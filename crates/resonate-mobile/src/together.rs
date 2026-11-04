@@ -516,20 +516,27 @@ impl MobilePlayer {
     }
 
     pub fn party_play_next(&self, request: u32) -> bool {
-        let guard = self.together.party.lock();
-        let Some(room) = guard.as_ref() else {
-            return false;
-        };
         let at = request as usize;
-        let Some(asked) = room.going.shown().asked_for.get(at).cloned() else {
+        let Some((party, player, finder, asked)) =
+            self.together.party.lock().as_ref().and_then(|room| {
+                let asked = room.going.shown().asked_for.get(at).cloned()?;
+
+                Some((
+                    Arc::clone(room.going.party()),
+                    Arc::clone(&room.player),
+                    Arc::clone(&room.finder),
+                    asked,
+                ))
+            })
+        else {
             return false;
         };
-        let Some(row) = room.finder.found(&asked.song) else {
+        let Some(row) = finder.found(&asked.song) else {
             return false;
         };
-        let queued = room.player.queued();
+        let queued = player.queued();
         let id = resonate_engine::unclaimed_id(queued.rows.iter().map(AsRef::as_ref));
-        let placed = room.player.send(Command::Insert {
+        let placed = player.send(Command::Insert {
             items: vec![QueueItem {
                 id,
                 location: row.location,
@@ -538,7 +545,7 @@ impl MobilePlayer {
             at: Placement::Next,
             play: false,
         });
-        room.going.party().take_a_request(at);
+        party.take_a_request(at);
 
         placed.is_ok()
     }
@@ -596,6 +603,7 @@ impl MobilePlayer {
     }
 
     fn party_seated(&self, party: Party) -> Result<()> {
+        self.party_leave();
         let zone = self.playing.shown();
         let player = self.playing.player_of(zone)?;
         let seat = PhoneSeat {

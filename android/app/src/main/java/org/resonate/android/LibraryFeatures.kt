@@ -276,6 +276,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val playlistSync = MutableStateFlow<PlaylistSync?>(null)
     val transferring = MutableStateFlow(false)
     val transferServiceRunning = MutableStateFlow(false)
+    private val syncApplied = MutableStateFlow(false)
+    val together =
+        Together(context, library, settings, scope, online, syncConfig, syncApplied) { loadPlaylists() }
     private val syncAccess = Mutex()
     private var syncPolling: Job? = null
     private var network: ConnectivityManager.NetworkCallback? = null
@@ -413,13 +416,17 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     meteredAllowed = false,
                 )
             }
+        together.begin(native)
         joinWaiting?.let(::joinSync)
         watchNetwork()
         syncPolling?.cancel()
         syncPolling = scope.launch { pollSync() }
         keepingInStep?.cancel()
         keepingInStep = scope.launch { keepLinkedPlaylistsInStep() }
-        work { applySync(it) }
+        work { native ->
+            applySync(native)
+            together.readLists(native)
+        }
     }
 
     private suspend fun keepLinkedPlaylistsInStep() {
@@ -545,6 +552,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             downloads.wantsChanged()
             enrichment.onlineChanged(enabled)
             settings.edit().putBoolean("online", enabled).commit()
+            together.onlineTurned(enabled)
             applySync(native)
         }
     }
@@ -685,7 +693,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     private suspend fun applySync(native: MobilePlayer) {
-        syncAccess.withLock { syncWith(native) }
+        try {
+            syncAccess.withLock { syncWith(native) }
+        } finally {
+            syncApplied.value = true
+        }
     }
 
     private fun syncWith(native: MobilePlayer) {
@@ -782,6 +794,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     arrivals = status.arrivals
                     library.refresh()
                     playlists.value = native.playlists()
+                    together.readLists(native)
                     openPlaylist.value?.let { id ->
                         if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
                     }
@@ -1858,6 +1871,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         downloadsWaitOnTheMeter.value = false
         transferring.value = false
         syncHandoffs.value = emptyList()
+        syncApplied.value = false
+        together.stopped()
         analysisRequest.incrementAndGet()
         recognitionRequest.incrementAndGet()
         correctionRequest.incrementAndGet()

@@ -94,6 +94,14 @@ was true at) is told on any change, on a jump past `HOST_MOVED_PAST`, and every 
 it as it arrives. A reconnecting seat tries from 1 s to 15 s and the room waits 30 s for its host. An old
 server's silence reads as `ServerTooOld`.
 
+## The lock
+
+**The room's lock is never held across a search, a thread join or a command**: a front end reads the
+party from its drawing thread (`Together::party`, `following`, `party_shown`), and a search takes seconds.
+Playing a request next clones what it needs out of the lock, and leaving takes the room out and drops it
+outside it, since dropping joins the seat's thread. Beginning or joining leaves any party first, so the
+old seat puts its queue back before the new one remembers it.
+
 ## Surfaces
 
 The window's **Party** pane (`views/party.rs`; `party` is a tab name in `last-tab`), and `resonate party

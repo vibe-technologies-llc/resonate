@@ -19,6 +19,7 @@ import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.defaultTrackFilter
+import org.resonate.android.nativecore.invitationKind
 import org.resonate.android.ui.Resonate
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -79,7 +80,12 @@ class LibraryViewModel(private val resonate: Resonate) : ViewModel() {
         features.loadPlaylists()
     }
 
-    fun refreshPlaylists() = features.loadPlaylists()
+    val sharedLists = features.together.lists
+
+    fun refreshPlaylists() {
+        features.loadPlaylists()
+        features.together.readLists()
+    }
 
     fun applyFilter(chosen: TrackFilter) = library.setFilter(chosen.trimmed())
 
@@ -88,7 +94,10 @@ class LibraryViewModel(private val resonate: Resonate) : ViewModel() {
     fun change(transform: (TrackFilter) -> TrackFilter) =
         applyFilter(transform(library.filter.value ?: defaultTrackFilter()))
 
-    fun createPlaylist(name: String) = features.createPlaylist(name)
+    fun createOrJoin(typed: String) {
+        if (invitationKind(typed) != null) features.together.arrive(typed)
+        else features.createPlaylist(typed)
+    }
 
     fun rescan() = library.rescan()
 }

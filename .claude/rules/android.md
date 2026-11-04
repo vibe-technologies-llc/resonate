@@ -1411,6 +1411,18 @@ remains necessary for Bluetooth, USB DAC and device-fidelity claims. UI checks c
 accessibility cache before each poll: an API 36 screenshot can show current controls while the
 cached tree still reports the preceding value. All write tests use copies.
 
+## Together
+
+`Together.kt`, `PartyService.kt`, `InvitationLinks.kt`, `ui/together/` and `ui/wrapped/` hold shared playlists,
+parties and the deck. `party_shown` is polled off the main thread, since a press on the boundary may wait
+on it. `PartyService` keeps a party in the foreground whatever playback does; dismissing the task leaves
+it, since a guest would otherwise go on playing unseen. `resonate://shared`, `resonate://party` and App Links
+for `https://resonate.tecnio.dev/s/` and `/p/` all reach `accept_invitation`; the links verify against
+`[web] android_certificates` on the server, which names the release key, so a debug build shows them
+unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws none. The typed name is
+`shared-name`. The card is drawn through a graphics layer to a PNG for the system's sheet
+(`shared-playlists.md`, `party.md`).
+
 ## Accessibility
 
 - **One set of helpers, in `ui/components/Accessibility.kt`.** `rememberCalm()` re-reads on resume and on

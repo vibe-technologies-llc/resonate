@@ -46,7 +46,7 @@ pub(crate) fn in_the_window(seats: Seats) {
 }
 
 pub(crate) fn out_of_the_window() {
-    *ROOM.lock() = None;
+    leave();
     *SEATS.lock() = None;
 }
 
@@ -81,6 +81,7 @@ pub(crate) fn begin(zone: ZoneId) -> Result<()> {
         seats.name.clone(),
     )?;
     let party = Party::host(settings).map_err(Error::Party)?;
+    leave();
     let room = opened(party, player, zone, &seats)?;
 
     *ROOM.lock() = Some(room);
@@ -101,6 +102,7 @@ pub(crate) fn join(code: &str, server: Option<String>, zone: ZoneId) -> Result<(
         seats.name.clone(),
     )?;
     let party = Party::join(settings, code).map_err(Error::Party)?;
+    leave();
     let room = opened(party, player, zone, &seats)?;
 
     *ROOM.lock() = Some(room);
@@ -153,7 +155,9 @@ pub(crate) fn shown() -> Option<(PartyShown, PartyFollowed, ZoneId)> {
 }
 
 pub(crate) fn leave() {
-    *ROOM.lock() = None;
+    let left = ROOM.lock().take();
+
+    drop(left);
 }
 
 pub(crate) fn turn_out(member: [u8; 16]) {
@@ -169,19 +173,24 @@ pub(crate) fn dismiss_a_request(at: usize) {
 }
 
 pub(crate) fn play_a_request_next(at: usize) -> bool {
-    let guard = ROOM.lock();
-    let Some(room) = guard.as_ref() else {
+    let Some((party, player, finder, wanted)) = ROOM.lock().as_ref().and_then(|room| {
+        let wanted = room.going.shown().asked_for.get(at).cloned()?;
+
+        Some((
+            Arc::clone(room.going.party()),
+            Arc::clone(&room.player),
+            Arc::clone(&room.finder),
+            wanted,
+        ))
+    }) else {
         return false;
     };
-    let Some(wanted) = room.going.shown().asked_for.get(at).cloned() else {
+    let Some(row) = finder.found(&wanted.song) else {
         return false;
     };
-    let Some(row) = room.finder.found(&wanted.song) else {
-        return false;
-    };
-    let queued = room.player.queued();
+    let queued = player.queued();
     let id = resonate_engine::unclaimed_id(queued.rows.iter().map(AsRef::as_ref));
-    let placed = room.player.send(Command::Insert {
+    let placed = player.send(Command::Insert {
         items: vec![QueueItem {
             id,
             location: row.location,
@@ -190,7 +199,7 @@ pub(crate) fn play_a_request_next(at: usize) -> bool {
         at: Placement::Next,
         play: false,
     });
-    room.going.party().take_a_request(at);
+    party.take_a_request(at);
 
     placed.is_ok()
 }

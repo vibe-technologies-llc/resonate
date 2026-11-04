@@ -10,14 +10,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -26,6 +29,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -61,6 +65,7 @@ import org.resonate.android.nativecore.ListenedOnDay
 import org.resonate.android.nativecore.ListenedTo
 import org.resonate.android.nativecore.ListeningDetail
 import org.resonate.android.nativecore.Track
+import org.resonate.android.nativecore.WrappedYear
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.albumOwner
@@ -75,6 +80,8 @@ import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.ui.wrapped.WrappedDeck
+import org.resonate.android.ui.wrapped.WrappedWords
 
 data class Ranked(val entry: ListenedTo, val artworkSong: ULong?)
 
@@ -111,6 +118,20 @@ private fun artistSong(entry: ListenedTo, tracks: List<Track>): ULong? =
         ?.id
 
 class StatisticsViewModel(private val resonate: Resonate) : ViewModel() {
+    private val mutableWrapped = MutableStateFlow<WrappedYear?>(null)
+    val wrapped = mutableWrapped.asStateFlow()
+
+    fun readWrapped(year: Long? = null) {
+        viewModelScope.launch {
+            val zone = TimeZone.getDefault()
+            val offset = zone.getOffset(System.currentTimeMillis()) / 1000
+            resonate
+                .read { native -> withContext(Dispatchers.IO) { native.wrapped(year, zone.id, offset) } }
+                .onSuccess { mutableWrapped.value = it }
+                .onFailure { android.util.Log.w("Resonate", "The year in review was not read", it) }
+        }
+    }
+
     private val mutableState = MutableStateFlow<StatisticsState>(StatisticsState.Loading)
     val state = mutableState.asStateFlow()
     private val mutableBreakdown = MutableStateFlow<LibraryBreakdown?>(null)
@@ -197,10 +218,26 @@ fun StatisticsScreen() {
     val resonate = LocalResonate.current
     val sheets = LocalSheets.current
     val navigator = LocalNavigator.current
+    val wrapped by model.wrapped.collectAsStateWithLifecycle()
+    var deckOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(period) { model.load(period) }
+    LaunchedEffect(Unit) { model.readWrapped() }
     Page("Listening statistics") { padding ->
         SettingsList(padding, Modifier.testTag("statistics-list")) {
             item(key = "periods") { Periods(period) { period = it } }
+            wrapped?.let { year ->
+                item(key = "wrapped") {
+                    TextButton(
+                        onClick = { deckOpen = true },
+                        modifier =
+                            Modifier.padding(horizontal = Sizes.gutter).testTag("wrapped-open"),
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(WrappedWords.entry(year.year))
+                    }
+                }
+            }
             when (val current = state) {
                 StatisticsState.Loading -> item(key = "loading") { ListLoading() }
                 is StatisticsState.Failed ->
@@ -292,6 +329,10 @@ fun StatisticsScreen() {
                 }
             }
         }
+    }
+    val year = wrapped
+    if (deckOpen && year != null) {
+        WrappedDeck(year, onYear = model::readWrapped, onClose = { deckOpen = false })
     }
 }
 

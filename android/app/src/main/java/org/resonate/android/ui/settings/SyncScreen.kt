@@ -107,8 +107,11 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
         config.value?.let { features.saveSync(edit(it)) }
     }
 
-    fun saveNames(device: String, server: String) = change {
-        it.copy(device = device.trim(), server = server.trim())
+    val nameForOthers = features.together.nameForOthers
+
+    fun saveNames(device: String, server: String, forOthers: String) {
+        change { it.copy(device = device.trim(), server = server.trim()) }
+        if (forOthers.trim() != nameForOthers.value) features.together.nameForOthers(forOthers)
     }
 
     fun join(code: String) = features.joinSync(code)
@@ -173,6 +176,7 @@ fun SyncScreen() {
     val notice by model.notice.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     val askedAt by model.askedAt.collectAsStateWithLifecycle()
+    val keptNameForOthers by model.nameForOthers.collectAsStateWithLifecycle()
     var showCode by remember { mutableStateOf(false) }
     var asking by rememberSaveable { mutableStateOf<Asking?>(null) }
     var forgetting by rememberSaveable { mutableStateOf<String?>(null) }
@@ -188,6 +192,7 @@ fun SyncScreen() {
         }
         var device by rememberSaveable(config.device) { mutableStateOf(config.device) }
         var server by rememberSaveable(config.server) { mutableStateOf(config.server) }
+        var forOthers by rememberSaveable(keptNameForOthers) { mutableStateOf(keptNameForOthers) }
         LaunchedEffect(config.key) { showCode = false }
         val code = status?.code?.ifEmpty { null } ?: config.key
         val devices = orderedDevices(status?.devices.orEmpty())
@@ -412,6 +417,13 @@ fun SyncScreen() {
                     supporting = "How your other devices see this one",
                     modifier = Modifier.testTag("device-name"),
                 )
+                Field(
+                    value = forOthers,
+                    onValueChange = { forOthers = it },
+                    label = "Name other people see",
+                    supporting = "On a shared playlist or at a party. Empty until you type it.",
+                    modifier = Modifier.testTag("name-for-others"),
+                )
                 if (!config.nearbyOnly) {
                     Field(
                         value = server,
@@ -422,9 +434,10 @@ fun SyncScreen() {
                         modifier = Modifier.testTag("sync-server"),
                     )
                 }
-                val unsaved = namesUnsaved(config, device, server)
+                val unsaved =
+                    namesUnsaved(config, device, server) || forOthers.trim() != keptNameForOthers
                 ButtonRow {
-                    Button(onClick = { model.saveNames(device, server) }, enabled = unsaved) {
+                    Button(onClick = { model.saveNames(device, server, forOthers) }, enabled = unsaved) {
                         Text(if (unsaved) "Save" else "Saved")
                     }
                 }

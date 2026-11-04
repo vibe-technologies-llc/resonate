@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.NavDisplay
+import org.resonate.android.ArrivalPage
 import org.resonate.android.ui.components.ArtworkClock
 import org.resonate.android.ui.components.Banners
 import org.resonate.android.ui.components.FollowArtworkChanges
@@ -205,6 +206,7 @@ fun ResonateApp(resonate: Resonate) {
                 }
                 SheetHost()
                 PairingOffer()
+                InvitationArrivals()
             }
         }
     }
@@ -234,6 +236,25 @@ private fun PairingOffer() {
         },
         onDismiss = { features.pairingOffered.value = null },
     )
+}
+
+@Composable
+private fun InvitationArrivals() {
+    val together = LocalResonate.current.features.together
+    val navigator = LocalNavigator.current
+    val arrived by together.arrived.collectAsStateWithLifecycle()
+    LaunchedEffect(arrived) {
+        when (arrived) {
+            ArrivalPage.PARTY -> navigator.open(Screen.Party)
+            ArrivalPage.PLAYLISTS -> {
+                navigator.beforeOpen()
+                navigator.selectAtRoot(Screen.Library)
+                together.playlistsAsked.value = true
+            }
+            null -> return@LaunchedEffect
+        }
+        together.arrived.value = null
+    }
 }
 
 private const val SHORT_WINDOW_BELOW_DP = 480

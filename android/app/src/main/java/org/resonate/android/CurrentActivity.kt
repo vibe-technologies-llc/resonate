@@ -2,6 +2,7 @@ package org.resonate.android
 
 import android.net.Uri
 import androidx.media3.session.MediaController
+import java.io.File
 import org.resonate.android.ui.Host
 
 class CurrentActivity : Host {
@@ -43,6 +44,10 @@ class CurrentActivity : Host {
 
     override fun share(title: String, link: String) {
         host?.share(title, link)
+    }
+
+    override fun shareImage(title: String, picture: File) {
+        host?.shareImage(title, picture)
     }
 
     override fun open(link: Uri) {

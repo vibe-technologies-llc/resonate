@@ -3,6 +3,7 @@ package org.resonate.android.ui
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.lifecycle.ViewModel
@@ -33,6 +34,8 @@ interface Host {
     fun allowNotifications()
 
     fun share(title: String, link: String)
+
+    fun shareImage(title: String, picture: File)
 
     fun open(link: Uri)
 

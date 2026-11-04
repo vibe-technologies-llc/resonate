@@ -470,13 +470,13 @@ fun CodeText(code: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun rememberCopy(): (label: String, text: String) -> Unit {
+fun rememberCopy(sensitive: Boolean = true): (label: String, text: String) -> Unit {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     return { label, text ->
         val data = ClipData.newPlainText(label, text)
         data.description.extras =
-            PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
+            PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, sensitive) }
         scope.launch { clipboard.setClipEntry(ClipEntry(data)) }
     }
 }

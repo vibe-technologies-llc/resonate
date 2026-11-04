@@ -125,3 +125,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its
   workflow job (`fedora-server-rpm`) fires on a release or a manual dispatch alone
+
+## Later: Together on the phones
+
+- [S] Trying Wrapped, shared playlists and parties on a real iPhone: they build clean and their logic is tested, but the views have never run.
+- [S] On Android, driving what the emulator run did not reach: the online-off banner, a list's songs not held, Remove in the sharing sheet, Paste a link, saving a typed name, leaving by dismissing the task and from the notification, and the service held through a pause.
+- [S] A party between two real devices in different places, measuring the offset by ear or by loopback.

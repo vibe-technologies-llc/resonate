@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.SavedSearch
+import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.Track
@@ -21,12 +22,12 @@ fun reachableDevices(devices: List<SyncedDevice>): List<SyncedDevice> =
 
 class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) : ViewModel() {
     private val features = resonate.features
-    private val shared = SharingStarted.WhileSubscribed(5_000)
+    private val whileWatched = SharingStarted.WhileSubscribed(5_000)
 
     val playlist: StateFlow<MusicPlaylist?> =
         features.playlists
             .map { all -> all.firstOrNull { it.id == id } }
-            .stateIn(viewModelScope, shared, features.playlists.value.firstOrNull { it.id == id })
+            .stateIn(viewModelScope, whileWatched, features.playlists.value.firstOrNull { it.id == id })
 
     val rows: StateFlow<Loaded<List<PlaylistEntry>>> =
         combine(
@@ -41,7 +42,7 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
                     else -> Loaded.Ready(playlistEntries(rows))
                 }
             }
-            .stateIn(viewModelScope, shared, Loaded.Loading)
+            .stateIn(viewModelScope, whileWatched, Loaded.Loading)
 
     val sync: StateFlow<PlaylistSyncView?> =
         combine(features.playlistSync, features.syncStatus) { held, status ->
@@ -53,22 +54,32 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
                         devices = reachableDevices(status.devices),
                     )
             }
-            .stateIn(viewModelScope, shared, null)
+            .stateIn(viewModelScope, whileWatched, null)
+
+    val shared: StateFlow<SharedPlaylist?> =
+        features.together.lists
+            .map { all -> all.firstOrNull { it.playlist == id } }
+            .stateIn(
+                viewModelScope,
+                whileWatched,
+                features.together.lists.value.firstOrNull { it.playlist == id },
+            )
 
     val refreshing: StateFlow<Boolean> =
         features.refreshingPlaylists
             .map { id in it }
-            .stateIn(viewModelScope, shared, id in features.refreshingPlaylists.value)
+            .stateIn(viewModelScope, whileWatched, id in features.refreshingPlaylists.value)
 
     val online: StateFlow<Boolean> = features.online
 
-    val playing: StateFlow<ULong?> = resonate.playingId().stateIn(viewModelScope, shared, null)
+    val playing: StateFlow<ULong?> = resonate.playingId().stateIn(viewModelScope, whileWatched, null)
 
     val catalog: StateFlow<List<Track>> = resonate.library.allTracks
 
     fun open() {
         if (features.openPlaylist.value != id || features.playlistUnread.value == id) features.selectPlaylist(id)
         features.loadPlaylistSync(id)
+        features.together.readLists()
     }
 
     private fun edit(revision: ULong?, change: (org.resonate.android.nativecore.MobilePlayer, ULong) -> Unit) {

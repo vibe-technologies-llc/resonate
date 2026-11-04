@@ -172,6 +172,7 @@ dependencies {
     implementation("androidx.navigation3:navigation3-ui:1.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.12.0")
     implementation("com.materialkolor:material-kolor:5.0.1")
+    implementation("com.google.zxing:core:3.5.4")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.media3:media3-session:1.9.3")
     implementation("net.java.dev.jna:jna:5.17.0@aar")

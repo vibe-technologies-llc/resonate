@@ -133,6 +133,7 @@ enum class Setting(
             "Pairing code",
             "Join a group",
             "Sync server",
+            "Name other people see",
             "Only this network",
             "Mobile data",
             "Sync now",

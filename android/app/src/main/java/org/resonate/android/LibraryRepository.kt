@@ -316,6 +316,7 @@ class LibraryRepository(private val context: Context) {
                     access.withLock {
                         opened?.let { native ->
                             try {
+                                native.partyLeave()
                                 native.shutdown()
                             } catch (failure: Exception) {
                                 report(failure)

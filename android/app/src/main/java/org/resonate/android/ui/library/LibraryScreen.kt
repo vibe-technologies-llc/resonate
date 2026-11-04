@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -69,7 +70,14 @@ fun LibraryScreen() {
     val onPlaylists = pager.currentPage == Shelf.PLAYLISTS.ordinal
     LaunchedEffect(pager.currentPage) { selection.clear() }
     LaunchedEffect(songs) { selection.retain(songs.map { it.id }) }
-    val newPlaylist = { sheets.name("New playlist") { model.createPlaylist(it) } }
+    val newPlaylist = { sheets.name("New playlist") { model.createOrJoin(it) } }
+    val playlistsAsked by resonate.features.together.playlistsAsked.collectAsStateWithLifecycle()
+    LaunchedEffect(playlistsAsked) {
+        if (playlistsAsked) {
+            pager.scrollToPage(Shelf.PLAYLISTS.ordinal)
+            resonate.features.together.playlistsAsked.value = false
+        }
+    }
     Page(
         "Library",
         size = TitleSize.LARGE,
@@ -88,9 +96,12 @@ fun LibraryScreen() {
                         MenuEntry.Action("Rescan library", Icons.Rounded.Refresh) { model.rescan() },
                     ),
                     listOf(
+                        MenuEntry.Action("Listening party", Icons.Rounded.Groups) {
+                            navigator.open(Screen.Party)
+                        },
                         MenuEntry.Action("Library tools", Icons.Rounded.Handyman) {
                             navigator.open(Screen.LibraryTools)
-                        }
+                        },
                     ),
                 )
             )

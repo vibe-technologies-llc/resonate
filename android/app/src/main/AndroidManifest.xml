@@ -46,6 +46,23 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="resonate" android:host="pair" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="resonate" />
+                <data android:host="shared" />
+                <data android:host="party" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="resonate.tecnio.dev" />
+                <data android:pathPrefix="/s/" />
+                <data android:pathPrefix="/p/" />
+            </intent-filter>
         </activity>
         <receiver android:name=".ResonatePlayerWidgetProvider" android:exported="false" android:label="@string/widget_compact_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
@@ -59,6 +76,7 @@
             <intent-filter><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter>
         </receiver>
         <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".PartyService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service
             android:name=".PlaybackService"
             android:foregroundServiceType="mediaPlayback"
@@ -72,6 +90,15 @@
             android:name=".ArtworkProvider"
             android:authorities="${applicationId}.art"
             android:exported="true" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shared_files" />
+        </provider>
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

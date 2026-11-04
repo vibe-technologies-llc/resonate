@@ -67,6 +67,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Sync : Screen
 
+    @Serializable data object Party : Screen
+
     @Serializable data object Server : Screen
 
     @Serializable

@@ -3,6 +3,7 @@ package org.resonate.android
 import android.Manifest
 import android.app.PendingIntent
 import android.app.SearchManager
+import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -19,10 +20,12 @@ import androidx.activity.result.ActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import java.io.File
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import kotlinx.coroutines.CompletableDeferred
@@ -35,7 +38,7 @@ import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.Host
 import org.resonate.android.ui.ResonateApp
 
-private const val PAIRING_SCHEME = "resonate"
+private const val SHARED_PICTURE_TYPE = "image/png"
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainActivity : ComponentActivity(), Host {
@@ -133,11 +136,18 @@ class MainActivity : ComponentActivity(), Host {
         when (intent.action) {
             Intent.ACTION_VIEW -> {
                 val opened = intent.data ?: return
-                if (opened.scheme == PAIRING_SCHEME) {
-                    library.features.offerPairing(opened.toString())
-                    return
+                when (InvitationLinks.of(opened.scheme, opened.host, opened.path)) {
+                    OpenedLink.PAIRING -> {
+                        library.features.offerPairing(opened.toString())
+                        return
+                    }
+                    OpenedLink.INVITATION -> {
+                        library.features.together.arrive(opened.toString())
+                        return
+                    }
+                    OpenedLink.SOMETHING_ELSE ->
+                        waitingToPlay = { listOf(library.openedFiles.track(opened)) }
                 }
-                waitingToPlay = { listOf(library.openedFiles.track(opened)) }
             }
             MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH -> {
                 val asked = intent.getStringExtra(SearchManager.QUERY).orEmpty()
@@ -214,6 +224,18 @@ class MainActivity : ComponentActivity(), Host {
                 .setType("text/plain")
                 .putExtra(Intent.EXTRA_SUBJECT, title)
                 .putExtra(Intent.EXTRA_TEXT, link)
+        startActivity(Intent.createChooser(send, title))
+    }
+
+    override fun shareImage(title: String, picture: File) {
+        val shared = FileProvider.getUriForFile(this, "$packageName.files", picture)
+        val send =
+            Intent(Intent.ACTION_SEND)
+                .setType(SHARED_PICTURE_TYPE)
+                .putExtra(Intent.EXTRA_SUBJECT, title)
+                .putExtra(Intent.EXTRA_STREAM, shared)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .apply { clipData = ClipData.newRawUri(title, shared) }
         startActivity(Intent.createChooser(send, title))
     }
 

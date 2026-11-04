@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
@@ -41,7 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.CollectionOrder
+import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.ArtistPortrait
 import org.resonate.android.ui.components.CollectionRow
 import org.resonate.android.ui.components.IconTile
@@ -51,6 +54,7 @@ import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.ui.together.rememberPasteALink
 
 val CollectionOrder.label: String
     get() =
@@ -166,9 +170,13 @@ fun ArtistsTab(model: LibraryViewModel, padding: PaddingValues) {
 
 @Composable
 fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
+    val resonate = LocalResonate.current
     val navigator = LocalNavigator.current
     val playlists by model.playlists.collectAsStateWithLifecycle()
     val favourites by model.favourites.collectAsStateWithLifecycle()
+    val sharedLists by model.sharedLists.collectAsStateWithLifecycle()
+    val party by resonate.features.together.party.collectAsStateWithLifecycle()
+    val paste = rememberPasteALink()
     LaunchedEffect(Unit) { model.refreshPlaylists() }
     LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("playlists")) {
         item("favourites") {
@@ -186,7 +194,29 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
                 modifier = Modifier.padding(top = 8.dp).testTag("favourites"),
             )
         }
-        item("heading") { SectionHeader("Your playlists") }
+        item("party") {
+            CollectionRow(
+                title = "Listening party",
+                supporting = party?.let(TogetherWords::partyLine) ?: "Listen together with friends",
+                onClick = { navigator.open(Screen.Party) },
+                leading = {
+                    IconTile(
+                        Icons.Rounded.Groups,
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                },
+                modifier = Modifier.testTag("listening-party"),
+            )
+        }
+        item("heading") {
+            SectionHeader(
+                "Your playlists",
+                action = "Paste a link",
+                onAction = paste,
+                modifier = Modifier.testTag("playlists-heading"),
+            )
+        }
         if (playlists.isEmpty()) {
             item("none") {
                 Text(
@@ -200,7 +230,12 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
         items(playlists, key = { "playlist:${it.id}" }) { playlist ->
             CollectionRow(
                 title = playlist.name,
-                supporting = counted(playlist.songs, "song"),
+                supporting =
+                    listOfNotNull(
+                            TogetherWords.badge(sharedLists.firstOrNull { it.playlist == playlist.id }),
+                            counted(playlist.songs, "song"),
+                        )
+                        .joinToString(" · "),
                 onClick = { navigator.open(playlist.screen) },
                 leading = { PlaylistCover(playlist.covers, Sizes.rowArt, shape = MaterialTheme.shapes.medium) },
             )

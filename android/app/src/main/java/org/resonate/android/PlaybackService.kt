@@ -265,6 +265,11 @@ class PlaybackService : MediaLibraryService() {
         )
     }
 
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val holdsAParty = (application as ResonateApplication).library.features.together.keepsTheServiceForeground
+        super.onUpdateNotification(session, startInForegroundRequired || holdsAParty)
+    }
+
     private fun refreshButtons(player: Player) {
         val open = session ?: return
         open.setMediaButtonPreferences(buttons(player, forCar = false))

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -80,6 +81,7 @@ import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.ui.together.SharingSheet
 
 @Composable
 fun PlaylistScreen(screen: Screen.Playlist) {
@@ -97,6 +99,9 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     val online by model.online.collectAsStateWithLifecycle()
     var adding by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
+    var sharing by rememberSaveable { mutableStateOf(false) }
+    val shared by model.shared.collectAsStateWithLifecycle()
+    val mayEdit = shared?.mayEdit != false
     val name = playlist?.name ?: screen.name
     val search = playlist?.search
     val link = playlist?.link
@@ -131,7 +136,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                             onSelectAll = { selection.selectAll(entries.map { it.key }) },
                             onClose = selection::clear,
                             removal =
-                                if (search != null) null
+                                if (search != null || !mayEdit) null
                                 else
                                     SelectionRemoval("Remove from playlist") {
                                         model.removeAll(
@@ -147,6 +152,9 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                     playlistMenu(
                         sync.takeIf { search == null },
                         fills = search != null,
+                        mayEdit = mayEdit,
+                        onShare = if (search == null) ({ sharing = true }) else null,
+                        inShare = shared != null,
                         onPlayNext = { resonate.playNext(tracks) },
                         onQueue = { resonate.addToQueue(tracks) },
                         onAdd = { adding = true },
@@ -174,7 +182,13 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             item("header") {
                 CollectionHeader(
                     title = name,
-                    overline = if (search == null) "Playlist" else "Saved search",
+                    overline =
+                        when {
+                            search != null -> "Saved search"
+                            shared == null -> "Playlist"
+                            mayEdit -> "Shared playlist"
+                            else -> "Followed playlist"
+                        },
                     summary = collectionSummary(tracks = rows.map { it.track }),
                     onPlay = { resonate.playInOrder(rows.map { it.track }) },
                     onShuffle = { resonate.playShuffled(rows.map { it.track }) },
@@ -205,7 +219,9 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                                         onRefresh = model::refreshLink,
                                     )
                                 }
-                                if (rows.isEmpty()) {
+                                if (!mayEdit) {
+                                    Unit
+                                } else if (rows.isEmpty()) {
                                     FilledTonalButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
                                         AddSongsLabel()
                                     }
@@ -221,8 +237,16 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                     PlaylistCover(playlist?.covers.orEmpty(), side, shape = MaterialTheme.shapes.extraLarge)
                 }
             }
-            if (search != null) {
-                if (rows.isEmpty()) item("empty") { EmptyCollection(detail = "No song in your library matches this search yet.") }
+            if (search != null || !mayEdit) {
+                if (rows.isEmpty()) {
+                    item("empty") {
+                        EmptyCollection(
+                            detail =
+                                if (search != null) "No song in your library matches this search yet."
+                                else "No song of this playlist is in your library yet.",
+                        )
+                    }
+                }
                 items(rows.size, key = { rows[it].key }) { at ->
                     val entry = rows[at]
                     TrackRow(
@@ -258,6 +282,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             }
         }
     }
+    if (sharing) SharingSheet(screen.id, name) { sharing = false }
     if (adding) {
         AddSongsSheet(
             catalog = model.catalog,
@@ -340,6 +365,9 @@ private fun AddSongsLabel() {
 private fun playlistMenu(
     sync: PlaylistSyncView?,
     fills: Boolean,
+    mayEdit: Boolean,
+    onShare: (() -> Unit)?,
+    inShare: Boolean,
     onPlayNext: () -> Unit,
     onQueue: () -> Unit,
     onAdd: () -> Unit,
@@ -358,12 +386,15 @@ private fun playlistMenu(
             MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay, run = onPlayNext),
             MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic, run = onQueue),
         ),
-        listOfNotNull(
-            if (fills) null else MenuEntry.Action("Add songs", Icons.AutoMirrored.Rounded.PlaylistAdd, run = onAdd),
-            onEditSearch?.let { MenuEntry.Action("Edit search", Icons.Rounded.Edit, run = it) },
-            MenuEntry.Action("Rename", Icons.Rounded.Edit, run = onRename),
-            MenuEntry.Action("Undo last edit", Icons.AutoMirrored.Rounded.Undo, run = onUndo),
-        ),
+        listOfNotNull(onShare?.let { MenuEntry.Action("Share", Icons.Rounded.Share, run = it) }),
+        if (!mayEdit) emptyList()
+        else
+            listOfNotNull(
+                if (fills) null else MenuEntry.Action("Add songs", Icons.AutoMirrored.Rounded.PlaylistAdd, run = onAdd),
+                onEditSearch?.let { MenuEntry.Action("Edit search", Icons.Rounded.Edit, run = it) },
+                MenuEntry.Action("Rename", Icons.Rounded.Edit, run = onRename),
+                MenuEntry.Action("Undo last edit", Icons.AutoMirrored.Rounded.Undo, run = onUndo),
+            ),
         if (sync == null) emptyList()
         else
             listOf<MenuEntry>(MenuEntry.Toggle("Keep songs on this device", Icons.Rounded.DownloadForOffline, sync.kept, onKeep)) +
@@ -383,7 +414,8 @@ private fun playlistMenu(
                 MenuEntry.Toggle("Keep in step with ${link.service}", Icons.Rounded.Sync, link.keptInStep, onKeepInStep),
                 MenuEntry.Action("Forget the link", Icons.Rounded.LinkOff, run = onForgetLink),
             ),
-        listOf(MenuEntry.Action("Delete playlist", Icons.Rounded.Delete, destructive = true, run = onDelete)),
+        if (inShare) emptyList()
+        else listOf(MenuEntry.Action("Delete playlist", Icons.Rounded.Delete, destructive = true, run = onDelete)),
     )
 
 @Composable
