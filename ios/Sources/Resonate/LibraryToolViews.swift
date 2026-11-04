@@ -371,14 +371,18 @@ struct SuggestedMixCard: View {
                     .background { HeaderShadow(outline: .rounded(16)) }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(mix.title)
-            .accessibilityHint("Shows the songs in this mix")
+            .accessibilityHidden(true)
             HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mix.title).font(.subheadline.weight(.semibold)).titleLines()
-                    Text(mix.detail).font(.caption).foregroundStyle(.secondary).titleLines(2)
+                Button(action: open) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(mix.title).font(.subheadline.weight(.semibold)).titleLines()
+                        Text(mix.detail).font(.caption).foregroundStyle(.secondary).titleLines(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the songs in this mix")
                 Button("Play \(mix.title)", systemImage: "play.fill") { play(shuffled: false) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.glass)

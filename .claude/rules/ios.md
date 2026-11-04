@@ -769,7 +769,7 @@ every route change (a pair of headphones at the same rate included), not from th
   Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
   appearing and coming forward), then *Favourites* and *Shuffle all* as two shortcut cards (`ShuffleAllCard`, the whole catalog
   shuffled), *Made for you* (`HomeMixes`: every `SuggestedMix` as a card on a shelf, its covers from
-  `SuggestedMix.covers`, which the Suggestions page shares; *See all* is `Destination.suggestions`),
+  `SuggestedMix.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
   *Recently added* (`albums(order: .added)`) and *Artists* (`artists(order: .plays)`), twelve each read on
   `Work.onScreen` keyed by `collectionGeneration` and `catalogEpoch`, *Your playlists* (a *New playlist*
   button where there are none) and *Your listening* (`ListeningSummary`: plays, time listened and songs from
