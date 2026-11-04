@@ -106,6 +106,8 @@ pub async fn connect(
     let tcp = TcpStream::connect((address.host.as_str(), address.port))
         .await
         .map_err(|source| Error::stream(StreamOp::Open, source))?;
+    tcp.set_nodelay(true)
+        .map_err(|source| Error::stream(StreamOp::Open, source))?;
     let tunnel: Tunnel = if address.secure {
         let name = ServerName::try_from(address.host.clone()).map_err(|_| Error::ServerName {
             server: address.host.clone().into(),

@@ -134,6 +134,34 @@ struct Args {
 
     #[arg(
         long,
+        default_value_t = 50,
+        help = "The most shared playlists one address may start a day"
+    )]
+    shared_spaces_per_address_per_day: u32,
+
+    #[arg(
+        long,
+        default_value_t = 50,
+        help = "The most listening parties one address may start a day"
+    )]
+    rooms_per_address_per_day: u32,
+
+    #[arg(
+        long,
+        default_value_t = 1024,
+        help = "The most listening parties held at once, from everyone"
+    )]
+    rooms: usize,
+
+    #[arg(
+        long,
+        default_value_t = 32,
+        help = "The most people in one listening party at once"
+    )]
+    room_members: usize,
+
+    #[arg(
+        long,
         value_name = "DIR",
         help = "Where the gateway keeps the tracks it has downloaded, so a track asked for again is not downloaded again"
     )]
@@ -239,7 +267,12 @@ fn run(args: Args) -> Result<(), Error> {
             connections_per_address: args.connections_per_address,
             attempts_per_minute: args.attempts_per_minute,
             spaces_per_address_per_day: args.spaces_per_address_per_day,
+            shared_spaces_per_address_per_day: args.shared_spaces_per_address_per_day,
+            rooms_per_address_per_day: args.rooms_per_address_per_day,
         },
+        rooms: args.rooms,
+        room_members: args.room_members,
+        ..Limits::default()
     };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -263,7 +296,9 @@ fn run(args: Args) -> Result<(), Error> {
                 Some(web) => {
                     let listener = TcpListener::bind(web.listen).await.map_err(Error::Listen)?;
                     tracing::info!(listen = %web.listen, forwarded_by = ?web.forwarded_by, "serving sync over web sockets");
-                    web_server.serve_web(listener, web.forwarded_by).await;
+                    web_server
+                        .serve_web_claiming(listener, web.forwarded_by, web.android_certificates)
+                        .await;
                     Ok::<(), Error>(())
                 }
                 None => std::future::pending().await,

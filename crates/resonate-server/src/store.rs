@@ -1,6 +1,9 @@
 use std::{path::Path, time::Duration};
 
-use resonate_sync::{DeviceId, SpaceId};
+use resonate_sync::{
+    DeviceId, SpaceId,
+    wire::{SpaceAsked, SpaceHead},
+};
 use ring::digest::{Digest, SHA256, digest};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
@@ -36,7 +39,16 @@ ALTER TABLE records ADD COLUMN digest BLOB;
 CREATE INDEX records_by_digest ON records(space, device, digest) WHERE digest IS NOT NULL;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, RECORDS_ARE_KNOWN_BY_THEIR_DIGEST];
+const A_SPACE_MAY_BE_SHARED_AND_CLOSED: &str = "
+ALTER TABLE spaces ADD COLUMN viewer BLOB;
+ALTER TABLE spaces ADD COLUMN closed BLOB;
+";
+
+const MIGRATIONS: &[&str] = &[
+    V1,
+    RECORDS_ARE_KNOWN_BY_THEIR_DIGEST,
+    A_SPACE_MAY_BE_SHARED_AND_CLOSED,
+];
 
 pub struct Store {
     connection: Connection,
@@ -69,6 +81,7 @@ pub enum Claim {
 pub enum Appended {
     Through(u64),
     Full,
+    Closed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,6 +89,7 @@ pub enum Compacted {
     Through(u64),
     Stale,
     Full,
+    Closed,
 }
 
 pub struct Stored {
@@ -199,6 +213,78 @@ impl Store {
         }
     }
 
+    pub fn allow_viewers(&mut self, space: SpaceId, viewer: &[u8; 32]) -> Result<()> {
+        self.connection
+            .execute(
+                "UPDATE spaces SET viewer = coalesce(viewer, ?2) WHERE id = ?1",
+                params![space.0.as_slice(), viewer.as_slice()],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        Ok(())
+    }
+
+    pub fn may_view(&mut self, space: SpaceId, viewer: &[u8; 32], now: i64) -> Result<bool> {
+        let touched = self
+            .connection
+            .execute(
+                "UPDATE spaces SET touched = ?3 WHERE id = ?1 AND viewer = ?2",
+                params![space.0.as_slice(), viewer.as_slice(), now],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        Ok(touched > 0)
+    }
+
+    pub fn heads(&mut self, asked: &[SpaceAsked], now: i64) -> Result<Vec<SpaceHead>> {
+        let mut heads = Vec::with_capacity(asked.len());
+        for space in asked {
+            let digest = space.token.digest();
+            let found: Option<(i64, bool)> = self
+                .connection
+                .query_row(
+                    "UPDATE spaces SET touched = ?3
+                      WHERE id = ?1 AND (token = ?2 OR viewer = ?2)
+                  RETURNING head, closed IS NOT NULL",
+                    params![space.space.0.as_slice(), digest.as_slice(), now],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            if let Some((head, closed)) = found {
+                heads.push(SpaceHead {
+                    space: space.space,
+                    head: head.cast_unsigned(),
+                    closed,
+                });
+            }
+        }
+
+        Ok(heads)
+    }
+
+    pub fn close(&mut self, space: SpaceId, sealed: &[u8]) -> Result<Vec<u8>> {
+        self.connection
+            .query_row(
+                "UPDATE spaces SET closed = coalesce(closed, ?2) WHERE id = ?1 RETURNING closed",
+                params![space.0.as_slice(), sealed],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    pub fn closed(&self, space: SpaceId) -> Result<Option<Vec<u8>>> {
+        self.connection
+            .query_row(
+                "SELECT closed FROM spaces WHERE id = ?1",
+                params![space.0.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(Option::flatten)
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
     fn totals(&self) -> Result<(u64, u64)> {
         totals_in(&self.connection)
     }
@@ -231,13 +317,16 @@ impl Store {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        let (head, bytes): (i64, i64) = transaction
+        let (head, bytes, closed): (i64, i64, bool) = transaction
             .query_row(
-                "SELECT head, bytes FROM spaces WHERE id = ?1",
+                "SELECT head, bytes, closed IS NOT NULL FROM spaces WHERE id = ?1",
                 params![space.0.as_slice()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if closed {
+            return Ok(Appended::Closed);
+        }
         let mut fresh: Vec<(Digest, &Vec<u8>)> = Vec::with_capacity(blobs.len());
         for blob in blobs {
             let known = digest(&SHA256, blob);
@@ -379,13 +468,16 @@ impl Store {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        let (head, snapshot_through): (i64, i64) = transaction
+        let (head, snapshot_through, closed): (i64, i64, bool) = transaction
             .query_row(
-                "SELECT head, snapshot_through FROM spaces WHERE id = ?1",
+                "SELECT head, snapshot_through, closed IS NOT NULL FROM spaces WHERE id = ?1",
                 params![space.0.as_slice()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if closed {
+            return Ok(Compacted::Closed);
+        }
         let through = through.cast_signed();
         if through <= snapshot_through || through > head {
             return Ok(Compacted::Stale);

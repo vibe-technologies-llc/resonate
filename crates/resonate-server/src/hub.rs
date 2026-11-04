@@ -22,6 +22,7 @@ pub enum Notice {
         sealed: Vec<u8>,
     },
     Compacted(u64),
+    Closed(Vec<u8>),
     Replaced,
     Relayed {
         from: DeviceId,

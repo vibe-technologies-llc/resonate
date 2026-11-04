@@ -25,6 +25,7 @@ pub enum PemOp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConfigField {
+    AndroidCertificates,
     Hifi,
     Web,
     ForwardedBy,

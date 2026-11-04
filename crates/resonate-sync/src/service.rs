@@ -1748,7 +1748,16 @@ impl Syncing {
                 self.push().await?;
             }
             FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
-            FromServer::Welcome { .. } | FromServer::Relayed { .. } => {}
+            FromServer::Welcome { .. }
+            | FromServer::Relayed { .. }
+            | FromServer::Closed { .. }
+            | FromServer::Heads { .. }
+            | FromServer::RoomWelcome { .. }
+            | FromServer::RoomHeard { .. }
+            | FromServer::RoomArrived { .. }
+            | FromServer::RoomLeft { .. }
+            | FromServer::RoomPong { .. }
+            | FromServer::RoomEnded => {}
         }
         Ok(())
     }

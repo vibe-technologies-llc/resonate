@@ -59,6 +59,14 @@ pub const LYRICSFILES_ASKED_AT_MOST: usize = 512;
 pub const PRINTS_ASKED_AT_MOST: usize = 512;
 pub const LARGEST_SHARED_COVER: usize = 16 * 1024 * 1024;
 
+pub const HEADS_ASKED_AT_MOST: usize = 256;
+
+pub const LARGEST_ROOM_FRAME: usize = 256 * 1024;
+
+const SPACE_ASKED_AT_LEAST: usize = SPACE_BYTES + TOKEN_BYTES;
+
+const SPACE_HEAD_AT_LEAST: usize = SPACE_BYTES + 2;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToServer {
     Hello {
@@ -85,6 +93,58 @@ pub enum ToServer {
         to: DeviceId,
         datagram: Vec<u8>,
     },
+    Share {
+        version: u16,
+        space: SpaceId,
+        token: Token,
+        viewer: [u8; TOKEN_BYTES],
+        device: DeviceId,
+        after: u64,
+    },
+    View {
+        version: u16,
+        space: SpaceId,
+        token: Token,
+        device: DeviceId,
+        after: u64,
+    },
+    Heads {
+        version: u16,
+        asked: Vec<SpaceAsked>,
+    },
+    Close {
+        sealed: Vec<u8>,
+    },
+    Room {
+        version: u16,
+        room: SpaceId,
+        token: Token,
+        host: Option<Token>,
+        member: DeviceId,
+    },
+    RoomSay {
+        to: Option<DeviceId>,
+        sealed: Vec<u8>,
+    },
+    RoomPing {
+        nonce: u64,
+    },
+    RoomKick {
+        member: DeviceId,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpaceAsked {
+    pub space: SpaceId,
+    pub token: Token,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpaceHead {
+    pub space: SpaceId,
+    pub head: u64,
+    pub closed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +162,7 @@ pub enum Refusal {
     TooFast,
     Busy,
     Stale,
+    NoSuchRoom,
     Unknown,
 }
 
@@ -141,6 +202,31 @@ pub enum FromServer {
         from: DeviceId,
         datagram: Vec<u8>,
     },
+    Closed {
+        sealed: Vec<u8>,
+    },
+    Heads {
+        heads: Vec<SpaceHead>,
+    },
+    RoomWelcome {
+        members: Vec<DeviceId>,
+        host: DeviceId,
+    },
+    RoomHeard {
+        from: DeviceId,
+        sealed: Vec<u8>,
+    },
+    RoomArrived {
+        member: DeviceId,
+    },
+    RoomLeft {
+        member: DeviceId,
+    },
+    RoomPong {
+        nonce: u64,
+        at_nanos: u64,
+    },
+    RoomEnded,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -978,6 +1064,10 @@ impl<'a> Reader<'a> {
     }
 }
 
+fn version_read(reader: &mut Reader<'_>) -> Result<u16> {
+    u16::try_from(reader.number()?).map_err(|_| Error::Malformed(Malformed::Number))
+}
+
 impl ToServer {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
@@ -1017,6 +1107,82 @@ impl ToServer {
                 writer.device(*to);
                 writer.bytes(datagram);
             }
+            Self::Share {
+                version,
+                space,
+                token,
+                viewer,
+                device,
+                after,
+            } => {
+                writer.byte(7);
+                writer.number(u64::from(*version));
+                writer.fixed(&space.0);
+                writer.fixed(&token.0);
+                writer.fixed(viewer);
+                writer.device(*device);
+                writer.number(*after);
+            }
+            Self::View {
+                version,
+                space,
+                token,
+                device,
+                after,
+            } => {
+                writer.byte(8);
+                writer.number(u64::from(*version));
+                writer.fixed(&space.0);
+                writer.fixed(&token.0);
+                writer.device(*device);
+                writer.number(*after);
+            }
+            Self::Heads { version, asked } => {
+                writer.byte(9);
+                writer.number(u64::from(*version));
+                writer.length(asked.len());
+                for space in asked {
+                    writer.fixed(&space.space.0);
+                    writer.fixed(&space.token.0);
+                }
+            }
+            Self::Close { sealed } => {
+                writer.byte(10);
+                writer.bytes(sealed);
+            }
+            Self::Room {
+                version,
+                room,
+                token,
+                host,
+                member,
+            } => {
+                writer.byte(11);
+                writer.number(u64::from(*version));
+                writer.fixed(&room.0);
+                writer.fixed(&token.0);
+                writer.flag(host.is_some());
+                if let Some(host) = host {
+                    writer.fixed(&host.0);
+                }
+                writer.device(*member);
+            }
+            Self::RoomSay { to, sealed } => {
+                writer.byte(12);
+                writer.flag(to.is_some());
+                if let Some(to) = to {
+                    writer.device(*to);
+                }
+                writer.bytes(sealed);
+            }
+            Self::RoomPing { nonce } => {
+                writer.byte(13);
+                writer.number(*nonce);
+            }
+            Self::RoomKick { member } => {
+                writer.byte(14);
+                writer.device(*member);
+            }
         }
         writer.finish()
     }
@@ -1049,6 +1215,64 @@ impl ToServer {
                 to: reader.device()?,
                 datagram: reader.bytes(LARGEST_DATAGRAM)?.to_vec(),
             },
+            7 => Self::Share {
+                version: version_read(&mut reader)?,
+                space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
+                token: Token(reader.fixed::<TOKEN_BYTES>()?),
+                viewer: reader.fixed::<TOKEN_BYTES>()?,
+                device: reader.device()?,
+                after: reader.number()?,
+            },
+            8 => Self::View {
+                version: version_read(&mut reader)?,
+                space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
+                token: Token(reader.fixed::<TOKEN_BYTES>()?),
+                device: reader.device()?,
+                after: reader.number()?,
+            },
+            9 => {
+                let version = version_read(&mut reader)?;
+                let count = reader.count_of(SPACE_ASKED_AT_LEAST)?;
+                if count > HEADS_ASKED_AT_MOST {
+                    return Err(Error::Malformed(Malformed::Number));
+                }
+                let mut asked = Vec::with_capacity(count);
+                for _ in 0..count {
+                    asked.push(SpaceAsked {
+                        space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
+                        token: Token(reader.fixed::<TOKEN_BYTES>()?),
+                    });
+                }
+                Self::Heads { version, asked }
+            }
+            10 => Self::Close {
+                sealed: reader.sealed()?,
+            },
+            11 => Self::Room {
+                version: version_read(&mut reader)?,
+                room: SpaceId(reader.fixed::<SPACE_BYTES>()?),
+                token: Token(reader.fixed::<TOKEN_BYTES>()?),
+                host: if reader.flag()? {
+                    Some(Token(reader.fixed::<TOKEN_BYTES>()?))
+                } else {
+                    None
+                },
+                member: reader.device()?,
+            },
+            12 => Self::RoomSay {
+                to: if reader.flag()? {
+                    Some(reader.device()?)
+                } else {
+                    None
+                },
+                sealed: reader.bytes(LARGEST_ROOM_FRAME)?.to_vec(),
+            },
+            13 => Self::RoomPing {
+                nonce: reader.number()?,
+            },
+            14 => Self::RoomKick {
+                member: reader.device()?,
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1066,6 +1290,7 @@ impl Refusal {
             Self::TooFast => 4,
             Self::Busy => 5,
             Self::Stale => 6,
+            Self::NoSuchRoom => 7,
             Self::Unknown => 255,
         }
     }
@@ -1079,6 +1304,7 @@ impl Refusal {
             4 => Self::TooFast,
             5 => Self::Busy,
             6 => Self::Stale,
+            7 => Self::NoSuchRoom,
             _ => Self::Unknown,
         }
     }
@@ -1155,6 +1381,46 @@ impl FromServer {
                 writer.device(*from);
                 writer.bytes(datagram);
             }
+            Self::Closed { sealed } => {
+                writer.byte(10);
+                writer.bytes(sealed);
+            }
+            Self::Heads { heads } => {
+                writer.byte(11);
+                writer.length(heads.len());
+                for head in heads {
+                    writer.fixed(&head.space.0);
+                    writer.number(head.head);
+                    writer.flag(head.closed);
+                }
+            }
+            Self::RoomWelcome { members, host } => {
+                writer.byte(12);
+                writer.length(members.len());
+                for member in members {
+                    writer.device(*member);
+                }
+                writer.device(*host);
+            }
+            Self::RoomHeard { from, sealed } => {
+                writer.byte(13);
+                writer.device(*from);
+                writer.bytes(sealed);
+            }
+            Self::RoomArrived { member } => {
+                writer.byte(14);
+                writer.device(*member);
+            }
+            Self::RoomLeft { member } => {
+                writer.byte(15);
+                writer.device(*member);
+            }
+            Self::RoomPong { nonce, at_nanos } => {
+                writer.byte(16);
+                writer.number(*nonce);
+                writer.number(*at_nanos);
+            }
+            Self::RoomEnded => writer.byte(17),
         }
         writer.finish()
     }
@@ -1214,6 +1480,47 @@ impl FromServer {
                 from: reader.device()?,
                 datagram: reader.bytes(LARGEST_DATAGRAM)?.to_vec(),
             },
+            10 => Self::Closed {
+                sealed: reader.sealed()?,
+            },
+            11 => {
+                let count = reader.count_of(SPACE_HEAD_AT_LEAST)?;
+                let mut heads = Vec::with_capacity(count);
+                for _ in 0..count {
+                    heads.push(SpaceHead {
+                        space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
+                        head: reader.number()?,
+                        closed: reader.flag()?,
+                    });
+                }
+                Self::Heads { heads }
+            }
+            12 => {
+                let count = reader.count_of(DEVICE_BYTES)?;
+                let mut members = Vec::with_capacity(count);
+                for _ in 0..count {
+                    members.push(reader.device()?);
+                }
+                Self::RoomWelcome {
+                    members,
+                    host: reader.device()?,
+                }
+            }
+            13 => Self::RoomHeard {
+                from: reader.device()?,
+                sealed: reader.bytes(LARGEST_ROOM_FRAME)?.to_vec(),
+            },
+            14 => Self::RoomArrived {
+                member: reader.device()?,
+            },
+            15 => Self::RoomLeft {
+                member: reader.device()?,
+            },
+            16 => Self::RoomPong {
+                nonce: reader.number()?,
+                at_nanos: reader.number()?,
+            },
+            17 => Self::RoomEnded,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1854,6 +2161,112 @@ mod tests {
             nanos: -5,
             device: DeviceId([7; DEVICE_BYTES]),
         }
+    }
+
+    #[test]
+    fn the_frames_of_shared_spaces_and_rooms_read_back_as_themselves() {
+        let space = SpaceId([1; SPACE_BYTES]);
+        let device = DeviceId([2; DEVICE_BYTES]);
+        let to_server = [
+            ToServer::Share {
+                version: PROTOCOL_VERSION,
+                space,
+                token: Token([3; TOKEN_BYTES]),
+                viewer: [4; TOKEN_BYTES],
+                device,
+                after: 9,
+            },
+            ToServer::View {
+                version: PROTOCOL_VERSION,
+                space,
+                token: Token([3; TOKEN_BYTES]),
+                device,
+                after: 9,
+            },
+            ToServer::Heads {
+                version: PROTOCOL_VERSION,
+                asked: vec![SpaceAsked {
+                    space,
+                    token: Token([3; TOKEN_BYTES]),
+                }],
+            },
+            ToServer::Close {
+                sealed: vec![0; SEALED_AT_LEAST],
+            },
+            ToServer::Room {
+                version: PROTOCOL_VERSION,
+                room: space,
+                token: Token([3; TOKEN_BYTES]),
+                host: Some(Token([5; TOKEN_BYTES])),
+                member: device,
+            },
+            ToServer::Room {
+                version: PROTOCOL_VERSION,
+                room: space,
+                token: Token([3; TOKEN_BYTES]),
+                host: None,
+                member: device,
+            },
+            ToServer::RoomSay {
+                to: Some(device),
+                sealed: vec![1, 2],
+            },
+            ToServer::RoomSay {
+                to: None,
+                sealed: vec![1, 2],
+            },
+            ToServer::RoomPing { nonce: 7 },
+            ToServer::RoomKick { member: device },
+        ];
+        let from_server = [
+            FromServer::Closed {
+                sealed: vec![0; SEALED_AT_LEAST],
+            },
+            FromServer::Heads {
+                heads: vec![SpaceHead {
+                    space,
+                    head: 3,
+                    closed: true,
+                }],
+            },
+            FromServer::RoomWelcome {
+                members: vec![device],
+                host: device,
+            },
+            FromServer::RoomHeard {
+                from: device,
+                sealed: vec![1],
+            },
+            FromServer::RoomArrived { member: device },
+            FromServer::RoomLeft { member: device },
+            FromServer::RoomPong {
+                nonce: 7,
+                at_nanos: 1_000_000,
+            },
+            FromServer::RoomEnded,
+            FromServer::Refused(Refusal::NoSuchRoom),
+        ];
+
+        for frame in to_server {
+            assert_eq!(ToServer::decoded(&frame.encoded()).ok(), Some(frame));
+        }
+        for frame in from_server {
+            assert_eq!(FromServer::decoded(&frame.encoded()).ok(), Some(frame));
+        }
+    }
+
+    #[test]
+    fn a_frame_asking_after_more_heads_than_a_server_answers_is_refused() {
+        let mut writer = Writer::new();
+        writer.byte(9);
+        writer.number(u64::from(PROTOCOL_VERSION));
+        writer.length(HEADS_ASKED_AT_MOST + 1);
+        for _ in 0..=HEADS_ASKED_AT_MOST {
+            writer.fixed(&[0; SPACE_BYTES]);
+            writer.fixed(&[0; TOKEN_BYTES]);
+        }
+
+        assert!(ToServer::decoded(&writer.finish()).is_err());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use crate::{ConfigField, Error, Result, keys::address_of};
 pub struct Web {
     pub listen: SocketAddr,
     pub forwarded_by: Option<String>,
+    pub android_certificates: Vec<String>,
 }
 
 impl Web {
@@ -42,16 +43,58 @@ impl Web {
                     .to_owned(),
             ),
         };
+        let android_certificates = match table.get("android_certificates") {
+            None => Vec::new(),
+            Some(item) => item
+                .as_array()
+                .ok_or(Error::ConfigInvalid {
+                    field: ConfigField::AndroidCertificates,
+                })?
+                .iter()
+                .map(|certificate| {
+                    certificate
+                        .as_str()
+                        .filter(|certificate| is_a_fingerprint(certificate))
+                        .map(str::to_owned)
+                        .ok_or(Error::ConfigInvalid {
+                            field: ConfigField::AndroidCertificates,
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?,
+        };
+
         Ok(Some(Self {
             listen: address_of(table, "listen", ConfigField::Listen)?,
             forwarded_by,
+            android_certificates,
         }))
     }
+}
+
+fn is_a_fingerprint(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .split(':')
+            .all(|pair| pair.len() == 2 && pair.bytes().all(|digit| digit.is_ascii_hexdigit()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_certificate_named_for_app_links_is_a_fingerprint_or_the_table_is_refused() {
+        let named =
+            parsed("[web]\nlisten = \"127.0.0.1:8080\"\nandroid_certificates = [\"AB:CD:01\"]\n")
+                .expect("parsed")
+                .expect("a table");
+
+        assert_eq!(named.android_certificates, ["AB:CD:01"]);
+        assert!(
+            parsed("[web]\nlisten = \"127.0.0.1:8080\"\nandroid_certificates = [\"<x>\"]\n")
+                .is_err()
+        );
+    }
 
     fn parsed(text: &str) -> Result<Option<Web>> {
         Web::parse(Path::new("web.toml"), text)

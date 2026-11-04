@@ -19,6 +19,8 @@ pub struct Allowance {
     pub connections_per_address: usize,
     pub attempts_per_minute: u32,
     pub spaces_per_address_per_day: u32,
+    pub shared_spaces_per_address_per_day: u32,
+    pub rooms_per_address_per_day: u32,
 }
 
 impl Default for Allowance {
@@ -28,6 +30,8 @@ impl Default for Allowance {
             connections_per_address: 64,
             attempts_per_minute: 30,
             spaces_per_address_per_day: 5,
+            shared_spaces_per_address_per_day: 50,
+            rooms_per_address_per_day: 50,
         }
     }
 }
@@ -35,12 +39,40 @@ impl Default for Allowance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Source(IpAddr);
 
+#[derive(Clone, Copy)]
+struct Allowed {
+    spent: u32,
+    since: Instant,
+}
+
+impl Allowed {
+    const fn new(now: Instant) -> Self {
+        Self {
+            spent: 0,
+            since: now,
+        }
+    }
+
+    fn spend(&mut self, most: u32, now: Instant) -> bool {
+        if now.duration_since(self.since) >= SPACE_WINDOW {
+            self.since = now;
+            self.spent = 0;
+        }
+        if self.spent >= most {
+            return false;
+        }
+        self.spent += 1;
+        true
+    }
+}
+
 struct Account {
     open: usize,
     attempts: u32,
     attempts_since: Instant,
-    spaces: u32,
-    spaces_since: Instant,
+    spaces: Allowed,
+    shared_spaces: Allowed,
+    rooms: Allowed,
     seen: Instant,
 }
 
@@ -79,8 +111,9 @@ impl Account {
             open: 0,
             attempts: 0,
             attempts_since: now,
-            spaces: 0,
-            spaces_since: now,
+            spaces: Allowed::new(now),
+            shared_spaces: Allowed::new(now),
+            rooms: Allowed::new(now),
             seen: now,
         }
     }
@@ -153,20 +186,31 @@ impl Ledger {
 
 impl Admitted {
     pub fn may_make_a_space(&self) -> bool {
+        let most = self.guard.allowance.spaces_per_address_per_day;
+
+        self.spending(|account, now| account.spaces.spend(most, now))
+    }
+
+    pub fn may_make_a_shared_space(&self) -> bool {
+        let most = self.guard.allowance.shared_spaces_per_address_per_day;
+
+        self.spending(|account, now| account.shared_spaces.spend(most, now))
+    }
+
+    pub fn may_host_a_room(&self) -> bool {
+        let most = self.guard.allowance.rooms_per_address_per_day;
+
+        self.spending(|account, now| account.rooms.spend(most, now))
+    }
+
+    fn spending(&self, spend: impl FnOnce(&mut Account, Instant) -> bool) -> bool {
         let now = Instant::now();
         let mut ledger = self.guard.ledger.lock();
-        let Some(account) = ledger.accounts.get_mut(&self.source) else {
-            return false;
-        };
-        if now.duration_since(account.spaces_since) >= SPACE_WINDOW {
-            account.spaces_since = now;
-            account.spaces = 0;
-        }
-        if account.spaces >= self.guard.allowance.spaces_per_address_per_day {
-            return false;
-        }
-        account.spaces += 1;
-        true
+
+        ledger
+            .accounts
+            .get_mut(&self.source)
+            .is_some_and(|account| spend(account, now))
     }
 }
 
@@ -190,7 +234,28 @@ mod tests {
             connections_per_address: 2,
             attempts_per_minute: 3,
             spaces_per_address_per_day: 1,
+            shared_spaces_per_address_per_day: 2,
+            rooms_per_address_per_day: 2,
         }
+    }
+
+    #[test]
+    fn a_shared_space_and_a_room_are_counted_apart_from_a_personal_space() {
+        let guard = Guard::new(tight());
+        let admitted = guard
+            .admit("198.51.100.200".parse().expect("an address"))
+            .expect("admitted");
+
+        assert!(admitted.may_make_a_shared_space());
+        assert!(admitted.may_make_a_shared_space());
+        assert!(!admitted.may_make_a_shared_space());
+        assert!(admitted.may_host_a_room());
+        assert!(admitted.may_host_a_room());
+        assert!(!admitted.may_host_a_room());
+        assert!(
+            admitted.may_make_a_space(),
+            "what a shared space spent came out of a personal space's allowance"
+        );
     }
 
     #[test]

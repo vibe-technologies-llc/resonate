@@ -52,6 +52,42 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   files it as `0.0.0.0:0`, the asked device skips an unspecified address, and the candidates (its
   interfaces and the address STUN gave it) are all it dials (`sync.md`).
 
+## Shared spaces (`shared-playlists.md`)
+
+A shared playlist is one more space, its token a write capability, so nothing here reads what it
+holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
+
+- **`Share` is `Hello` for a shared space**: it carries the digest of a viewer token as well, kept
+  once (`Store::allow_viewers`), and a new space it makes spends
+  `--shared-spaces-per-address-per-day` (50), not the 5 a personal space does, so a reset behind one
+  NAT cannot fail halfway through its work.
+- **`View` is one read and no seat**: the viewer token opens `Welcome`, the snapshot and records and
+  a `Closed` if there is one, then the connection ends. It joins no hub, so followers do not count
+  against `--devices`, and appending or compacting is not a thing it can ask. It touches the space,
+  so a list only followed is not swept.
+- **`Heads` asks after many spaces on one connection** (at most `HEADS_ASKED_AT_MOST`, 256): each
+  space whose token or viewer token fits answers its head and whether it is closed, and any other is
+  left out, so a client polls with one connection and opens a session only for what moved.
+- **`Close` is first come, kept apart from the log** (`spaces.closed`): compaction cannot reach it
+  (a member being removed could otherwise compact the word that moves everyone away), a second one
+  is answered with the first, `Append` and `Compact` then answer `Closed`, and every session and view
+  is told it.
+
+## Listening parties (`rooms.rs`, `party.md`)
+
+A room lives in memory only: nothing is stored, and a restart ends every party. **The first frame
+`Room` either makes one or joins one**: a host token makes the room and only that token is the host
+from then on, and a guest finds `NoSuchRoom` until it exists. **The server enforces the star, so
+nobody can forge the host**: `RoomSay` from the host reaches everyone (or the one member it names),
+from a guest it reaches the host alone, whatever it names. `RoomKick` and a host's `Close` are the
+host's; a guest asking changes nothing. **A host gone is waited for** (`Limits::host_back_within`,
+30 s, `Leaving::TheHostLeft`) and then the room ends. Each member's frames count against
+`--frames-per-minute`, a member may have at most `Limits::room_bytes_per_second` (512 KiB) said, what
+exceeds it is dropped, and a member who reads nothing holds at most `ROOM_BACKLOG_BYTES_AT_MOST`
+(1 MiB). `--rooms` (1024), `--room-members` (32) and `--rooms-per-address-per-day` (50) bound the
+rest. **`RoomPing` is answered with this server's monotonic clock**, nanoseconds since it began, so a
+party's clocks are one clock whatever each machine's says.
+
 ## Limits
 
 `--record-bytes` (`LARGEST_RECORD`, 256 KiB a blob, `TooLarge`; devices send nothing larger), `--space-bytes` (64 MiB a space, `SpaceFull`),
@@ -169,6 +205,13 @@ it off.
 - **`forwarded_by = "CF-Connecting-IP"`** makes the address the allowance counts the first one in
   that header, and a connection without a parseable one is dropped, so only the proxy's path works.
   Left out, the peer address is counted, which behind a proxy is the proxy itself: set it.
+- **A plain `GET` of `/s/` or `/p/` is a page, not a socket** (`pages.rs`): `serve_web` peeks at the
+  stream before tungstenite, which would refuse it, and answers a static page that hands its URL
+  fragment to `resonate://`. The fragment never reaches here, so the page holds nothing of an
+  invitation. `/.well-known/assetlinks.json` answers only where `[web] android_certificates` names
+  signing fingerprints, else 404, so no build claims links it cannot verify. Both sides of a socket
+  leave Nagle's algorithm (`set_nodelay`), since a party's clock is read over it
+  (`a_page_is_answered_beside_the_socket_and_holds_nothing_of_the_invitation`).
 - At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.
   The server pings every 30 s and a reader silent for 90 s ends the session.
   `a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward`.
