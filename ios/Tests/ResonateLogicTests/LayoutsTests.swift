@@ -157,6 +157,14 @@ import Testing
         #expect(LibraryArrangement.of(horizontal: .compact, accessibilityText: true) == .stack)
     }
 
+    @Test func theListeningGlanceStandsBesideItsChartOnlyWhereTheWidthIsRegularAndTheTextIsNotLarge() {
+        #expect(ListeningGlanceArrangement.of(horizontal: Self.iPadLandscape.horizontal, accessibilityText: false) == .beside)
+        #expect(ListeningGlanceArrangement.of(horizontal: Self.duoOpen.horizontal, accessibilityText: false) == .beside)
+        #expect(ListeningGlanceArrangement.of(horizontal: Self.iPhonePortrait.horizontal, accessibilityText: false) == .stacked)
+        #expect(ListeningGlanceArrangement.of(horizontal: Self.iPhoneLandscape.horizontal, accessibilityText: false) == .stacked)
+        #expect(ListeningGlanceArrangement.of(horizontal: .regular, accessibilityText: true) == .stacked)
+    }
+
     @Test func theSidebarListsEverySectionOnceStartingAtHome() {
         let every = LibrarySection.allCases
 

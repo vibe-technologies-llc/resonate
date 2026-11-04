@@ -88,6 +88,7 @@ final class Features {
     var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
     private(set) var statisticsDays: UInt32?
+    private(set) var homeListening: HomeListening?
     private(set) var wrappedYear: WrappedYear?
     var lyrics: LyricSheet?
     var lyricsLoading = false
@@ -1155,12 +1156,18 @@ final class Features {
             }
             let covers = try await Work.aside { ListenedCovers.of(detail, from: native) }
             let breakdown = try await Work.aside { try native.libraryBreakdown() }
+            let listening: HomeListening? = if days == 0 {
+                try await Work.aside { HomeListening.of(found, detail, covers: covers) }
+            } else {
+                nil
+            }
             guard let self, request == statisticsRequest else { return }
             if statistics != found { statistics = found }
             if listeningDetail != detail { listeningDetail = detail }
             if listenedCovers != covers { listenedCovers = covers }
             if libraryBreakdown != breakdown { libraryBreakdown = breakdown }
             statisticsDays = days
+            if let listening, homeListening != listening { homeListening = listening }
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })

@@ -146,20 +146,11 @@ struct StatisticsView: View {
     }
 
     nonisolated static func spoken(_ milliseconds: UInt64) -> String {
-        let minutes = Int(milliseconds / 60_000)
-        let hours = minutes / 60
-        let rest = minutes % 60
-        if hours == 0 { return counted(rest, "minute") }
-        if rest == 0 { return counted(hours, "hour") }
-        return "\(counted(hours, "hour")) \(counted(rest, "minute"))"
+        ListenedTime.spoken(milliseconds)
     }
 
     static func brief(_ milliseconds: UInt64) -> String {
-        let minutes = Int(milliseconds / 60_000)
-        if minutes < 60 { return "\(minutes) min" }
-        let hours = minutes / 60
-        if hours < 100 { return "\(hours) h \(minutes % 60) min" }
-        return "\(hours) h"
+        ListenedTime.brief(milliseconds)
     }
 }
 

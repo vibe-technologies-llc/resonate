@@ -6,7 +6,9 @@ struct HomeView: View {
     private static let shelved = 12
 
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     @Environment(\.scenePhase) private var phase
+    @State private var wentToBackground = false
     @State private var hour = Calendar.current.component(.hour, from: .now)
     @State private var recent: [AlbumHit] = []
     @State private var listenedTo: [ArtistHit] = []
@@ -64,11 +66,7 @@ struct HomeView: View {
                         SeeAllPageHeader(title: "Artists", more: true, page: .artists)
                     }
                 }
-                Section("Your listening") {
-                    NavigationLink(value: Destination.statistics) {
-                        ListeningSummary()
-                    }
-                }
+                HomeListeningSections()
             }
         }
         .listStyle(.insetGrouped)
@@ -85,7 +83,14 @@ struct HomeView: View {
             features.loadStatistics()
         }
         .onChange(of: phase) { _, now in
-            if now == .active { hour = Calendar.current.component(.hour, from: .now) }
+            if now == .background { wentToBackground = true }
+            guard now == .active else { return }
+
+            hour = Calendar.current.component(.hour, from: .now)
+            if wentToBackground, navigation.tab == .home, navigation.paths[.home]?.isEmpty ?? true {
+                features.loadStatistics()
+            }
+            wentToBackground = false
         }
         .task(id: "\(library.collectionGeneration):\(library.catalogEpoch)") { await loadShelves() }
         .alert("Create playlist", isPresented: $naming) {
@@ -157,57 +162,6 @@ private struct HomeMixes: View {
         .task(id: "\(library.collectionGeneration):\(mixes.map(\.id).joined())") {
             guard let found = await SuggestedMix.covers(of: mixes, in: library) else { return }
             covers = found
-        }
-    }
-}
-
-private struct ListeningSummary: View {
-    private static let gap: CGFloat = 12
-
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        let features = library.features
-        let statistics = features.statisticsDays == 0 ? features.statistics : nil
-        let plays = statistics.map { "\($0.plays)" } ?? "–"
-        let listened = statistics.map { StatisticsView.brief($0.listenedMs) } ?? "–"
-        let songs = "\(statistics.map { Int($0.songs) } ?? library.catalogCount)"
-
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                ListeningFigure(value: plays, label: "plays")
-                Spacer(minLength: Self.gap)
-                ListeningFigure(value: listened, label: "listened")
-                Spacer(minLength: Self.gap)
-                ListeningFigure(value: songs, label: "songs")
-            }
-            VStack(alignment: .leading, spacing: Self.gap) {
-                ListeningFigure(value: plays, label: "plays")
-                ListeningFigure(value: listened, label: "listened")
-                ListeningFigure(value: songs, label: "songs")
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Shows your listening statistics")
-    }
-}
-
-private struct ListeningFigure: View {
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.tint)
-                .titleLines()
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .titleLines()
         }
     }
 }
