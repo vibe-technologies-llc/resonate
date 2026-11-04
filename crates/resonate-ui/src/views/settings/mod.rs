@@ -13,7 +13,7 @@ mod online;
 mod output;
 mod processing;
 mod subsonic;
-mod sync;
+pub(crate) mod sync;
 mod tidal;
 
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};

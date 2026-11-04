@@ -3,12 +3,23 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
     process,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
+use parking_lot::Mutex;
+use resonate_core::Recording;
 use resonate_server::{Limits, Server, Store};
 use resonate_sync::{
-    DeviceId, Incoming, Outgoing, SpaceId, Token, connect, to_the_web, web_address,
+    DeviceId, Incoming, Outgoing, SpaceId, Token, connect,
+    party::{
+        Going, Mine, Party, PartyFinder, PartyNow, PartyReach, PartySeat, PartySettings, PartySong,
+        SeatHeard, Standing,
+    },
+    to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
 };
 use rustls::RootCertStore;
@@ -537,4 +548,343 @@ fn a_store_of_before_shared_spaces_is_carried_forward_with_its_records() {
     assert_eq!(store.closed(SPACE).expect("read"), None);
 
     fs::remove_dir_all(&folder).ok();
+}
+
+fn party_settings(server: SocketAddr, name: &str) -> PartySettings {
+    let began = std::time::Instant::now();
+
+    PartySettings {
+        server: format!("ws://{server}"),
+        trusted: None,
+        name: name.to_owned(),
+        now_nanos: std::sync::Arc::new(move || {
+            u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX)
+        }),
+    }
+}
+
+async fn until(what: &str, reached: impl Fn() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while !reached() {
+        assert!(tokio::time::Instant::now() < deadline, "{what}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn a_song(row: u64) -> PartySong {
+    PartySong {
+        row,
+        recording: Recording {
+            mbid: None,
+            title: "Song".to_owned(),
+            artist: "Artist".to_owned(),
+            album: "Album".to_owned(),
+            length: Some(Duration::from_secs(200)),
+        },
+        isrc: None,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_host_turning_one_out()
+{
+    let server = hosted(Limits::default()).await;
+    let host = Party::host(party_settings(server, "Host")).expect("the host starts");
+
+    until("the host to reach the server", || {
+        host.shown().reach == PartyReach::Here
+    })
+    .await;
+
+    let now = PartyNow {
+        song: Some(a_song(1)),
+        next: vec![a_song(2)],
+        playing: true,
+        position_nanos: 5,
+        anchor_nanos: 7,
+        coarse: false,
+    };
+    host.tell(now.clone());
+
+    let code = host.shown().code;
+    let guest = Party::join(party_settings(server, "Guest"), &code).expect("the guest starts");
+
+    until("the guest to hear the song", || {
+        guest.shown().now.as_ref() == Some(&now)
+    })
+    .await;
+    until("the host to learn the guest's name", || {
+        host.shown().people.iter().any(|one| one.name == "Guest")
+    })
+    .await;
+    until("the guest to learn the host's name", || {
+        guest
+            .shown()
+            .people
+            .iter()
+            .any(|one| one.host && one.name == "Host")
+    })
+    .await;
+    until("the guest's clock to be set", || {
+        guest.to_server(1).is_some()
+    })
+    .await;
+
+    guest.ask_for(a_song(9));
+    until("the host to be asked for the song", || {
+        host.shown().asked_for.len() == 1
+    })
+    .await;
+
+    let member = guest.shown().me;
+    host.turn_out(member);
+    until("the guest to be told the party is over", || {
+        guest.shown().reach == PartyReach::Ended
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn nobody_is_at_a_party_nobody_began() {
+    let server = hosted(Limits::default()).await;
+    let key = resonate_sync::party::PartyKey::minted().expect("a key is minted");
+    let guest = Party::join(party_settings(server, ""), &key.code()).expect("the guest starts");
+
+    until("the guest to be told there is no such party", || {
+        guest.shown().reach == PartyReach::NoSuchParty
+    })
+    .await;
+}
+
+#[derive(Clone, Default)]
+struct Told {
+    taken_up: Arc<Mutex<Vec<(Vec<u64>, u64, bool)>>>,
+    paused: Arc<AtomicBool>,
+    put_back: Arc<AtomicBool>,
+}
+
+struct FakeSeat {
+    now_nanos: Arc<dyn Fn() -> u64 + Send + Sync>,
+    told: Told,
+    hosting: bool,
+    row: Arc<Mutex<Option<u64>>>,
+    began: u64,
+}
+
+impl PartySeat for FakeSeat {
+    type Row = u64;
+
+    fn heard(&self) -> SeatHeard {
+        let at = (self.now_nanos)();
+        let row = *self.row.lock();
+        let paused = self.told.paused.load(Ordering::Acquire);
+        let mine = match (row, paused) {
+            (None, _) => Mine::Stopped,
+            (Some(_), true) => Mine::Paused,
+            (Some(_), false) => Mine::Playing,
+        };
+
+        SeatHeard {
+            mine,
+            row,
+            position_nanos: row.map(|_| at.saturating_sub(self.began)),
+            at_nanos: at,
+            coarse: false,
+        }
+    }
+
+    fn stamp_of(&self, row: &u64) -> u64 {
+        row + 1_000
+    }
+
+    fn songs_up_next(&self) -> (Option<PartySong>, Vec<PartySong>) {
+        if self.hosting {
+            (Some(a_song(1)), vec![a_song(2)])
+        } else {
+            (None, Vec::new())
+        }
+    }
+
+    fn added_here(&self, _known: &[u64]) -> Vec<PartySong> {
+        Vec::new()
+    }
+
+    fn take_up(&self, rows: &[u64], position: u64, _at: u64, sounding: bool) -> bool {
+        self.told
+            .taken_up
+            .lock()
+            .push((rows.to_vec(), position, sounding));
+        *self.row.lock() = rows.first().map(|row| row + 1_000);
+        true
+    }
+
+    fn nudge(&self, _position: u64, _at: u64) {}
+
+    fn seek(&self, _to: u64) {}
+
+    fn pause(&self) {
+        self.told.paused.store(true, Ordering::Release);
+    }
+
+    fn play(&self) {
+        self.told.paused.store(false, Ordering::Release);
+    }
+
+    fn put_back(&self) {
+        self.told.put_back.store(true, Ordering::Release);
+    }
+}
+
+struct HeldOnly(u64);
+
+impl PartyFinder for HeldOnly {
+    type Row = u64;
+
+    fn found(&self, song: &PartySong) -> Option<u64> {
+        (song.row <= self.0).then_some(song.row)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_queue_back_on_leaving()
+ {
+    let server = hosted(Limits::default()).await;
+    let host_settings = party_settings(server, "Host");
+    let host_now = Arc::clone(&host_settings.now_nanos);
+    let host = Party::host(host_settings).expect("the host starts");
+    let code = host.shown().code;
+    let host_told = Told::default();
+    let host_seat = FakeSeat {
+        began: host_now(),
+        now_nanos: host_now,
+        told: host_told,
+        hosting: true,
+        row: Arc::new(Mutex::new(Some(1))),
+    };
+    let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
+
+    let guest_settings = party_settings(server, "Guest");
+    let guest_now = Arc::clone(&guest_settings.now_nanos);
+    let told = Told::default();
+    let guest_seat = FakeSeat {
+        began: guest_now(),
+        now_nanos: guest_now,
+        told: told.clone(),
+        hosting: false,
+        row: Arc::new(Mutex::new(None)),
+    };
+    let guest = Party::join(guest_settings, &code).expect("the guest joins");
+    let mut going =
+        Going::begin(guest, guest_seat, Arc::new(HeldOnly(1))).expect("the guest's seat");
+
+    until("the guest to take the song up", || {
+        !told.taken_up.lock().is_empty()
+    })
+    .await;
+    {
+        let taken = told.taken_up.lock();
+        assert_eq!(taken[0].0, vec![1], "a next song it lacks stops the run");
+        assert!(taken[0].2);
+    }
+    until("the guest to stand in step", || {
+        going.followed().standing == Standing::InStep
+    })
+    .await;
+
+    going.leave();
+
+    assert!(told.put_back.load(Ordering::Acquire));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
+    let server = hosted(Limits::default()).await;
+    let host_settings = party_settings(server, "Host");
+    let host_now = Arc::clone(&host_settings.now_nanos);
+    let host = Party::host(host_settings).expect("the host starts");
+    let code = host.shown().code;
+    let host_seat = FakeSeat {
+        began: host_now(),
+        now_nanos: host_now,
+        told: Told::default(),
+        hosting: true,
+        row: Arc::new(Mutex::new(Some(1))),
+    };
+    let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
+
+    let guest_settings = party_settings(server, "Guest");
+    let guest_now = Arc::clone(&guest_settings.now_nanos);
+    let told = Told::default();
+    let guest_seat = FakeSeat {
+        began: guest_now(),
+        now_nanos: guest_now,
+        told: told.clone(),
+        hosting: false,
+        row: Arc::new(Mutex::new(None)),
+    };
+    let guest = Party::join(guest_settings, &code).expect("the guest joins");
+    let going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(0))).expect("the guest's seat");
+
+    until("the guest to sit the song out", || {
+        matches!(going.followed().standing, Standing::SittingOut(_))
+    })
+    .await;
+
+    assert!(told.taken_up.lock().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded() {
+    let Ok(server) = env::var("RESONATE_PARTY_SERVER") else {
+        return;
+    };
+    let began = Instant::now();
+    let now: Arc<dyn Fn() -> u64 + Send + Sync> =
+        Arc::new(move || u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX));
+    let settings = |name: &str| PartySettings {
+        server: server.clone(),
+        trusted: None,
+        name: name.to_owned(),
+        now_nanos: Arc::clone(&now),
+    };
+    let host = Party::host(settings("Host")).expect("the host starts");
+    let guest = Party::join(settings("Guest"), &host.shown().code).expect("the guest joins");
+    let measured_for = Duration::from_secs(
+        env::var("RESONATE_PARTY_SECONDS")
+            .ok()
+            .and_then(|seconds| seconds.parse().ok())
+            .unwrap_or(30),
+    );
+
+    until("both clocks to be set", || {
+        host.to_server(0).is_some() && guest.to_server(0).is_some()
+    })
+    .await;
+
+    let mut most_apart = 0_u64;
+    let mut sum = 0_u128;
+    let mut samples = 0_u128;
+    let end = Instant::now() + measured_for;
+    while Instant::now() < end {
+        let here = now();
+        let apart = host
+            .to_server(here)
+            .expect("the host has a clock")
+            .abs_diff(guest.to_server(here).expect("the guest has a clock"));
+        most_apart = most_apart.max(apart);
+        sum += u128::from(apart);
+        samples += 1;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let trip = guest.shown().round_trip.expect("a round trip was measured");
+    println!(
+        "round trip {trip:?}, clocks apart on average {:?}, at most {:?}",
+        Duration::from_nanos(u64::try_from(sum / samples.max(1)).unwrap_or(u64::MAX)),
+        Duration::from_nanos(most_apart)
+    );
+    assert!(
+        most_apart < 100_000_000,
+        "two seats disagreed by {most_apart} ns"
+    );
 }

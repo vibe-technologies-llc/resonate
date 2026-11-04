@@ -29,10 +29,10 @@ use resonate_engine::{
     NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged,
     Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
     ReplayGainMode, Resampling, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
-    SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
-    SkipUnderRepeat, SourceId, Sources, Stepping, StreamClock, StreamCommand, StreamEvent,
-    StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, Zone,
-    ZoneId, ZoneName, Zones, stamp_of,
+    Seat, SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
+    SkipUnderRepeat, Sounding, SourceId, Sources, Stepping, StreamClock, StreamCommand,
+    StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Unreshapable, Until,
+    Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -2242,6 +2242,77 @@ fn a_zone_ahead_of_a_clock_told_from_afar_waits_for_it_and_carries_on() -> Resul
         "the zone came back {apart} frames from the clock"
     );
     assert!(still_playing);
+    Ok(())
+}
+
+#[test]
+fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_queue_back()
+-> Result<()> {
+    let tree = Tree::new();
+    let own = tree.write("own.wav", &pcm(24, RATE as usize * 6).file);
+    let told = tree.write("told.wav", &pcm(24, RATE as usize * 10).file);
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    let device = Device {
+        graph: opened.graph(ZoneId::FIRST),
+    };
+    let mut clocked = Clocked::new();
+
+    played_from(&zones, ZoneId::FIRST, &own)?;
+    clocked.run_until(
+        &[&device],
+        || first.heard_at().is_some(),
+        "the listener's own queue to be heard",
+    );
+    let queue_before = first.queue().len();
+    let seat = Seat::on(Arc::clone(&first));
+    let row = Resumable {
+        location: MediaLocation::local(told),
+        span: None,
+        held: None,
+    };
+
+    assert!(seat.take_up(
+        std::slice::from_ref(&row),
+        Duration::from_secs(2),
+        Moment::now(),
+        true,
+    )?);
+    assert!(seat.is_taking_part());
+    let anchor = HeardAt {
+        row: Seat::stamp_of(&row),
+        frame: Frames(2 * u64::from(RATE)),
+        at: Moment::now(),
+        rate: SampleRate::HZ_44100,
+    };
+    clocked.run_until(
+        &[&device],
+        || {
+            first.heard_at().is_some_and(|heard| {
+                heard.row == anchor.row && heard.frame.get() > 3 * u64::from(RATE)
+            })
+        },
+        "the told song to be heard part way through",
+    );
+
+    let heard = first.heard_at().expect("the seat is heard");
+    let apart = (heard.frame.get() as f64 - anchor.frame_at(heard.at)).abs();
+
+    assert!(
+        apart < f64::from(RATE) / 4.0,
+        "the seat came in {apart} frames from where it was told"
+    );
+    assert_eq!(seat.heard().sounding, Sounding::Playing);
+    assert_eq!(seat.heard().row, Some(anchor.row));
+
+    seat.put_back()?;
+    wait_for(
+        &first,
+        |player| player.queue().len() == queue_before && player.state().queue_stamp != anchor.row,
+        "the listener's own queue to come back",
+    );
+    assert!(!seat.is_taking_part());
     Ok(())
 }
 

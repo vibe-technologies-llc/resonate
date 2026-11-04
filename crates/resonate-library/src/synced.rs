@@ -1061,6 +1061,21 @@ fn cut_at(row: &SqlRow<'_>) -> rusqlite::Result<Cut> {
     })
 }
 
+pub(crate) fn cut_with_isrc(inner: &Inner, isrc: &str) -> Result<Option<Cut>> {
+    inner.read(|connection| {
+        connection
+            .query_row(
+                "SELECT path, span_start, span_frames FROM tracks
+                  WHERE isrc = ?1 AND hidden = 0
+                  ORDER BY alternative_of IS NOT NULL, id LIMIT 1",
+                params![isrc],
+                cut_at,
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
 pub(crate) fn resolve(inner: &Inner, recording: &Recording) -> Result<Option<Cut>> {
     inner.read(|connection| resolved(connection, recording))
 }

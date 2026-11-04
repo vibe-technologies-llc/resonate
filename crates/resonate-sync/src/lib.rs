@@ -5,6 +5,7 @@ mod key;
 mod ledger;
 mod merge;
 mod nearby;
+pub mod party;
 mod peer;
 mod quic;
 mod relay;

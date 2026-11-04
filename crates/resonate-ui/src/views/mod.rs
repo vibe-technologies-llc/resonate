@@ -19,6 +19,7 @@ pub(crate) mod menu;
 mod missing;
 mod mosaic;
 mod part;
+mod party;
 pub(crate) mod playlists;
 pub(crate) mod plot;
 mod pointed;

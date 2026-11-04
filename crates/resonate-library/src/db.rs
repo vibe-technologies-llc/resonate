@@ -2715,6 +2715,10 @@ impl Library {
         synced::resolve(&self.inner, recording)
     }
 
+    pub fn cut_with_isrc(&self, isrc: &str) -> Result<Option<Cut>> {
+        synced::cut_with_isrc(&self.inner, isrc)
+    }
+
     pub fn holds_recording(&self, recording: &resonate_core::Recording) -> Result<bool> {
         synced::holds(&self.inner, self.vault().map(AsRef::as_ref), recording)
     }

@@ -98,7 +98,7 @@ pub enum Server {
 }
 
 impl Server {
-    pub(crate) fn address(self) -> Option<String> {
+    pub fn address(self) -> Option<String> {
         match self {
             Self::At(server) if !server.trim().is_empty() => Some(server.trim().to_owned()),
             Self::Hosted | Self::At(_) => Some(HOSTED_SERVER.to_owned()),

@@ -241,6 +241,20 @@ pub struct TransportArgs {
     pub volume: Option<u8>,
 }
 
+#[derive(Debug, Subcommand)]
+pub enum PartyWanted {
+    #[command(about = "Begin a party, playing these to everyone who joins")]
+    Start {
+        #[arg(value_name = "FILES", required = true)]
+        files: Vec<std::ffi::OsString>,
+    },
+    #[command(about = "Join a party by its link or code, hearing each song from your own copy")]
+    Join {
+        #[arg(value_name = "LINK")]
+        link: String,
+    },
+}
+
 #[derive(Debug, Args)]
 pub struct SharedArgs {
     #[arg(
@@ -1310,6 +1324,13 @@ pub enum Sub {
                  leave one, or take someone off one"
     )]
     Shared(SharedArgs),
+
+    #[command(
+        about = "Listen together: begin a party others join by a link, or join someone's, each \
+                 person hearing their own copy of the song",
+        subcommand
+    )]
+    Party(PartyWanted),
 
     #[command(
         about = "List the release tracks the catalog holds no file for, and the releases of held \

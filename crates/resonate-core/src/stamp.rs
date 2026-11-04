@@ -4,6 +4,10 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 pub struct QueueStamp(u64);
 
 impl QueueStamp {
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+
     pub fn of<Row: Hash>(rows: impl IntoIterator<Item = Row>) -> Self {
         rows.into_iter()
             .enumerate()

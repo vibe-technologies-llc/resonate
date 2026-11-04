@@ -247,6 +247,7 @@ pub enum Pane {
     #[default]
     Tracks,
     Statistics,
+    Party,
     Queue,
     Playlists,
     Favourites,
@@ -400,12 +401,13 @@ impl Section {
 }
 
 impl Pane {
-    pub const BROWSE: [Self; 12] = [
+    pub const BROWSE: [Self; 13] = [
         Self::Albums,
         Self::Artists,
         Self::Tracks,
         Self::Statistics,
         Self::Playlists,
+        Self::Party,
         Self::Favourites,
         Self::Suggestions,
         Self::Missing,
@@ -420,6 +422,7 @@ impl Pane {
             Self::Suggestions => tabs.suggestions,
             Self::Missing => tabs.missing,
             Self::Albums
+            | Self::Party
             | Self::Artists
             | Self::Tracks
             | Self::Statistics
@@ -449,6 +452,7 @@ impl Pane {
             Self::Artists => "Artists",
             Self::Tracks => "Tracks",
             Self::Statistics => "Statistics",
+            Self::Party => "Party",
             Self::Queue => "Queue",
             Self::Playlists => "Playlists",
             Self::Favourites => "Favourites",
@@ -469,6 +473,7 @@ impl Pane {
             Self::Artists => "artists",
             Self::Tracks => "tracks",
             Self::Statistics => "statistics",
+            Self::Party => "party",
             Self::Queue => "queue",
             Self::Playlists => "playlists",
             Self::Favourites => "favourites",
@@ -499,6 +504,7 @@ impl Pane {
             "inspector" => Some(Self::Inspector),
             "visualiser" => Some(Self::Visualiser),
             "analysis" => Some(Self::Analysis),
+            "party" => Some(Self::Party),
             "settings" => Some(Self::Settings),
             _ => None,
         }
@@ -510,6 +516,7 @@ impl Pane {
             Self::Artists => "Every artist the library has scanned",
             Self::Tracks => "Every track the library has scanned",
             Self::Statistics => "How much has been played, and what most",
+            Self::Party => "Hear the same song at the same moment as your friends",
             Self::Queue => "What is queued, in the order it will play",
             Self::Playlists => "Lists you have saved, and what is in them",
             Self::Favourites => "The artists, albums and tracks you have starred",
@@ -535,7 +542,8 @@ impl Pane {
     pub(crate) const fn section(self) -> Section {
         match self {
             Self::Albums | Self::Artists | Self::Tracks | Self::Statistics => Section::Library,
-            Self::Playlists
+            Self::Party
+            | Self::Playlists
             | Self::Favourites
             | Self::Suggestions
             | Self::Missing
@@ -555,6 +563,7 @@ impl Pane {
             Self::Artists => Icon::Artists,
             Self::Tracks => Icon::Tracks,
             Self::Statistics => Icon::Statistics,
+            Self::Party => Icon::Share,
             Self::Queue => Icon::Queue,
             Self::Playlists => Icon::Playlists,
             Self::Favourites => Icon::Favourite,
@@ -583,6 +592,7 @@ pub struct RootView {
     pub(crate) sharing: Option<sharing::Sharing>,
     pub(crate) shared_lists: Vec<(PlaylistId, bool)>,
     pub(crate) sharing_redraws: Option<Task<()>>,
+    pub(crate) party_redraws: Option<Task<()>>,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
@@ -1234,6 +1244,7 @@ impl RootView {
             sharing: None,
             shared_lists: Vec::new(),
             sharing_redraws: None,
+            party_redraws: None,
             downloads_open: false,
             downloads_pressed_off: None,
             deleting: None,
@@ -3553,7 +3564,8 @@ impl RootView {
 
                 (rows > 0).then_some((Shift::Listing(Listed::Heard), rows))
             }
-            Pane::Server
+            Pane::Party
+            | Pane::Server
             | Pane::Lyrics
             | Pane::Inspector
             | Pane::Visualiser
@@ -4020,6 +4032,7 @@ impl RootView {
             Pane::Playlists => &self.playlist_rows,
             Pane::Tracks
             | Pane::Statistics
+            | Pane::Party
             | Pane::Favourites
             | Pane::Suggestions
             | Pane::Missing
@@ -4986,6 +4999,7 @@ impl RootView {
                     Pane::Artists => Some(artists),
                     Pane::Tracks => Some(tracks),
                     Pane::Statistics => (plays > 0).then_some(plays),
+                    Pane::Party => None,
                     Pane::Playlists => Some(saved),
                     Pane::Favourites => (favourites > 0).then_some(favourites),
                     Pane::Suggestions => (offered > 0).then_some(offered),
@@ -5885,6 +5899,7 @@ impl RootView {
             Pane::Artists => self.artists(cx),
             Pane::Tracks => self.tracks(cx),
             Pane::Statistics => self.statistics_pane(cx),
+            Pane::Party => self.party_pane(cx).into_any_element(),
             Pane::Queue => self.queue_pane(cx),
             Pane::Playlists => self.playlists_pane(cx),
             Pane::Favourites => self.favourites_pane(cx),

@@ -50,6 +50,16 @@ pub struct Served {
 
 impl Served {
     #[cfg(feature = "online")]
+    pub fn services(&self) -> InPlace {
+        self.slot.read().clone()
+    }
+
+    #[cfg(not(feature = "online"))]
+    pub fn services(&self) -> Vec<Arc<dyn resonate_providers::PlaysInPlace>> {
+        Vec::new()
+    }
+
+    #[cfg(feature = "online")]
     pub fn of(config: &Config, settings: Option<PathBuf>) -> Self {
         Self::over(providers::in_place_named(config, settings), false)
     }

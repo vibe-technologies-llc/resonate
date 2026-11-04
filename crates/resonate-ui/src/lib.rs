@@ -57,6 +57,8 @@ pub use crate::{
         Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing,
         Tabs, TidalSignIn, Unkept, WindowButtons, WindowSize,
     },
-    together::{SharedPerson, SharedReach, SharedSeen, Together},
+    together::{
+        PartyReached, PartySeen, PartyStanding, SharedPerson, SharedReach, SharedSeen, Together,
+    },
     views::{Pane, RootView},
 };

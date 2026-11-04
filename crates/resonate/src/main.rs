@@ -33,6 +33,8 @@ mod measuring;
 mod metered;
 mod mpris;
 mod online;
+#[cfg(feature = "sync")]
+mod party;
 mod playlists;
 mod providers;
 mod readout;
@@ -299,6 +301,7 @@ fn run() -> Result<()> {
         Some(Sub::Wants(args)) => wanting::run(&open_library(&cli, &config)?, args),
         Some(Sub::Sync(args)) => synced(&cli, &config, args),
         Some(Sub::Shared(args)) => shared(&cli, &config, args),
+        Some(Sub::Party(wanted)) => party_asked(&cli, &config, wanted),
         Some(Sub::Missing {
             artist,
             read_the_rest,
@@ -2497,6 +2500,16 @@ fn shared(_cli: &Cli, _config: &Config, _args: &SharedArgs) -> Result<()> {
     Err(Error::SyncOff)
 }
 
+#[cfg(feature = "sync")]
+fn party_asked(cli: &Cli, config: &Config, wanted: &cli::PartyWanted) -> Result<()> {
+    party::run(cli, config, wanted)
+}
+
+#[cfg(not(feature = "sync"))]
+fn party_asked(_cli: &Cli, _config: &Config, _wanted: &cli::PartyWanted) -> Result<()> {
+    Err(Error::SyncOff)
+}
+
 #[derive(Default)]
 struct Opening {
     playing: Option<PlaylistId>,
@@ -3057,6 +3070,15 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         tracing::warn!(%error, "shared playlists could not start");
         None
     });
+    #[cfg(feature = "sync")]
+    party::in_the_window(party::Seats {
+        zones: Arc::clone(&zones),
+        library: Arc::clone(&library),
+        services: served.services(),
+        server: sync::server_of(&config),
+        trusted: config.sync_server_certificate.clone(),
+        name: config.shared_name.clone().unwrap_or_default(),
+    });
     let syncing = sync::start(&config, Some(&places.config), &library);
     #[cfg(feature = "sync")]
     syncing.drive(driven::Driven::Zones(Arc::downgrade(&zones)));
@@ -3195,6 +3217,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     drop(presenter);
     syncing.leave();
     #[cfg(feature = "sync")]
+    party::out_of_the_window();
     drop(together);
     submitting.leave();
     zones.leave();

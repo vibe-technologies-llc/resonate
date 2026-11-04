@@ -7,10 +7,11 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{PlaylistId, Recording};
+use resonate_core::{PlaylistId, Recording, ZoneId};
 use resonate_library::{Library, PlaylistName, SyncedPlaylist};
 use resonate_sync::{
     HeldShare, LocalPlaylistId, Refused,
+    party::{PartyReach, SittingOut, Standing},
     shared::{
         Invited, LocalShared, MemberId, Shared, SharedCatalog, SharedSettings, SharedShown,
         SharedStanding, invitation_in,
@@ -310,6 +311,81 @@ impl resonate_ui::Together for Seen {
             shared.named(name.to_owned());
         }
     }
+
+    fn party(&self) -> Option<resonate_ui::PartySeen> {
+        let (shown, followed, zone) = crate::party::shown()?;
+
+        Some(resonate_ui::PartySeen {
+            zone,
+            hosting: shown.hosting,
+            link: shown.page.unwrap_or(shown.link),
+            reach: match shown.reach {
+                PartyReach::Here => resonate_ui::PartyReached::Here,
+                PartyReach::Connecting => resonate_ui::PartyReached::Connecting,
+                PartyReach::Reconnecting => resonate_ui::PartyReached::Reconnecting,
+                PartyReach::Ended => resonate_ui::PartyReached::Ended,
+                PartyReach::NoSuchParty => resonate_ui::PartyReached::NoSuchParty,
+                PartyReach::TurnedAway => resonate_ui::PartyReached::TurnedAway,
+                PartyReach::ServerTooOld => resonate_ui::PartyReached::ServerTooOld,
+            },
+            people: shown
+                .people
+                .into_iter()
+                .map(|person| resonate_ui::SharedPerson {
+                    id: person.member.0,
+                    name: person.name,
+                    me: person.me,
+                })
+                .collect(),
+            standing: match followed.standing {
+                Standing::WaitingForTheHost => resonate_ui::PartyStanding::WaitingForTheHost,
+                Standing::Finding => resonate_ui::PartyStanding::Finding,
+                Standing::SittingOut(SittingOut::NotHeld) => resonate_ui::PartyStanding::NotHeld,
+                Standing::SittingOut(SittingOut::CannotStartMidSong) => {
+                    resonate_ui::PartyStanding::CannotStartMidSong
+                }
+                Standing::SittingOut(SittingOut::AskedTo) => resonate_ui::PartyStanding::SatOut,
+                Standing::HostPaused => resonate_ui::PartyStanding::HostPaused,
+                Standing::InStep => resonate_ui::PartyStanding::InStep,
+            },
+            song: shown
+                .now
+                .and_then(|now| now.song)
+                .map(|song| (song.recording.title, song.recording.artist)),
+            asked_for: shown
+                .asked_for
+                .into_iter()
+                .map(|asked| (asked.song.recording.title, asked.song.recording.artist))
+                .collect(),
+            round_trip: shown.round_trip,
+        })
+    }
+
+    fn begin_party(&self, zone: ZoneId) -> bool {
+        crate::party::begin(zone)
+            .inspect_err(|error| tracing::warn!(%error, "a party could not begin"))
+            .is_ok()
+    }
+
+    fn leave_party(&self) {
+        crate::party::leave();
+    }
+
+    fn turn_out(&self, person: [u8; 16]) {
+        crate::party::turn_out(person);
+    }
+
+    fn play_request_next(&self, at: usize) -> bool {
+        crate::party::play_a_request_next(at)
+    }
+
+    fn dismiss_request(&self, at: usize) {
+        crate::party::dismiss_a_request(at);
+    }
+
+    fn following(&self, zone: ZoneId) -> bool {
+        crate::party::following(zone)
+    }
 }
 
 pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
@@ -324,8 +400,8 @@ pub(crate) fn accepted(text: &str) -> bool {
     let Some(invitation) = invitation_in(text) else {
         return false;
     };
-    if invitation.to != Invited::Playlist {
-        return false;
+    if invitation.to == Invited::Party {
+        return crate::party::accept(text);
     }
 
     thread::spawn(move || {
@@ -544,7 +620,7 @@ mod tests {
 
         let kept = invitations_taken_out(&arguments);
 
-        assert_eq!(kept.len(), 3, "a party is left for the party to take up");
+        assert_eq!(kept.len(), 2, "a party's link is no song either");
     }
 
     #[test]

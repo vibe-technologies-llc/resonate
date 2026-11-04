@@ -1,4 +1,6 @@
-use resonate_core::PlaylistId;
+use std::time::Duration;
+
+use resonate_core::{PlaylistId, ZoneId};
 
 const SHARED_LINK: &str = "resonate://shared/";
 
@@ -36,6 +38,41 @@ pub struct SharedSeen {
     pub reach: SharedReach,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartyReached {
+    Connecting,
+    Here,
+    Reconnecting,
+    Ended,
+    NoSuchParty,
+    TurnedAway,
+    ServerTooOld,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartyStanding {
+    WaitingForTheHost,
+    Finding,
+    NotHeld,
+    CannotStartMidSong,
+    SatOut,
+    HostPaused,
+    InStep,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartySeen {
+    pub zone: ZoneId,
+    pub hosting: bool,
+    pub link: String,
+    pub reach: PartyReached,
+    pub people: Vec<SharedPerson>,
+    pub standing: PartyStanding,
+    pub song: Option<(String, String)>,
+    pub asked_for: Vec<(String, String)>,
+    pub round_trip: Option<Duration>,
+}
+
 pub trait Together: Send + Sync {
     fn seen(&self, playlist: PlaylistId) -> Option<SharedSeen>;
 
@@ -52,6 +89,20 @@ pub trait Together: Send + Sync {
     fn accept(&self, invitation: &str) -> bool;
 
     fn named(&self, name: &str);
+
+    fn party(&self) -> Option<PartySeen>;
+
+    fn begin_party(&self, zone: ZoneId) -> bool;
+
+    fn leave_party(&self);
+
+    fn turn_out(&self, person: [u8; 16]);
+
+    fn play_request_next(&self, at: usize) -> bool;
+
+    fn dismiss_request(&self, at: usize);
+
+    fn following(&self, zone: ZoneId) -> bool;
 }
 
 pub(crate) fn is_an_invitation(text: &str) -> bool {

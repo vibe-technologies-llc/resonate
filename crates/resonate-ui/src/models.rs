@@ -5068,6 +5068,15 @@ impl LibraryModel {
     }
 
     pub fn keep_the_queue(&mut self, zone: ZoneId, keep: Keep, cx: &Context<Self>) {
+        let following = cx
+            .global::<ResonateApp>()
+            .together
+            .as_ref()
+            .is_some_and(|together| together.following(zone));
+        if following {
+            return;
+        }
+
         let library = Arc::clone(&self.library);
 
         self.keep_after_what_was_kept(cx, move || {

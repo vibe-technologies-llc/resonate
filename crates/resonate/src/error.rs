@@ -589,6 +589,13 @@ pub enum Error {
     #[error("another Resonate holds the shared playlists; do this from there")]
     SharedBusy,
 
+    #[error("a party needs a server, and this device is set to use none")]
+    PartyNeedsAServer,
+
+    #[cfg(feature = "sync")]
+    #[error("the party could not go on: {0}")]
+    Party(#[source] resonate_sync::Error),
+
     #[cfg(feature = "sync")]
     #[error("{0} is not shared with anyone")]
     PlaylistNotShared(Box<str>),

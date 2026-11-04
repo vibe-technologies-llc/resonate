@@ -288,7 +288,7 @@ fn modules_of(link: &str) -> Option<(usize, Arc<[bool]>)> {
     Some((code.width(), dark))
 }
 
-fn scanned(link: &str) -> Div {
+pub(crate) fn scanned(link: &str) -> Div {
     let modules = modules_of(link);
     div()
         .size_full()
