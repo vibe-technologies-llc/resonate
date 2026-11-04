@@ -4760,7 +4760,7 @@ mod tests {
         showing_settings(&mut driven, SettingsCategory::Processing);
 
         for (index, held) in [
-            Quality::Fast,
+            Quality::LowLatency,
             Quality::Balanced,
             Quality::High,
             Quality::VeryHigh,

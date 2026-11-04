@@ -1656,10 +1656,10 @@ fn two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both() -> Res
     wait_for(&first, paused, "the first zone to pause");
     let half = Volume::new(0.5).expect("half way");
     zones.send(study.id, Command::SetVolume(half))?;
-    zones.send(study.id, Command::SetQuality(Quality::Fast))?;
+    zones.send(study.id, Command::SetQuality(Quality::LowLatency))?;
     wait_for(
         &first,
-        |player| player.output_settings().quality == Quality::Fast,
+        |player| player.output_settings().quality == Quality::LowLatency,
         "the resampler chosen in one zone to reach the first",
     );
     wait_for(
@@ -1673,7 +1673,7 @@ fn two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both() -> Res
         playing(&study.player),
         "pausing one zone stood the other down"
     );
-    assert_eq!(study.player.output_settings().quality, Quality::Fast);
+    assert_eq!(study.player.output_settings().quality, Quality::LowLatency);
     assert_eq!(
         first.state().volume,
         Volume::MAX,
@@ -3592,7 +3592,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         "a seek on a stream that cannot seek answered {refused:?}"
     );
     player
-        .request(Command::SetQuality(Quality::Fast))?
+        .request(Command::SetQuality(Quality::LowLatency))?
         .wait_for(PATIENCE)?;
     assert_eq!(
         graph.lock().opens,
@@ -4860,7 +4860,7 @@ fn choosing_the_bound_device_or_a_setting_the_plan_does_not_read_leaves_the_stre
 
     answered(&player, Command::SetSink(Some(bound)))?;
     answered(&player, Command::SetSink(None))?;
-    answered(&player, Command::SetQuality(Quality::Fast))?;
+    answered(&player, Command::SetQuality(Quality::LowLatency))?;
     answered(&player, Command::SetFilterPhase(FilterPhase::Minimum))?;
     answered(&player, Command::SetDither(DitherKind::Rectangular))?;
     answered(&player, Command::SetRestoration(Restoration::Extend))?;
@@ -4895,7 +4895,7 @@ fn changing_the_quality_a_resampled_track_is_converted_at_reopens_its_stream() -
     })?;
     wait_for(&player, playing, "the stream to open");
 
-    answered(&player, Command::SetQuality(Quality::Fast))?;
+    answered(&player, Command::SetQuality(Quality::LowLatency))?;
     play_until(
         &player,
         &graph,
@@ -11195,7 +11195,7 @@ fn switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_
     )?;
     let contest = Contest::Resampling {
         a: Resampling {
-            quality: Quality::Fast,
+            quality: Quality::LowLatency,
             phase: FilterPhase::Linear,
         },
         b: Resampling {

@@ -45,7 +45,7 @@ struct Arguments {
     plots: Option<PathBuf>,
     timed: bool,
     measured: bool,
-    tuning: bool,
+    candidates: Option<PathBuf>,
 }
 
 impl Arguments {
@@ -54,7 +54,7 @@ impl Arguments {
             plots: None,
             timed: true,
             measured: true,
-            tuning: false,
+            candidates: None,
         };
         let mut given = env::args_os().skip(1);
         while let Some(argument) = given.next() {
@@ -69,7 +69,12 @@ impl Arguments {
                 }
                 Some("--no-timing") => arguments.timed = false,
                 Some("--timing-only") => arguments.measured = false,
-                Some("--fast-and-balanced") => arguments.tuning = true,
+                Some("--candidates") => {
+                    arguments.candidates =
+                        Some(given.next().map(PathBuf::from).ok_or(Error::MissingValue {
+                            flag: "--candidates",
+                        })?);
+                }
                 _ => return Err(Error::UnknownArgument(argument)),
             }
         }
@@ -130,18 +135,19 @@ fn measured_everywhere(contenders: &[Contender]) -> Result<Vec<Measured>> {
 
 fn run() -> Result<()> {
     let arguments = Arguments::parsed()?;
-    let contenders = if arguments.tuning {
-        tuning::contenders(&PAIRS)?
-    } else {
-        CONTENDERS.to_vec()
+    let contenders = match &arguments.candidates {
+        Some(file) => tuning::candidates(file)?,
+        None => CONTENDERS.to_vec(),
     };
 
     let costs = if arguments.timed {
         let costs = timed(&contenders)?;
-        print!(
-            "{}",
-            report::costs(&contenders, &PAIRS, &BUILDS_SHOWN, &costs)
-        );
+        if arguments.candidates.is_none() {
+            print!(
+                "{}",
+                report::costs(&contenders, &PAIRS, &BUILDS_SHOWN, &costs)
+            );
+        }
         costs
     } else {
         Vec::new()
@@ -149,8 +155,12 @@ fn run() -> Result<()> {
 
     if arguments.measured {
         let measured = measured_everywhere(&contenders)?;
-        if arguments.tuning {
-            print!("{}", tuning::verdicts(&contenders, &measured, &costs));
+        if arguments.candidates.is_some() {
+            print!(
+                "{}",
+                tuning::verdicts(&PAIRS, &contenders, &measured, &costs)
+            );
+            return Ok(());
         }
         for pair in PAIRS {
             print!("{}", report::quality(&contenders, pair, &measured));

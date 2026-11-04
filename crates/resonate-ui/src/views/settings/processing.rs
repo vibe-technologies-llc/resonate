@@ -15,11 +15,11 @@ use crate::{
 };
 
 impl Choice for Quality {
-    const ALL: &'static [Self] = &[Self::Fast, Self::Balanced, Self::High, Self::VeryHigh];
+    const ALL: &'static [Self] = &[Self::LowLatency, Self::Balanced, Self::High, Self::VeryHigh];
 
     fn label(self) -> &'static str {
         match self {
-            Self::Fast => "Fast",
+            Self::LowLatency => "Low latency",
             Self::Balanced => "Balanced",
             Self::High => "High",
             Self::VeryHigh => "Very high",
@@ -32,23 +32,24 @@ impl Choice for Quality {
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Fast => {
-                "The shortest filter: the least work for the machine, with the treble starting \
-                 to fall a little below the top of the band. Used only where the file's rate has \
-                 to be changed."
+            Self::LowLatency => {
+                "Answers about a millisecond after the sound goes in, where the others wait tens \
+                 of milliseconds, for the most work of the four and a treble starting to fall a \
+                 little below the top of the band. Used only where the file's rate has to be \
+                 changed."
             }
             Self::Balanced => {
-                "A shorter filter than High, transparent for listening at a quarter of the work. \
+                "The least work of the four, with errors far below what a 16-bit file can hold. \
                  Used only where the file's rate has to be changed."
             }
             Self::High => {
-                "A long filter whose errors sit far below what a 16-bit file can hold. Used only \
-                 where the file's rate has to be changed."
+                "A sharper filter whose errors sit below what a 24-bit file can hold, for a little \
+                 more work than Balanced. Used only where the file's rate has to be changed."
             }
             Self::VeryHigh => {
-                "The longest filter, keeping the treble flat nearer the top of the band and its \
-                 errors below what 24 bits hold. The most work of the four; used only where the \
-                 file's rate has to be changed."
+                "The sharpest filter, keeping the treble flat almost to the top of the band and \
+                 its errors below what any file holds. It waits longest for its first sound; used \
+                 only where the file's rate has to be changed."
             }
         })
     }
@@ -480,9 +481,9 @@ fn filter(params: SincParams) -> SharedString {
     if params.converts_in_blocks() {
         return format!(
             "Converted a block at a time through Fourier transforms: a filter reaching {} samples \
-             either side of each output instant, flat until its transition and silent from the \
-             lower rate's Nyquist. Cutoff {:.3} of Nyquist, Kaiser β {:.1}.",
-            params.half_taps, params.cutoff, params.kaiser_beta,
+             either side of each output instant, its window shaped to ring for as short a time as \
+             its depth allows and silent from the lower rate's Nyquist. Cutoff {:.3} of Nyquist.",
+            params.half_taps, params.cutoff,
         )
         .into();
     }

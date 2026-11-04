@@ -472,7 +472,7 @@ tested.
   setting A is what the engine's `OutputSettings` say (`Player::output_settings`), shown as a
   reading, and B is chips of the values the listener picks (`Chosen`, one `Option` per
   setting): restoration, the resampler's quality and phase, the dither's kind and noise shaping,
-  each defaulting to the CLI's opposite (extend or off, fast or very high, none or triangular; phase
+  each defaulting to the CLI's opposite (extend or off, low latency or very high, none or triangular; phase
   and shaping the settings'). `Chosen::contest` is the `Contest` and nothing else decides it. The
   test (`ListeningTest`, a `Session` and a `Subject`: the equaliser's `Arms` and sink, or a
   `Contest` and its `Lowered`) begins on the background executor (`begin_the_audition`): restoration

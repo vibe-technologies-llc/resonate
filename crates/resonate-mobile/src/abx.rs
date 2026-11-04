@@ -134,7 +134,7 @@ const fn restoration_of(restoration: LossyRestoration) -> Restoration {
 const fn resampling_of(quality: ResamplingQuality, phase: ResamplingPhase) -> Resampling {
     Resampling {
         quality: match quality {
-            ResamplingQuality::Fast => Quality::Fast,
+            ResamplingQuality::LowLatency => Quality::LowLatency,
             ResamplingQuality::Balanced => Quality::Balanced,
             ResamplingQuality::High => Quality::High,
             ResamplingQuality::VeryHigh => Quality::VeryHigh,
@@ -326,10 +326,10 @@ pub fn setting_test_by_default(
         SettingKind::Resampling => TestedSetting::Resampling {
             a_quality: preferences.quality,
             a_phase: preferences.phase,
-            b_quality: if preferences.quality == ResamplingQuality::Fast {
+            b_quality: if preferences.quality == ResamplingQuality::LowLatency {
                 ResamplingQuality::VeryHigh
             } else {
-                ResamplingQuality::Fast
+                ResamplingQuality::LowLatency
             },
             b_phase: preferences.phase,
         },
@@ -661,14 +661,14 @@ mod tests {
         );
         assert_eq!(
             Contest::from(TestedSetting::Resampling {
-                a_quality: ResamplingQuality::Fast,
+                a_quality: ResamplingQuality::LowLatency,
                 a_phase: ResamplingPhase::Minimum,
                 b_quality: ResamplingQuality::VeryHigh,
                 b_phase: ResamplingPhase::Linear,
             }),
             Contest::Resampling {
                 a: Resampling {
-                    quality: Quality::Fast,
+                    quality: Quality::LowLatency,
                     phase: FilterPhase::Minimum,
                 },
                 b: Resampling {
@@ -742,7 +742,7 @@ mod tests {
     fn a_setting_test_begins_against_the_opposite_of_what_the_phone_has_set() {
         let preferences = PlaybackPreferences {
             restoration: LossyRestoration::Off,
-            quality: ResamplingQuality::Fast,
+            quality: ResamplingQuality::LowLatency,
             phase: ResamplingPhase::Minimum,
             ..PlaybackPreferences::default()
         };
@@ -769,7 +769,7 @@ mod tests {
         assert_eq!(
             setting_test_by_default(SettingKind::Resampling, preferences),
             TestedSetting::Resampling {
-                a_quality: ResamplingQuality::Fast,
+                a_quality: ResamplingQuality::LowLatency,
                 a_phase: ResamplingPhase::Minimum,
                 b_quality: ResamplingQuality::VeryHigh,
                 b_phase: ResamplingPhase::Minimum,
@@ -780,7 +780,7 @@ mod tests {
             TestedSetting::Resampling {
                 a_quality: ResamplingQuality::High,
                 a_phase: ResamplingPhase::Minimum,
-                b_quality: ResamplingQuality::Fast,
+                b_quality: ResamplingQuality::LowLatency,
                 b_phase: ResamplingPhase::Minimum,
             }
         );

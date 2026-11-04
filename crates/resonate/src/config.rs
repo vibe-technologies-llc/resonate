@@ -2101,7 +2101,7 @@ mod tests {
         assert_eq!(refusals.len(), 2, "{refusals:?}");
         assert_eq!(config.last_tab, None);
         assert_eq!(config.window_size, None);
-        assert_eq!(config.quality, Some(Quality::Fast));
+        assert_eq!(config.quality, Some(Quality::LowLatency));
         assert_eq!(config.online, Some(false));
     }
 
@@ -3126,6 +3126,28 @@ mod tests {
         let config = load(Some(&scratch.path)).expect("it reads back");
         assert_eq!(config.sink, None);
         assert_eq!(config.quality, Some(Quality::High));
+    }
+
+    #[test]
+    fn a_file_kept_from_when_the_level_was_called_fast_reads_as_low_latency() {
+        let scratch = Scratch::new().seed("quality = \"fast\"\n");
+
+        assert_eq!(
+            load(Some(&scratch.path)).expect("it reads").quality,
+            Some(Quality::LowLatency)
+        );
+    }
+
+    #[test]
+    fn the_low_latency_level_is_spelt_the_way_its_flag_is() {
+        let scratch = Scratch::new().seed("quality = \"high\"\n");
+        store(&scratch.path, ConfigKey::Quality, "low-latency").expect("a writable file");
+
+        assert!(scratch.text().contains("quality = \"low-latency\""));
+        assert_eq!(
+            load(Some(&scratch.path)).expect("it reads back").quality,
+            Some(Quality::LowLatency)
+        );
     }
 
     #[test]

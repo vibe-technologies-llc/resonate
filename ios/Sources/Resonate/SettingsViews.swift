@@ -845,7 +845,7 @@ struct ProcessingView: View {
                 }
                 Section("Resampling") {
                     Picker("Resampling quality", selection: binding(settings.quality) { $0.quality = $1 }) {
-                        Text("Fast").tag(ResamplingQuality.fast)
+                        Text("Low latency").tag(ResamplingQuality.lowLatency)
                         Text("Balanced").tag(ResamplingQuality.balanced)
                         Text("High").tag(ResamplingQuality.high)
                         Text("Very high").tag(ResamplingQuality.veryHigh)

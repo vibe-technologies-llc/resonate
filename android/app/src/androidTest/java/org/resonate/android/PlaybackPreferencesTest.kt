@@ -117,6 +117,20 @@ class PlaybackPreferencesTest {
     }
 
     @Test
+    fun aQualityKeptFromWhenTheLevelWasCalledFastReadsAsLowLatency() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "quality-test-${System.nanoTime()}"
+        val storage = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+        try {
+            assertTrue(storage.edit().putString("quality", "FAST").commit())
+
+            assertEquals(ResamplingQuality.LOW_LATENCY, PlaybackPreferencesStore(storage).read().quality)
+        } finally {
+            context.deleteSharedPreferences(name)
+        }
+    }
+
+    @Test
     fun aCurveBoundToAnOutputIsReadForThatOutputAndWrittenToItAlone() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "route-test-${System.nanoTime()}"
@@ -134,7 +148,7 @@ class PlaybackPreferencesTest {
             assertEquals(shared.equaliser.preampDb, store.read(car).equaliser.preampDb, 0.01f)
             assertEquals(shared.equaliser.preampDb, store.read(null).equaliser.preampDb, 0.01f)
 
-            store.write(store.read(buds).copy(quality = ResamplingQuality.FAST), buds)
+            store.write(store.read(buds).copy(quality = ResamplingQuality.LOW_LATENCY), buds)
             store.write(
                 store.read(null).copy(equaliser = tenBandCurve(-9f, List(10) { 0f })),
                 buds,
@@ -142,7 +156,7 @@ class PlaybackPreferencesTest {
 
             assertEquals(-9f, store.read(buds).equaliser.preampDb, 0.01f)
             assertEquals(shared.equaliser.preampDb, store.read(car).equaliser.preampDb, 0.01f)
-            assertEquals(ResamplingQuality.FAST, store.read(car).quality)
+            assertEquals(ResamplingQuality.LOW_LATENCY, store.read(car).quality)
 
             store.bind(car, shared.equaliser)
             assertEquals(listOf(buds, car).sortedBy { it.name }, store.boundRoutes())

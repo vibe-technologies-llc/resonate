@@ -36,7 +36,8 @@ and a contact, a key or a token is sent only where it is typed into this file.
 String. The node.name of the PipeWire sink to play to. Default: the graph's default sink.
 .TP
 .B quality
-String: fast, balanced, high or very-high. The resampler's quality. Default: high.
+String: low-latency, balanced, high or very-high. The resampler's quality; a file still
+saying fast reads as low-latency. Default: high.
 .TP
 .B filter-phase
 String: linear, intermediate or minimum. The resampler filter's phase. Linear rings before a

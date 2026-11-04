@@ -17,7 +17,7 @@ pub enum GainMode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum ResamplingQuality {
-    Fast,
+    LowLatency,
     Balanced,
     #[default]
     High,
@@ -124,7 +124,7 @@ impl PlaybackPreferences {
         }
         if self.quality != previous.quality {
             commands.push(Command::SetQuality(match self.quality {
-                ResamplingQuality::Fast => Quality::Fast,
+                ResamplingQuality::LowLatency => Quality::LowLatency,
                 ResamplingQuality::Balanced => Quality::Balanced,
                 ResamplingQuality::High => Quality::High,
                 ResamplingQuality::VeryHigh => Quality::VeryHigh,

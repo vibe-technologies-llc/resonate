@@ -111,7 +111,7 @@ fn at_sixteen_kilohertz(mono: &[f32], rate: SampleRate) -> Vec<f64> {
         input_rate: rate,
         output_rate: SIGNED_AT,
         channels: ChannelLayout::Mono,
-        quality: Quality::Balanced,
+        quality: Quality::LowLatency,
         phase: FilterPhase::Linear,
         max_frames_in: RESAMPLED_IN_BLOCKS,
     }) else {

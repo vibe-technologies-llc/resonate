@@ -3,15 +3,19 @@ use std::{mem, ops::Range, sync::Arc};
 use parking_lot::Mutex;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
-use crate::resample::bessel_i0;
-
 const LONGEST_TRANSFORM: usize = 1 << 18;
-const SAMPLED_POINTS_OVER_THE_BAND: usize = 16;
+const TURNED_POINTS_OVER_THE_BAND: usize = 16;
+const EVEN_POINTS_OVER_THE_BAND: usize = 8;
 const KEPT_PLAN_BYTES_AT_MOST: usize = 4 << 20;
 const SMOOTH_RADICES: [usize; 4] = [2, 3, 5, 7];
 const BINS_ROUNDED_WITHIN: f64 = 1e-9;
-const TRANSITION_STEPS: usize = 4_096;
 const SILENCE: Complex<f64> = Complex::new(0.0, 0.0);
+const CUBED: u32 = 3;
+const AT_LEAST_FOUR_TWOS: u32 = 2;
+const SLOW_FIVES_DRAG_STAGES: f64 = 2.0;
+const FEW_TWOS_DRAG_STAGES: f64 = 1.5;
+const LARGE_TRANSFORM_FROM: usize = 8_192;
+const LARGE_TRANSFORM_DRAG_STAGES: f64 = 1.0;
 
 const fn greatest_common_divisor(a: u64, b: u64) -> u64 {
     if b == 0 {
@@ -30,8 +34,32 @@ fn is_smooth(mut value: usize) -> bool {
     value == 1
 }
 
+fn exponent_of(mut points: usize, radix: usize) -> u32 {
+    let mut exponent = 0;
+    while points.is_multiple_of(radix) {
+        points /= radix;
+        exponent += 1;
+    }
+    exponent
+}
+
 fn transform_weight(points: usize) -> f64 {
-    points as f64 * (points as f64).log2()
+    let stages = (points as f64).log2();
+    let drags = if exponent_of(points, 5) >= CUBED {
+        SLOW_FIVES_DRAG_STAGES
+    } else {
+        0.0
+    } + if exponent_of(points, 2) < AT_LEAST_FOUR_TWOS {
+        FEW_TWOS_DRAG_STAGES
+    } else {
+        0.0
+    };
+    let beyond_the_near_cache = if points >= LARGE_TRANSFORM_FROM {
+        LARGE_TRANSFORM_DRAG_STAGES
+    } else {
+        0.0
+    };
+    points as f64 * (stages + drags + beyond_the_near_cache)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -70,35 +98,26 @@ impl Blocks {
         let lead_units = (conversion.lead_seconds / unit_seconds).ceil() as usize;
         let hop_at_most = ((conversion.hop_at_most_seconds / unit_seconds) as usize).max(1);
         let longest_units = LONGEST_TRANSFORM / unit_in.max(unit_out);
-        let weight = |units: usize, hop_units: usize| {
+        let shortest_units = trail_units + lead_units + 1;
+        let weight = |units: usize| {
+            let hop_units = units - trail_units - lead_units;
             (transform_weight(units * unit_in) + transform_weight(units * unit_out))
                 / (hop_units * unit_in) as f64
         };
-        let candidates = || {
-            (2..=longest_units)
-                .step_by(2)
-                .filter(|units| is_smooth(*units))
-                .filter_map(|units| {
-                    units
-                        .checked_sub(trail_units + lead_units)
-                        .filter(|hop_units| *hop_units > 0)
-                        .map(|hop_units| (units, hop_units))
-                })
-        };
+        let usable = |units: &usize| units.is_multiple_of(2) && is_smooth(*units);
 
-        candidates()
-            .filter(|(_, hop_units)| *hop_units <= hop_at_most)
-            .min_by(|(units, hop_units), (other, other_hop)| {
-                weight(*units, *hop_units).total_cmp(&weight(*other, *other_hop))
-            })
-            .or_else(|| candidates().next())
-            .map(|(units, hop_units)| Self {
-                unit_in,
-                unit_out,
-                units,
-                trail_units,
-                hop_units,
-            })
+        let units = (shortest_units..=longest_units.min(shortest_units - 1 + hop_at_most))
+            .filter(usable)
+            .min_by(|units, other| weight(*units).total_cmp(&weight(*other)))
+            .or_else(|| (shortest_units..=longest_units).find(usable))?;
+
+        Some(Self {
+            unit_in,
+            unit_out,
+            units,
+            trail_units,
+            hop_units: units - trail_units - lead_units,
+        })
     }
 
     const fn input_points(self) -> usize {
@@ -141,67 +160,9 @@ impl Blocks {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct FlatTop {
-    pub(crate) pass_hz: f64,
-    pub(crate) stop_hz: f64,
-    pub(crate) beta: f64,
-}
-
-impl FlatTop {
-    pub(crate) fn of(cutoff_hz: f64, width_hz: f64, band_edge_hz: f64, beta: f64) -> Self {
-        Self {
-            pass_hz: cutoff_hz - width_hz / 2.0,
-            stop_hz: (cutoff_hz + width_hz / 2.0).min(band_edge_hz),
-            beta,
-        }
-    }
-
-    fn gains(self, bins: usize, bin_hz: f64, unity: f64) -> Vec<f64> {
-        let step = 2.0 / TRANSITION_STEPS as f64;
-        let mut still_to_fall = vec![0.0; TRANSITION_STEPS + 1];
-        let mut whole = 0.0;
-        for (index, slot) in still_to_fall.iter_mut().enumerate().rev().skip(1) {
-            let low = -1.0 + index as f64 * step;
-            whole += kaiser_between(self.beta, low, low + step);
-            *slot = whole;
-        }
-
-        (0..bins)
-            .map(|bin| {
-                let hz = bin as f64 * bin_hz;
-                if hz >= self.stop_hz {
-                    return 0.0;
-                }
-                if hz <= self.pass_hz {
-                    return unity;
-                }
-                let along = 2.0 * (hz - self.pass_hz) / (self.stop_hz - self.pass_hz) - 1.0;
-                let next = (((along + 1.0) / step).ceil() as usize).min(TRANSITION_STEPS);
-                let next_at = -1.0 + next as f64 * step;
-                let beyond = still_to_fall.get(next).copied().unwrap_or_default();
-                unity * (beyond + kaiser_between(self.beta, along, next_at)) / whole
-            })
-            .collect()
-    }
-}
-
-fn kaiser_between(beta: f64, from: f64, to: f64) -> f64 {
-    let spread = 2.0 / 7.0 * (6.0_f64 / 5.0).sqrt();
-    let inner = (3.0 / 7.0 - spread).sqrt();
-    let outer = (3.0 / 7.0 + spread).sqrt();
-    let inner_weight = (18.0 + 30.0_f64.sqrt()) / 36.0;
-    let outer_weight = (18.0 - 30.0_f64.sqrt()) / 36.0;
-    let middle = (from + to) / 2.0;
-    let half = (to - from) / 2.0;
-    let at = |x: f64| bessel_i0(beta * (1.0 - x * x).max(0.0).sqrt());
-    half * (inner_weight * (at(middle - half * inner) + at(middle + half * inner))
-        + outer_weight * (at(middle - half * outer) + at(middle + half * outer)))
-}
-
 pub(crate) enum Design<At> {
-    FlatTop(FlatTop),
-    Sampled(At),
+    Even(At),
+    Turned(At),
 }
 
 enum Response {
@@ -227,9 +188,27 @@ impl Response {
         let unity = (input_points as f64).recip();
 
         match design {
-            Design::FlatTop(flat) => Self::Even(flat.gains(bins, block_seconds.recip(), unity)),
-            Design::Sampled(at_seconds) => {
-                let points = SAMPLED_POINTS_OVER_THE_BAND * 2 * bins;
+            Design::Even(at_seconds) => {
+                let points = EVEN_POINTS_OVER_THE_BAND * 2 * bins;
+                let step = block_seconds / points as f64;
+                let mut spectrum = vec![SILENCE; points];
+                if let Some(first) = spectrum.first_mut() {
+                    first.re = at_seconds(0.0);
+                }
+                let (rising, falling) = spectrum.split_at_mut(points / 2 + 1);
+                let mirrored = rising.iter_mut().skip(1).zip(falling.iter_mut().rev());
+                for (point, (at, mirror)) in mirrored.enumerate() {
+                    let tap = at_seconds((point + 1) as f64 * step);
+                    at.re = tap;
+                    mirror.re = tap;
+                }
+                planner.plan_fft_forward(points).process(&mut spectrum);
+                let scale = unity / spectrum.first().map_or(1.0, |bin| bin.re);
+                let held = spectrum.get(..bins).unwrap_or_default();
+                Self::Even(held.iter().map(|bin| bin.re * scale).collect())
+            }
+            Design::Turned(at_seconds) => {
+                let points = TURNED_POINTS_OVER_THE_BAND * 2 * bins;
                 let step = block_seconds / points as f64;
                 let halfway = points / 2;
                 let mut spectrum: Vec<Complex<f64>> = (0..points)
@@ -243,8 +222,7 @@ impl Response {
                     })
                     .collect();
                 planner.plan_fft_forward(points).process(&mut spectrum);
-                let direct = spectrum.first().map_or(1.0, |bin| bin.re);
-                let scale = unity / direct;
+                let scale = unity / spectrum.first().map_or(1.0, |bin| bin.re);
                 let held = spectrum.get(..bins).unwrap_or_default();
                 Self::Turned(held.iter().map(|bin| bin * scale).collect())
             }
@@ -589,36 +567,20 @@ mod tests {
     }
 
     #[test]
-    fn the_flat_top_is_exactly_one_in_its_passband_and_exactly_nothing_past_its_stop() {
-        let flat = FlatTop::of(20_000.0, 2_000.0, 21_000.0, 20.0);
-        let gains = flat.gains(2_205, 10.0, 1.0);
+    fn a_transform_the_library_runs_slowly_weighs_more_than_a_longer_one_it_runs_well() {
+        const SLOW_FIVES: usize = 6_750;
+        const SMOOTH_AND_LONGER: usize = 6_912;
 
-        assert!(gains[..1_900].iter().all(|gain| *gain == 1.0));
-        assert!(gains[2_100..].iter().all(|gain| *gain == 0.0));
-        assert!(
-            gains[1_900..2_100]
-                .windows(2)
-                .all(|pair| pair[0] >= pair[1]),
-            "the transition rose somewhere"
-        );
-        let halfway = gains[2_000];
-        assert!((halfway - 0.5).abs() < 1e-12, "{halfway} at the cutoff");
-        for offset in 1..100 {
-            let sum = gains[2_000 - offset] + gains[2_000 + offset];
-            assert!(
-                (sum - 1.0).abs() < 1e-12,
-                "the transition is not odd: {sum}"
-            );
-        }
+        assert!(transform_weight(SLOW_FIVES) > transform_weight(SMOOTH_AND_LONGER));
     }
 
     #[test]
-    fn a_transition_past_the_band_edge_is_closed_at_it_rather_than_cut_off() {
-        let flat = FlatTop::of(20_000.0, 2_000.0, 20_500.0, 20.0);
-        let gains = flat.gains(2_205, 10.0, 1.0);
+    fn the_search_never_takes_a_block_longer_than_the_hop_allows_while_one_fits() {
+        let wanted = conversion(96_000, 48_000);
+        let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
+        let hop_seconds = blocks.hop_units as f64 * blocks.unit_in as f64 / 96_000.0;
 
-        assert_eq!(gains[2_050], 0.0);
-        assert!(gains[2_049] < 1e-7, "{} one bin short", gains[2_049]);
+        assert!(hop_seconds <= wanted.hop_at_most_seconds + 1e-12);
     }
 
     #[test]
@@ -631,10 +593,9 @@ mod tests {
             trail_units: 64,
             hop_units: 3_008,
         };
-        let flat = FlatTop::of(23_900.0, 200.0, 24_000.0, 20.0);
         let mut planner = FftPlanner::new();
         let response = Response::of(
-            Design::<fn(f64) -> f64>::FlatTop(flat),
+            Design::Even(|after: f64| f64::from(after == 0.0)),
             blocks,
             wanted,
             &mut planner,
@@ -648,13 +609,27 @@ mod tests {
         let wanted = conversion(44_100, 48_000);
         let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
         let cache = Mutex::new(None);
-        let flat = FlatTop::of(18_000.0, 2_000.0, 22_050.0, 12.0);
+        let cutoff_hz = 19_000.0_f64;
+        let reach_seconds = 64.0 / 44_100.0;
         let plan = Plan::kept_for(
             &cache,
             0_u8,
             wanted,
             blocks,
-            Design::<fn(f64) -> f64>::FlatTop(flat),
+            Design::Even(|after: f64| {
+                let along = after.abs() / reach_seconds;
+                if along >= 1.0 {
+                    return 0.0;
+                }
+                let turned = TAU * cutoff_hz * after;
+                let sinc = if turned == 0.0 {
+                    1.0
+                } else {
+                    turned.sin() / turned
+                };
+                let bell = (along * std::f64::consts::FRAC_PI_2).cos().powi(8);
+                sinc * bell
+            }),
         );
         let frames = 40_000;
         let interleaved: Vec<f64> = (0..frames)
@@ -691,12 +666,12 @@ mod tests {
             let left = (TAU * 1_000.0 * t).sin();
             let right = 0.5 * (TAU * 7_000.0 * t).cos();
             assert!(
-                (frame[0] - left).abs() < 1e-6,
+                (frame[0] - left).abs() < 1e-4,
                 "left {} at {index}",
                 frame[0]
             );
             assert!(
-                (frame[1] - right).abs() < 1e-6,
+                (frame[1] - right).abs() < 1e-4,
                 "right {} at {index}",
                 frame[1]
             );

@@ -39,6 +39,14 @@ pub enum Error {
     MissingValue { flag: &'static str },
     #[error("unknown argument {0:?}")]
     UnknownArgument(OsString),
+    #[error("could not read candidates from {file}")]
+    Candidates {
+        file: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("a candidate is level, half taps, beta, clear taps, hop taps, edge terms: {0}")]
+    UnreadableCandidate(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

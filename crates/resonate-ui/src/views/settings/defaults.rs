@@ -428,7 +428,7 @@ mod tests {
     fn a_setting_moved_off_its_default_says_so_and_nothing_beside_it_does() {
         let moved = Standing {
             output: OutputSettings {
-                quality: Quality::Fast,
+                quality: Quality::LowLatency,
                 ..Standing::as_built().output
             },
             ..Standing::as_built()

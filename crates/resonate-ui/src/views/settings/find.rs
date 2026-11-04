@@ -895,16 +895,17 @@ pub(crate) const DEVICE_HINT: &str = "Where Resonate sends audio. The badge on e
 
 pub(crate) const RESAMPLER_HINT: &str = "Runs only when the device cannot take the file's own sample rate, and never touches a stream \
      the device accepts as it is. It is a windowed-sinc filter: an ideal low-pass is cut to a \
-     finite length by a Kaiser window, whose β trades a wider transition band for a deeper \
-     stopband, and the cutoff sits just under the lower of the two Nyquist limits so nothing folds \
-     back as aliasing. The curve is built once into a table holding every phase the two rates can \
-     meet, so each output instant reads its own exact weights. Downsampling stretches the window \
-     by the ratio, so the same level costs more taps going down than up. Very high is built to beat \
-     SoX's very-high setting on paper: flat to 96 % of Nyquist, half power at 97.6 % and 185 dB \
-     down from Nyquist on, against SoX's 95 % and 175 dB. Hover a level for the filter it builds. \
-     Linear phase rings as much before a transient as after it; minimum phase moves all of that \
-     ringing after it and plays a few frames sooner, at the price of delaying the treble a little \
-     more than the bass; intermediate sits between the two.";
+     finite length by a window, and the filter closes on the lower of the two Nyquist limits so \
+     nothing folds back as aliasing. Low latency sums a kernel for every output instant, a table \
+     holding every phase the two rates can meet, so it answers in about a millisecond. The others \
+     convert a block at a time through Fourier transforms, far less work and a longer wait, each \
+     through a window designed to fall steadily so the filter rings for as short a time as its \
+     depth allows. Very high is built to beat SoX's steep very-high setting: flat as near the top \
+     of the band, about 230 dB down from Nyquist on against SoX's 180, and ringing 10.4 ms either \
+     side of a sharp sound against SoX's 11.8. Hover a level for the filter it builds. Linear \
+     phase rings as much before a transient as after it; minimum phase moves all of that ringing \
+     after it and plays a few frames sooner, at the price of delaying the treble a little more \
+     than the bass; intermediate sits between the two.";
 
 pub(crate) const TRUE_PEAK_HINT: &str = "A sample can sit under full scale while the wave the \
                                          device rebuilds between two samples passes it, and a \

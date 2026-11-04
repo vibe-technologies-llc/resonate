@@ -55,7 +55,7 @@ public enum ListeningTestWords {
 
     public static func qualityLabel(_ value: ResamplingQuality) -> String {
         switch value {
-        case .fast: "Fast"
+        case .lowLatency: "Low latency"
         case .balanced: "Balanced"
         case .high: "High"
         case .veryHigh: "Very high"

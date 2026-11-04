@@ -6,10 +6,10 @@ use resonate_core::{ChannelLayout, Ratio, SampleRate, StreamSpec};
 use crate::{
     Error, FilterPhase, ProcessCount, Processor, RatioLimits, Result,
     phase::{Prototype, designed},
-    spectral::{Blocks, Conversion, Design, FlatTop, Plan, Spectral},
+    spectral::{Blocks, Conversion, Design, Plan, Spectral},
 };
 
-const MAX_HALF_TAPS: u16 = 1_024;
+const MAX_HALF_TAPS: u16 = 2_048;
 const MIN_PHASES: u32 = 8;
 const LANES_PER_VECTOR: usize = if cfg!(target_feature = "avx512f") {
     8
@@ -25,12 +25,10 @@ const _: () =
 const TABULATED_WEIGHT_BYTES_AT_MOST: usize = 16 << 20;
 const KEPT_TABLE_BYTES_AT_MOST: usize = 4 << 20;
 const LAGRANGE_NODES: usize = 4;
-const SPECTRAL_FROM_HALF_TAPS: u16 = 128;
-const SPECTRAL_TAIL_TAPS: f64 = 192.0;
-const SPECTRAL_HOP_BASE_TAPS: f64 = 1_400.0;
-const SPECTRAL_HOP_PER_SPAN: f64 = 0.5;
-const SPECTRAL_HOP_WIDENS_AT_MOST: f64 = 2.0;
-const SPECTRAL_HOP_SECONDS_AT_MOST: f64 = 0.2;
+const SPECTRAL_FROM_HALF_TAPS: u16 = 48;
+const STEEP_FROM_RATIO: f64 = 2.0;
+const SHAPED_CLEARS_A_SHARE_OF_THE_REACH: u16 = 8;
+const SPECTRAL_HOP_SECONDS_AT_MOST: f64 = 0.4;
 const OVERSAMPLED: usize = 2;
 const INTERPOLATOR_PHASES: u32 = 1_024;
 const INTERPOLATOR_CUTOFF: f32 = 1.0;
@@ -41,10 +39,65 @@ const KAISER_DECIBELS_AT_NO_BETA: f64 = 8.7;
 const KAISER_LENGTH_DECIBELS: f64 = 7.95;
 const KAISER_LENGTH_PER_DECIBEL: f64 = 14.36;
 
+const BALANCED_WINDOW: [f64; 10] = [
+    0.30671382544860293,
+    -0.6376531743318821,
+    0.5584325253254765,
+    -0.3395642911942146,
+    0.15328081311843028,
+    -0.05294841496722559,
+    0.014286134908432835,
+    -0.0030933373788818025,
+    0.0005199393803197172,
+    -9.557476880843463e-05,
+];
+
+const HIGH_WINDOW: [f64; 13] = [
+    0.24053709856192423,
+    -0.5390856442241267,
+    0.5625869723081898,
+    -0.4488451520698929,
+    0.2895782064941611,
+    -0.15317479422792973,
+    0.0666645101503116,
+    -0.023888384626784803,
+    0.00704207894887969,
+    -0.0017005811900209916,
+    0.0003327233059389617,
+    -5.070433295871479e-05,
+    5.748985880585367e-06,
+];
+
+const VERY_HIGH_WINDOW: [f64; 25] = [
+    0.15861352245935742,
+    -0.3789587164950704,
+    0.4598993501671325,
+    -0.4672157606244562,
+    0.4222783558800702,
+    -0.34547974797854814,
+    0.25678622511337307,
+    -0.17285651405519822,
+    0.10468971848162832,
+    -0.05663589043696097,
+    0.02721201786962143,
+    -0.011574395475138928,
+    0.004354854447432262,
+    -0.0014511993108578117,
+    0.00042943980255349945,
+    -0.0001132469173140693,
+    2.6717495111419625e-05,
+    -5.663875087186242e-06,
+    1.082325391824068e-06,
+    -1.8805154467643742e-07,
+    2.918270090163099e-08,
+    -4.481586150795191e-09,
+    4.159418434679373e-10,
+    -1.3466031067999038e-10,
+    -1.2254149084345297e-11,
+];
+
 fn under_the_stopband(params: SincParams) -> f64 {
-    f64::from(params.kaiser_beta) / KAISER_BETA_PER_DECIBEL
-        + KAISER_DECIBELS_AT_NO_BETA
-        + INTERPOLATOR_UNDER_THE_STOPBAND_DB
+    f64::from(params.rejects_db) + INTERPOLATOR_UNDER_THE_STOPBAND_DB
 }
 
 fn kaiser_rejecting(rejected_db: f64, transition_cycles: f64, cutoff: f64) -> SincParams {
@@ -57,6 +110,11 @@ fn kaiser_rejecting(rejected_db: f64, transition_cycles: f64, cutoff: f64) -> Si
         phases: INTERPOLATOR_PHASES,
         cutoff: cutoff as f32,
         kaiser_beta: (KAISER_BETA_PER_DECIBEL * (rejected_db - KAISER_DECIBELS_AT_NO_BETA)) as f32,
+        rejects_db: rejected_db as f32,
+        clear_taps: 0,
+        hop_taps: 0,
+        steep_hop_taps: 0,
+        window: &[],
     }
 }
 
@@ -84,7 +142,7 @@ const LIMITS: RatioLimits = RatioLimits {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Quality {
-    Fast,
+    LowLatency,
     Balanced,
     #[default]
     High,
@@ -94,30 +152,68 @@ pub enum Quality {
 impl Quality {
     pub const fn params(self) -> SincParams {
         match self {
-            Self::Fast => SincParams {
-                half_taps: 19,
-                phases: 128,
-                cutoff: 0.900,
-                kaiser_beta: 6.0,
-            },
-            Self::Balanced => SincParams {
+            Self::LowLatency => SincParams {
                 half_taps: 47,
                 phases: 512,
                 cutoff: 0.940,
                 kaiser_beta: 9.0,
+                rejects_db: 90.4,
+                clear_taps: 0,
+                hop_taps: 0,
+                steep_hop_taps: 0,
+                window: &[],
+            },
+            Self::Balanced => SincParams {
+                half_taps: 110,
+                phases: 512,
+                cutoff: 0.956_916,
+                kaiser_beta: 14.888_727,
+                rejects_db: 130.0,
+                clear_taps: 0,
+                hop_taps: 870,
+                steep_hop_taps: 1_600,
+                window: &BALANCED_WINDOW,
             },
             Self::High => SincParams {
-                half_taps: 160,
+                half_taps: 170,
                 phases: 1024,
-                cutoff: 0.963_534,
-                kaiser_beta: 18.33,
+                cutoff: 0.955_782,
+                kaiser_beta: 23.615_373,
+                rejects_db: 171.0,
+                clear_taps: 0,
+                hop_taps: 1_960,
+                steep_hop_taps: 3_600,
+                window: &HIGH_WINDOW,
             },
             Self::VeryHigh => SincParams {
-                half_taps: 900,
+                half_taps: 1_200,
                 phases: 1024,
-                cutoff: 0.992_078,
-                kaiser_beta: 22.4,
+                cutoff: 0.991_383,
+                kaiser_beta: 32.484_497,
+                rejects_db: 218.0,
+                clear_taps: 0,
+                hop_taps: 3_300,
+                steep_hop_taps: 16_000,
+                window: &VERY_HIGH_WINDOW,
             },
+        }
+    }
+
+    pub const fn shaped_params(self) -> SincParams {
+        let params = self.params();
+        match self {
+            Self::LowLatency => params,
+            Self::Balanced | Self::High | Self::VeryHigh => SincParams {
+                clear_taps: params.half_taps / SHAPED_CLEARS_A_SHARE_OF_THE_REACH,
+                ..params
+            },
+        }
+    }
+
+    pub const fn params_for(self, phase: FilterPhase) -> SincParams {
+        match phase {
+            FilterPhase::Linear => self.params(),
+            FilterPhase::Intermediate | FilterPhase::Minimum => self.shaped_params(),
         }
     }
 }
@@ -128,6 +224,11 @@ pub struct SincParams {
     pub phases: u32,
     pub cutoff: f32,
     pub kaiser_beta: f32,
+    pub rejects_db: f32,
+    pub clear_taps: u16,
+    pub hop_taps: u16,
+    pub steep_hop_taps: u16,
+    pub window: &'static [f64],
 }
 
 impl SincParams {
@@ -194,6 +295,23 @@ pub(crate) struct WindowedSinc {
     cutoff: f64,
     beta: f64,
     window_peak: f64,
+    series: &'static [f64],
+}
+
+fn even_legendre_series(series: &[f64], along: f64) -> f64 {
+    let mut even = 1.0;
+    let mut odd = along;
+    let mut sum = 0.0;
+    for (index, coefficient) in series.iter().enumerate() {
+        sum += coefficient * even;
+        let odd_order = (2 * index + 1) as f64;
+        let even_order = odd_order + 1.0;
+        let next_even = ((2.0 * odd_order + 1.0) * along * odd - odd_order * even) / even_order;
+        odd =
+            ((2.0 * even_order + 1.0) * along * next_even - even_order * odd) / (even_order + 1.0);
+        even = next_even;
+    }
+    sum
 }
 
 impl WindowedSinc {
@@ -204,6 +322,7 @@ impl WindowedSinc {
             cutoff: f64::from(params.cutoff),
             beta,
             window_peak: bessel_i0(beta),
+            series: params.window,
         }
     }
 
@@ -211,8 +330,12 @@ impl WindowedSinc {
         if tau >= self.half_taps {
             return 0.0;
         }
-        let shoulder = (1.0 - (tau / self.half_taps).powi(2)).max(0.0).sqrt();
-        let window = bessel_i0(self.beta * shoulder) / self.window_peak;
+        let along = tau / self.half_taps;
+        let window = if self.series.is_empty() {
+            bessel_i0(self.beta * (1.0 - along * along).max(0.0).sqrt()) / self.window_peak
+        } else {
+            even_legendre_series(self.series, along)
+        };
         self.cutoff * sinc(self.cutoff * tau) * window
     }
 }
@@ -524,31 +647,29 @@ enum Taps {
     Interpolated(Kernel),
 }
 
-fn conversion_for(config: ResamplerConfig, shape: &Shape, output_hz: u32) -> Conversion {
+fn conversion_for(
+    config: ResamplerConfig,
+    params: SincParams,
+    shape: &Shape,
+    output_hz: u32,
+) -> Conversion {
     let input_hz = f64::from(config.input_rate.hz());
     let band_hz = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
     let widest_hz = input_hz.max(f64::from(output_hz));
-    let span = shape.lead() + shape.trail();
-    let hop_taps = (SPECTRAL_HOP_BASE_TAPS + SPECTRAL_HOP_PER_SPAN * span)
-        * (widest_hz / band_hz).min(SPECTRAL_HOP_WIDENS_AT_MOST);
+    let clear_taps = f64::from(params.clear_taps);
+    let hop_taps = if widest_hz >= STEEP_FROM_RATIO * band_hz {
+        params.steep_hop_taps
+    } else {
+        params.hop_taps
+    };
     Conversion {
         input_hz: config.input_rate.hz(),
         output_hz,
         band_hz,
-        lead_seconds: (shape.lead() + SPECTRAL_TAIL_TAPS) / band_hz,
-        trail_seconds: (shape.trail() + SPECTRAL_TAIL_TAPS) / band_hz,
-        hop_at_most_seconds: (hop_taps / band_hz).min(SPECTRAL_HOP_SECONDS_AT_MOST),
+        lead_seconds: (shape.lead() + clear_taps) / band_hz,
+        trail_seconds: (shape.trail() + clear_taps) / band_hz,
+        hop_at_most_seconds: (f64::from(hop_taps) / band_hz).min(SPECTRAL_HOP_SECONDS_AT_MOST),
     }
-}
-
-fn flat_top_of(params: SincParams, band_hz: f64) -> FlatTop {
-    let beta = f64::from(params.kaiser_beta);
-    FlatTop::of(
-        f64::from(params.cutoff) * band_hz / 2.0,
-        beta / (PI * f64::from(params.half_taps)) * band_hz,
-        band_hz / 2.0,
-        beta,
-    )
 }
 
 fn planned(
@@ -561,8 +682,8 @@ fn planned(
     let band_hz = conversion.band_hz;
     let at_seconds = |after: f64| shape.at(after * band_hz);
     let design = match shape {
-        Shape::Linear(_) => Design::FlatTop(flat_top_of(params, band_hz)),
-        Shape::Shaped(_) => Design::Sampled(at_seconds),
+        Shape::Linear(_) => Design::Even(at_seconds),
+        Shape::Shaped(_) => Design::Turned(at_seconds),
     };
     Plan::kept_for(
         &LAST_PLANNED,
@@ -597,7 +718,7 @@ impl Stage {
         };
         let shape = Shape::of(params, config.phase);
         let oversampled_hz = config.input_rate.hz().checked_mul(up as u32)?;
-        let conversion = conversion_for(config, &shape, oversampled_hz);
+        let conversion = conversion_for(config, params, &shape, oversampled_hz);
         let blocks = Blocks::fitting(conversion)?;
         let plan = planned(config, params, &shape, blocks, conversion);
         let channels = config.channels.count().get() as usize;
@@ -658,7 +779,7 @@ struct Whole {
 impl Whole {
     fn new(config: ResamplerConfig, params: SincParams) -> Option<Self> {
         let shape = Shape::of(params, config.phase);
-        let conversion = conversion_for(config, &shape, config.output_rate.hz());
+        let conversion = conversion_for(config, params, &shape, config.output_rate.hz());
         let blocks = Blocks::fitting(conversion)?;
         let plan = planned(config, params, &shape, blocks, conversion);
         let channels = config.channels.count().get() as usize;
@@ -766,7 +887,7 @@ struct Polyphase {
 
 impl Resampler {
     pub fn new(config: ResamplerConfig) -> Result<Self> {
-        Self::with_params(config, config.quality.params())
+        Self::with_params(config, config.quality.params_for(config.phase))
     }
 
     pub fn with_params(config: ResamplerConfig, params: SincParams) -> Result<Self> {
@@ -1314,15 +1435,21 @@ mod tests {
     use super::*;
 
     const BLOCK: usize = 1_024;
-    const SIXTEEN_BIT_FLOOR_DB: f64 = -96.0;
+    const LOW_LATENCY_REJECTS_DB: f64 = -85.0;
+    const BALANCED_REJECTS_DB: f64 = -125.0;
     const TWENTY_FOUR_BIT_FLOOR_DB: f64 = -140.0;
     const UNITY_WITHIN: f64 = 1e-9;
     const FOLDS_TO_THREE_KILOHERTZ_AT_EIGHT: f64 = 21_000.0;
     const AGREES_WITH_THE_EXACT_SUM_WITHIN: f64 = 1e-12;
-    const HIGH_AGREES_WITHIN: f64 = 5e-10;
-    const VERY_HIGH_AGREES_WITHIN: f64 = 1e-11;
-    const HIGH_INTERPOLATED_WITHIN: f64 = 1e-9;
-    const VERY_HIGH_INTERPOLATED_WITHIN: f64 = 1e-11;
+    const BALANCED_AGREES_WITHIN: f64 = 1e-6;
+    const HIGH_AGREES_WITHIN: f64 = 1e-8;
+    const VERY_HIGH_AGREES_WITHIN: f64 = 3e-11;
+    const HIGH_INTERPOLATED_WITHIN: f64 = 1e-8;
+    const VERY_HIGH_INTERPOLATED_WITHIN: f64 = 3e-11;
+    const RINGS_UNTIL_DOWN_BY: f64 = 1e-6;
+    const SOX_STEEP_RINGS_MILLISECONDS: f64 = 11.77;
+    const SOX_VHQ_RINGS_MILLISECONDS: f64 = 2.52;
+    const SOX_HQ_RINGS_MILLISECONDS: f64 = 2.15;
     const HIGH_REJECTS_DB: f64 = -170.0;
     const VERY_HIGH_REJECTS_DB: f64 = -200.0;
     const SOX_STEEP_PASSBAND_NYQUISTS: f64 = 0.9864;
@@ -1359,7 +1486,7 @@ mod tests {
         output
     }
 
-    fn steady(samples: &[f64]) -> &[f64] {
+    fn steady<T>(samples: &[T]) -> &[T] {
         let skip = samples.len() / 8;
         &samples[skip..samples.len() - skip]
     }
@@ -1381,7 +1508,7 @@ mod tests {
     }
 
     fn spanned(config: ResamplerConfig) -> f64 {
-        let params = config.quality.params();
+        let params = config.quality.params_for(config.phase);
         let band = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
         let span = 2.0 * f64::from(params.half_taps) * f64::from(config.output_rate.hz()) / band;
         latency(config) + span
@@ -1437,7 +1564,11 @@ mod tests {
 
     #[test]
     fn the_output_frame_count_tracks_the_conversion_ratio() {
-        let config = config(SampleRate::HZ_44100, SampleRate::HZ_88200, Quality::Fast);
+        let config = config(
+            SampleRate::HZ_44100,
+            SampleRate::HZ_88200,
+            Quality::LowLatency,
+        );
         let produced = run(config, &vec![0.0; BLOCK * 8]).len();
         let expected = BLOCK * 8 * 2;
 
@@ -1550,6 +1681,8 @@ mod tests {
     #[test]
     fn every_phase_passes_direct_current_keeps_the_passband_and_rejects_aliases() {
         for (quality, floor) in [
+            (Quality::LowLatency, LOW_LATENCY_REJECTS_DB),
+            (Quality::Balanced, BALANCED_REJECTS_DB),
             (Quality::High, TWENTY_FOUR_BIT_FLOOR_DB),
             (Quality::VeryHigh, VERY_HIGH_REJECTS_DB),
         ] {
@@ -1699,7 +1832,7 @@ mod tests {
         let wanted = config(
             SampleRate::HZ_44100,
             SampleRate::HZ_48000,
-            Quality::Balanced,
+            Quality::LowLatency,
         );
         let built_back_to_back = || {
             let first = Resampler::new(wanted).expect("a supported conversion");
@@ -1718,7 +1851,7 @@ mod tests {
         let elsewhere = Resampler::new(config(
             SampleRate::HZ_48000,
             SampleRate::HZ_44100,
-            Quality::Balanced,
+            Quality::LowLatency,
         ))
         .expect("a supported conversion");
         assert!(
@@ -1809,12 +1942,16 @@ mod tests {
     }
 
     #[test]
-    fn high_quality_rejects_aliases_harder_than_fast() {
+    fn high_quality_rejects_aliases_harder_than_low_latency() {
         let high_down = config(SampleRate::HZ_44100, SampleRate::HZ_22050, Quality::High);
         let input = tone(SampleRate::HZ_44100, 15_000.0, settling_frames(high_down));
 
-        let fast = alias_level(
-            config(SampleRate::HZ_44100, SampleRate::HZ_22050, Quality::Fast),
+        let low_latency = alias_level(
+            config(
+                SampleRate::HZ_44100,
+                SampleRate::HZ_22050,
+                Quality::LowLatency,
+            ),
             &input,
         );
         let high = alias_level(
@@ -1823,8 +1960,8 @@ mod tests {
         );
 
         assert!(
-            high < fast,
-            "high rejected {high:.1} dB, fast rejected {fast:.1} dB"
+            high < low_latency,
+            "high rejected {high:.1} dB, low latency rejected {low_latency:.1} dB"
         );
     }
 
@@ -1843,8 +1980,9 @@ mod tests {
             *sample = if index % 2 == 0 { 1.0 } else { -1.0 };
         }
         let output = run(config, &input);
+        let frames = output.as_chunks::<2>().0;
 
-        for frame in steady(&output).as_chunks::<2>().0 {
+        for frame in steady(frames) {
             assert!((frame[0] - 1.0).abs() < 1e-3, "left was {}", frame[0]);
             assert!((frame[1] + 1.0).abs() < 1e-3, "right was {}", frame[1]);
         }
@@ -1860,7 +1998,7 @@ mod tests {
     ];
 
     const QUALITIES: [Quality; 4] = [
-        Quality::Fast,
+        Quality::LowLatency,
         Quality::Balanced,
         Quality::High,
         Quality::VeryHigh,
@@ -1947,7 +2085,11 @@ mod tests {
     fn a_ratio_beyond_the_supported_range_is_rejected() {
         let config = ResamplerConfig {
             max_frames_in: BLOCK,
-            ..config(SampleRate::HZ_384000, SampleRate::HZ_8000, Quality::Fast)
+            ..config(
+                SampleRate::HZ_384000,
+                SampleRate::HZ_8000,
+                Quality::LowLatency,
+            )
         };
         match Resampler::new(config) {
             Err(Error::RatioOutOfRange { .. }) => {}
@@ -1959,8 +2101,8 @@ mod tests {
     #[test]
     fn each_quality_meets_its_alias_rejection_floor() {
         for (quality, floor) in [
-            (Quality::Fast, -65.0),
-            (Quality::Balanced, SIXTEEN_BIT_FLOOR_DB),
+            (Quality::LowLatency, LOW_LATENCY_REJECTS_DB),
+            (Quality::Balanced, BALANCED_REJECTS_DB),
             (Quality::High, HIGH_REJECTS_DB),
             (Quality::VeryHigh, VERY_HIGH_REJECTS_DB),
         ] {
@@ -2023,6 +2165,20 @@ mod tests {
         sum
     }
 
+    fn legendre_of_order(order: usize, along: f64) -> f64 {
+        let (mut before, mut at) = (1.0, along);
+        if order == 0 {
+            return before;
+        }
+        for degree in 1..order {
+            let degree = degree as f64;
+            let next = ((2.0 * degree + 1.0) * along * at - degree * before) / (degree + 1.0);
+            before = at;
+            at = next;
+        }
+        at
+    }
+
     fn analytic_tap(params: SincParams, tau: f64) -> f64 {
         let half_taps = f64::from(params.half_taps);
         if tau >= half_taps {
@@ -2036,27 +2192,29 @@ mod tests {
         } else {
             argument.sin() / argument
         };
-        let shoulder = (1.0 - (tau / half_taps).powi(2)).sqrt();
-        let window =
-            modified_bessel_of_order_zero(beta * shoulder) / modified_bessel_of_order_zero(beta);
+        let along = tau / half_taps;
+        let window = if params.window.is_empty() {
+            modified_bessel_of_order_zero(beta * (1.0 - along * along).sqrt())
+                / modified_bessel_of_order_zero(beta)
+        } else {
+            params
+                .window
+                .iter()
+                .enumerate()
+                .map(|(index, coefficient)| coefficient * legendre_of_order(2 * index, along))
+                .sum()
+        };
         cutoff * sinc * window
     }
 
-    fn flat_tap(flat: FlatTop, band_hz: f64, tau: f64) -> f64 {
-        let beta = flat.beta;
-        let centre = (flat.pass_hz + flat.stop_hz) / 2.0 / band_hz;
-        let width = (flat.stop_hz - flat.pass_hz) / band_hz;
-        let inside = beta.powi(2) - (PI * width * tau).powi(2);
-        let root = inside.abs().sqrt();
-        let window = if inside > 0.0 {
-            root.sinh() / root
-        } else if root > 0.0 {
-            root.sin() / root
-        } else {
-            1.0
-        } * beta
-            / beta.sinh();
-        2.0 * centre * sinc(2.0 * centre * tau) * window
+    fn dc_of_a_block_kernel(params: SincParams, per_input_tap: f64) -> f64 {
+        const POINTS_PER_TAP: i64 = 32;
+
+        let reach = i64::from(params.half_taps) * POINTS_PER_TAP;
+        let sum: f64 = (-reach..=reach)
+            .map(|point| analytic_tap(params, (point as f64 / POINTS_PER_TAP as f64).abs()))
+            .sum();
+        sum / POINTS_PER_TAP as f64 / per_input_tap
     }
 
     struct Oracle {
@@ -2065,37 +2223,26 @@ mod tests {
         advance: i64,
         scale: f64,
         reach: i64,
+        gain: Option<f64>,
         rows: BTreeMap<i64, Vec<f64>>,
     }
 
     impl Oracle {
         fn new(config: ResamplerConfig) -> Self {
-            let params = config.quality.params();
+            let params = config.quality.params_for(config.phase);
             let cycle = config.input_rate.ratio_to(config.output_rate);
             let scale =
                 (f64::from(config.output_rate.hz()) / f64::from(config.input_rate.hz())).min(1.0);
+            let gain = params
+                .converts_in_blocks()
+                .then(|| dc_of_a_block_kernel(params, scale));
             Self::of(
                 move |tau| analytic_tap(params, tau),
                 f64::from(params.half_taps),
                 i64::from(cycle.numer.get()),
                 i64::from(cycle.denom.get()),
                 scale,
-            )
-        }
-
-        fn flat_top(config: ResamplerConfig) -> Self {
-            let params = config.quality.params();
-            let band_hz = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
-            let flat = flat_top_of(params, band_hz);
-            let cycle = config.input_rate.ratio_to(config.output_rate);
-            let scale =
-                (f64::from(config.output_rate.hz()) / f64::from(config.input_rate.hz())).min(1.0);
-            Self::of(
-                move |tau| flat_tap(flat, band_hz, tau),
-                f64::from(params.half_taps) + 2.0 * SPECTRAL_TAIL_TAPS,
-                i64::from(cycle.numer.get()),
-                i64::from(cycle.denom.get()),
-                scale,
+                gain,
             )
         }
 
@@ -2111,6 +2258,7 @@ mod tests {
                 numer / common,
                 advanced / common,
                 1.0,
+                None,
             )
         }
 
@@ -2120,6 +2268,7 @@ mod tests {
             phases: i64,
             advance: i64,
             scale: f64,
+            gain: Option<f64>,
         ) -> Self {
             Self {
                 tap: Box::new(tap),
@@ -2127,6 +2276,7 @@ mod tests {
                 advance,
                 scale,
                 reach: (reach_taps / scale).ceil() as i64 + 1,
+                gain,
                 rows: BTreeMap::new(),
             }
         }
@@ -2140,6 +2290,7 @@ mod tests {
                 phases,
                 scale,
                 reach,
+                gain,
                 rows,
                 ..
             } = self;
@@ -2150,8 +2301,8 @@ mod tests {
                         tap(distance * *scale)
                     })
                     .collect();
-                let gain: f64 = raw.iter().sum();
-                raw.into_iter().map(|weight| weight / gain).collect()
+                let divided_by = gain.unwrap_or_else(|| raw.iter().sum());
+                raw.into_iter().map(|weight| weight / divided_by).collect()
             });
             (first, row)
         }
@@ -2210,20 +2361,17 @@ mod tests {
             };
             let band_hz = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
             let scale = band_hz / f64::from(config.input_rate.hz());
-            let flat = flat_top_of(params, band_hz);
-            let reach_taps = f64::from(params.half_taps) + 2.0 * SPECTRAL_TAIL_TAPS;
+            let reach_taps = f64::from(params.half_taps);
             let lead = (reach_taps * up as f64 / scale).ceil() as i64;
             let mut taps: Vec<f64> = (0..=2 * lead)
                 .map(|tap| {
                     let after = (tap - lead) as f64 / up as f64 * scale;
-                    flat_tap(flat, band_hz, after)
+                    analytic_tap(params, after.abs())
                 })
                 .collect();
-            for branch in 0..up as usize {
-                let gain: f64 = taps.iter().skip(branch).step_by(up as usize).sum();
-                for tap in taps.iter_mut().skip(branch).step_by(up as usize) {
-                    *tap /= gain;
-                }
+            let gain = dc_of_a_block_kernel(params, scale / up as f64) / up as f64;
+            for tap in &mut taps {
+                *tap /= gain;
             }
             Self { taps, lead, up }
         }
@@ -2251,7 +2399,6 @@ mod tests {
         let prefiltered = staged.then(|| Prefiltered::of(wanted));
         let mut oracle = match &prefiltered {
             Some(stage) => Oracle::interpolating(wanted, stage.up),
-            None if matches!(built.route, Route::Whole(_)) => Oracle::flat_top(wanted),
             None => Oracle::new(wanted),
         };
 
@@ -2306,8 +2453,8 @@ mod tests {
     fn every_frame_is_the_exact_windowed_sinc_normalised_at_its_instant() {
         for (from, to) in ORACLE_PAIRS {
             for (quality, within) in [
-                (Quality::Fast, AGREES_WITH_THE_EXACT_SUM_WITHIN),
-                (Quality::Balanced, AGREES_WITH_THE_EXACT_SUM_WITHIN),
+                (Quality::LowLatency, AGREES_WITH_THE_EXACT_SUM_WITHIN),
+                (Quality::Balanced, BALANCED_AGREES_WITHIN),
                 (Quality::High, HIGH_AGREES_WITHIN),
                 (Quality::VeryHigh, VERY_HIGH_AGREES_WITHIN),
             ] {
@@ -2359,31 +2506,72 @@ mod tests {
 
     #[test]
     fn very_high_stays_flat_past_the_steepest_sox_recipe_and_is_closed_at_nyquist() {
-        const BAND_HZ: f64 = 44_100.0;
+        let params = Quality::VeryHigh.params();
+        let width = f64::from(params.kaiser_beta) / (PI * f64::from(params.half_taps));
+        let starts = f64::from(params.cutoff) - width;
 
-        let flat = flat_top_of(Quality::VeryHigh.params(), BAND_HZ);
-        let band_edge = BAND_HZ / 2.0;
+        assert!(
+            starts > SOX_STEEP_PASSBAND_NYQUISTS - 0.01,
+            "the transition starts at {starts} of the band edge"
+        );
+        assert!(
+            (f64::from(params.cutoff) + width - 1.0).abs() < 1e-5,
+            "the transition ends away from the band edge"
+        );
 
-        assert!(
-            flat.pass_hz / band_edge > SOX_STEEP_PASSBAND_NYQUISTS - 0.01,
-            "the transition starts at {} Hz",
-            flat.pass_hz
-        );
-        assert!(
-            flat.stop_hz <= band_edge,
-            "the transition ends at {} Hz, past the band edge",
-            flat.stop_hz
-        );
-        assert!(
-            flat.stop_hz > band_edge * 0.9999,
-            "the transition ends at {} Hz, short of the band edge",
-            flat.stop_hz
-        );
+        let at = |nyquists: f64| continuous_response(params, nyquists);
+        let flat_through = decibels(at(starts)).abs();
+        let closed_by = decibels(at(1.0 + width / 4.0));
+        assert!(flat_through < 1e-7, "{flat_through:e} dB where it starts");
+        assert!(closed_by < -190.0, "{closed_by:.1} dB past the edge");
+    }
+
+    fn ringing_milliseconds(quality: Quality) -> f64 {
+        let wanted = config(SampleRate::HZ_44100, SampleRate::HZ_48000, quality);
+        let mut input = vec![0.0; BLOCK * 32];
+        let at = BLOCK * 16;
+        input[at] = 1.0;
+        let output = resampled_and_flushed(wanted, &input);
+        let peak = output.iter().map(|sample| sample.abs()).fold(0.0, f64::max);
+        let heard = |sample: &f64| sample.abs() > peak * RINGS_UNTIL_DOWN_BY;
+        let first = output.iter().position(heard).unwrap_or_default();
+        let last = output.iter().rposition(heard).unwrap_or_default();
+        (last - first) as f64 / 2.0 / 48.0
+    }
+
+    #[test]
+    fn each_level_rings_for_less_than_the_sox_recipe_it_answers() {
+        for (quality, recipe_rings) in [
+            (Quality::Balanced, SOX_HQ_RINGS_MILLISECONDS),
+            (Quality::High, SOX_VHQ_RINGS_MILLISECONDS),
+            (Quality::VeryHigh, SOX_STEEP_RINGS_MILLISECONDS),
+        ] {
+            let rings = ringing_milliseconds(quality);
+            assert!(
+                rings < recipe_rings,
+                "{quality:?} rings {rings:.2} ms either side against {recipe_rings} ms"
+            );
+        }
+    }
+
+    #[test]
+    fn a_window_stands_at_one_in_the_middle_and_falls_to_almost_nothing_at_its_reach() {
+        for quality in [Quality::Balanced, Quality::High, Quality::VeryHigh] {
+            let window = quality.params().window;
+            let middle = even_legendre_series(window, 0.0);
+            let reach = even_legendre_series(window, 1.0);
+
+            assert!(
+                (middle - 1.0).abs() < 1e-12,
+                "{quality:?} peaks at {middle}"
+            );
+            assert!(reach.abs() < 1e-3, "{quality:?} ends at {reach}");
+        }
     }
 
     #[test]
     fn the_preset_cutoffs_end_their_transitions_on_nyquist() {
-        for quality in [Quality::High, Quality::VeryHigh] {
+        for quality in [Quality::Balanced, Quality::High, Quality::VeryHigh] {
             let params = quality.params();
             let halfway = f64::from(params.kaiser_beta) / (PI * f64::from(params.half_taps));
             let stop = f64::from(params.cutoff) + halfway;
@@ -2405,8 +2593,7 @@ mod tests {
             let prefilter = quality.params();
             let interpolator = interpolator_for(prefilter);
             let at = |nyquists: f64| decibels(continuous_response(interpolator, nyquists));
-            let promised = -(f64::from(prefilter.kaiser_beta) / KAISER_BETA_PER_DECIBEL
-                + KAISER_DECIBELS_AT_NO_BETA);
+            let promised = -f64::from(prefilter.rejects_db);
             let flat_within_db = decibels(1.0 + 10_f64.powf((promised - FLATTER_BY_DB) / 20.0));
 
             let flattest = (0..=500)
@@ -2433,11 +2620,15 @@ mod tests {
     fn a_resampler_given_too_few_phases_says_so_rather_than_naming_the_filter_length() {
         let params = SincParams {
             phases: MIN_PHASES - 1,
-            ..Quality::Fast.params()
+            ..Quality::LowLatency.params()
         };
 
         let built = Resampler::with_params(
-            config(SampleRate::HZ_44100, SampleRate::HZ_48000, Quality::Fast),
+            config(
+                SampleRate::HZ_44100,
+                SampleRate::HZ_48000,
+                Quality::LowLatency,
+            ),
             params,
         );
 

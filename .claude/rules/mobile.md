@@ -252,7 +252,7 @@ thread, and the engine's refusals pass as `Error::Player`, worded by `failure::o
 rest by `Cause`). `TestStanding.levels` says how the arms were levelled (`TestLevels`), and
 `setting_test_by_default(SettingKind, PlaybackPreferences)` is the `TestedSetting` a phone begins
 from: A the preferences' restoration, or quality and phase, or the dither the phones play
-(triangular under `Threshold`, `TestedDither::Shaped`), B the opposite (extend or off, fast or very
+(triangular under `Threshold`, `TestedDither::Shaped`), B the opposite (extend or off, low latency or very
 high with the phase kept, no dither). Both phones draw the choice (`eq.md`'s *The phones*).
 
 ## Lyrics

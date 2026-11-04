@@ -23,9 +23,7 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
             replayGain =
                 GainMode.entries.find { it.name == storage.getString("replay-gain", null) }
                     ?: defaults.replayGain,
-            quality =
-                ResamplingQuality.entries.find { it.name == storage.getString("quality", null) }
-                    ?: defaults.quality,
+            quality = storedQuality() ?: defaults.quality,
             phase =
                 ResamplingPhase.entries.find { it.name == storage.getString("phase", null) }
                     ?: defaults.phase,
@@ -126,6 +124,12 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
         return parsedCurve(text, name)
     }
 
+    private fun storedQuality(): ResamplingQuality? {
+        val stored = storage.getString("quality", null)
+        if (stored == QUALITY_ONCE_CALLED_FAST) return ResamplingQuality.LOW_LATENCY
+        return ResamplingQuality.entries.find { it.name == stored }
+    }
+
     private fun storedCurve(): EqualiserCurve? {
         val kept = storage.getString(CURVE, null) ?: return null
         val name = storage.getString(CURVE_NAME, "").orEmpty()
@@ -147,5 +151,6 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
         const val ROUTE_CURVE_NAMES = "equaliser-curve-name-for."
         const val ROUTE_NAMES = "equaliser-route-names."
         const val FOLLOW_SONG_RATE = "follow-song-rate"
+        const val QUALITY_ONCE_CALLED_FAST = "FAST"
     }
 }

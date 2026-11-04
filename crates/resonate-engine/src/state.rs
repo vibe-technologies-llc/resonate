@@ -300,7 +300,7 @@ mod tests {
     fn settings_laid_over_a_config_give_back_the_config_they_were_read_from() {
         let config = EngineConfig {
             sink: Some(NodeName::new("a dac")),
-            quality: Quality::Fast,
+            quality: Quality::LowLatency,
             prefer_bit_perfect: false,
             ..EngineConfig::default()
         };
@@ -323,7 +323,7 @@ mod tests {
         note("sink", config);
         *config = EngineConfig::default();
 
-        config.quality = Quality::Fast;
+        config.quality = Quality::LowLatency;
         note("quality", config);
         *config = EngineConfig::default();
 

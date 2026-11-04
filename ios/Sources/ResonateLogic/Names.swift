@@ -18,9 +18,11 @@ extension GainMode {
 }
 
 extension ResamplingQuality {
-    public static let every: [ResamplingQuality] = [.fast, .balanced, .high, .veryHigh]
+    public static let every: [ResamplingQuality] = [.lowLatency, .balanced, .high, .veryHigh]
     public var name: String { "\(self)" }
-    public static func named(_ name: String?) -> ResamplingQuality? { every.first { $0.name == name } }
+    public static func named(_ name: String?) -> ResamplingQuality? {
+        name == "fast" ? .lowLatency : every.first { $0.name == name }
+    }
 }
 
 extension ResamplingPhase {

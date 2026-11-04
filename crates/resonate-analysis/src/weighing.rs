@@ -106,7 +106,7 @@ impl Resampled {
             input_rate: SampleRate::new(rate).ok()?,
             output_rate: to,
             channels: layout,
-            quality: Quality::Balanced,
+            quality: Quality::LowLatency,
             phase: FilterPhase::Linear,
             max_frames_in: FRAMES_AT_A_TIME,
         })

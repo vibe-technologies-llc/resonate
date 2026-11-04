@@ -27,7 +27,7 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
 - **A stream that turns is brought back to the shape it opened in.** `study`, `analyse`, `print` and
   `excerpt` follow format changes (`Decoder::follow_format_changes`) through `conform::Walking`: on
   each `Reformatted` the previous segment's resampler is flushed, and the new shape gets a `Remix`
-  to the opening layout and a `Resampler` (`Quality::Balanced`, linear phase) to the opening rate
+  to the opening layout and a `Resampler` (`Quality::LowLatency`, linear phase) to the opening rate
   from `resonate-dsp`, so every builder, the frame count and `Examined` keep one rate and one
   channel count and the length is on the opening clock, as `Decoder::position` is. A shape equal to
   the opening one passes through untouched. A ratio the resampler refuses is `Error::Conformity`.
@@ -122,7 +122,7 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   failed analysis.
 - **A clip is signed, never printed**: AcoustID filters by a whole recording's `duration`, matches
   from its start. Listen asks Shazam and AudD; AcoustID only a file printed whole. `signature_of`
-  writes Shazam's signature from the documented format: mono, 16 kHz via `Resampler` at `Balanced`,
+  writes Shazam's signature from the documented format: mono, 16 kHz via `Resampler` at `LowLatency`,
   at most `SIGNED_SECONDS_AT_MOST` from the middle, as a `data:audio/vnd.shazam.sig;base64,` URI.
   `Signature::is_worth_asking` holds it to `FEWEST_PEAKS_A_SECOND`: `Shazam::signed` asks nothing
   about a steady tone or lone click, for Listen and `ByEar` alike.
@@ -374,7 +374,7 @@ could change (stored studies and kept analyses are weighed against it).
   PVQ's pulses show in the shapes of a few bands (lines of equal magnitude or zero) but only where
   the band has few pulses and no spreading, and were not weighed.
 - **A decode taken to another rate is weighed brought back.** `Weighing` runs the three grids at
-  the stream's rate and feeds the first two channels through a `Resampler` (`Quality::Balanced`,
+  the stream's rate and feeds the first two channels through a `Resampler` (`Quality::LowLatency`,
   linear phase) to each rate in `BROUGHT_BACK_TO`, running `Aac` and `Mp3` there at
   `SEARCHES_RESAMPLED` (2) places: 44.1 kHz to 48, 48 to 44.1, and 88.2, 96, 176.4 and 192 kHz to
   both CD rates (a lossy CD-rate stream played out at a hi-res rate keeps its grid however the

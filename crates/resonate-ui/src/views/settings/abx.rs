@@ -147,11 +147,12 @@ impl Chosen {
     }
 
     fn quality_against(&self, set: &OutputSettings) -> Quality {
-        self.quality.unwrap_or(if set.quality == Quality::Fast {
-            Quality::VeryHigh
-        } else {
-            Quality::Fast
-        })
+        self.quality
+            .unwrap_or(if set.quality == Quality::LowLatency {
+                Quality::VeryHigh
+            } else {
+                Quality::LowLatency
+            })
     }
 
     fn phase_against(&self, set: &OutputSettings) -> FilterPhase {
@@ -883,10 +884,10 @@ mod tests {
         assert_eq!(chosen.restoration_against(&off), Restoration::Extend);
         assert_eq!(chosen.restoration_against(&extended), Restoration::Off);
 
-        let fast = set_as(|config| config.quality = Quality::Fast);
+        let fast = set_as(|config| config.quality = Quality::LowLatency);
         let high = set_as(|config| config.quality = Quality::High);
         assert_eq!(chosen.quality_against(&fast), Quality::VeryHigh);
-        assert_eq!(chosen.quality_against(&high), Quality::Fast);
+        assert_eq!(chosen.quality_against(&high), Quality::LowLatency);
 
         let plain = set_as(|config| config.dither = DitherKind::None);
         let triangular = set_as(|config| config.dither = DitherKind::Triangular);

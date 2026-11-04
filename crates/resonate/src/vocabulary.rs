@@ -36,7 +36,7 @@ impl From<resonate_engine::FilterPhase> for FilterPhaseArg {
 impl From<QualityArg> for resonate_engine::Quality {
     fn from(quality: QualityArg) -> Self {
         match quality {
-            QualityArg::Fast => Self::Fast,
+            QualityArg::LowLatency => Self::LowLatency,
             QualityArg::Balanced => Self::Balanced,
             QualityArg::High => Self::High,
             QualityArg::VeryHigh => Self::VeryHigh,
@@ -77,7 +77,7 @@ impl From<NoiseShapingArg> for resonate_engine::NoiseShaping {
 impl From<resonate_engine::Quality> for QualityArg {
     fn from(quality: resonate_engine::Quality) -> Self {
         match quality {
-            resonate_engine::Quality::Fast => Self::Fast,
+            resonate_engine::Quality::LowLatency => Self::LowLatency,
             resonate_engine::Quality::Balanced => Self::Balanced,
             resonate_engine::Quality::High => Self::High,
             resonate_engine::Quality::VeryHigh => Self::VeryHigh,

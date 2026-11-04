@@ -110,10 +110,16 @@ impl fmt::Display for Contender {
         match *self {
             Self::Tuned { quality, params } => write!(
                 f,
-                "Resonate {}, {} taps a side, cutoff {:.4}",
+                "Resonate {}: {} taps, cut {:.5}, beta {:.2}, clear {}, hop {}, steep {}, window {:+.6}/{}",
                 level(quality),
                 params.half_taps,
-                params.cutoff
+                params.cutoff,
+                params.kaiser_beta,
+                params.clear_taps,
+                params.hop_taps,
+                params.steep_hop_taps,
+                params.window.get(1).copied().unwrap_or_default(),
+                params.window.len()
             ),
             Self::Ours { quality, phase } => {
                 let quality = level(quality);
@@ -153,7 +159,7 @@ impl fmt::Display for Contender {
 
 const fn level(quality: Quality) -> &'static str {
     match quality {
-        Quality::Fast => "Fast",
+        Quality::LowLatency => "Low latency",
         Quality::Balanced => "Balanced",
         Quality::High => "High",
         Quality::VeryHigh => "Very high",
@@ -173,7 +179,7 @@ const fn soxr(recipe: QualityRecipe, phase: SoxrPhase, steep: bool) -> Contender
 }
 
 pub const CONTENDERS: [Contender; 18] = [
-    ours(Quality::Fast, FilterPhase::Linear),
+    ours(Quality::LowLatency, FilterPhase::Linear),
     ours(Quality::Balanced, FilterPhase::Linear),
     ours(Quality::High, FilterPhase::Linear),
     ours(Quality::VeryHigh, FilterPhase::Linear),
@@ -394,15 +400,20 @@ impl Stream {
         block: usize,
     ) -> Result<Self> {
         let engine = match contender {
-            Contender::Ours { quality, phase } => {
-                OurStream::open(quality, phase, quality.params(), pair, channels, block)
-                    .map(|stream| Engine::Ours(Box::new(stream)))
-                    .map_err(|source| Error::Ours {
-                        contender,
-                        pair,
-                        source,
-                    })?
-            }
+            Contender::Ours { quality, phase } => OurStream::open(
+                quality,
+                phase,
+                quality.params_for(phase),
+                pair,
+                channels,
+                block,
+            )
+            .map(|stream| Engine::Ours(Box::new(stream)))
+            .map_err(|source| Error::Ours {
+                contender,
+                pair,
+                source,
+            })?,
             Contender::Tuned { quality, params } => {
                 OurStream::open(quality, FilterPhase::Linear, params, pair, channels, block)
                     .map(|stream| Engine::Ours(Box::new(stream)))

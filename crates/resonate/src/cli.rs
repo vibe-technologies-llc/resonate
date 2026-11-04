@@ -13,7 +13,8 @@ const SLEEP_SPEC_MEANS: &str = "How much longer to play: a bare number of minute
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum QualityArg {
-    Fast,
+    #[value(alias = "fast")]
+    LowLatency,
     Balanced,
     #[default]
     High,
@@ -84,8 +85,8 @@ pub struct AbxArgs {
         long,
         value_enum,
         value_name = "QUALITY",
-        help = "B's resampler quality under --of resampler [default: fast, or very-high where \
-                the settings say fast]"
+        help = "B's resampler quality under --of resampler [default: low-latency, or very-high \
+                where the settings say low-latency]"
     )]
     pub against_quality: Option<QualityArg>,
 

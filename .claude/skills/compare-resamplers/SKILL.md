@@ -1,6 +1,6 @@
 ---
 name: compare-resamplers
-description: Rerun the measurement of Resonate's resampler against libsoxr and refresh docs/RESAMPLING.md and its plots. Use after any change to resonate-dsp's resample.rs or phase.rs, a new Quality level or SincParams, or whenever the report's figures need checking.
+description: Rerun the measurement of Resonate's resampler against libsoxr, try a changed kernel or window against it, and refresh docs/RESAMPLING.md and its plots. Use after any change to resonate-dsp's resample.rs, spectral.rs or phase.rs, a new Quality level or SincParams, or whenever the report's figures need checking.
 ---
 
 # Compare the resampler against SoXR
@@ -30,6 +30,11 @@ system libsoxr and its headers (`pkg-config --modversion soxr` answers).
    Then check the prose against the new figures: each claim there names a number from these
    tables, and the summary tables under `## Results` repeat some of them.
 
-4. **Look at the plots** with `rsvg-convert docs/resampling/response-44.1-to-48.svg -o /tmp/r.png`
+4. **A changed kernel starts from `--candidates`.** `python3 design_window.py NAME WIDTH_HZ REACH RING_TAPS TERMS`
+   prints a window (`docs/RESAMPLING.md`, *Reproducing*, has the three held now); write its numbers to a file, one
+   line per try in a candidates file (`very-high 1200 32.4845 0 3300 16000 window.txt`, `soxr-steep` for a recipe),
+   and `cargo run --release -- --candidates FILE` tables them side by side.
+
+5. **Look at the plots** with `rsvg-convert docs/resampling/response-44.1-to-48.svg -o /tmp/r.png`
    before committing: a level clamped at the plot's floor or overlapping labels mean the frame needs
    widening in `plot.rs`.

@@ -996,21 +996,27 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   (crossfeed and the two-by-two convolver: `eq.md`; equaliser: `eq.md`). The equaliser is after the resampler (a biquad's shape warps with its design
   rate) and before gain (volume is the last word, should attenuate a boost); the convolver is before
   it (both linear). An equaliser in force makes the plan `Converted`; a DoP-packed stream refuses it.
-- **Resampler levels: four lengths of a filter, High the default; the top two a flat top, below.** `Quality::params` is the
+- **Resampler levels: Low latency, Balanced, High (the default), Very high; the last three a block at a time, below.** `Quality::params` is the
   whole difference of the filter (printed on hover in the settings pane, hence `SincParams` re-exported by
-  `resonate-engine`). **Phase is its own setting** (`FilterPhase` `Linear`/`Intermediate`/`Minimum`,
+  `resonate-engine`); `QualityArg` still reads a settings file's `fast` as `low-latency`, and each phone's store its own old spelling. **Phase is its own setting** (`FilterPhase` `Linear`/`Intermediate`/`Minimum`,
   SoX `-L -I -M`): `phase.rs` folds the quality's linear kernel through the real cepstrum to minimum
   phase, designed once a run (`DESIGNED`, the design made outside its lock; a racing asker keeps the one held).
-  **The cepstrum's log magnitude is floored a hundredth under the Kaiser stopband**
-  (`LOG_FLOOR_UNDER_THE_STOPBAND`, the stopband read from β) **over a 32-fold padded FFT**: the
-  logarithm of the stopband's nulls aliased the cepstrum, and the truncated response strayed
-  6e-4 dB in High's passband; floored any higher, the flat floor sums over every polyphase image
-  and the stopband's energy rises (0.1 cost High 15 dB). `a_shaped_filter_keeps_the_stopband_and_passband_the_linear_one_promises`
-  (within 2e-6 dB to 0.9 of Nyquist) and `a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one`
-  (within 3 dB) hold both sides; `docs/RESAMPLING.md` measures it end to end against SoXR.
+  **A level is one magnitude response whatever its phase**: `Quality::shaped_params` is `params` plus
+  `clear_taps` an eighth of the reach kept clear of the wrap (`SHAPED_CLEARS_A_SHARE_OF_THE_REACH`).
+  **The cepstrum's log magnitude is floored under the stopband** (`SincParams::rejects_db`) **over a
+  32-fold padded FFT**: the logarithm of the stopband's nulls aliases the cepstrum and strays in the
+  passband, so a higher floor flattens. A polyphase kernel floors it a hundredth under
+  (`POLYPHASE_LOG_FLOOR_UNDER_THE_STOPBAND`), since a flat floor sums over every polyphase image (a
+  tenth cost a polyphase kernel 15 dB); a block kernel a tenth under
+  (`BLOCK_LOG_FLOOR_UNDER_THE_STOPBAND`), since it keeps no image: 7 to 40 times the flatness for no rejection.
+  `a_shaped_filter_keeps_the_passband_the_linear_one_promises` holds the passband;
+  `a_shaped_polyphase_filter_keeps_the_stopband_its_images_all_sum_from` and
+  `a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one` the polyphase stopband, and
+  `every_phase_passes_direct_current_keeps_the_passband_and_rejects_aliases` every level end to end;
+  `docs/RESAMPLING.md` measures it against SoXR.
   Intermediate's window (lead 1.25, trail 2 half-widths) is the whole of its response: trimmed to
-  the stopband's level its rejection falls, so it waits longer than linear (by 13 ms at Very
-  high, 44.1 kHz). **Reach is two numbers** (shaped kernels are asymmetric):
+  the stopband's level its rejection falls, so it waits longer than linear at Very high's ratios under
+  2:1. **Reach is two numbers** (shaped kernels are asymmetric):
   `Reach { behind, ahead }`, history primed with `behind` zeros and flushed with `ahead` zeros; a
   track keeps its length whatever the phase.
 - **Kernel polyphase, read position exactly rational:** `whole` sample index + `phase` numerator over
@@ -1024,13 +1030,11 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   channels instead of packing each one's lanes). More accumulators win nothing: the loop is bound by
   its loads (about 3.5 of 5 multiply-adds a cycle on Zen 4), so a long kernel needs fewer taps, not
   a faster dot product.
-- **Fast and Balanced are 19 and 47 taps a side, the fewest that start the stopband at Nyquist**
-  at their cutoff and β (nothing past Nyquist at any rate pair louder than 1 dB over the Kaiser
-  stopband; `soxr-comparison --fast-and-balanced` searches it). At 16 and 32 their transition
-  straddled Nyquist and −39 and −36 dB got through just above the band edge; narrowing the cutoff
-  instead cost 4 to 5 dB at 20 kHz, lengthening cost 5 % and 17 % more CPU.
-- **High and Very high convert a block at a time in the frequency domain; Fast and Balanced sum a
-  polyphase kernel** (`SincParams::converts_in_blocks`, from `SPECTRAL_FROM_HALF_TAPS`, 128).
+- **Low latency is the one level summing a polyphase kernel** (47 taps a side, 1.07 ms, the fewest that
+  start the stopband at Nyquist at its cutoff and β; a designed window measured no better, since a Kaiser
+  is near-optimal when only depth at its reach is asked). `resonate-analysis`'s resamplers take it, so a
+  decode weighed or signed at another rate reads as it always did. **Balanced, High and Very high convert a
+  block at a time in the frequency domain** (`SincParams::converts_in_blocks`, from `SPECTRAL_FROM_HALF_TAPS`, 48).
   **`spectral.rs`** cuts a conversion into blocks a whole number of ratio cycles long (`Blocks`: `units` of
   `unit_in` input and `unit_out` output samples, `unit_in : unit_out` the reduced ratio, so
   147 : 160 at 44.1 to 48 kHz), takes one forward FFT at the input's length, multiplies the kept
@@ -1044,45 +1048,45 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `heard * unit_out / unit_in`), so `max_output_frames` still holds per call and
   `latency_frames` is exactly `outputs_held`. A track keeps its length: the flush drives silence
   until `outputs_of(frames)` have left.
-- **Linear phase's response is a flat top: the Kaiser window is on the frequency side.**
-  `FlatTop::gains` is exactly unity below `pass_hz`, exactly zero from `stop_hz`, and between them the
-  integral of a Kaiser over the transition (`kaiser_between`, four-point Gauss-Legendre over
-  `TRANSITION_STEPS`), so the passband has no ripple and the stopband no sidelobes. What is left is
-  the kernel's tail outside its reach wrapping round the block, the time-domain dual of a Kaiser
-  sidelobe and scaled down further by the sinc it multiplies: measured rejection sits 5 to 30 dB
-  past the `kaiser_beta` design level, by pair and block. `SPECTRAL_TAIL_TAPS` (192) of margin either side is kept out of what is
-  released, which is worth 10 to 15 dB of that. **The response must reach zero on or before the band edge**
-  (`FlatTop::of` clamps `stop_hz` to it): a bin cut anywhere above zero is a jump whose tail wraps at
-  roughly 30 dB under the jump's own level; one bin lost to `floor` of `1567.9999999999998` cost 45 dB
-  (`BINS_ROUNDED_WITHIN`, `a_block_count_with_a_rounded_band_keeps_the_last_bin`).
-  `half_taps`, `cutoff` and `kaiser_beta` keep their meaning: the transition is
-  `kaiser_beta / (pi * half_taps)` cycles a sample wide, and each preset's `cutoff` ends it on Nyquist
-  (`the_preset_cutoffs_end_their_transitions_on_nyquist`). Taking off the Kaiser's pedestal bought nothing.
-  **Minimum and intermediate phase stay designed in time** (`Design::Sampled`: `phase.rs`'s `Prototype`
-  sampled 16 points a tap of the band and transformed, cut at the band edge). Their prototypes are
-  sampled `SAMPLED_PER_TAP_OF_A_LONG_KERNEL` (16) a tap from `LONG_KERNEL_FROM_HALF_TAPS` (512): at 64
-  Very high's design took a 64 MiB transform, and its energy past Nyquist no longer matters because
-  the band edge cuts it.
-- **A block's size is searched, not fixed** (`Blocks::fitting`): every even 7-smooth count of units up
-  to `LONGEST_TRANSFORM` whose hop fits within `hop_at_most_seconds`, the least `N log N` a sample
-  wins. The hop allowed is `SPECTRAL_HOP_BASE_TAPS + SPECTRAL_HOP_PER_SPAN * span` taps, widened by the
-  ratio of the faster rate to the band up to `SPECTRAL_HOP_WIDENS_AT_MOST` (2: past it the cost stops
-  falling and the latency does not, 137 against 71 ms for High at 192 to 48 kHz) and capped at
-  `SPECTRAL_HOP_SECONDS_AT_MOST`. That is the one
-  trade against latency: a longer hop is cheaper and waits longer, which a player's ring never hears
-  (`docs/RESAMPLING.md`).
+- **A block kernel stops at its reach and its window is designed.** `Design::Even` samples
+  `WindowedSinc` (`EVEN_POINTS_OVER_THE_BAND`, 8) and keeps the real part, halving the evaluations by symmetry;
+  `Design::Turned` does it for a shaped phase. A time-limited kernel has nothing to wrap round a block, so
+  what rejection is left is the jump at the band edge, a stopband ripple deep, whose tail wraps some way under
+  it: 900 taps of Kaiser reject what 1 092 of a flat top in frequency did (the flat top's tail wrapped, and an
+  equal-ripple tail at the band edge adds coherently: constraining a kernel's far taps is the wrong objective).
+  **The windows are even Legendre series, `BALANCED_WINDOW`, `HIGH_WINDOW` and `VERY_HIGH_WINDOW`**, printed to the bit by
+  `soxr-comparison/design_window.py`: the deepest ripple a kernel of this reach and transition can meet while its
+  level falls in a straight line in decibels from −120 dB at a chosen tap to the far end. The straight line
+  is not decoration: an envelope free to sit just under −120 dB games the ringing figure. A Kaiser only
+  trades rejection for ringing at 8.4 dB to 0.4 ms a unit of β; removing its pedestal, whatever the order, buys nothing.
+  `half_taps` is the reach, `kaiser_beta / (pi * half_taps)` the transition's width in cycles a sample, and
+  each preset's `cutoff` ends it on Nyquist (`the_preset_cutoffs_end_their_transitions_on_nyquist`), so
+  `kaiser_beta` means width alone where `window` is not empty; `rejects_db` is its depth, for the log floor and the interpolator.
+  Very high's 380 Hz (at a 44.1 kHz band) puts its −0.1 dB point a hair past VHQ steep's, High's 1 950 Hz past VHQ's and
+  Balanced's 1 900 Hz past HQ's, each ringing for less than the recipe it answers
+  (`each_level_rings_for_less_than_the_sox_recipe_it_answers`).
+- **A block's size is searched, not fixed, against what `rustfft` costs** (`Blocks::fitting`, `transform_weight`): every
+  even 7-smooth count of units up to `LONGEST_TRANSFORM` whose hop fits within `hop_at_most_seconds`, the least weight a sample
+  wins. A transform is `N log N` plus what was measured: two stages of drag for `5³` in its length
+  (`SLOW_FIVES_DRAG_STAGES`), one and a half for one factor of two, one past 8 192 points. Nearly all of a
+  block's time is its two transforms. The hop allowed is `SincParams::hop_taps` under 2:1 and `steep_hop_taps` from it
+  (`STEEP_FROM_RATIO`), capped at `SPECTRAL_HOP_SECONDS_AT_MOST` (0.4): a longer hop costs less and waits longer,
+  which a player's ring never hears, and each level's pair was chosen from a sweep of cost against latency
+  (`docs/RESAMPLING.md`): Very high's steep hop is long because 2:1 was its last row behind SoXR, and the cost
+  stops falling at about that length.
+- **An own FFT was measured and is not worth it**: a split-complex Stockham over `pulp` reached 0.73 to 1.06 times `rustfft`'s time natively and 0.87 to 1.15 on `x86-64-v3` (`docs/RESAMPLING.md`). Its one lesson: planes laid at one page offset put every stream of a radix-4 pass in one L1 set at a power-of-two length.
 - **A ratio with a prime past 7 in it cannot be cut into blocks** (44.1 kHz onto 47.993 kHz would need
   a block of a second; every rate a device offers is 7-smooth, `every_rate_pair_is_tabulated_or_converted_in_blocks_at_every_quality`).
   There the same spectral stage runs to `R1`, twice the input rate unless the output is at most half of
   it, and the polyphase engine interpolates on with `interpolator_for(params)`: cutoff at `R1`'s
   Nyquist, passing half of it and stopping from one and a half, `INTERPOLATOR_UNDER_THE_STOPBAND_DB`
-  (60) under the quality's Kaiser stopband and always linear phase. The stage is primed with what the
+  (60) under the level's `rejects_db` and always linear phase. The stage is primed with what the
   interpolator's `behind` reads and the output keeps its alignment and length.
-- **The oracle shares no code with the block path.** A Kaiser's Fourier transform is `sinh(r)/r`, so
-  `flat_tap` writes the flat top's kernel in closed form and
+- **The oracle shares no code with the block path.** `analytic_tap` writes the kernel with its own Legendre
+  recurrence and Bessel series, `dc_of_a_block_kernel` gives it the block's one DC gain, and
   `every_frame_is_the_exact_windowed_sinc_normalised_at_its_instant` holds every frame of a direct
-  convolution over it against the block route (within 5e-10 at High, 1e-11 at Very high, the tail the
-  oracle's reach leaves out); Fast and Balanced within 1e-12 of the time-windowed sinc.
+  convolution over it against the block route: within 1e-6 at Balanced, 1e-8 at High and 3e-11 at Very high,
+  each the level's own ripple, since the direct sum keeps the faint images the block path drops; Low latency within 1e-12.
   `docs/RESAMPLING.md` measures all of it against SoXR.
 - **Dither: flat or shaped path, f64; the plan's curve picks.** `Dither::prepare` resolves
   `NoiseShaping::at` the output rate once; `None` requantises with no error history and allocates

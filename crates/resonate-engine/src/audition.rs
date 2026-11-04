@@ -393,7 +393,7 @@ mod tests {
         let before = Contested::of(&config);
         let contest = Contest::Resampling {
             a: Resampling {
-                quality: Quality::Fast,
+                quality: Quality::LowLatency,
                 phase: FilterPhase::Minimum,
             },
             b: Resampling {
@@ -406,7 +406,7 @@ mod tests {
         assert_eq!(config.quality, Quality::VeryHigh);
         assert_eq!(config.filter_phase, FilterPhase::Linear);
         contest.apply(Arm::A, &mut config);
-        assert_eq!(config.quality, Quality::Fast);
+        assert_eq!(config.quality, Quality::LowLatency);
         before.put_back(&mut config);
 
         assert_eq!(Contested::of(&config), before);

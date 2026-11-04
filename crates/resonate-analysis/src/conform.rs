@@ -79,7 +79,7 @@ impl Conforming {
                 input_rate: sounding.rate,
                 output_rate: self.opened.rate,
                 channels: self.opened.channels,
-                quality: Quality::Balanced,
+                quality: Quality::LowLatency,
                 phase: FilterPhase::Linear,
                 max_frames_in: FRAMES_AT_A_TIME,
             })

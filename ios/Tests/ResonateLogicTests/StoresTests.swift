@@ -155,6 +155,7 @@ let interactionNotAllowed: Int32 = -25308
     @Test func eachEnginePreferenceIsNamedByItsCaseAndFoundByThatName() {
         #expect(GainMode.named("album") == .album)
         #expect(ResamplingQuality.named("veryHigh") == .veryHigh)
+        #expect(ResamplingQuality.named("fast") == .lowLatency)
         #expect(ResamplingPhase.named("intermediate") == .intermediate)
         #expect(LossyRestoration.named("repair") == .repair)
         #expect(MusicProvider.named("hifiApi") == .hifiApi)
@@ -276,12 +277,12 @@ let interactionNotAllowed: Int32 = -25308
 
         var edited = store.read(for: route)
         edited.equaliser = EqualiserCurve(name: "Buds edited", preampDb: -6, bands: [])
-        edited.quality = .fast
+        edited.quality = .lowLatency
         store.write(edited, for: route)
 
         #expect(store.read(for: route).equaliser.name == "Buds edited")
         #expect(store.read(for: nil).equaliser.name == "Shared")
-        #expect(store.read(for: nil).quality == .fast)
+        #expect(store.read(for: nil).quality == .lowLatency)
     }
 
     @Test func boundOutputsAreListedByNameAndForgottenWhenUnbound() {

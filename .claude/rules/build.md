@@ -127,9 +127,9 @@ the listener, never by a script.
 - **Timing wants an idle machine**: throughput is the best of five runs over 4 s of stereo noise in
   1 024-frame blocks, construction the first build in the process and the best of nine after.
   `--no-timing` measures quality alone (on every core, under any load), `--timing-only` the costs.
-  `--fast-and-balanced` searches the narrowed cutoff and the lengthened kernel that start Fast's
-  and Balanced's stopband at Nyquist and measures and times them beside SoXR LQ, MQ, 16-bit and HQ
-  (`tuning.rs`, a `Contender::Tuned` through `Resampler::with_params`).
+  `--candidates FILE` measures and times a line each of kernels and recipes in one table, a rejection for
+  each pair (`tuning.rs`, a `Contender::Tuned` through `Resampler::with_params`), which is how every
+  preset was chosen. `design_window.py` (numpy alone) prints a level's window as `resample.rs` holds it, to the bit.
 - **Not in CI**: a hosted runner has no libsoxr and its timings would mean nothing.
   `docs/RESAMPLING.md` is the report and `docs/resampling/` its plots; the `compare-resamplers`
   skill reruns both.

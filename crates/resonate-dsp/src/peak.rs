@@ -16,6 +16,11 @@ const INTERPOLATOR: SincParams = SincParams {
     phases: METERED_AT as u32,
     cutoff: 0.998,
     kaiser_beta: 10.0,
+    rejects_db: 99.4,
+    clear_taps: 0,
+    hop_taps: 0,
+    steep_hop_taps: 0,
+    window: &[],
 };
 const REACH: usize = INTERPOLATOR.half_taps as usize;
 const TAPS: usize = 2 * REACH;

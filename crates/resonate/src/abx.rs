@@ -98,10 +98,10 @@ fn contest_of(asked: AbxArgs, set: &EngineConfig) -> Result<Option<Contest>> {
             };
             let b = Resampling {
                 quality: asked.against_quality.map_or(
-                    if a.quality == Quality::Fast {
+                    if a.quality == Quality::LowLatency {
                         Quality::VeryHigh
                     } else {
-                        Quality::Fast
+                        Quality::LowLatency
                     },
                     Into::into,
                 ),
@@ -691,7 +691,7 @@ mod tests {
                     phase: set.filter_phase,
                 },
                 b: Resampling {
-                    quality: Quality::Fast,
+                    quality: Quality::LowLatency,
                     phase: resonate_engine::FilterPhase::Minimum,
                 },
             })
@@ -716,7 +716,7 @@ mod tests {
         let set = EngineConfig::default();
 
         for against in [
-            &["--against-quality", "fast"][..],
+            &["--against-quality", "low-latency"][..],
             &["--of", "restoration", "--against-dither", "none"],
             &["--of", "dither", "--against-restoration", "extend"],
             &["--of", "resampler", "--against-noise-shaping", "flat"],

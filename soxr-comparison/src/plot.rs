@@ -28,14 +28,14 @@ pub const PLOTTED: [Contender; 4] = [
         phase: FilterPhase::Linear,
     },
     Contender::Soxr {
-        recipe: QualityRecipe::Bits20,
+        recipe: QualityRecipe::Bits28,
         phase: SoxrPhase::Linear,
         steep: false,
     },
     Contender::Soxr {
         recipe: QualityRecipe::Bits28,
         phase: SoxrPhase::Linear,
-        steep: false,
+        steep: true,
     },
 ];
 

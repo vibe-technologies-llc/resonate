@@ -5,7 +5,7 @@ high-fidelity, high-performance playback as the guiding constraint.
 
 - A **native PipeWire client** rather than a PulseAudio or ALSA compatibility layer. It reads the
   rates a sink advertises, switches the graph to the source's own rate where the hardware takes it,
-  and resamples with its own polyphase filters where it does not — so a lossless file reaches the
+  and resamples with its own filters where it does not — so a lossless file reaches the
   device bit-accurate wherever the device allows it. ReplayGain, a true-peak guard, dither with
   noise shaping and DoP for DSD sit in the same chain.
 - A **GPUI front end** running natively on Wayland: a library with albums, artists, playlists,
@@ -97,7 +97,7 @@ flatpak-builder --force-clean --user --install flatpak-build packaging/org.reson
 flatpak run org.resonate.Resonate
 ```
 
-`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.4x to 1.7x on the resampler.
+`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.25x on the resampler's Low latency level; the other three pick their vector width at run time.
 The Arch PKGBUILD keeps it for the machine building the package. The Fedora RPM and the Flatpak
 select the architecture's baseline CPU so a build runs on other machines.
 

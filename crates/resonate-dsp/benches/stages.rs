@@ -30,7 +30,7 @@ const SHAPED_PHASES: [(FilterPhase, &str); 2] = [
 ];
 
 const QUALITIES: [(Quality, &str); 4] = [
-    (Quality::Fast, "fast"),
+    (Quality::LowLatency, "low latency"),
     (Quality::Balanced, "balanced"),
     (Quality::High, "high"),
     (Quality::VeryHigh, "very high"),
@@ -396,7 +396,11 @@ fn main() {
         }
     }
 
-    let elsewhere = resampler(SampleRate::HZ_88200, SampleRate::HZ_96000, Quality::Fast);
+    let elsewhere = resampler(
+        SampleRate::HZ_88200,
+        SampleRate::HZ_96000,
+        Quality::LowLatency,
+    );
     for (quality, named) in QUALITIES {
         for (from, to) in RATE_PAIRS {
             let pair = format!("{} to {}", kilohertz(from), kilohertz(to));

@@ -26,10 +26,10 @@ val gainChoices =
 
 val qualityChoices =
     listOf(
-        Choice(ResamplingQuality.FAST, "Fast", "Least battery, a softer filter"),
-        Choice(ResamplingQuality.BALANCED, "Balanced", "A good filter at modest cost"),
+        Choice(ResamplingQuality.LOW_LATENCY, "Low latency", "Answers soonest, the most battery"),
+        Choice(ResamplingQuality.BALANCED, "Balanced", "A good filter, the least battery"),
         Choice(ResamplingQuality.HIGH, "High", "A steep filter for critical listening"),
-        Choice(ResamplingQuality.VERY_HIGH, "Very high", "The steepest filter, the most battery"),
+        Choice(ResamplingQuality.VERY_HIGH, "Very high", "The steepest filter, waits longest"),
     )
 
 val phaseChoices =

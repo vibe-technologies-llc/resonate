@@ -78,7 +78,7 @@ import Testing
     @Test func aSettingIsNamedAsPlayedAndEachTestSaysWhatIsCompared() {
         #expect(ListeningTestWords.playedAs(.restoration(a: .off, b: .extend)) == "A is Off")
         #expect(
-            ListeningTestWords.playedAs(.resampling(aQuality: .veryHigh, aPhase: .minimum, bQuality: .fast, bPhase: .minimum))
+            ListeningTestWords.playedAs(.resampling(aQuality: .veryHigh, aPhase: .minimum, bQuality: .lowLatency, bPhase: .minimum))
                 == "A is Very high · Minimum"
         )
         #expect(ListeningTestWords.playedAs(.dither(a: .shaped, b: .off)) == "A is Triangular, shaped")
