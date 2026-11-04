@@ -151,14 +151,19 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
-- [M] *Fit the preamp*'s solved bound still sits 3.7 dB over the decode on average over
-  eight real songs under the bench's six curves (0.7 to 5.9; `RESONATE_BENCH_SONGS`), and the slack
-  is the in-phase sum of every node's peak inside a few hundredths of a second, not where in time
-  the peaks fall: every tile of five milliseconds kept as a moment of its own moved it 0.74 dB and
-  every quarter-second tile 0.56, so no figure of when the bands peak can buy more (`eq.md`); what
-  could is a joint figure of how the bands' phases sum (the peak of the signal through a few fixed
-  probe curves, an anchor in place of `c * x`), and a finer reading of the nodes reaching above
-  10 kHz, whose tone shortfall costs at most 0.63 dB
+- [M] *Fit the preamp*'s solved bound still sits 2.67 dB over the decode on average over twenty-three
+  real songs under the bench's six curves (0.45 to 4.65; `RESONATE_BENCH_SONGS`), down from 3.55 by
+  keeping what came together at one instant (`eq.md`); that figure's own rectified limit is about
+  0.6 dB, and what keeps it from there is what makes it sound against a turned phase, so more
+  needs a joint figure that knows the groups' phases rather than their envelopes, each group's real
+  and imaginary parts apart, in a space too large for this few figures. A finer reading of the nodes
+  reaching above 10 kHz, whose tone shortfall costs at most 0.63 dB of the old bound, was not measured
+  again since the figures read those bands by envelope
+- [M] A song built as the exact inverse of a chain of all-passes, heard through that chain, passes
+  under *Fit the preamp*'s bound by 3.65 dB (`eq.md`), since each narrow node is priced at its steady
+  gain and only the whole signal's at its transient gain: a chain refused the figures could be priced
+  rigorously, but a dispersive correction then bounds 6 to 12 dB looser, so the price wants a test
+  that tells such a song from music
 - [S · blocked: hardware] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
   own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
   proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real

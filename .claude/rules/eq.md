@@ -207,7 +207,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   linear programme, `min sum lambda_S * P_S` subject to `sum lambda_S * B_S(span) >= D(span)` over
   346 spans (24 an octave from 1 Hz to Nyquist, each span's `B_S` the least of its two edges, a node's
   response being unimodal, `D` the most `|G_near - c|` reaches inside it), by a revised simplex from
-  the slack basis (`Solving`, warm across levels, 57 rows); any dual it stops at is made feasible
+  the slack basis (`Solving`, warm across levels, a row a cover); any dual it stops at is made feasible
   by scaling and so is an answer, it stops within `SETTLED_WITHIN` (0.1 %) of the primal, gives up
   once the primal passes what a level already holds, and a level whose loudest single tone
   (`heard_alone`) cannot win is never solved; the moment takes the least of the partition and the
@@ -240,7 +240,50 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   an answer and the partition stands
   (`a_lone_band_under_a_boost_on_it_is_bounded_at_least_at_its_boosted_peak`). No moment of the
   decodes the bound is measured against held an empty node beside a sounding one, so the figures
-  below are unchanged. **Time**: a moment holds every
+  below are unchanged. **What came together** (`analysis.md`, kept whole-song in `BandPeaks`):
+  a programme priced only on each node's own peak sums every node's term as if they peaked at one
+  instant, which is where the slack was: the solved weights' rectified sum taken at one instant sat
+  0.64 dB over the decode where their sum of peaks sat 2.96. So each of the 80 figures is a column
+  of the programme, `Tones` holding them beside the nodes (`COVERS` rows: the 57 nodes, `LEVEL`, the
+  80): bought at weight `g`, a figure of weights `(w, d0, d1, d2)` pays `g` times what it read, covers
+  `g * sum of d_i * B_i(f)` of every span whatever the phase, the groups being envelopes, and `g * w`
+  of the level, which is now one more point of the programme (`apart`'s last) with a column `LEVEL` of
+  its own at the whole signal's peak, since `c * x` itself may be bought inside a figure. Rectified sums
+  are monotone in their weights, so a figure need only *dominate* the curve's weights, never match
+  them, which is why 80 serve any curve where linear probes cannot (below). The figures are whole-song
+  and the nodes per moment, so every moment reads the same figures; a row with no figures (a row kept
+  before them, `BandPeaks::at_once`) solves as it did, and `at_least` adds the level to the loudest
+  single tone only then, a figure being able to pay both at once. **A chain that spreads the groups
+  in time is refused the figures** (`BandGains::stays_together`, `coinciding::stays_together`): they
+  say what came together at one instant, so a response that moves a group far from the main lobe could
+  bring together what the music kept apart. Each near response is taken through a smooth window a
+  group (`HEARD_AROUND_HZ`, `HEARD_ACROSS_OCTAVES`, smooth so the band edge's own ringing is not
+  charged to the curve), and the share of its amplitude further than `HELD_TOGETHER_WITHIN_SECONDS`
+  (8 ms, 1 ms, 0.25 ms) from the lobe must stay within `COMPACT_WHILE_APART_AT_MOST` (0.5) in every
+  group of every response, or the whole figure goes, coincidence being relative between groups. The
+  gap is wide: bells, shelves, smiles, ragged curves and even two all-passes of Q 4 read about 0.40 at most
+  beside the 0.18 of no curve at all; eight all-passes of Q 1 read 0.93, a dispersive burst 0.75 to
+  0.99, a noise tail 0.56 to 0.73
+  (`a_chain_that_spreads_the_bands_in_time_is_not_bounded_by_what_came_together`). **Measured**
+  (`RESONATE_BENCH_SONGS`, twenty-three library songs evenly through the library, 30 s from 0:40
+  each, 44.1 kHz FLAC, under the bench's six curves, 138 cases): 3.55 dB over the decode on average
+  before (0.48 to 6.72) and 2.67 after (0.45 to 4.65): bass boost 1.28 to 1.26, boosts and cuts 3.78
+  to 2.88, ragged 4.02 to 3.26, smile 3.93 to 2.77, tilt 3.75 to 2.90, turned phase 4.52 to 2.97. The
+  synthetic corpus below stays over its decode and moves little, its sums being few, about 1.0 dB
+  with no correction and 2.8 under one. Soundness has its own songs
+  (`the_bound_holds_where_a_curve_could_bring_together_what_the_music_kept_apart`: hats, noise clipped
+  as a master is, chirps each way, tones squared off, clicks and a click undone by a chain of
+  all-passes, under twelve curves). The figures take a bound to about 2 ms a song and leave a fold
+  about 19 us (`BandGains::of` about 45 ms, 250 under a ten-second response). **Measured and dropped on the way to it**: fixed probe curves as the level, the
+  lead this section used to name, bought 0.5 dB at 128 probes, since a linear figure helps only a
+  curve close to it and each costs a filter; the least ellipsoid holding the groups' signal, which
+  answers every direction at once, 0.07 dB, the cloud being sliced flat by a limiter rather than
+  round; figures at each sample with no envelope reached 1.46 dB against the envelope's 2.1 in the
+  model, but a turned phase or a click under a shelf passes them; holding the groups for a quarter
+  of their lowest period lost a decibel; paying what lies outside the hold by its L1 undid the gain,
+  a band-limited response's L1 being 1 to 2 whatever the curve; dividing each group's cover by its
+  L1 over the steady gain lost 0.3 dB and took everything from a curve with a narrow all-pass; three
+  groups beat four and six. **Time**: a moment holds every
   node's peak over its stretch widened by a tenth of a second each way, so the response may be
   split around a delay `d`: the chain's impulse response (`Applied::impulse_responses`, the
   correction's taps run through the profile's biquads, the whole correction long) is searched for
@@ -278,12 +321,16 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   partition is exact, the moments hold every stretch with its neighbours, the codes round up, the
   near envelope holds between bins, the ring is bounded by the whole song and its envelope between
   the points, the whole node alone
-  pays its L1, but `|G - c| * peak` bounds a narrower node's term exactly only for a steady tone or
+  pays its L1, but what came together is read at one instant and held only as long as above, and
+  `|G - c| * peak` bounds a narrower node's term exactly only for a steady tone or
   a sustained sum of tones; a transient
   through a resonant or phase-turning curve can pass it by up to the filter's L1-to-peak ratio, the
   band peaks are read at each sample and its cubic midpoint scaled by a tone's shortfall at the
   band's reach, the bank is zero-phase only to within its margin (`analysis.md`), and the bank's
-  response is taken at the fit rate though the study ran at the file's. **Measured** over eight
+  response is taken at the fit rate though the study ran at the file's. A song built as the exact
+  inverse of a chain that turns phase and little else, heard through it, passes under the bound by
+  3.65 dB, the programme's own limit with or without the figures, since each narrow node keeps its
+  steady price (the one pairing the test leaves out). **Measured** over eight
   songs (a tone low and high, bursts, beats, noise, a band, clicks, bass then treble) under
   thirteen curves with no correction and four curves under each of nine corrections (the six
   below, a 32 767-tap linear-phase low pass, the same length of linear-phase bass lift, and that
@@ -342,7 +389,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   cubic midpoint a shortfall of 0.71 within four frames (3 dB); reading each node as the lesser of
   its own figure and the sum of its halves' (sound, free in the study) recovered only 0.10, and a
   longer interpolator at three phases still reads 0.84 there, at more than the bank's own cost a
-  sample. **Cost**: `BandGains::of` takes
+  sample. **Cost**: before the figures' columns `BandGains::of` took
   about 15 ms for a profile and 75 ms with a ten-second response (it was 28 and 320 ms here), since
   the near window is summed by `resonate_dsp::response_of`, which shares the points among
   `available_parallelism` scoped threads once taps times points pass `TURNS_WORTH_A_THREAD` (2^24),
@@ -350,8 +397,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the settled ring, one after another, about 140 ms under a ten-second room response on a loaded
   machine (the bench's `ten-second room`, about 250 ms before and 350 after there) and a
   millisecond under a profile alone, and holds at most 2^21 complex bins (32 MiB) at a time unless
-  the ring is longer than half of that. A
-  solved bound costs about 0.36 ms a song and a fold about 50 us a song (`cargo bench -p resonate-analysis --bench bound`: twelve songs
+  the ring is longer than half of that. Before the figures' columns a
+  solved bound cost about 0.36 ms a song and a fold about 50 us a song (`cargo bench -p resonate-analysis --bench bound`: twelve songs
   under six curves, a thousand songs folded; 1.2 ms and 156 us before) where the partition costs
   microseconds: the simplex prices the spans against each node's shares laid node by node over the
   contiguous spans it passes (`Tones::reaches`), so the sums run across spans and vectorise, it
@@ -398,7 +445,14 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   (`a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it_held`,
   `a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until_it_is`).
   A study under an older `JUDGED_UNDER` is studied whole as ever. Until a song is measured the
-  fit decodes it if it is queued and passes it over otherwise.
+  fit decodes it if it is queued and passes it over otherwise. **Peaks kept before what came together
+  need no schema step**: the 472 bytes of the build before stay where they are and a fit folds them
+  (`BandPeaks::from_kept`, no figures, the bound it always made), so an upgrade never fits to fewer
+  songs than before, while `to_study` and `studies_without_bands` still ask for the whole length, so
+  the pass replaces each in its own time
+  (`peaks_kept_before_what_came_together_still_fit_and_are_measured_again`, the phones'
+  `peaks_kept_before_what_came_together_still_fit_and_are_owed_a_new_measure`,
+  `what_came_together_tightens_the_bound_and_a_row_kept_before_it_still_bounds_the_decode`).
 - **The press keeps the model as the first answer.** The desktop's *Fit* sets the model fit of the profile at
   once, then `RootView::fit_the_preamp_to_the_queue` reads the room response again from the file the
   settings name (`read_impulse`; one that will not read is logged and left out), builds the
@@ -410,7 +464,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the model fit through the correction (`Applied::fitted_preamp`) instead, toasting *The preamp is
   fitted to the room correction*. The phones read the same bands from their own catalog:
   `MobilePlayer::fitted_preamp_to_the_queue(curve)` folds `Catalog::loudest_kept` (every visible
-  document whose `studies.band_peaks` is `BAND_PEAKS_BYTES` (472) long, through `BandGains::of` the
+  document whose `studies.band_peaks` is `BAND_PEAKS_BYTES` long or of the older shape, through `BandGains::of` the
   curve and the room correction applied at the stream rate, 48 kHz with none open) with a decode of `Catalog::unmeasured(cuts_to_fit)` alone, the queue's
   songs with no kept peaks (a cut, which no study covers, a document not indexed, one studied
   before `band_peaks` existed or changed since: `documents_forget_where_the_peaks_gathered`), and
@@ -420,7 +474,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   (`keep_studied`, `keep_study`). **A study kept before the bands is measured alone, as on the
   desktop**: `enrichment::measure_the_unmeasured` runs first in the pass's study thread, key or none
   (it asks no service and decodes only studies already kept), over `Catalog::studies_without_bands`
-  (every visible document whose study lacks the 29-byte `band_levels` or the 472-byte `band_peaks`),
+  (every visible document whose study lacks the 29-byte `band_levels` or the whole `band_peaks` of `BAND_PEAKS_BYTES`),
   decoding each once through `resonate_analysis::band_figures` and writing those two columns
   through `Catalog::keep_bands`, which leaves the verdict, true peak, print and agreement where they
   stood and never overwrites figures already whole; a stopped pass ends it, a document that will not open is left owed for the next pass

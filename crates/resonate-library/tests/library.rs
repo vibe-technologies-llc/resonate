@@ -18882,6 +18882,39 @@ fn a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until
 }
 
 #[test]
+fn peaks_kept_before_what_came_together_still_fit_and_are_measured_again() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    let location = MediaLocation::local(&file);
+    let length_kept = || -> i64 {
+        beside(&database)
+            .query_row("SELECT length(band_peaks) FROM track_studies", [], |row| {
+                row.get(0)
+            })
+            .expect("a kept row")
+    };
+    beside(&database)
+        .execute(
+            "UPDATE track_studies SET band_peaks = substr(band_peaks, 1, ?1)",
+            [resonate_analysis::BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64],
+        )
+        .expect("the study reads as one kept by the build before");
+
+    assert_eq!(library.unmeasured(&[whole_cut(&location)])?, vec![]);
+    assert_eq!(library.loudest_kept(&flat_gains())?.measured, 1);
+
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
+    assert_eq!(length_kept(), resonate_analysis::BAND_PEAKS_BYTES as i64);
+    assert_eq!(library.loudest_kept(&flat_gains())?.measured, 1);
+    Ok(())
+}
+
+#[test]
 fn a_song_no_study_holds_is_left_to_be_decoded_and_one_it_does_is_not() -> Result<()> {
     let tree = Tree::new();
     let studied = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());

@@ -762,6 +762,42 @@ mod tests {
     }
 
     #[test]
+    fn peaks_kept_before_what_came_together_still_fit_and_are_owed_a_new_measure() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        kept_sounding_at_one_kilohertz(&harness, 'a', 0.5);
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE studies SET band_peaks = substr(band_peaks, 1, ?1)",
+                [resonate_analysis::BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64],
+            )
+            .expect("the study reads as one kept by the build before");
+
+        let fitted = harness
+            .player
+            .fitted_preamp_to_the_queue(curve(vec![peaking(1000.0, 6.0, 1.0)]))
+            .expect("a fit")
+            .expect("a measure");
+        let owed = harness
+            .player
+            .catalog
+            .studies_without_bands()
+            .expect("the studies owed a measure");
+
+        let expected = -(20.0 * (0.5_f64 * 2.0).log10()) as f32;
+        assert!(
+            (fitted - expected).abs() < 0.15,
+            "{fitted} against {expected} dB"
+        );
+        assert_eq!(owed.len(), 1);
+    }
+
+    #[test]
     fn songs_with_kept_bands_are_fitted_without_a_decode_and_the_whole_catalog_counts() {
         use crate::harness::Harness;
 

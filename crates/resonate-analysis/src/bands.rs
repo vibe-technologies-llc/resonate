@@ -13,11 +13,12 @@ use crate::{
     Error, Result, Spectrum, Watching,
     analysis::{native_format, opened},
     applied::{Applied, Heard},
+    coinciding::{WEIGHINGS, stays_together},
     conform::Walking,
     peaks::{BandPeaks, Heights, NODES, TILES_REACHED_EACH_WAY, TREE, WHOLE},
     spectrum::{FLOOR_DB, Transforming},
     split::{Splitting, TILES_A_SECOND, passed_below},
-    tones::{Solving, Tones},
+    tones::{Prices, Solving, Tones, prices_of},
 };
 
 pub const BANDS: usize = 29;
@@ -160,13 +161,14 @@ pub struct BandGains {
     anchors: Vec<Anchor>,
     ringing: Heights,
     tones: Tones,
+    stays_together: bool,
     hints: Hints,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Hint {
     anchor: usize,
-    weights: Heights,
+    weights: Prices,
 }
 
 #[derive(Debug, Default)]
@@ -228,7 +230,7 @@ impl BandGains {
             anchors: levels
                 .into_iter()
                 .zip(spread)
-                .map(|(level, apart)| {
+                .map(|(level, mut apart)| {
                     let swung = soon.swung_by(level);
                     let mut reach = reach_of(&near, &shares, level);
                     reach[WHOLE] = reach[WHOLE].max(swung);
@@ -238,6 +240,7 @@ impl BandGains {
                     } else {
                         1.0
                     };
+                    apart.push(level.abs());
                     Anchor {
                         level,
                         reach,
@@ -248,6 +251,7 @@ impl BandGains {
                 .collect(),
             ringing: ringing_of(&at_the_rate, &soon, lasting, &hertz, &later, &shares, rate)?,
             tones,
+            stays_together: stays_together(&soon.around_the_lobe(), rate),
             hints: Hints::default(),
         })
     }
@@ -270,16 +274,18 @@ impl BandGains {
         ranked.sort_by(|left, right| right.0.total_cmp(&left.0));
         let ring = cheapest(&self.ringing, &whole);
         let floor = loudest_yet - ring;
+        let together = self.stays_together.then(|| peaks.together()).flatten();
+        let together = together.as_ref();
         let mut held: f64 = 0.0;
         for (partitioned, heights) in ranked {
             if partitioned <= held.max(floor) {
                 held = held.max(partitioned);
                 break;
             }
-            if loudest_yet > 0.0 && self.hinted(heights) <= held.max(floor) {
+            if loudest_yet > 0.0 && self.hinted(heights, together) <= held.max(floor) {
                 continue;
             }
-            held = held.max(self.solved(heights, partitioned, held.max(floor)));
+            held = held.max(self.solved(heights, together, partitioned, held.max(floor)));
         }
         held + ring
     }
@@ -291,49 +297,53 @@ impl BandGains {
             .fold(f64::INFINITY, f64::min)
     }
 
-    fn hinted(&self, heights: &Heights) -> f64 {
+    fn hinted(&self, heights: &Heights, together: Option<&[f64; WEIGHINGS]>) -> f64 {
         self.hints
             .held()
             .iter()
             .filter_map(|hint| {
                 let anchor = self.anchors.get(hint.anchor)?;
-                let level = anchor.level.abs() * heights[WHOLE];
-                let prices = priced(heights, anchor.transient);
-                Some(level + self.tones.paid_by(&hint.weights, &prices, &anchor.apart))
+                let mut prices = prices_of(heights, together);
+                prices[WHOLE] *= anchor.transient;
+                Some(self.tones.paid_by(&hint.weights, &prices, &anchor.apart))
             })
             .fold(f64::INFINITY, f64::min)
     }
 
-    fn solved(&self, heights: &Heights, partitioned: f64, floor: f64) -> f64 {
-        let mut solving = Solving::over(&self.tones, heights);
-        let mut ranked: Vec<(f64, (usize, &Anchor))> = self
+    fn solved(
+        &self,
+        heights: &Heights,
+        together: Option<&[f64; WEIGHINGS]>,
+        partitioned: f64,
+        floor: f64,
+    ) -> f64 {
+        let mut solving = Solving::over(&self.tones, &prices_of(heights, together));
+        let mut ranked: Vec<(f64, f64, (usize, &Anchor))> = self
             .anchors
             .iter()
             .enumerate()
             .map(|(index, anchor)| {
                 let level = anchor.level.abs() * heights[WHOLE];
-                (
-                    level + solving.heard_alone(&anchor.apart, anchor.transient),
-                    (index, anchor),
-                )
+                let alone = solving.heard_alone(&anchor.apart, anchor.transient);
+                let at_least = if together.is_some() {
+                    alone
+                } else {
+                    level + alone
+                };
+                (level + alone, at_least, (index, anchor))
             })
             .collect();
         ranked.sort_by(|left, right| left.0.total_cmp(&right.0));
         let mut least = partitioned;
         let mut solved_by = None;
-        for (at_least, (index, anchor)) in ranked {
+        for (_, at_least, (index, anchor)) in ranked {
             if least <= floor || at_least >= least {
-                break;
+                continue;
             }
-            let level = anchor.level.abs() * heights[WHOLE];
-            if let Some(paid) = solving.bound(
-                &anchor.apart,
-                anchor.transient,
-                least - level,
-                floor - level,
-            ) && level + paid.paid < least
+            if let Some(paid) = solving.bound(&anchor.apart, anchor.transient, least, floor)
+                && paid.paid < least
             {
-                least = level + paid.paid;
+                least = paid.paid;
                 solved_by = Some(Hint {
                     anchor: index,
                     weights: paid.weights,
@@ -620,6 +630,13 @@ impl Soon {
         Self { centre, from, taps }
     }
 
+    fn around_the_lobe(&self) -> Vec<(Vec<f64>, usize)> {
+        self.taps
+            .iter()
+            .map(|taps| (taps.clone(), self.centre - self.from))
+            .collect()
+    }
+
     fn swung_by(&self, level: f64) -> f64 {
         let centre = self.centre - self.from;
         self.taps
@@ -737,12 +754,6 @@ fn faded(taps: &mut [f64], cut_before: bool) {
             *tap *= fade(into);
         }
     }
-}
-
-fn priced(heights: &Heights, transient: f64) -> Heights {
-    let mut prices = heights.map(|height| height.max(0.0));
-    prices[WHOLE] *= transient;
-    prices
 }
 
 fn cheapest(reach: &Heights, heights: &Heights) -> f64 {
@@ -1100,6 +1111,50 @@ mod tests {
     }
 
     #[test]
+    fn a_chain_that_spreads_the_bands_in_time_is_not_bounded_by_what_came_together() {
+        let ordinary = [
+            boosting(110.0, 6.0),
+            bell(63.0, 8.0, 4.0),
+            bell(9_000.0, 9.0, 6.0),
+            bell(5_000.0, 9.0, 5.0),
+        ];
+        let turning = Arc::new(
+            Profile::new(
+                Preamp::NONE,
+                (0..8)
+                    .map(|step| {
+                        Band::new(
+                            BandKind::AllPass,
+                            Frequency::from_hertz(80.0 * 2_f64.powi(step)).expect("in range"),
+                            BandGain::FLAT,
+                            Q::from_units(1.0).expect("in range"),
+                        )
+                    })
+                    .collect(),
+            )
+            .expect("a profile in range"),
+        );
+        let mut seed = 0x5eed_u64;
+        let burst: Vec<f64> = (0..2_000)
+            .map(|at| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let white = seed as f64 / u64::MAX as f64 - 0.5;
+                white * (-f64::from(at) / 700.0).exp()
+            })
+            .collect();
+        let flat = Arc::new(Profile::flat());
+
+        for profile in &ordinary {
+            assert!(gains_under(profile).stays_together);
+        }
+        assert!(corrected_by(&flat, vec![1.0, 1.0]).stays_together);
+        assert!(!gains_under(&turning).stays_together);
+        assert!(!corrected_by(&flat, burst).stays_together);
+    }
+
+    #[test]
     fn the_solved_bound_never_passes_the_partition_and_never_falls_under_a_tone_its_peaks_allow() {
         let profiles = [
             boosting(110.0, 6.0),
@@ -1117,13 +1172,13 @@ mod tests {
             for song in &songs {
                 for heights in song.moments() {
                     let partitioned = gains.partitioned(&heights);
-                    let solved = gains.solved(&heights, partitioned, 0.0);
+                    let solved = gains.solved(&heights, None, partitioned, 0.0);
                     let alone = gains
                         .anchors
                         .iter()
                         .map(|anchor| {
                             anchor.level.abs() * heights[WHOLE]
-                                + Solving::over(&gains.tones, &heights)
+                                + Solving::over(&gains.tones, &prices_of(&heights, None))
                                     .heard_alone(&anchor.apart, anchor.transient)
                         })
                         .fold(f64::INFINITY, f64::min);

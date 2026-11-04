@@ -10,8 +10,9 @@ use std::{
 };
 
 use resonate_analysis::{
-    Applied, BandGains, BandLevels, Cut, Error, Finding, LossyGuess, Ramp, Study, Verdict, Watch,
-    Watching, analyse, band_figures, loudest_through, peak_through, print, span_of_band, study,
+    Applied, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BandGains, BandLevels, BandPeaks, Cut, Error,
+    Finding, LossyGuess, Ramp, Study, Verdict, Watch, Watching, analyse, band_figures,
+    loudest_through, peak_through, print, span_of_band, study,
 };
 use resonate_codec::Sources;
 use resonate_core::{
@@ -1006,6 +1007,230 @@ fn the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_
             }
         }
     }
+}
+
+const ADVERSARY_FRAMES: usize = 2 * RATE as usize;
+
+const CLICK_UNDONE: &str = "a click undone by the turning chain";
+
+const TURNING_CHAIN: &str = "the turning chain";
+
+fn stereo_of(samples: impl Iterator<Item = f64>) -> Vec<i32> {
+    samples
+        .flat_map(|sample| {
+            let word = (sample.clamp(-1.0, 1.0) * 32_767.0) as i32;
+            [word, word]
+        })
+        .collect()
+}
+
+struct Churning(u32);
+
+impl Churning {
+    fn white(&mut self) -> f64 {
+        self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        f64::from(self.0 >> 8) / f64::from(1_u32 << 23) - 1.0
+    }
+}
+
+fn hats_alone() -> Vec<i32> {
+    let mut churning = Churning(0x51ed);
+    let mut before = 0.0;
+    stereo_of((0..ADVERSARY_FRAMES).map(|frame| {
+        let seconds = frame as f64 / f64::from(RATE);
+        let white = churning.white();
+        let hat = (white - before) * (-(seconds % 0.25) * 60.0).exp() * 0.45;
+        before = white;
+        hat
+    }))
+}
+
+fn noise_clipped_as_a_loud_master_is() -> Vec<i32> {
+    let mut churning = Churning(0xc11b);
+    let mut low = 0.0;
+    stereo_of((0..ADVERSARY_FRAMES).map(|_| {
+        let white = churning.white();
+        low += (white - low) * 0.03;
+        (low * 6.0 + white * 0.5).clamp(-0.95, 0.95)
+    }))
+}
+
+fn chirps(from_hz: f64, to_hz: f64) -> Vec<i32> {
+    let sweep = 0.05;
+    stereo_of((0..ADVERSARY_FRAMES).map(|frame| {
+        let seconds = (frame as f64 / f64::from(RATE)) % 0.2;
+        if seconds >= sweep {
+            return 0.0;
+        }
+        let rising = (to_hz / from_hz).ln() / sweep;
+        let phase = std::f64::consts::TAU * from_hz * ((rising * seconds).exp() - 1.0) / rising;
+        phase.sin() * 0.8 * (std::f64::consts::PI * seconds / sweep).sin().powi(2)
+    }))
+}
+
+fn tones_squared_off() -> Vec<i32> {
+    stereo_of((0..ADVERSARY_FRAMES).map(|frame| {
+        let seconds = frame as f64 / f64::from(RATE);
+        let sum: f64 = [55.0, 220.0, 880.0, 3_520.0, 14_080.0]
+            .iter()
+            .map(|hertz| (std::f64::consts::TAU * hertz * seconds).sin())
+            .sum();
+        (sum * 0.6).clamp(-0.9, 0.9)
+    }))
+}
+
+fn turning_chain() -> Vec<(BandKind, f64, f64, f64)> {
+    (0..8)
+        .map(|step| (BandKind::AllPass, 80.0 * 2_f64.powi(step), 0.0, 1.0))
+        .collect()
+}
+
+fn a_click_undone_by(profile: &Arc<Profile>) -> Vec<i32> {
+    let frames = RATE as usize / 2;
+    let mut response = vec![0.0_f64; frames];
+    response[0] = 1.0;
+    for biquad in profile.designed(SampleRate::HZ_44100) {
+        let (mut first, mut second) = (0.0, 0.0);
+        for sample in &mut response {
+            let input = *sample;
+            let output = biquad.b0 * input + first;
+            first = biquad.b1 * input - biquad.a1 * output + second;
+            second = biquad.b2 * input - biquad.a2 * output;
+            *sample = output;
+        }
+    }
+    let loudest = response
+        .iter()
+        .fold(0.0_f64, |held, tap| held.max(tap.abs()));
+    stereo_of(
+        response
+            .iter()
+            .rev()
+            .chain(std::iter::repeat_n(&0.0, frames))
+            .map(|tap| tap / loudest * 0.9),
+    )
+}
+
+#[test]
+fn the_bound_holds_where_a_curve_could_bring_together_what_the_music_kept_apart() {
+    let tree = Tree::new();
+    let turning = shaped(&turning_chain());
+    let songs = [
+        ("hats", tree.wave("hats.wav", RATE, 16, &hats_alone())),
+        (
+            "clipped noise",
+            tree.wave(
+                "clipped.wav",
+                RATE,
+                16,
+                &noise_clipped_as_a_loud_master_is(),
+            ),
+        ),
+        (
+            "a rising chirp",
+            tree.wave("rising.wav", RATE, 16, &chirps(40.0, 18_000.0)),
+        ),
+        (
+            "a falling chirp",
+            tree.wave("falling.wav", RATE, 16, &chirps(18_000.0, 40.0)),
+        ),
+        (
+            "tones squared off",
+            tree.wave("squared.wav", RATE, 16, &tones_squared_off()),
+        ),
+        ("clicks", tree.wave("clicks.wav", RATE, 16, &clicks())),
+        (
+            CLICK_UNDONE,
+            tree.wave("undone.wav", RATE, 16, &a_click_undone_by(&turning)),
+        ),
+    ];
+    let curves = [
+        (TURNING_CHAIN, Arc::clone(&turning)),
+        ("no curve", shaped(&[])),
+        (
+            "a shelf at 1 kHz",
+            shaped(&[(BandKind::HighShelf, 1_000.0, 6.0, 0.7)]),
+        ),
+        (
+            "a shelf at 2 kHz",
+            shaped(&[(BandKind::HighShelf, 2_000.0, 5.0, 0.7)]),
+        ),
+        (
+            "a shelf at 4 kHz",
+            shaped(&[(BandKind::HighShelf, 4_000.0, 5.0, 0.7)]),
+        ),
+        (
+            "a shelf at 8 kHz",
+            shaped(&[(BandKind::HighShelf, 8_000.0, 9.0, 1.0)]),
+        ),
+        (
+            "a shelf at 150 Hz",
+            shaped(&[(BandKind::LowShelf, 150.0, 9.0, 0.7)]),
+        ),
+        (
+            "boosts either side",
+            shaped(&[
+                (BandKind::LowShelf, 100.0, 6.0, 0.7),
+                (BandKind::HighShelf, 6_000.0, 6.0, 0.7),
+            ]),
+        ),
+        (
+            "a narrow lift at 5 kHz",
+            shaped(&[(BandKind::Peaking, 5_000.0, 9.0, 5.0)]),
+        ),
+        (
+            "a low pass",
+            shaped(&[(BandKind::LowPass, 3_000.0, 0.0, 0.7)]),
+        ),
+        (
+            "a high pass",
+            shaped(&[(BandKind::HighPass, 1_000.0, 0.0, 0.7)]),
+        ),
+        (
+            "a tilt",
+            octaves([-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0]),
+        ),
+    ];
+
+    for (song, location) in &songs {
+        let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
+        for (curve, profile) in &curves {
+            if *song == CLICK_UNDONE && *curve == TURNING_CHAIN {
+                continue;
+            }
+            let bounded = decibels_of_the_bound(&gains_under(profile), &studied);
+            let decoded = peak_db_through(profile, location);
+
+            assert!(
+                bounded >= decoded - 0.02,
+                "{song} under {curve}: {bounded} under {decoded}"
+            );
+        }
+    }
+}
+
+#[test]
+fn what_came_together_tightens_the_bound_and_a_row_kept_before_it_still_bounds_the_decode() {
+    let tree = Tree::new();
+    let location = tree.wave("band.wav", RATE, 16, &kick_hat_bass_and_pads());
+    let studied = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
+    let bytes = studied.band_peaks.to_bytes();
+    let older =
+        BandPeaks::from_kept(&bytes[..BAND_PEAKS_BYTES_BEFORE_TOGETHER]).expect("an older row");
+    let smile = octaves([6.0, 5.0, 3.0, 1.0, -1.0, -1.0, 1.0, 3.0, 5.0, 6.0]);
+    let gains = gains_under(&smile);
+
+    let held = 20.0 * gains.bound(&studied.band_peaks).log10();
+    let before = 20.0 * gains.bound(&older).log10();
+    let decoded = peak_db_through(&smile, &location);
+
+    assert_eq!(
+        BandPeaks::from_bytes(&bytes[..BAND_PEAKS_BYTES_BEFORE_TOGETHER]),
+        None
+    );
+    assert!(held >= decoded - 0.02, "{held} under {decoded}");
+    assert!(before >= held, "{before} under {held}");
+    assert!(before - held > 0.3, "{before} against {held}");
 }
 
 fn boosting_the_bass_twice_over() -> Arc<Impulse> {

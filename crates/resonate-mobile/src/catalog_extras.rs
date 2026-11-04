@@ -4,8 +4,8 @@ use std::{
 };
 
 use resonate_analysis::{
-    BAND_PEAKS_BYTES, BANDS, BandFigures, BandGains, BandPeaks, Cut, JUDGED_UNDER, LossyGuess,
-    Loudest, Study,
+    BAND_PEAKS_BYTES, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BANDS, BandFigures, BandGains, BandPeaks,
+    Cut, JUDGED_UNDER, LossyGuess, Loudest, Study,
 };
 use resonate_codec::{MediaInfo, Scanned};
 use resonate_core::{Calendar, Chromaprint};
@@ -616,17 +616,23 @@ impl Catalog {
         let mut statement = connection
             .prepare_cached(
                 "SELECT s.band_peaks FROM studies s JOIN documents d ON d.id = s.track
-                 WHERE d.missing = 0 AND length(s.band_peaks) = ?1",
+                 WHERE d.missing = 0 AND length(s.band_peaks) IN (?1, ?2)",
             )
             .map_err(read_error)?;
         let rows = statement
-            .query_map([BAND_PEAKS_BYTES as i64], |row| row.get::<_, Vec<u8>>(0))
+            .query_map(
+                [
+                    BAND_PEAKS_BYTES as i64,
+                    BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64,
+                ],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
             .map_err(read_error)?;
 
         let mut loudest = Loudest::default();
         for row in rows {
             let kept = row.map_err(read_error)?;
-            if let Some(peaks) = BandPeaks::from_bytes(&kept) {
+            if let Some(peaks) = BandPeaks::from_kept(&kept) {
                 loudest.weigh(gains, &peaks);
             }
         }
@@ -639,7 +645,8 @@ impl Catalog {
         let mut statement = connection
             .prepare_cached(
                 "SELECT EXISTS (SELECT 1 FROM studies s JOIN documents d ON d.id = s.track
-                                 WHERE d.uri = ?1 AND d.missing = 0 AND length(s.band_peaks) = ?2)",
+                                 WHERE d.uri = ?1 AND d.missing = 0
+                                   AND length(s.band_peaks) IN (?2, ?3))",
             )
             .map_err(read_error)?;
 
@@ -648,7 +655,11 @@ impl Catalog {
             let held = cut.span.is_none()
                 && statement
                     .query_row(
-                        params![cut.location.to_uri(), BAND_PEAKS_BYTES as i64],
+                        params![
+                            cut.location.to_uri(),
+                            BAND_PEAKS_BYTES as i64,
+                            BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64
+                        ],
                         |row| row.get::<_, bool>(0),
                     )
                     .map_err(read_error)?;

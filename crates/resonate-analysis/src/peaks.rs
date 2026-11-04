@@ -1,4 +1,4 @@
-use crate::bands::BANDS;
+use crate::{bands::BANDS, coinciding::WEIGHINGS};
 
 pub const NODES: usize = 2 * BANDS - 1;
 
@@ -6,7 +6,13 @@ pub const MOMENTS_KEPT: usize = 8;
 
 const MOMENT_BYTES: usize = 2 + NODES;
 
-pub const BAND_PEAKS_BYTES: usize = MOMENTS_KEPT * MOMENT_BYTES;
+const MOMENTS_BYTES: usize = MOMENTS_KEPT * MOMENT_BYTES;
+
+const TOGETHER_BYTES: usize = 2 + WEIGHINGS;
+
+pub const BAND_PEAKS_BYTES: usize = MOMENTS_BYTES + TOGETHER_BYTES;
+
+pub const BAND_PEAKS_BYTES_BEFORE_TOGETHER: usize = MOMENTS_BYTES;
 
 pub(crate) const WHOLE: usize = 0;
 
@@ -19,6 +25,8 @@ const SILENT_PEAK: u16 = 0;
 const STEPS_BELOW_A_DECIBEL: f64 = 4.0;
 
 const SILENT_STEP: u8 = u8::MAX;
+
+const TOGETHER_STEPS_A_DECIBEL: f64 = 8.0;
 
 const DEEPEST_STEP: u8 = u8::MAX - 1;
 
@@ -147,13 +155,66 @@ fn decibels_of(code: u16) -> f64 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Together {
+    loudest: u16,
+    steps: [u8; WEIGHINGS],
+}
+
+impl Together {
+    const NOTHING: Self = Self {
+        loudest: SILENT_PEAK,
+        steps: [SILENT_STEP; WEIGHINGS],
+    };
+
+    fn of(figures: &[f64; WEIGHINGS]) -> Self {
+        let loudest = figures
+            .iter()
+            .copied()
+            .filter(|figure| figure.is_finite())
+            .fold(0.0, f64::max);
+        let code = code_above(loudest);
+        if code == SILENT_PEAK {
+            return Self::NOTHING;
+        }
+        let loudest_db = decibels_of(code);
+        Self {
+            loudest: code,
+            steps: figures.map(|figure| {
+                if !figure.is_finite() || figure <= 0.0 {
+                    return SILENT_STEP;
+                }
+                let steps =
+                    ((loudest_db - 20.0 * figure.log10()) * TOGETHER_STEPS_A_DECIBEL).floor();
+                steps.clamp(0.0, f64::from(DEEPEST_STEP)) as u8
+            }),
+        }
+    }
+
+    fn figures(&self) -> Option<[f64; WEIGHINGS]> {
+        if self.loudest == SILENT_PEAK {
+            return None;
+        }
+        let loudest_db = decibels_of(self.loudest);
+        Some(self.steps.map(|step| {
+            if step == SILENT_STEP {
+                0.0
+            } else {
+                10_f64.powf((loudest_db - f64::from(step) / TOGETHER_STEPS_A_DECIBEL) / 20.0)
+            }
+        }))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BandPeaks {
     moments: [Moment; MOMENTS_KEPT],
+    together: Together,
 }
 
 impl BandPeaks {
     pub const SILENT: Self = Self {
         moments: [Moment::SILENT; MOMENTS_KEPT],
+        together: Together::NOTHING,
     };
 
     pub fn at_once(bands: impl IntoIterator<Item = f64>) -> Self {
@@ -178,7 +239,40 @@ impl BandPeaks {
         peaks
     }
 
+    pub(crate) fn held_together(mut self, figures: Option<&[f64; WEIGHINGS]>) -> Self {
+        self.together = figures.map_or(Together::NOTHING, Together::of);
+        self
+    }
+
+    pub(crate) fn together(&self) -> Option<[f64; WEIGHINGS]> {
+        self.together.figures()
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != BAND_PEAKS_BYTES {
+            return None;
+        }
+        let (moments, together) = bytes.split_at(MOMENTS_BYTES);
+        let (loudest, steps) = together.split_first_chunk::<2>()?;
+        let mut peaks = Self::of_moments_kept(moments)?;
+        peaks.together = Together {
+            loudest: u16::from_le_bytes(*loudest),
+            steps: steps.try_into().ok()?,
+        };
+        if peaks.together.loudest == SILENT_PEAK {
+            peaks.together = Together::NOTHING;
+        }
+        Some(peaks)
+    }
+
+    pub fn from_kept(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() == BAND_PEAKS_BYTES_BEFORE_TOGETHER {
+            return Self::of_moments_kept(bytes);
+        }
+        Self::from_bytes(bytes)
+    }
+
+    fn of_moments_kept(bytes: &[u8]) -> Option<Self> {
         let (moments, rest) = bytes.as_chunks::<MOMENT_BYTES>();
         if !rest.is_empty() || moments.len() != MOMENTS_KEPT {
             return None;
@@ -199,7 +293,11 @@ impl BandPeaks {
 
     pub fn to_bytes(&self) -> [u8; BAND_PEAKS_BYTES] {
         let mut bytes = [0; BAND_PEAKS_BYTES];
-        for (slot, moment) in bytes
+        let (moments, together) = bytes.split_at_mut(MOMENTS_BYTES);
+        let (loudest, steps) = together.split_at_mut(2);
+        loudest.copy_from_slice(&self.together.loudest.to_le_bytes());
+        steps.copy_from_slice(&self.together.steps);
+        for (slot, moment) in moments
             .as_chunks_mut::<MOMENT_BYTES>()
             .0
             .iter_mut()
@@ -380,11 +478,35 @@ mod tests {
     }
 
     #[test]
+    fn figures_held_together_are_kept_at_or_above_each_by_less_than_an_eighth_of_a_decibel() {
+        let figures: [f64; WEIGHINGS] = std::array::from_fn(|index| 2.0 - 0.02 * index as f64);
+
+        let read = BandPeaks::SILENT
+            .held_together(Some(&figures))
+            .together()
+            .expect("held");
+
+        for (figure, held) in figures.iter().zip(read) {
+            assert!(held >= *figure, "{held} under {figure}");
+            assert!(
+                held <= figure * 10_f64.powf(0.125 / 20.0),
+                "{held} over {figure}"
+            );
+        }
+        assert_eq!(BandPeaks::SILENT.together(), None);
+    }
+
+    #[test]
     fn peaks_read_back_from_their_bytes_and_a_wrong_length_reads_as_nothing() {
         let peaks =
             BandPeaks::of_moments(&[heights_of(0.7, &[(3, 0.6)]), heights_of(0.3, &[(22, 0.2)])]);
 
+        let held = peaks.held_together(Some(&std::array::from_fn(|index| {
+            0.1 + 0.01 * index as f64
+        })));
+
         assert_eq!(BandPeaks::from_bytes(&peaks.to_bytes()), Some(peaks));
+        assert_eq!(BandPeaks::from_bytes(&held.to_bytes()), Some(held));
         assert_eq!(BandPeaks::from_bytes(&peaks.to_bytes()[1..]), None);
         assert_eq!(BandPeaks::from_bytes(&[]), None);
         assert!(BandPeaks::SILENT.is_silent());

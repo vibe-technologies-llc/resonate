@@ -90,12 +90,35 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   (1/16 dB steps from -200 dBFS, rounded up) and each node a byte of quarter-decibel steps below it
   (rounded down, so the figure read is never under the one measured; 254 holds anything deeper
   than 63.5 dB below, 255 a node that held nothing); the moments loudest first, silent moments
-  after: 472 bytes (`BAND_PEAKS_BYTES`), `track_studies.band_peaks`, a row of any other length
-  reading as unmeasured. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 6) carry it, so a
+  after: 472 bytes, then what came together (below): 554 bytes (`BAND_PEAKS_BYTES`),
+  `track_studies.band_peaks`. A row of any other length reads as unmeasured, except the 472 bytes of
+  a build before that figure (`BAND_PEAKS_BYTES_BEFORE_TOGETHER`), which `BandPeaks::from_kept` reads
+  and a fit still weighs while the pass measures it again; `from_bytes`, which a landed answer goes
+  through, takes only the whole shape. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 7) carry it, so a
   study from a recalled analysis keeps its peaks. `BandPeaks::at_once` makes the peaks of bands
   heard as one moment (each node the sum of its bands), for a caller that has only band peaks. The
   bank, the tree and the moments cost about 14 ms of one core a second of 44.1 kHz stereo audio,
   twice the 7 ms the one-moment bank of two biquads an edge measured the same way. `eq.md` has the bound it makes of them.
+- **A study keeps what came together** (`coinciding::Coinciding`, in `Splitting`): the peak over the
+  whole song of 80 weighed sums of four heights *at one instant*, the whole signal's magnitude and
+  the envelope of each of three groups of bands (`GROUP_EDGES`: under about 126 Hz, up to about
+  3.2 kHz, above it), every weight 0, a half or 1 (`weighing`), each channel on its own and the
+  loudest kept. A group's answer is the bank's own (`group_passes`, the band-edge filters in closed
+  form); its signal is analytic, from one transform of the channel's window and one smaller inverse a
+  group (a window of about 1.5 s at 44.1 kHz, settling all but a fifth of a second each way, the stream mirrored past its ends as the bank's
+  is), so a turned phase cannot raise a group over its envelope. The whole signal is read at the
+  sample and between samples by a 32-tap filter (`read_at`; quarter samples to 48 kHz, half samples
+  to 96 kHz, as the guard's meter folds), since a near-Nyquist hat swings between its samples, and any
+  of the true peak left over is added to each sum by its weight. A group's envelope is held
+  (`HELD_FOR_SECONDS`, 1 ms, 0.25 ms, 50 us, its points' own spacing rounded to whole passes) and the
+  widest multiplied by `SHARPENED_BY_AT_MOST` (1.12): a curve of steady gain at most 1 can sharpen a
+  wideband click by that much (the adversary below read 1.13 where its envelope read 1.03). The 81
+  sums are a table of nine plus nine, so they are nine additions nine times a frame. Kept as a `u16`
+  and a byte of eighth-decibel steps below it each, rounded up: 82 bytes. It costs about 10 ms of one
+  core a second of 44.1 kHz stereo audio beside the bank's 14
+  (`a_figure_never_reads_under_the_sample_it_was_weighed_at`,
+  `tones_heard_at_once_add_where_their_groups_are_weighed_together`,
+  `a_stream_noted_in_pieces_has_the_figures_it_has_noted_whole`).
 - **Non-number samples are silence**: `normalised` maps float NaN/infinity to 0 before any builder
   (one would ride the K-weighting history to track end). Bit reading keeps native samples.
 - **`Watching` stops a pass.** `Watch` is the window's; `EnrichProgress` implements it, so cancelling
@@ -398,7 +421,7 @@ could change (stored studies and kept analyses are weighed against it).
   offset, which the control refuses, and a lattice among few coefficients is chance, which the
   significance refuses (a genuine track read 0.019 on 21 000 effective coefficients, a significance
   of 2.8; a real MP3 rip reads 0.023 on 300 000, 12.6). Every grid's `Steps` is kept in the study
-  and the kept analysis (`WRITTEN_AS` 6, each `Steps`' `Tell` named after its coding; 5: the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
+  and the kept analysis (`WRITTEN_AS` 7, each `Steps`' `Tell` named after its coding; 6: the peaks without what came together; 5: the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
   study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC

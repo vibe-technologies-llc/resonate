@@ -10,8 +10,8 @@ use std::{
 use ahash::AHashSet;
 use parking_lot::{Condvar, Mutex};
 use resonate_analysis::{
-    BAND_PEAKS_BYTES, BANDS, BandFigures, BandGains, BandLevels, BandPeaks, Cut, Cutoff,
-    JUDGED_UNDER, LossyGuess, Loudest, Study, Verdict, Watching,
+    BAND_PEAKS_BYTES, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BANDS, BandFigures, BandGains, BandLevels,
+    BandPeaks, Cut, Cutoff, JUDGED_UNDER, LossyGuess, Loudest, Study, Verdict, Watching,
 };
 use resonate_codec::Sources;
 use resonate_core::{
@@ -342,18 +342,22 @@ pub(crate) fn write_band_figures(
 
 pub(crate) fn loudest_kept(connection: &Connection, gains: &BandGains) -> Result<Loudest> {
     let mut statement = connection
-        .prepare_cached("SELECT band_peaks FROM track_studies WHERE length(band_peaks) = ?1")
+        .prepare_cached("SELECT band_peaks FROM track_studies WHERE length(band_peaks) IN (?1, ?2)")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
-        .query_map(params![BAND_PEAKS_BYTES as i64], |row| {
-            row.get::<_, Vec<u8>>(0)
-        })
+        .query_map(
+            params![
+                BAND_PEAKS_BYTES as i64,
+                BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64
+            ],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut loudest = Loudest::default();
     for row in rows {
         let kept = row.map_err(|source| Error::store(StoreOp::Query, source))?;
-        let Some(peaks) = BandPeaks::from_bytes(&kept) else {
+        let Some(peaks) = BandPeaks::from_kept(&kept) else {
             continue;
         };
         loudest.weigh(gains, &peaks);
@@ -367,7 +371,7 @@ pub(crate) fn unmeasured(connection: &Connection, cuts: &[Cut]) -> Result<Vec<Cu
             "SELECT EXISTS (SELECT 1
                               FROM tracks t JOIN track_studies s ON s.track_id = t.id
                              WHERE t.path = ?1 AND t.span_start = ?2
-                               AND length(s.band_peaks) = ?3)",
+                               AND length(s.band_peaks) IN (?3, ?4))",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
@@ -379,7 +383,8 @@ pub(crate) fn unmeasured(connection: &Connection, cuts: &[Cut]) -> Result<Vec<Cu
                     params![
                         store::path_text(path),
                         store::span_columns(cut.span).0,
-                        BAND_PEAKS_BYTES as i64
+                        BAND_PEAKS_BYTES as i64,
+                        BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64
                     ],
                     |row| row.get::<_, bool>(0),
                 )

@@ -11,6 +11,7 @@ use resonate_dsp::TruePeakMeter;
 
 use crate::{
     bands::{BANDS, edge_of},
+    coinciding::Coinciding,
     peaks::{BandPeaks, Heights, NODES, TREE, WHOLE, grouped},
 };
 
@@ -241,6 +242,7 @@ pub(crate) struct Splitting {
     tile_frames: usize,
     noted: usize,
     shortfalls: Lanes,
+    coinciding: Coinciding,
 }
 
 impl Splitting {
@@ -269,10 +271,12 @@ impl Splitting {
             tile_frames,
             noted: 0,
             shortfalls: shortfalls_at(rate),
+            coinciding: Coinciding::new(rate, channels),
         }
     }
 
     pub(crate) fn note(&mut self, interleaved: &[f32]) {
+        self.coinciding.note(interleaved);
         let width = self.channels.len();
         for frame in interleaved.chunks_exact(width) {
             for (channel, sample) in self.channels.iter_mut().zip(frame) {
@@ -327,7 +331,12 @@ impl Splitting {
                 *height /= self.shortfalls[node.to - 1];
             }
         }
-        grouped(&self.tiles.loudest)
+        let true_peak = self
+            .tiles
+            .loudest
+            .iter()
+            .fold(0.0, |loudest, heights| f64::max(loudest, heights[WHOLE]));
+        grouped(&self.tiles.loudest).held_together(self.coinciding.finished(true_peak).as_ref())
     }
 
     fn meter_frame(&mut self, frame: &[f32]) {

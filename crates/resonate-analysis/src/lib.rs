@@ -2,6 +2,7 @@ mod analysis;
 mod applied;
 mod bands;
 mod celt;
+mod coinciding;
 mod conform;
 mod envelope;
 mod error;
@@ -40,7 +41,7 @@ pub use crate::{
     kept::{KEPT_BYTES_AT_MOST, KeptAnalyses},
     levels::{Levels, Stereo},
     loudness::{Loudness, LoudnessMeter},
-    peaks::{BAND_PEAKS_BYTES, BandPeaks},
+    peaks::{BAND_PEAKS_BYTES, BAND_PEAKS_BYTES_BEFORE_TOGETHER, BandPeaks},
     print::PRINTED_FOR,
     signature::{Signature, signature_of},
     spectrogram::{Ramp, SPECTROGRAM_COLUMNS, SPECTROGRAM_FLOOR_DB, SPECTROGRAM_ROWS, Spectrogram},

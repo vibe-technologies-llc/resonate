@@ -285,6 +285,7 @@ fn weighed_against_their_decodes(folder: PathBuf) {
     paths.sort();
     let sources = Sources::local();
     let watch = Watch::default();
+    let started = Instant::now();
     let measured: Vec<(MediaLocation, SampleRate, BandPeaks)> = paths
         .into_iter()
         .filter_map(|path| {
@@ -294,6 +295,10 @@ fn weighed_against_their_decodes(folder: PathBuf) {
             Some((location, rate, figures.peaks))
         })
         .collect();
+    println!(
+        "figures: {:.0} ms a song",
+        started.elapsed().as_secs_f64() * 1e3 / measured.len().max(1) as f64
+    );
     let mut over = Vec::new();
     for (curve, profile) in curves() {
         let applied = Applied::from(Arc::clone(&profile));

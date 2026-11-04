@@ -1,9 +1,32 @@
 use resonate_core::SampleRate;
 
 use crate::{
+    coinciding::{GROUPS, WEIGHINGS, group_passes, weighing},
     peaks::{Heights, NODES, TREE, WHOLE},
     split::passed_below,
 };
+
+pub(crate) const COVERS: usize = NODES + 1 + WEIGHINGS;
+
+pub(crate) const LEVEL: usize = NODES;
+
+const FIRST_WEIGHING: usize = LEVEL + 1;
+
+pub(crate) type Prices = [f64; COVERS];
+
+pub(crate) fn prices_of(heights: &Heights, together: Option<&[f64; WEIGHINGS]>) -> Prices {
+    let mut prices = [0.0; COVERS];
+    for (price, height) in prices.iter_mut().zip(heights) {
+        *price = height.max(0.0);
+    }
+    prices[LEVEL] = heights[WHOLE].max(0.0);
+    if let Some(together) = together {
+        for (index, figure) in together.iter().enumerate() {
+            prices[FIRST_WEIGHING + index] = figure.max(0.0);
+        }
+    }
+    prices
+}
 
 const PASSED_AT_LEAST: f64 = 1e-9;
 
@@ -36,29 +59,32 @@ struct Reach {
 }
 
 impl Reach {
-    fn of(node: usize, starts: &[usize], passed: &[(usize, f64)]) -> Self {
-        let points = starts.len() - 1;
-        let share_at = |point: usize| {
-            passed[starts[point]..starts[point + 1]]
-                .iter()
-                .find(|(passing, _)| *passing == node)
-                .map(|(_, share)| *share)
-        };
-        let reached: Vec<usize> = (0..points)
-            .filter(|point| share_at(*point).is_some())
-            .collect();
-        let (Some(first), Some(last)) = (reached.first(), reached.last()) else {
-            return Self {
-                first: 0,
-                shares: Vec::new(),
-            };
-        };
-        Self {
-            first: *first,
-            shares: (*first..=*last)
-                .map(|point| share_at(point).unwrap_or(0.0))
-                .collect(),
+    fn of_each(starts: &[usize], passed: &[(usize, f64)]) -> Vec<Self> {
+        let mut listed: Vec<Vec<(usize, f64)>> = vec![Vec::new(); COVERS];
+        for (point, range) in starts.windows(2).enumerate() {
+            for (cover, share) in &passed[range[0]..range[1]] {
+                listed[*cover].push((point, *share));
+            }
         }
+        listed
+            .into_iter()
+            .map(|reached| {
+                let (Some((first, _)), Some((last, _))) = (reached.first(), reached.last()) else {
+                    return Self {
+                        first: 0,
+                        shares: Vec::new(),
+                    };
+                };
+                let mut shares = vec![0.0; last - first + 1];
+                for (point, share) in &reached {
+                    shares[point - first] = *share;
+                }
+                Self {
+                    first: *first,
+                    shares,
+                }
+            })
+            .collect()
     }
 }
 
@@ -81,11 +107,19 @@ impl Tones {
                 })
             })
             .collect();
+        let groups_at_edges: Vec<[f64; GROUPS]> = edges
+            .iter()
+            .map(|hertz| std::array::from_fn(|group| group_passes(group, *hertz, rate)))
+            .collect();
         let mut spans = Vec::with_capacity(edges.len());
-        let mut starts = Vec::with_capacity(edges.len());
+        let mut starts = Vec::with_capacity(edges.len() + 1);
         let mut passed = Vec::new();
         starts.push(0);
-        for (bounds, sides) in edges.windows(2).zip(at_edges.windows(2)) {
+        for ((bounds, sides), group_sides) in edges
+            .windows(2)
+            .zip(at_edges.windows(2))
+            .zip(groups_at_edges.windows(2))
+        {
             spans.push((bounds[0], bounds[1]));
             for (index, (lower, upper)) in sides[0].iter().zip(&sides[1]).enumerate() {
                 let share = lower.min(*upper);
@@ -93,11 +127,30 @@ impl Tones {
                     passed.push((index, share));
                 }
             }
+            let held: [f64; GROUPS] =
+                std::array::from_fn(|group| group_sides[0][group].min(group_sides[1][group]));
+            for index in 0..WEIGHINGS {
+                let share: f64 = weighing(index)
+                    .groups
+                    .iter()
+                    .zip(&held)
+                    .map(|(weight, held)| weight * held)
+                    .sum();
+                if share >= PASSED_AT_LEAST {
+                    passed.push((FIRST_WEIGHING + index, share));
+                }
+            }
             starts.push(passed.len());
         }
-        let reaches = (0..NODES)
-            .map(|node| Reach::of(node, &starts, &passed))
-            .collect();
+        passed.push((LEVEL, 1.0));
+        for index in 0..WEIGHINGS {
+            let share = weighing(index).whole;
+            if share > 0.0 {
+                passed.push((FIRST_WEIGHING + index, share));
+            }
+        }
+        starts.push(passed.len());
+        let reaches = Reach::of_each(&starts, &passed);
         Self {
             spans,
             starts,
@@ -110,7 +163,7 @@ impl Tones {
         &self.spans
     }
 
-    pub(crate) fn paid_by(&self, weights: &Heights, prices: &Heights, apart: &[f64]) -> f64 {
+    pub(crate) fn paid_by(&self, weights: &Prices, prices: &Prices, apart: &[f64]) -> f64 {
         let mut covered = vec![0.0; self.points()];
         for ((reach, weight), price) in self.reaches.iter().zip(weights).zip(prices) {
             if *weight <= 0.0 || *price <= 0.0 {
@@ -154,46 +207,46 @@ impl Tones {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Paid {
     pub(crate) paid: f64,
-    pub(crate) weights: Heights,
+    pub(crate) weights: Prices,
 }
 
 pub(crate) struct Solving<'a> {
     tones: &'a Tones,
-    heights: Heights,
+    prices: Prices,
     whole: f64,
-    covering: [bool; NODES],
-    basis: [usize; NODES],
-    inverse: Box<[[f64; NODES]; NODES]>,
-    values: Heights,
+    covering: [bool; COVERS],
+    basis: [usize; COVERS],
+    inverse: Box<[[f64; COVERS]; COVERS]>,
+    values: Prices,
     room: Vec<f64>,
     covered: Vec<f64>,
     covered_kept: Vec<f64>,
 }
 
 impl<'a> Solving<'a> {
-    pub(crate) fn over(tones: &'a Tones, heights: &Heights) -> Self {
+    pub(crate) fn over(tones: &'a Tones, prices: &Prices) -> Self {
         let points = tones.points();
-        let heights = heights.map(|height| height.max(0.0));
-        let covering = heights.map(|height| height > 0.0);
+        let prices = prices.map(|price| price.max(0.0));
+        let covering = prices.map(|price| price > 0.0);
         let room = (0..points)
             .map(|point| {
                 tones
                     .passed_at(point)
                     .iter()
                     .filter(|(node, _)| *node != WHOLE && covering[*node])
-                    .map(|(node, share)| heights[*node] / share)
+                    .map(|(node, share)| prices[*node] / share)
                     .fold(f64::INFINITY, f64::min)
             })
             .collect();
         let mut solving = Self {
             tones,
-            heights,
-            whole: heights[WHOLE],
+            prices,
+            whole: prices[WHOLE],
             covering,
             room,
-            basis: [0; NODES],
-            inverse: Box::new([[0.0; NODES]; NODES]),
-            values: heights,
+            basis: [0; COVERS],
+            inverse: Box::new([[0.0; COVERS]; COVERS]),
+            values: prices,
             covered: vec![0.0; points],
             covered_kept: vec![0.0; points],
         };
@@ -204,25 +257,25 @@ impl<'a> Solving<'a> {
     fn start_over(&mut self) {
         let points = self.tones.points();
         for (row, held) in self.inverse.iter_mut().enumerate() {
-            *held = [0.0; NODES];
+            *held = [0.0; COVERS];
             held[row] = 1.0;
         }
         self.basis = std::array::from_fn(|node| points + node);
-        self.values = self.heights;
+        self.values = self.prices;
     }
 
     fn priced_whole_at(&mut self, transient: f64) {
         let price = self.whole * transient;
-        if price == self.heights[WHOLE] {
+        if price == self.prices[WHOLE] {
             return;
         }
-        self.heights[WHOLE] = price;
-        let largest = self.heights.iter().copied().fold(0.0, f64::max);
-        let values: Heights = std::array::from_fn(|row| {
+        self.prices[WHOLE] = price;
+        let largest = self.prices.iter().copied().fold(0.0, f64::max);
+        let values: Prices = std::array::from_fn(|row| {
             self.inverse[row]
                 .iter()
-                .zip(&self.heights)
-                .map(|(entry, height)| entry * height)
+                .zip(&self.prices)
+                .map(|(entry, price)| entry * price)
                 .sum()
         });
         if values
@@ -249,6 +302,7 @@ impl<'a> Solving<'a> {
         apart
             .iter()
             .zip(&self.room)
+            .take(self.tones.spans.len())
             .enumerate()
             .filter(|(_, (wanted, _))| **wanted > 0.0)
             .map(|(point, (wanted, room))| {
@@ -273,7 +327,7 @@ impl<'a> Solving<'a> {
         self.priced_whole_at(transient);
         let mut paid_at_most = Paid {
             paid: f64::INFINITY,
-            weights: [0.0; NODES],
+            weights: [0.0; COVERS],
         };
         for _ in 0..PIVOTS_AT_MOST {
             let weights = self.weights(apart);
@@ -311,7 +365,7 @@ impl<'a> Solving<'a> {
             .sum()
     }
 
-    fn priced(&mut self, apart: &[f64], weights: &Heights) -> (Option<usize>, Paid) {
+    fn priced(&mut self, apart: &[f64], weights: &Prices) -> (Option<usize>, Paid) {
         let points = self.tones.points();
         let largest = apart.iter().copied().fold(0.0_f64, f64::max);
         let kept = weights.map(|weight| weight.max(0.0));
@@ -343,8 +397,8 @@ impl<'a> Solving<'a> {
         }
         let paid: f64 = kept
             .iter()
-            .zip(&self.heights)
-            .map(|(weight, height)| weight * height)
+            .zip(&self.prices)
+            .map(|(weight, price)| weight * price)
             .sum();
         (
             best.1.filter(|variable| !self.basis.contains(variable)),
@@ -355,7 +409,7 @@ impl<'a> Solving<'a> {
         )
     }
 
-    fn cover(&mut self, weights: &Heights, kept: &Heights) {
+    fn cover(&mut self, weights: &Prices, kept: &Prices) {
         self.covered.fill(0.0);
         self.covered_kept.fill(0.0);
         for (node, reach) in self.tones.reaches.iter().enumerate() {
@@ -377,9 +431,9 @@ impl<'a> Solving<'a> {
         }
     }
 
-    fn weights(&self, apart: &[f64]) -> Heights {
+    fn weights(&self, apart: &[f64]) -> Prices {
         let points = self.tones.points();
-        let mut weights = [0.0; NODES];
+        let mut weights = [0.0; COVERS];
         for (row, variable) in self.basis.iter().enumerate() {
             if *variable >= points {
                 continue;
@@ -392,12 +446,12 @@ impl<'a> Solving<'a> {
         weights
     }
 
-    fn column(&self, variable: usize) -> Heights {
+    fn column(&self, variable: usize) -> Prices {
         let points = self.tones.points();
         if let Some(node) = variable.checked_sub(points) {
             return std::array::from_fn(|row| self.inverse[row][node]);
         }
-        let mut column = [-0.0; NODES];
+        let mut column = [-0.0; COVERS];
         for (node, share) in self.covered_at(variable) {
             for (row, held) in column.iter_mut().zip(self.inverse.iter()) {
                 *row += held[*node] * share;
@@ -415,7 +469,7 @@ impl<'a> Solving<'a> {
 
     fn pivot(&mut self, entering: usize) -> bool {
         let column = self.column(entering);
-        let Some(leaving) = (0..NODES)
+        let Some(leaving) = (0..COVERS)
             .filter(|row| column[*row] > MOVED_AT_LEAST)
             .min_by(|left, right| {
                 (self.values[*left] / column[*left])
