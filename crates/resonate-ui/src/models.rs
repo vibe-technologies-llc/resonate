@@ -25,9 +25,9 @@ use resonate_library::{
     ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut,
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
-    GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
-    ImportSummary, Imported, Issued, Kept, Layout, Learning, Library, Listen, Maker, Mbid, Meant,
-    Measured, Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions,
+    GroupRelease, Habits, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress,
+    ImportStats, ImportSummary, Imported, Issued, Kept, Layout, Learning, Library, Listen, Maker,
+    Mbid, Meant, Measured, Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions,
     OrganiseProgress, OrganiseStats, OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry,
     PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
     RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
@@ -210,6 +210,7 @@ struct Standing {
     statistics: Statistics,
     most_listened: MostListened,
     by_day: Vec<Day>,
+    habits: Habits,
     suggestions: Arc<[Suggestion]>,
     roots: Vec<PathBuf>,
 }
@@ -732,6 +733,7 @@ pub struct LibraryModel {
     statistics: Statistics,
     most_listened: Arc<MostListened>,
     by_day: Arc<[Day]>,
+    habits: Arc<Habits>,
     suggestions: Arc<[Suggestion]>,
     opened_suggestion: Option<Previewed>,
     window: Window,
@@ -956,6 +958,7 @@ impl LibraryModel {
             statistics: Statistics::default(),
             most_listened: Arc::default(),
             by_day: Arc::default(),
+            habits: Arc::default(),
             suggestions: Arc::default(),
             opened_suggestion: None,
             window,
@@ -2908,6 +2911,10 @@ impl LibraryModel {
         Arc::clone(&self.by_day)
     }
 
+    pub fn habits(&self) -> Arc<Habits> {
+        Arc::clone(&self.habits)
+    }
+
     pub(crate) fn charted(&self) -> Arc<Chart> {
         Arc::clone(&self.charted)
     }
@@ -4679,6 +4686,7 @@ impl LibraryModel {
             if renewed(&mut self.by_day, standing.by_day) {
                 self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
             }
+            self.habits = Arc::new(standing.habits);
             self.suggestions = standing.suggestions;
             self.roots = standing.roots;
         }
@@ -7049,6 +7057,7 @@ fn standing(library: &Library, window: Window) -> resonate_library::Result<Stand
         statistics: library.statistics(window)?,
         most_listened: library.most_listened(window, MOST_LISTENED)?,
         by_day: library.listening_by_day(window)?,
+        habits: library.habits(window)?,
         suggestions: library.suggestions()?,
         roots: library.roots()?,
     })

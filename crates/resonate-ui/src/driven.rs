@@ -2200,6 +2200,46 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_statistics_pane_reads_when_things_were_heard_and_keeps_the_one_run_the_keys_walk(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .remove(0);
+        let counted = library
+            .track_played(&track.location, track.span, std::time::Duration::ZERO)
+            .expect("the catalog counts the play")
+            .expect("the catalog holds the row");
+        library
+            .listened(counted.listen, std::time::Duration::from_secs(90))
+            .expect("the catalog keeps the time");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.set_pane(Pane::Statistics, cx));
+        });
+        driven.settle();
+
+        driven.read(|root, cx| {
+            let library = root.library.read(cx);
+            let habits = library.habits();
+
+            assert_eq!(habits.rhythm.days_heard, 1);
+            assert_eq!(
+                habits.rhythm.hours.iter().sum::<std::time::Duration>(),
+                std::time::Duration::from_secs(90)
+            );
+            assert!(habits.formats.is_some(), "what was heard has a sound");
+            assert_eq!(library.most_listened().tracks.len(), 1);
+            assert_eq!(root.heard_rows(cx), 1, "a track of no album by nobody");
+        });
+    }
+
+    #[gpui::test]
     fn what_was_heard_most_is_read_back_in_the_order_it_is_listed(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);

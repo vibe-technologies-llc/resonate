@@ -33,9 +33,9 @@ use crate::{
     ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals,
     Asked, Billed, Cancelling, Certainty, Clause, Codec, Column, Compacted, Compare, Condition,
     Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
-    Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
-    Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
-    KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan, Link, Listen,
+    Favoured, Fingerprinters, Found, Fruitless, Genre, Habits, HeldMedium, HeldReleaseTrack,
+    HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept,
+    KeptCorrection, KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan, Link, Listen,
     ListeningService, LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing, MissingTrack,
     MostListened, Move, MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
     Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted,
@@ -688,6 +688,7 @@ pub(crate) struct Inner {
     renamed: Arc<Mutex<Renamed>>,
     spellings: Mutex<Option<KeptVocabulary>>,
     suggested: Mutex<Option<KeptSuggestions>>,
+    filed: Mutex<Option<KeptFiling>>,
     measured: Mutex<Option<KeptMeasurements>>,
     playing: Mutex<Option<Playing>>,
     steps: Mutex<Vec<Step>>,
@@ -748,9 +749,15 @@ impl KeptMeasurements {
 
 const MEASUREMENTS_KEPT_FOR: Duration = Duration::from_secs(60);
 
+struct KeptFiling {
+    stamp: CatalogStamp,
+    filing: Arc<suggest::Filing>,
+}
+
 struct KeptSuggestions {
     stamp: CatalogStamp,
     filters: MusicFilters,
+    today: i64,
     suggestions: Arc<[Suggestion]>,
 }
 
@@ -1049,6 +1056,26 @@ impl Inner {
 
     fn rows_stamp(&self) -> CatalogStamp {
         self.stamped_by(&self.written)
+    }
+
+    pub(crate) fn filing(&self) -> Result<Arc<suggest::Filing>> {
+        let stamp = self.names_stamp();
+        if let Some(kept) = self
+            .filed
+            .lock()
+            .as_ref()
+            .filter(|kept| kept.stamp.still_holds_at(stamp))
+        {
+            return Ok(Arc::clone(&kept.filing));
+        }
+
+        let filing = Arc::new(suggest::Filing::read(self)?);
+        *self.filed.lock() = Some(KeptFiling {
+            stamp,
+            filing: Arc::clone(&filing),
+        });
+
+        Ok(filing)
     }
 
     pub(crate) fn measured_saved(&self, saved: &SavedQuery) -> Result<Measured> {
@@ -1380,6 +1407,7 @@ impl Library {
     pub fn filter_music(&self, filters: MusicFilters) {
         *self.inner.music_filters.lock() = filters;
         *self.inner.suggested.lock() = None;
+        *self.inner.filed.lock() = None;
         *self.inner.measured.lock() = None;
     }
 
@@ -1556,6 +1584,7 @@ impl Library {
                 renamed,
                 spellings: Mutex::new(None),
                 suggested: Mutex::new(None),
+                filed: Mutex::new(None),
                 measured: Mutex::new(None),
                 playing: Mutex::new(None),
                 steps: Mutex::new(Vec::new()),
@@ -1918,6 +1947,10 @@ impl Library {
         statistics::listening_by_day(&self.inner, window)
     }
 
+    pub fn habits(&self, window: Window) -> Result<Habits> {
+        statistics::habits(&self.inner, window)
+    }
+
     pub fn years_heard(&self, calendar: &Calendar) -> Result<Vec<i64>> {
         wrapped::years_heard(&self.inner, calendar)
     }
@@ -1938,20 +1971,21 @@ impl Library {
     pub fn suggestions(&self) -> Result<Arc<[Suggestion]>> {
         let stamp = self.inner.rows_stamp();
         let filters = self.music_filters();
-        if let Some(kept) = self
-            .inner
-            .suggested
-            .lock()
-            .as_ref()
-            .filter(|kept| kept.stamp.still_holds_at(stamp) && kept.filters == filters)
-        {
+        let now = SystemTime::now();
+        let today = Calendar::local().day_of(now);
+        if let Some(kept) = self.inner.suggested.lock().as_ref().filter(|kept| {
+            kept.stamp.still_holds_at(stamp) && kept.filters == filters && kept.today == today
+        }) {
             return Ok(Arc::clone(&kept.suggestions));
         }
 
-        let suggestions: Arc<[Suggestion]> = suggest::suggestions(&self.inner)?.into();
+        let filing = self.inner.filing()?;
+        let suggestions: Arc<[Suggestion]> =
+            suggest::suggestions(&self.inner, &filing, today, now)?.into();
         *self.inner.suggested.lock() = Some(KeptSuggestions {
             stamp,
             filters,
+            today,
             suggestions: Arc::clone(&suggestions),
         });
         Ok(suggestions)

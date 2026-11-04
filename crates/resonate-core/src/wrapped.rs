@@ -13,6 +13,10 @@ pub const MONTHS_IN_A_YEAR: usize = 12;
 
 pub const HOURS_IN_A_DAY: usize = 24;
 
+pub const DAYS_IN_A_WEEK: usize = 7;
+
+const THE_EPOCH_FELL_DAYS_AFTER_A_MONDAY: i64 = 3;
+
 const MINUTES_IN_AN_HOUR: u32 = 60;
 
 const SECONDS_IN_A_MINUTE: u64 = 60;
@@ -105,6 +109,7 @@ pub struct QuarterHeard {
 pub struct Rhythm {
     pub months: [Duration; MONTHS_IN_A_YEAR],
     pub hours: [Duration; HOURS_IN_A_DAY],
+    pub weekdays: [Duration; DAYS_IN_A_WEEK],
     pub days_heard: u32,
     pub busiest_day: Option<DayHeard>,
     pub longest_streak: Option<Streak>,
@@ -116,13 +121,25 @@ impl Rhythm {
         calendar: &Calendar,
         year: i64,
     ) -> Self {
+        Self::of_those(quarters, calendar, |date| date.year == year)
+    }
+
+    pub fn across(quarters: impl IntoIterator<Item = QuarterHeard>, calendar: &Calendar) -> Self {
+        Self::of_those(quarters, calendar, |_| true)
+    }
+
+    fn of_those(
+        quarters: impl IntoIterator<Item = QuarterHeard>,
+        calendar: &Calendar,
+        counted: impl Fn(CivilDate) -> bool,
+    ) -> Self {
         let mut rhythm = Self::default();
         let mut days: BTreeMap<i64, Duration> = BTreeMap::new();
 
         for quarter in quarters {
             let day = calendar.day_of(quarter.at);
             let date = CivilDate::of_day(day);
-            if date.year != year || quarter.listened.is_zero() {
+            if !counted(date) || quarter.listened.is_zero() {
                 continue;
             }
 
@@ -133,6 +150,9 @@ impl Rhythm {
                 *held += quarter.listened;
             }
             if let Some(held) = rhythm.hours.get_mut(hour) {
+                *held += quarter.listened;
+            }
+            if let Some(held) = rhythm.weekdays.get_mut(weekday_of(day)) {
                 *held += quarter.listened;
             }
             *days.entry(day).or_default() += quarter.listened;
@@ -155,9 +175,18 @@ impl Rhythm {
         busiest(&self.months)
     }
 
-    fn busiest_hour(&self) -> Option<usize> {
+    pub fn busiest_hour(&self) -> Option<usize> {
         busiest(&self.hours)
     }
+
+    pub fn busiest_weekday(&self) -> Option<usize> {
+        busiest(&self.weekdays)
+    }
+}
+
+const fn weekday_of(day: i64) -> usize {
+    day.saturating_add(THE_EPOCH_FELL_DAYS_AFTER_A_MONDAY)
+        .rem_euclid(DAYS_IN_A_WEEK as i64) as usize
 }
 
 fn busiest(spans: &[Duration]) -> Option<usize> {
@@ -809,6 +838,37 @@ mod tests {
             [("Fusion", 3), ("Jazz", 3)]
         );
         assert_eq!(tallied[0].listened, AN_HOUR + A_MINUTE);
+    }
+
+    #[test]
+    fn a_reading_across_every_year_counts_them_all_and_files_each_day_under_its_weekday() {
+        const THE_FIRST_OF_JANUARY_1970_WAS_A_THURSDAY: usize = 3;
+        const THE_FIRST_OF_JANUARY_2024_WAS_A_MONDAY: u64 = 19_723;
+
+        let heard = [
+            QuarterHeard {
+                at: at(0, 0),
+                listened: AN_HOUR,
+            },
+            QuarterHeard {
+                at: at(THE_FIRST_OF_JANUARY_2024_WAS_A_MONDAY, 0),
+                listened: A_MINUTE,
+            },
+        ];
+
+        let rhythm = Rhythm::across(heard, &Calendar::utc());
+
+        assert_eq!(rhythm.days_heard, 2);
+        assert_eq!(
+            rhythm.weekdays[THE_FIRST_OF_JANUARY_1970_WAS_A_THURSDAY],
+            AN_HOUR
+        );
+        assert_eq!(rhythm.weekdays[0], A_MINUTE);
+        assert_eq!(
+            rhythm.busiest_weekday(),
+            Some(THE_FIRST_OF_JANUARY_1970_WAS_A_THURSDAY)
+        );
+        assert_eq!(Rhythm::of(heard, &Calendar::utc(), 2024).days_heard, 1);
     }
 
     #[test]

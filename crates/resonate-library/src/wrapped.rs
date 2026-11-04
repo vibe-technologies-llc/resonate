@@ -249,7 +249,7 @@ fn ranked(connection: &Connection, sql: &str, from: i64, to: i64) -> Result<Vec<
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn genres(connection: &Connection, from: i64, to: i64) -> Result<Vec<Ranked>> {
+pub(crate) fn genres(connection: &Connection, from: i64, to: i64) -> Result<Vec<Ranked>> {
     let mut statement = connection
         .prepare(THE_GENRES_OF_THE_YEAR)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -310,7 +310,7 @@ fn first_song(
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn formats(connection: &Connection, from: i64, to: i64) -> Result<Option<FormatShares>> {
+pub(crate) fn formats(connection: &Connection, from: i64, to: i64) -> Result<Option<FormatShares>> {
     let mut statement = connection
         .prepare(THE_FORMATS_OF_THE_YEAR)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;

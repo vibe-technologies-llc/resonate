@@ -713,7 +713,9 @@ is never named.
     frame and would be re-announced.
   - **A chart, a card and a run of missing rows are named by what they say.** The Statistics chart
     is the list *Listening by day* (`statistics::listed_days`), each bar a list item placed *n of m*
-    labelled by what the hover names (*yesterday · 3 plays · 1h 0m listened*). A Suggestions card is
+    labelled by what the hover names (*yesterday · 3 plays · 1h 0m listened*); *Listening by hour*,
+    *Listening by weekday* and *Genres most heard* are lists alike, and a tile says its name and
+    reading (`read_plainly`). A Suggestions card is
     a list item (`("suggestion-card", index)`) of *name, reason, tracks · length* (`said_of`),
     selected where reached. The Missing pane's rows are list items: an album heading *title, owner,
     n missing*, a disc *Disc n*, a track `browser::unheld_said` (*title, artist, not in your
@@ -1131,14 +1133,25 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   three. Its track rows have their own order, `Sorting::favourites` (*Favourited* newest first until a
   header is pressed) and `sorting::favourites_sorted`, a `Sorted` with `#` as `Sortable::Marked`.
 - **Resonate Wrapped is a sheet over the pane, offered from the Statistics heading and never unasked.** `views/wrapped.rs`: `open_wrapped` reads on the background executor and sets `RootView::wrapped`, a `Deck` (the years heard, the review, its slides, the slide shown); `Sheet::Wrapped` keeps the focus, escape closes it, and the plain arrows, which are the seek keys, turn the slide (`turn_the_slide`) because a sheet in front holds them back from the transport. A slide fades in over `HANDS_OVER`, keyed by its place; there is no auto-advance. Each row and bar is a list item saying what it shows. *Copy* takes `YearReview::summary`; *Save card* writes `wrapped_card.rs`'s picture, an SVG written by hand in the worn palette and drawn by `resvg` on the background executor with the system's fonts (`the_arrows_turn_the_slides_and_escape_closes_the_deck_leaving_the_pane_alone`, `a_name_written_on_the_card_cannot_break_out_of_the_drawing`).
+- **The Statistics pane reads top down from one figure to the rankings** (`views/statistics.rs`):
+  *Time listened* and its pace over every day the window spans (`the_pace_of`) beside four counts,
+  the number ones with their art, the chart, the moments (busiest day, longest run, the hour and the
+  day heard most), when in the day and the week, genres beside the sound, tracks, then albums beside
+  artists. **Two columns stand only from `statistics_two_columns()`**, read off the `grid_width` a
+  `kit::measures_the_grid` under the pane writes, not a wrapping row (taffy sizes a wrapping flex item
+  at min-content width); below it everything stacks. A ranked row is a `tall_row`, its wash as long as
+  its share of the first row, its by-line the maker and plays. The three lists stay one reach run in
+  order (`heard_rows`).
 - **The statistics chart is `div`s, not a canvas** (a few dozen discrete bars; a `div` carries a
-  `hint::Names` hover free). A day with no plays still draws its baseline; a run over `BARS_AT_MOST`
-  (120) folds whole days into one bar. Axis: *today*, *yesterday*, else the date via
+  `hint::Names` hover free). `a_standing_bar` is every bar of the three charts, the peak lit, the rest
+  the accent worn thinner. The header says the average, drawn as a line, and the peak, and how many
+  days a folded bar holds, since a peak over four days is not a day's. A day with no plays still draws
+  its baseline; a run over `BARS_AT_MOST` (120) folds whole days into one bar. Axis: *today*, *yesterday*, else the date via
   `resonate-core::CivilDate` of the day `Calendar::local` puts each bar's midnight on (the calendar
   history buckets plays by); `Chart::in_calendar` takes one so tests hold the axis to UTC and a zone
   east of it (`a_day_is_dated_in_the_listeners_calendar_rather_than_greenwichs`).
 - **Suggestions: shelves by kind; a card opens onto what it would hold.** `SuggestionKind::ALL` groups
-  cards under *From your listening*, *Eras*, *Genres*, *Artists*, *Sound*, each an eyebrow over a
+  cards under *Made for you*, *Rediscover*, *From your listening*, *Eras*, *Genres*, *Artists*, *Sound*, each an eyebrow over a
   wrapping row. Pressing art or name = `LibraryModel::open_suggestion`: `SavedQuery` kept in a
   `Previewed`, first `PREVIEWED_AT_MOST` (500) rows read on the background executor; `preview_further`
   grows the window whenever the list is drawn within `LOOK_AHEAD` of full. The opened pane draws a way

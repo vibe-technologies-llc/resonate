@@ -177,7 +177,7 @@ pub use crate::{
         FilledFromTheLink, FollowedProfile, FromTheLink, KEPT_IN_STEP_EVERY, PlaylistSource, Upkeep,
     },
     spelling::{Spellings, spelt_alike},
-    statistics::{Day, Listened, MostListened, Statistics, Window},
+    statistics::{Day, Habits, Listened, MostListened, Statistics, Window},
     store::{A_THUMBNAIL_BELOW, betters, folded_letters},
     studies::{
         Agreement, HEARD_AT_LEAST, Heard, HeardAs, KeptPrint, Studied, StudiedTrack, StudyFilter,

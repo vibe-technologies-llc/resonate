@@ -132,11 +132,32 @@ rows read via `Player::media` like any unscanned row.
   `Suggestion { name, reason, query, rows, length, pictured_by }`; the query is written through
   `Display for Search`, so suggestion and search-box parse cannot drift. A genre/artist with no
   letter or digit or containing `"` is not offered. Saving = `Library::save_query`; nothing persists
-  until saved; nothing offered below `ENOUGH_TO_OFFER` rows; `names_a_decade` drops a genre that is
-  only a decade. `Library::suggestions` answers an `Arc<[Suggestion]>` kept beside the search
-  vocabulary under a counter the `update_hook` steps for any write in `tracks`, `albums`, `artists`,
-  `artist_genres` (plays and favourites count too); another process's writes drop both via the data
-  version. `length` is an aggregate with no `ORDER BY` wherever the query has no limit/offset.
+  until saved; nothing offered below `ENOUGH_TO_OFFER` rows (`ENOUGH_OF_ONE_ARTIST` for a list of one
+  artist or a few); `names_a_decade` drops a genre that is only a decade. `Library::suggestions`
+  answers an `Arc<[Suggestion]>` kept beside the search vocabulary under a counter the `update_hook`
+  steps for any write in `tracks`, `albums`, `artists`, `artist_genres` (plays and favourites count
+  too) and under the local day; another process's writes drop both via the data version.
+  - **Lists read from listening are still saved queries, so they need nothing the grammar cannot
+    say.** *On repeat* (`plays:>=3@1mo`), *Forgotten favourites*, *Old flames*, *Second chances*,
+    *Starred, never played*, *Fresh arrivals*, an artist's *deep cuts*, *Discover* (an artist with
+    no plays), *Back to* (an artist played often, quiet for half a year), *Unheard* a genre played
+    most. Shelves: `Kind::ForYou`, `Rediscover`, then the rest (`Reason::kind`).
+  - **More like an artist is a local reading of genres, no network.** `kindred_to` scores every other
+    artist by the genres it shares with the seed, a rarer genre weighing more (`1 / ln(2 + holders)`),
+    passes over the artists heard lately and asks for the best `KINDRED_ARTISTS_AT_MOST` in one `or`.
+  - **Variety is a turn, not chance.** `taken_in_turn` starts a list at `today % len`, so the genres
+    and artists past those always offered, the genre-of-a-decade cards, the seeds of *More like*
+    and *deep cuts*, and *Discover* and *Back to* change daily yet read the same all day and in tests.
+    A card opened as its turn ends goes back to the shelves, as one the catalog stops offering does.
+  - **A list from listening gives way to one holding the same rows** (`Standing::GivesWayToTheSameRows`,
+    weighed by count and total length): a small catalog is not offered one set of songs under five
+    names, and the plain decade, genre, artist and shape cards, measured first, always stand.
+  - **What no play can move is kept apart.** `Filing` (the decades, ranked genres, genres of each
+    decade and each artist's genres) is `Inner::filing`, kept under `names_stamp`, so a counted play
+    reads only `the_artists_as_heard`, one scan answering the most played, the never played and
+    those left behind, and measures the lists. On 300 000 synthetic tracks: about 6 s to read whole,
+    about 4 s after a play, on the background executor; a catalog of hundreds of songs, 30 ms.
+  `length` is an aggregate with no `ORDER BY` wherever the query has no limit/offset.
   `pictured_by` = `db::pictured_by`: albums holding a picture the search's rows fall on, most rows
   first, up to `PICTURED_BY_AT_MOST` (4), skipping an album whose picture another already stood for,
   then one that merely *looks like* one standing. `store::the_picture_of!` = `coalesce(cover_key,
@@ -148,6 +169,13 @@ rows read via `Player::media` like any unscanned row.
   table).
 
 (`every_suggestion_reads_back_through_the_grammar_it_was_written_in`)
+- **`Library::habits` is what the Statistics pane says beyond the counts.** `Habits` holds a
+  `resonate_core::wrapped::Rhythm` read `across` the window's quarter hours (hours, Monday-first
+  weekdays, days heard, busiest day, longest run: the type Wrapped reads for one year), the top
+  genres and `FormatShares` (`wrapped::genres`, `wrapped::formats`, asked to the end of time). As in
+  Wrapped, time counts passes and unheld listens while genres and the sound read what still has a
+  row. `Listened` carries `by`, `album` and `has_portrait` so a ranked row is drawn without a read per
+  row.
 - **A share is the link alone, one for three callers.** `Library::shareable` reads the track and its
   `release_track_links`, `album_links`; `Shared::written` is a pure function over them, so window,
   `resonate share` and others agree. **Song.link's own short page wherever the service has one**:

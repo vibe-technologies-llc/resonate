@@ -3,10 +3,13 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use resonate_core::{AlbumId, ArtistId, Calendar, TrackId};
+use resonate_core::{
+    AlbumId, ArtistId, Calendar, TrackId,
+    wrapped::{FormatShares, QuarterHeard, Ranked, Rhythm},
+};
 use rusqlite::{Connection, params};
 
-use crate::{Error, Result, StoreOp, db::Inner, store};
+use crate::{Error, Result, StoreOp, db::Inner, store, wrapped};
 
 const SECONDS_PER_DAY: u64 = 86_400;
 const DAYS_IN_A_WEEK: u64 = 7;
@@ -22,6 +25,7 @@ const SECONDS_PER_QUARTER_HOUR: i64 = 15 * 60;
 const NANOS_PER_QUARTER_HOUR: i64 = SECONDS_PER_QUARTER_HOUR * NANOS_PER_SECOND;
 
 const SINCE_THE_BEGINNING: i64 = i64::MIN;
+const UNTIL_THE_END: i64 = i64::MAX;
 
 const WHAT_WAS_HEARD: &str = "SELECT count(*)
               + (SELECT count(*) FROM unheld_listens u WHERE u.at >= ?1),
@@ -32,26 +36,28 @@ const WHAT_WAS_HEARD: &str = "SELECT count(*)
        FROM listens l JOIN tracks t ON t.id = l.track_id
       WHERE l.at >= ?1";
 
-const THE_TRACKS_MOST_LISTENED_TO: &str =
-    "SELECT t.id, t.title, count(*), coalesce(sum(l.heard), 0) AS listened
+const THE_TRACKS_MOST_LISTENED_TO: &str = "SELECT t.id, t.title, t.artist, t.album_id, 0, count(*),
+            coalesce(sum(l.heard), 0) AS listened
        FROM listens l JOIN tracks t ON t.id = l.track_id
       WHERE l.at >= ?1
       GROUP BY t.id
       ORDER BY listened DESC, count(*) DESC, t.title COLLATE NOCASE
       LIMIT ?2";
 
-const THE_ALBUMS_MOST_LISTENED_TO: &str =
-    "SELECT a.id, a.title, count(*), coalesce(sum(l.heard), 0) AS listened
+const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT a.id, a.title, owner.name, a.id, 0, count(*),
+            coalesce(sum(l.heard), 0) AS listened
        FROM listens l
        JOIN tracks t ON t.id = l.track_id
        JOIN albums a ON a.id = t.album_id
+       LEFT JOIN artists owner ON owner.id = a.artist_id
       WHERE l.at >= ?1
       GROUP BY a.id
       ORDER BY listened DESC, count(*) DESC, a.title COLLATE NOCASE
       LIMIT ?2";
 
 const THE_ARTISTS_MOST_LISTENED_TO: &str =
-    "SELECT r.id, r.name, count(*), coalesce(sum(l.heard), 0) AS listened
+    "SELECT r.id, r.name, NULL, NULL, r.portrait IS NOT NULL, count(*),
+            coalesce(sum(l.heard), 0) AS listened
        FROM listens l
        JOIN tracks t ON t.id = l.track_id
        JOIN artists r ON r.id = t.artist_id
@@ -128,6 +134,9 @@ pub struct Statistics {
 pub struct Listened<Id> {
     pub id: Id,
     pub name: String,
+    pub by: Option<String>,
+    pub album: Option<AlbumId>,
+    pub has_portrait: bool,
     pub plays: u64,
     pub listened: Duration,
 }
@@ -144,6 +153,13 @@ pub struct Day {
     pub at: SystemTime,
     pub plays: u64,
     pub listened: Duration,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Habits {
+    pub rhythm: Rhythm,
+    pub genres: Vec<Ranked>,
+    pub formats: Option<FormatShares>,
 }
 
 struct Counted {
@@ -212,22 +228,7 @@ fn listening_by_day_in(
     now: SystemTime,
 ) -> Result<Vec<Day>> {
     let since = from_when(window);
-    let quarters = inner.read(|connection| {
-        let mut statement = connection
-            .prepare(WHAT_WAS_HEARD_EACH_QUARTER_HOUR)
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-
-        statement
-            .query_map(params![NANOS_PER_QUARTER_HOUR, since], |row| {
-                Ok(Counted {
-                    period: row.get(0)?,
-                    plays: row.get(1)?,
-                    listened: row.get(2)?,
-                })
-            })
-            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-            .map_err(|source| Error::store(StoreOp::Query, source))
-    })?;
+    let quarters = inner.read(|connection| quarters_heard(connection, since))?;
     let counted = into_days(&quarters, calendar);
 
     Ok(filled(
@@ -236,6 +237,47 @@ fn listening_by_day_in(
         calendar.day_of(now),
         calendar,
     ))
+}
+
+pub(crate) fn habits(inner: &Inner, window: Window) -> Result<Habits> {
+    habits_in(inner, window, &Calendar::local())
+}
+
+fn habits_in(inner: &Inner, window: Window, calendar: &Calendar) -> Result<Habits> {
+    let since = from_when(window);
+
+    inner.read(|connection| {
+        let quarters = quarters_heard(connection, since)?;
+
+        Ok(Habits {
+            rhythm: Rhythm::across(
+                quarters.iter().map(|quarter| QuarterHeard {
+                    at: store::from_nanos(quarter.period.saturating_mul(NANOS_PER_QUARTER_HOUR)),
+                    listened: how_long(quarter.listened),
+                }),
+                calendar,
+            ),
+            genres: wrapped::genres(connection, since, UNTIL_THE_END)?,
+            formats: wrapped::formats(connection, since, UNTIL_THE_END)?,
+        })
+    })
+}
+
+fn quarters_heard(connection: &Connection, since: i64) -> Result<Vec<Counted>> {
+    let mut statement = connection
+        .prepare(WHAT_WAS_HEARD_EACH_QUARTER_HOUR)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map(params![NANOS_PER_QUARTER_HOUR, since], |row| {
+            Ok(Counted {
+                period: row.get(0)?,
+                plays: row.get(1)?,
+                listened: row.get(2)?,
+            })
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 fn into_days(quarters: &[Counted], calendar: &Calendar) -> Vec<Counted> {
@@ -255,6 +297,16 @@ fn into_days(quarters: &[Counted], calendar: &Calendar) -> Vec<Counted> {
     days.into_values().collect()
 }
 
+struct Reading {
+    id: i64,
+    name: String,
+    by: Option<String>,
+    album: Option<i64>,
+    has_portrait: bool,
+    plays: i64,
+    listened: i64,
+}
+
 fn listened<Id>(
     connection: &Connection,
     sql: &str,
@@ -267,23 +319,32 @@ fn listened<Id>(
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let held = statement
         .query_map(params![since, most], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)?,
-            ))
+            Ok(Reading {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                by: row.get(2)?,
+                album: row.get(3)?,
+                has_portrait: row.get(4)?,
+                plays: row.get(5)?,
+                listened: row.get(6)?,
+            })
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     held.into_iter()
-        .map(|(id, name, plays, listened)| {
+        .map(|read| {
             Ok(Listened {
-                id: named(id as u64)?,
-                name,
-                plays: how_many(plays),
-                listened: how_long(listened),
+                id: named(read.id as u64)?,
+                name: read.name,
+                by: read.by.filter(|name| !name.trim().is_empty()),
+                album: read
+                    .album
+                    .map(|album| AlbumId::new(album as u64))
+                    .transpose()?,
+                has_portrait: read.has_portrait,
+                plays: how_many(read.plays),
+                listened: how_long(read.listened),
             })
         })
         .collect()
@@ -587,6 +648,85 @@ mod tests {
                 month: 1,
                 day: 1
             }
+        );
+    }
+
+    #[test]
+    fn a_ranked_row_says_who_made_it_and_what_pictures_it() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        counted_at(&library, "Echoes", &[(Duration::ZERO, A_MINUTE)]);
+        library
+            .inner()
+            .write(|transaction| {
+                for statement in [
+                    "INSERT INTO artists (id, name, key) VALUES (7, 'The Orbiters', 'the orbiters')",
+                    "INSERT INTO albums (id, title, artist_id) VALUES (9, 'Orbits', 7)",
+                    "UPDATE tracks SET artist = 'The Orbiters', artist_id = 7, album_id = 9",
+                ] {
+                    transaction
+                        .execute(statement, [])
+                        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+                }
+
+                Ok(())
+            })
+            .expect("the catalog takes an artist and an album");
+
+        let most = library
+            .most_listened(Window::Everything, 5)
+            .expect("the catalog answers for everything");
+        let album = AlbumId::new(9).expect("an album's id");
+
+        assert_eq!(most.tracks[0].by.as_deref(), Some("The Orbiters"));
+        assert_eq!(most.tracks[0].album, Some(album));
+        assert_eq!(most.albums[0].by.as_deref(), Some("The Orbiters"));
+        assert_eq!(most.albums[0].album, Some(album));
+        assert_eq!(most.artists[0].by, None);
+        assert!(!most.artists[0].has_portrait);
+    }
+
+    #[test]
+    fn habits_keep_to_the_window_and_fold_each_listen_into_its_hour_and_weekday() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        counted_at(&library, "Lately", &[(TWO_DAYS, A_MINUTE)]);
+        counted_at(&library, "Once", &[(A_FORTNIGHT, A_MINUTE * 3)]);
+        let lately = SystemTime::now()
+            .checked_sub(TWO_DAYS)
+            .expect("two days ago is a time");
+        let hour = Calendar::utc().minute_of_the_day(lately) as usize / 60;
+
+        let week = habits_in(library.inner(), Window::Week, &Calendar::utc())
+            .expect("the catalog answers for a week");
+        let everything = habits_in(library.inner(), Window::Everything, &Calendar::utc())
+            .expect("the catalog answers for everything");
+
+        assert_eq!(week.rhythm.days_heard, 1);
+        assert_eq!(week.rhythm.hours[hour], A_MINUTE);
+        assert_eq!(
+            week.rhythm.weekdays.iter().sum::<Duration>(),
+            A_MINUTE,
+            "a listen older than the window was folded in"
+        );
+        assert_eq!(everything.rhythm.days_heard, 2);
+        assert_eq!(
+            everything.rhythm.weekdays.iter().sum::<Duration>(),
+            A_MINUTE * 4
+        );
+        assert_eq!(
+            everything.formats.map(|shares| shares.lossless_permille),
+            Some(1_000),
+            "a PCM file heard is not lossless"
+        );
+    }
+
+    #[test]
+    fn habits_of_a_window_with_nothing_in_it_say_nothing() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
+        assert_eq!(
+            habits_in(library.inner(), Window::Everything, &Calendar::utc())
+                .expect("the catalog answers for everything"),
+            Habits::default()
         );
     }
 
