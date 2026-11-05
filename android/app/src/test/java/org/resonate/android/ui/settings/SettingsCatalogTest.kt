@@ -67,7 +67,7 @@ class SettingsCatalogTest {
     }
 
     @Test
-    fun mixesAreFoundUnderMadeForYou() {
-        assertEquals("High resolution", Setting.SUGGESTIONS.match("resolution")?.shownDetail)
+    fun listsAreFoundUnderMadeForYou() {
+        assertEquals("Old flames", Setting.SUGGESTIONS.match("flames")?.shownDetail)
     }
 }

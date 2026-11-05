@@ -13,15 +13,15 @@ import org.resonate.android.nativecore.ArtistHit
 import org.resonate.android.nativecore.CollectionOrder
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.MusicPlaylist
+import org.resonate.android.nativecore.SuggestedList
 import org.resonate.android.nativecore.Track
-import org.resonate.android.ui.Mix
+import org.resonate.android.ui.onHome
 import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.suggestions
 import org.resonate.android.ui.library.Loaded
 import org.resonate.android.ui.library.Retry
 import org.resonate.android.ui.library.catalogRead
 import org.resonate.android.ui.library.catalogReady
-
-data class MixShelf(val mix: Mix, val covers: List<ULong>)
 
 class HomeViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
@@ -53,15 +53,9 @@ class HomeViewModel(private val resonate: Resonate) : ViewModel() {
             .catalogRead(retry) { it.artists(CollectionOrder.PLAYS).take(SHELF_AT_MOST) }
             .stateIn(viewModelScope, shared, Loaded.Loading)
 
-    val mixes: StateFlow<Loaded<List<MixShelf>>> =
+    val mixes: StateFlow<Loaded<List<SuggestedList>>> =
         resonate
-            .catalogRead(retry) { native ->
-                Mix.entries.mapNotNull { mix ->
-                    val filter = mix.filter()
-                    val any = native.filteredTracks(filter, 0u, 1u).isNotEmpty()
-                    if (any) MixShelf(mix, native.picturedBy(filter)) else null
-                }
-            }
+            .catalogRead(retry) { native -> native.suggestions().onHome() }
             .stateIn(viewModelScope, shared, Loaded.Loading)
 
     val playlists: StateFlow<List<MusicPlaylist>> = features.playlists

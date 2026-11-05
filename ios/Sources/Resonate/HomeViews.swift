@@ -136,17 +136,16 @@ private struct HomeMixes: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @ScaledMetric(relativeTo: .subheadline) private var cardWidth: CGFloat = 160
-    @State private var covers: [String: [UInt64]] = [:]
+    @State private var offered = OfferedMixes()
 
     var body: some View {
-        let mixes = SuggestedMix.offered(topArtist: library.features.listeningDetail?.artists.first?.name)
         Section {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
-                    ForEach(mixes) { mix in
+                    ForEach(offered.home) { mix in
                         SuggestedMixCard(
                             mix: mix,
-                            covers: (covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
+                            covers: (offered.covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
                             open: { navigation.open(.mix(mix.id)) }
                         )
                         .frame(width: cardWidth)
@@ -159,9 +158,9 @@ private struct HomeMixes: View {
         } header: {
             SeeAllPageHeader(title: "Made for you", more: true, page: .suggestions)
         }
-        .task(id: "\(library.collectionGeneration):\(mixes.map(\.id).joined())") {
-            guard let found = await SuggestedMix.covers(of: mixes, in: library) else { return }
-            covers = found
+        .task(id: "\(library.collectionGeneration):\(library.catalogEpoch)") {
+            guard let found = await OfferedMixes.read(in: library) else { return }
+            offered = found
         }
     }
 }

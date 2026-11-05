@@ -18,14 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Insights
-import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -64,7 +59,9 @@ import java.time.LocalTime
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.ui.LocalResonate
-import org.resonate.android.ui.Mix
+import org.resonate.android.nativecore.SuggestedList
+import org.resonate.android.ui.icon
+import org.resonate.android.ui.screen
 import org.resonate.android.ui.components.rememberTitleMaxLines
 import org.resonate.android.ui.components.CollectionRow
 import org.resonate.android.ui.components.IconTile
@@ -168,8 +165,8 @@ private fun HomeFeed(model: HomeViewModel, padding: PaddingValues) {
         mixes.valueOrNull()?.takeIf { it.isNotEmpty() }?.let { shown ->
             item("mixes-title") { SectionHeader("Made for you") }
             item("mixes") {
-                Shelf(shown, key = { it.mix.name }) { shelf ->
-                    MixCard(shelf, onClick = { navigator.open(Screen.Mix(shelf.mix)) })
+                Shelf(shown, key = { it.id }) { list ->
+                    MixCard(list, onClick = { navigator.open(list.screen) })
                 }
             }
         }
@@ -221,41 +218,32 @@ private fun HomeFeed(model: HomeViewModel, padding: PaddingValues) {
     }
 }
 
-private val Mix.icon: ImageVector
-    get() =
-        when (this) {
-            Mix.NEVER_HEARD -> Icons.Rounded.AutoAwesome
-            Mix.MOST_PLAYED -> Icons.AutoMirrored.Rounded.TrendingUp
-            Mix.RECENTLY_ADDED -> Icons.Rounded.NewReleases
-            Mix.HIGH_RESOLUTION -> Icons.Rounded.HighQuality
-        }
-
 private data class MixColours(val container: Color, val content: Color, val badge: Color, val onBadge: Color)
 
 @Composable
-private fun Mix.colours(): MixColours {
+private fun SuggestedList.colours(): MixColours {
     val scheme = MaterialTheme.colorScheme
-    return when (this) {
-        Mix.NEVER_HEARD -> MixColours(scheme.tertiaryContainer, scheme.onTertiaryContainer, scheme.tertiary, scheme.onTertiary)
-        Mix.MOST_PLAYED -> MixColours(scheme.primaryContainer, scheme.onPrimaryContainer, scheme.primary, scheme.onPrimary)
-        Mix.RECENTLY_ADDED -> MixColours(scheme.secondaryContainer, scheme.onSecondaryContainer, scheme.secondary, scheme.onSecondary)
-        Mix.HIGH_RESOLUTION -> MixColours(scheme.surfaceContainerHighest, scheme.onSurface, scheme.inverseSurface, scheme.inverseOnSurface)
+    return when (reason.ordinal % MIX_PALETTES) {
+        0 -> MixColours(scheme.tertiaryContainer, scheme.onTertiaryContainer, scheme.tertiary, scheme.onTertiary)
+        1 -> MixColours(scheme.primaryContainer, scheme.onPrimaryContainer, scheme.primary, scheme.onPrimary)
+        2 -> MixColours(scheme.secondaryContainer, scheme.onSecondaryContainer, scheme.secondary, scheme.onSecondary)
+        else -> MixColours(scheme.surfaceContainerHighest, scheme.onSurface, scheme.inverseSurface, scheme.inverseOnSurface)
     }
 }
 
 @Composable
-private fun MixCard(shelf: MixShelf, onClick: () -> Unit) {
-    val colours = shelf.mix.colours()
+private fun MixCard(list: SuggestedList, onClick: () -> Unit) {
+    val colours = list.colours()
     Surface(
         onClick = onClick,
         color = colours.container,
         contentColor = colours.content,
         shape = MaterialTheme.shapes.extraLarge,
-        modifier = Modifier.width(MIX_WIDTH).testTag("mix-${shelf.mix.name.lowercase()}"),
+        modifier = Modifier.width(MIX_WIDTH).testTag("mix-${list.reason.name.lowercase()}"),
     ) {
         Column(Modifier.padding(12.dp)) {
             Box {
-                PlaylistCover(shelf.covers, MIX_WIDTH - 24.dp, shape = MaterialTheme.shapes.large)
+                PlaylistCover(list.covers, MIX_WIDTH - 24.dp, shape = MaterialTheme.shapes.large)
                 Surface(
                     color = colours.badge,
                     contentColor = colours.onBadge,
@@ -263,19 +251,19 @@ private fun MixCard(shelf: MixShelf, onClick: () -> Unit) {
                     modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(40.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(shelf.mix.icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Icon(list.reason.icon, contentDescription = null, modifier = Modifier.size(22.dp))
                     }
                 }
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                shelf.mix.title,
+                list.name,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = rememberTitleMaxLines(),
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                shelf.mix.subtitle,
+                list.detail,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
                 minLines = 2,
@@ -399,5 +387,7 @@ private fun Figure(value: String, label: String, modifier: Modifier = Modifier) 
 }
 
 private val MIX_WIDTH = 176.dp
+
+private const val MIX_PALETTES = 4
 private const val CAPTION_GONE_BELOW = 0.3f
 private const val CAPTION_WHOLE_FROM = 0.5f

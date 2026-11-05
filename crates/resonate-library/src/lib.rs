@@ -183,7 +183,11 @@ pub use crate::{
         Agreement, HEARD_AT_LEAST, Heard, HeardAs, KeptPrint, Studied, StudiedTrack, StudyFilter,
         weighed_again,
     },
-    suggest::{Kind as SuggestionKind, PICTURED_BY_AT_MOST, Reason, Suggestion},
+    suggest::{
+        ARTISTS_OF_LATE_AT_MOST, ArtistHeard, Candidate, Kind as SuggestionKind, Kinship, OF_LATE,
+        PICTURED_BY_AT_MOST, Reason, Suggestion, Weighed, artists_as_heard, artists_heard_lately,
+        genres_ranked_by, listening_lists, the_shape_of_the_catalog, worth_offering,
+    },
     sung::{BETTERED_AFTER, LyricsAhead, MISSED_AGAIN_AFTER},
     supply::{
         ANSWERS_WITHIN, POLL_AGAIN_AFTER, PollOptions, PollProgress, PollStats, PollSummary,

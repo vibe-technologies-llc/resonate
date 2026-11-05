@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::LISTED_APART_BY;
-use resonate_core::AlbumId;
+use resonate_core::{Accent, AlbumId};
 use rusqlite::{Connection, Row, params};
 use smallvec::smallvec;
 
@@ -34,7 +34,7 @@ const UNHEARD_GENRES: usize = 2;
 const KINDRED_ARTISTS_AT_MOST: usize = 6;
 
 const ARTISTS_WEIGHED_AT_MOST: usize = 24;
-const ARTISTS_OF_LATE_AT_MOST: i64 = 6;
+pub const ARTISTS_OF_LATE_AT_MOST: i64 = 6;
 const DEEP_CUTS_BEGIN_DAYS_AFTER_THE_KINDRED: i64 = 3;
 
 const YEARS_IN_A_DECADE: i32 = 10;
@@ -47,7 +47,7 @@ const A_SLOW_BURNER: Duration = Duration::from_secs(6 * 60);
 const SHORT_AND_SHARP: Duration = Duration::from_secs(2 * 60);
 const A_MONTH: Duration = Duration::from_secs(30 * SECONDS_PER_DAY);
 const HALF_A_YEAR: Duration = Duration::from_secs(180 * SECONDS_PER_DAY);
-const OF_LATE: Duration = Duration::from_secs(90 * SECONDS_PER_DAY);
+pub const OF_LATE: Duration = Duration::from_secs(90 * SECONDS_PER_DAY);
 
 const NEVER_PLAYED: u32 = 0;
 const PLAYED_ONCE: u32 = 1;
@@ -186,6 +186,31 @@ impl Reason {
     }
 }
 
+impl Reason {
+    pub fn accents(&self, name: &str) -> (Accent, Accent) {
+        match self {
+            Self::Decade(_) | Self::GenreOfADecade(_) => (Accent::Amber, Accent::Peach),
+            Self::NeverHeard | Self::UnheardGenre => (Accent::Teal, Accent::Blue),
+            Self::MostPlayed | Self::OnRepeat => (Accent::Red, Accent::Peach),
+            Self::RecentlyAdded | Self::FreshArrivals => (Accent::Green, Accent::Teal),
+            Self::BackCatalogue | Self::OldFlames | Self::SecondChances => {
+                (Accent::Amber, Accent::Mauve)
+            }
+            Self::ForgottenFavourites | Self::StarredUnheard => (Accent::Mauve, Accent::Red),
+            Self::HiRes | Self::Surround | Self::Mono => (Accent::Green, Accent::Blue),
+            Self::LongPlayers | Self::SlowBurners | Self::ShortAndSharp => {
+                (Accent::Blue, Accent::Mauve)
+            }
+            Self::Genre
+            | Self::Artist
+            | Self::KindredArtists
+            | Self::DeepCuts
+            | Self::ArtistToDiscover
+            | Self::ArtistLeftBehind => Accent::named_pair(name),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     ForYou,
@@ -267,10 +292,11 @@ enum Standing {
     GivesWayToTheSameRows,
 }
 
-struct Candidate {
-    name: String,
-    reason: Reason,
-    query: SavedQuery,
+#[derive(Clone, Debug)]
+pub struct Candidate {
+    pub name: String,
+    pub reason: Reason,
+    pub query: SavedQuery,
     enough: u32,
     standing: Standing,
 }
@@ -324,17 +350,30 @@ impl Spelt {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct Filing {
-    decades: Vec<i32>,
-    genres: Vec<String>,
-    genres_of_decades: Vec<(i32, String)>,
+pub struct Kinship {
     artists: ArtistsFiled,
     holders: AHashMap<String, u32>,
 }
 
+impl Kinship {
+    pub fn of(shelved: &[(String, String)]) -> Self {
+        let (artists, holders) = artists_and_who_shares_their_genres(shelved);
+
+        Self { artists, holders }
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Filing {
+    decades: Vec<i32>,
+    genres: Vec<String>,
+    genres_of_decades: Vec<(i32, String)>,
+    kin: Kinship,
+}
+
 impl Filing {
     pub(crate) fn read(inner: &Inner) -> Result<Self> {
-        let (artists, holders) = artists_and_who_shares_their_genres(&inner.read(named_and_filed)?);
+        let kin = Kinship::of(&inner.read(named_and_filed)?);
 
         Ok(Self {
             decades: decades(inner)?,
@@ -343,17 +382,60 @@ impl Filing {
                 [THE_GENRES_THE_FILES_NAME, THE_GENRES_THE_ARTISTS_WERE_GIVEN],
             )?,
             genres_of_decades: genres_of_decades(inner)?,
-            artists,
-            holders,
+            kin,
         })
     }
 }
 
-struct ArtistHeard {
-    name: String,
-    plays: i64,
-    held: i64,
-    played: Option<i64>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtistHeard {
+    pub name: String,
+    pub plays: i64,
+    pub held: i64,
+    pub last_played: Option<SystemTime>,
+}
+
+pub fn artists_as_heard(mut heard: Vec<ArtistHeard>) -> Vec<ArtistHeard> {
+    heard.retain(|artist| {
+        let name = artist.name.trim();
+
+        fits_in_a_phrase(name)
+    });
+    heard.sort_by(|one, other| {
+        other
+            .plays
+            .cmp(&one.plays)
+            .then(other.held.cmp(&one.held))
+            .then_with(|| one.name.to_lowercase().cmp(&other.name.to_lowercase()))
+    });
+
+    heard
+}
+
+pub fn artists_heard_lately(heard: impl IntoIterator<Item = (String, u64)>) -> Vec<String> {
+    let mut merged: AHashMap<String, (String, u64)> = AHashMap::new();
+    for (name, time) in heard {
+        let held = merged
+            .entry(store::folded_letters(name.trim()))
+            .or_insert_with(|| (name.trim().to_owned(), 0));
+        held.1 = held.1.saturating_add(time);
+    }
+
+    let mut ranked: Vec<(String, u64)> = merged.into_values().collect();
+    ranked.sort_by(|one, other| {
+        other
+            .1
+            .cmp(&one.1)
+            .then_with(|| one.0.to_lowercase().cmp(&other.0.to_lowercase()))
+    });
+
+    names_of(
+        ranked
+            .into_iter()
+            .take(ARTISTS_OF_LATE_AT_MOST as usize)
+            .map(|(name, time)| (name, i64::try_from(time).unwrap_or(i64::MAX)))
+            .collect(),
+    )
 }
 
 fn the_artists_as_heard(inner: &Inner) -> Result<Vec<ArtistHeard>> {
@@ -369,7 +451,7 @@ fn the_artists_as_heard(inner: &Inner) -> Result<Vec<ArtistHeard>> {
                         name: row.get::<_, String>(0)?.trim().to_owned(),
                         plays: row.get(1)?,
                         held: row.get(2)?,
-                        played: row.get(3)?,
+                        last_played: row.get::<_, Option<i64>>(3)?.map(store::from_nanos),
                     })
                 })
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -396,28 +478,56 @@ pub(crate) fn suggestions(
     candidates.extend(from_what_you_play(inner, filing, &heard, today, now)?);
     candidates.extend(the_sounds_the_catalog_holds());
 
-    let mut offered: Vec<Suggestion> = Vec::with_capacity(candidates.len());
+    worth_offering(candidates, |query| -> Result<Weighed> {
+        let measured = db::measured(inner, &TrackQuery::from(query))?;
+
+        Ok(Weighed {
+            rows: measured.rows,
+            length: measured.length,
+        })
+    })?
+    .into_iter()
+    .map(|(candidate, weighed)| -> Result<Suggestion> {
+        Ok(Suggestion {
+            pictured_by: db::pictured_by(
+                inner,
+                &TrackQuery::from(&candidate.query),
+                PICTURED_BY_AT_MOST,
+            )?,
+            name: candidate.name,
+            reason: candidate.reason,
+            query: candidate.query,
+            rows: u64::from(weighed.rows),
+            length: weighed.length,
+        })
+    })
+    .collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Weighed {
+    pub rows: u32,
+    pub length: Option<Duration>,
+}
+
+pub fn worth_offering<E>(
+    candidates: Vec<Candidate>,
+    mut weigh: impl FnMut(&SavedQuery) -> std::result::Result<Weighed, E>,
+) -> std::result::Result<Vec<(Candidate, Weighed)>, E> {
+    let mut offered = Vec::with_capacity(candidates.len());
     let mut filled: AHashSet<(u32, Option<Duration>)> = AHashSet::new();
     for candidate in candidates {
-        let asked = TrackQuery::from(&candidate.query);
-        let measured = db::measured(inner, &asked)?;
-        if measured.rows < candidate.enough {
+        let weighed = weigh(&candidate.query)?;
+        if weighed.rows < candidate.enough {
             continue;
         }
-        let what_it_holds = (measured.rows, measured.length);
+        let what_it_holds = (weighed.rows, weighed.length);
         if candidate.standing == Standing::GivesWayToTheSameRows && filled.contains(&what_it_holds)
         {
             continue;
         }
         filled.insert(what_it_holds);
-        offered.push(Suggestion {
-            pictured_by: db::pictured_by(inner, &asked, PICTURED_BY_AT_MOST)?,
-            name: candidate.name,
-            reason: candidate.reason,
-            query: candidate.query,
-            rows: u64::from(measured.rows),
-            length: measured.length,
-        });
+        offered.push((candidate, weighed));
     }
 
     Ok(offered)
@@ -576,21 +686,30 @@ fn genres(filing: &Filing, today: i64) -> Vec<Candidate> {
 }
 
 fn genres_ranked(inner: &Inner, asked: [&str; 2]) -> Result<Vec<String>> {
-    let billed = inner.read(|connection| {
-        let mut billed: AHashMap<String, Spelt> = AHashMap::new();
+    let counted = inner.read(|connection| {
+        let mut counted = Vec::new();
         for sql in asked {
-            for (listed, rows) in named_and_counted(connection, sql, None)? {
-                for name in offerable_genres(&listed) {
-                    billed
-                        .entry(store::folded_letters(name))
-                        .or_default()
-                        .taking(name, u64::try_from(rows).unwrap_or_default());
-                }
-            }
+            counted.extend(named_and_counted(connection, sql, None)?);
         }
 
-        Ok(billed)
+        Ok(counted)
     })?;
+
+    Ok(genres_ranked_by(counted.into_iter().map(
+        |(listed, rows)| (listed, u64::try_from(rows).unwrap_or_default()),
+    )))
+}
+
+pub fn genres_ranked_by(counted: impl IntoIterator<Item = (String, u64)>) -> Vec<String> {
+    let mut billed: AHashMap<String, Spelt> = AHashMap::new();
+    for (listed, rows) in counted {
+        for name in offerable_genres(&listed) {
+            billed
+                .entry(store::folded_letters(name))
+                .or_default()
+                .taking(name, rows);
+        }
+    }
 
     let mut held: Vec<(String, u64)> = billed
         .into_values()
@@ -598,7 +717,7 @@ fn genres_ranked(inner: &Inner, asked: [&str; 2]) -> Result<Vec<String>> {
         .collect();
     held.sort_by(|(name, rows), (other, held)| held.cmp(rows).then_with(|| name.cmp(other)));
 
-    Ok(held.into_iter().map(|(name, _)| name).collect())
+    held.into_iter().map(|(name, _)| name).collect()
 }
 
 fn offerable_genres(listed: &str) -> impl Iterator<Item = &str> {
@@ -695,12 +814,12 @@ fn never_played_of(heard: &[ArtistHeard]) -> Vec<&str> {
         .collect()
 }
 
-fn left_behind_of(heard: &[ArtistHeard], before: i64) -> Vec<&str> {
+fn left_behind_of(heard: &[ArtistHeard], before: SystemTime) -> Vec<&str> {
     heard
         .iter()
         .filter(|artist| {
             artist.plays >= LEFT_BEHIND_AT_LEAST
-                && artist.played.is_some_and(|played| played < before)
+                && artist.last_played.is_some_and(|played| played < before)
         })
         .take(ARTISTS_WEIGHED_AT_MOST)
         .map(|artist| artist.name.as_str())
@@ -715,7 +834,6 @@ fn from_what_you_play(
     now: SystemTime,
 ) -> Result<Vec<Candidate>> {
     let of_late = store::to_nanos(now.checked_sub(OF_LATE).unwrap_or(UNIX_EPOCH));
-    let half_a_year_ago = store::to_nanos(now.checked_sub(HALF_A_YEAR).unwrap_or(UNIX_EPOCH));
     let lately = inner.read(|connection| {
         names_read(
             connection,
@@ -723,6 +841,27 @@ fn from_what_you_play(
             params![of_late, ARTISTS_OF_LATE_AT_MOST],
         )
     })?;
+    let played_most = genres_ranked(inner, [THE_GENRES_PLAYED, THE_GENRES_OF_THE_ARTISTS_PLAYED])?;
+
+    Ok(listening_lists(
+        &filing.kin,
+        heard,
+        &lately,
+        &played_most,
+        today,
+        now,
+    ))
+}
+
+pub fn listening_lists(
+    kin: &Kinship,
+    heard: &[ArtistHeard],
+    lately: &[String],
+    played_most: &[String],
+    today: i64,
+    now: SystemTime,
+) -> Vec<Candidate> {
+    let half_a_year_ago = now.checked_sub(HALF_A_YEAR).unwrap_or(UNIX_EPOCH);
     let never_played = never_played_of(heard);
     let left_behind = left_behind_of(heard, half_a_year_ago);
 
@@ -799,14 +938,14 @@ fn from_what_you_play(
         .iter()
         .map(|name| store::folded_letters(name))
         .collect();
-    for seed in taken_in_turn(&lately, today, KINDRED_MIXES_IN_TURN) {
-        let kindred = kindred_to(filing, &seed, &known);
+    for seed in taken_in_turn(lately, today, KINDRED_MIXES_IN_TURN) {
+        let kindred = kindred_to(kin, &seed, &known);
         if !kindred.is_empty() {
             candidates.push(more_like(&seed, &kindred));
         }
     }
     for artist in taken_in_turn(
-        &lately,
+        lately,
         today + DEEP_CUTS_BEGIN_DAYS_AFTER_THE_KINDRED,
         DEEP_CUTS_IN_TURN,
     ) {
@@ -818,12 +957,11 @@ fn from_what_you_play(
     for artist in taken_in_turn(&left_behind, today, ARTISTS_TO_GO_BACK_TO_IN_TURN) {
         candidates.push(an_artist_left_behind(artist));
     }
-    let played_most = genres_ranked(inner, [THE_GENRES_PLAYED, THE_GENRES_OF_THE_ARTISTS_PLAYED])?;
     for genre in played_most.iter().take(UNHEARD_GENRES) {
         candidates.push(a_genre_unheard(genre));
     }
 
-    Ok(candidates)
+    candidates
 }
 
 fn names_read(
@@ -878,12 +1016,11 @@ fn artists_and_who_shares_their_genres(
     (filed, holders)
 }
 
-fn kindred_to(filing: &Filing, seed: &str, known: &AHashSet<String>) -> Vec<String> {
-    let Filing {
+fn kindred_to(kin: &Kinship, seed: &str, known: &AHashSet<String>) -> Vec<String> {
+    let Kinship {
         artists: filed,
         holders,
-        ..
-    } = filing;
+    } = kin;
     let seed = store::folded_letters(seed);
     let Some((_, sought)) = filed.get(&seed) else {
         return Vec::new();
@@ -1052,7 +1189,7 @@ fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
     ]
 }
 
-fn the_shape_of_the_catalog() -> Vec<Candidate> {
+pub fn the_shape_of_the_catalog() -> Vec<Candidate> {
     vec![
         of_one_term(
             "Never heard",
@@ -1320,11 +1457,9 @@ mod tests {
             .iter()
             .map(|(artist, genre)| ((*artist).to_owned(), (*genre).to_owned()))
             .collect();
-        let (artists, holders) = artists_and_who_shares_their_genres(&shelved);
 
         Filing {
-            artists,
-            holders,
+            kin: Kinship::of(&shelved),
             ..Filing::default()
         }
     }
@@ -1356,10 +1491,10 @@ mod tests {
         let known: AHashSet<String> = ["heard already".to_owned()].into_iter().collect();
 
         assert_eq!(
-            kindred_to(&shelf, "Seed", &known),
+            kindred_to(&shelf.kin, "Seed", &known),
             ["Neighbour", "Anyone", "Everyone", "Others"]
         );
-        assert!(kindred_to(&shelf, "Nobody", &known).is_empty());
+        assert!(kindred_to(&shelf.kin, "Nobody", &known).is_empty());
     }
 
     #[test]
@@ -1370,7 +1505,7 @@ mod tests {
             ("SIGUR ROS", "Rock"),
         ]);
 
-        assert_eq!(kindred_to(&shelf, "seed", &AHashSet::new()).len(), 1);
+        assert_eq!(kindred_to(&shelf.kin, "seed", &AHashSet::new()).len(), 1);
     }
 
     #[test]
@@ -1411,6 +1546,117 @@ mod tests {
         for text in &written {
             assert_eq!(Search::read(text).to_string(), *text);
         }
+    }
+
+    #[test]
+    fn the_lists_read_from_listening_are_made_from_plain_readings_and_no_catalog() {
+        let now = SystemTime::now();
+        let heard = artists_as_heard(vec![
+            ArtistHeard {
+                name: "Quiet".to_owned(),
+                plays: 0,
+                held: 7,
+                last_played: None,
+            },
+            ArtistHeard {
+                name: "Long Gone".to_owned(),
+                plays: 40,
+                held: 12,
+                last_played: now.checked_sub(Duration::from_secs(300 * SECONDS_PER_DAY)),
+            },
+            ArtistHeard {
+                name: "!!!".to_owned(),
+                plays: 90,
+                held: 12,
+                last_played: None,
+            },
+        ]);
+        let kin = Kinship::of(&[
+            ("Played Lately".to_owned(), "Dub".to_owned()),
+            ("Neighbour".to_owned(), "Dub".to_owned()),
+        ]);
+
+        let made = listening_lists(
+            &kin,
+            &heard,
+            &["Played Lately".to_owned()],
+            &["Dub".to_owned()],
+            0,
+            now,
+        );
+        let named: Vec<&str> = made
+            .iter()
+            .map(|candidate| candidate.name.as_str())
+            .collect();
+
+        assert_eq!(heard[0].name, "Long Gone");
+        assert!(named.contains(&"On repeat"));
+        assert!(named.contains(&"More like Played Lately"));
+        assert!(named.contains(&"Played Lately, deep cuts"));
+        assert!(named.contains(&"Discover Quiet"));
+        assert!(named.contains(&"Back to Long Gone"));
+        assert!(named.contains(&"Unheard Dub"));
+        assert!(!named.iter().any(|name| name.contains("!!!")));
+    }
+
+    #[test]
+    fn artists_heard_lately_are_one_artist_however_spelled_most_heard_first_and_few() {
+        let lately = artists_heard_lately([
+            ("Sigur Rós".to_owned(), 100),
+            ("Air".to_owned(), 500),
+            ("SIGUR ROS".to_owned(), 450),
+            ("a".to_owned(), 1),
+            ("b".to_owned(), 1),
+            ("c".to_owned(), 1),
+            ("d".to_owned(), 1),
+            ("e".to_owned(), 1),
+        ]);
+
+        assert_eq!(lately.len(), ARTISTS_OF_LATE_AT_MOST as usize);
+        assert_eq!(lately[0], "Sigur Rós");
+        assert_eq!(lately[1], "Air");
+    }
+
+    #[test]
+    fn a_list_holding_the_rows_of_one_before_it_gives_way_to_it() {
+        let mut candidates = the_shape_of_the_catalog();
+        candidates.truncate(1);
+        candidates.extend(listening_lists(
+            &Kinship::default(),
+            &[],
+            &[],
+            &[],
+            0,
+            SystemTime::now(),
+        ));
+        let every_list_alike = |_: &SavedQuery| -> std::result::Result<Weighed, ()> {
+            Ok(Weighed {
+                rows: ENOUGH_TO_OFFER,
+                length: None,
+            })
+        };
+
+        let offered = worth_offering(candidates, every_list_alike).expect("weighing cannot fail");
+
+        assert_eq!(offered.len(), 1);
+        assert_eq!(offered[0].0.name, "Never heard");
+    }
+
+    #[test]
+    fn a_list_too_short_for_its_floor_is_not_offered() {
+        let candidates = vec![deep_cuts_of("Seed")];
+        let four_songs = |_: &SavedQuery| -> std::result::Result<Weighed, ()> {
+            Ok(Weighed {
+                rows: ENOUGH_OF_ONE_ARTIST - 1,
+                length: None,
+            })
+        };
+
+        assert!(
+            worth_offering(candidates, four_songs)
+                .expect("weighing cannot fail")
+                .is_empty()
+        );
     }
 
     #[test]

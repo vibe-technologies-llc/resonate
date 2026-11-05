@@ -202,63 +202,106 @@ struct FolderRow: View {
     }
 }
 
-struct SuggestedMix: Identifiable {
+struct SuggestedMix: Identifiable, Sendable {
+    enum Source: Sendable {
+        case filter(TrackFilter)
+        case search(SavedSearch)
+    }
+
+    let id: String
     let title: String
     let detail: String
-    let filter: TrackFilter
+    let shelfName: String
+    let source: Source
     let accents: MixAccents
     let mark: String
 
-    var id: String { title }
+    init(list: SuggestedList) {
+        id = list.id
+        title = list.name
+        detail = list.detail
+        shelfName = list.shelfName
+        source = .search(list.search)
+        accents = list.accents
+        mark = Suggestions.symbol(for: list.reason)
+    }
 
-    static func offered(topArtist: String?) -> [SuggestedMix] {
-        let base = defaultTrackFilter()
-        var unplayed = base
-        unplayed.unplayed = true
-        var favourites = base
+    init(title: String, detail: String, filter: TrackFilter, accents: MixAccents, mark: String) {
+        id = title
+        self.title = title
+        self.detail = detail
+        shelfName = Suggestions.yoursShelf
+        source = .filter(filter)
+        self.accents = accents
+        self.mark = mark
+    }
+
+    static var yours: [SuggestedMix] {
+        var favourites = defaultTrackFilter()
         favourites.favourites = true
-        var played = base
-        played.order = .plays
-        played.descending = true
-        played.played = true
-        var recent = base
+        var recent = defaultTrackFilter()
         recent.order = .played
         recent.descending = true
         recent.played = true
-        var added = base
-        added.order = .added
-        added.descending = true
-        var high = base
-        high.minimumRate = 88200
-        var mixes = [
-            SuggestedMix(title: "Never heard", detail: "Songs you have not played yet", filter: unplayed, accents: MixAccents(from: .teal, to: .blue), mark: "sparkles"),
+        return [
             SuggestedMix(title: "Your favourites", detail: "Every song you hearted", filter: favourites, accents: MixAccents(from: .mauve, to: .red), mark: "heart.fill"),
-            SuggestedMix(title: "Most played", detail: "What you come back to", filter: played, accents: MixAccents(from: .red, to: .peach), mark: "chart.bar.fill"),
             SuggestedMix(title: "Recently played", detail: "What you listened to last", filter: recent, accents: MixAccents(from: .amber, to: .peach), mark: "clock.arrow.circlepath"),
-            SuggestedMix(title: "Recently added", detail: "The newest in your library", filter: added, accents: MixAccents(from: .green, to: .teal), mark: "clock.fill"),
-            SuggestedMix(title: "High-resolution music", detail: "88.2 kHz and above", filter: high, accents: MixAccents(from: .green, to: .blue), mark: "waveform"),
         ]
-        if let topArtist, !topArtist.isEmpty {
-            var artist = base
-            artist.artist = topArtist
-            mixes.append(SuggestedMix(title: "More from \(topArtist)", detail: "From your most played artist", filter: artist, accents: namedAccents(name: topArtist), mark: "music.mic"))
-        }
-        return mixes
     }
+
+    nonisolated func tracks(in native: MobilePlayer) throws -> [Track] {
+        switch source {
+        case .filter(let filter):
+            try Library.everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) }
+        case .search(let search):
+            try Library.everyPage { try native.savedSearchPage(search: search, offset: $0, limit: Library.page) }
+        }
+    }
+
+    nonisolated func covers(in native: MobilePlayer) throws -> [UInt64] {
+        switch source {
+        case .filter(let filter): try native.picturedBy(filter: filter)
+        case .search(let search): try native.measureSavedSearch(search: search).covers
+        }
+    }
+}
+
+struct OfferedMixes: Sendable {
+    var lists: [SuggestedList] = []
+    var covers: [String: [UInt64]] = [:]
+
+    var all: [SuggestedMix] { SuggestedMix.yours + lists.map(SuggestedMix.init(list:)) }
+
+    var home: [SuggestedMix] { SuggestedMix.yours + Suggestions.home(lists).map(SuggestedMix.init(list:)) }
+
+    var shelves: [(name: String, mixes: [SuggestedMix])] {
+        var found: [(name: String, mixes: [SuggestedMix])] = []
+        for mix in all {
+            if let at = found.firstIndex(where: { $0.name == mix.shelfName }) {
+                found[at].mixes.append(mix)
+            } else {
+                found.append((mix.shelfName, [mix]))
+            }
+        }
+        return found
+    }
+
+    func named(_ id: String) -> SuggestedMix? { all.first { $0.id == id } }
 
     @MainActor
-    static func covers(of mixes: [SuggestedMix], in library: Library) async -> [String: [UInt64]]? {
+    static func read(in library: Library) async -> OfferedMixes? {
         guard let native = try? await library.player() else { return nil }
-        let asked = mixes.map { ($0.id, $0.filter) }
+        let zone = TimeZone.current
+        let identifier = zone.identifier
+        let offset = Int32(zone.secondsFromGMT())
         return try? await Work.aside {
-            Dictionary(uniqueKeysWithValues: try asked.map { ($0.0, try native.picturedBy(filter: $0.1)) })
+            let lists = try native.suggestedLists(timeZone: identifier, utcOffsetSeconds: offset)
+            var covers = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, $0.covers) })
+            for mix in SuggestedMix.yours {
+                covers[mix.id] = try mix.covers(in: native)
+            }
+            return OfferedMixes(lists: lists, covers: covers)
         }
-    }
-
-    static func named(_ id: String) -> SuggestedMix? {
-        let artistPrefix = "More from "
-        let topArtist = id.hasPrefix(artistPrefix) ? String(id.dropFirst(artistPrefix.count)) : nil
-        return offered(topArtist: topArtist).first { $0.id == id }
     }
 }
 
@@ -266,37 +309,32 @@ struct SuggestionsView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @ScaledMetric(relativeTo: .body) private var cardWidth: CGFloat = 160
-    @State private var covers: [String: [UInt64]] = [:]
+    @State private var offered = OfferedMixes()
 
     var body: some View {
-        let mixes = SuggestedMix.offered(topArtist: library.features.listeningDetail?.artists.first?.name)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Mixes from your library and listening history").foregroundStyle(.secondary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth), spacing: 16, alignment: .top)], spacing: 20) {
-                    ForEach(mixes) { mix in
-                        SuggestedMixCard(
-                            mix: mix,
-                            covers: (covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
-                            open: { open(mix) }
-                        )
+                Text("Lists from your library and listening history, turning over each day").foregroundStyle(.secondary)
+                ForEach(offered.shelves, id: \.name) { shelf in
+                    Text(shelf.name).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth), spacing: 16, alignment: .top)], spacing: 20) {
+                        ForEach(shelf.mixes) { mix in
+                            SuggestedMixCard(
+                                mix: mix,
+                                covers: (offered.covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
+                                open: { navigation.open(.mix(mix.id)) }
+                            )
+                        }
                     }
                 }
             }
             .padding(20)
         }
         .navigationTitle("Suggestions")
-        .onAppear { library.features.loadStatistics() }
-        .task(id: "\(library.collectionGeneration):\(mixes.map(\.id).joined())") { await loadCovers(mixes) }
-    }
-
-    private func open(_ mix: SuggestedMix) {
-        navigation.open(.mix(mix.id))
-    }
-
-    private func loadCovers(_ mixes: [SuggestedMix]) async {
-        guard let found = await SuggestedMix.covers(of: mixes, in: library) else { return }
-        covers = found
+        .task(id: "\(library.collectionGeneration):\(library.catalogEpoch)") {
+            guard let found = await OfferedMixes.read(in: library) else { return }
+            offered = found
+        }
     }
 }
 
@@ -305,50 +343,65 @@ struct MixView: View {
 
     @Environment(Library.self) private var library
     let id: String
+    @State private var mix: SuggestedMix?
+    @State private var resolved = false
     @State private var tracks: [Track] = []
     @State private var covers: [Track] = []
     @State private var read = false
     @State private var failure: String?
 
     var body: some View {
-        if let mix = SuggestedMix.named(id) {
-            List {
-                CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
-                    MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: Self.corner)
-                }
-                if let failure {
-                    ReadFailure(text: failure) { Task { await load(mix) } }
-                } else if read, tracks.isEmpty {
-                    Text("Nothing in this mix yet.").foregroundStyle(.secondary)
-                }
-                ForEach(tracks, id: \.id) { track in
-                    TrackRow(track: track) {
-                        library.play(tracks, selected: track)
+        Group {
+            if let mix {
+                List {
+                    CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
+                        MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: Self.corner)
                     }
-                    .listRowBackground(Color.clear)
+                    if let failure {
+                        ReadFailure(text: failure) { Task { await load(mix) } }
+                    } else if read, tracks.isEmpty {
+                        Text("Nothing in this mix yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(tracks, id: \.id) { track in
+                        TrackRow(track: track) {
+                            library.play(tracks, selected: track)
+                        }
+                        .listRowBackground(Color.clear)
+                    }
                 }
+                .listStyle(.plain)
+                .background(BackdropView(track: tracks.first, moving: false))
+                .scrollContentBackground(.hidden)
+                .navigationTitle(mix.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { CollectionMenu(tracks: tracks) }
+            } else if resolved {
+                ContentUnavailableView("This mix is no longer offered", systemImage: "sparkles")
+            } else {
+                ProgressView().accessibilityLabel("Reading this mix")
             }
-            .listStyle(.plain)
-            .background(BackdropView(track: tracks.first, moving: false))
-            .scrollContentBackground(.hidden)
-            .navigationTitle(mix.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { CollectionMenu(tracks: tracks) }
-            .task(id: "\(id):\(library.collectionGeneration):\(library.catalogEpoch)") { await load(mix) }
-        } else {
-            ContentUnavailableView("This mix is no longer offered", systemImage: "sparkles")
         }
+        .task(id: "\(id):\(library.collectionGeneration):\(library.catalogEpoch)") { await resolveAndLoad() }
+    }
+
+    private func resolveAndLoad() async {
+        var found = SuggestedMix.yours.first { $0.id == id }
+        if found == nil, let offered = await OfferedMixes.read(in: library) {
+            found = offered.named(id)
+            resolved = true
+            mix = found
+        } else if found != nil {
+            resolved = true
+            mix = found
+        }
+        if let found { await load(found) }
     }
 
     private func load(_ mix: SuggestedMix) async {
         guard let native = try? await library.player() else { return }
-        let filter = mix.filter
         do {
             let (rows, pictured) = try await Work.aside {
-                (
-                    try Library.everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) },
-                    try native.picturedBy(filter: filter)
-                )
+                (try mix.tracks(in: native), try mix.covers(in: native))
             }
             failure = nil
             tracks = rows
@@ -401,11 +454,11 @@ struct SuggestedMixCard: View {
     }
 
     private func play(shuffled: Bool) {
-        let filter = mix.filter
+        let mix = mix
         Task {
             do {
                 let native = try await library.player()
-                let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) } }
+                let tracks = try await Work.aside { try mix.tracks(in: native) }
                 guard !tracks.isEmpty else {
                     library.notice("Nothing in \(mix.title) yet")
                     return

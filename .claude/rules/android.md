@@ -698,8 +698,17 @@ picker lists lists alone (`SavedSearchDraftTest`).
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
 with seven stable orders (title, album, artist, duration, added, plays and last played, the latest
-counted listen, the unheard last) and direction, read off the search index below. Suggestions are explicit mixes of the actual library and its
-listening history. `Listening` counts heard time rather than sought position; its half-track or
+counted listen, the unheard last) and direction, read off the search index below. Suggestions are the
+desktop's lists (`mobile.md`'s *Made for you*, `suggested_lists`): *On repeat*, *More like*, *deep cuts*,
+*Discover*, *Back to*, *Old flames* and the rest read from the actual library and its listening history,
+turning daily. Home's *Made for you* shelf shows up to twelve of the first three shelves
+(`SuggestedLists.onHome`, `HomeViewModel.mixes`), a card wearing its reason's icon (`SuggestionReason.icon`)
+and the cover mosaic the boundary measured, and the Made for you page (`SuggestionsScreen`) lists every
+shelf under its name after the *Your favourites* card. A card opens `Screen.Suggested`, which carries the
+list's name, detail and search as plain values (`SuggestedSearch`, so a restored back stack needs no
+catalog) and reads its songs with `saved_search_page` and its covers with `measure_saved_search`
+(`SuggestedViewModel`). The four filter `Mix`es (*Never heard*, *Most played*, *Recently added*, *High
+resolution*) remain the Search tab's browse tiles. `Listening` counts heard time rather than sought position; its half-track or
 four-minute threshold feeds the local history and statistics. History filters cover all time and
 the last week/month/year. Document playlists preserve repeated songs, use revision checks for
 position edits, and have bounded in-session undo; they never invent Linux paths.

@@ -25,6 +25,8 @@ import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Mix
 import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.SuggestedSearch
+import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.SongSelectionBar
@@ -55,6 +57,32 @@ class MixViewModel(private val resonate: Resonate, mix: Mix) : ViewModel() {
                 resonate.catalogRead(retry, follow = false) { native ->
                     val filter = mix.filter()
                     MixPage(pagedFully { offset, limit -> native.filteredTracks(filter, offset, limit) }, native.picturedBy(filter))
+                },
+                resonate.library.allTracks,
+            ) { loaded, _ ->
+                when (loaded) {
+                    is Loaded.Ready -> Loaded.Ready(loaded.value.copy(tracks = resonate.current(loaded.value.tracks)))
+                    else -> loaded
+                }
+            }
+            .stateIn(viewModelScope, shared, Loaded.Loading)
+
+    val playing: StateFlow<ULong?> = resonate.playingId().stateIn(viewModelScope, shared, null)
+}
+
+class SuggestedViewModel(private val resonate: Resonate, search: SuggestedSearch) : ViewModel() {
+    private val shared = SharingStarted.WhileSubscribed(5_000)
+
+    val retry = Retry()
+
+    val page: StateFlow<Loaded<MixPage>> =
+        combine(
+                resonate.catalogRead(retry, follow = false) { native ->
+                    val asked = search.native()
+                    MixPage(
+                        pagedFully { offset, limit -> native.savedSearchPage(asked, offset, limit) },
+                        native.measureSavedSearch(asked).covers,
+                    )
                 },
                 resonate.library.allTracks,
             ) { loaded, _ ->
@@ -101,6 +129,29 @@ fun MixScreen(mix: Mix) {
         playing = playing,
         tag = "mix",
         empty = "Nothing fits this mix yet. Listen a little and come back.",
+    ) { side ->
+        PlaylistCover(covers, side, shape = MaterialTheme.shapes.extraLarge)
+    }
+}
+
+@Composable
+fun SuggestedScreen(suggested: Screen.Suggested) {
+    val model =
+        resonateViewModel(key = "suggested:${suggested.name}:${suggested.search}") {
+            SuggestedViewModel(it, suggested.search)
+        }
+    val loaded by model.page.collectAsStateWithLifecycle()
+    val playing by model.playing.collectAsStateWithLifecycle()
+    val covers = loaded.valueOrNull()?.covers.orEmpty()
+    SongCollection(
+        title = suggested.name,
+        overline = "Made for you",
+        detail = suggested.detail,
+        loaded = loaded.map { it.tracks },
+        onRetry = model.retry::again,
+        playing = playing,
+        tag = "suggested",
+        empty = "Nothing fits this list right now. Listen a little and come back.",
     ) { side ->
         PlaylistCover(covers, side, shape = MaterialTheme.shapes.extraLarge)
     }

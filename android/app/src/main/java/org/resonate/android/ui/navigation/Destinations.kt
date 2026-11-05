@@ -9,6 +9,7 @@ import org.resonate.android.ui.library.ArtistScreen
 import org.resonate.android.ui.library.FavouritesScreen
 import org.resonate.android.ui.library.LibraryScreen
 import org.resonate.android.ui.library.MixScreen
+import org.resonate.android.ui.library.SuggestedScreen
 import org.resonate.android.ui.library.PlaylistScreen
 import org.resonate.android.ui.search.SearchScreen
 import org.resonate.android.ui.server.ServedAlbumScreen
@@ -47,6 +48,7 @@ fun ScreenContent(screen: Screen) {
         is Screen.Playlist -> PlaylistScreen(screen)
         Screen.Favourites -> FavouritesScreen()
         is Screen.Mix -> MixScreen(screen.mix)
+        is Screen.Suggested -> SuggestedScreen(screen)
         is Screen.Lyrics -> LyricsScreen(screen.track)
         is Screen.Analysis -> AnalysisScreen(screen.track)
         is Screen.Details -> DetailsScreen(screen.track)

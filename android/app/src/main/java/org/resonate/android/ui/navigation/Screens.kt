@@ -29,6 +29,13 @@ sealed interface Screen : NavKey {
 
     @Serializable data class Mix(val mix: org.resonate.android.ui.Mix) : Screen
 
+    @Serializable
+    data class Suggested(
+        val name: String,
+        val detail: String,
+        val search: org.resonate.android.ui.SuggestedSearch,
+    ) : Screen
+
     @Serializable data class Lyrics(val track: ULong) : Screen
 
     @Serializable data class Analysis(val track: ULong) : Screen

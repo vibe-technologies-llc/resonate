@@ -7,17 +7,19 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.5.0] Android's album page draws only the songs held: iOS greys in the songs of the album's
   release the listener lacks, each a press to download it, over `album_songs_not_held` and
   `learn_album_songs`, which Android's generated bindings already carry and no screen calls
-- [M · 0.5.0] Android's *Made for you* is four fixed mixes: the desktop's lists read from listening
-  (*On repeat*, *More like*, *deep cuts*, *Discover*, *Old flames*) need a filter or saved search over
-  the phones' own catalog, and the daily turn with them
+- [S · 0.5.0] Android's *Made for you* has the desktop's lists read from listening but not its Eras,
+  Genres, Artists and Sound shelves (decades, ranked genres, an artist's mix, hi-res and length
+  shapes) nor *Keep as a playlist that fills itself* on an opened list (`save_search` already makes
+  one): the shelves are `resonate_library::suggest` candidates the phones' index has not yet been
+  taught to fill (`mobile.md`'s *Made for you*)
 - [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
   32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
   arrive untouched
 
 ## iOS parity
-- [M · 0.5.0] iOS's *Made for you* is six fixed mixes and one of the top artist: the desktop's lists
-  read from listening (*On repeat*, *More like*, *deep cuts*, *Discover*, *Old flames*) need a filter or
-  saved search over the phones' own catalog, and the daily turn with them
+- [S · 0.5.0] iOS's *Made for you* has the desktop's lists read from listening but not its Eras,
+  Genres, Artists and Sound shelves nor *Keep as a playlist that fills itself* on an opened list
+  (`save_search` already makes one); the shelves are the same open work as Android's
 - [M · 0.5.0] An artist's page on the phones lists only what is held: the desktop greys in the
   releases and songs of a discography the library lacks (`library.md`), and a phone reaches those
   only through the Search tab's online artist page, since its catalog keeps no discography
