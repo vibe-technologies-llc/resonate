@@ -812,7 +812,7 @@ struct AlbumView: View {
                             }
                             .listRowBackground(Color.clear)
                         case .notHeld(let song):
-                            NotHeldAlbumRow(song: song)
+                            NotHeldSongRow(song: song)
                                 .listRowBackground(Color.clear)
                         }
                     }
@@ -870,10 +870,12 @@ struct AlbumView: View {
     }
 }
 
-struct NotHeldAlbumRow: View {
+struct NotHeldSongRow: View {
     @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .callout) private var numberWidth: CGFloat = 28
     let song: SearchSong
+    var numbered = true
+    var showsAlbum = false
 
     var body: some View {
         let features = library.features
@@ -884,15 +886,23 @@ struct NotHeldAlbumRow: View {
             downloads.enqueue([song])
         } label: {
             HStack(spacing: 12) {
-                Text(song.position.map(String.init) ?? "")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: numberWidth)
+                if numbered {
+                    Text(song.position.map(String.init) ?? "")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: numberWidth)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .titleLines()
+                    if showsAlbum, !song.album.isEmpty {
+                        Text(song.album)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .titleLines()
+                    }
                     if standing != .available {
                         OnlineSongCaption(song: song, standing: standing)
                     }
@@ -937,7 +947,11 @@ struct ArtistView: View {
     @State private var albums: [AlbumHit] = []
     @State private var tracks: [Track] = []
     @State private var top: [Track] = []
+    @State private var releasesLacked: [ReleaseNotHeld] = []
+    @State private var songsLacked: [SearchSong] = []
+    @State private var openRelease: ReleaseNotHeld?
     @State private var seeingAll = false
+    @State private var seeingAllLacked = false
     @State private var read = false
     @State private var failure: String?
 
@@ -990,6 +1004,38 @@ struct ArtistView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            if !releasesLacked.isEmpty {
+                Section(NotInYourLibrary.heading(releasesLacked.count, "release")) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 14) {
+                            ForEach(releasesLacked, id: \.group) { release in
+                                Button {
+                                    openRelease = release
+                                } label: {
+                                    VStack(alignment: .leading) {
+                                        OnlinePlaceholder(symbol: "opticaldisc")
+                                            .frame(width: albumEdge, height: albumEdge)
+                                        Text(release.title)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.secondary)
+                                            .titleLines()
+                                        Text(NotInYourLibrary.line(release))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: albumEdge)
+                                    .accessibilityElement(children: .combine)
+                                    .accessibilityValue("Not in your library")
+                                    .accessibilityHint("Shows its songs to download")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+                .listRowBackground(Color.clear)
+            }
             if !tracks.isEmpty {
                 let shown = seeingAll || top.isEmpty ? tracks : top
                 Section {
@@ -1005,6 +1051,21 @@ struct ArtistView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            if !songsLacked.isEmpty {
+                let lacked = NotInYourLibrary.shown(songsLacked, all: seeingAllLacked)
+                Section {
+                    ForEach(lacked, id: \.id) { song in
+                        NotHeldSongRow(song: song, numbered: false, showsAlbum: true)
+                            .listRowBackground(Color.clear)
+                    }
+                    if lacked.count < songsLacked.count {
+                        Button("Show all \(songsLacked.count) songs") { seeingAllLacked = true }
+                            .listRowBackground(Color.clear)
+                    }
+                } header: {
+                    Text(NotInYourLibrary.heading(songsLacked.count, "song"))
+                }
+            }
         }
         .listStyle(.plain)
         .background(BackdropView(track: tracks.first, moving: false))
@@ -1012,7 +1073,33 @@ struct ArtistView: View {
         .navigationTitle(shownName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { CollectionMenu(tracks: tracks) }
+        .sheet(item: $openRelease) { release in
+            UnheldReleaseSheet(artist: name, release: release)
+        }
         .task(id: "\(name):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
+        .task(id: name) { await learnTheDiscography() }
+    }
+
+    private func learnTheDiscography() async {
+        guard let native = try? await library.player() else { return }
+        let name = name
+        if (try? await Work.aside { try native.learnArtistDiscography(name: name) }) == true {
+            await readWhatIsLacked(native)
+        }
+        while !Task.isCancelled {
+            let read = (try? await Work.aside { try native.learnArtistSongs(name: name) }) ?? 0
+            await readWhatIsLacked(native)
+            if read == 0 { break }
+        }
+    }
+
+    private func readWhatIsLacked(_ native: MobilePlayer) async {
+        let name = name
+        guard let (releases, songs) = try? await Work.aside({
+            (try native.artistReleasesNotHeld(name: name), try native.artistSongsNotHeld(name: name))
+        }) else { return }
+        releasesLacked = releases
+        songsLacked = songs
     }
 
     private func load() async {
@@ -1022,9 +1109,17 @@ struct ArtistView: View {
         let found: [AlbumHit]
         let rows: [Track]
         let played: [Track]
+        let releases: [ReleaseNotHeld]
+        let songs: [SearchSong]
         do {
-            (found, rows, played) = try await Work.aside {
-                (try native.albumsBy(name: name), try native.artistTracks(name: name), try native.mostPlayedBy(name: name, limit: most))
+            (found, rows, played, releases, songs) = try await Work.aside {
+                (
+                    try native.albumsBy(name: name),
+                    try native.artistTracks(name: name),
+                    try native.mostPlayedBy(name: name, limit: most),
+                    try native.artistReleasesNotHeld(name: name),
+                    try native.artistSongsNotHeld(name: name)
+                )
             }
         } catch {
             failure = explained(error)
@@ -1041,7 +1136,69 @@ struct ArtistView: View {
         albums = found
         tracks = rows
         top = played
+        releasesLacked = releases
+        songsLacked = songs
         read = true
+    }
+}
+
+extension ReleaseNotHeld: @retroactive Identifiable {
+    var id: String { group }
+}
+
+struct UnheldReleaseSheet: View {
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    let artist: String
+    let release: ReleaseNotHeld
+    @State private var songs: [SearchSong] = []
+    @State private var read = false
+    @State private var failed = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                DownloadProgress()
+                if !songs.isEmpty {
+                    Section {
+                        Button("Download all \(songs.count) songs", systemImage: "arrow.down.circle") {
+                            library.features.downloads.enqueue(songs)
+                        }
+                    }
+                    Section(NotInYourLibrary.line(release)) {
+                        ForEach(songs, id: \.id) { song in
+                            NotHeldSongRow(song: song)
+                        }
+                    }
+                }
+                if failed {
+                    ReadFailure(text: "The songs could not be read.") { Task { await readSongs() } }
+                } else if read, songs.isEmpty {
+                    Text("Nothing on this release is missing from your library.").foregroundStyle(.secondary)
+                }
+            }
+            .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
+            .navigationTitle(release.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .task { await readSongs() }
+        }
+    }
+
+    private func readSongs() async {
+        guard let native = try? await library.player() else { return }
+        let artist = artist
+        let group = release.group
+        failed = false
+        do {
+            if !release.songsRead {
+                _ = try await Work.aside { try native.learnReleaseSongs(group: group) }
+            }
+            songs = try await Work.aside { try native.releaseSongsNotHeld(artist: artist, group: group) }
+            read = true
+        } catch {
+            failed = true
+        }
     }
 }
 

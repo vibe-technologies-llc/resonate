@@ -258,6 +258,42 @@ CREATE TABLE playlist_shares (
 ) STRICT;
 ";
 
+const ARTISTS_KEEP_THEIR_DISCOGRAPHY: &str = "
+CREATE TABLE artist_releases (
+    artist        TEXT NOT NULL,
+    release_group TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    released      TEXT NOT NULL,
+    PRIMARY KEY (artist, release_group)
+) STRICT;
+
+CREATE TABLE artist_discographies (
+    artist  TEXT PRIMARY KEY,
+    read_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE group_songs (
+    release_group TEXT NOT NULL,
+    disc          INTEGER NOT NULL,
+    position      INTEGER NOT NULL,
+    recording     TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    artist        TEXT NOT NULL,
+    artist_id     TEXT NOT NULL,
+    album         TEXT NOT NULL,
+    release       TEXT NOT NULL,
+    duration_ms   INTEGER,
+    isrcs         TEXT NOT NULL,
+    PRIMARY KEY (release_group, disc, position)
+) STRICT;
+
+CREATE TABLE groups_read (
+    release_group TEXT PRIMARY KEY,
+    read_at       INTEGER NOT NULL
+) STRICT;
+";
+
 const LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN: &str = "
 CREATE INDEX listens_by_when ON listens(began);
 ";
@@ -291,6 +327,7 @@ const MIGRATIONS: &[&str] = &[
     ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE,
     LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN,
     A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
+    ARTISTS_KEEP_THEIR_DISCOGRAPHY,
 ];
 
 #[cfg(test)]
@@ -1605,6 +1642,61 @@ mod tests {
             .expect("the flag's table");
 
         assert_eq!((kept, flagged), (1, 0));
+        drop(connection);
+        drop(opened);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_catalog_of_before_discographies_were_kept_keeps_its_songs_and_gains_empty_tables() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-discographies-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(ARTISTS_KEEP_THEIR_DISCOGRAPHY)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
+                 VALUES ('content://music/one.flac', 'one.flac', 'One', 'Band', 'Album', 1000, 44100, 'FLAC')",
+                [],
+            )
+            .expect("a song of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(ARTISTS_KEEP_THEIR_DISCOGRAPHY)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let connection = opened.0.lock();
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table")
+        };
+
+        assert_eq!(count("documents"), 1);
+        assert_eq!(count("artist_releases"), 0);
+        assert_eq!(count("artist_discographies"), 0);
+        assert_eq!(count("group_songs"), 0);
+        assert_eq!(count("groups_read"), 0);
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();

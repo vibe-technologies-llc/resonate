@@ -728,11 +728,11 @@ every route change (a pair of headphones at the same rate included), not from th
   `AlbumView` reads `album_songs_not_held` with its songs, and once per opened key asks
   `learn_album_songs`, reading them again where songs landed. `AlbumDisc.of(tracks, notHeld:)`
   (`ResonateLogic`, `AlbumDiscTests`) lays each in by disc and position as an `AlbumRow.notHeld`, a disc
-  holding no song yet standing in its order; `NotHeldAlbumRow` is the number, the title in `.secondary`
+  holding no song yet standing in its order; `NotHeldSongRow` is the number, the title in `.secondary`
   and the length, with `DownloadBadge`: a press downloads it as an online row does, its swipe and menu
   save it for later, and VoiceOver says *Not in your library*. Play, Shuffle, the summary and the shared
   quality read the songs held alone. Offline, or for an album no strict lookup matched, the page is as
-  it was.
+  it was. **An artist's page greys in what the discography lacks the same way** (`mobile.md`'s *The releases and songs an artist lacks*): `ArtistView` reads `artist_releases_not_held` and `artist_songs_not_held` with its albums and songs and, once per opened name, asks `learn_artist_discography` and then `learn_artist_songs` until it answers 0, reading them again after each batch. *Not in your library · N releases* follows the albums, each a placeholder tile with its title in `.secondary` whose press opens `UnheldReleaseSheet` (it reads the release's songs, offers *Download all N songs* and a `NotHeldSongRow` for each), and *Not in your library · N songs* follows the songs, `NotInYourLibrary.songsShownFirst` of them and *Show all* (`NotInYourLibraryTests`). Play, Shuffle, the summary and the menu read the songs held alone.
 - **A failed read is never drawn as empty.** The album and artist pages, the online artist, album
   and release pages and the tag editor show the read's failure with *Try again* (`ReadFailure`)
   instead of "No songs…" or a blank editor (whose Save would overwrite the file's tags), and so does the lyrics pane (`Features.lyricsUnread`: *Lyrics could not be read* with *Try again* and *Add lyrics…*); a

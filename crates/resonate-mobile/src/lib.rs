@@ -1,5 +1,6 @@
 mod abx;
 mod album_songs;
+mod artist_discography;
 mod catalog;
 mod catalog_extras;
 mod collections;

@@ -2454,7 +2454,7 @@ const KEPT_KINDS: [&str; 3] = ["Album", "EP", "Single"];
 
 pub(crate) const SOUNDTRACK: &str = "Soundtrack";
 
-pub(crate) fn worth_keeping(release: &ArtistRelease) -> bool {
+pub fn worth_keeping(release: &ArtistRelease) -> bool {
     release
         .kind
         .as_deref()
