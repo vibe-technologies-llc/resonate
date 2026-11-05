@@ -769,6 +769,7 @@ mod tests {
         reader.read_line(&mut line).ok()?;
         let mut range = None;
         let mut authorization = None;
+        let mut body_length = 0;
         loop {
             let mut header = String::new();
             match reader.read_line(&mut header) {
@@ -787,9 +788,11 @@ mod tests {
                         .and_then(|from| from.trim_end_matches('-').parse().ok());
                 }
                 "authorization" => authorization = Some(value.to_owned()),
+                "content-length" => body_length = value.parse().unwrap_or(0),
                 _ => {}
             }
         }
+        io::copy(&mut reader.by_ref().take(body_length), &mut io::sink()).ok()?;
         Some(Asked {
             line,
             range,
