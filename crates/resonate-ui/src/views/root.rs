@@ -81,7 +81,7 @@ use crate::{
         settings::{
             Account, Category, FILTER_PLACEHOLDER, Fitting, HeldBand, LastfmAccount, LastfmSigning,
             Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
-            SYNC_SERVER_PLACEHOLDER, Service, SigningIn, TidalAccount,
+            SYNC_SERVER_PLACEHOLDER, Service, SigningIn, SpotifyState, TidalAccount, spotify,
         },
         sharing,
         sheets::{self, MAGNIFIER_PANEL},
@@ -651,6 +651,8 @@ pub struct RootView {
     pub(crate) jellyfin: [Entity<Field>; 3],
     pub(crate) tidal: [Entity<Field>; 6],
     pub(crate) lastfm: [Entity<Field>; 4],
+    pub(crate) spotify_client: Entity<Field>,
+    pub(crate) spotify_state: SpotifyState,
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) sync_server: Entity<Field>,
@@ -1039,6 +1041,7 @@ impl RootView {
         let jellyfin = Account::fields(Service::Jellyfin, &online, window, cx);
         let tidal = TidalAccount::fields(&online, window, cx);
         let lastfm = LastfmAccount::fields(&online, window, cx);
+        let spotify_client = spotify::field(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
@@ -1303,6 +1306,8 @@ impl RootView {
             jellyfin,
             tidal,
             lastfm,
+            spotify_client,
+            spotify_state: SpotifyState::default(),
             discord_app,
             discord_icon,
             sync_server,
@@ -4401,6 +4406,7 @@ impl RootView {
             &self.server_search,
             &self.figure,
             &self.looking,
+            &self.spotify_client,
         ]
         .into_iter()
         .chain(&self.subsonic)

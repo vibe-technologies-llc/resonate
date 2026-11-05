@@ -12,6 +12,7 @@ mod library;
 mod online;
 mod output;
 mod processing;
+pub(crate) mod spotify;
 mod subsonic;
 pub(crate) mod sync;
 mod tidal;
@@ -32,6 +33,7 @@ pub(crate) use crate::views::settings::{
     equaliser::{Fitting, marked_at},
     find::{Category, Group},
     lastfm::{LastfmAccount, LastfmSigning},
+    spotify::SpotifyState,
     subsonic::{Account, Service},
     sync::{
         SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
@@ -107,6 +109,9 @@ impl RootView {
             Followed::Bindings(bindings) => self.follow_the_bindings_read_again(bindings, cx),
             Followed::Tidal(signed_in) => {
                 self.follow_the_tidal_sign_in_made_elsewhere(signed_in, cx)
+            }
+            Followed::Spotify(signed_in) => {
+                self.follow_the_spotify_sign_in_made_elsewhere(signed_in, cx)
             }
         }
     }
@@ -453,6 +458,7 @@ impl RootView {
             Group::Jellyfin => self.account_group(Service::Jellyfin, cx),
             Group::ResonateKey => self.resonate_key_group(cx),
             Group::Tidal => self.tidal_group(cx),
+            Group::Spotify => self.spotify_group(cx),
             Group::Served => self.served_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
@@ -635,6 +641,7 @@ impl RootView {
             Group::Jellyfin => self.forget_the_account(Service::Jellyfin, cx),
             Group::ResonateKey => self.forget_the_resonate_key(cx),
             Group::Tidal => self.forget_the_tidal_account(cx),
+            Group::Spotify => self.forget_the_spotify_account(cx),
             Group::RoomCorrection => {
                 self.set_the_speaker_angle(SpeakerAngle::STANDARD, cx);
                 self.set_the_speaker_elevation(SpeakerElevation::LEVEL, cx);
@@ -743,6 +750,14 @@ impl RootView {
             .trim()
             .is_empty();
 
+        let spotify_given = !self.spotify_client.read(cx).text().trim().is_empty()
+            || !cx
+                .global::<ResonateApp>()
+                .online
+                .spotify_refresh_token
+                .trim()
+                .is_empty();
+
         Standing {
             output: self.player.read(cx).output_settings().clone(),
             appearance: theme::chosen(),
@@ -789,6 +804,7 @@ impl RootView {
             subsonic_given,
             jellyfin_given,
             tidal_given,
+            spotify_given,
             resonate_key_given,
             convolving,
         }

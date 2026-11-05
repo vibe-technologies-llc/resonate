@@ -549,6 +549,7 @@ impl fmt::Debug for SpotifySignedIn {
     }
 }
 
+#[derive(Clone)]
 pub struct SpotifySignIn {
     client: Arc<Client>,
     endpoints: SpotifyEndpoints,

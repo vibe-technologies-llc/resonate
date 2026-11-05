@@ -750,6 +750,40 @@ impl RootView {
         );
     }
 
+    pub(crate) fn followed_the_account(
+        &mut self,
+        followed: resonate_library::Result<Option<FollowedProfile>>,
+        upkeep: Upkeep,
+        cx: &mut Context<Self>,
+    ) {
+        match upkeep {
+            Upkeep::InStep => self.followed_a_profile(
+                &ProfileLink::SpotifyAccount,
+                followed,
+                &Told::of(&FollowedLink::Profile(ProfileLink::SpotifyAccount)),
+                cx,
+            ),
+            Upkeep::Once => match followed {
+                Ok(Some(moved)) => {
+                    let kept = moved.playlists.len();
+                    self.library
+                        .update(cx, |library, cx| library.reload_playlists(cx));
+                    self.set_pane(Pane::Playlists, cx);
+                    toast::tell(
+                        Notice::Done(format!(
+                            "Moved {} of {} to Resonate, following none of them",
+                            format::counted(kept, "playlist", "playlists"),
+                            moved.name
+                        )),
+                        cx,
+                    );
+                }
+                Ok(None) => toast::tell(Notice::Trouble(NO_PROFILE_AT_THE_LINK.to_owned()), cx),
+                Err(error) => toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx),
+            },
+        }
+    }
+
     pub(crate) fn search_pane(&mut self, shows: SearchShows, cx: &mut Context<Self>) -> AnyElement {
         match shows {
             SearchShows::Top => self.top_results(cx),

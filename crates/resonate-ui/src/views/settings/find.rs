@@ -114,6 +114,7 @@ pub(crate) enum Group {
     Subsonic,
     Jellyfin,
     Tidal,
+    Spotify,
     Served,
     Resuming,
     History,
@@ -153,7 +154,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 68] = [
+    pub(crate) const ALL: [Self; 69] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -186,6 +187,7 @@ impl Group {
         Self::Subsonic,
         Self::Jellyfin,
         Self::Tidal,
+        Self::Spotify,
         Self::Served,
         Self::Resuming,
         Self::History,
@@ -261,6 +263,7 @@ impl Group {
             | Self::Subsonic
             | Self::Jellyfin
             | Self::Tidal
+            | Self::Spotify
             | Self::Served
             | Self::Resuming
             | Self::History
@@ -329,6 +332,7 @@ impl Group {
             Self::Jellyfin => "A Jellyfin or Emby server",
             Self::ResonateKey => "Resonate server key",
             Self::Tidal => "A TIDAL account",
+            Self::Spotify => "A Spotify account",
             Self::Served => "Browsing a service",
             Self::Resuming => "Resuming",
             Self::History => "Listening history",
@@ -406,6 +410,7 @@ impl Group {
             Self::Jellyfin => JELLYFIN_HINT,
             Self::ResonateKey => RESONATE_KEY_HINT,
             Self::Tidal => TIDAL_HINT,
+            Self::Spotify => SPOTIFY_HINT,
             Self::Served => SERVED_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::History => HISTORY_HINT,
@@ -546,6 +551,10 @@ impl Group {
             Self::Served => {
                 "server pane browse play in place stream subsonic navidrome jellyfin emby tidal monochrome \
                  hifi-api resonate service artists albums search open"
+            }
+            Self::Spotify => {
+                "spotify account sign in playlists liked songs import move follow keep in step \
+                 client id redirect isrc"
             }
             Self::Tidal => {
                 "tidal streaming service subscription provider download wants missing fill \
@@ -709,6 +718,7 @@ impl Group {
             ],
             Self::ResonateKey => &[SettingKey::HifiSecret],
             Self::Served => &[],
+            Self::Spotify => &[SettingKey::SpotifyClientId, SettingKey::SpotifyRefreshToken],
             Self::Tidal => &[
                 SettingKey::TidalClientId,
                 SettingKey::TidalClientSecret,
@@ -1083,6 +1093,12 @@ pub(crate) const RESONATE_KEY_HINT: &str = "The key your Resonate server lists. 
                                             the lossless FLAC. The key goes to that server \
                                             alone, never to a hifi-api or Monochrome server \
                                             named under TIDAL.";
+
+pub(crate) const SPOTIFY_HINT: &str = "A Spotify account, signed in to with an app you register \
+                                       yourself. Its liked songs and playlists become playlists \
+                                       here, kept in step or moved once, and what the library \
+                                       lacks is wanted. Nothing is offered or asked until a \
+                                       client ID is given.";
 
 pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own, signed in to here or \
                                      reached through a hifi-api server you run, the tracks \

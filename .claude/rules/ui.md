@@ -115,6 +115,21 @@ is never named.
     (`a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is`).
   - A server address must begin `http://` or `https://` with a host (`reads_as_a_server`); else a
     toast, nothing stored.
+- **A Spotify account is signed in to, followed and let go from its group, and offered only with a
+  client ID.** `views/settings/spotify.rs` holds one `Field` (`spotify-client-id`, an app the listener
+  registered). `SignsInToSpotify` is the seam, `Lookups::spotify` the binary's
+  (`online::signs_in_to_spotify`, `None` without `online`), so the window names no online type:
+  *Sign in to Spotify* is greyed without a client and Online and asks nothing then; pressed, it binds
+  the redirect and opens the address (`cx.open_url`), waiting beside *Open the page again* and *Stop*
+  on the background executor; the token lands in the global and the file, never in a field. Signed
+  in, *Follow the account* and *Move to Resonate once* run `Library::follow_profile` on
+  `ProfileLink::SpotifyAccount` (`followed_the_account`, a following toasted as a pasted profile is),
+  a refusal under `LookupOp::SpotifyAccount` saying to sign in again; `refreshed_where_due` reads a
+  followed account every `KEPT_IN_STEP_EVERY` as any profile, and one signed out names nothing and
+  costs nothing. *Sign out of Spotify* clears the token and lets the account's playlists go with their
+  rows. `resonate spotify` reaches a running window (`Followed::Spotify`, `Reloadable::Spotify`)
+  (`a_spotify_account_is_signed_in_to_followed_and_let_go_from_its_group_and_offered_only_with_a_client`,
+  `a_spotify_sign_in_made_at_the_terminal_reaches_the_window`).
 - **Last.fm is signed in to from its group; the password is typed, sent once and never kept.**
   `views/settings/lastfm.rs` holds four `Field`s (`LastfmAccount`): API key and secret kept as
   `lastfm-key`/`lastfm-secret`, user name and password kept nowhere. Enter or *Sign in to Last.fm*
@@ -1238,7 +1253,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   saved value.
 - **The window is handed its lookups and owns none.** `Lookups` is what `run` takes: `lyricists`,
   `fingerprinters`, `reference` (`Option<Arc<dyn Reference>>`), `for_the_pass` (`Consulted`),
-  `scrobblers`, `signs_in`, `corrections`, the `online` setting, `bindings`, `measures` (the sweep of the Equaliser pane's *Measure*, `eq.md`), `sourcing`, `serving`, `listens`;
+  `scrobblers`, `signs_in`, `spotify`, `corrections`, the `online` setting, `bindings`, `measures` (the sweep of the Equaliser pane's *Measure*, `eq.md`), `sourcing`, `serving`, `listens`;
   `ResonateApp` holds them as globals, so `LibraryModel::new` knows whether it `can_enrich`. A scan not
   cancelled runs `enrich(false)` as it ends where `can_enrich` (online *and* a reference) allows; the
   lookup polls at `SCAN_POLL` and reloads every `POLLS_PER_RELOAD` polls. Online off under a run keeps

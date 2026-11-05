@@ -89,6 +89,7 @@ pub(crate) struct Standing {
     pub(crate) subsonic_given: bool,
     pub(crate) jellyfin_given: bool,
     pub(crate) tidal_given: bool,
+    pub(crate) spotify_given: bool,
     pub(crate) resonate_key_given: bool,
     pub(crate) convolving: bool,
 }
@@ -141,6 +142,7 @@ impl Standing {
             subsonic_given: false,
             jellyfin_given: false,
             tidal_given: false,
+            spotify_given: false,
             resonate_key_given: false,
             convolving: false,
         }
@@ -228,6 +230,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Subsonic => standing.subsonic_given,
         Group::Jellyfin => standing.jellyfin_given,
         Group::Tidal => standing.tidal_given,
+        Group::Spotify => standing.spotify_given,
         Group::Colour => {
             standing.appearance.theme != Appearance::DEFAULT.theme
                 || standing.appearance.accent != Appearance::DEFAULT.accent
@@ -330,6 +333,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Subsonic
         | Group::Jellyfin
         | Group::Tidal
+        | Group::Spotify
         | Group::Served
         | Group::RoomCorrection
         | Group::Abx

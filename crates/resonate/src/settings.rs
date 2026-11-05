@@ -389,6 +389,10 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::TidalClientId(given) => given_or_cleared(ConfigKey::TidalClientId, given),
         Setting::TidalClientSecret(given) => given_or_cleared(ConfigKey::TidalClientSecret, given),
         Setting::TidalRefreshToken(given) => given_or_cleared(ConfigKey::TidalRefreshToken, given),
+        Setting::SpotifyClientId(given) => given_or_cleared(ConfigKey::SpotifyClientId, given),
+        Setting::SpotifyRefreshToken(given) => {
+            given_or_cleared(ConfigKey::SpotifyRefreshToken, given)
+        }
         Setting::HifiApi(given) => given_or_cleared(ConfigKey::HifiApi, given),
         Setting::HifiSecret(given) => given_or_cleared(ConfigKey::HifiSecret, given),
         Setting::Monochrome(given) => given_or_cleared(ConfigKey::Monochrome, given),
@@ -533,6 +537,8 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::TidalClientId => ConfigKey::TidalClientId,
         SettingKey::TidalClientSecret => ConfigKey::TidalClientSecret,
         SettingKey::TidalRefreshToken => ConfigKey::TidalRefreshToken,
+        SettingKey::SpotifyClientId => ConfigKey::SpotifyClientId,
+        SettingKey::SpotifyRefreshToken => ConfigKey::SpotifyRefreshToken,
         SettingKey::HifiApi => ConfigKey::HifiApi,
         SettingKey::HifiSecret => ConfigKey::HifiSecret,
         SettingKey::Monochrome => ConfigKey::Monochrome,

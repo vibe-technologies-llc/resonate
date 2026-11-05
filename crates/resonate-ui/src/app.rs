@@ -24,7 +24,9 @@ use resonate_engine::{
     TrackState, Zones,
 };
 use resonate_eq::Corrected;
-use resonate_library::{Fingerprinters, HistoryKept, Library, Reference, Scrobblers};
+use resonate_library::{
+    Fingerprinters, HistoryKept, Library, Reference, Scrobblers, SignsInToSpotify,
+};
 use resonate_lyrics::Lyricists;
 use resonate_providers::SignsIn;
 
@@ -161,6 +163,7 @@ pub struct Lookups {
     pub for_the_pass: Consulted,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
     pub signs_in: Option<Arc<dyn SignsIn>>,
+    pub spotify: Option<Arc<dyn SignsInToSpotify>>,
     pub corrections: Arc<Corrected>,
     pub online: Online,
     pub bindings: Bindings,
@@ -186,6 +189,7 @@ pub struct ResonateApp {
     pub for_the_pass: Consulted,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
     pub signs_in: Option<Arc<dyn SignsIn>>,
+    pub spotify: Option<Arc<dyn SignsInToSpotify>>,
     pub attention: Sender<bool>,
     pub places: Places,
     pub resume: bool,
@@ -1092,6 +1096,7 @@ pub fn run(
             for_the_pass: lookups.for_the_pass.clone(),
             scrobblers: lookups.scrobblers.clone(),
             signs_in: lookups.signs_in.clone(),
+            spotify: lookups.spotify.clone(),
             attention: bus.attention.clone(),
             places: stored.places.clone(),
             resume: stored.resume,

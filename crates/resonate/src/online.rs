@@ -229,6 +229,81 @@ impl SpotifyGrants for KeptInTheSettings {
     }
 }
 
+#[cfg(all(feature = "online", feature = "ui"))]
+struct SignInForTheWindow {
+    signs_in: SpotifySignIn,
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+struct ApprovalForTheWindow {
+    signs_in: SpotifySignIn,
+    authorizing: resonate_online::SpotifyAuthorizing,
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+fn failure_of(
+    error: resonate_online::SpotifySignInError,
+) -> resonate_library::SpotifySignInFailure {
+    use resonate_library::SpotifySignInFailure as Failure;
+    use resonate_online::SpotifySignInError as Signing;
+
+    tracing::warn!(%error, "the Spotify sign-in did not finish");
+    match error {
+        Signing::NoPlaceToComeBack { .. } => Failure::NoPlaceToComeBack,
+        Signing::Lapsed => Failure::Lapsed,
+        Signing::Denied => Failure::Denied,
+        Signing::Asked(resonate_online::Error::Refused { .. }) => Failure::Refused,
+        Signing::Asked(_) => Failure::Unreached,
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+impl resonate_library::SignsInToSpotify for SignInForTheWindow {
+    fn authorizing(
+        &self,
+        client_id: &str,
+    ) -> std::result::Result<
+        Box<dyn resonate_library::SpotifyApproval>,
+        resonate_library::SpotifySignInFailure,
+    > {
+        Ok(Box::new(ApprovalForTheWindow {
+            signs_in: self.signs_in.clone(),
+            authorizing: self.signs_in.authorizing(client_id).map_err(failure_of)?,
+        }))
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+impl resonate_library::SpotifyApproval for ApprovalForTheWindow {
+    fn address(&self) -> &str {
+        &self.authorizing.authorize_at
+    }
+
+    fn approved(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+    ) -> std::result::Result<Option<String>, resonate_library::SpotifySignInFailure> {
+        self.signs_in
+            .authorized(&self.authorizing, cancelled)
+            .map(|signed_in| signed_in.map(|signed_in| signed_in.refresh_token))
+            .map_err(failure_of)
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn signs_in_to_spotify(config: &Config) -> Option<Arc<dyn resonate_library::SignsInToSpotify>> {
+    Some(Arc::new(SignInForTheWindow {
+        signs_in: SpotifySignIn::new(client_for(config, Asking::ForTheListener)),
+    }))
+}
+
+#[cfg(all(not(feature = "online"), feature = "ui"))]
+pub fn signs_in_to_spotify(
+    _config: &Config,
+) -> Option<Arc<dyn resonate_library::SignsInToSpotify>> {
+    None
+}
+
 #[cfg(feature = "online")]
 pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
     use std::sync::atomic::{AtomicBool, Ordering};

@@ -355,16 +355,18 @@ fn run() -> Result<()> {
         }
         Some(Sub::Spotify(args)) => {
             let settings = settings_path(&cli)?;
-            match (args.follow, args.move_once, args.forget) {
-                (true, ..) => {
-                    spotify::follow(&open_library(&cli, &config)?, &config, Upkeep::InStep)
+            reloading::delivering(&settings, Some(Reloadable::Spotify), || {
+                match (args.follow, args.move_once, args.forget) {
+                    (true, ..) => {
+                        spotify::follow(&open_library(&cli, &config)?, &config, Upkeep::InStep)
+                    }
+                    (_, true, _) => {
+                        spotify::follow(&open_library(&cli, &config)?, &config, Upkeep::Once)
+                    }
+                    (.., true) => spotify::sign_out(&open_library(&cli, &config)?, &settings),
+                    _ => spotify::sign_in(&config, &settings),
                 }
-                (_, true, _) => {
-                    spotify::follow(&open_library(&cli, &config)?, &config, Upkeep::Once)
-                }
-                (.., true) => spotify::sign_out(&open_library(&cli, &config)?, &settings),
-                _ => spotify::sign_in(&config, &settings),
-            }
+            })
         }
         Some(Sub::Lastfm { user, forget }) => {
             let settings = settings_path(&cli)?;
@@ -3126,6 +3128,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             },
             scrobblers: online::scrobblers(&config),
             signs_in: providers::signs_in(),
+            spotify: online::signs_in_to_spotify(&config),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             measurers: equaliser::measured_by(&config),
@@ -3153,6 +3156,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 tidal_client_id: config.tidal_client_id.clone().unwrap_or_default(),
                 tidal_client_secret: config.tidal_client_secret.clone().unwrap_or_default(),
                 tidal_refresh_token: config.tidal_refresh_token.clone().unwrap_or_default(),
+                spotify_client_id: config.spotify_client_id.clone().unwrap_or_default(),
+                spotify_refresh_token: config.spotify_refresh_token.clone().unwrap_or_default(),
                 hifi_api: config.hifi_api.clone().unwrap_or_default(),
                 hifi_secret: config.hifi_secret.clone().unwrap_or_default(),
                 monochrome: config.monochrome.clone().unwrap_or_default(),

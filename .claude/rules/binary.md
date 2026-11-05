@@ -441,7 +441,7 @@ batch of `SettingChange`s through one `config::edit`, writing only if something 
 file cannot say (a non-UTF-8 folder) is `SettingNotStored` while the rest land.
 
 **A subcommand's write is delivered to the players already running.** `reloading::delivering` wraps
-the write of `resonate eq`, `tidal`, `lastfm` and `sync`: it compares the settings file before and
+the write of `resonate eq`, `tidal`, `spotify`, `lastfm` and `sync`: it compares the settings file before and
 after and, when it moved, lists the players on the bus (`Running::listed`) and calls `Reload` on each
 with the group the command changed (`Reloadable`) and the file's path. A player that took it is
 said to take it up; one that refused, or is too old to know `Reload`, is said to keep the settings it
@@ -455,7 +455,8 @@ read again (`resonate_ui::Followed::Bindings`); `Submission` and `Sync` are `App
 the player has a catalog, since `submitting`'s token and the sync watcher (`sync.md`) follow the file
 themselves; `Tidal` (named by `resonate tidal`) reads the account again and hands a window
 `Followed::Tidal`, which the window writes into its own `Online` and TIDAL fields before asking
-every unheld want again, and a windowless player refuses it (it registers no providers). The
+every unheld want again, and a windowless player refuses it (it registers no providers); `Spotify`
+reads the account again and hands a window `Followed::Spotify`. The
 window drains `Bus::followed` on the foreground (`follow_when_told`, as it drains `raise`).
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
