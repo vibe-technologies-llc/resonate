@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
@@ -85,6 +86,7 @@ private val Setting.icon: ImageVector
             Setting.PROVIDERS -> Icons.Rounded.CloudDownload
             Setting.SERVER -> Icons.Rounded.Cloud
             Setting.SCROBBLING -> Icons.Rounded.History
+            Setting.SPOTIFY -> Icons.Rounded.Link
             Setting.SYNC -> Icons.Rounded.Devices
             Setting.APPEARANCE -> Icons.Rounded.Palette
             Setting.NOTIFICATIONS -> Icons.Rounded.Notifications
@@ -106,6 +108,7 @@ private val Setting.destination: Screen?
             Setting.PROVIDERS -> Screen.Providers
             Setting.SERVER -> Screen.Server
             Setting.SCROBBLING -> Screen.Scrobbling
+            Setting.SPOTIFY -> Screen.Spotify
             Setting.SYNC -> Screen.Sync
             Setting.APPEARANCE -> Screen.Appearance
             Setting.ONLINE,

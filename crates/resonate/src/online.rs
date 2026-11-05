@@ -241,23 +241,6 @@ struct ApprovalForTheWindow {
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]
-fn failure_of(
-    error: resonate_online::SpotifySignInError,
-) -> resonate_library::SpotifySignInFailure {
-    use resonate_library::SpotifySignInFailure as Failure;
-    use resonate_online::SpotifySignInError as Signing;
-
-    tracing::warn!(%error, "the Spotify sign-in did not finish");
-    match error {
-        Signing::NoPlaceToComeBack { .. } => Failure::NoPlaceToComeBack,
-        Signing::Lapsed => Failure::Lapsed,
-        Signing::Denied => Failure::Denied,
-        Signing::Asked(resonate_online::Error::Refused { .. }) => Failure::Refused,
-        Signing::Asked(_) => Failure::Unreached,
-    }
-}
-
-#[cfg(all(feature = "online", feature = "ui"))]
 impl resonate_library::SignsInToSpotify for SignInForTheWindow {
     fn authorizing(
         &self,
@@ -268,7 +251,7 @@ impl resonate_library::SignsInToSpotify for SignInForTheWindow {
     > {
         Ok(Box::new(ApprovalForTheWindow {
             signs_in: self.signs_in.clone(),
-            authorizing: self.signs_in.authorizing(client_id).map_err(failure_of)?,
+            authorizing: self.signs_in.authorizing(client_id)?,
         }))
     }
 }
@@ -286,7 +269,7 @@ impl resonate_library::SpotifyApproval for ApprovalForTheWindow {
         self.signs_in
             .authorized(&self.authorizing, cancelled)
             .map(|signed_in| signed_in.map(|signed_in| signed_in.refresh_token))
-            .map_err(failure_of)
+            .map_err(Into::into)
     }
 }
 

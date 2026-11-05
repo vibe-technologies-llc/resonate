@@ -113,6 +113,10 @@ final class Features {
     var openPlaylist: UInt64?
     var playlistToShow: UInt64?
     var followedProfiles: [ProfileFollowed] = []
+    var spotifyAccount = SpotifyAccount()
+    var spotifyAddress: String?
+    var spotifySigningIn = false
+    private var spotifyRequest = 0
     var followingProfile = false
     var onlineQuery = "" {
         didSet { if onlineQuery != oldValue { askOnline() } }
@@ -303,6 +307,7 @@ final class Features {
             SecretsRead(
                 providers: Result { try store.readProviders() },
                 scrobbling: Result { try store.readScrobbling() },
+                spotify: Result { try store.readSpotify() },
                 recognition: Result { try store.readRecognitionKey() },
                 sync: Result { try store.readSync() }
             )
@@ -314,6 +319,12 @@ final class Features {
         }
         switch read.scrobbling {
         case .success(let value): scrobbleAccount = value
+        case .failure(let error): failure = error
+        }
+        switch read.spotify {
+        case .success(let value):
+            spotifyAccount = value
+            work { native in native.configureSpotify(clientId: value.clientId, refreshToken: value.refreshToken) }
         case .failure(let error): failure = error
         }
         switch read.recognition {
@@ -1020,7 +1031,12 @@ final class Features {
         guard !followingProfile else { return }
         followingProfile = true
         work({ [weak self] native in
-            let followed = try await Work.aside { try native.followProfile(link: link, keptInStep: keptInStep) }
+            let read = try await Work.aside {
+                let followed = Result { try native.followProfile(link: link, keptInStep: keptInStep) }
+                return (followed, native.refreshedSpotifyToken())
+            }
+            if let renewed = read.1 { self?.keepRenewedSpotifyToken(renewed) }
+            let followed = try read.0.get()
             let (found, profiles) = try await Work.aside { (try native.playlists(), try native.profilesFollowed()) }
             guard let self else { return }
             adoptPlaylists(found, native)
@@ -1028,6 +1044,79 @@ final class Features {
             library.notice(FollowedProfileWords.followed(followed, keptInStep: keptInStep))
             if keptInStep { await refreshWanted(native) }
         }, finally: { [weak self] in self?.followingProfile = false })
+    }
+
+    func keepRenewedSpotifyToken(_ token: String) {
+        var renewed = spotifyAccount
+        guard renewed.refreshToken != token else { return }
+        renewed.refreshToken = token
+        keepSpotifyAccount(renewed)
+    }
+
+    private func keepSpotifyAccount(_ account: SpotifyAccount) {
+        spotifyAccount = account
+        let store = accounts
+        Task {
+            do {
+                try await Work.inSecrets { try store.writeSpotify(account) }
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    func keepSpotifyClient(_ clientId: String) {
+        var kept = spotifyAccount
+        kept.clientId = clientId.trimmingCharacters(in: .whitespaces)
+        keepSpotifyAccount(kept)
+        work { native in native.configureSpotify(clientId: kept.clientId, refreshToken: kept.refreshToken) }
+    }
+
+    func signInToSpotify(_ clientId: String) {
+        guard !spotifySigningIn else { return }
+        spotifySigningIn = true
+        spotifyRequest += 1
+        let request = spotifyRequest
+        let given = clientId.trimmingCharacters(in: .whitespaces)
+        work({ [weak self] native in
+            let address = try await Work.aside { try native.authorizeSpotify(clientId: given) }
+            guard let self, spotifyRequest == request else { return }
+            spotifyAddress = address
+            let answer = try await Work.aside { try native.finishSpotifyAuthorization() }
+            guard let token = answer, spotifyRequest == request else { return }
+            let kept = SpotifyAccount(clientId: given, refreshToken: token)
+            keepSpotifyAccount(kept)
+            native.configureSpotify(clientId: kept.clientId, refreshToken: kept.refreshToken)
+            library.notice(SpotifyWords.signedIn)
+        }, finally: { [weak self] in
+            guard let self, spotifyRequest == request else { return }
+            spotifySigningIn = false
+            spotifyAddress = nil
+        })
+    }
+
+    func cancelSpotifySignIn() {
+        guard spotifySigningIn else { return }
+        spotifyRequest += 1
+        spotifySigningIn = false
+        spotifyAddress = nil
+        work { native in try await Work.aside { native.cancelSpotifyAuthorization() } }
+    }
+
+    func signOutOfSpotify() {
+        var kept = spotifyAccount
+        kept.refreshToken = ""
+        keepSpotifyAccount(kept)
+        work { [weak self] native in
+            let (found, profiles) = try await Work.aside {
+                _ = try native.signOutOfSpotify()
+                return (try native.playlists(), try native.profilesFollowed())
+            }
+            guard let self else { return }
+            adoptPlaylists(found, native)
+            followedProfiles = profiles
+            library.notice(SpotifyWords.signedOut)
+        }
     }
 
     func unfollowProfile(_ link: String) {
@@ -1840,7 +1929,12 @@ final class Features {
         for link in due {
             guard !Task.isCancelled, linkedGeneration == generation, online else { return }
             let before = playlists
-            guard let followed = try? await Work.aside({ try native.followProfile(link: link, keptInStep: true) }),
+            let read = try? await Work.aside {
+                let followed = Result { try native.followProfile(link: link, keptInStep: true) }
+                return (followed, native.refreshedSpotifyToken())
+            }
+            if let renewed = read?.1 { keepRenewedSpotifyToken(renewed) }
+            guard let followed = try? read?.0.get(),
                 let found = try? await Work.aside({ try native.playlists() })
             else { continue }
             let added = followed.playlists.filter { imported in !before.contains { $0.id == imported.id } }.count
@@ -1999,6 +2093,7 @@ struct HeardSignal: Sendable {
 private struct SecretsRead: Sendable {
     let providers: Result<ProviderAccounts, any Swift.Error>
     let scrobbling: Result<ScrobbleAccount, any Swift.Error>
+    let spotify: Result<SpotifyAccount, any Swift.Error>
     let recognition: Result<String, any Swift.Error>
     let sync: Result<SyncConfig, any Swift.Error>
 }

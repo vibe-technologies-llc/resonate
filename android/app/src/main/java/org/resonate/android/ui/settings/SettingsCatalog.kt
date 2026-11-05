@@ -132,6 +132,12 @@ enum class Setting(
         "ListenBrainz and Last.fm",
         listOf("Sign in to Last.fm", "ListenBrainz token", "Loves", "Listening history"),
     ),
+    SPOTIFY(
+        SettingsGroup.ONLINE,
+        "Spotify",
+        "Your playlists and liked songs, with an app you register",
+        listOf("Client ID", "Sign in to Spotify", "Follow the account", "Move to Resonate once"),
+    ),
     SYNC(
         SettingsGroup.ONLINE,
         "Devices",

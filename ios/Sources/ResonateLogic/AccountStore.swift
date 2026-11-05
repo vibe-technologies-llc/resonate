@@ -137,6 +137,18 @@ public struct AccountStore: Sendable {
         try secrets.write("lastfm-session", account.lastfmSession)
     }
 
+    public func readSpotify() throws -> SpotifyAccount {
+        SpotifyAccount(
+            clientId: try secrets.read("spotify-client-id"),
+            refreshToken: try secrets.read("spotify-refresh-token")
+        )
+    }
+
+    public func writeSpotify(_ account: SpotifyAccount) throws {
+        try secrets.write("spotify-client-id", account.clientId)
+        try secrets.write("spotify-refresh-token", account.refreshToken)
+    }
+
     public func readRecognitionKey() throws -> String { try secrets.read("acoustid-key") }
 
     public func writeRecognitionKey(_ value: String) throws { try secrets.write("acoustid-key", value) }

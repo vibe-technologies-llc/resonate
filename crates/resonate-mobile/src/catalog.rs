@@ -306,6 +306,10 @@ CREATE TABLE unheld_covers (
 ) STRICT;
 ";
 
+const DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC: &str = "
+CREATE INDEX documents_by_isrc ON documents(isrc) WHERE isrc IS NOT NULL;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -337,6 +341,7 @@ const MIGRATIONS: &[&str] = &[
     A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
     ARTISTS_KEEP_THEIR_DISCOGRAPHY,
     UNHELD_RELEASES_KEEP_THEIR_SLEEVE,
+    DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC,
 ];
 
 #[cfg(test)]
@@ -1816,6 +1821,56 @@ mod tests {
 
         assert_eq!(kept, 2000);
         assert!(plan.contains("listens_by_when"), "read by {plan}");
+    }
+
+    #[test]
+    fn a_catalog_of_before_songs_were_found_by_their_isrc_keeps_its_rows_and_answers_by_it() {
+        let folder =
+            std::env::temp_dir().join(format!("resonate-isrc-step-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a folder");
+        let path = folder.join("documents.sqlite");
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, isrc)
+                 VALUES ('content://music/one.flac', 'one.flac', 'One', 'Band', 'Album', 200000, 44100, 'FLAC', 'USRC17607839')",
+                [],
+            )
+            .expect("a song of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let indexed: i64 = opened
+            .0
+            .lock()
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'documents_by_isrc'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the schema reads");
+
+        assert_eq!(indexed, 1);
+        assert_eq!(opened.tracks("One", 0, 10).expect("the rows").len(), 1);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

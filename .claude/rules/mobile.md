@@ -188,6 +188,27 @@ phone keeps a host list of its own
 `a_profile_link_names_its_service_and_anything_else_names_none`,
 `a_playlist_link_names_its_service_and_any_other_text_names_none`).
 
+## A Spotify account on a phone
+
+`spotify.rs` holds what a phone adds to `online.md`'s *A Spotify account*. The front end keeps the
+client ID and the refresh token in its own secret store (Android Keystore, iOS's keychain) and hands
+them over at start (`configure_spotify`, either blank being no account), so `Services::online` carries
+one `SpotifyAccount` over `KeptByThePhone`. A rotation is taken up at once and handed back through
+`refreshed_spotify_token`, taken once, for the phone to write. `authorize_spotify(client_id)` binds
+the same `SPOTIFY_REDIRECT` the desktop does (`spotify_redirect`, one address the app registers) and
+answers the address to open; `finish_spotify_authorization` waits for the browser on the caller's
+thread and `cancel_spotify_authorization` ends it. The boundary's listener answers in-process, so the
+phone must stay running while the browser is up: Android has a browser in front and the process
+alive, iOS an `ASWebAuthenticationSession` over the app (neither seen on a device, `docs/TESTING.md`).
+`spotify_account_link` is what `follow_profile` takes (`profile_link_service` offers it to no search);
+signed out it is `NotSignedInToSpotify`, a refused token `SpotifySignInLapsed`.
+`sign_out_of_spotify` forgets the grant, the account's links and the following, keeping the rows.
+**A song is held by its ISRC first**: step 31 (`DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC`) indexes
+`documents(isrc)`, and `local_match` takes a visible document of a song's code within 5 s of its length
+before the name match, so a song tagged with a code is found whatever its name reads; a song neither
+answers for stays wanted. A list read through an account takes `ACCOUNT_SONGS_READ_AT_MOST` (50 000), not
+a pasted page's `PLAYLIST_SONGS_READ_AT_MOST`.
+
 ## The songs an album lacks
 
 `album_songs.rs` is the phones' half of `ui.md`'s *Album rows = catalog rows merged with the release's

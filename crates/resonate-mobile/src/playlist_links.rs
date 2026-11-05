@@ -32,6 +32,8 @@ pub fn playlist_link_service(text: String) -> Option<String> {
     PlaylistLink::read(&text).map(|link| link.service().to_owned())
 }
 
+const SONGS_MATCHED_AT_MOST: usize = 50_000;
+
 struct Matched {
     tracks: Vec<u64>,
     unmatched: Vec<SearchSong>,
@@ -164,7 +166,7 @@ impl MobilePlayer {
             tracks: Vec::new(),
             unmatched: Vec::new(),
         };
-        for song in songs.iter().take(500) {
+        for song in songs.iter().take(SONGS_MATCHED_AT_MOST) {
             match local_match(&self.catalog.0.lock(), song)? {
                 Some(track) => matched.tracks.push(track),
                 None if !song.title.trim().is_empty() => matched.unmatched.push(song.clone()),
@@ -406,6 +408,44 @@ mod tests {
             player.playlists().expect("the listing")[0].link,
             Some(link),
             "the listing carries the link"
+        );
+    }
+
+    #[test]
+    fn a_song_is_held_by_its_isrc_within_its_length_whatever_its_name_reads() {
+        let player = player();
+        let tagged = held(&player, "one", "A name of its own");
+        player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET isrc = 'USRC17607839' WHERE id = ?1",
+                [tagged as i64],
+            )
+            .expect("a code");
+        let coded = |length: u64| SearchSong {
+            isrcs: vec!["USRC17607839".to_owned()],
+            duration_ms: Some(length),
+            ..listed("What the service bills it as")
+        };
+
+        let found = local_match(&player.catalog.0.lock(), &coded(214_000)).expect("a look");
+        let another_take = local_match(&player.catalog.0.lock(), &coded(400_000)).expect("a look");
+        let another_code = local_match(
+            &player.catalog.0.lock(),
+            &SearchSong {
+                isrcs: vec!["GBAYE0601498".to_owned()],
+                ..coded(214_000)
+            },
+        )
+        .expect("a look");
+
+        assert_eq!(found, Some(tagged));
+        assert_eq!(another_take, None, "the code of another length is no match");
+        assert_eq!(
+            another_code, None,
+            "and neither is a name that merely differs"
         );
     }
 

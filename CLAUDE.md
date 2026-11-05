@@ -145,7 +145,7 @@ Invariants the layering protects (the rules files have the rest):
   `cargo tree -p resonate --no-default-features` builds with no HTTP client. Same for `Scrobbler`,
   `Fingerprints`, `Corrections`, `LyricProvider`.
 - **A request says what this build is and nothing else**: User-Agent `resonate/<version>`; a contact,
-  AcoustID key, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
+  AcoustID key, Spotify client ID, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
   default; `online = false` stops every request (`online.md`).
 - **A metered connection is one `resonate_core::Metering`, read through `Gate`s**: a detector
   (`resonate-mpris` on NetworkManager, the phones' own callbacks) reports `Meter::{Unknown,

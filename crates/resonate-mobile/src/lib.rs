@@ -39,6 +39,7 @@ mod saved_searches;
 mod search;
 mod served;
 mod sharing;
+mod spotify;
 mod stamp;
 mod sync;
 mod tagging;

@@ -87,7 +87,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   reference, and `resonate-online`'s gated live test (`RESONATE_ONLINE_TESTS`,
   `RESONATE_SPOTIFY_CLIENT_ID`, `RESONATE_SPOTIFY_TOKEN_FILE`) has never run; a registered app's
   development mode (`403` on a playlist the account only follows), `SPOTIFY_REDIRECT` accepted as
-  registered and the rotation of its refresh tokens are as Spotify documents them, unmeasured
+  registered and the rotation of its refresh tokens are as Spotify documents them, unmeasured; on a
+  phone, the browser reaching the boundary's loopback listener (an `ASWebAuthenticationSession` on
+  iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor

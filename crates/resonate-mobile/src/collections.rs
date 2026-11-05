@@ -8,7 +8,7 @@ use resonate_library::{
     AlbumLink, ArtistLink, FollowedLink, ListedSong, LookupOp, POLL_AGAIN_AFTER, PlaylistLink,
     REFUSALS_REMEMBERED_FOR, RETRY_WAITS, Reference, TRIES_BEFORE_GIVING_UP,
 };
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension as _, params};
 
 use crate::{
     Error, MobilePlayer, Result, StoreOp,
@@ -22,6 +22,8 @@ use crate::{
 const WANTED_READ_AT_MOST: usize = 500;
 
 const PLAYLIST_SONGS_READ_AT_MOST: usize = 500;
+const ACCOUNT_SONGS_READ_AT_MOST: usize = 50_000;
+const FOUND_BY_ITS_ISRC: &str = "SELECT id FROM documents WHERE isrc = ?1 AND missing = 0 AND (?2 IS NULL OR duration_ms IS NULL OR abs(duration_ms - ?2) <= 5000) ORDER BY id LIMIT 1";
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct OnlineCollection {
@@ -212,7 +214,11 @@ impl MobilePlayer {
             return Ok(None);
         };
         let mut songs = Vec::new();
-        for song in playlist.songs.into_iter().take(PLAYLIST_SONGS_READ_AT_MOST) {
+        let read_at_most = match link {
+            PlaylistLink::Spotify(_) | PlaylistLink::SpotifyLiked => ACCOUNT_SONGS_READ_AT_MOST,
+            _ => PLAYLIST_SONGS_READ_AT_MOST,
+        };
+        for song in playlist.songs.into_iter().take(read_at_most) {
             match song {
                 ListedSong::Recording(id) => {
                     if let Some(recording) =
@@ -489,6 +495,24 @@ impl Catalog {
 const LOCAL_MATCH: &str = "SELECT id, coalesce(recording = ?1, 0) FROM documents WHERE missing = 0 AND ((?1 != '' AND recording = ?1) OR ((recording IS NULL OR ?1 = '') AND ?3 != '' AND folded(title) = folded(?2) AND folded(artist) = folded(?3) AND (?4 IS NULL OR abs(duration_ms - ?4) <= 5000))) ORDER BY coalesce(recording = ?1, 0) DESC, id LIMIT 2";
 
 pub(crate) fn local_match(connection: &Connection, song: &SearchSong) -> Result<Option<u64>> {
+    let length = song
+        .duration_ms
+        .map(|value| value.min(i64::MAX as u64) as i64);
+    let mut coded = connection
+        .prepare_cached(FOUND_BY_ITS_ISRC)
+        .map_err(read_error)?;
+    for isrc in &song.isrcs {
+        let found = coded
+            .query_row(
+                params![isrc, length],
+                |row| Ok(row.get::<_, i64>(0)? as u64),
+            )
+            .optional()
+            .map_err(read_error)?;
+        if found.is_some() {
+            return Ok(found);
+        }
+    }
     let mut query = connection.prepare(LOCAL_MATCH).map_err(read_error)?;
     let matches = query
         .query_map(

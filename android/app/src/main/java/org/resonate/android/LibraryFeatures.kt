@@ -149,6 +149,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val correctionBusy = MutableStateFlow(false)
     val correctionApplying = MutableStateFlow(false)
     val scrobbleAccount = MutableStateFlow<ScrobbleAccount?>(null)
+    val spotifyAccount = MutableStateFlow<SpotifyAccount?>(null)
+    val spotifyAddress = MutableStateFlow<String?>(null)
+    val spotifySigningIn = MutableStateFlow(false)
     val scrobbleStatus = MutableStateFlow<String?>(null)
     private var submitting: Job? = null
     private var keepingInStep: Job? = null
@@ -330,6 +333,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 library.report(failure)
                 ScrobbleAccount("", "", "", "")
             }
+        spotifyAccount.value =
+            try {
+                accounts.readSpotify()
+            } catch (failure: Exception) {
+                library.report(failure)
+                SpotifyAccount()
+            }
+        work { native ->
+            spotifyAccount.value?.let { native.configureSpotify(it.clientId, it.refreshToken) }
+        }
         recognitionKey.value =
             try {
                 accounts.readRecognitionKey()
@@ -475,7 +488,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (!claimProfile(link)) return
         try {
             val before = native.playlists()
-            val followed = native.followProfile(link, keptInStep)
+            val followed =
+                try {
+                    native.followProfile(link, keptInStep)
+                } finally {
+                    keepRenewedSpotifyToken(native)
+                }
             val after = native.playlists()
             val changes = FollowedProfileWords.changes(before, after, followed)
             if (asked || !changes.quiet) {
@@ -503,6 +521,54 @@ class LibraryFeatures(private val context: Context, private val library: Library
         follow(native, link, keptInStep, asked = true)
     }
 
+    private fun keepRenewedSpotifyToken(native: MobilePlayer) {
+        val token = native.refreshedSpotifyToken() ?: return
+        val kept = (spotifyAccount.value ?: return).copy(refreshToken = token)
+        accounts.writeSpotify(kept)
+        spotifyAccount.value = kept
+    }
+
+    fun keepSpotifyClient(clientId: String) = work { native ->
+        val kept = (spotifyAccount.value ?: SpotifyAccount()).copy(clientId = clientId.trim())
+        accounts.writeSpotify(kept)
+        spotifyAccount.value = kept
+        native.configureSpotify(kept.clientId, kept.refreshToken)
+    }
+
+    fun signInToSpotify(clientId: String) {
+        if (!spotifySigningIn.compareAndSet(false, true)) return
+        work { native ->
+            try {
+                val given = clientId.trim()
+                spotifyAddress.value = native.authorizeSpotify(given)
+                val token = native.finishSpotifyAuthorization() ?: return@work
+                val kept = SpotifyAccount(given, token)
+                accounts.writeSpotify(kept)
+                spotifyAccount.value = kept
+                native.configureSpotify(kept.clientId, kept.refreshToken)
+                library.notice(SpotifyWords.SIGNED_IN)
+            } finally {
+                spotifyAddress.value = null
+                spotifySigningIn.value = false
+            }
+        }
+    }
+
+    fun cancelSpotifySignIn() = work { native ->
+        native.cancelSpotifyAuthorization()
+        spotifyAddress.value = null
+    }
+
+    fun signOutOfSpotify() = work { native ->
+        val kept = (spotifyAccount.value ?: SpotifyAccount()).copy(refreshToken = "")
+        accounts.writeSpotify(kept)
+        spotifyAccount.value = kept
+        native.signOutOfSpotify()
+        playlists.value = native.playlists()
+        profilesFollowed.value = native.profilesFollowed()
+        library.notice(SpotifyWords.SIGNED_OUT)
+    }
+
     fun loadProfilesFollowed() = work { native -> profilesFollowed.value = native.profilesFollowed() }
 
     fun unfollowProfile(link: String) = work { native ->
@@ -523,7 +589,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private fun refreshLinked(native: MobilePlayer, id: ULong, asked: Boolean) {
         if (!claimRefresh(id)) return
         try {
-            val refreshed = native.refreshLinkedPlaylist(id)
+            val refreshed =
+                try {
+                    native.refreshLinkedPlaylist(id)
+                } finally {
+                    keepRenewedSpotifyToken(native)
+                }
             val moved = LinkedPlaylistWords.moved(refreshed)
             if (moved) {
                 playlists.value = native.playlists()

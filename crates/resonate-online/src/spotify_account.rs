@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use parking_lot::Mutex;
 use resonate_library::{
     Isrc, LinkNames, LinkedPlaylist, LinkedProfile, ListedSong, LookupOp, PlaylistLink,
-    ProfilePlaylist,
+    ProfilePlaylist, SpotifySignInFailure,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use sha2::{Digest as _, Sha256};
@@ -546,6 +546,19 @@ pub struct SpotifySignedIn {
 impl fmt::Debug for SpotifySignedIn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SpotifySignedIn").finish_non_exhaustive()
+    }
+}
+
+impl From<SpotifySignInError> for SpotifySignInFailure {
+    fn from(error: SpotifySignInError) -> Self {
+        tracing::warn!(%error, "the Spotify sign-in did not finish");
+        match error {
+            SpotifySignInError::NoPlaceToComeBack { .. } => Self::NoPlaceToComeBack,
+            SpotifySignInError::Lapsed => Self::Lapsed,
+            SpotifySignInError::Denied => Self::Denied,
+            SpotifySignInError::Asked(Error::Refused { .. }) => Self::Refused,
+            SpotifySignInError::Asked(_) => Self::Unreached,
+        }
     }
 }
 

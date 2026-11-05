@@ -59,6 +59,7 @@ enum Destination: Hashable, Codable {
     case wanted
     case providers
     case scrobbling
+    case spotify
     case sync
     case server
     case output
@@ -247,7 +248,7 @@ extension Destination {
 
     var belongsToSettings: Bool {
         switch self {
-        case .sound, .processing, .output, .scrobbling, .providers, .sync, .server, .folders, .appearance, .background: true
+        case .sound, .processing, .output, .scrobbling, .spotify, .providers, .sync, .server, .folders, .appearance, .background: true
         default: false
         }
     }
@@ -542,6 +543,7 @@ struct DestinationView: View {
         case .wanted: WantedView()
         case .providers: ProviderView()
         case .scrobbling: ScrobblingView()
+        case .spotify: SpotifyView()
         case .sync: SyncView()
         case .server: ServerView()
         case .output: OutputView()
