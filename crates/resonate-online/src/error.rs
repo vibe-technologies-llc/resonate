@@ -24,6 +24,8 @@ pub enum Host {
     DeezerPictures,
     Spotify,
     SpotifyPictures,
+    SpotifyAccounts,
+    SpotifyApi,
     SoundCloud,
     SoundCloudPictures,
     SongLink,
@@ -38,7 +40,7 @@ impl Host {
     pub const fn is_an_enrichment(self) -> bool {
         !matches!(
             self,
-            Self::ListenBrainz | Self::LastFm | Self::Shazam | Self::Audd
+            Self::ListenBrainz | Self::LastFm | Self::Shazam | Self::Audd | Self::SpotifyAccounts
         )
     }
 
@@ -60,6 +62,8 @@ impl Host {
             Self::DeezerPictures => "https://cdn-images.dzcdn.net",
             Self::Spotify => "https://open.spotify.com",
             Self::SpotifyPictures => "https://i.scdn.co",
+            Self::SpotifyAccounts => "https://accounts.spotify.com",
+            Self::SpotifyApi => "https://api.spotify.com/v1",
             Self::SoundCloud => "https://soundcloud.com",
             Self::SoundCloudPictures => "https://i1.sndcdn.com",
             Self::SongLink => "https://song.link",

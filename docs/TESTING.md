@@ -82,6 +82,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S · blocked: network] That the hosted hifi service still answers a request carrying neither
   `Origin` nor `Referer` is proved by its gated live test alone (`RESONATE_HIFI_LIVE_TESTS`), which
   nothing here has run
+- [S · blocked: registered app] No real Spotify account has been read: the sign-in and the reads are
+  proved against a fake server on loopback whose fixtures are written from the published Web API
+  reference, and `resonate-online`'s gated live test (`RESONATE_ONLINE_TESTS`,
+  `RESONATE_SPOTIFY_CLIENT_ID`, `RESONATE_SPOTIFY_TOKEN_FILE`) has never run; a registered app's
+  development mode (`403` on a playlist the account only follows), `SPOTIFY_REDIRECT` accepted as
+  registered and the rotation of its refresh tokens are as Spotify documents them, unmeasured
 
 ## Testing
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor

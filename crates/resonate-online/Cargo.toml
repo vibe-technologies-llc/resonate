@@ -8,6 +8,7 @@ license.workspace = true
 doctest = false
 
 [dependencies]
+base64.workspace = true
 flate2.workspace = true
 md-5.workspace = true
 parking_lot.workspace = true
@@ -21,6 +22,7 @@ resonate-listen.workspace = true
 resonate-lyrics.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 ureq.workspace = true

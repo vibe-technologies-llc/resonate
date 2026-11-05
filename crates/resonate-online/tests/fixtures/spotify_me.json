@@ -1,0 +1,10 @@
+{
+  "account_id": "acc-0001",
+  "display_name": "A Listener",
+  "external_urls": { "spotify": "https://open.spotify.com/user/a.listener" },
+  "href": "https://api.spotify.com/v1/users/a.listener",
+  "id": "a.listener",
+  "images": [],
+  "type": "user",
+  "uri": "spotify:user:a.listener"
+}

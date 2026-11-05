@@ -959,6 +959,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Token => "a check of a listening service's token",
         LookupOp::StreamLink => "a look for where a track streams",
         LookupOp::FollowLink => "what a link names",
+        LookupOp::SpotifyAccount => "a sign-in to the Spotify account",
     }
 }
 

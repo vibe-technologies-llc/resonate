@@ -5045,7 +5045,7 @@ dependencies = [
  "pbkdf2",
  "serde",
  "serde_bytes",
- "sha2",
+ "sha2 0.10.9",
  "subtle",
  "zbus 5.19.0",
  "zbus_macros 5.19.0",
@@ -6418,6 +6418,7 @@ dependencies = [
 name = "resonate-online"
 version = "0.4.0"
 dependencies = [
+ "base64 0.23.1",
  "flate2",
  "md-5 0.11.0",
  "parking_lot 0.13.0",
@@ -6431,6 +6432,7 @@ dependencies = [
  "resonate-lyrics",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
  "tracing",
  "ureq",
@@ -7247,6 +7249,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]

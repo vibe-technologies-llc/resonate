@@ -1,0 +1,7 @@
+{
+  "access_token": "BQDfirstaccess",
+  "token_type": "Bearer",
+  "scope": "playlist-read-private playlist-read-collaborative user-library-read",
+  "expires_in": 3600,
+  "refresh_token": "first-refresh"
+}

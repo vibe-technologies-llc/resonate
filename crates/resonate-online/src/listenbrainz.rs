@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     Client, Host,
-    client::{Encoded, Posted},
+    client::{Encoded, LARGEST_DOCUMENT, Posted},
     deezer::PLAYLIST_SONGS_AT_MOST,
 };
 
@@ -152,6 +152,7 @@ impl Scrobbler for ListenBrainz {
             LookupOp::Token,
             &url,
             &self.authorization(),
+            LARGEST_DOCUMENT,
         );
 
         match answered {

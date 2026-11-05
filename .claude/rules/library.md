@@ -1797,7 +1797,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   carrying the group or release (`album_held`) gives `Linked::HeldAlbum`; else `Linked::Album`, both
   handed to `want_album` (a named pressing is read whole and its songs landed as the group's; a
   group-only link is wanted from the pressing most of its pressings share). **Playlist link**:
-  `PlaylistLink::read` takes Deezer, ListenBrainz, Spotify, TIDAL (`tidal.com` or `listen.tidal.com`, a `/playlist/<uuid>` read whole as a UUID and kept lowercase), Apple Music and YouTube playlists (never
+  `PlaylistLink::read` takes Deezer, ListenBrainz, Spotify (`open.spotify.com/collection/tracks` is
+  `SpotifyLiked`, the signed-in account's liked songs), TIDAL (`tidal.com` or `listen.tidal.com`, a `/playlist/<uuid>` read whole as a UUID and kept lowercase), Apple Music and YouTube playlists (never
   an `OLAK5uy_` album list or a `watch` link carrying a `list`); `Reference::playlist_linked`
   answers a `LinkedPlaylist` of `ListedSong`s (`Recording`, `Named` (`LinkNames`; Spotify's and Apple Music's are
   followed by the strict search, TIDAL's by its ISRC first) or `Uploaded` (YouTube));
@@ -1996,8 +1997,9 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   (`a_playlist_kept_in_step_with_its_link_takes_what_the_service_added_and_drops_what_it_took_out`,
   `a_playlist_imported_once_keeps_what_the_service_took_out_and_can_be_kept_in_step_later`).
 - **A Deezer profile is followed whole, or moved to Resonate once.** `ProfileLink`
-  (`deezer.com/[lang/]profile/<id>`, a fourth `FollowedLink`) is answered by
-  `Reference::profile_linked` with the playlists the profile made and its loved tracks
+  (`deezer.com/[lang/]profile/<id>`, a fourth `FollowedLink`; `spotify:account`, the signed-in Spotify
+  account, is the same thing read through the listener's sign-in: `online.md`'s *A Spotify account*)
+  is answered by `Reference::profile_linked` with the playlists the profile made and its loved tracks
   (`LinkedProfile`). `Library::follow_profile` imports each through `import_playlist_link` under its
   own title. In step it remembers the profile (`profile_sources`, and in `profile_playlists` every
   page it listed, the step `A_PROFILE_IS_FOLLOWED_WHOLE`), so the next follow imports only what is
