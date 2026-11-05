@@ -134,6 +134,7 @@ pub(crate) enum Group {
     SyncDevices,
     SyncConnection,
     SyncedSongs,
+    SyncControl,
     Notifications,
     Discord,
     DiscordShows,
@@ -153,7 +154,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 68] = [
+    pub(crate) const ALL: [Self; 69] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -206,6 +207,7 @@ impl Group {
         Self::SyncDevices,
         Self::SyncConnection,
         Self::SyncedSongs,
+        Self::SyncControl,
         Self::Notifications,
         Self::Discord,
         Self::DiscordShows,
@@ -275,7 +277,8 @@ impl Group {
             | Self::Pairing
             | Self::SyncDevices
             | Self::SyncConnection
-            | Self::SyncedSongs => Category::Sync,
+            | Self::SyncedSongs
+            | Self::SyncControl => Category::Sync,
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
             Self::Colour
             | Self::Layout
@@ -350,6 +353,7 @@ impl Group {
             Self::SyncDevices => "Your devices",
             Self::SyncConnection => "Connection",
             Self::SyncedSongs => "Songs between devices",
+            Self::SyncControl => resonate_core::REMOTE_TRUST_TITLE,
             Self::Discord => "Discord",
             Self::DiscordShows => "What Discord shows",
             Self::Colour => "Colour",
@@ -427,6 +431,7 @@ impl Group {
             Self::SyncDevices => SYNC_DEVICES_HINT,
             Self::SyncConnection => SYNC_CONNECTION_HINT,
             Self::SyncedSongs => SYNCED_SONGS_HINT,
+            Self::SyncControl => SYNC_CONTROL_HINT,
             Self::Discord => DISCORD_HINT,
             Self::DiscordShows => DISCORD_SHOWS_HINT,
             Self::Colour => COLOUR_HINT,
@@ -613,6 +618,10 @@ impl Group {
                 "sync copy transfer download songs files phone android peer playlists favourites \
                  everything automatic"
             }
+            Self::SyncControl => {
+                "drive driven remote control another device zones queue transport trust consent \
+                 play pause skip seek volume"
+            }
             Self::DiscordShows => {
                 "rich presence status activity cover art album icon asset progress bar elapsed \
                  paused details"
@@ -748,6 +757,7 @@ impl Group {
                 SettingKey::SharedName,
             ],
             Self::SyncedSongs => &[SettingKey::SyncSongs],
+            Self::SyncControl => &[SettingKey::SyncControl],
             Self::Discord => &[SettingKey::Discord, SettingKey::DiscordApp],
             Self::DiscordShows => &[
                 SettingKey::DiscordShows,
@@ -1254,6 +1264,11 @@ pub(crate) const SYNC_CONNECTION_HINT: &str = "How your devices meet: through Re
                                                a server of your own, or only on this network \
                                                with no server at all. Devices on one network \
                                                always meet directly.";
+
+pub(crate) const SYNC_CONTROL_HINT: &str = "A device sharing your pairing code can see and steer \
+                                            what plays here, as far as you let it. Nothing \
+                                            reaches the server: it goes straight between your \
+                                            devices.";
 
 pub(crate) const SYNCED_SONGS_HINT: &str = "Songs never pass through the server: while two of \
                                             your devices are online they are sent from one to the \

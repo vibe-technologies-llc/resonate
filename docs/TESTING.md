@@ -13,6 +13,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (how true their own timestamps and latency readings are, and clock drift over the overlap) has
   not been measured
 
+- [S · blocked: hardware] A phone driven from another device is proved on the host over a real engine
+  and the peer wire alone: audio focus asked for a play pressed elsewhere (`soundBegan`) and the
+  iPhone's session activated for one (`SessionAsked`) have not been heard on a device
+
 - [S · blocked: hardware] Android zones on two outputs are proved on the host alone: no USB DAC or
   Bluetooth device is attached here, so whether Android plays two Oboe streams asking two device ids
   (`setDeviceId`) on those two devices at once, rather than routing media to one, has not been heard

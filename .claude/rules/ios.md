@@ -318,7 +318,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   `name (n)` made beside it; the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
   writable folder, else the first writable one), and one that is not readable holds the songs back
   with a notice rather than sending them to another folder (`LandingDestinationTests`).
-- **An online device on the sync page opens `DrivenDeviceView`**, which drives its zones (`sync.md`'s *One device drives another's zones*).
+- **An online device on the sync page opens `DrivenDeviceView`**, which drives its zones: transport, volume, seek, and jump, move and remove by row. **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
   assigns `syncConfig` on the main actor at once, then restarts on `Work.inSync`, so a second switch
   flipped straight after builds on the first; `applySync` puts a minted code into the *current*

@@ -32,7 +32,7 @@ mod served;
 pub(crate) mod settings;
 mod sharing;
 mod sheets;
-mod slider;
+pub(crate) mod slider;
 pub(crate) mod sorting;
 pub(crate) mod spoken;
 pub(crate) mod statistics;

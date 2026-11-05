@@ -673,21 +673,55 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   catalog's `sync.lock`, so it runs where no window syncs.
 - **The window drives from the Device sync pane** (`views/settings/sync.rs`): an online device's row
   carries *Drive*, which sets `RootView::driving` and draws, under the device list, each zone it
-  mirrors (name and volume, song, place) with previous, play or pause, next, quieter and louder
-  (`VOLUME_STEP`, a tenth). `resonate_ui::Syncing` gained `watch` (renews the watch and answers a
-  `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Refused`), `unwatch` and `press`
-  (a `RemoteKey`, run on the background executor since it waits for the answer; a refusal is a
-  toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` redraws the pane
-  every `DRIVEN_REDRAWN_EVERY` (500 ms) while driving.
+  mirrors: name and volume, song and place with previous, play or pause, next, quieter and louder
+  (`VOLUME_STEP`, a tenth); a seek rail (`driven_rail`: a press seeks there, its keys and a reader's
+  actions step by `DRIVEN_SEEK_STEP`, 5 s, a reader's SetValue lands it, the rail's bounds kept per
+  zone in `RootView::driving_rails`); and the mirrored rows (`driven_row`, `rows_shown`: from
+  `DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING` above the row playing, `DRIVEN_ROWS_AT_FIRST`, 12, until *N
+  more* adds `DRIVEN_ROWS_MORE`), a press on one jumping to it, with up, down and remove marks, up and
+  down offered only where the queue has a neighbour. `resonate_ui::Syncing` has `watch` (renews the
+  watch and answers a `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Refused`), `unwatch`
+  and `press` (a `RemoteKey`, run on the background executor since it waits for the answer; a refusal
+  is a toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` redraws the
+  pane every `DRIVEN_REDRAWN_EVERY` (500 ms) while driving
+  (`a_driven_device_is_sought_jumped_moved_and_emptied_from_its_rows`).
 - **The phones drive through the boundary** (`resonate-mobile`'s `sync/driving.rs`):
   `sync_watch(device)` (a `RemoteDevice`: `RemoteStanding` and `RemoteZoneState`s, the position
   played on to the moment asked), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
   answering a `RemoteAnswer`; `sync_control` takes the running sync's lock only to ask
   (`Sync::ask_to_control`, an `AskedToControl` whose `answer` waits outside it), so a status poll
   never waits behind a command. Android's Devices page gives an online device a *Drive* button
-  opening `DrivenDevice` under its row (read every `DRIVEN_READ_EVERY_MS`, unwatched as it leaves,
-  `DrivenWords` held by `DrivenWordsTest`); iOS's sync page makes such a device's row a link to
-  `DrivenDeviceView`, read every 500 ms while shown. A phone is not yet driven itself (`FEATURES.md`).
+  opening `DrivenDevice` under its row (read every `DRIVEN_READ_EVERY_MS`, unwatched as it leaves): a
+  `CommitSlider` to seek and the rows `DrivenWords.rowsShown` picks as the window's do, a press on one
+  jumping, with up, down and remove buttons, *Show more of this queue* adding `DRIVEN_ROWS_MORE`
+  (`DrivenWordsTest`). iOS's sync page makes such a device's row a link to `DrivenDeviceView`, read
+  every 500 ms while shown: a `CommittingSlider` to seek and every mirrored row, a tap jumping, a swipe
+  removing and the context menu moving up, down and removing (`DrivenRows`, `ResonateLogic`,
+  `DrivingTests`).
+- **A phone is driven too.** `sync_start` hands its `Sync` `MobilePlayer::driven`: a
+  `resonate_driven::Driven` over the boundary's `Zones`, each row named by `NamedByTheCatalog`
+  (`sync/driving.rs`: the document's title, artist and length, kept per URI until the catalog's
+  revision moves, at most `ROWS_KEPT_AT_MOST`; a served row through `Served::track_of`; anything else
+  `unnamed`), so the sync thread never probes and a whole-library queue costs SQLite once a change
+  (`a_phones_zones_are_mirrored_by_the_catalogs_names_and_driven_by_row`,
+  `a_row_retitled_in_the_catalog_is_mirrored_by_its_new_name`,
+  `a_phone_is_driven_across_the_wire_as_far_as_its_setting_trusts`). Every zone answers, not only
+  the one shown. **Sound a phone did not ask for takes what a press would have**: Android's
+  `RustMediaPlayer` asks audio focus when a snapshot's transport turns to sounding
+  (`soundBegan`) and pauses where it is refused, and iOS's `NowPlaying` activates the session where
+  the engine answered sounding with no `activate` asked of it since it last rested (`SessionAsked`).
+  As for any peer, a phone on a metered network with mobile data off refuses the connection and an
+  iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
+- **`sync-control` is a choice on every front end, worded once.** `RemoteTrust::label` and `meaning`
+  and `REMOTE_TRUST_TITLE`, `_ASKED` and `_TOLD` (core) are the words; the desktop's Device sync
+  category has the group of that title (`sync_control_group`, a `kit::segmented`,
+  `Setting::SyncControl`, `Synchronised::control`), and the phones read them through
+  `sync_control_offered()` into a radio group on Android's sync page and iOS's `SyncControlPage`
+  under *Options*, kept as `sync-control` (`everything`, `transport`, `nothing`, the file's spellings,
+  `SyncControls`) in the plain sync preferences and handed over as `SyncConfig.control`, so a change
+  restarts sync as any setting does. Absent or unreadable it is `Everything`, the default everywhere
+  (`what_a_device_may_do_here_is_worded_once_and_everything_unless_told`,
+  `what_other_devices_may_do_is_chosen_in_the_pane_and_worn_at_once`).
 
 ## The desktop follows its settings
 

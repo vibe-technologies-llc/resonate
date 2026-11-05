@@ -92,7 +92,11 @@ impl Rail {
         self.painted.get().size.width
     }
 
-    fn fraction_at(&self, at: Point<Pixels>) -> Option<f32> {
+    pub(crate) fn painted_as(&self) -> Rc<Cell<Bounds<Pixels>>> {
+        Rc::clone(&self.painted)
+    }
+
+    pub(crate) fn fraction_at(&self, at: Point<Pixels>) -> Option<f32> {
         let painted = self.painted.get();
         let width = f32::from(painted.size.width);
         (width > 0.0).then(|| (f32::from(at.x - painted.origin.x) / width).clamp(0.0, 1.0))

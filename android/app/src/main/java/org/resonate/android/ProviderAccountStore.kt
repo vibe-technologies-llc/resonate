@@ -88,6 +88,7 @@ class ProviderAccountStore(context: Context) {
             playlists = storage.getBoolean("sync-playlists", false),
             everything = storage.getBoolean("sync-everything", false),
             meteredAllowed = storage.getBoolean("sync-metered-allowed", false),
+            control = SyncControls.of(storage.getString("sync-control", null)),
         )
 
     @Synchronized
@@ -104,6 +105,7 @@ class ProviderAccountStore(context: Context) {
                 .putBoolean("sync-playlists", config.playlists)
                 .putBoolean("sync-everything", config.everything)
                 .putBoolean("sync-metered-allowed", config.meteredAllowed)
+                .putString("sync-control", SyncControls.spelt(config.control))
         check(edit.commit()) { "Device sync settings could not be saved" }
     }
 

@@ -21,6 +21,7 @@ import org.resonate.android.nativecore.OutputPath
 import org.resonate.android.nativecore.OutputStream
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.nativecore.SyncConfig
+import org.resonate.android.nativecore.SyncControl
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncTransfer
@@ -247,7 +248,7 @@ class SettingsWordsTest {
         assertFalse(canSignInToLastFm(ScrobbleDraft(account.copy(lastfmSecret = ""), user = "me", password = "pw")))
     }
 
-    private val config = SyncConfig(true, false, "", "", "", false, false, false, false)
+    private val config = SyncConfig(true, false, "", "", "", false, false, false, false, SyncControl.EVERYTHING)
 
     private fun device(
         name: String,

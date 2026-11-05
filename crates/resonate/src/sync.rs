@@ -1425,6 +1425,18 @@ fn zone_shown(mirror: &Mirror, zone: &RemoteZone) -> resonate_ui::RemoteZoneShow
         position: mirror.position_of(zone, Instant::now()),
         length: zone.length,
         volume: zone.volume.get(),
+        playing: zone.playing,
+        queue_length: zone.queue_length,
+        first_row: zone.first_row,
+        rows: zone
+            .rows
+            .iter()
+            .map(|row| resonate_ui::RemoteRowShown {
+                title: row.title.clone(),
+                artist: row.artist.clone(),
+                length: row.length,
+            })
+            .collect(),
     }
 }
 
@@ -1437,6 +1449,10 @@ const fn command_of(key: resonate_ui::RemoteKey) -> RemoteCommand {
         resonate_ui::RemoteKey::Volume(permille) => {
             RemoteCommand::Volume(resonate_sync::Permille::new(permille))
         }
+        resonate_ui::RemoteKey::Seek(at) => RemoteCommand::Seek(at),
+        resonate_ui::RemoteKey::Jump(row) => RemoteCommand::Jump(row),
+        resonate_ui::RemoteKey::Move { from, to } => RemoteCommand::Move { from, to },
+        resonate_ui::RemoteKey::Remove(row) => RemoteCommand::Remove(row),
     }
 }
 

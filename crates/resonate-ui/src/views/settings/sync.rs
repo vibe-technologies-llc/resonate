@@ -1,21 +1,27 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
-    Bounds, Context, Div, FontWeight, SharedString, Stateful, Window, canvas, div, fill, point,
-    prelude::*, px, rgb, size,
+    AccessibleAction, Bounds, Context, Div, FontWeight, KeyContext, MouseButton, MouseDownEvent,
+    Role, SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb,
+    size,
 };
 use qrcode::{Color, EcLevel, QrCode};
-use resonate_core::SyncedSongs;
+use resonate_core::{REMOTE_TRUST_ASKED, REMOTE_TRUST_TOLD, RemoteTrust, SyncedSongs};
 
 use crate::{
-    Notice, RemoteKey, RemoteShown, RemoteZoneShown, ResonateApp, Setting, SyncShown, SyncStanding,
-    SyncedDevice, SyncedPlatform, Synchronised, clipboard,
+    Notice, RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, ResonateApp, Setting,
+    SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,
+    app::{CONTROL_CONTEXT, RAIL_CONTEXT, RailBack, RailOn},
+    clipboard,
     icons::{self, Icon},
     theme,
     views::{
-        kit::{self, EndsInAnEllipsis, Tone},
+        focus,
+        hint::Names,
+        kit::{self, EndsInAnEllipsis, Found, Tone},
         root::RootView,
         settings::{note, switch_row},
+        spoken::{self, Reading, Spoken},
     },
 };
 
@@ -63,7 +69,8 @@ const ARMED_TO_REGENERATE: &str = "Press again to make a new code: every device 
 const REGENERATED: &str = "A new pairing code is being made; type it into your other devices \
                            when it shows";
 
-const DRIVE_HINT: &str = "Play, pause, skip and set the volume of what this device plays";
+const DRIVE_HINT: &str = "Play, pause, skip, seek, set the volume and change the queue of what \
+                          this device plays";
 
 const STOP_DRIVING_HINT: &str = "Stop showing what this device plays";
 
@@ -78,6 +85,26 @@ const DRIVEN_REDRAWN_EVERY: Duration = Duration::from_millis(500);
 const VOLUME_STEP: u16 = 100;
 
 const WHOLE_VOLUME: u16 = 1_000;
+
+pub(crate) const DRIVEN_ROWS_AT_FIRST: usize = 12;
+
+const DRIVEN_ROWS_MORE: usize = 50;
+
+const DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING: usize = 2;
+
+const DRIVEN_SEEK_STEP: Duration = Duration::from_secs(5);
+
+const DRIVEN_POSITION: &str = "Position on the other device";
+
+const JUMP_HINT: &str = "Play this song on the other device";
+
+const UP_HINT: &str = "Move this song up its queue";
+
+const DOWN_HINT: &str = "Move this song down its queue";
+
+const REMOVE_HINT: &str = "Take this song out of its queue";
+
+const SHOW_MORE_HINT: &str = "Show more of this queue";
 
 const FORGET_HINT: &str = "Take this device off every device's list; one that syncs again comes \
                            back";
@@ -665,6 +692,7 @@ impl RootView {
             return;
         }
         self.driving = Some((id.to_owned(), name.to_owned()));
+        self.driving_rows = DRIVEN_ROWS_AT_FIRST;
         self.driving_redraws = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DRIVEN_REDRAWN_EVERY).await;
@@ -764,7 +792,7 @@ impl RootView {
                 cx,
             ));
         }
-        div()
+        let heading = div()
             .flex()
             .items_center()
             .gap_3()
@@ -794,7 +822,256 @@ impl RootView {
                     )
                     .child(kit::figure(place)),
             )
-            .child(transport)
+            .child(transport);
+        let rail = self.driven_rail(id, zone, cx);
+        let rows = self.driven_rows(id, zone, cx);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(heading)
+            .children(rail)
+            .child(rows)
+    }
+
+    fn driven_rail(
+        &mut self,
+        id: &str,
+        zone: &RemoteZoneShown,
+        cx: &mut Context<Self>,
+    ) -> Option<Stateful<Div>> {
+        let length = zone.length.filter(|length| !length.is_zero())?;
+        let filled = (zone.position.as_secs_f32() / length.as_secs_f32()).clamp(0.0, 1.0);
+        let rail = self.driving_rails.entry(zone.zone).or_default().clone();
+        let painted = rail.painted_as();
+        let (position, at) = (zone.position, zone.zone);
+        let control = format!("sync-drive-seek-{at}");
+        let element = SharedString::from(control.clone()).into();
+        let focused = self.controls.at(control, cx);
+        let device = id.to_owned();
+        let (forward, back, pressed, set) = (
+            device.clone(),
+            device.clone(),
+            device.clone(),
+            device.clone(),
+        );
+        let reading = spoken::listening().then(|| Reading {
+            share: filled,
+            said: format!("{} of {}", clock_of(position), clock_of(length)).into(),
+        });
+
+        Some(
+            div()
+                .id(SharedString::from(format!("sync-drive-seek-{at}")))
+                .found_as(&element)
+                .track_focus(&focused)
+                .key_context(
+                    KeyContext::parse(&format!("{CONTROL_CONTEXT} {RAIL_CONTEXT}"))
+                        .unwrap_or_default(),
+                )
+                .on_action(cx.listener(move |this, _: &RailOn, _, cx| {
+                    let to = stepped_on(position, length);
+                    this.press_on_the_device(&forward, at, RemoteKey::Seek(to), cx);
+                }))
+                .on_action(cx.listener(move |this, _: &RailBack, _, cx| {
+                    let to = position.saturating_sub(DRIVEN_SEEK_STEP);
+                    this.press_on_the_device(&back, at, RemoteKey::Seek(to), cx);
+                }))
+                .when_some(reading, |control, reading| {
+                    let entity = cx.entity().downgrade();
+                    let (on, off) = (entity.clone(), entity.clone());
+                    let (toward, away) = (device.clone(), device);
+                    control
+                        .read_as(DRIVEN_POSITION, reading)
+                        .on_a11y_action(AccessibleAction::SetValue, move |asked, _, cx| {
+                            let Some(share) = spoken::share_asked(asked) else {
+                                return;
+                            };
+                            entity
+                                .update(cx, |this, cx| {
+                                    let to = length.mul_f32(share.clamp(0.0, 1.0));
+                                    this.press_on_the_device(&set, at, RemoteKey::Seek(to), cx);
+                                })
+                                .ok();
+                        })
+                        .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
+                            on.update(cx, |this, cx| {
+                                let to = stepped_on(position, length);
+                                this.press_on_the_device(&toward, at, RemoteKey::Seek(to), cx);
+                            })
+                            .ok();
+                        })
+                        .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
+                            off.update(cx, |this, cx| {
+                                let to = position.saturating_sub(DRIVEN_SEEK_STEP);
+                                this.press_on_the_device(&away, at, RemoteKey::Seek(to), cx);
+                            })
+                            .ok();
+                        })
+                })
+                .rounded_md()
+                .focus_visible(focus::lit)
+                .flex()
+                .items_center()
+                .h(theme::width(theme::RAIL_HEIGHT))
+                .px(theme::width(theme::RAIL_THUMB / 2.0))
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        window.prevent_default();
+                        if let Some(fraction) = rail.fraction_at(event.position) {
+                            let to = length.mul_f32(fraction);
+                            this.press_on_the_device(&pressed, at, RemoteKey::Seek(to), cx);
+                        }
+                    }),
+                )
+                .child(
+                    div()
+                        .relative()
+                        .h(theme::width(theme::RAIL_TRACK))
+                        .w_full()
+                        .rounded_full()
+                        .bg(rgb(theme::soft_edge()))
+                        .child(
+                            div()
+                                .h_full()
+                                .w(relative(filled))
+                                .rounded_full()
+                                .bg(rgb(theme::accent())),
+                        )
+                        .child(canvas(
+                            move |bounds, _, _| painted.set(bounds),
+                            |_, _, _, _| {},
+                        )),
+                ),
+        )
+    }
+
+    fn driven_rows(&mut self, id: &str, zone: &RemoteZoneShown, cx: &mut Context<Self>) -> Div {
+        let shown = rows_shown(zone, self.driving_rows);
+        let more = zone.rows.len().saturating_sub(shown.len());
+        let mut list = div().flex().flex_col();
+        for (row, song) in shown {
+            list = list.child(self.driven_row(id, zone, row, song, cx));
+        }
+        if more > 0 {
+            let control = format!("sync-drive-more-{}", zone.zone);
+            list = list.child(self.in_the_ring_at(
+                control.clone(),
+                kit::button(
+                    SharedString::from(control),
+                    None,
+                    format!("{more} more"),
+                    SHOW_MORE_HINT,
+                    Tone::Ghost,
+                ),
+                move |this, _, cx| {
+                    this.driving_rows = this.driving_rows.saturating_add(DRIVEN_ROWS_MORE);
+                    cx.notify();
+                },
+                cx,
+            ));
+        }
+        list
+    }
+
+    fn driven_row(
+        &mut self,
+        id: &str,
+        zone: &RemoteZoneShown,
+        row: usize,
+        song: &RemoteRowShown,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let at = zone.zone;
+        let playing = zone.playing == Some(row);
+        let saying = if song.artist.is_empty() {
+            song.title.clone()
+        } else {
+            format!("{} — {}", song.title, song.artist)
+        };
+        let jump = format!("sync-drive-jump-{at}-{row}");
+        let device = id.to_owned();
+        let named = SharedString::from(jump.clone()).into();
+        let pressed = div()
+            .id(SharedString::from(jump.clone()))
+            .found_as(&named)
+            .named_as(Role::Button, &saying, JUMP_HINT)
+            .names(JUMP_HINT)
+            .flex()
+            .flex_1()
+            .min_w(px(0.0))
+            .items_center()
+            .gap_2()
+            .px_2()
+            .py_0p5()
+            .rounded_md()
+            .cursor_pointer()
+            .hover(|row| row.bg(rgb(theme::hover())))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(if playing {
+                        theme::accent()
+                    } else {
+                        theme::text()
+                    }))
+                    .truncate()
+                    .ends_in_an_ellipsis()
+                    .child(saying),
+            )
+            .children(song.length.map(|length| kit::figure(clock_of(length))));
+        let mut line = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .child(self.in_the_ring_at(
+                jump,
+                pressed,
+                move |this, _, cx| this.press_on_the_device(&device, at, RemoteKey::Jump(row), cx),
+                cx,
+            ));
+        let moves = [
+            (
+                "up",
+                Icon::ChevronUp,
+                UP_HINT,
+                row.checked_sub(1)
+                    .map(|to| RemoteKey::Move { from: row, to }),
+            ),
+            (
+                "down",
+                Icon::ChevronDown,
+                DOWN_HINT,
+                (row + 1 < zone.queue_length).then_some(RemoteKey::Move {
+                    from: row,
+                    to: row + 1,
+                }),
+            ),
+            (
+                "remove",
+                Icon::Close,
+                REMOVE_HINT,
+                Some(RemoteKey::Remove(row)),
+            ),
+        ];
+        for (which, icon, hint, key) in moves {
+            let Some(key) = key else { continue };
+            let control = format!("sync-drive-{which}-{at}-{row}");
+            let device = id.to_owned();
+            line = line.child(self.in_the_ring_at(
+                control.clone(),
+                kit::icon_button(SharedString::from(control), icon, hint),
+                move |this, _, cx| this.press_on_the_device(&device, at, key, cx),
+                cx,
+            ));
+        }
+        line
     }
 
     fn press_on_the_device(&mut self, id: &str, zone: u32, key: RemoteKey, cx: &mut Context<Self>) {
@@ -932,6 +1209,40 @@ impl RootView {
                 cx,
             ))
             .child(note(SONGS_NOTE))
+    }
+
+    pub(super) fn sync_control_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let chosen = cx.global::<ResonateApp>().synchronised.control;
+
+        let mut choices = kit::segmented();
+        for (index, trust) in RemoteTrust::ALL.into_iter().enumerate() {
+            choices = choices.child(self.option_in_the_ring(
+                kit::segment(("sync-control", index), trust.label(), trust == chosen),
+                "sync-control",
+                index,
+                move |this, _, cx| this.trust_other_devices(trust, cx),
+                cx,
+            ));
+        }
+        kit::section_body().child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(note(REMOTE_TRUST_ASKED))
+                .child(div().flex().child(choices))
+                .child(note(chosen.meaning()))
+                .child(note(REMOTE_TRUST_TOLD))
+                .child(note(SYNCING_NOTE)),
+        )
+    }
+
+    pub(crate) fn trust_other_devices(&mut self, control: RemoteTrust, cx: &mut Context<Self>) {
+        self.synchronise(
+            |synchronised| synchronised.control = control,
+            &Setting::SyncControl(control),
+            cx,
+        );
     }
 
     fn synchronise(
@@ -1270,6 +1581,27 @@ impl RootView {
     }
 }
 
+fn stepped_on(position: Duration, length: Duration) -> Duration {
+    (position + DRIVEN_SEEK_STEP).min(length)
+}
+
+fn rows_shown(zone: &RemoteZoneShown, most: usize) -> Vec<(usize, &RemoteRowShown)> {
+    let from = zone
+        .playing
+        .map_or(zone.first_row, |playing| {
+            playing.saturating_sub(DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING)
+        })
+        .max(zone.first_row);
+
+    zone.rows
+        .iter()
+        .enumerate()
+        .map(|(offset, row)| (zone.first_row + offset, row))
+        .filter(|(row, _)| *row >= from)
+        .take(most)
+        .collect()
+}
+
 fn clock_of(length: Duration) -> String {
     let seconds = length.as_secs();
     let (hours, minutes, seconds) = (seconds / 3_600, seconds / 60 % 60, seconds % 60);
@@ -1282,7 +1614,199 @@ fn clock_of(length: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use gpui::TestAppContext;
+    use parking_lot::Mutex;
+    use resonate_core::PlaylistId;
+    use resonate_library::Library;
+
     use super::*;
+    use crate::{Continuing, HandedOff, Syncing, driven::Driven};
+
+    const ROWS: usize = 3;
+
+    #[derive(Default)]
+    struct Stage {
+        pressed: Mutex<Vec<(String, u32, RemoteKey)>>,
+    }
+
+    fn row(title: &str) -> RemoteRowShown {
+        RemoteRowShown {
+            title: title.to_owned(),
+            artist: "Pink Floyd".to_owned(),
+            length: Some(Duration::from_secs(200)),
+        }
+    }
+
+    fn a_zone() -> RemoteZoneShown {
+        RemoteZoneShown {
+            zone: 1,
+            name: "Living room".to_owned(),
+            song: Some("Time".to_owned()),
+            sounding: true,
+            position: Duration::from_secs(50),
+            length: Some(Duration::from_secs(200)),
+            volume: 500,
+            playing: Some(1),
+            queue_length: ROWS,
+            first_row: 0,
+            rows: vec![row("Echoes"), row("Time"), row("Money")],
+        }
+    }
+
+    impl Syncing for Stage {
+        fn shown(&self) -> SyncShown {
+            SyncShown {
+                standing: SyncStanding::Connected,
+                devices: vec![SyncedDevice {
+                    id: "desk".to_owned(),
+                    name: "Desk".to_owned(),
+                    platform: SyncedPlatform::Linux,
+                    online: true,
+                    nearby: false,
+                    this: false,
+                }],
+                ..SyncShown::default()
+            }
+        }
+
+        fn force(&self) {}
+
+        fn forget(&self, _: &str) -> bool {
+            false
+        }
+
+        fn missing_from(&self, _: PlaylistId) -> usize {
+            0
+        }
+
+        fn fetch_missing(&self, _: PlaylistId, _: &str) {}
+
+        fn keeps_songs_of(&self, _: PlaylistId) -> bool {
+            false
+        }
+
+        fn keep_songs_of(&self, _: PlaylistId, _: bool) {}
+
+        fn handed_off(&self) -> Vec<HandedOff> {
+            Vec::new()
+        }
+
+        fn continue_from(&self, _: &str) -> Continuing {
+            Continuing::default()
+        }
+
+        fn watch(&self, _: &str) -> RemoteShown {
+            RemoteShown::Zones(vec![a_zone()])
+        }
+
+        fn press(&self, device: &str, zone: u32, key: RemoteKey) -> bool {
+            self.pressed.lock().push((device.to_owned(), zone, key));
+            true
+        }
+    }
+
+    fn opened_on_the_sync_group(cx: &mut TestAppContext) -> (Driven, Arc<Stage>) {
+        let mut driven = Driven::open(cx, Arc::new(in_memory()));
+        let stage = Arc::new(Stage::default());
+        let seam = Arc::clone(&stage) as Arc<dyn Syncing>;
+
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|app, _| app.syncing = Some(seam));
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("your devices");
+        driven.settle();
+        (driven, stage)
+    }
+
+    fn in_memory() -> Library {
+        Library::open_in_memory().expect("a catalog")
+    }
+
+    #[gpui::test]
+    fn a_driven_device_is_sought_jumped_moved_and_emptied_from_its_rows(cx: &mut TestAppContext) {
+        let (mut driven, stage) = opened_on_the_sync_group(cx);
+
+        driven.click("sync-drive-desk");
+        driven.settle();
+        driven.click("sync-drive-seek-1");
+        driven.click("sync-drive-jump-1-2");
+        driven.click("sync-drive-up-1-2");
+        driven.click("sync-drive-down-1-0");
+        driven.click("sync-drive-remove-1-1");
+        driven.until(|_, _| stage.pressed.lock().len() == 5);
+
+        let pressed = stage.pressed.lock().clone();
+
+        assert!(
+            pressed
+                .iter()
+                .all(|(device, zone, _)| device == "desk" && *zone == 1)
+        );
+        let RemoteKey::Seek(sought) = pressed[0].2 else {
+            panic!("a seek, not {:?}", pressed[0].2);
+        };
+        assert!(sought > Duration::from_secs(80) && sought < Duration::from_secs(120));
+        assert_eq!(pressed[1].2, RemoteKey::Jump(2));
+        assert_eq!(pressed[2].2, RemoteKey::Move { from: 2, to: 1 });
+        assert_eq!(pressed[3].2, RemoteKey::Move { from: 0, to: 1 });
+        assert_eq!(pressed[4].2, RemoteKey::Remove(1));
+    }
+
+    #[test]
+    fn only_a_rows_real_neighbours_are_offered_and_the_shown_rows_start_about_the_one_playing() {
+        let many = RemoteZoneShown {
+            playing: Some(20),
+            queue_length: 40,
+            first_row: 5,
+            rows: (5..40).map(|at| row(&format!("{at}"))).collect(),
+            ..a_zone()
+        };
+
+        let shown = rows_shown(&many, 4);
+
+        assert_eq!(
+            shown.iter().map(|(at, _)| *at).collect::<Vec<_>>(),
+            [18, 19, 20, 21]
+        );
+        assert_eq!(shown[2].1.title, "20");
+        assert_eq!(
+            rows_shown(&a_zone(), 12)
+                .iter()
+                .map(|(at, _)| *at)
+                .collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert_eq!(
+            stepped_on(Duration::from_secs(198), Duration::from_secs(200)),
+            Duration::from_secs(200)
+        );
+    }
+
+    #[gpui::test]
+    fn what_other_devices_may_do_is_chosen_in_the_pane_and_worn_at_once(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, Arc::new(in_memory()));
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().synchronised.control),
+            RemoteTrust::Everything
+        );
+
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("driven by your other devices");
+        driven.settle();
+        driven.click("sync-control-1");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().synchronised.control),
+            RemoteTrust::Transport
+        );
+    }
 
     #[test]
     fn the_songs_on_their_way_say_how_many_are_downloading_and_how_many_wait() {

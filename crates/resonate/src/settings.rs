@@ -297,6 +297,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             ConfigKey::SyncSongs,
             Some(Value::Array(songs.named().into_iter().collect::<Array>())),
         ),
+        Setting::SyncControl(trust) => (ConfigKey::SyncControl, Some(trust.as_str().into())),
         Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
         Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
         Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
@@ -551,6 +552,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::SyncDevice => ConfigKey::SyncDevice,
         SettingKey::SharedName => ConfigKey::SharedName,
         SettingKey::SyncSongs => ConfigKey::SyncSongs,
+        SettingKey::SyncControl => ConfigKey::SyncControl,
     }
 }
 
@@ -594,8 +596,8 @@ mod tests {
     use std::{collections::BTreeSet, env, fs, process};
 
     use resonate_core::{
-        Accent, AppId, HeadYaw, Pictured, Presence, Shown, SpeakerAngle, SpeakerElevation,
-        TextSize, Theme, os_bytes,
+        Accent, AppId, HeadYaw, Pictured, Presence, RemoteTrust, Shown, SpeakerAngle,
+        SpeakerElevation, TextSize, Theme, os_bytes,
     };
 
     use super::*;
@@ -864,6 +866,32 @@ mod tests {
 
         assert_eq!(named, Some(inbox));
         assert_eq!(forgotten, None);
+    }
+
+    #[test]
+    fn what_other_devices_may_do_reads_back_as_chosen_and_one_forgotten_is_everything_again() {
+        let folder = env::temp_dir().join(format!("resonate-settings-control-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+
+        for trust in RemoteTrust::ALL {
+            file.apply(&[SettingChange::Store(Setting::SyncControl(trust))])
+                .expect("a writable temporary directory");
+
+            let read = config::load(Some(&path)).expect("the file reads back");
+
+            assert_eq!(read.sync_control, Some(trust));
+        }
+        file.apply(&[SettingChange::Forget(SettingKey::SyncControl)])
+            .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(forgotten.sync_control, None);
+        assert_eq!(
+            forgotten.sync_control.unwrap_or_default(),
+            RemoteTrust::Everything
+        );
     }
 
     #[test]

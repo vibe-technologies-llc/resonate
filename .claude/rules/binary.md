@@ -358,7 +358,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `<hostname> (Linux)`, from `/proc/sys/kernel/hostname`, else `Linux`); `sync-songs` an array of
   `favourites`, `playlists`, `everything` (empty = only on request). `sync-control` what another
   device may do to this one's zones (`everything`, `transport`, `nothing`; `RemoteTrust`, `sync.md`'s
-  *One device drives another's zones*), driven from elsewhere by `resonate sync --control <device>`. Off whenever `online` is, unless
+  *One device drives another's zones*), chosen in the Device sync category's *Driven by your other devices* group, driven from elsewhere by `resonate sync --control <device>`. Off whenever `online` is, unless
   `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file
   (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a
   window holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the

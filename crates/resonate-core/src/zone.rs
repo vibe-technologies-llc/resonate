@@ -88,8 +88,32 @@ pub enum RemoteTrust {
     Nothing,
 }
 
+pub const REMOTE_TRUST_TITLE: &str = "Driven by your other devices";
+
+pub const REMOTE_TRUST_ASKED: &str = "What your other devices may do here";
+
+pub const REMOTE_TRUST_TOLD: &str = "Your other devices drive this one from their list of devices.";
+
 impl RemoteTrust {
     pub const ALL: [Self; 3] = [Self::Everything, Self::Transport, Self::Nothing];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Everything => "Everything",
+            Self::Transport => "Playback only",
+            Self::Nothing => "Nothing",
+        }
+    }
+
+    pub const fn meaning(self) -> &'static str {
+        match self {
+            Self::Everything => "Play, pause, skip, seek, set the volume and change the queue",
+            Self::Transport => {
+                "Play, pause, skip, seek and set the volume, but not move or remove songs"
+            }
+            Self::Nothing => "They cannot see or change what plays here",
+        }
+    }
 
     pub const fn as_str(self) -> &'static str {
         match self {

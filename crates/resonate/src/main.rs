@@ -3196,6 +3196,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 device: config.sync_device.clone().unwrap_or_default(),
                 shared_name: config.shared_name.clone().unwrap_or_default(),
                 songs: config.sync_songs.unwrap_or_default(),
+                control: config.sync_control.unwrap_or_default(),
             },
             syncing: syncing.for_the_window(),
             #[cfg(feature = "sync")]

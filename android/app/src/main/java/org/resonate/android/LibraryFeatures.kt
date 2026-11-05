@@ -415,6 +415,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     playlists = false,
                     everything = false,
                     meteredAllowed = false,
+                    control = SyncControls.of(null),
                 )
             }
         together.begin(native)

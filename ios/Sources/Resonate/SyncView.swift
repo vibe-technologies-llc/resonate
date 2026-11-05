@@ -58,6 +58,16 @@ struct SyncView: View {
                                 Label("Connection", systemImage: "point.3.connected.trianglepath.dotted")
                             }
                         }
+                        NavigationLink {
+                            SyncControlPage()
+                        } label: {
+                            let offered = syncControlOffered()
+                            LabeledContent {
+                                Text(offered.choices.first { $0.control == config.control }?.label ?? "")
+                            } label: {
+                                Label(offered.title, systemImage: "dial.medium")
+                            }
+                        }
                     }
                 }
             } else {

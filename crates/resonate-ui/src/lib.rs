@@ -52,10 +52,10 @@ pub use crate::{
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves, Serving},
     settings::{
         Asking, Bindings, CaretBlink, Continuing, Ephemeral, Followed, HandedOff, Measurers,
-        Online, Places, Present, Registering, RemoteKey, RemoteShown, RemoteZoneShown, Renderers,
-        Setting, SettingChange, SettingKey, Settings, SettingsCategory, Sourcing, Stored,
-        Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing,
-        Tabs, TidalSignIn, Unkept, WindowButtons, WindowSize,
+        Online, Places, Present, Registering, RemoteKey, RemoteRowShown, RemoteShown,
+        RemoteZoneShown, Renderers, Setting, SettingChange, SettingKey, Settings, SettingsCategory,
+        Sourcing, Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform,
+        Synchronised, Syncing, Tabs, TidalSignIn, Unkept, WindowButtons, WindowSize,
     },
     together::{
         PartyReached, PartySeen, PartyStanding, SharedPerson, SharedReach, SharedSeen, Together,
