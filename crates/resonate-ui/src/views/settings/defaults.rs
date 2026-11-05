@@ -211,6 +211,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || worn.device != built.device
         }
         Group::SyncedSongs => standing.synchronised.songs != AS_BUILT.synchronised.songs,
+        Group::SyncControl => standing.synchronised.control != AS_BUILT.synchronised.control,
         Group::Contact => standing.contact_given,
         Group::Measured => standing.measurer_given,
         Group::Recognition => standing.key_given || standing.token_given,
@@ -343,6 +344,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::SyncDevices
         | Group::SyncConnection
         | Group::SyncedSongs
+        | Group::SyncControl
         | Group::Build
         | Group::Places
         | Group::Everything => Vec::new(),

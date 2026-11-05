@@ -76,6 +76,7 @@ import org.resonate.android.MusicFolder
 import org.resonate.android.nativecore.DevicePlatform
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.SyncConfig
+import org.resonate.android.nativecore.syncControlOffered
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncedDevice
@@ -177,6 +178,7 @@ fun SyncScreen() {
     val online by model.online.collectAsStateWithLifecycle()
     val askedAt by model.askedAt.collectAsStateWithLifecycle()
     val keptNameForOthers by model.nameForOthers.collectAsStateWithLifecycle()
+    val offered = remember { syncControlOffered() }
     var showCode by remember { mutableStateOf(false) }
     var asking by rememberSaveable { mutableStateOf<Asking?>(null) }
     var forgetting by rememberSaveable { mutableStateOf<String?>(null) }
@@ -441,6 +443,22 @@ fun SyncScreen() {
                         Text(if (unsaved) "Save" else "Saved")
                     }
                 }
+            }
+            item(key = "control-header") { SectionHeader(offered.title) }
+            item(key = "control") {
+                Note(offered.asked)
+                Column(Modifier.selectableGroup()) {
+                    offered.choices.forEach { choice ->
+                        RadioRow(
+                            title = choice.label,
+                            supporting = choice.meaning,
+                            selected = config.control == choice.control,
+                            onClick = { model.change { it.copy(control = choice.control) } },
+                            modifier = Modifier.testTag("sync-control-${choice.label}"),
+                        )
+                    }
+                }
+                Footnote(offered.told)
             }
             item(key = "keystore") {
                 Footnote("The pairing code stays encrypted with Android Keystore. The server keeps only sealed records it cannot read.")

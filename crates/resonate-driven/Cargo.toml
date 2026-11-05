@@ -1,0 +1,20 @@
+[package]
+name = "resonate-driven"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+resonate-core.workspace = true
+resonate-engine.workspace = true
+resonate-sync.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+crossbeam-channel.workspace = true
+
+[lints]
+workspace = true

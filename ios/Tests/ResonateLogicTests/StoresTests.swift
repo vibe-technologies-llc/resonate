@@ -405,7 +405,8 @@ let interactionNotAllowed: Int32 = -25308
             favourites: true,
             playlists: true,
             everything: false,
-            meteredAllowed: true
+            meteredAllowed: true,
+            control: .transport
         )
 
         try store.writeSync(config)

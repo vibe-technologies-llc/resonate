@@ -153,6 +153,7 @@ pub struct SyncConfig {
     pub playlists: bool,
     pub everything: bool,
     pub metered_allowed: bool,
+    pub control: driving::SyncControl,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -670,6 +671,9 @@ impl MobilePlayer {
         *self.syncing.shared.lock() = shared.map(Arc::new);
         let sync =
             Sync::start(settings, catalog).map_err(|source| Error::sync(SyncOp::Start, source))?;
+        if let Some(driven) = self.driven() {
+            sync.control_with(Arc::new(driven), config.control.into());
+        }
         Ok(Running {
             sync,
             metered_allowed: config.metered_allowed,

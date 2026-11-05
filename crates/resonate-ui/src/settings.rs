@@ -15,8 +15,8 @@ use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, Frames, HeadYaw, Icon, Pictured, PlaylistId, Presence,
-    ScrollbarMode, Shown, SpeakerAngle, SpeakerElevation, Spectral, SpectrumBands, SpectrumFalls,
-    SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
+    RemoteTrust, ScrollbarMode, Shown, SpeakerAngle, SpeakerElevation, Spectral, SpectrumBands,
+    SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
@@ -266,10 +266,11 @@ pub enum SettingKey {
     SyncDevice,
     SharedName,
     SyncSongs,
+    SyncControl,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 113] = [
+    pub const ALL: [Self; 114] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -383,6 +384,7 @@ impl SettingKey {
         Self::SyncDevice,
         Self::SharedName,
         Self::SyncSongs,
+        Self::SyncControl,
     ];
 }
 
@@ -507,6 +509,7 @@ pub enum Setting {
     SyncDevice(String),
     SharedName(String),
     SyncSongs(SyncedSongs),
+    SyncControl(RemoteTrust),
 }
 
 impl SettingKey {
@@ -631,6 +634,7 @@ impl Setting {
             Self::SyncDevice(_) => SettingKey::SyncDevice,
             Self::SharedName(_) => SettingKey::SharedName,
             Self::SyncSongs(_) => SettingKey::SyncSongs,
+            Self::SyncControl(_) => SettingKey::SyncControl,
         }
     }
 }
@@ -1066,6 +1070,7 @@ pub struct Synchronised {
     pub device: String,
     pub shared_name: String,
     pub songs: SyncedSongs,
+    pub control: RemoteTrust,
 }
 
 impl Default for Synchronised {
@@ -1077,6 +1082,7 @@ impl Default for Synchronised {
             device: String::new(),
             shared_name: String::new(),
             songs: SyncedSongs::default(),
+            control: RemoteTrust::default(),
         }
     }
 }
@@ -1134,6 +1140,17 @@ pub enum RemoteKey {
     Next,
     Previous,
     Volume(u16),
+    Seek(Duration),
+    Jump(usize),
+    Move { from: usize, to: usize },
+    Remove(usize),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteRowShown {
+    pub title: String,
+    pub artist: String,
+    pub length: Option<Duration>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1145,6 +1162,10 @@ pub struct RemoteZoneShown {
     pub position: Duration,
     pub length: Option<Duration>,
     pub volume: u16,
+    pub playing: Option<usize>,
+    pub queue_length: usize,
+    pub first_row: usize,
+    pub rows: Vec<RemoteRowShown>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

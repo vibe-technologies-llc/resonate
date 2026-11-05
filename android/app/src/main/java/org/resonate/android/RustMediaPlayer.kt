@@ -98,10 +98,13 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                 val jumped = positionJumped(snapshot, value, now - snapshotAt)
                 val stoppedItself =
                     snapshot.playsOrLoads() && !value.playsOrLoads() && !resumeAfterFocus
+                val began = soundBegan(snapshot?.transport, value?.transport)
 
                 snapshot = value
                 snapshotAt = now
                 if (stoppedItself) audio.abandonAudioFocusRequest(focus)
+                if (began && audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                    library.request { it.pause() }
                 ResonateWidgets.publish(
                     context,
                     value,

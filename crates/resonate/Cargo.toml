@@ -24,7 +24,7 @@ online = [
     "dep:resonate-subsonic",
     "dep:resonate-tidal"
 ]
-sync = ["dep:resonate-sync"]
+sync = ["dep:resonate-driven", "dep:resonate-sync"]
 ui = ["dep:resonate-ui"]
 
 [dependencies]
@@ -35,6 +35,7 @@ resonate-cast.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-discord = { workspace = true, optional = true }
+resonate-driven = { workspace = true, optional = true }
 resonate-dsp.workspace = true
 resonate-engine.workspace = true
 resonate-eq.workspace = true

@@ -62,7 +62,8 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
         favourites: false,
         playlists: false,
         everything: false,
-        meteredAllowed: false
+        meteredAllowed: false,
+        control: .everything
     )
 }
 

@@ -10,6 +10,7 @@ members = [
     "crates/resonate-core",
     "crates/resonate-codec",
     "crates/resonate-discord",
+    "crates/resonate-driven",
     "crates/resonate-dsp",
     "crates/resonate-pipewire",
     "crates/resonate-wasapi",
@@ -262,6 +263,7 @@ resonate-cast = { version = "0.4.0", path = "crates/resonate-cast" }
 resonate-core = { version = "0.4.0", path = "crates/resonate-core" }
 resonate-codec = { version = "0.4.0", path = "crates/resonate-codec" }
 resonate-discord = { version = "0.4.0", path = "crates/resonate-discord" }
+resonate-driven = { version = "0.4.0", path = "crates/resonate-driven" }
 resonate-dsp = { version = "0.4.0", path = "crates/resonate-dsp" }
 resonate-pipewire = { version = "0.4.0", path = "crates/resonate-pipewire" }
 resonate-wasapi = { version = "0.4.0", path = "crates/resonate-wasapi" }

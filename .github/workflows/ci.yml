@@ -203,8 +203,15 @@ jobs:
           only resonate-server resonate-core resonate-sync resonate-providers resonate-fetch resonate-tidal
           for by in $(held_by --workspace -i resonate-sync | grep '^resonate' | grep -vx resonate-sync || true); do
             case "$by" in
-              resonate|resonate-mobile|resonate-server) ;;
+              resonate|resonate-driven|resonate-mobile|resonate-server) ;;
               *) echo "::error::resonate-sync is reached by $by"; failed=1 ;;
+            esac
+          done
+          refuse resonate-driven gpui resonate-library ureq serde serde_json
+          for by in $(held_by --workspace -i resonate-driven | grep '^resonate' | grep -vx resonate-driven || true); do
+            case "$by" in
+              resonate|resonate-mobile) ;;
+              *) echo "::error::resonate-driven is reached by $by"; failed=1 ;;
             esac
           done
           reached_by_the_binary_alone resonate-mcp

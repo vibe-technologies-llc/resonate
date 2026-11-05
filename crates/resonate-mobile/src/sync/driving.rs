@@ -1,12 +1,196 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeMap,
+    slice,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use resonate_core::ZoneId;
+use parking_lot::Mutex;
+use resonate_core::{
+    REMOTE_TRUST_ASKED, REMOTE_TRUST_TITLE, REMOTE_TRUST_TOLD, RemoteTrust, ZoneId,
+};
+use resonate_driven::{Driven, RowNames, unnamed};
+use resonate_engine::{Player, QueueItem};
 use resonate_sync::{
     Controlling, Mirror, Permille, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone, Watched,
 };
 
 use super::the_device;
-use crate::{Error, MobilePlayer, Result};
+use crate::{
+    Error, MobilePlayer, Result, Track, catalog::Catalog, documents::document_uri, served::Served,
+};
+
+const ROWS_KEPT_AT_MOST: usize = 8_192;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
+pub enum SyncControl {
+    #[default]
+    Everything,
+    Transport,
+    Nothing,
+}
+
+impl From<SyncControl> for RemoteTrust {
+    fn from(control: SyncControl) -> Self {
+        match control {
+            SyncControl::Everything => Self::Everything,
+            SyncControl::Transport => Self::Transport,
+            SyncControl::Nothing => Self::Nothing,
+        }
+    }
+}
+
+impl From<RemoteTrust> for SyncControl {
+    fn from(trust: RemoteTrust) -> Self {
+        match trust {
+            RemoteTrust::Everything => Self::Everything,
+            RemoteTrust::Transport => Self::Transport,
+            RemoteTrust::Nothing => Self::Nothing,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SyncControlChoice {
+    pub control: SyncControl,
+    pub label: String,
+    pub meaning: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SyncControlOffered {
+    pub title: String,
+    pub asked: String,
+    pub told: String,
+    pub choices: Vec<SyncControlChoice>,
+}
+
+#[uniffi::export]
+pub fn sync_control_offered() -> SyncControlOffered {
+    SyncControlOffered {
+        title: REMOTE_TRUST_TITLE.to_owned(),
+        asked: REMOTE_TRUST_ASKED.to_owned(),
+        told: REMOTE_TRUST_TOLD.to_owned(),
+        choices: RemoteTrust::ALL
+            .into_iter()
+            .map(|trust| SyncControlChoice {
+                control: trust.into(),
+                label: trust.label().to_owned(),
+                meaning: trust.meaning().to_owned(),
+            })
+            .collect(),
+    }
+}
+
+#[derive(Default)]
+struct KeptRows {
+    revision: u64,
+    rows: BTreeMap<String, RemoteRow>,
+}
+
+struct NamedByTheCatalog {
+    catalog: Arc<Catalog>,
+    served: Arc<Served>,
+    kept: Mutex<KeptRows>,
+}
+
+fn row_of(track: &Track) -> RemoteRow {
+    RemoteRow {
+        title: if track.title.is_empty() {
+            track.name.clone()
+        } else {
+            track.title.clone()
+        },
+        artist: track.artist.clone(),
+        length: (track.duration_ms > 0).then(|| Duration::from_millis(track.duration_ms)),
+    }
+}
+
+impl NamedByTheCatalog {
+    fn over(catalog: Arc<Catalog>, served: Arc<Served>) -> Self {
+        Self {
+            catalog,
+            served,
+            kept: Mutex::new(KeptRows::default()),
+        }
+    }
+
+    fn read_outside_the_lock(&self, uris: Vec<String>) -> BTreeMap<String, RemoteRow> {
+        uris.into_iter()
+            .filter_map(|uri| {
+                let tracks = self.catalog.tracks_at(slice::from_ref(&uri));
+                let row = tracks.ok()?.first().map(row_of)?;
+                Some((uri, row))
+            })
+            .collect()
+    }
+
+    fn documents(&self, items: &[Arc<QueueItem>]) -> BTreeMap<String, RemoteRow> {
+        let revision = self.catalog.revision();
+        let uris = items
+            .iter()
+            .filter(|item| !Served::names(&item.location))
+            .filter_map(|item| document_uri(&item.location).ok());
+        let (mut named, unread) = {
+            let mut kept = self.kept.lock();
+            if kept.revision != revision || kept.rows.len() > ROWS_KEPT_AT_MOST {
+                kept.revision = revision;
+                kept.rows.clear();
+            }
+            let mut named = BTreeMap::new();
+            let mut unread = Vec::new();
+            for uri in uris {
+                match kept.rows.get(&uri) {
+                    Some(row) => {
+                        named.insert(uri, row.clone());
+                    }
+                    None => unread.push(uri),
+                }
+            }
+            (named, unread)
+        };
+        let read = self.read_outside_the_lock(unread);
+        let mut kept = self.kept.lock();
+        if kept.revision == revision {
+            kept.rows
+                .extend(read.iter().map(|(uri, row)| (uri.clone(), row.clone())));
+        }
+        named.extend(read);
+        named
+    }
+}
+
+impl RowNames for NamedByTheCatalog {
+    fn rows(&self, _: &Player, items: &[Arc<QueueItem>]) -> Vec<RemoteRow> {
+        let documents = self.documents(items);
+
+        items
+            .iter()
+            .map(|item| {
+                if Served::names(&item.location) {
+                    return row_of(&self.served.track_of(item));
+                }
+                document_uri(&item.location)
+                    .ok()
+                    .and_then(|uri| documents.get(&uri).cloned())
+                    .unwrap_or_else(|| RemoteRow {
+                        title: unnamed(item),
+                        artist: String::new(),
+                        length: None,
+                    })
+            })
+            .collect()
+    }
+}
+
+impl MobilePlayer {
+    pub(super) fn driven(&self) -> Option<Driven> {
+        let zones = self.playing.zones().ok()?;
+        let names = NamedByTheCatalog::over(Arc::clone(&self.catalog), Arc::clone(&self.served));
+
+        Some(Driven::zones(&zones, names))
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum RemoteControl {
@@ -212,7 +396,319 @@ impl MobilePlayer {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        env, fs,
+        net::{Ipv4Addr, SocketAddr},
+        path::Path,
+        process, thread,
+    };
+
+    use resonate_core::Recording;
+    use resonate_sync::{
+        Broadcast, Catalog as SyncCatalog, Controlled, Follow, Held, LocalListen, LocalPlaylist,
+        LocalPlaylistId, Me, Nearby, Opened, Platform, Refused, RemoteListen, Resumed, Server,
+        Settings, SongTags, Sync, SyncKey, Uncontrolled,
+    };
+
     use super::*;
+    use crate::{
+        harness::{Harness, SECONDS_A_SONG},
+        sync::SyncConfig,
+    };
+
+    type Answer<T> = std::result::Result<T, Refused>;
+
+    const SETTLES_WITHIN: Duration = Duration::from_secs(40);
+    const LOOKED_AGAIN_AFTER: Duration = Duration::from_millis(50);
+
+    fn eventually(what: &str, done: impl Fn() -> bool) {
+        let deadline = Instant::now() + SETTLES_WITHIN;
+        while !done() {
+            assert!(Instant::now() < deadline, "{what} never happened");
+            thread::sleep(LOOKED_AGAIN_AFTER);
+        }
+    }
+
+    fn titles(zone: &RemoteZone) -> Vec<String> {
+        zone.rows.iter().map(|row| row.title.clone()).collect()
+    }
+
+    #[test]
+    fn a_phones_zones_are_mirrored_by_the_catalogs_names_and_driven_by_row() {
+        let harness = Harness::sounding();
+        let player = &harness.player;
+        let driven = player.driven().expect("the zones");
+        let rows: Vec<String> = "abc"
+            .chars()
+            .map(|name| harness.song(name).title.clone())
+            .collect();
+
+        player
+            .load(harness.ids("abc"), 0, false)
+            .expect("the queue loaded");
+
+        eventually("the rows named by the catalog", || {
+            let zones = driven.zones();
+            zones.len() == 1 && zones[0].queue_length == 3 && titles(&zones[0]) == rows
+        });
+        assert_eq!(
+            driven.zones()[0].rows[0].length,
+            Some(Duration::from_secs(u64::from(SECONDS_A_SONG)))
+        );
+
+        driven
+            .control(ZoneId::FIRST, RemoteCommand::Move { from: 2, to: 0 })
+            .expect("a move");
+        eventually("the move shown", || {
+            titles(&driven.zones()[0]) == [rows[2].clone(), rows[0].clone(), rows[1].clone()]
+        });
+
+        driven
+            .control(ZoneId::FIRST, RemoteCommand::Remove(1))
+            .expect("a removal");
+        eventually("the row gone from the zone shown", || {
+            player.queue().map(|queue| queue.len()).unwrap_or_default() == 2
+        });
+
+        driven
+            .control(ZoneId::FIRST, RemoteCommand::Jump(1))
+            .expect("a jump");
+        eventually("the row jumped to is the one a snapshot names", || {
+            player
+                .snapshot()
+                .ok()
+                .and_then(|snapshot| snapshot.current)
+                .is_some_and(|track| track.title == rows[1])
+        });
+
+        driven
+            .control(ZoneId::FIRST, RemoteCommand::Volume(Permille::new(250)))
+            .expect("the volume");
+        eventually("the volume taken", || {
+            driven.zones()[0].volume == Permille::new(250)
+        });
+
+        assert_eq!(
+            driven.control(ZoneId::FIRST, RemoteCommand::Remove(7)),
+            Err(Uncontrolled::NoSuchRow)
+        );
+        assert_eq!(
+            driven.control(ZoneId::new(9).expect("a zone"), RemoteCommand::Play),
+            Err(Uncontrolled::NoSuchZone)
+        );
+    }
+
+    #[test]
+    fn a_row_retitled_in_the_catalog_is_mirrored_by_its_new_name() {
+        let harness = Harness::sounding();
+        let player = &harness.player;
+        let driven = player.driven().expect("the zones");
+        let song = harness.song('a').clone();
+
+        player
+            .load(vec![song.id], 0, false)
+            .expect("the queue loaded");
+        eventually("the row named", || {
+            driven.zones()[0].rows.first().map(|row| &row.title) == Some(&song.title)
+        });
+
+        player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET title = 'Renamed' WHERE id = ?1",
+                [song.id as i64],
+            )
+            .expect("the row retitled");
+
+        eventually("the new name mirrored", || {
+            driven.zones()[0].rows.first().map(|row| row.title.as_str()) == Some("Renamed")
+        });
+    }
+
+    #[test]
+    fn what_a_device_may_do_here_is_worded_once_and_everything_unless_told() {
+        let offered = sync_control_offered();
+
+        assert_eq!(SyncControl::default(), SyncControl::Everything);
+        assert_eq!(
+            RemoteTrust::default(),
+            RemoteTrust::from(SyncControl::default())
+        );
+        assert_eq!(offered.asked, "What your other devices may do here");
+        assert_eq!(
+            offered
+                .choices
+                .iter()
+                .map(|choice| (choice.control, choice.label.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (SyncControl::Everything, "Everything"),
+                (SyncControl::Transport, "Playback only"),
+                (SyncControl::Nothing, "Nothing"),
+            ]
+        );
+    }
+
+    struct NothingHeld;
+
+    impl SyncCatalog for NothingHeld {
+        fn playlists(&self) -> Answer<Vec<LocalPlaylist>> {
+            Ok(Vec::new())
+        }
+
+        fn write_playlist(
+            &self,
+            _: Option<LocalPlaylistId>,
+            _: &str,
+            _: &[Recording],
+        ) -> Answer<LocalPlaylist> {
+            Err(Refused::Unwritable)
+        }
+
+        fn remove_playlist(&self, _: LocalPlaylistId) -> Answer<()> {
+            Ok(())
+        }
+
+        fn favourites(&self) -> Answer<Vec<Recording>> {
+            Ok(Vec::new())
+        }
+
+        fn favour(&self, _: &Recording, _: bool) -> Answer<bool> {
+            Ok(false)
+        }
+
+        fn listens_after(&self, _: u64, _: usize) -> Answer<Vec<LocalListen>> {
+            Ok(Vec::new())
+        }
+
+        fn credit(&self, _: &RemoteListen) -> Answer<bool> {
+            Ok(false)
+        }
+
+        fn resumption(&self) -> Answer<Option<Resumed>> {
+            Ok(None)
+        }
+
+        fn holds(&self, _: &Recording) -> Answer<bool> {
+            Ok(false)
+        }
+
+        fn holdings(&self) -> Answer<Vec<Held>> {
+            Ok(Vec::new())
+        }
+
+        fn open(&self, _: &Recording) -> Answer<Option<Opened>> {
+            Ok(None)
+        }
+
+        fn land(&self, _: &Recording, _: &SongTags, _: &str, _: &Path) -> Answer<bool> {
+            Ok(false)
+        }
+
+        fn revision(&self) -> u64 {
+            0
+        }
+    }
+
+    #[test]
+    fn a_phone_is_driven_across_the_wire_as_far_as_its_setting_trusts() {
+        let harness = Harness::sounding();
+        let player = &harness.player;
+        let folder = env::temp_dir().join(format!("resonate-driven-phone-{}", process::id()));
+        fs::create_dir_all(&folder).expect("a test folder");
+        let key = SyncKey::minted().expect("a key");
+
+        player
+            .load(harness.ids("ab"), 0, false)
+            .expect("the queue loaded");
+        player
+            .sync_start(SyncConfig {
+                enabled: true,
+                nearby_only: true,
+                server: String::new(),
+                key: key.code().to_owned(),
+                device: "Phone".to_owned(),
+                favourites: false,
+                playlists: false,
+                everything: false,
+                metered_allowed: true,
+                control: SyncControl::Transport,
+            })
+            .expect("sync started");
+        let told = player
+            .syncing
+            .running
+            .lock()
+            .as_ref()
+            .expect("running")
+            .sync
+            .nearby_port()
+            .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
+        let desk = Sync::start(
+            Settings {
+                server: Server::Nowhere,
+                trusted: None,
+                stun: None,
+                key,
+                me: Me {
+                    name: "Desk".into(),
+                    platform: Platform::Linux,
+                },
+                follow: Follow::default(),
+                ledger: folder.join("desk.sqlite"),
+                staging: folder.join("desk-staging"),
+                transfers_allowed: true,
+                relay_only: false,
+                nearby: Some(Nearby {
+                    broadcast: Some(Broadcast {
+                        port: 0,
+                        told: told.into_iter().collect(),
+                    }),
+                    bonjour: false,
+                }),
+            },
+            Arc::new(NothingHeld),
+        )
+        .expect("the desk started");
+        let the_phone = || {
+            desk.shown()
+                .devices
+                .into_iter()
+                .find(|known| known.name == "Phone" && known.nearby)
+                .map(|known| known.id)
+        };
+        eventually("the desk meeting the phone", || the_phone().is_some());
+        let phone = the_phone().expect("the phone");
+
+        eventually("the phone's queue mirrored on the desk", || {
+            desk.watch(phone);
+            desk.watched(phone)
+                .mirror()
+                .is_some_and(|mirror| mirror.zones[0].queue_length == 2)
+        });
+
+        assert_eq!(
+            desk.control(phone, ZoneId::FIRST, RemoteCommand::Jump(1)),
+            Controlling::Done
+        );
+        assert_eq!(
+            desk.control(phone, ZoneId::FIRST, RemoteCommand::Remove(0)),
+            Controlling::Untrusted
+        );
+        eventually("the jump reached the engine", || {
+            player
+                .playing
+                .player()
+                .is_ok_and(|player| player.state().queue_position == Some(1))
+        });
+        assert_eq!(player.queue().expect("the queue").len(), 2);
+
+        drop(desk);
+        player.sync_stop();
+        let _ = fs::remove_dir_all(&folder);
+    }
 
     #[test]
     fn a_mirrored_zone_reaches_the_phones_with_its_place_played_on_and_its_rows_numbered() {

@@ -36,6 +36,7 @@ final class NowPlaying {
     private var routeAsks = 0
     private var rebindOwed = false
     private var release = SessionRelease()
+    private var sessionAsked = SessionAsked()
 
     private struct Activation: Sendable {
         let refusal: (any Swift.Error)?
@@ -76,6 +77,7 @@ final class NowPlaying {
     }
 
     func activate(loading track: Track? = nil) {
+        sessionAsked.ask()
         let wanted = Self.wantedRate(of: track ?? shown?.track)
         Work.enqueueInOrder { [weak self] in
             let activation = Self.activated(preferring: wanted)
@@ -332,7 +334,10 @@ final class NowPlaying {
     }
 
     func update(_ snapshot: Snapshot, answered: Snapshot? = nil, forced: Bool = false) {
-        if let answered { releaseSessionIfDone(answered) }
+        if let answered {
+            releaseSessionIfDone(answered)
+            if sessionAsked.owed(by: answered.transport), !listening { activate() }
+        }
         let center = MPNowPlayingInfoCenter.default()
         guard let track = snapshot.current else {
             guard shown != nil || center.nowPlayingInfo != nil else { return }

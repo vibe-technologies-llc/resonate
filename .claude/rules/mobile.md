@@ -639,6 +639,8 @@ volume preference of its own
 `the_first_zone_reopens_at_the_volume_kept_beside_it_and_full_without_one`,
 `a_catalog_of_before_zones_kept_their_volume_gains_a_full_one_for_each`).
 
+**Another device drives every zone, not the zone shown** (`MobilePlayer::driven`, `sync.md`'s *A phone is driven too*): it reaches each through `Zones::send`, and the watch, the save and the front end's poll follow as for a press here.
+
 **A handover to another device is sync's**: the phones already continue another device's queue
 (`sync_continue_from`, into the zone shown) and offer the zone shown's queue and place
 (`DocumentCatalog::resumption` reads the shown zone's `QueueKept` through the `shown` cell `Playing`

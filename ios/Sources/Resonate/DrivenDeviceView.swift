@@ -1,3 +1,4 @@
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 
@@ -24,6 +25,11 @@ struct DrivenDeviceView: View {
                     Section(zone.name) {
                         zoneRows(zone)
                     }
+                    if !zone.rows.isEmpty {
+                        Section("Queue of \(zone.queueLength)") {
+                            queueRows(zone)
+                        }
+                    }
                 }
             }
         }
@@ -45,6 +51,11 @@ struct DrivenDeviceView: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+        if let length = zone.lengthMillis, length > 0 {
+            DrivenSeek(zone: zone.zone, positionMillis: zone.positionMillis, lengthMillis: length) { control in
+                press(zone.zone, control)
+            }
+        }
         HStack(spacing: 24) {
             control("Previous song", "backward.fill", zone, .previous)
             control(sounding ? "Pause" : "Play", sounding ? "pause.fill" : "play.fill", zone, .toggle)
@@ -54,6 +65,39 @@ struct DrivenDeviceView: View {
         }
         .buttonStyle(.borderless)
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func queueRows(_ zone: RemoteZoneState) -> some View {
+        ForEach(Array(zone.rows.enumerated()), id: \.offset) { offset, song in
+            let row = DrivenRows.row(offset, firstRow: zone.firstRow)
+            let up = DrivenRows.moveUp(row)
+            let down = DrivenRows.moveDown(row, queueLength: zone.queueLength)
+            Button {
+                press(zone.zone, .jump(row: row))
+            } label: {
+                DrivenQueueRow(song: song, playing: zone.playingRow == row)
+            }
+            .buttonStyle(.plain)
+            .swipeActions(edge: .trailing) {
+                Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+                    press(zone.zone, .remove(row: row))
+                }
+                .tint(.red)
+            }
+            .contextMenu {
+                if let up {
+                    Button("Move up", systemImage: "arrow.up") { press(zone.zone, up) }
+                }
+                if let down {
+                    Button("Move down", systemImage: "arrow.down") { press(zone.zone, down) }
+                }
+                Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+                    press(zone.zone, .remove(row: row))
+                }
+            }
+            .accessibilityAction(named: "Remove from queue") { press(zone.zone, .remove(row: row)) }
+        }
     }
 
     private func control(_ title: String, _ symbol: String, _ zone: RemoteZoneState, _ remote: RemoteControl) -> some View {
@@ -100,8 +144,11 @@ struct DrivenDeviceView: View {
         guard let playing = zone.playingRow, playing >= zone.firstRow else { return "Nothing playing" }
         let index = Int(playing - zone.firstRow)
         guard index < zone.rows.count else { return "Nothing playing" }
-        let row = zone.rows[index]
-        return row.artist.isEmpty ? row.title : "\(row.title) — \(row.artist)"
+        return billed(zone.rows[index])
+    }
+
+    static func billed(_ row: RemoteSong) -> String {
+        row.artist.isEmpty ? row.title : "\(row.title) — \(row.artist)"
     }
 
     static func place(_ zone: RemoteZoneState) -> String {
@@ -127,5 +174,86 @@ struct DrivenDeviceView: View {
         case .failed: "The other device could not do that"
         case .unanswered: "The other device did not answer"
         }
+    }
+}
+
+private struct DrivenQueueRow: View {
+    let song: RemoteSong
+    let playing: Bool
+
+    var body: some View {
+        HStack {
+            Text(DrivenDeviceView.billed(song))
+                .fontWeight(playing ? .semibold : .regular)
+                .foregroundStyle(playing ? Color.worn : Color.primary)
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            if let length = song.lengthMillis {
+                Text(DrivenDeviceView.clock(length))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(playing ? .isSelected : [])
+    }
+}
+
+private struct DrivenSeek: View {
+    let zone: UInt32
+    let positionMillis: UInt64
+    let lengthMillis: UInt64
+    let commit: (RemoteControl) -> Void
+    @State private var editing: Double?
+
+    var body: some View {
+        CommittingSlider(
+            title: "Position",
+            value: min(Double(positionMillis), Double(lengthMillis)) / 1000,
+            range: 0...(Double(lengthMillis) / 1000),
+            step: 1,
+            editing: $editing,
+            spoken: { DrivenDeviceView.clock(UInt64($0 * 1000)) },
+            commit: { commit(DrivenRows.seek(to: $0, lengthMillis: lengthMillis)) }
+        )
+    }
+}
+
+struct SyncControlPage: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let offered = syncControlOffered()
+        let features = library.features
+        ThemedForm {
+            if let config = features.syncConfig {
+                Section {
+                    Picker(offered.asked, selection: Binding(
+                        get: { config.control },
+                        set: { chosen in
+                            guard var next = library.features.syncConfig else { return }
+                            next.control = chosen
+                            library.features.saveSync(next)
+                        }
+                    )) {
+                        ForEach(offered.choices, id: \.label) { choice in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(choice.label)
+                                Text(choice.meaning).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .tag(choice.control)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text(offered.asked)
+                } footer: {
+                    Text(offered.told)
+                }
+            }
+        }
+        .navigationTitle(offered.title)
     }
 }

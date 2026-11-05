@@ -1,11 +1,15 @@
 package org.resonate.android.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -17,15 +21,21 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -35,14 +45,21 @@ import org.resonate.android.nativecore.RemoteAnswer
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.RemoteDevice
 import org.resonate.android.nativecore.RemotePlaying
+import org.resonate.android.nativecore.RemoteSong
 import org.resonate.android.nativecore.RemoteStanding
 import org.resonate.android.nativecore.RemoteZoneState
 import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.components.CommitSlider
 import org.resonate.android.ui.components.Sizes
 
 const val DRIVEN_READ_EVERY_MS = 500L
 const val VOLUME_STEP: UShort = 100u
 const val WHOLE_VOLUME: UShort = 1000u
+const val DRIVEN_ROWS_AT_FIRST = 12
+const val DRIVEN_ROWS_MORE = 50
+const val DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING = 2
+
+data class DrivenRow(val row: UInt, val song: RemoteSong, val playing: Boolean)
 
 object DrivenWords {
     fun clock(millis: ULong): String {
@@ -74,6 +91,46 @@ object DrivenWords {
 
     fun quieter(zone: RemoteZoneState): UShort =
         maxOf(0, zone.volumePermille.toInt() - VOLUME_STEP.toInt()).toUShort()
+
+    fun billed(song: RemoteSong): String =
+        if (song.artist.isBlank()) song.title else "${song.title} — ${song.artist}"
+
+    fun rowsShown(zone: RemoteZoneState, most: Int): List<DrivenRow> {
+        val playing = zone.playingRow?.toLong() ?: zone.firstRow.toLong()
+        val from =
+            maxOf(playing - DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING, zone.firstRow.toLong())
+        return zone.rows
+            .mapIndexed { offset, song ->
+                val row = zone.firstRow + offset.toUInt()
+                DrivenRow(row, song, row == zone.playingRow)
+            }
+            .filter { it.row.toLong() >= from }
+            .take(most)
+    }
+
+    fun rowsBefore(zone: RemoteZoneState): Int {
+        val playing = zone.playingRow?.toLong() ?: zone.firstRow.toLong()
+        return (playing - DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING - zone.firstRow.toLong())
+            .coerceIn(0L, zone.rows.size.toLong())
+            .toInt()
+    }
+
+    fun moveUp(row: UInt): RemoteControl? =
+        if (row == 0u) null else RemoteControl.Move(row, row - 1u)
+
+    fun moveDown(row: UInt, queueLength: UInt): RemoteControl? =
+        if (row + 1u < queueLength) RemoteControl.Move(row, row + 1u) else null
+
+    fun share(zone: RemoteZoneState): Float {
+        val length = zone.lengthMillis ?: return 0f
+        if (length == 0uL) return 0f
+        return (zone.positionMillis.toDouble() / length.toDouble()).toFloat().coerceIn(0f, 1f)
+    }
+
+    fun seekTo(zone: RemoteZoneState, share: Float): RemoteControl? {
+        val length = zone.lengthMillis ?: return null
+        return RemoteControl.Seek((length.toDouble() * share.coerceIn(0f, 1f)).toULong())
+    }
 
     fun refusal(answer: RemoteAnswer): String? =
         when (answer) {
@@ -133,6 +190,18 @@ private fun DrivenZone(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
             Text(DrivenWords.place(zone), style = MaterialTheme.typography.bodySmall)
+            if ((zone.lengthMillis ?: 0uL) > 0uL) {
+                CommitSlider(
+                    value = DrivenWords.share(zone),
+                    onCommit = { share -> DrivenWords.seekTo(zone, share)?.let(press) },
+                    trackHeight = 4.dp,
+                    stateText = { share ->
+                        val at = (zone.lengthMillis ?: 0uL).toDouble() * share
+                        "${DrivenWords.clock(at.toULong())} of ${DrivenWords.clock(zone.lengthMillis ?: 0uL)}"
+                    },
+                    modifier = Modifier.testTag("driven-seek-${zone.zone}"),
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { press(RemoteControl.Previous) }) {
                     Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous song")
@@ -153,6 +222,54 @@ private fun DrivenZone(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
                     Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "Louder")
                 }
             }
+            DrivenRows(zone, press)
+        }
+    }
+}
+
+@Composable
+private fun DrivenRows(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
+    var most by remember(zone.zone) { mutableIntStateOf(DRIVEN_ROWS_AT_FIRST) }
+    val shown = DrivenWords.rowsShown(zone, most)
+    shown.forEach { row -> DrivenQueueRow(zone, row, press) }
+    if (zone.rows.size > shown.size + DrivenWords.rowsBefore(zone)) {
+        TextButton(onClick = { most += DRIVEN_ROWS_MORE }) {
+            Text("Show more of this queue")
+        }
+    }
+}
+
+@Composable
+private fun DrivenQueueRow(zone: RemoteZoneState, row: DrivenRow, press: (RemoteControl) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            DrivenWords.billed(row.song),
+            style = MaterialTheme.typography.bodyMedium,
+            color =
+                if (row.playing) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            modifier =
+                Modifier.weight(1f)
+                    .clickable(role = Role.Button, onClickLabel = "Play this song") {
+                        press(RemoteControl.Jump(row.row))
+                    }
+                    .padding(vertical = 8.dp)
+                    .semantics { if (row.playing) stateDescription = "Playing" }
+                    .testTag("driven-row-${zone.zone}-${row.row}"),
+        )
+        DrivenWords.moveUp(row.row)?.let { up ->
+            IconButton(onClick = { press(up) }) {
+                Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move ${row.song.title} up")
+            }
+        }
+        DrivenWords.moveDown(row.row, zone.queueLength)?.let { down ->
+            IconButton(onClick = { press(down) }) {
+                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move ${row.song.title} down")
+            }
+        }
+        IconButton(onClick = { press(RemoteControl.Remove(row.row)) }) {
+            Icon(Icons.Rounded.Close, contentDescription = "Remove ${row.song.title} from the queue")
         }
     }
 }
