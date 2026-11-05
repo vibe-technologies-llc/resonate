@@ -102,6 +102,13 @@ class ArtistViewModel(private val resonate: Resonate, name: String) : ViewModel(
                         .getOrDefault(0u)
                 if (read > 0u) retry.again()
             } while (read > 0u)
+            do {
+                val covered =
+                    resonate
+                        .read { native -> withContext(Dispatchers.IO) { native.learnArtistCovers(name) } }
+                        .getOrDefault(0u)
+                if (covered > 0u) retry.again()
+            } while (covered > 0u)
         }
     }
 

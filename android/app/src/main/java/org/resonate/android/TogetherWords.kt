@@ -16,6 +16,9 @@ object TogetherWords {
     const val FOLLOWED = "Followed"
     const val NOT_AN_INVITATION = "That is not a Resonate link"
     const val LINK_NOT_OPENED = "That link could not be opened"
+    const val JOIN_THIS_PARTY_ASKS = "Join this listening party?"
+    const val JOIN_THIS_PARTY_SAYS =
+        "A link asks this phone to stop what it plays and follow someone's party instead. Join only if you were invited."
     const val NOTHING_TO_PASTE = "The clipboard holds no Resonate link"
     const val NOT_FOUND_TO_PLAY_NEXT = "That song could not be found here"
 
@@ -78,12 +81,14 @@ object TogetherWords {
                 "This device is set to use no server, so nothing can be shared."
         }
 
-    fun badge(list: SharedPlaylist?): String? =
+    fun badge(list: SharedPlaylist?, followed: Boolean = false): String? =
         when {
-            list == null -> null
+            list == null -> if (followed) FOLLOWED else null
             list.mayEdit -> SHARED
             else -> FOLLOWED
         }
+
+    fun mayEdit(list: SharedPlaylist?, followed: Boolean): Boolean = list?.mayEdit ?: !followed
 
     fun notHeld(titles: List<String>): String? {
         if (titles.isEmpty()) return null

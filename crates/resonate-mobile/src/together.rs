@@ -426,6 +426,11 @@ impl MobilePlayer {
         shared.watch(space);
     }
 
+    pub fn together_server(&self, server: String) {
+        let server = server.trim();
+        *self.syncing.chosen_server.lock() = (!server.is_empty()).then(|| server.to_owned());
+    }
+
     pub fn together_named(&self, name: String) {
         *self.syncing.shared_name.lock() = name.clone();
         if let Some(shared) = self.syncing.shared() {
@@ -584,6 +589,7 @@ impl MobilePlayer {
 
         let server = server
             .or_else(|| self.syncing.server())
+            .or_else(|| self.syncing.chosen_server.lock().clone())
             .unwrap_or_else(|| HOSTED_SERVER.to_owned());
 
         Ok(PartySettings {
@@ -662,6 +668,32 @@ mod tests {
 
         assert!(matches!(phone.party_begin(), Err(Error::OnlineOff)));
         assert!(phone.party_shown().is_none());
+    }
+
+    #[test]
+    fn a_party_reaches_the_server_chosen_even_while_sync_has_never_run() {
+        let phone = crate::playlists::tests::player();
+
+        phone.configure_online(true);
+
+        let hosted = phone.party_settings(None).expect("settings").server;
+        phone.together_server(" https://mine.example/ ".to_owned());
+
+        assert_eq!(
+            phone.party_settings(None).expect("settings").server,
+            "https://mine.example/"
+        );
+        assert_eq!(
+            phone
+                .party_settings(Some("https://invited.example/".to_owned()))
+                .expect("settings")
+                .server,
+            "https://invited.example/"
+        );
+
+        phone.together_server("  ".to_owned());
+
+        assert_eq!(phone.party_settings(None).expect("settings").server, hosted);
     }
 
     #[test]

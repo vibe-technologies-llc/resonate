@@ -361,7 +361,7 @@ import Testing
 
 @Suite struct NotInYourLibraryTests {
     private func release(kind: String = "Album", year: UInt32? = 2010) -> ReleaseNotHeld {
-        ReleaseNotHeld(group: "g", title: "Lacked", kind: kind, year: year, songs: 0, songsRead: false)
+        ReleaseNotHeld(group: "g", title: "Lacked", kind: kind, year: year, songs: 0, songsRead: false, covered: false)
     }
 
     @Test func theHeadingCountsWhatTheLibraryLacks() {

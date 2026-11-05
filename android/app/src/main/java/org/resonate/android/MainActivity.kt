@@ -142,7 +142,10 @@ class MainActivity : ComponentActivity(), Host {
                         return
                     }
                     OpenedLink.INVITATION -> {
-                        library.features.together.arrive(opened.toString())
+                        library.features.together.arriving(
+                            opened.toString(),
+                            InvitationLinks.isAParty(opened.scheme, opened.host, opened.path),
+                        )
                         return
                     }
                     OpenedLink.SOMETHING_ELSE ->

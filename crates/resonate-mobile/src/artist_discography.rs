@@ -2,7 +2,8 @@ use std::{cmp::Ordering, collections::HashSet};
 
 use resonate_core::{Mbid, folded_letters};
 use resonate_library::{
-    ArtistRelease, Discography, LookupOp, Reference, Release, pressing_of, worth_keeping,
+    ArtistRelease, COVERS_ASKED_AGAIN_AFTER, CoverArt, Discography, ImageFormat, LookupOp,
+    Reference, Release, pressing_of, worth_keeping,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -14,6 +15,7 @@ use crate::{
 const DISCOGRAPHY_KEPT_FOR_SECONDS: i64 = 30 * 24 * 60 * 60;
 const FURTHER_PAGES_AT_MOST: u32 = 3;
 const GROUPS_READ_AT_MOST: u32 = 8;
+const COVERS_ASKED_AT_MOST: u32 = 8;
 
 const ARTIST_OF_THE_NAME: &str = "SELECT artist_mbid FROM documents
     WHERE missing = 0 AND artist_mbid IS NOT NULL AND folded(artist) = ?1
@@ -42,6 +44,17 @@ const SONGS_OF_THE_GROUP: &str =
         disc, position, duration_ms, isrcs
     FROM group_songs WHERE release_group = ?1 ORDER BY disc, position";
 
+const COVER_IS_HELD_OR_ASKED_LATELY: &str = "SELECT EXISTS (SELECT 1 FROM unheld_covers
+    WHERE release_group = ?1 AND (cover IS NOT NULL OR asked > unixepoch() - ?2))";
+
+const COVER_IS_HELD: &str =
+    "SELECT EXISTS (SELECT 1 FROM unheld_covers WHERE release_group = ?1 AND cover IS NOT NULL)";
+
+const COVER_KEPT: &str = "SELECT cover FROM unheld_covers WHERE release_group = ?1";
+
+const PRESSING_READ_FOR_THE_GROUP: &str = "SELECT release FROM group_songs
+    WHERE release_group = ?1 AND release <> '' ORDER BY disc, position LIMIT 1";
+
 const GROUP_IS_READ: &str = "SELECT EXISTS (SELECT 1 FROM groups_read WHERE release_group = ?1)";
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -52,6 +65,7 @@ pub struct ReleaseNotHeld {
     pub year: Option<u32>,
     pub songs: u32,
     pub songs_read: bool,
+    pub covered: bool,
 }
 
 #[uniffi::export]
@@ -86,6 +100,21 @@ impl MobilePlayer {
         learned_songs(&self.catalog, &name, |group| {
             self.services.online.releases_of_group(group)
         })
+    }
+
+    pub fn learn_artist_covers(&self, name: String) -> Result<u32> {
+        if self.require_online().is_err() {
+            return Ok(0);
+        }
+
+        learned_covers(&self.catalog, &name, |pressing, group| match pressing {
+            Some(pressing) => self.services.online.cover(pressing, Some(group)),
+            None => self.services.online.group_cover(group),
+        })
+    }
+
+    pub fn unheld_release_cover(&self, group: String) -> Result<Option<Vec<u8>>> {
+        self.catalog.unheld_release_cover(&group)
     }
 
     pub fn learn_release_songs(&self, group: String) -> Result<bool> {
@@ -288,6 +317,12 @@ impl Catalog {
             .map_err(read_error)
     }
 
+    fn cover_is_held(connection: &Connection, group: &str) -> Result<bool> {
+        connection
+            .query_row(COVER_IS_HELD, [group], |row| row.get(0))
+            .map_err(read_error)
+    }
+
     fn songs_left_by(
         connection: &Connection,
         held: &HeldByTheArtist,
@@ -325,6 +360,7 @@ impl Catalog {
                     year: release.year(),
                     songs: songs.len() as u32,
                     songs_read: read,
+                    covered: Self::cover_is_held(&connection, &release.group)?,
                     group: release.group,
                     title: release.title,
                     kind: release.kind,
@@ -471,6 +507,62 @@ impl Catalog {
         Ok(kept)
     }
 
+    fn covers_to_ask(&self, artist: &Mbid, name: &str) -> Result<Vec<(Mbid, Option<Mbid>)>> {
+        let connection = self.0.lock();
+        let held = Self::held_by_the_artist(&connection, Some(artist), name)?;
+        let mut due = Vec::new();
+        for release in Self::releases_kept(&connection, artist, &held)? {
+            let asked_lately: bool = connection
+                .query_row(
+                    COVER_IS_HELD_OR_ASKED_LATELY,
+                    params![release.group, COVERS_ASKED_AGAIN_AFTER.as_secs() as i64],
+                    |row| row.get(0),
+                )
+                .map_err(read_error)?;
+            if asked_lately {
+                continue;
+            }
+            let pressing: Option<String> = connection
+                .query_row(PRESSING_READ_FOR_THE_GROUP, [&release.group], |row| {
+                    row.get(0)
+                })
+                .optional()
+                .map_err(read_error)?;
+            if let Ok(group) = Mbid::new(&release.group) {
+                due.push((group, pressing.and_then(|id| Mbid::new(&id).ok())));
+            }
+        }
+
+        Ok(due)
+    }
+
+    fn keep_unheld_cover(&self, group: &Mbid, art: Option<&CoverArt>) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "INSERT INTO unheld_covers (release_group, cover, asked)
+                 VALUES (?1, ?2, unixepoch())
+                 ON CONFLICT(release_group)
+                 DO UPDATE SET cover = coalesce(excluded.cover, cover), asked = excluded.asked",
+                params![group.as_str(), art.map(|art| art.bytes.as_slice())],
+            )
+            .map(drop)
+            .map_err(write_error)
+    }
+
+    pub(crate) fn unheld_release_cover(&self, group: &str) -> Result<Option<Vec<u8>>> {
+        let kept: Option<Option<Vec<u8>>> = self
+            .0
+            .lock()
+            .query_row(COVER_KEPT, [group], |row| row.get(0))
+            .optional()
+            .map_err(read_error)?;
+
+        Ok(kept
+            .flatten()
+            .filter(|bytes| ImageFormat::sniff(bytes).is_some()))
+    }
+
     fn groups_to_read(&self, artist: &Mbid, name: &str) -> Result<Vec<String>> {
         let connection = self.0.lock();
         let held = Self::held_by_the_artist(&connection, Some(artist), name)?;
@@ -545,6 +637,30 @@ fn learned_songs(
         .take(GROUPS_READ_AT_MOST as usize)
     {
         learned_group(catalog, &group, &mut asked)?;
+        read += 1;
+    }
+
+    Ok(read)
+}
+
+fn learned_covers(
+    catalog: &Catalog,
+    name: &str,
+    mut asked: impl FnMut(Option<&Mbid>, &Mbid) -> resonate_library::Result<Option<CoverArt>>,
+) -> Result<u32> {
+    let Some(artist) = catalog.artist_named(name)? else {
+        return Ok(0);
+    };
+
+    let mut read = 0;
+    for (group, pressing) in catalog
+        .covers_to_ask(&artist, name)?
+        .into_iter()
+        .take(COVERS_ASKED_AT_MOST as usize)
+    {
+        let art = asked(pressing.as_ref(), &group)
+            .map_err(|source| Error::reference(LookupOp::Cover, source))?;
+        catalog.keep_unheld_cover(&group, art.as_ref())?;
         read += 1;
     }
 
@@ -888,6 +1004,156 @@ mod tests {
         assert_eq!(
             groups(&catalog.artist_releases_not_held(NAME).expect("the rows")),
             vec![SINGLE_GROUP, LACKED_GROUP]
+        );
+    }
+
+    fn sleeve() -> CoverArt {
+        CoverArt {
+            format: ImageFormat::Jpeg,
+            bytes: vec![0xff, 0xd8, 0xff, 0xe0, 1, 2, 3],
+        }
+    }
+
+    #[test]
+    fn a_release_not_held_is_asked_for_its_sleeve_by_the_pressing_read_else_by_its_group() {
+        let catalog = opened();
+        held(&catalog, "Held song", "Held album");
+        learned(
+            &catalog,
+            vec![
+                released(LACKED_GROUP, "Lacked", "Album", "2010"),
+                released(SINGLE_GROUP, "Other", "Single", "2012"),
+            ],
+        );
+        learned_songs(&catalog, NAME, |group: &Mbid| {
+            Ok(if group.as_str() == LACKED_GROUP {
+                vec![pressing(&["First"])]
+            } else {
+                Vec::new()
+            })
+        })
+        .expect("read");
+        let mut asked = Vec::new();
+
+        let read = learned_covers(&catalog, NAME, |pressing, group| {
+            asked.push((
+                pressing.map(|id| id.as_str().to_owned()),
+                group.as_str().to_owned(),
+            ));
+            Ok(Some(sleeve()))
+        })
+        .expect("covers");
+
+        assert_eq!(read, 2);
+        assert_eq!(
+            asked,
+            vec![
+                (Some(PRESSING.to_owned()), LACKED_GROUP.to_owned()),
+                (None, SINGLE_GROUP.to_owned()),
+            ]
+        );
+        assert_eq!(
+            catalog.unheld_release_cover(LACKED_GROUP).expect("a cover"),
+            Some(sleeve().bytes)
+        );
+        let lacking = catalog.artist_releases_not_held(NAME).expect("the rows");
+        assert!(lacking.iter().all(|release| release.covered));
+    }
+
+    #[test]
+    fn a_sleeve_is_kept_and_not_asked_again_and_a_miss_waits_a_month() {
+        let catalog = opened();
+        held(&catalog, "Held song", "Held album");
+        learned(
+            &catalog,
+            vec![
+                released(LACKED_GROUP, "Lacked", "Album", "2010"),
+                released(SINGLE_GROUP, "Other", "Single", "2012"),
+            ],
+        );
+        let asked = Cell::new(0);
+        let mut ask = |_: Option<&Mbid>, group: &Mbid| {
+            asked.set(asked.get() + 1);
+            Ok((group.as_str() == LACKED_GROUP).then(sleeve))
+        };
+
+        assert_eq!(learned_covers(&catalog, NAME, &mut ask).expect("asked"), 2);
+        assert_eq!(learned_covers(&catalog, NAME, &mut ask).expect("kept"), 0);
+        assert_eq!(asked.get(), 2);
+
+        let lacking = catalog.artist_releases_not_held(NAME).expect("the rows");
+        assert_eq!(
+            lacking
+                .iter()
+                .map(|release| (release.group.as_str(), release.covered))
+                .collect::<Vec<_>>(),
+            vec![(LACKED_GROUP, true), (SINGLE_GROUP, false)]
+        );
+        assert_eq!(
+            catalog.unheld_release_cover(SINGLE_GROUP).expect("a miss"),
+            None
+        );
+
+        catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE unheld_covers SET asked = asked - ?1",
+                [COVERS_ASKED_AGAIN_AFTER.as_secs() as i64 + 1],
+            )
+            .expect("an old ask");
+
+        assert_eq!(learned_covers(&catalog, NAME, &mut ask).expect("again"), 1);
+        assert_eq!(asked.get(), 3);
+    }
+
+    #[test]
+    fn a_failed_ask_for_a_sleeve_is_not_remembered_and_a_later_miss_never_blanks_one_held() {
+        let catalog = opened();
+        held(&catalog, "Held song", "Held album");
+        learned(
+            &catalog,
+            vec![released(LACKED_GROUP, "Lacked", "Album", "2010")],
+        );
+        let failed = learned_covers(&catalog, NAME, |_, _| {
+            Err(resonate_library::Error::Refused {
+                op: LookupOp::Cover,
+                status: 503,
+            })
+        });
+
+        assert!(failed.is_err());
+
+        let group = Mbid::new(LACKED_GROUP).expect("an mbid");
+        assert_eq!(
+            learned_covers(&catalog, NAME, |_, _| Ok(Some(sleeve()))).expect("asked"),
+            1
+        );
+        catalog.keep_unheld_cover(&group, None).expect("a miss");
+
+        assert_eq!(
+            catalog.unheld_release_cover(LACKED_GROUP).expect("a cover"),
+            Some(sleeve().bytes)
+        );
+    }
+
+    #[test]
+    fn a_release_that_becomes_held_is_no_longer_asked_for_and_an_artist_without_an_id_is_never_asked()
+     {
+        let catalog = opened();
+        held(&catalog, "Same Title Song", "Same Title");
+        learned(
+            &catalog,
+            vec![released(LACKED_GROUP, "Same title", "Album", "2010")],
+        );
+
+        assert_eq!(
+            learned_covers(&catalog, NAME, |_, _| panic!("asked")).expect("none"),
+            0
+        );
+        assert_eq!(
+            learned_covers(&catalog, "Nobody", |_, _| panic!("asked")).expect("none"),
+            0
         );
     }
 }

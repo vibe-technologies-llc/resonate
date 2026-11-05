@@ -19,6 +19,7 @@ final class TogetherState {
     private(set) var joining = false
     private(set) var name: String
     var toShow: InvitationKind?
+    var partyOffered: String?
 
     init(library: Library) {
         self.library = library
@@ -84,6 +85,14 @@ final class TogetherState {
             uniquingKeysWith: { kept, _ in kept }
         )
         if lists != keyed { lists = keyed }
+    }
+
+    func arrive(_ text: String) {
+        if invitationKind(text: text) == .party {
+            partyOffered = text
+        } else {
+            accept(text)
+        }
     }
 
     func accept(_ text: String) {

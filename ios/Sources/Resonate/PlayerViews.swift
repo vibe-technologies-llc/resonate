@@ -244,6 +244,7 @@ struct NowPlayingView: View {
             .modifier(SleepTimerPresentation(insidePlayer: true))
             .modifier(ZonesPresentation(insidePlayer: true))
             .modifier(PairingOffer(insidePlayer: true))
+            .modifier(PartyOffer(insidePlayer: true))
         }
     }
 

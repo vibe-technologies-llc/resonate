@@ -2,6 +2,8 @@ package org.resonate.android.ui.library
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -21,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,8 +38,11 @@ import org.resonate.android.DownloadJob
 import org.resonate.android.DownloadPlan
 import org.resonate.android.nativecore.ReleaseNotHeld
 import org.resonate.android.nativecore.SearchSong
+import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.SheetRow
+import org.resonate.android.ui.components.rememberPicture
 import org.resonate.android.ui.counted
 
 const val NOT_HELD_COVER_ALPHA = 0.5f
@@ -54,6 +60,20 @@ fun <T> firstOf(items: List<T>, all: Boolean, folded: Int = SONGS_LACKED_FOLDED)
 
 @Composable
 fun UnheldReleaseCard(release: ReleaseNotHeld, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val resonate = LocalResonate.current
+    val sleeve by
+        produceState<ByteArray?>(null, release.group, release.covered) {
+            value =
+                if (release.covered) {
+                    resonate
+                        .read { native ->
+                            withContext(Dispatchers.IO) { native.unheldReleaseCover(release.group) }
+                        }
+                        .getOrNull()
+                } else {
+                    null
+                }
+        }
     CoverCard(
         title = release.title.ifBlank { "Untitled" },
         detail = releaseLine(release).ifBlank { null },
@@ -61,7 +81,11 @@ fun UnheldReleaseCard(release: ReleaseNotHeld, onClick: () -> Unit, modifier: Mo
         modifier =
             modifier.testTag("not-held-release").semantics { stateDescription = NOT_IN_YOUR_LIBRARY },
     ) {
-        SquareCover(null, Modifier.alpha(NOT_HELD_COVER_ALPHA))
+        Picture(
+            rememberPicture(sleeve),
+            Modifier.fillMaxWidth().aspectRatio(1f).alpha(NOT_HELD_COVER_ALPHA),
+            shape = MaterialTheme.shapes.large,
+        )
     }
 }
 

@@ -62,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.resonate.android.LinkedPlaylistWords
+import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.PlaylistLinkInfo
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.CollectionRow
@@ -105,7 +106,8 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     var deleting by rememberSaveable { mutableStateOf(false) }
     var sharing by rememberSaveable { mutableStateOf(false) }
     val shared by model.shared.collectAsStateWithLifecycle()
-    val mayEdit = shared?.mayEdit != false
+    val followed = playlist?.followed == true
+    val mayEdit = TogetherWords.mayEdit(shared, followed)
     val name = playlist?.name ?: screen.name
     val search = playlist?.search
     val link = playlist?.link
@@ -190,6 +192,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         overline =
                             when {
                                 search != null -> "Saved search"
+                                shared == null && followed -> "Followed playlist"
                                 shared == null -> "Playlist"
                                 mayEdit -> "Shared playlist"
                                 else -> "Followed playlist"

@@ -17,9 +17,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.5.0] iOS's *Made for you* has the desktop's lists read from listening but not its Eras,
   Genres, Artists and Sound shelves nor *Keep as a playlist that fills itself* on an opened list
   (`save_search` already makes one); the shelves are the same open work as Android's
-- [S · 0.5.0] The phones' artist pages draw a release the library lacks as a placeholder tile, not
-  its sleeve: the desktop keeps `unheld_covers` (`library.md`) and the phones' catalog keeps no cover
-  of a release it does not hold
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns
@@ -55,7 +52,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
   owner-only security descriptor, a client reaching it), the ARM64 files (cross-built on an x64
   runner, never started), the installer (compiled by Inno Setup for the first time at a release; its
-  Start menu shortcut, file associations and uninstall), a toast (whether one shows once a shortcut carries
+  Start menu shortcut, file associations, the `resonate://` link handler and uninstall: whether a click on a shared or party link in a browser starts or reaches the window), a toast (whether one shows once a shortcut carries
   `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
   transport, a replacement when the cover lands), the connection's `NetworkCostType` (a metered
   hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its
@@ -137,13 +134,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Together
 
 - [M] Chat and reactions in a listening party.
-- [S] Asking before a party's link takes over playback, as pairing asks before joining devices; a link joins at once today.
-- [S] A followed list told apart on the phones while sync is off, so its edit controls hide instead of answering with a refusal.
-- [S] A party on the phones reaching the listener's own server while sync is off; the boundary learns the server only as sync starts.
+- [S] Asking before a party's link takes over playback in the window, as the phones ask: a
+  `resonate://party/` argument or `OpenUri` from outside joins the first zone at once
+  (`party_room::accept`); it needs a confirmation sheet (a `Sheet` of `views/sheets.rs`) naming
+  what the link takes over
 - [M] Handing the host's role to someone else in a party, when the host must go.
 - [S] A frozen snapshot of a past Wrapped, kept once its year is over, rather than read afresh from what history keeps.
 - [M] A browser view of a shared playlist's contents; today the page only hands its link to the app.
-- [S] Registering `resonate://` as a link handler on Windows, so a shared or party link opens the window there too.
 - [S] A guest's queue kept current as the host edits past the songs found ahead, rather than found again on reaching them.
 - [S] Measuring a party's offset between two people in different places, past the bound half their round trip gives.
 

@@ -703,6 +703,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     private fun syncWith(native: MobilePlayer) {
         val config = syncConfig.value ?: return
+        native.togetherServer(config.server)
         try {
             val status =
                 if (config.enabled && (online.value || config.nearbyOnly))

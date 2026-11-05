@@ -41,6 +41,9 @@ public enum TogetherWords {
     public static let unreadableLink = "That link could not be read"
     public static let notAnInvitation = "The clipboard holds no shared playlist or party link"
     public static let pressAgain = "Press again"
+    public static let joinThisPartyAsks = "Join this listening party?"
+    public static let joinThisPartySays =
+        "A link asks this iPhone to stop what it plays and follow someone's party instead. Join only if you were invited."
 
     public static func person(_ person: TogetherPerson) -> String {
         let name = person.isMe ? "You" : person.name.isEmpty ? "Someone" : person.name
@@ -56,6 +59,15 @@ public enum SharedPlaylistWords {
 
     public static func kind(mayEdit: Bool) -> String {
         mayEdit ? "Shared" : "Followed"
+    }
+
+    public static func mayEdit(shared: Bool?, followed: Bool) -> Bool {
+        shared ?? !followed
+    }
+
+    public static func kind(shared mayEdit: Bool?, followed: Bool) -> String? {
+        if let mayEdit { return kind(mayEdit: mayEdit) }
+        return followed ? kind(mayEdit: false) : nil
     }
 
     public static func reach(_ reach: SharedPlaylistReach) -> String? {

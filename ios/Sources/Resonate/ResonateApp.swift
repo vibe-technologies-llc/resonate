@@ -329,6 +329,7 @@ struct RootView: View {
         }
         .modifier(SharingSheet(insidePlayer: false))
         .modifier(PairingOffer(insidePlayer: false))
+        .modifier(PartyOffer(insidePlayer: false))
         .onChange(of: library.features.playlistToShow) { _, shown in
             guard let shown else { return }
             library.features.playlistToShow = nil
@@ -429,6 +430,31 @@ struct PairingOffer: ViewModifier {
             Text(library.features.syncConfig?.key.isEmpty == false
                 ? "A link asks this iPhone to leave the devices it syncs with now and sync with the devices of the code \(code). Join only if that is your code or one you were given."
                 : "A link asks this iPhone to share its playlists, favourites and history with the devices of the code \(code). Join only if that is your code or one you were given.")
+        }
+    }
+}
+
+struct PartyOffer: ViewModifier {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let insidePlayer: Bool
+
+    func body(content: Content) -> some View {
+        content.alert(
+            TogetherWords.joinThisPartyAsks,
+            isPresented: Binding(
+                get: { navigation.nowPlaying == insidePlayer && library.features.together.partyOffered != nil },
+                set: { shown in if !shown { library.features.together.partyOffered = nil } }
+            ),
+            presenting: library.features.together.partyOffered
+        ) { link in
+            Button("Join") {
+                library.features.together.partyOffered = nil
+                library.features.together.accept(link)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(TogetherWords.joinThisPartySays)
         }
     }
 }

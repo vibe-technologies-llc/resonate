@@ -91,9 +91,10 @@ struct PlaylistView: View {
         let name = playlist?.name ?? "Playlist"
         let search = playlist?.search
         let shared = features.together.shared(id)
-        let mayEdit = shared?.mayEdit ?? true
+        let followed = playlist?.followed ?? false
+        let mayEdit = SharedPlaylistWords.mayEdit(shared: shared?.mayEdit, followed: followed)
         let subtitle = search == nil
-            ? shared.map { SharedPlaylistWords.kind(mayEdit: $0.mayEdit) } ?? playlist?.link.map(LinkedPlaylistWords.header) ?? "Playlist"
+            ? SharedPlaylistWords.kind(shared: shared?.mayEdit, followed: followed) ?? playlist?.link.map(LinkedPlaylistWords.header) ?? "Playlist"
             : "Saved search"
         List {
             CollectionHeader(title: name, subtitle: subtitle, tracks: rows) {

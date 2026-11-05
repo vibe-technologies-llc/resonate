@@ -660,6 +660,8 @@ final class Features {
     private func applySync(_ native: MobilePlayer) async throws {
         guard let config = syncConfig else { return }
         let enabled = syncRuns
+        let server = config.server
+        _ = try? await Work.aside { native.togetherServer(server: server) }
         do {
             let status = try await Work.inSync {
                 guard enabled else {

@@ -44,6 +44,7 @@ class Together(
     val nameForOthers = mutableName.asStateFlow()
     val arrived = MutableStateFlow<ArrivalPage?>(null)
     val playlistsAsked = MutableStateFlow(false)
+    val partyOffered = MutableStateFlow<String?>(null)
 
     val keepsTheServiceForeground: Boolean
         get() = mutableParty.value?.let { !TogetherWords.isOver(it.connection) } == true
@@ -71,6 +72,10 @@ class Together(
     fun sharingNeedsSync(): String? {
         val config = syncConfig.value ?: return null
         return TogetherWords.sharingNeedsSync(config.enabled, config.nearbyOnly, online.value)
+    }
+
+    fun arriving(link: String, party: Boolean) {
+        if (party) partyOffered.value = link else arrive(link)
     }
 
     fun arrive(link: String) = work { native ->

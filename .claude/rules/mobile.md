@@ -254,8 +254,24 @@ title) and left out when the artist holds a song of its title or `local_match` f
 `a_discography_is_asked_once_a_month_and_an_artist_without_an_id_is_never_asked`,
 `a_discography_with_more_to_read_is_followed_a_few_pages_and_kept_whole`,
 `a_catalog_of_before_discographies_were_kept_keeps_its_songs_and_gains_empty_tables`). Both phones draw
-them (`ios.md`'s *Collection header*, `android.md`'s *Collection pages*). A release has no sleeve here:
-the desktop's `unheld_covers` is not kept, so its card wears a quiet placeholder.
+them (`ios.md`'s *Collection header*, `android.md`'s *Collection pages*).
+
+**A release not held wears its sleeve** as on the desktop (`library.md`'s *Sleeves of those releases*).
+Step 30 (`UNHELD_RELEASES_KEEP_THEIR_SLEEVE`) made `unheld_covers` (`release_group`, `cover`, `asked` in
+Unix seconds), the desktop's table. `learn_artist_covers(name)` asks, for up to eight
+(`COVERS_ASKED_AT_MOST`) of the artist's unheld releases with no sleeve held and none asked within
+`COVERS_ASKED_AGAIN_AFTER`, `Reference::cover` for the pressing its songs were read off
+(`group_songs.release`), else `Reference::group_cover`, and answers how many it asked, so a front end
+asks again until it answers 0 after the songs are read; it is `Ok(0)` while online is off and the
+client's own `Error::Metered` stops it as it stops every lookup. A miss is kept as an ask with no
+bytes (the next try waits the month), an answer never blanks a sleeve held, and a failed or refused ask
+writes nothing. `ReleaseNotHeld.covered` says a sleeve is held and `unheld_release_cover(group)` reads
+its bytes (only what `ImageFormat::sniff` knows), no network
+(`a_release_not_held_is_asked_for_its_sleeve_by_the_pressing_read_else_by_its_group`,
+`a_sleeve_is_kept_and_not_asked_again_and_a_miss_waits_a_month`,
+`a_failed_ask_for_a_sleeve_is_not_remembered_and_a_later_miss_never_blanks_one_held`,
+`a_release_that_becomes_held_is_no_longer_asked_for_and_an_artist_without_an_id_is_never_asked`,
+`a_catalog_of_before_unheld_sleeves_were_kept_keeps_its_discography_and_gains_an_empty_table`).
 
 ## Logging
 
@@ -787,7 +803,7 @@ else is, and an empty remainder is `NoProvider`
 keyed by `playlist` and `created`, leaves a flagged list out of `Catalog::playlists`; a list written for a
 friend is flagged in the transaction that writes it, a followed one refuses `edit_playlist`
 (`Error::PlaylistFollowed`), and `shared.sqlite` lives beside the ledger, started and stopped by `sync_start`
-and `sync_stop`, so sync must be on. `together_named` keeps the typed name, empty until asked. A party
+and `sync_stop`, so sync must be on. `together_named` keeps the typed name, empty until asked. `together_server(server)` keeps the server the sync settings name whether sync runs or not (each phone tells it whenever it applies those settings), so a party reaches the listener's own server with sync off: an invitation's server, else the running sync's, else this, else the hosted one (`a_party_reaches_the_server_chosen_even_while_sync_has_never_run`). `playlists()` marks a followed one (`MusicPlaylist.followed`, the flag `edit_playlist` refuses by), so a front end hides its edit controls with sync off too (`a_followed_list_is_told_from_the_others_with_sync_off`). A party
 follows the zone shown when it began, and `save_zone` leaves that zone's kept queue alone while following
 (`shared-playlists.md`, `party.md`).
 

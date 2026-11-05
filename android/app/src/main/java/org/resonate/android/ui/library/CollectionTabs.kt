@@ -247,7 +247,11 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
             PlaylistCard(
                 playlist,
                 onClick = { navigator.open(playlist.screen) },
-                badge = TogetherWords.badge(sharedLists.firstOrNull { it.playlist == playlist.id }),
+                badge =
+                    TogetherWords.badge(
+                        sharedLists.firstOrNull { it.playlist == playlist.id },
+                        playlist.followed,
+                    ),
             )
         }
     }

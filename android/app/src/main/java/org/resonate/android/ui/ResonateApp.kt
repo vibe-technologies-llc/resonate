@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.GroupAdd
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Search
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.NavDisplay
 import org.resonate.android.ArrivalPage
+import org.resonate.android.TogetherWords
 import org.resonate.android.ui.components.ArtworkClock
 import org.resonate.android.ui.components.Banners
 import org.resonate.android.ui.components.FollowArtworkChanges
@@ -206,6 +208,7 @@ fun ResonateApp(resonate: Resonate) {
                 }
                 SheetHost()
                 PairingOffer()
+                PartyOffer()
                 InvitationArrivals()
             }
         }
@@ -235,6 +238,21 @@ private fun PairingOffer() {
             navigator.open(Screen.Sync)
         },
         onDismiss = { features.pairingOffered.value = null },
+    )
+}
+
+@Composable
+private fun PartyOffer() {
+    val together = LocalResonate.current.features.together
+    val link by together.partyOffered.collectAsStateWithLifecycle()
+    val offered = link ?: return
+    ConfirmDialog(
+        title = TogetherWords.JOIN_THIS_PARTY_ASKS,
+        text = TogetherWords.JOIN_THIS_PARTY_SAYS,
+        confirm = "Join",
+        icon = Icons.Rounded.Headphones,
+        onConfirm = { together.arrive(offered) },
+        onDismiss = { together.partyOffered.value = null },
     )
 }
 

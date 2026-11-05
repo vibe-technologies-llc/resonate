@@ -52,7 +52,10 @@ between them. `synced_playlists` leaves flagged rows out, so the personal ledger
   (`whatever_the_listener_did_the_list_comes_to_read_as_the_catalog_does`). The alias a catalog wrote is
   not told as a rename.
 - **A followed copy refuses every edit** (`undo::edited`, `Error::PlaylistReadOnly`), but may be
-  removed, which is leaving; a copy changed anyway is written back.
+  removed, which is leaving; a copy changed anyway is written back. **On the phones the catalog tells
+  it, not the service**: `MusicPlaylist.followed` is `playlist_shares.editable = 0`, so a followed list
+  hides its edit controls and reads *Followed* with sync off, where `shared_playlists()` is empty; a
+  `SharedPlaylist` still decides when it is there (`mobile.md`).
 - **Removing a list here is leaving it**, never removing its songs for the others: a `Left` op goes,
   and the list is forgotten once told. A friend's edit drops the undo steps of the list
   (`undo::overtaken`).
