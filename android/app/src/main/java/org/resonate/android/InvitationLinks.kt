@@ -38,6 +38,15 @@ object InvitationLinks {
             else -> OpenedLink.SOMETHING_ELSE
         }
 
+    fun isAParty(scheme: String?, host: String?, path: String?): Boolean =
+        when (scheme?.lowercase()) {
+            RESONATE_SCHEME -> host.equals(PARTY_HOST, ignoreCase = true)
+            SECURE_WEB_SCHEME ->
+                host.equals(RESONATE_WEB_HOST, ignoreCase = true) &&
+                    path?.startsWith(PARTY_PAGE) == true
+            else -> false
+        }
+
     fun pageFor(kind: InvitationKind): ArrivalPage =
         when (kind) {
             InvitationKind.PARTY -> ArrivalPage.PARTY

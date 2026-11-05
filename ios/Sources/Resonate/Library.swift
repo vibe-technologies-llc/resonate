@@ -1681,7 +1681,7 @@ final class Library {
     func open(_ url: URL) {
         switch OpenedLink.of(url) {
         case .invitation:
-            features.together.accept(url.absoluteString)
+            features.together.arrive(url.absoluteString)
             return
         case .unreadableInvitation:
             notice(TogetherWords.unreadableLink)

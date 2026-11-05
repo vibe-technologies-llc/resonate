@@ -132,7 +132,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Together
 
 - [M] Chat and reactions in a listening party.
-- [S] Asking before a party's link takes over playback, as pairing asks before joining devices; a link joins at once today.
+- [S] Asking before a party's link takes over playback in the window, as the phones ask: a
+  `resonate://party/` argument or `OpenUri` from outside joins the first zone at once
+  (`party_room::accept`); it needs a confirmation sheet (a `Sheet` of `views/sheets.rs`) naming
+  what the link takes over
 - [S] A followed list told apart on the phones while sync is off, so its edit controls hide instead of answering with a refusal.
 - [S] A party on the phones reaching the listener's own server while sync is off; the boundary learns the server only as sync starts.
 - [M] Handing the host's role to someone else in a party, when the host must go.
