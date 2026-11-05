@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
@@ -117,7 +118,75 @@ class LibraryLogicTest {
         val discs = discsOf(listOf(song(1uL, disc = 1u), song(2uL, disc = 2u), song(3uL, disc = 2u)))
 
         assertEquals(listOf(1u, 2u), discs.map { it.number })
-        assertEquals(listOf(1, 2), discs[1].rows.map { it.index })
+        assertEquals(listOf(1, 2), discs[1].held.map { it.index })
+    }
+
+    private fun lacking(title: String, disc: UInt? = 1u, position: UInt? = null) =
+        SearchSong(
+            recording = "rec-$title",
+            title = title,
+            artist = "Artist",
+            artistId = "",
+            album = "Album",
+            release = "release",
+            releaseGroup = "group",
+            disc = disc,
+            position = position,
+            durationMs = 60_000uL,
+            isrcs = emptyList(),
+            held = false,
+        )
+
+    private fun names(disc: Disc) =
+        disc.rows.map { row ->
+            when (row) {
+                is AlbumRow.Held -> "${row.track.id}"
+                is AlbumRow.NotHeld -> row.song.title
+            }
+        }
+
+    @Test
+    fun aSongNotHeldStandsAtItsPlaceAmongTheSongsHeld() {
+        val discs =
+            discsOf(
+                listOf(song(1uL, number = 2u), song(2uL, number = 4u)),
+                listOf(lacking("first", position = 1u), lacking("third", position = 3u), lacking("fifth", position = 5u)),
+            )
+
+        assertEquals(1, discs.size)
+        assertEquals(listOf("first", "1", "third", "2", "fifth"), names(discs.single()))
+        assertEquals(listOf(0, 1), discs.single().held.map { it.index })
+    }
+
+    @Test
+    fun aDiscHoldingNoSongYetStandsInItsOrderWithItsNumber() {
+        val discs =
+            discsOf(
+                listOf(song(1uL, disc = 1u, number = 1u), song(2uL, disc = 3u, number = 1u)),
+                listOf(lacking("second", disc = 2u, position = 1u), lacking("second too", disc = 2u, position = 2u)),
+            )
+
+        assertEquals(listOf(1u, 2u, 3u), discs.map { it.number })
+        assertEquals(listOf("second", "second too"), names(discs[1]))
+    }
+
+    @Test
+    fun anAlbumHoldingOneDiscWhoseReleaseHasTwoShowsBothHeadings() {
+        val discs =
+            discsOf(
+                listOf(song(1uL, disc = 1u, number = 1u)),
+                listOf(lacking("on two", disc = 2u, position = 1u)),
+            )
+
+        assertEquals(listOf(1u, 2u), discs.map { it.number })
+        assertEquals(listOf("on two"), names(discs[1]))
+    }
+
+    @Test
+    fun songsNotHeldWithNoDiscLieOnTheFirst() {
+        val discs = discsOf(listOf(song(1uL, number = 1u)), listOf(lacking("loose", disc = null, position = 2u)))
+
+        assertEquals(listOf("1", "loose"), names(discs.single()))
     }
 
     @Test

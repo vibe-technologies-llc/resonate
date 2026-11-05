@@ -4,9 +4,6 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [S · 0.5.0] Android's album page draws only the songs held: iOS greys in the songs of the album's
-  release the listener lacks, each a press to download it, over `album_songs_not_held` and
-  `learn_album_songs`, which Android's generated bindings already carry and no screen calls
 - [M · 0.5.0] Android's *Made for you* is four fixed mixes: the desktop's lists read from listening
   (*On repeat*, *More like*, *deep cuts*, *Discover*, *Old flames*) need a filter or saved search over
   the phones' own catalog, and the daily turn with them

@@ -61,6 +61,9 @@ object DownloadPlan {
     fun held(jobs: List<DownloadJob>): Set<String> =
         jobs.filter { !it.state.settled }.map { it.song.heldKey() }.toSet()
 
+    fun standing(jobs: List<DownloadJob>, song: SearchSong): DownloadState? =
+        jobs.firstOrNull { !it.state.settled && it.song.heldKey() == song.heldKey() }?.state
+
     fun stranded(journalled: Collection<String>, indexed: Set<String>): Set<String> =
         journalled.filter { it !in indexed }.toSet()
 

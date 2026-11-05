@@ -10,14 +10,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.DownloadJob
+import org.resonate.android.DownloadPlan
 import org.resonate.android.nativecore.AlbumHit
+import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
@@ -32,20 +41,35 @@ import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.ui.search.DownloadChooser
+import org.resonate.android.ui.search.Downloads
+import org.resonate.android.ui.search.OnlineSongSheet
+import org.resonate.android.ui.search.onlineSongActions
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.rememberSeedOf
 
-data class AlbumPage(val album: AlbumHit?, val tracks: List<Track>)
+data class AlbumPage(val album: AlbumHit?, val tracks: List<Track>, val notHeld: List<SearchSong>)
 
 class AlbumViewModel(private val resonate: Resonate, key: String) : ViewModel() {
     private val shared = SharingStarted.WhileSubscribed(5_000)
 
     val retry = Retry()
+    val downloads = Downloads(resonate, viewModelScope)
+
+    val jobs: StateFlow<List<DownloadJob>> = resonate.features.downloads.jobs
+
+    init {
+        viewModelScope.launch {
+            val learned =
+                resonate.read { native -> withContext(Dispatchers.IO) { native.learnAlbumSongs(key) } }
+            if (learned.getOrDefault(false)) retry.again()
+        }
+    }
 
     val page: StateFlow<Loaded<AlbumPage>> =
         combine(
-                resonate.catalogRead(retry) { native -> AlbumPage(native.album(key), native.albumTracks(key)) },
+                resonate.catalogRead(retry) { native -> AlbumPage(native.album(key), native.albumTracks(key), native.albumSongsNotHeld(key)) },
                 resonate.library.allTracks,
             ) { loaded, _ ->
                 when (loaded) {
@@ -66,6 +90,9 @@ fun AlbumScreen(screen: Screen.Album) {
     val sheets = LocalSheets.current
     val loaded by model.page.collectAsStateWithLifecycle()
     val playing by model.playing.collectAsStateWithLifecycle()
+    val jobs by model.jobs.collectAsStateWithLifecycle()
+    var acting by remember { mutableStateOf<SearchSong?>(null) }
+    var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     val page = loaded.valueOrNull()
     val album = page?.album
     val title = album?.shownTitle ?: screen.title.ifBlank { "Unknown album" }
@@ -138,28 +165,63 @@ fun AlbumScreen(screen: Screen.Album) {
                 }
             }
             if (tracks.isEmpty()) item("empty") { EmptyCollection() }
-            val discs = discsOf(tracks)
+            val discs = discsOf(tracks, shown.notHeld)
             discs.forEach { disc ->
                 if (discs.size > 1) {
                     item("disc:${disc.number}") { SectionHeader(discTitle(disc.number)) }
                 }
-                disc.rows.forEach { (index, track) ->
-                    item("row:$index:${track.id}") {
-                        TrackRow(
-                            track,
-                            onClick = { resonate.playback.play(tracks, index) },
-                            playing = track.id == playing,
-                            number = trackNumber(track, index),
-                            supporting = albumRowLine(track, owner, various),
-                            note = clock(track.durationMs),
-                            onMore = { sheets.song(track) },
-                            selection = selection.row(track.id),
-                        )
+                disc.rows.forEach { row ->
+                    when (row) {
+                        is AlbumRow.Held -> {
+                            val track = row.track
+                            item("row:${row.index}:${track.id}") {
+                                TrackRow(
+                                    track,
+                                    onClick = { resonate.playback.play(tracks, row.index) },
+                                    playing = track.id == playing,
+                                    number = trackNumber(track, row.index),
+                                    supporting = albumRowLine(track, owner, various),
+                                    note = clock(track.durationMs),
+                                    onMore = { sheets.song(track) },
+                                    selection = selection.row(track.id),
+                                )
+                            }
+                        }
+                        is AlbumRow.NotHeld -> {
+                            val song = row.song
+                            item("not-held:${song.disc}:${song.position}:${song.recording}:${song.title}") {
+                                NotHeldSongRow(
+                                    song,
+                                    standing = DownloadPlan.standing(jobs, song),
+                                    onDownload = {
+                                        model.downloads.request(listOf(song)) { choosing = listOf(song) }
+                                    },
+                                    onMore = { acting = song },
+                                    number = song.position?.toString().orEmpty(),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    acting?.let { song ->
+        OnlineSongSheet(
+            song = song,
+            held = false,
+            dismiss = { acting = null },
+            actions =
+                onlineSongActions(
+                    save = { resonate.features.saveWanted(listOf(song)) },
+                    download = { model.downloads.request(listOf(song)) { choosing = listOf(song) } },
+                    album = null,
+                    artist = null,
+                ),
+        )
+    }
+    choosing?.let { songs -> DownloadChooser(songs, model.downloads) { choosing = null } }
 }
 
 private fun albumRowLine(track: Track, owner: String, various: Boolean): String =

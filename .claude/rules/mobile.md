@@ -209,8 +209,8 @@ offered again. `SearchSong` carries disc and position, so a row is a download as
 `one_file_answers_for_one_song_of_a_name_a_release_holds_twice`,
 `a_song_landed_under_another_album_is_held_by_its_recording`,
 `an_album_with_a_release_is_asked_once_and_one_without_is_never_asked`,
-`a_catalog_of_before_albums_kept_their_songs_keeps_its_rows_and_owes_each_matched_album_a_read`). iOS draws them; Android does
-not yet (`FEATURES.md`).
+`a_catalog_of_before_albums_kept_their_songs_keeps_its_rows_and_owes_each_matched_album_a_read`). Both phones draw them (`ios.md`'s
+*Collection header*, `android.md`'s *Collection pages*).
 
 ## Logging
 
