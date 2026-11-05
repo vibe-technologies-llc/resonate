@@ -13,6 +13,14 @@ CREATE TABLE playlist_shares (
 ) STRICT;
 ";
 
+const A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD: &str = "
+CREATE TABLE wrapped_years (
+    year   INTEGER PRIMARY KEY,
+    frozen INTEGER NOT NULL,
+    review BLOB NOT NULL
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     LISTENS_NAME_THEIR_ORIGIN,
     SONGS_RECEIVED_NAME_THEIR_RECORDING,
@@ -31,6 +39,7 @@ const MIGRATIONS: &[&str] = &[
     A_PLAYLIST_REMEMBERS_THE_LINK_IT_CAME_FROM,
     A_PROFILE_IS_FOLLOWED_WHOLE,
     A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
+    A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -1501,6 +1510,43 @@ mod tests {
         };
         assert_eq!(peaks(1), None);
         assert_eq!(peaks(2), Some(472));
+    }
+
+    #[test]
+    fn a_catalog_of_before_years_were_kept_keeps_what_it_held_and_gains_an_empty_table() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD)
+            .expect("the step that keeps a year");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root held before");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table")
+        };
+        assert_eq!(count("roots"), 1);
+        assert_eq!(count("wrapped_years"), 0);
+        assert_eq!(
+            stamped(&connection).expect("the stamp reads back"),
+            Some(SCHEMA_FINGERPRINT)
+        );
     }
 
     #[test]
