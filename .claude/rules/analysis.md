@@ -14,7 +14,7 @@ paths:
 # Analysis, studies and recognition
 
 `resonate-analysis`: one whole decode → envelope, spectrum, lossless-claim verdict, loudness, print.
-Leaf beside the vault (core, codec, dsp, `rustfft`, `rusty-chromaprint`); free of gpui, engine,
+Leaf beside the vault (core, codec, dsp, `rustfft`, `rusty-chromaprint`, `rayon`); free of gpui, engine,
 library, `ureq`. `Player::analyse` uses the player's own `Sources` (vaulted rows analyse from their
 object). Library reaches `study` (enrichment) and `print` (moved files).
 
@@ -24,6 +24,55 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   width the vault's `pcm_of` picks. The `Drawing` trait is `Unseen` (`study`) or `Drawn` (envelope,
   spectrogram; `analyse`), so library-wide studies build nothing only a screen wants. DSD → F32 via
   its decimator, not DoP.
+- **One decode feeds a crew, and the answers are the ones one thread would give** (`crew.rs`). The
+  walk decodes, reads `Leveling` and `Printing` itself (the native samples never cross a thread)
+  and hands the rest to `Crew::fanned` as `Noting` stages: `Metering`, the spectrum with whatever
+  the `Drawing` keeps, each native `Stepping`, each `Resampled`, one `Bank` and one `Hearing` a
+  channel and the one `Metered`. A stage hears every slab in order on one thread at a time, each
+  drain a task of one slab (a thread waiting inside a search may steal a drain, so a longer one
+  would hold that search's answer back). A slab keeps its pieces, so a stage hears the partition the
+  decoder made; those whose answer no partition moves (`hears_any_pieces_alike`, the two with a
+  `stream_noted_in_pieces` test and the meter) take it whole. Memory is held by
+  `BYTES_QUEUED_AT_MOST` (8 MiB of samples no stage has finished with); past it the decoder waits for
+  the slowest stage. **A grid's search and confirmation run across the crew too**
+  (`Readers::read_each`), each run on a clone of the grid, cleared and dropped after, since a run is
+  a pure function of the samples and every grid's own state is a memo by position or a chain
+  `forget` ends; a grid whose residues share polyphase vectors keeps a class of them on one thread
+  (`RESIDUES_SHARING_POSITIONS_EVERY`). Off a crew's thread (a unit test, a pool that did not start)
+  the same code runs in line (`every_grid_reads_the_same_alone_as_on_a_crew`,
+  `a_stream_heard_on_a_crew_has_the_peaks_it_has_heard_alone`,
+  `a_study_alone_and_the_study_inside_an_analysis_are_one_answer`).
+  **Two crews, so a library pass keeps its share of the machine.** `analyse` (a listener is waiting)
+  takes `AsTheMachineAllows`, every core but one, a slab a second so a bank has chunks to settle
+  apart; `study` and `band_figures` take `HalfTheMachine`, half the cores shared by every study at
+  once, a slab a quarter of a second. Each pool starts on first use and sleeps after.
+  **Measured**, 5 minutes of stereo on a Ryzen 7 7700 (8 cores, 16 threads), a release-like build
+  (`--profile profiling`), bit for bit the answers of the single thread it replaced on FLAC 16/44.1,
+  FLAC 24/96, FLAC holding a decoded MP3, LAME 256, Opus 128 and ffmpeg's AAC 256 (`Debug` of the
+  `Study`, the `Analysis` and the `BandFigures`; FLAC 16/44.1 pinned to one core as well): a study of FLAC 16/44.1 from 14.1 s to 2.1 s, 21 to 139 times real time; lossy files, which
+  no grid weighs, 8 s to 1.5 s, 37 to 200 times; FLAC 24/96 22.6 s to 4.5 s, 13 to 66 times. On one
+  core FLAC 16/44.1 goes from 14.7 s to 8.0 s, the batching alone. Sixteen songs by eight workers,
+  as a library pass runs them, from 33 s to 17 s on eight cores' worth of threads. The decode alone is 2 to
+  7% of a pass's CPU; most of what is left is the bank's biquads (below), left unfused so the figures
+  stay what they were. A process running one pass peaks at about 150 to 280 MB (45 to 130 MB on one
+  thread), a bank holding about a second more of its forward pass.
+  `cargo bench -p resonate-analysis --bench study` times a synthetic minute,
+  `RESONATE_BENCH_SONGS=<folder>` each song by itself (`decode alone`, `study`, `analyse`, `band
+  figures`), `RESONATE_BENCH_STUDIES=<folder>` keeps each answer's `Debug` to compare with `cmp`,
+  and `RESONATE_BENCH_WORKERS=<n>` studies the folder as `n` library workers do.
+- **What keeps it fast without moving a bit.** A float sum is order-dependent, so nothing sums
+  across lanes that summed along a run: `Phases::sum_into` computes weights in vectors and adds the
+  weighed coefficients one by one in their old order, skipping a weight of zero, which adds nothing
+  (the sums start at +0 and cannot reach -0); `Polyphase::vector` and `Mp3::transformed` keep each
+  output's own terms in order and run the outputs side by side (`-0.0` is where `Iterator::sum`
+  starts); `Reading` turns a bank's rows into columns a run at most a tile long, so a node's peak is
+  a vertical `max`, and a `max` of no NaN does not care for order; `Tiles` are per stage and merged,
+  a tile's place depending only on its frame and the final width. A chunk's backward pass starts
+  from silence, so chunks settle apart, the margin read before any chunk is written
+  (`settle_chunks`) and alongside the next forward pass (`together`). `Mp2::a_step_holds` weighs
+  the peak first, which every step must hold anyway, and `round_ties_even` for the distance to a
+  step, which only a tie could tell from `round` and a tie is too far to pass. `Hearing` adds its
+  table by column (`loudest_sum`), where `f32::max` frame by frame was most of its cost.
 - **A stream that turns is brought back to the shape it opened in.** `study`, `analyse`, `print` and
   `excerpt` follow format changes (`Decoder::follow_format_changes`) through `conform::Walking`: on
   each `Reformatted` the previous segment's resampler is flushed, and the new shape gets a `Remix`
@@ -97,8 +146,9 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   through, takes only the whole shape. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 7) carry it, so a
   study from a recalled analysis keeps its peaks. `BandPeaks::at_once` makes the peaks of bands
   heard as one moment (each node the sum of its bands), for a caller that has only band peaks. The
-  bank, the tree and the moments cost about 14 ms of one core a second of 44.1 kHz stereo audio,
-  twice the 7 ms the one-moment bank of two biquads an edge measured the same way. `eq.md` has the bound it makes of them.
+  bank, the tree and the moments, with what came together (below), the meter, the spectrum and the
+  decode, cost about 14 ms of one core a second of 44.1 kHz stereo audio (`band_figures` pinned to one
+  core). `eq.md` has the bound it makes of them.
 - **A study keeps what came together** (`coinciding::Coinciding`, in `Splitting`): the peak over the
   whole song of 80 weighed sums of four heights *at one instant*, the whole signal's magnitude and
   the envelope of each of three groups of bands (`GROUP_EDGES`: under about 126 Hz, up to about
@@ -114,8 +164,8 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   widest multiplied by `SHARPENED_BY_AT_MOST` (1.12): a curve of steady gain at most 1 can sharpen a
   wideband click by that much (the adversary below read 1.13 where its envelope read 1.03). The 81
   sums are a table of nine plus nine, so they are nine additions nine times a frame. Kept as a `u16`
-  and a byte of eighth-decibel steps below it each, rounded up: 82 bytes. It costs about 10 ms of one
-  core a second of 44.1 kHz stereo audio beside the bank's 14
+  and a byte of eighth-decibel steps below it each, rounded up: 82 bytes. Its cost is inside the
+  bank's 14 ms a second
   (`a_figure_never_reads_under_the_sample_it_was_weighed_at`,
   `tones_heard_at_once_add_where_their_groups_are_weighed_together`,
   `a_stream_noted_in_pieces_has_the_figures_it_has_noted_whole`).
@@ -424,12 +474,8 @@ could change (stored studies and kept analyses are weighed against it).
   and the kept analysis (`WRITTEN_AS` 7, each `Steps`' `Tell` named after its coding; 6: the peaks without what came together; 5: the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
-  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
-  on a loaded machine, 0.9 s to 3.3 s for 40 s at 96 kHz, which runs two resamplers), fixed
-  whatever its length, since every grid is done within its first 20 s; the band norms added 0.7 s
-  a track to `Aac` alone (118 s to 144 s for the 36 sources, two cores at the lowest priority on a
-  loaded machine) and the undoing and 16 frames a search 0.4 s to `Opus` alone (7.1 s to 22.7 s
-  for the 36 sources) (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
+  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7. Cost: about 3 s of one core a 44.1 kHz FLAC (a study less `band_figures`, pinned to one core), fixed
+  whatever its length, since every grid is done within its first 20 s (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
   `lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset`,
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in
   `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME,
@@ -509,7 +555,8 @@ could change (stored studies and kept analyses are weighed against it).
   (`Error::is_out_of_reach`: unmounted drive, downed share) leave no mark.
 - **Enrichment studies every track beside the pass.** `Studies`: `workers_for` = half
   `available_parallelism` (min 1, capped at the work asked) threads named `resonate-study-<n>`, one
-  shared counter, started before the pass, joined after the pictures. `to_study` = no study, older
+  shared counter, started before the pass, joined after the pictures, every one of them decoding and
+  sharing `Crew::HalfTheMachine` for the rest of a study. `to_study` = no study, older
   `JUDGED_UNDER`, or unrecognised print (only where something can recognise; `refresh` re-asks from
   the kept print, no second decode), or a current study with no `band_levels` or no `band_peaks`,
   which is measured alone (`ToStudy::unmeasured`) and never studied again for it. The list says only *whether* a print is kept

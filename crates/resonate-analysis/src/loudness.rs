@@ -4,6 +4,8 @@ use resonate_codec::Placement;
 use resonate_core::SampleRate;
 use resonate_dsp::TruePeakMeter;
 
+use crate::crew::Noting;
+
 const SHELF_HZ: f64 = 1_681.974_450_955_533;
 const SHELF_GAIN_DB: f64 = 3.999_843_853_973_347;
 const SHELF_Q: f64 = 0.707_175_236_955_419_6;
@@ -209,6 +211,12 @@ impl Metering {
             dynamic_range: dynamic_range(&self.dr_closed),
             true_peak: self.peaking.finish() as f32,
         }
+    }
+}
+
+impl Noting for Metering {
+    fn note(&mut self, interleaved: &[f32]) {
+        Self::note(self, interleaved);
     }
 }
 

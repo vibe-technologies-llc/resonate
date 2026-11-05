@@ -3,6 +3,7 @@ use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig};
 
 use crate::{
     celt::{Coupling, Opus},
+    crew::Noting,
     granules::Mp3,
     steps::{Aac, Stepping, Steps, Vorbis},
     subbands::Mp2,
@@ -72,6 +73,17 @@ impl Coded {
         self.vorbis.note(interleaved);
         self.opus.note(interleaved);
         self.coupling.note(interleaved);
+    }
+
+    fn stages(&mut self) -> [&mut dyn Noting; 6] {
+        [
+            &mut self.aac,
+            &mut self.mp3,
+            &mut self.mp2,
+            &mut self.vorbis,
+            &mut self.opus,
+            &mut self.coupling,
+        ]
     }
 
     fn finished(self, into: &mut Vec<Steps>) {
@@ -159,6 +171,12 @@ impl Resampled {
     }
 }
 
+impl Noting for Resampled {
+    fn note(&mut self, interleaved: &[f32]) {
+        Self::note(self, interleaved);
+    }
+}
+
 pub(crate) struct Weighing {
     native: Coded,
     resampled: Vec<Resampled>,
@@ -188,11 +206,12 @@ impl Weighing {
         }
     }
 
-    pub(crate) fn note(&mut self, interleaved: &[f32]) {
-        self.native.note(interleaved);
-        for resampled in &mut self.resampled {
-            resampled.note(interleaved);
-        }
+    pub(crate) fn stages(&mut self) -> impl Iterator<Item = &mut dyn Noting> {
+        self.native.stages().into_iter().chain(
+            self.resampled
+                .iter_mut()
+                .map(|resampled| resampled as &mut dyn Noting),
+        )
     }
 
     pub(crate) fn finished(self) -> Vec<Steps> {

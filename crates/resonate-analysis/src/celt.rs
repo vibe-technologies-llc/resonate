@@ -34,7 +34,7 @@ const TURNS_AN_ENERGY_STEP: f64 = 32.0;
 const ROUNDING_A_LINE: f64 = 0.4;
 const ROUNDING_NOISE_TURNS: f64 = 0.25;
 const PHASE_BINS: usize = 1 << 12;
-const ENERGIES_KEPT_AT_MOST: usize = 1 << 15;
+const ENERGIES_KEPT_AT_MOST: usize = 1 << 11;
 const WINDOW: usize = 2 * FRAME;
 const FIRST_SAMPLE: usize = FRAME + 1;
 const OWN_FILTER_FROM: usize = QUIET + OVERLAP;
@@ -127,6 +127,7 @@ const KINDS: [Kind; 8] = {
     kinds
 };
 
+#[derive(Clone)]
 pub(crate) struct Opus {
     long: Mdct,
     short: Mdct,
@@ -370,6 +371,7 @@ struct Crossed {
     combed: [f64; BANDS],
 }
 
+#[derive(Clone)]
 struct Undoing {
     pitch: Pitch,
     next: Option<u64>,
@@ -596,6 +598,7 @@ fn powers(one: &[f32], other: &[f32]) -> [f64; BANDS] {
     powers
 }
 
+#[derive(Clone)]
 pub(crate) struct Coupling {
     mdct: Mdct,
     emphasised: Vec<f32>,

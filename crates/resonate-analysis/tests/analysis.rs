@@ -212,6 +212,26 @@ fn a_stereo_file_in_opposite_phase_is_judged_by_what_its_channels_hold() {
 }
 
 #[test]
+fn a_study_alone_and_the_study_inside_an_analysis_are_one_answer() {
+    let tree = Tree::new();
+    let mut state = 3_u32;
+    let samples: Vec<i32> = (0..RATE * 2 * 8)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            i32::from((state >> 16) as i16) / 4
+        })
+        .collect();
+    let location = tree.wave("noise.wav", RATE, 16, &samples);
+
+    let alone = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
+    let inside =
+        analyse(&Sources::local(), &location, None, &Watch::default()).expect("an analysis");
+
+    assert_eq!(alone, inside.study);
+    assert!(!alone.band_peaks.is_silent());
+}
+
+#[test]
 fn a_print_of_the_head_alone_is_the_print_the_whole_study_took() {
     let tree = Tree::new();
     let location = tree.wave("printed.wav", RATE, 16, &music(RATE, 16_000.0, 20_000.0));

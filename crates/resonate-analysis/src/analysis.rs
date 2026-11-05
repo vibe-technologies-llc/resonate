@@ -9,6 +9,7 @@ use crate::{
     AnalysisOp, BandFigures, BandLevels, BandPeaks, Envelope, Error, Judgement, Levels, Loudness,
     Result, Spectrogram, Spectrum, Steps, Watching,
     conform::Walking,
+    crew::{Crew, Noting},
     envelope::Enveloping,
     levels::Leveling,
     loudness::Metering,
@@ -68,7 +69,15 @@ pub fn study(
     span: Option<FrameSpan>,
     watch: &dyn Watching,
 ) -> Result<Study> {
-    walked(sources, location, span, watch, |_, _| Unseen).map(|(study, Unseen)| study)
+    walked(
+        Crew::HalfTheMachine,
+        sources,
+        location,
+        span,
+        watch,
+        |_, _| Unseen,
+    )
+    .map(|(study, Unseen)| study)
 }
 
 pub fn analyse(
@@ -77,10 +86,17 @@ pub fn analyse(
     span: Option<FrameSpan>,
     watch: &dyn Watching,
 ) -> Result<Analysis> {
-    let (study, drawn) = walked(sources, location, span, watch, |examined, points| Drawn {
-        envelope: Enveloping::new(usize::from(examined.channels)),
-        spectrogram: Spectrographing::new(points, examined.rate.hz()),
-    })?;
+    let (study, drawn) = walked(
+        Crew::AsTheMachineAllows,
+        sources,
+        location,
+        span,
+        watch,
+        |examined, points| Drawn {
+            envelope: Enveloping::new(usize::from(examined.channels)),
+            spectrogram: Spectrographing::new(points, examined.rate.hz()),
+        },
+    )?;
 
     Ok(Analysis {
         study,
@@ -175,7 +191,7 @@ pub fn excerpt(
     Ok((!mono.is_empty()).then_some(Excerpt { rate, mono }))
 }
 
-trait Drawing {
+trait Drawing: Send {
     fn note_block(&mut self, interleaved: &[f32]);
 
     fn note_transform(&mut self, powers: &[f32]);
@@ -201,6 +217,19 @@ impl Drawing for Drawn {
 
     fn note_transform(&mut self, powers: &[f32]) {
         self.spectrogram.note(powers);
+    }
+}
+
+struct Seeing<'a, D> {
+    transforming: &'a mut Transforming,
+    drawn: &'a mut D,
+}
+
+impl<D: Drawing> Noting for Seeing<'_, D> {
+    fn note(&mut self, interleaved: &[f32]) {
+        self.drawn.note_block(interleaved);
+        self.transforming
+            .note(interleaved, |powers| self.drawn.note_transform(powers));
     }
 }
 
@@ -233,6 +262,7 @@ pub(crate) fn native_format(info: &MediaInfo, codec: Codec) -> SampleFormat {
 }
 
 fn walked<D: Drawing>(
+    crew: Crew,
     sources: &Sources,
     location: &MediaLocation,
     span: Option<FrameSpan>,
@@ -271,25 +301,37 @@ fn walked<D: Drawing>(
 
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut frames = 0_u64;
-    loop {
-        if watch.stopped() {
-            return Err(Error::Stopped);
-        }
-        let Some(heard) = walking.step(&mut decoder)? else {
-            break;
-        };
+    let mut seeing = Seeing {
+        transforming: &mut transforming,
+        drawn: &mut drawn,
+    };
+    let stages: Vec<&mut dyn Noting> = [&mut metering as &mut dyn Noting, &mut seeing]
+        .into_iter()
+        .chain(weighing.stages())
+        .chain(splitting.stages())
+        .collect();
+    crew.fanned(
+        rate.hz() as usize * channels,
+        stages,
+        &|| watch.stopped(),
+        |feed| -> Result<()> {
+            loop {
+                if watch.stopped() {
+                    return Err(Error::Stopped);
+                }
+                let Some(heard) = walking.step(&mut decoder)? else {
+                    return Ok(());
+                };
 
-        leveling.note(heard.native, heard.samples);
-        metering.note(heard.samples);
-        printing.note(heard.samples);
-        drawn.note_block(heard.samples);
-        weighing.note(heard.samples);
-        transforming.note(heard.samples, |powers| drawn.note_transform(powers));
-        splitting.note(heard.samples);
+                leveling.note(heard.native, heard.samples);
+                printing.note(heard.samples);
+                feed(heard.samples);
 
-        frames += (heard.samples.len() / channels) as u64;
-        watch.reached(Frames(frames), info.duration);
-    }
+                frames += (heard.samples.len() / channels) as u64;
+                watch.reached(Frames(frames), info.duration);
+            }
+        },
+    )?;
 
     examined.length = Frames(frames).to_duration(rate);
     let spectrum = transforming.finished();

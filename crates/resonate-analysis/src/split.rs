@@ -3,6 +3,10 @@ use std::{
     num::NonZeroUsize,
 };
 
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 use resonate_core::{
     SampleRate,
     eq::{Band, BandGain, BandKind, Biquad, Frequency, Q},
@@ -12,6 +16,7 @@ use resonate_dsp::TruePeakMeter;
 use crate::{
     bands::{BANDS, edge_of},
     coinciding::Coinciding,
+    crew::Noting,
     peaks::{BandPeaks, Heights, NODES, TREE, WHOLE, grouped},
 };
 
@@ -39,6 +44,12 @@ const LEAST_SEEN_OF_A_PEAK: f64 = 0.25;
 
 const LAST_MIDPOINT_FRAMES: usize = 2;
 
+const HISTORY: usize = 3;
+
+const FRAMES_READ_AT_ONCE: usize = 64;
+
+const READ_LANES: usize = 8;
+
 const WIDEST_EDGE_OF_A_BAND_READ: f64 = 0.9;
 
 const OCTAVES_BEYOND_A_BAND_READ: f64 = 2.0 / 3.0;
@@ -46,8 +57,6 @@ const OCTAVES_BEYOND_A_BAND_READ: f64 = 2.0 / 3.0;
 type Plane = [f64; EDGES];
 
 type Lanes = [f64; BANDS];
-
-type Levels = [f64; LEVELS];
 
 struct Coefficients {
     b0: [Plane; SECTIONS_AN_EDGE],
@@ -138,39 +147,23 @@ impl Cascades {
     }
 }
 
-struct Seen {
-    before: [Levels; 3],
-}
-
-impl Seen {
-    const NOTHING: Self = Self {
-        before: [[0.0; LEVELS]; 3],
-    };
-
-    fn note(&mut self, levels: &Levels, into: &mut Heights) {
-        let [oldest, older, newer] = &self.before;
-        let midway: Levels = std::array::from_fn(|level| {
-            (9.0 * (older[level] + newer[level]) - oldest[level] - levels[level]) / 16.0
-        });
-        for (node, height) in TREE.iter().zip(into.iter_mut()).skip(WHOLE + 1) {
-            let at = levels[node.to] - levels[node.from];
-            let between = midway[node.to] - midway[node.from];
-            *height = height.max(at.abs()).max(between.abs());
-        }
-        self.before = [self.before[1], self.before[2], *levels];
-    }
-}
-
-struct Tiles {
+struct Tiles<const WIDTH: usize> {
     frames: usize,
-    loudest: Vec<Heights>,
+    loudest: Vec<[f64; WIDTH]>,
 }
 
-impl Tiles {
-    fn holding(&mut self, frame: usize) -> &mut Heights {
+impl<const WIDTH: usize> Tiles<WIDTH> {
+    const fn each(frames: usize) -> Self {
+        Self {
+            frames,
+            loudest: Vec::new(),
+        }
+    }
+
+    fn holding(&mut self, frame: usize) -> &mut [f64; WIDTH] {
         let mut tile = frame / self.frames;
         while tile >= self.loudest.len() {
-            self.loudest.push([0.0; NODES]);
+            self.loudest.push([0.0; WIDTH]);
             if self.loudest.len() > TILES_AT_MOST {
                 self.loudest = self
                     .loudest
@@ -186,61 +179,404 @@ impl Tiles {
         }
         &mut self.loudest[tile]
     }
+
+    fn frames_left_of_the_tile_holding(&mut self, frame: usize) -> usize {
+        self.holding(frame);
+        self.frames - frame % self.frames
+    }
 }
 
-struct Channel {
-    forward: Cascades,
-    heard: Vec<f64>,
-    passed: Vec<Plane>,
-    seen: Seen,
+fn loudest_apart(
+    start: f64,
+    to: &[f64],
+    from: &[f64],
+    midway_to: &[f64],
+    midway_from: &[f64],
+) -> f64 {
+    let mut lanes = [start; READ_LANES];
+    let chunks = to
+        .as_chunks::<READ_LANES>()
+        .0
+        .iter()
+        .zip(from.as_chunks::<READ_LANES>().0)
+        .zip(midway_to.as_chunks::<READ_LANES>().0)
+        .zip(midway_from.as_chunks::<READ_LANES>().0);
+    for (((to, from), midway_to), midway_from) in chunks {
+        for lane in 0..READ_LANES {
+            let at = (to[lane] - from[lane]).abs();
+            let between = (midway_to[lane] - midway_from[lane]).abs();
+            lanes[lane] = larger(lanes[lane], larger(at, between));
+        }
+    }
+    let mut loudest = lanes.into_iter().fold(start, larger);
+    let read = to.len() / READ_LANES * READ_LANES;
+    for at in read..to.len() {
+        loudest = larger(loudest, (to[at] - from[at]).abs());
+        loudest = larger(loudest, (midway_to[at] - midway_from[at]).abs());
+    }
+    loudest
 }
 
-impl Channel {
-    const fn new() -> Self {
+const fn larger(one: f64, other: f64) -> f64 {
+    if one > other { one } else { other }
+}
+
+struct Reading {
+    levels: Box<[[f64; HISTORY + FRAMES_READ_AT_ONCE]; LEVELS]>,
+    midway: Box<[[f64; FRAMES_READ_AT_ONCE]; LEVELS]>,
+}
+
+impl Reading {
+    fn silent() -> Self {
         Self {
-            forward: Cascades::SILENT,
-            heard: Vec::new(),
-            passed: Vec::new(),
-            seen: Seen::NOTHING,
+            levels: Box::new([[0.0; HISTORY + FRAMES_READ_AT_ONCE]; LEVELS]),
+            midway: Box::new([[0.0; FRAMES_READ_AT_ONCE]; LEVELS]),
         }
     }
 
-    fn pass(&mut self, coefficients: &Coefficients, sample: f64) -> Plane {
-        let mut lanes = [sample; EDGES];
-        self.forward.step(coefficients, &mut lanes);
-        lanes
-    }
-
-    fn begin(&mut self, coefficients: &Coefficients, margin: usize) {
-        let before = margin.min(self.heard.len().saturating_sub(1));
-        for back in (1..=before).rev() {
-            self.pass(coefficients, self.heard[back]);
+    fn take_in(&mut self, passed: &[Plane], heard: &[f64]) {
+        for (frame, plane) in passed.iter().enumerate() {
+            for (column, lane) in self.levels[1..BANDS].iter_mut().zip(plane) {
+                column[HISTORY + frame] = *lane;
+            }
         }
-        self.pass_from(coefficients, 0);
+        self.levels[BANDS][HISTORY..HISTORY + heard.len()].copy_from_slice(heard);
     }
 
-    fn pass_from(&mut self, coefficients: &Coefficients, from: usize) {
-        for at in from..self.heard.len() {
-            let lanes = self.pass(coefficients, self.heard[at]);
-            self.passed.push(lanes);
+    fn take_in_silence(&mut self, frames: usize) {
+        for column in &mut self.levels[1..] {
+            column[HISTORY..HISTORY + frames].fill(0.0);
+        }
+    }
+
+    fn read_into(&mut self, frames: usize, into: &mut Heights) {
+        for (midway, column) in self.midway[1..].iter_mut().zip(&self.levels[1..]) {
+            let oldest = &column[..frames];
+            let older = &column[1..=frames];
+            let newer = &column[2..frames + 2];
+            let levels = &column[HISTORY..HISTORY + frames];
+            let reads = oldest.iter().zip(older).zip(newer).zip(levels);
+            for (slot, (((oldest, older), newer), level)) in midway[..frames].iter_mut().zip(reads)
+            {
+                *slot = (9.0 * (older + newer) - oldest - level) / 16.0;
+            }
+        }
+
+        for (node, height) in TREE.iter().zip(into.iter_mut()).skip(WHOLE + 1) {
+            *height = loudest_apart(
+                *height,
+                &self.levels[node.to][HISTORY..HISTORY + frames],
+                &self.levels[node.from][HISTORY..HISTORY + frames],
+                &self.midway[node.to][..frames],
+                &self.midway[node.from][..frames],
+            );
+        }
+
+        for column in &mut self.levels[1..] {
+            column.copy_within(frames..frames + HISTORY, 0);
         }
     }
 }
 
-pub(crate) struct Splitting {
+struct Bank {
+    index: usize,
+    width: usize,
     chunk: usize,
     margin: usize,
     coefficients: Coefficients,
-    channels: Vec<Channel>,
+    forward: Cascades,
+    heard: Vec<f64>,
+    passed: Vec<Plane>,
     begun: bool,
     base: usize,
-    backward: Vec<Plane>,
-    tiles: Tiles,
+    reading: Reading,
+    tiles: Tiles<NODES>,
+}
+
+impl Noting for Bank {
+    fn note(&mut self, interleaved: &[f32]) {
+        Self::note(self, interleaved);
+    }
+
+    fn hears_any_pieces_alike(&self) -> bool {
+        true
+    }
+}
+
+impl Noting for Metered {
+    fn note(&mut self, interleaved: &[f32]) {
+        Self::note(self, interleaved);
+    }
+
+    fn hears_any_pieces_alike(&self) -> bool {
+        true
+    }
+}
+
+impl Bank {
+    fn new(index: usize, width: usize, rate: SampleRate) -> Self {
+        let hz = rate.hz() as usize;
+        Self {
+            index,
+            width,
+            chunk: (hz / CHUNKS_A_SECOND).max(1),
+            margin: (hz / MARGINS_A_SECOND).max(1),
+            coefficients: Coefficients::at(rate),
+            forward: Cascades::SILENT,
+            heard: Vec::new(),
+            passed: Vec::new(),
+            begun: false,
+            base: 0,
+            reading: Reading::silent(),
+            tiles: Tiles::each(tile_frames_at(hz)),
+        }
+    }
+
+    fn note(&mut self, interleaved: &[f32]) {
+        let width = self.width;
+        self.heard.extend(
+            interleaved
+                .iter()
+                .skip(self.index)
+                .step_by(width)
+                .map(|sample| f64::from(*sample)),
+        );
+
+        if !self.begun {
+            if self.heard.len() <= self.margin {
+                return;
+            }
+            self.begin();
+        }
+        self.pass_and_settle();
+    }
+
+    fn begin(&mut self) {
+        let before = self.margin.min(self.heard.len().saturating_sub(1));
+        for back in (1..=before).rev() {
+            let mut lanes = [self.heard[back]; EDGES];
+            self.forward.step(&self.coefficients, &mut lanes);
+        }
+        self.begun = true;
+    }
+
+    fn pass_and_settle(&mut self) {
+        let passed = self.passed.len();
+        let chunks = passed.saturating_sub(self.margin) / self.chunk;
+        self.passed.resize(self.heard.len(), [0.0; EDGES]);
+        let (settling, fresh) = self.passed.split_at_mut(passed);
+
+        let Self {
+            coefficients,
+            forward,
+            heard,
+            reading,
+            tiles,
+            chunk,
+            margin,
+            base,
+            ..
+        } = self;
+        together(
+            || {
+                for (lanes, sample) in fresh.iter_mut().zip(&heard[passed..]) {
+                    *lanes = [*sample; EDGES];
+                    forward.step(coefficients, lanes);
+                }
+            },
+            || {
+                settle_chunks(coefficients, settling, chunks, *chunk, *margin);
+                let frames = chunks * *chunk;
+                read_settled(reading, tiles, &settling[..frames], &heard[..frames], *base);
+            },
+        );
+
+        let frames = chunks * self.chunk;
+        self.heard.drain(..frames);
+        self.passed.drain(..frames);
+        self.base += frames;
+    }
+
+    fn finished(mut self) -> Tiles<NODES> {
+        if !self.begun {
+            self.begin();
+        }
+        self.pass_and_settle();
+        self.pass_and_settle();
+
+        let held = self.heard.len();
+        let after = self.margin.min(held.saturating_sub(1));
+        self.passed.reserve(after);
+        for ahead in 1..=after {
+            let mut lanes = [self.heard[held - 1 - ahead]; EDGES];
+            self.forward.step(&self.coefficients, &mut lanes);
+            self.passed.push(lanes);
+        }
+        if held > 0 {
+            let (settled, ahead) = self.passed.split_at_mut(held);
+            backward_over(&self.coefficients, settled, ahead);
+            read_settled(
+                &mut self.reading,
+                &mut self.tiles,
+                settled,
+                &self.heard,
+                self.base,
+            );
+        }
+
+        let last = (self.base + held).saturating_sub(1);
+        self.reading.take_in_silence(LAST_MIDPOINT_FRAMES);
+        self.reading
+            .read_into(LAST_MIDPOINT_FRAMES, self.tiles.holding(last));
+        self.tiles
+    }
+}
+
+fn on_the_crew() -> bool {
+    rayon::current_thread_index().is_some()
+}
+
+fn together(one: impl FnOnce() + Send, other: impl FnOnce() + Send) {
+    if on_the_crew() {
+        rayon::join(one, other);
+    } else {
+        one();
+        other();
+    }
+}
+
+fn state_before(coefficients: &Coefficients, ahead: &[Plane]) -> Cascades {
+    let mut backward = Cascades::SILENT;
+    for lanes in ahead.iter().rev() {
+        let mut lanes = *lanes;
+        backward.step(coefficients, &mut lanes);
+    }
+    backward
+}
+
+fn backward_over(coefficients: &Coefficients, settled: &mut [Plane], ahead: &[Plane]) {
+    let backward = state_before(coefficients, ahead);
+    finish_backward(coefficients, settled, backward);
+}
+
+fn finish_backward(coefficients: &Coefficients, settled: &mut [Plane], mut backward: Cascades) {
+    for lanes in settled.iter_mut().rev() {
+        backward.step(coefficients, lanes);
+    }
+}
+
+fn settle_chunks(
+    coefficients: &Coefficients,
+    passed: &mut [Plane],
+    chunks: usize,
+    chunk: usize,
+    margin: usize,
+) {
+    if chunks == 0 {
+        return;
+    }
+    if chunks > 1 && on_the_crew() {
+        let held: &[Plane] = passed;
+        let states: Vec<Cascades> = (1..=chunks)
+            .into_par_iter()
+            .map(|nth| state_before(coefficients, &held[nth * chunk..nth * chunk + margin]))
+            .collect();
+        passed[..chunks * chunk]
+            .par_chunks_mut(chunk)
+            .zip(states)
+            .for_each(|(settled, state)| finish_backward(coefficients, settled, state));
+    } else {
+        for nth in 0..chunks {
+            let (settled, ahead) = passed[nth * chunk..].split_at_mut(chunk);
+            backward_over(coefficients, settled, &ahead[..margin]);
+        }
+    }
+}
+
+fn read_settled(
+    reading: &mut Reading,
+    tiles: &mut Tiles<NODES>,
+    settled: &[Plane],
+    heard: &[f64],
+    base: usize,
+) {
+    let frames = settled.len();
+    let mut at = 0;
+    while at < frames {
+        let frame = base + at;
+        let run = tiles
+            .frames_left_of_the_tile_holding(frame)
+            .min(FRAMES_READ_AT_ONCE)
+            .min(frames - at);
+        reading.take_in(&settled[at..at + run], &heard[at..at + run]);
+        reading.read_into(run, tiles.holding(frame));
+        at += run;
+    }
+}
+
+struct Metered {
+    width: usize,
     meter: TruePeakMeter,
     metered: Vec<f32>,
     metered_from: usize,
     tile_frames: usize,
     noted: usize,
+    tiles: Tiles<1>,
+}
+
+impl Metered {
+    fn new(rate: SampleRate, width: usize) -> Self {
+        let tile_frames = tile_frames_at(rate.hz() as usize);
+        Self {
+            width,
+            meter: TruePeakMeter::at(rate, NonZeroUsize::new(width).unwrap_or(NonZeroUsize::MIN)),
+            metered: Vec::new(),
+            metered_from: 0,
+            tile_frames,
+            noted: 0,
+            tiles: Tiles::each(tile_frames),
+        }
+    }
+
+    fn note(&mut self, interleaved: &[f32]) {
+        let mut left = interleaved;
+        while left.len() >= self.width {
+            if self.metered.is_empty() {
+                self.metered_from = self.noted;
+            }
+            let room = self.tile_frames - self.noted % self.tile_frames;
+            let taken = room.min(left.len() / self.width);
+            let (these, rest) = left.split_at(taken * self.width);
+            self.metered.extend_from_slice(these);
+            self.noted += taken;
+            left = rest;
+            if self.noted.is_multiple_of(self.tile_frames) {
+                self.read_what_was_metered();
+            }
+        }
+    }
+
+    fn read_what_was_metered(&mut self) {
+        let peak = self.meter.take(&self.metered);
+        let [whole] = self.tiles.holding(self.metered_from);
+        *whole = whole.max(peak);
+        self.metered.clear();
+    }
+
+    fn finished(mut self) -> Tiles<1> {
+        if !self.metered.is_empty() {
+            self.read_what_was_metered();
+        }
+        let ringing = self.meter.finish();
+        let [whole] = self.tiles.holding(self.noted.saturating_sub(1));
+        *whole = whole.max(ringing);
+        self.tiles
+    }
+}
+
+pub(crate) struct Splitting {
+    banks: Vec<Bank>,
+    metered: Metered,
     shortfalls: Lanes,
     coinciding: Coinciding,
 }
@@ -248,168 +584,70 @@ pub(crate) struct Splitting {
 impl Splitting {
     pub(crate) fn new(rate: SampleRate, channels: usize) -> Self {
         let channels = channels.max(1);
-        let hz = rate.hz() as usize;
-        let tile_frames = (hz / TILES_A_SECOND).max(1);
         Self {
-            chunk: (hz / CHUNKS_A_SECOND).max(1),
-            margin: (hz / MARGINS_A_SECOND).max(1),
-            coefficients: Coefficients::at(rate),
-            channels: (0..channels).map(|_| Channel::new()).collect(),
-            begun: false,
-            base: 0,
-            backward: Vec::new(),
-            tiles: Tiles {
-                frames: tile_frames,
-                loudest: Vec::new(),
-            },
-            meter: TruePeakMeter::at(
-                rate,
-                NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN),
-            ),
-            metered: Vec::new(),
-            metered_from: 0,
-            tile_frames,
-            noted: 0,
+            banks: (0..channels)
+                .map(|index| Bank::new(index, channels, rate))
+                .collect(),
+            metered: Metered::new(rate, channels),
             shortfalls: shortfalls_at(rate),
             coinciding: Coinciding::new(rate, channels),
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn note(&mut self, interleaved: &[f32]) {
         self.coinciding.note(interleaved);
-        let width = self.channels.len();
-        for frame in interleaved.chunks_exact(width) {
-            for (channel, sample) in self.channels.iter_mut().zip(frame) {
-                channel.heard.push(f64::from(*sample));
-            }
-            self.meter_frame(frame);
-        }
-
-        if self.begun {
-            for channel in &mut self.channels {
-                let from = channel.passed.len();
-                channel.pass_from(&self.coefficients, from);
-            }
-        } else if self.frames_held() > self.margin {
-            self.begin();
-        }
-
-        while self.begun && self.frames_held() >= self.chunk + self.margin {
-            self.settle(self.chunk, false);
+        self.metered.note(interleaved);
+        for bank in &mut self.banks {
+            bank.note(interleaved);
         }
     }
 
-    pub(crate) fn finished(mut self) -> BandPeaks {
-        if !self.begun {
-            self.begin();
-        }
-        let unsettled = self.frames_held();
-        self.settle(unsettled, true);
+    pub(crate) fn stages(&mut self) -> impl Iterator<Item = &mut dyn Noting> {
+        self.banks
+            .iter_mut()
+            .map(|bank| bank as &mut dyn Noting)
+            .chain(std::iter::once(&mut self.metered as &mut dyn Noting))
+            .chain(self.coinciding.stages())
+    }
 
-        let last = self.noted.saturating_sub(1);
-        let tile = self.tiles.holding(last);
-        for channel in &mut self.channels {
-            for _ in 0..LAST_MIDPOINT_FRAMES {
-                channel.seen.note(&[0.0; LEVELS], tile);
-            }
-        }
-
-        if !self.metered.is_empty() {
-            let peak = self.meter.take(&self.metered);
-            let whole = &mut self.tiles.holding(self.metered_from)[WHOLE];
-            *whole = whole.max(peak);
-        }
-        let ringing = self.meter.finish();
-        let whole = &mut self.tiles.holding(last)[WHOLE];
-        *whole = whole.max(ringing);
-
-        if self.noted == 0 {
+    pub(crate) fn finished(self) -> BandPeaks {
+        if self.metered.noted == 0 {
             return BandPeaks::SILENT;
         }
-        for heights in &mut self.tiles.loudest {
+
+        let mut tiles = Vec::new();
+        for bank in self.banks {
+            let finished = bank.finished();
+            if tiles.is_empty() {
+                tiles = finished.loudest;
+            } else {
+                for (held, more) in tiles.iter_mut().zip(&finished.loudest) {
+                    let held: &mut Heights = held;
+                    for (held, more) in held.iter_mut().zip(more) {
+                        *held = held.max(*more);
+                    }
+                }
+            }
+        }
+        for (heights, [whole]) in tiles.iter_mut().zip(self.metered.finished().loudest) {
+            heights[WHOLE] = whole;
+        }
+
+        for heights in &mut tiles {
             for (height, node) in heights.iter_mut().zip(&TREE).skip(WHOLE + 1) {
                 *height /= self.shortfalls[node.to - 1];
             }
         }
-        let true_peak = self
-            .tiles
-            .loudest
+        let true_peak = tiles
             .iter()
             .fold(0.0, |loudest, heights| f64::max(loudest, heights[WHOLE]));
-        grouped(&self.tiles.loudest).held_together(self.coinciding.finished(true_peak).as_ref())
+        grouped(&tiles).held_together(self.coinciding.finished(true_peak).as_ref())
     }
+}
 
-    fn meter_frame(&mut self, frame: &[f32]) {
-        if self.metered.is_empty() {
-            self.metered_from = self.noted;
-        }
-        self.metered.extend_from_slice(frame);
-        self.noted += 1;
-        if self.noted.is_multiple_of(self.tile_frames) {
-            let peak = self.meter.take(&self.metered);
-            let whole = &mut self.tiles.holding(self.metered_from)[WHOLE];
-            *whole = whole.max(peak);
-            self.metered.clear();
-        }
-    }
-
-    fn frames_held(&self) -> usize {
-        self.channels
-            .first()
-            .map_or(0, |channel| channel.heard.len())
-    }
-
-    fn begin(&mut self) {
-        for channel in &mut self.channels {
-            channel.begin(&self.coefficients, self.margin);
-        }
-        self.begun = true;
-    }
-
-    fn settle(&mut self, frames: usize, ending: bool) {
-        if frames == 0 {
-            return;
-        }
-        for index in 0..self.channels.len() {
-            self.settle_channel(index, frames, ending);
-        }
-        for channel in &mut self.channels {
-            channel.heard.drain(..frames);
-            channel.passed.drain(..frames);
-        }
-        self.base += frames;
-    }
-
-    fn settle_channel(&mut self, index: usize, frames: usize, ending: bool) {
-        let channel = &mut self.channels[index];
-        self.backward.clear();
-        if ending {
-            let held = channel.heard.len();
-            let after = self.margin.min(held.saturating_sub(1));
-            self.backward.extend_from_slice(&channel.passed);
-            for ahead in 1..=after {
-                let sample = channel.heard[held - 1 - ahead];
-                let lanes = channel.pass(&self.coefficients, sample);
-                self.backward.push(lanes);
-            }
-        } else {
-            self.backward
-                .extend_from_slice(&channel.passed[..frames + self.margin]);
-        }
-
-        let mut backward = Cascades::SILENT;
-        for lanes in self.backward.iter_mut().rev() {
-            backward.step(&self.coefficients, lanes);
-        }
-
-        for at in 0..frames {
-            let mut levels = [0.0; LEVELS];
-            levels[1..BANDS].copy_from_slice(&self.backward[at]);
-            levels[BANDS] = channel.heard[at];
-            let tile = self.tiles.holding(self.base + at);
-            channel.seen.note(&levels, tile);
-        }
-    }
+fn tile_frames_at(hz: usize) -> usize {
+    (hz / TILES_A_SECOND).max(1)
 }
 
 fn shortfalls_at(rate: SampleRate) -> Lanes {
@@ -446,6 +684,7 @@ fn shortfall(angle: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crew::Crew;
 
     const RATE: SampleRate = SampleRate::HZ_44100;
 
@@ -468,6 +707,21 @@ mod tests {
         for part in signal.chunks(piece * channels) {
             splitting.note(part);
         }
+        splitting.finished()
+    }
+
+    fn peaks_on_a_crew(signal: &[f32], channels: usize, crew: Crew) -> BandPeaks {
+        let mut splitting = Splitting::new(RATE, channels);
+        crew.fanned(
+            RATE.hz() as usize * channels,
+            splitting.stages().collect(),
+            &|| false,
+            |feed| {
+                for part in signal.chunks(4_096 * channels) {
+                    feed(part);
+                }
+            },
+        );
         splitting.finished()
     }
 
@@ -516,6 +770,22 @@ mod tests {
 
         assert_eq!(whole, in_blocks);
         assert_eq!(whole, in_odd_blocks);
+    }
+
+    #[test]
+    fn a_stream_heard_on_a_crew_has_the_peaks_it_has_heard_alone() {
+        let signal = faded_tone(250.0, 0.6, 2);
+        let long: Vec<f32> = signal
+            .iter()
+            .chain(&signal)
+            .chain(&signal)
+            .copied()
+            .collect();
+
+        let alone = peaks_of(&long, 2, 4_096);
+
+        assert_eq!(alone, peaks_on_a_crew(&long, 2, Crew::HalfTheMachine));
+        assert_eq!(alone, peaks_on_a_crew(&long, 2, Crew::AsTheMachineAllows));
     }
 
     #[test]

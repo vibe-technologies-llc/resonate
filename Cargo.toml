@@ -77,6 +77,7 @@ ahash = { version = "0.8.12", default-features = false, features = ["std", "runt
 imbl = { version = "7.0.2", default-features = false }
 qrcode = { version = "0.14.1", default-features = false }
 parking_lot = { version = "0.13.0", default-features = false }
+rayon = { version = "1.12.0", default-features = false }
 notify = { version = "8.2.1", default-features = false }
 bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }

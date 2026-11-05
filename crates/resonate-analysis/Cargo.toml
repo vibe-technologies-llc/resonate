@@ -10,6 +10,7 @@ doctest = false
 [dependencies]
 ahash.workspace = true
 parking_lot.workspace = true
+rayon.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-dsp.workspace = true
@@ -21,6 +22,10 @@ tracing.workspace = true
 
 [[bench]]
 name = "bound"
+harness = false
+
+[[bench]]
+name = "study"
 harness = false
 
 [lints]

@@ -3,7 +3,10 @@ use std::{f64::consts::PI, sync::Arc};
 use resonate_core::SampleRate;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
-use crate::bands::{BANDS, edge_of};
+use crate::{
+    bands::{BANDS, edge_of},
+    crew::Noting,
+};
 
 pub(crate) const GROUPS: usize = 3;
 
@@ -13,9 +16,7 @@ const STEPS_OF_A_WEIGHT: usize = 3;
 
 const HALF_A_TABLE: usize = STEPS_OF_A_WEIGHT * STEPS_OF_A_WEIGHT;
 
-const WEIGHINGS_AND_NONE: usize = HALF_A_TABLE * HALF_A_TABLE;
-
-pub(crate) const WEIGHINGS: usize = WEIGHINGS_AND_NONE - 1;
+pub(crate) const WEIGHINGS: usize = HALF_A_TABLE * HALF_A_TABLE - 1;
 
 const MARGINS_A_SECOND: usize = 5;
 
@@ -50,6 +51,10 @@ const READ_REACH: usize = 16;
 const READ_TAPS: usize = 2 * READ_REACH;
 
 const READ_LANES: usize = 8;
+
+const FRAMES_SUMMED_AT_ONCE: usize = 256;
+
+const SUM_LANES: usize = 16;
 
 fn offsets_read_between(rate: SampleRate) -> &'static [f64] {
     match rate.hz() {
@@ -131,16 +136,22 @@ fn passed_at(edge: usize, hertz: f64, rate: SampleRate) -> f64 {
     1.0 / (1.0 + turned.powi(EDGE_ORDER))
 }
 
+#[derive(Clone)]
 struct Group {
     first: usize,
-    answers: Vec<f32>,
+    answers: Arc<[f32]>,
     inverse: Arc<dyn Fft<f32>>,
     heard: Vec<Complex<f32>>,
     sizes: Vec<f32>,
     settled: Vec<f32>,
     held_for: usize,
+    frames_a_point: u32,
     sharpened_by: f32,
     held: Vec<f32>,
+}
+
+const fn larger(one: f32, other: f32) -> f32 {
+    if one > other { one } else { other }
 }
 
 impl Group {
@@ -188,6 +199,7 @@ impl Group {
             settled: vec![0.0; points],
             held_for: (HELD_FOR_SECONDS[group] * f64::from(rate.hz()) * points as f64 / size as f64)
                 .round() as usize,
+            frames_a_point: (size / points).trailing_zeros(),
             sharpened_by: SHARPENED_BY_AT_MOST[group],
             held: vec![0.0; hop],
         }
@@ -196,7 +208,7 @@ impl Group {
     fn hear(&mut self, spectrum: &[Complex<f32>], from: usize, scratch: &mut Vec<Complex<f32>>) {
         self.heard.fill(Complex::new(0.0, 0.0));
         let bins = &spectrum[self.first..self.first + self.answers.len()];
-        for ((into, bin), answer) in self.heard.iter_mut().zip(bins).zip(&self.answers) {
+        for ((into, bin), answer) in self.heard.iter_mut().zip(bins).zip(self.answers.iter()) {
             *into = bin * answer;
         }
         scratch.resize(
@@ -208,17 +220,28 @@ impl Group {
             *size = heard.norm();
         }
         let points = self.sizes.len();
-        let window = spectrum.len();
         for _ in 0..self.held_for {
             self.settled.copy_from_slice(&self.sizes);
-            for (settled, three) in self.settled[1..].iter_mut().zip(self.sizes.windows(3)) {
-                *settled = three[0].max(three[1]).max(three[2]);
+            for (((settled, first), second), third) in self.settled[1..]
+                .iter_mut()
+                .zip(&self.sizes)
+                .zip(&self.sizes[1..])
+                .zip(&self.sizes[2..])
+            {
+                *settled = larger(larger(*first, *second), *third);
             }
             std::mem::swap(&mut self.sizes, &mut self.settled);
         }
-        for (into, held) in self.held.iter_mut().enumerate() {
-            let point = (from + into) * points / window;
-            *held = self.sizes[point].max(self.sizes[(point + 1) % points]) * self.sharpened_by;
+        let hop = self.held.len();
+        let mut into = 0;
+        while into < hop {
+            let point = (from + into) >> self.frames_a_point;
+            let past = ((point + 1) << self.frames_a_point) - from;
+            let height =
+                self.sizes[point].max(self.sizes[(point + 1) % points]) * self.sharpened_by;
+            let past = past.min(hop);
+            self.held[into..past].fill(height);
+            into = past;
         }
     }
 }
@@ -252,105 +275,77 @@ impl Wholes {
     }
 }
 
-pub(crate) struct Coinciding {
+struct Hearing {
+    index: usize,
+    width: usize,
     hop: usize,
     size: usize,
     pad: usize,
     forward: Arc<dyn Fft<f32>>,
     wholes: Wholes,
     groups: [Group; GROUPS],
-    channels: Vec<Vec<f32>>,
+    samples: Vec<f32>,
     begun: bool,
     spectrum: Vec<Complex<f32>>,
     scratch: Vec<Complex<f32>>,
-    heard: Box<[f32; WEIGHINGS_AND_NONE]>,
+    heard: Box<[[f32; HALF_A_TABLE]; HALF_A_TABLE]>,
+    sums: Sums,
     sampled: f32,
     noted: usize,
     settled: usize,
 }
 
-impl Coinciding {
-    pub(crate) fn new(rate: SampleRate, channels: usize) -> Self {
-        let pad = (rate.hz() as usize / MARGINS_A_SECOND).max(MARGIN_AT_LEAST);
-        let size = (rate.hz() as usize).max(4 * pad).next_power_of_two();
-        let hop = size - 2 * pad;
-        let mut planner = FftPlanner::new();
-        Self {
-            hop,
-            size,
-            pad,
-            forward: planner.plan_fft_forward(size),
-            wholes: Wholes::over(hop, rate),
-            groups: std::array::from_fn(|group| Group::over(group, size, hop, rate, &mut planner)),
-            channels: vec![Vec::new(); channels.max(1)],
-            begun: false,
-            spectrum: vec![Complex::new(0.0, 0.0); size],
-            scratch: Vec::new(),
-            heard: Box::new([0.0; WEIGHINGS_AND_NONE]),
-            sampled: 0.0,
-            noted: 0,
-            settled: 0,
-        }
+impl Noting for Hearing {
+    fn note(&mut self, interleaved: &[f32]) {
+        Self::note(self, interleaved);
     }
 
-    pub(crate) fn note(&mut self, interleaved: &[f32]) {
-        let width = self.channels.len();
-        for (index, channel) in self.channels.iter_mut().enumerate() {
-            channel.extend(interleaved.iter().skip(index).step_by(width));
-        }
-        self.noted += interleaved.len() / width;
-        if !self.begun && self.channels[0].len() > self.hop + self.pad {
+    fn hears_any_pieces_alike(&self) -> bool {
+        true
+    }
+}
+
+impl Hearing {
+    fn note(&mut self, interleaved: &[f32]) {
+        self.samples
+            .extend(interleaved.iter().skip(self.index).step_by(self.width));
+        self.noted += interleaved.len() / self.width;
+        if !self.begun && self.samples.len() > self.hop + self.pad {
             self.begin();
         }
-        while self.begun && self.channels[0].len() >= self.size {
+        while self.begun && self.samples.len() >= self.size {
             self.settle(self.hop);
         }
     }
 
-    pub(crate) fn finished(mut self, true_peak: f64) -> Option<[f64; WEIGHINGS]> {
+    fn finish(&mut self) {
         if !self.begun {
             self.begin();
         }
         while self.settled < self.noted {
             let ending = self.pad + self.noted - self.settled;
-            for channel in &mut self.channels {
-                mirrored_after(channel, ending, self.size);
-            }
+            mirrored_after(&mut self.samples, ending, self.size);
             self.settle((self.noted - self.settled).min(self.hop));
         }
-        if self.sampled <= 0.0 {
-            return None;
-        }
-        let between = (true_peak - f64::from(self.sampled)).max(0.0);
-        Some(std::array::from_fn(|index| {
-            f64::from(self.heard[index + 1]) + weighing(index).whole * between
-        }))
     }
 
     fn begin(&mut self) {
-        for channel in &mut self.channels {
-            let before: Vec<f32> = (1..=self.pad)
-                .rev()
-                .map(|back| channel.get(back).copied().unwrap_or(0.0))
-                .collect();
-            channel.splice(0..0, before);
-        }
+        let before: Vec<f32> = (1..=self.pad)
+            .rev()
+            .map(|back| self.samples.get(back).copied().unwrap_or(0.0))
+            .collect();
+        self.samples.splice(0..0, before);
         self.begun = true;
     }
 
     fn settle(&mut self, frames: usize) {
-        for index in 0..self.channels.len() {
-            self.settle_channel(index, frames);
-        }
-        for channel in &mut self.channels {
-            channel.drain(..self.hop.min(channel.len()));
-        }
+        self.read_a_window(frames);
+        self.samples.drain(..self.hop.min(self.samples.len()));
         self.settled += frames;
     }
 
-    fn settle_channel(&mut self, index: usize, frames: usize) {
-        let channel = &self.channels[index];
-        for (into, sample) in self.spectrum.iter_mut().zip(channel) {
+    fn read_a_window(&mut self, frames: usize) {
+        for (into, sample) in self.spectrum.iter_mut().zip(&self.samples) {
             *into = Complex::new(*sample, 0.0);
         }
         self.scratch.resize(
@@ -359,30 +354,196 @@ impl Coinciding {
         );
         self.forward
             .process_with_scratch(&mut self.spectrum, &mut self.scratch);
-        self.wholes.hear(channel, self.pad, frames);
+        self.wholes.hear(&self.samples, self.pad, frames);
         for group in &mut self.groups {
             group.hear(&self.spectrum, self.pad, &mut self.scratch);
         }
 
         let [low, middle, high] = &self.groups;
-        let heard = self.heard.as_mut();
-        let mut sampled = self.sampled;
-        for (at, whole) in self.wholes.held[..frames].iter().copied().enumerate() {
-            sampled = sampled.max(whole);
-            let front = table_of(whole, low.held[at]);
-            let back = table_of(middle.held[at], high.held[at]);
-            for (row, before) in heard
-                .as_chunks_mut::<HALF_A_TABLE>()
-                .0
-                .iter_mut()
-                .zip(&front)
-            {
-                for (held, after) in row.iter_mut().zip(&back) {
-                    *held = held.max(before + after);
-                }
+        for at in (0..frames).step_by(FRAMES_SUMMED_AT_ONCE) {
+            let past = (at + FRAMES_SUMMED_AT_ONCE).min(frames);
+            let whole = &self.wholes.held[at..past];
+            self.sampled = whole.iter().copied().fold(self.sampled, f32::max);
+            self.sums.hear_into(
+                self.heard.as_mut(),
+                [
+                    whole,
+                    &low.held[at..past],
+                    &middle.held[at..past],
+                    &high.held[at..past],
+                ],
+            );
+        }
+    }
+}
+
+struct Sums {
+    halves: Box<[[f32; FRAMES_SUMMED_AT_ONCE]; 4]>,
+    front: Box<[[f32; FRAMES_SUMMED_AT_ONCE]; HALF_A_TABLE]>,
+    back: Box<[[f32; FRAMES_SUMMED_AT_ONCE]; HALF_A_TABLE]>,
+}
+
+impl Sums {
+    fn new() -> Self {
+        Self {
+            halves: Box::new([[0.0; FRAMES_SUMMED_AT_ONCE]; 4]),
+            front: Box::new([[0.0; FRAMES_SUMMED_AT_ONCE]; HALF_A_TABLE]),
+            back: Box::new([[0.0; FRAMES_SUMMED_AT_ONCE]; HALF_A_TABLE]),
+        }
+    }
+
+    fn hear_into(
+        &mut self,
+        table: &mut [[f32; HALF_A_TABLE]; HALF_A_TABLE],
+        [whole, low, middle, high]: [&[f32]; 4],
+    ) {
+        for (halves, heights) in self.halves.iter_mut().zip([whole, low, middle, high]) {
+            for (half, height) in halves.iter_mut().zip(heights) {
+                *half = height / 2.0;
             }
         }
-        self.sampled = sampled;
+        let frames = whole.len();
+        let [half_whole, half_low, half_middle, half_high] = self.halves.as_ref();
+        side_of_the_table(
+            self.front.as_mut(),
+            frames,
+            [whole, &half_whole[..frames]],
+            [low, &half_low[..frames]],
+        );
+        side_of_the_table(
+            self.back.as_mut(),
+            frames,
+            [middle, &half_middle[..frames]],
+            [high, &half_high[..frames]],
+        );
+        for (row, front) in table.iter_mut().zip(self.front.iter()) {
+            for (held, back) in row.iter_mut().zip(self.back.iter()) {
+                *held = loudest_sum(*held, &front[..frames], &back[..frames]);
+            }
+        }
+    }
+}
+
+fn side_of_the_table(
+    side: &mut [[f32; FRAMES_SUMMED_AT_ONCE]; HALF_A_TABLE],
+    frames: usize,
+    [first, first_half]: [&[f32]; 2],
+    [second, second_half]: [&[f32]; 2],
+) {
+    for (row, sum) in side.iter_mut().enumerate() {
+        let sum = &mut sum[..frames];
+        match row / STEPS_OF_A_WEIGHT {
+            0 => sum.fill(0.0),
+            1 => sum.copy_from_slice(first_half),
+            _ => sum.copy_from_slice(first),
+        }
+        let added = match row % STEPS_OF_A_WEIGHT {
+            0 => continue,
+            1 => second_half,
+            _ => second,
+        };
+        for (sum, added) in sum.iter_mut().zip(added) {
+            *sum += added;
+        }
+    }
+}
+
+fn loudest_sum(start: f32, front: &[f32], back: &[f32]) -> f32 {
+    let mut lanes = [start; SUM_LANES];
+    for (front, back) in front
+        .as_chunks::<SUM_LANES>()
+        .0
+        .iter()
+        .zip(back.as_chunks::<SUM_LANES>().0)
+    {
+        for ((lane, front), back) in lanes.iter_mut().zip(front).zip(back) {
+            *lane = larger(*lane, front + back);
+        }
+    }
+    let read = front.len() / SUM_LANES * SUM_LANES;
+    let tail = front[read..]
+        .iter()
+        .zip(&back[read..])
+        .fold(start, |loudest, (front, back)| {
+            larger(loudest, front + back)
+        });
+    lanes.into_iter().fold(tail, larger)
+}
+
+pub(crate) struct Coinciding {
+    channels: Vec<Hearing>,
+}
+
+impl Coinciding {
+    pub(crate) fn new(rate: SampleRate, channels: usize) -> Self {
+        let width = channels.max(1);
+        let pad = (rate.hz() as usize / MARGINS_A_SECOND).max(MARGIN_AT_LEAST);
+        let size = (rate.hz() as usize).max(4 * pad).next_power_of_two();
+        let hop = size - 2 * pad;
+        let mut planner = FftPlanner::new();
+        let forward = planner.plan_fft_forward(size);
+        let groups: [Group; GROUPS] =
+            std::array::from_fn(|group| Group::over(group, size, hop, rate, &mut planner));
+        Self {
+            channels: (0..width)
+                .map(|index| Hearing {
+                    index,
+                    width,
+                    hop,
+                    size,
+                    pad,
+                    forward: Arc::clone(&forward),
+                    wholes: Wholes::over(hop, rate),
+                    groups: groups.clone(),
+                    samples: Vec::new(),
+                    begun: false,
+                    spectrum: vec![Complex::new(0.0, 0.0); size],
+                    scratch: Vec::new(),
+                    heard: Box::new([[0.0; HALF_A_TABLE]; HALF_A_TABLE]),
+                    sums: Sums::new(),
+                    sampled: 0.0,
+                    noted: 0,
+                    settled: 0,
+                })
+                .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn note(&mut self, interleaved: &[f32]) {
+        for hearing in &mut self.channels {
+            hearing.note(interleaved);
+        }
+    }
+
+    pub(crate) fn stages(&mut self) -> impl Iterator<Item = &mut dyn Noting> {
+        self.channels
+            .iter_mut()
+            .map(|hearing| hearing as &mut dyn Noting)
+    }
+
+    pub(crate) fn finished(mut self, true_peak: f64) -> Option<[f64; WEIGHINGS]> {
+        let mut heard = [[0.0_f32; HALF_A_TABLE]; HALF_A_TABLE];
+        let mut sampled = 0.0_f32;
+        for hearing in &mut self.channels {
+            hearing.finish();
+            sampled = sampled.max(hearing.sampled);
+            for (held, more) in heard
+                .as_flattened_mut()
+                .iter_mut()
+                .zip(hearing.heard.as_flattened())
+            {
+                *held = held.max(*more);
+            }
+        }
+        if sampled <= 0.0 {
+            return None;
+        }
+        let between = (true_peak - f64::from(sampled)).max(0.0);
+        let heard = heard.as_flattened();
+        Some(std::array::from_fn(|index| {
+            f64::from(heard[index + 1]) + weighing(index).whole * between
+        }))
     }
 }
 
@@ -435,13 +596,6 @@ fn mirrored_after(channel: &mut Vec<f32>, ending: usize, size: usize) {
         let sample = mirrored.and_then(|into| channel.get(into)).copied();
         channel.push(sample.unwrap_or(0.0));
     }
-}
-
-fn table_of(first: f32, second: f32) -> [f32; HALF_A_TABLE] {
-    let halves = |height: f32| [0.0, height / 2.0, height];
-    let firsts = halves(first);
-    let seconds = halves(second);
-    std::array::from_fn(|at| firsts[at / STEPS_OF_A_WEIGHT] + seconds[at % STEPS_OF_A_WEIGHT])
 }
 
 #[cfg(test)]

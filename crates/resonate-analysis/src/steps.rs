@@ -4,7 +4,11 @@ use std::{
     sync::Arc,
 };
 
+use parking_lot::Mutex;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
+
+use crate::crew::Noting;
 
 pub(crate) const SIXTEEN_BIT_STEPS: f32 = 32_768.0;
 const SILENT_COEFFICIENT_UP_TO: f32 = 1.0 / 4_096.0;
@@ -21,6 +25,7 @@ const MANTISSA_SHIFT: u32 = f32::MANTISSA_DIGITS - 1 - MANTISSA_BITS;
 const MANTISSA_BINS: usize = 1 << MANTISSA_BITS;
 const EXPONENTS: usize = 256;
 const EXPONENT_BIAS: i32 = 127;
+const COEFFICIENTS_READ_AT_ONCE: usize = 128;
 
 const AAC_HOP: usize = 1_024;
 const AAC_FROM_HZ: f32 = 4_000.0;
@@ -188,27 +193,24 @@ pub(crate) const STEPS_RAMP: Ramp = Ramp {
     to: 7.0,
 };
 
+#[derive(Clone)]
 pub(crate) struct Phases {
-    mantissas: Vec<Complex<f32>>,
-    exponents: Vec<Complex<f32>>,
+    mantissas: Box<[Complex<f32>; MANTISSA_BINS]>,
+    exponents: Box<[Complex<f32>; EXPONENTS]>,
     from: f32,
     to: f32,
 }
 
 impl Phases {
     pub(crate) fn new(steps_an_octave: f64, ramp: Ramp) -> Self {
-        let mantissas = (0..MANTISSA_BINS)
-            .map(|bin| {
-                let mantissa = 1.0 + (bin as f64 + 0.5) / MANTISSA_BINS as f64;
-                turned(1.0, TAU * steps_an_octave * mantissa.log2())
-            })
-            .collect();
-        let exponents = (0..EXPONENTS)
-            .map(|exponent| {
-                let octave = f64::from(exponent as i32 - EXPONENT_BIAS);
-                turned(1.0, TAU * (steps_an_octave * octave).fract())
-            })
-            .collect();
+        let mantissas = Box::new(std::array::from_fn(|bin| {
+            let mantissa = 1.0 + (bin as f64 + 0.5) / MANTISSA_BINS as f64;
+            turned(1.0, TAU * steps_an_octave * mantissa.log2())
+        }));
+        let exponents = Box::new(std::array::from_fn(|exponent| {
+            let octave = f64::from(exponent as i32 - EXPONENT_BIAS);
+            turned(1.0, TAU * (steps_an_octave * octave).fract())
+        }));
         let shift = ramp.unit.log2();
         Self {
             mantissas,
@@ -235,6 +237,92 @@ impl Phases {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct Summing {
+    re: f32,
+    im: f32,
+    mass: f32,
+    spread: f32,
+    count: u32,
+}
+
+struct Reads {
+    weights: [f32; COEFFICIENTS_READ_AT_ONCE],
+    bins: [u32; COEFFICIENTS_READ_AT_ONCE],
+    exponents: [u32; COEFFICIENTS_READ_AT_ONCE],
+    weighing: [u32; COEFFICIENTS_READ_AT_ONCE],
+}
+
+impl Reads {
+    const fn new() -> Self {
+        Self {
+            weights: [0.0; COEFFICIENTS_READ_AT_ONCE],
+            bins: [0; COEFFICIENTS_READ_AT_ONCE],
+            exponents: [0; COEFFICIENTS_READ_AT_ONCE],
+            weighing: [0; COEFFICIENTS_READ_AT_ONCE],
+        }
+    }
+}
+
+impl Phases {
+    fn sum_into(&self, coefficients: &[f32], reads: &mut Reads, summing: &mut Summing) {
+        let read = coefficients.len();
+        let across = self.to - self.from;
+        let mut counted = 0_u32;
+        for (((weight, bin), exponent), coefficient) in reads.weights[..read]
+            .iter_mut()
+            .zip(&mut reads.bins[..read])
+            .zip(&mut reads.exponents[..read])
+            .zip(coefficients)
+        {
+            let magnitude = coefficient.abs();
+            let heard = u32::from(magnitude > SILENT_COEFFICIENT_UP_TO);
+            let bits = magnitude.to_bits();
+            let raised = (bits >> (f32::MANTISSA_DIGITS - 1)) & (EXPONENTS as u32 - 1);
+            let x =
+                (raised as i32 - EXPONENT_BIAS) as f32 + (bits & 0x7f_ffff) as f32 / 8_388_608.0;
+            let t = (x - self.from) / across;
+            let t = if t > 0.0 { t } else { 0.0 };
+            let t = if t < 1.0 { t } else { 1.0 };
+            *weight = t * t * (3.0 - 2.0 * t) * heard as f32;
+            *bin = (bits >> MANTISSA_SHIFT) & (MANTISSA_BINS as u32 - 1);
+            *exponent = raised;
+            counted += heard;
+        }
+
+        let mut weighing = 0;
+        for (nth, weight) in reads.weights[..read].iter().enumerate() {
+            reads.weighing[weighing] = nth as u32;
+            weighing += usize::from(*weight > 0.0);
+        }
+
+        let Summing {
+            mut re,
+            mut im,
+            mut mass,
+            mut spread,
+            count,
+        } = *summing;
+        for nth in &reads.weighing[..weighing] {
+            let nth = *nth as usize & (COEFFICIENTS_READ_AT_ONCE - 1);
+            let weight = reads.weights[nth];
+            let mantissa = self.mantissas[reads.bins[nth] as usize & (MANTISSA_BINS - 1)];
+            let raised = self.exponents[reads.exponents[nth] as usize & (EXPONENTS - 1)];
+            re += (mantissa.re * raised.re - mantissa.im * raised.im) * weight;
+            im += (mantissa.re * raised.im + mantissa.im * raised.re) * weight;
+            mass += weight;
+            spread += weight * weight;
+        }
+        *summing = Summing {
+            re,
+            im,
+            mass,
+            spread,
+            count: count + counted,
+        };
+    }
+}
+
 pub(crate) fn phased(
     phases: &Phases,
     lines: Range<usize>,
@@ -242,35 +330,60 @@ pub(crate) fn phased(
     right: Option<&[f32]>,
     mid_and_side: bool,
 ) -> Tally {
-    let mut sum = Complex::<f32>::default();
-    let mut count = 0_u32;
-    let mut mass = 0.0_f32;
-    let mut spread = 0.0_f32;
-    let mut add = |coefficient: f32| {
-        let (phase, counted, weight) = phases.of(coefficient);
-        sum += phase;
-        count += counted;
-        mass += weight;
-        spread += weight * weight;
-    };
-    for line in lines {
-        let one = left[line];
-        add(one);
-        if let Some(right) = right {
-            let other = right[line];
-            add(other);
-            if mid_and_side {
-                add((one + other) / 2.0);
-                add((one - other) / 2.0);
+    let mut summing = Summing::default();
+    let mut reads = Reads::new();
+    let left = &left[lines.clone()];
+    match right.map(|right| &right[lines]) {
+        None => {
+            for piece in left.chunks(COEFFICIENTS_READ_AT_ONCE) {
+                phases.sum_into(piece, &mut reads, &mut summing);
+            }
+        }
+        Some(right) if mid_and_side => {
+            const LANES: usize = 4;
+            let mut woven = [0.0_f32; COEFFICIENTS_READ_AT_ONCE];
+            for (left, right) in left
+                .chunks(COEFFICIENTS_READ_AT_ONCE / LANES)
+                .zip(right.chunks(COEFFICIENTS_READ_AT_ONCE / LANES))
+            {
+                for ((into, one), other) in woven
+                    .as_chunks_mut::<LANES>()
+                    .0
+                    .iter_mut()
+                    .zip(left)
+                    .zip(right)
+                {
+                    *into = [*one, *other, (one + other) / 2.0, (one - other) / 2.0];
+                }
+                phases.sum_into(&woven[..left.len() * LANES], &mut reads, &mut summing);
+            }
+        }
+        Some(right) => {
+            const LANES: usize = 2;
+            let mut woven = [0.0_f32; COEFFICIENTS_READ_AT_ONCE];
+            for (left, right) in left
+                .chunks(COEFFICIENTS_READ_AT_ONCE / LANES)
+                .zip(right.chunks(COEFFICIENTS_READ_AT_ONCE / LANES))
+            {
+                for ((into, one), other) in woven
+                    .as_chunks_mut::<LANES>()
+                    .0
+                    .iter_mut()
+                    .zip(left)
+                    .zip(right)
+                {
+                    *into = [*one, *other];
+                }
+                phases.sum_into(&woven[..left.len() * LANES], &mut reads, &mut summing);
             }
         }
     }
     Tally {
-        sum: Complex::new(f64::from(sum.re), f64::from(sum.im)),
+        sum: Complex::new(f64::from(summing.re), f64::from(summing.im)),
         banded: Complex::default(),
-        count: u64::from(count),
-        mass: f64::from(mass),
-        spread: f64::from(spread),
+        count: u64::from(summing.count),
+        mass: f64::from(summing.mass),
+        spread: f64::from(summing.spread),
     }
 }
 
@@ -279,6 +392,7 @@ pub(crate) fn turned(size: f64, angle: f64) -> Complex<f32> {
     Complex::new(turn.re as f32, turn.im as f32)
 }
 
+#[derive(Clone)]
 pub(crate) struct Band {
     pub(crate) first: usize,
     pub(crate) past: usize,
@@ -311,8 +425,9 @@ pub(crate) struct Taking {
     pub(crate) kind: usize,
 }
 
-pub(crate) trait Grid {
+pub(crate) trait Grid: Clone + Send + Sync {
     const CODING: Coding;
+    const RESIDUES_SHARING_POSITIONS_EVERY: usize = 1;
     const TELL: Tell = Tell::QuantiserSteps;
     const HOP: usize;
     const RESIDUES: usize;
@@ -391,6 +506,167 @@ enum Stage {
     Done(Option<Steps>),
 }
 
+#[derive(Clone)]
+struct Reader<G> {
+    grid: G,
+    left: Vec<f32>,
+    right: Vec<f32>,
+}
+
+#[derive(Clone, Copy)]
+struct Heard<'a> {
+    held: &'a [Vec<f32>; 2],
+    held_from: u64,
+    paired: bool,
+    band: &'a Band,
+}
+
+impl<G: Grid> Reader<G> {
+    fn new(grid: G) -> Self {
+        Self {
+            grid,
+            left: vec![0.0; G::LINES],
+            right: vec![0.0; G::LINES],
+        }
+    }
+
+    fn tally_frame(&mut self, heard: Heard<'_>, start: usize, shape: usize, pass: Pass) -> Tally {
+        let mut chosen = Tally::default();
+        let mut chosen_strength = -1.0_f64;
+        if pass == Pass::Undoing {
+            let at = heard.held_from + start as u64;
+            let lanes: Vec<&[f32]> = heard.held[..usize::from(heard.paired) + 1]
+                .iter()
+                .map(|lane| &lane[start..start + G::SPAN])
+                .collect();
+            if let Some(tally) = self.grid.undone(at, &lanes) {
+                chosen_strength = tally.rayleigh();
+                chosen = tally;
+            }
+        }
+        let searching = pass == Pass::Searching;
+        for kind in (0..G::KINDS).filter(|kind| !searching || G::searched(*kind)) {
+            let tally = self.tally_kind(heard, start, shape, kind);
+            let strength = tally.rayleigh();
+            if strength > chosen_strength {
+                chosen_strength = strength;
+                chosen = tally;
+            }
+        }
+        chosen
+    }
+
+    fn tally_kind(&mut self, heard: Heard<'_>, start: usize, shape: usize, kind: usize) -> Tally {
+        let at = heard.held_from + start as u64;
+        let taking = Taking {
+            lane: 0,
+            at,
+            shape,
+            kind,
+        };
+        let lines = self.grid.frame(
+            taking,
+            &heard.held[0][start..start + G::SPAN],
+            heard.band,
+            &mut self.left,
+        );
+        if heard.paired {
+            self.grid.frame(
+                Taking { lane: 1, ..taking },
+                &heard.held[1][start..start + G::SPAN],
+                heard.band,
+                &mut self.right,
+            );
+        }
+
+        let right = heard.paired.then_some(self.right.as_slice());
+        self.grid.tally(lines, &self.left, right)
+    }
+
+    fn tally_run(
+        &mut self,
+        heard: Heard<'_>,
+        start: usize,
+        frames: usize,
+        shape: usize,
+        pass: Pass,
+    ) -> Tally {
+        let mut tally = Tally::default();
+        for frame in 0..frames {
+            tally.add(self.tally_frame(heard, start + frame * G::HOP, shape, pass));
+        }
+        tally
+    }
+}
+
+struct Lent<'a, G> {
+    reader: Option<Reader<G>>,
+    shelf: &'a Mutex<Vec<Reader<G>>>,
+}
+
+impl<G> Drop for Lent<'_, G> {
+    fn drop(&mut self) {
+        if let Some(reader) = self.reader.take() {
+            self.shelf.lock().push(reader);
+        }
+    }
+}
+
+struct Readers<G> {
+    first: Option<Reader<G>>,
+    shelf: Mutex<Vec<Reader<G>>>,
+}
+
+impl<G: Grid> Readers<G> {
+    fn of(grid: Option<G>) -> Self {
+        Self {
+            first: grid.map(Reader::new),
+            shelf: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn lend(&self) -> Option<Lent<'_, G>> {
+        let shelved = self.shelf.lock().pop();
+        let reader = shelved.or_else(|| self.first.clone())?;
+        Some(Lent {
+            reader: Some(reader),
+            shelf: &self.shelf,
+        })
+    }
+
+    fn read_each<T, F>(&mut self, count: usize, read: F) -> Vec<Option<T>>
+    where
+        T: Send,
+        F: Fn(&mut Reader<G>, usize) -> T + Sync,
+    {
+        if rayon::current_thread_index().is_none() {
+            let Some(reader) = self.first.as_mut() else {
+                return (0..count).map(|_| None).collect();
+            };
+            return (0..count).map(|nth| Some(read(reader, nth))).collect();
+        }
+        let readers = &*self;
+        (0..count)
+            .into_par_iter()
+            .map_init(
+                || readers.lend(),
+                |lent, nth| {
+                    lent.as_mut()
+                        .and_then(|lent| lent.reader.as_mut())
+                        .map(|reader| read(reader, nth))
+                },
+            )
+            .collect()
+    }
+
+    fn forget(&mut self) {
+        if let Some(reader) = self.first.as_mut() {
+            reader.grid.forget();
+        }
+        self.shelf.get_mut().clear();
+    }
+}
+
 pub(crate) struct Stepping<G: Grid> {
     searches: usize,
     rate: u32,
@@ -401,10 +677,14 @@ pub(crate) struct Stepping<G: Grid> {
     held: [Vec<f32>; 2],
     held_from: u64,
     reached: u64,
-    left: Vec<f32>,
-    right: Vec<f32>,
-    grid: Option<G>,
+    readers: Readers<G>,
     stage: Stage,
+}
+
+impl<G: Grid> Noting for Stepping<G> {
+    fn note(&mut self, interleaved: &[f32]) {
+        Self::note(self, interleaved);
+    }
 }
 
 impl<G: Grid> Stepping<G> {
@@ -430,9 +710,7 @@ impl<G: Grid> Stepping<G> {
             held: [Vec::new(), Vec::new()],
             held_from: 0,
             reached: 0,
-            left: vec![0.0; G::LINES],
-            right: vec![0.0; G::LINES],
-            grid,
+            readers: Readers::of(grid),
             stage: if weighable {
                 Stage::Searching {
                     next: every,
@@ -497,7 +775,7 @@ impl<G: Grid> Stepping<G> {
                 }
                 Stage::Done(_) => {
                     self.held = [Vec::new(), Vec::new()];
-                    self.grid = None;
+                    self.readers = Readers::of(None);
                     return;
                 }
             }
@@ -513,72 +791,6 @@ impl<G: Grid> Stepping<G> {
         self.held_from += gone as u64;
     }
 
-    fn tally_frame(&mut self, start: usize, shape: usize, pass: Pass) -> Tally {
-        let mut chosen = Tally::default();
-        let mut chosen_strength = -1.0_f64;
-        if pass == Pass::Undoing
-            && let Some(grid) = self.grid.as_mut()
-        {
-            let at = self.held_from + start as u64;
-            let lanes: Vec<&[f32]> = self.held[..usize::from(self.paired) + 1]
-                .iter()
-                .map(|lane| &lane[start..start + G::SPAN])
-                .collect();
-            if let Some(tally) = grid.undone(at, &lanes) {
-                chosen_strength = tally.rayleigh();
-                chosen = tally;
-            }
-        }
-        let searching = pass == Pass::Searching;
-        for kind in (0..G::KINDS).filter(|kind| !searching || G::searched(*kind)) {
-            let tally = self.tally_kind(start, shape, kind);
-            let strength = tally.rayleigh();
-            if strength > chosen_strength {
-                chosen_strength = strength;
-                chosen = tally;
-            }
-        }
-        chosen
-    }
-
-    fn tally_kind(&mut self, start: usize, shape: usize, kind: usize) -> Tally {
-        let Some(grid) = self.grid.as_mut() else {
-            return Tally::default();
-        };
-        let at = self.held_from + start as u64;
-        let taking = Taking {
-            lane: 0,
-            at,
-            shape,
-            kind,
-        };
-        let lines = grid.frame(
-            taking,
-            &self.held[0][start..start + G::SPAN],
-            &self.band,
-            &mut self.left,
-        );
-        if self.paired {
-            grid.frame(
-                Taking { lane: 1, ..taking },
-                &self.held[1][start..start + G::SPAN],
-                &self.band,
-                &mut self.right,
-            );
-        }
-
-        let right = self.paired.then_some(self.right.as_slice());
-        grid.tally(lines, &self.left, right)
-    }
-
-    fn tally_run(&mut self, start: usize, frames: usize, shape: usize, pass: Pass) -> Tally {
-        let mut tally = Tally::default();
-        for frame in 0..frames {
-            tally.add(self.tally_frame(start + frame * G::HOP, shape, pass));
-        }
-        tally
-    }
-
     fn lanes(&self) -> usize {
         match (self.paired, G::MID_AND_SIDE) {
             (false, _) => 1,
@@ -590,15 +802,35 @@ impl<G: Grid> Stepping<G> {
 
     fn search_at(&mut self, next: u64) {
         let start = (next - self.held_from) as usize;
+        let heard = Heard {
+            held: &self.held,
+            held_from: self.held_from,
+            paired: self.paired,
+            band: &self.band,
+        };
+        let classes = G::RESIDUES.min(G::RESIDUES_SHARING_POSITIONS_EVERY);
+        let read = self.readers.read_each(G::SHAPES * classes, |reader, task| {
+            let shape = task / classes;
+            let class = task % classes;
+            (class..G::RESIDUES)
+                .step_by(classes)
+                .map(|residue| {
+                    let tally = reader.tally_run(
+                        heard,
+                        start + residue,
+                        G::FRAMES_A_SEARCH,
+                        shape,
+                        Pass::Searching,
+                    );
+                    (shape * G::RESIDUES + residue, tally)
+                })
+                .collect::<Vec<_>>()
+        });
+        self.readers.forget();
+
         let mut found = vec![Tally::default(); G::SHAPES * G::RESIDUES];
-        for shape in 0..G::SHAPES {
-            for residue in 0..G::RESIDUES {
-                found[shape * G::RESIDUES + residue] =
-                    self.tally_run(start + residue, G::FRAMES_A_SEARCH, shape, Pass::Searching);
-            }
-        }
-        if let Some(grid) = self.grid.as_mut() {
-            grid.forget();
+        for (at, tally) in read.into_iter().flatten().flatten() {
+            found[at] = tally;
         }
         let coefficients: u64 = found.iter().map(|tally| tally.count).sum();
         let offered = (found.len() * G::FRAMES_A_SEARCH * self.band.width() * self.lanes()) as f64;
@@ -648,21 +880,24 @@ impl<G: Grid> Stepping<G> {
             .checked_sub(G::RESIDUES + G::CONTROL_SHIFT + G::SPAN)
             .map_or(0, |left| left / G::HOP + 1)
             .min(G::CONFIRMED_FRAMES);
-        let best = candidates
-            .iter()
-            .map(|candidate| {
-                (
-                    candidate,
-                    self.measured(start, frames, candidate, Pass::Confirming),
-                )
-            })
-            .max_by(|one, other| one.1.lattice.total_cmp(&other.1.lattice));
+        let best = self
+            .measured(start, frames, &candidates, Pass::Confirming)
+            .into_iter()
+            .zip(&candidates)
+            .max_by(|one, other| one.0.lattice.total_cmp(&other.0.lattice));
         let steps = best
-            .map(|(candidate, confirmed)| {
+            .map(|(confirmed, candidate)| {
                 if G::UNDOES {
-                    let undone = self.measured(start, frames, candidate, Pass::Undoing);
-                    if undone.lattice > confirmed.lattice {
-                        return undone;
+                    let undone = self.measured(
+                        start,
+                        frames,
+                        std::slice::from_ref(candidate),
+                        Pass::Undoing,
+                    );
+                    if let Some(undone) = undone.first()
+                        && undone.lattice > confirmed.lattice
+                    {
+                        return *undone;
                     }
                 }
                 confirmed
@@ -675,30 +910,45 @@ impl<G: Grid> Stepping<G> {
         &mut self,
         start: usize,
         frames: usize,
-        candidate: &Candidate,
+        candidates: &[Candidate],
         pass: Pass,
-    ) -> Steps {
-        let lattice = self.tally_run(start + candidate.residue, frames, candidate.shape, pass);
-        if let Some(grid) = self.grid.as_mut() {
-            grid.forget();
-        }
-        let control = self.tally_run(
-            start + candidate.residue + G::CONTROL_SHIFT,
-            frames,
-            candidate.shape,
-            pass,
-        );
-        if let Some(grid) = self.grid.as_mut() {
-            grid.forget();
-        }
-        Steps {
-            coding: G::CODING,
-            tell: G::TELL,
-            rate: self.rate,
-            lattice: lattice.resultant() as f32,
-            control: control.resultant() as f32,
-            coefficients: lattice.effective(),
-        }
+    ) -> Vec<Steps> {
+        let heard = Heard {
+            held: &self.held,
+            held_from: self.held_from,
+            paired: self.paired,
+            band: &self.band,
+        };
+        let shifts = [0, G::CONTROL_SHIFT];
+        let runs = self
+            .readers
+            .read_each(candidates.len() * shifts.len(), |reader, run| {
+                let candidate = candidates[run / shifts.len()];
+                let tally = reader.tally_run(
+                    heard,
+                    start + candidate.residue + shifts[run % shifts.len()],
+                    frames,
+                    candidate.shape,
+                    pass,
+                );
+                reader.grid.forget();
+                tally
+            });
+        self.readers.forget();
+        runs.chunks_exact(shifts.len())
+            .map(|pair| {
+                let lattice = pair[0].unwrap_or_default();
+                let control = pair[1].unwrap_or_default();
+                Steps {
+                    coding: G::CODING,
+                    tell: G::TELL,
+                    rate: self.rate,
+                    lattice: lattice.resultant() as f32,
+                    control: control.resultant() as f32,
+                    coefficients: lattice.effective(),
+                }
+            })
+            .collect()
     }
 
     pub(crate) fn finished(mut self) -> Option<Steps> {
@@ -729,6 +979,7 @@ fn chosen_from<G: Grid>(tallies: &[Tally]) -> Vec<Candidate> {
         .collect()
 }
 
+#[derive(Clone)]
 pub(crate) struct Mdct {
     hop: usize,
     fft: Arc<dyn Fft<f32>>,
@@ -899,6 +1150,7 @@ const AAC_BLOCKS: [AacBlock; 4] = [
     AacBlock::Eight,
 ];
 
+#[derive(Clone)]
 pub(crate) struct Aac {
     long: Mdct,
     short: Mdct,
@@ -1089,6 +1341,7 @@ impl Grid for Aac {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Vorbis {
     mdct: Mdct,
     phases: Phases,
@@ -1133,6 +1386,12 @@ impl Grid for Vorbis {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::{
+        celt::{Coupling, Opus},
+        crew::Crew,
+        granules::Mp3,
+        subbands::Mp2,
+    };
 
     pub(crate) const RATE: u32 = 44_100;
     const SECONDS: usize = 14;
@@ -1306,6 +1565,42 @@ pub(crate) mod tests {
             stepping.note(block);
         }
         stepping.finished()
+    }
+
+    fn taken_alone_and_on_a_crew<G: Grid>(rate: u32, interleaved: &[f32]) -> [Option<Steps>; 2] {
+        let mut alone = Stepping::<G>::new(rate, 2);
+        for block in interleaved.chunks(4_096 * 2) {
+            alone.note(block);
+        }
+        let mut crewed = Stepping::<G>::new(rate, 2);
+        Crew::HalfTheMachine.fanned(rate as usize * 2, vec![&mut crewed], &|| false, |feed| {
+            for block in interleaved.chunks(4_096 * 2) {
+                feed(block);
+            }
+        });
+        [alone.finished(), crewed.finished()]
+    }
+
+    #[test]
+    fn every_grid_reads_the_same_alone_as_on_a_crew() {
+        let mut wandering = Wandering(11);
+        let noise: Vec<f32> = (0..2 * 24 * RATE as usize)
+            .map(|_| (wandering.next() as f32 - 0.5) * 0.5)
+            .collect();
+
+        let readings = [
+            taken_alone_and_on_a_crew::<Aac>(RATE, &noise),
+            taken_alone_and_on_a_crew::<Vorbis>(RATE, &noise),
+            taken_alone_and_on_a_crew::<Mp3>(RATE, &noise),
+            taken_alone_and_on_a_crew::<Mp2>(RATE, &noise),
+            taken_alone_and_on_a_crew::<Opus>(48_000, &noise),
+            taken_alone_and_on_a_crew::<Coupling>(48_000, &noise),
+        ];
+
+        for [alone, crewed] in readings {
+            assert!(alone.is_some());
+            assert_eq!(alone, crewed);
+        }
     }
 
     #[test]

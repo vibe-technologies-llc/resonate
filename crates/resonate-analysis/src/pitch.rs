@@ -20,6 +20,7 @@ const SHORT_KEPT_OVER: f32 = 0.85;
 const SHORT_KEPT_AT_LEAST: f32 = 0.4;
 const ENCODER_GAIN_SHARE: f32 = 0.7;
 
+#[derive(Clone)]
 pub(crate) struct Pitch {
     frame: usize,
     period: usize,

@@ -4,6 +4,7 @@ mod bands;
 mod celt;
 mod coinciding;
 mod conform;
+mod crew;
 mod envelope;
 mod error;
 mod granules;

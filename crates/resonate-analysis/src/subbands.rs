@@ -12,7 +12,8 @@ const MP2_FROM_HZ: f32 = 0.0;
 const MP2_TO_HZ: f32 = 20_000.0;
 const HIGHEST_MP2_RATE: u32 = 48_000;
 
-const LEVELS: [u32; 17] = [
+const CLASSES: usize = 17;
+const LEVELS: [u32; CLASSES] = [
     3, 5, 7, 9, 15, 31, 63, 127, 255, 511, 1_023, 2_047, 4_095, 8_191, 16_383, 32_767, 65_535,
 ];
 const SCALE_FACTORS: usize = 63;
@@ -24,9 +25,25 @@ const OFF_THE_STEP_AT_MOST: f32 = 0.1;
 const PEAK_COUNTED_FROM: f32 = 32.0;
 const SPOKEN_LEVELS_AT_LEAST: usize = 3;
 
+#[derive(Clone)]
 pub(crate) struct Mp2 {
     polyphase: Polyphase,
-    steps: Vec<[f32; SCALE_FACTORS]>,
+    steps_by_factor: Box<[[f32; CLASSES]; SCALE_FACTORS]>,
+    tops: [f32; CLASSES],
+}
+
+fn off_its_step(at: f32) -> f32 {
+    (at - at.round_ties_even()).abs()
+}
+
+fn lies_on_a_step(part: &[f32], step: f32) -> bool {
+    part.iter()
+        .all(|value| off_its_step(value / step) <= OFF_THE_STEP_AT_MOST)
+        && part
+            .iter()
+            .filter(|value| (*value / step).abs() >= 0.5)
+            .count()
+            >= SPOKEN_LEVELS_AT_LEAST
 }
 
 impl Mp2 {
@@ -46,30 +63,30 @@ impl Mp2 {
         if highest < 0.0 {
             return Some(false);
         }
-        let factors = lowest as usize..=highest as usize;
-        let found = LEVELS.iter().zip(&self.steps).any(|(levels, steps)| {
-            let top = (levels / 2) as f32;
-            steps[factors.clone()].iter().any(|step| {
-                let reaches = (peak / step).round();
-                reaches >= 1.0
-                    && reaches <= top
-                    && part.iter().all(|value| {
-                        let at = value / step;
-                        (at - at.round()).abs() <= OFF_THE_STEP_AT_MOST
-                    })
-                    && part
-                        .iter()
-                        .filter(|value| (*value / step).abs() >= 0.5)
-                        .count()
-                        >= SPOKEN_LEVELS_AT_LEAST
-            })
-        });
+        let found = self.steps_by_factor[lowest as usize..=highest as usize]
+            .iter()
+            .any(|steps| self.a_step_holds(part, peak, steps));
         Some(found)
+    }
+
+    fn a_step_holds(&self, part: &[f32], peak: f32, steps: &[f32; CLASSES]) -> bool {
+        let mut reaching = [false; CLASSES];
+        for ((reaching, step), top) in reaching.iter_mut().zip(steps).zip(&self.tops) {
+            let at = peak / step;
+            let reaches = at.round_ties_even();
+            *reaching =
+                (at - reaches).abs() <= OFF_THE_STEP_AT_MOST && reaches >= 1.0 && reaches <= *top;
+        }
+        reaching
+            .iter()
+            .zip(steps)
+            .any(|(reaching, step)| *reaching && lies_on_a_step(part, *step))
     }
 }
 
 impl Grid for Mp2 {
     const CODING: Coding = Coding::Mp2;
+    const RESIDUES_SHARING_POSITIONS_EVERY: usize = SUBBANDS;
     const HOP: usize = HOP;
     const RESIDUES: usize = HOP;
     const SPAN: usize = SPAN;
@@ -86,19 +103,14 @@ impl Grid for Mp2 {
 
     fn new(_: u32, band: &Band) -> Self {
         let full_scale = LOUDEST_SCALE_FACTOR * SIXTEEN_BIT_STEPS;
-        let steps = LEVELS
-            .iter()
-            .map(|levels| {
-                std::array::from_fn(|factor| {
-                    let scale =
-                        full_scale * (-(factor as f32) / SCALE_FACTOR_STEPS_AN_OCTAVE).exp2();
-                    2.0 * scale / *levels as f32
-                })
-            })
-            .collect();
+        let steps_by_factor = Box::new(std::array::from_fn(|factor| {
+            let scale = full_scale * (-(factor as f32) / SCALE_FACTOR_STEPS_AN_OCTAVE).exp2();
+            LEVELS.map(|levels| 2.0 * scale / levels as f32)
+        }));
         Self {
             polyphase: Polyphase::new(band.first..band.past),
-            steps,
+            steps_by_factor,
+            tops: LEVELS.map(|levels| (levels / 2) as f32),
         }
     }
 

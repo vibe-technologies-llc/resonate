@@ -15,6 +15,7 @@ use crate::{
     applied::{Applied, Heard},
     coinciding::{WEIGHINGS, stays_together},
     conform::Walking,
+    crew::{Crew, Noting},
     peaks::{BandPeaks, Heights, NODES, TILES_REACHED_EACH_WAY, TREE, WHOLE},
     spectrum::{FLOOR_DB, Transforming},
     split::{Splitting, TILES_A_SECOND, passed_below},
@@ -801,6 +802,14 @@ fn shares_at(hertz: f64, rate: SampleRate) -> Heights {
     })
 }
 
+struct Transformed<'a>(&'a mut Transforming);
+
+impl Noting for Transformed<'_> {
+    fn note(&mut self, interleaved: &[f32]) {
+        self.0.note(interleaved, |_| {});
+    }
+}
+
 pub fn band_figures(
     sources: &Sources,
     location: &MediaLocation,
@@ -818,16 +827,27 @@ pub fn band_figures(
     let mut transforming = Transforming::new(rate.hz(), &placements);
     let mut splitting = Splitting::new(rate, usize::from(info.spec.channels.count().get()));
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
-    loop {
-        if watch.stopped() {
-            return Err(Error::Stopped);
-        }
-        let Some(heard) = walking.step(&mut decoder)? else {
-            break;
-        };
-        transforming.note(heard.samples, |_| {});
-        splitting.note(heard.samples);
-    }
+    let mut transformed = Transformed(&mut transforming);
+    let stages: Vec<&mut dyn Noting> = std::iter::once(&mut transformed as &mut dyn Noting)
+        .chain(splitting.stages())
+        .collect();
+    let samples_a_second = rate.hz() as usize * usize::from(info.spec.channels.count().get());
+    Crew::HalfTheMachine.fanned(
+        samples_a_second,
+        stages,
+        &|| watch.stopped(),
+        |feed| -> Result<()> {
+            loop {
+                if watch.stopped() {
+                    return Err(Error::Stopped);
+                }
+                let Some(heard) = walking.step(&mut decoder)? else {
+                    return Ok(());
+                };
+                feed(heard.samples);
+            }
+        },
+    )?;
 
     Ok(BandFigures {
         levels: BandLevels::of(&transforming.finished()),
