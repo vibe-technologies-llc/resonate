@@ -167,7 +167,14 @@ fun Navigator.openArtistOf(track: Track) {
 
 fun Resonate.shareLink(track: Track, scope: CoroutineScope) {
     attempt(scope) { native ->
-        val link = withContext(Dispatchers.IO) { native.shareLink(track.id) }
+        val link = try {
+            withContext(Dispatchers.IO) { native.shareLink(track.id) }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            library.notice(failure.message ?: "The share link could not be resolved")
+            return@attempt
+        }
         if (link == null) library.notice("There is no link to share for “${track.shownTitle}”")
         else host.share(track.shownTitle, link)
     }

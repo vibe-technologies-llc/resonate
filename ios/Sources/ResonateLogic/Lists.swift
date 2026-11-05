@@ -78,7 +78,12 @@ public struct AlbumDisc: Identifiable, Sendable {
                 discs.append(AlbumDisc(number: number, run: discs.count, rows: [.held(track)]))
             }
         }
+        var missingIds = Set<String>()
         for song in notHeld {
+            guard missingIds.insert(AlbumRow.notHeld(song).id).inserted else { continue }
+            if let position = song.position, tracks.contains(where: {
+                ($0.discNumber ?? 1) == (song.disc ?? 1) && $0.trackNumber == position
+            }) { continue }
             let number = song.disc ?? 1
             if let found = discs.firstIndex(where: { $0.number == number }) {
                 discs[found].lay(song)

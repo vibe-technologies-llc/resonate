@@ -862,7 +862,8 @@ struct AlbumView: View {
         guard let native = try? await library.player() else { return }
         let key = key
         guard (try? await Work.aside { try native.learnAlbumSongs(key: key) }) == true else { return }
-        notHeld = (try? await Work.aside { try native.albumSongsNotHeld(key: key) }) ?? notHeld
+        guard !Task.isCancelled, self.key == key else { return }
+        await load()
     }
 
     private func load() async {
@@ -879,6 +880,7 @@ struct AlbumView: View {
             failure = explained(error)
             return
         }
+        guard !Task.isCancelled, self.key == key else { return }
         failure = nil
         if rows.isEmpty, let shown = tracks.compactMap({ library.artworkTracks[$0.id] }).first {
             let moved = albumKey(album: shown.album, artist: shown.artist, albumArtist: shown.albumArtist)

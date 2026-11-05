@@ -1852,3 +1852,5 @@ so a followed list shows edit controls and an edit answers `PlaylistFollowed` (`
   `ios/Generated` fails the build before any edit: regenerate with `python3 ios/build-native.py`.
   The app turns every way (WCAG 1.3.4), with the accessibility-size layouts held in each
   (*Orientation and iPad*).
+
+Learning a release refreshes both its local and missing rows together; cancelled album reads cannot publish after navigation. Album rows suppress stale missing songs at a locally held disc and position and repeated missing row identities, so independently refreshed reads cannot display a song twice.

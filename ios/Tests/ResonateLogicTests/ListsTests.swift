@@ -157,6 +157,11 @@ import Testing
         #expect(discs[0].tracks.map(\.id) == [1, 2])
     }
 
+    @Test func aStaleMissingSongDoesNotDuplicateALocalPosition() {
+        let discs = AlbumDisc.of([numbered(1, 2)], notHeld: [notHeld("stale", at: 2), notHeld("missing", at: 3), notHeld("missing", at: 3)])
+        #expect(rowIds(discs[0]) == ["1", "missing"])
+    }
+
     @Test func aDiscHoldingNoSongYetStandsInItsPlaceWithItsOwnNumber() {
         let discs = AlbumDisc.of(
             [numbered(1, 1, disc: 1), numbered(2, 1, disc: 3)],

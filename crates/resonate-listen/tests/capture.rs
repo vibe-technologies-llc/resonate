@@ -1,12 +1,12 @@
 #![cfg(target_os = "linux")]
 
-use std::{f64::consts::TAU, thread, time::Duration};
+use std::{f64::consts::TAU, process::Command, thread, time::Duration};
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 use resonate_dsp::Sweep;
 use resonate_listen::{Clip, Hearing, Listener, Listening};
 use resonate_pipewire::{
-    AudioSource, Error, LatencyRequest, MediaRole, PipeWire, SinkInfo, StreamRequest,
+    AudioSource, LatencyRequest, MediaRole, NodeName, PipeWire, SinkInfo, StreamRequest,
 };
 
 const DISCOVERY: Duration = Duration::from_secs(2);
@@ -33,26 +33,60 @@ impl AudioSource for Tone {
     }
 }
 
-fn daemon() -> Option<(PipeWire, SinkInfo)> {
-    let pipewire = match PipeWire::start("resonate-listen-tests") {
-        Ok(pipewire) => pipewire,
-        Err(error) => {
-            eprintln!("skipped: no PipeWire daemon to talk to ({error})");
+struct Output {
+    module: String,
+    name: NodeName,
+}
+
+impl Output {
+    fn new(name: &str) -> Option<Self> {
+        let name = format!("{name}-{}", std::process::id());
+        let output = Command::new("pactl")
+            .args([
+                "load-module",
+                "module-null-sink",
+                &format!("sink_name={name}"),
+                "rate=48000",
+            ])
+            .output()
+            .ok()?;
+        if !output.status.success() {
             return None;
         }
-    };
-    match pipewire.default_sink(DISCOVERY) {
-        Ok(Some(sink)) => Some((pipewire, sink)),
-        Err(Error::Disconnected) => {
-            eprintln!("skipped: no PipeWire daemon to talk to");
-            None
-        }
-        Ok(None) | Err(Error::NoSink) => {
-            eprintln!("skipped: the daemon advertises no sink");
-            None
-        }
-        Err(error) => panic!("the daemon would not enumerate its sinks: {error}"),
+        Some(Self {
+            module: String::from_utf8(output.stdout).ok()?.trim().to_owned(),
+            name: NodeName::new(name),
+        })
     }
+}
+
+impl Drop for Output {
+    fn drop(&mut self) {
+        let _ = Command::new("pactl")
+            .args(["unload-module", &self.module])
+            .output();
+    }
+}
+
+fn daemon(name: &str) -> Option<(PipeWire, SinkInfo, Output)> {
+    let Some(output) = Output::new(name) else {
+        eprintln!("skipped: an isolated PipeWire output could not be created");
+        return None;
+    };
+    let pipewire = PipeWire::start("resonate-listen-tests")
+        .expect("the isolated output has a PipeWire daemon");
+    for _ in 0..20 {
+        if let Some(sink) = pipewire
+            .enumerate_sinks(DISCOVERY)
+            .expect("the isolated output can be enumerated")
+            .into_iter()
+            .find(|sink| sink.is_named(&output.name))
+        {
+            return Some((pipewire, sink, output));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("the isolated output was not advertised")
 }
 
 fn level_at(clip: &Clip, hertz: f64) -> f64 {
@@ -70,7 +104,7 @@ fn level_at(clip: &Clip, hertz: f64) -> f64 {
 
 #[test]
 fn what_the_desktop_plays_is_heard_through_its_monitor() {
-    let Some((pipewire, sink)) = daemon() else {
+    let Some((pipewire, sink, output)) = daemon("resonate-listen-tone") else {
         return;
     };
     let spec = StreamSpec::new(
@@ -97,6 +131,7 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
     thread::sleep(SETTLES_FOR);
 
     let clip = Listener::new("resonate-listen-tests")
+        .with_monitor(output.name.clone())
         .record(&Listening::Desktop, HEARD_FOR, &Hearing::new())
         .expect("the desktop is heard");
     drop(stream);
@@ -114,7 +149,7 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
 
 #[test]
 fn a_sweep_played_to_the_desktop_is_heard_through_its_monitor_and_deconvolves_to_a_response() {
-    let Some((pipewire, _)) = daemon() else {
+    let Some((pipewire, _, output)) = daemon("resonate-listen-sweep") else {
         return;
     };
     let _ = pipewire.shutdown();
@@ -122,9 +157,10 @@ fn a_sweep_played_to_the_desktop_is_heard_through_its_monitor_and_deconvolves_to
         .expect("a sweep that fits the rate");
 
     let clip = Listener::new("resonate-listen-tests")
+        .with_monitor(output.name.clone())
         .play_and_record(
             sweep.samples(),
-            None,
+            Some(&output.name),
             &Listening::Desktop,
             sweep.length() + Duration::from_secs(1),
             &Hearing::new(),

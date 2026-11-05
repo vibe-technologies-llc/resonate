@@ -20,13 +20,20 @@ const PLAYING_NAME: &str = "Measuring";
 #[derive(Clone, Debug)]
 pub struct Listener {
     app_name: String,
+    monitor: Option<NodeName>,
 }
 
 impl Listener {
     pub fn new(app_name: &str) -> Self {
         Self {
             app_name: app_name.to_owned(),
+            monitor: None,
         }
+    }
+
+    pub fn with_monitor(mut self, sink: NodeName) -> Self {
+        self.monitor = Some(sink);
+        self
     }
 
     pub fn microphones(&self) -> Result<Vec<Microphone>> {
@@ -100,7 +107,9 @@ impl Listener {
             .map_err(|source| Error::capture(CaptureOp::Connect, source))?;
         let request = CaptureRequest {
             from: match from {
-                Listening::Desktop => Capturing::Desktop { sink: None },
+                Listening::Desktop => Capturing::Desktop {
+                    sink: self.monitor.clone(),
+                },
                 Listening::Microphone(source) => Capturing::Microphone {
                     source: source.clone(),
                 },

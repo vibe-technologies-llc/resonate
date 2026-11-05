@@ -35,11 +35,11 @@ pub(crate) fn named_at(client: &Client, link: &SongLink) -> Result<Option<LinkNa
                 return Ok(None);
             };
             let twin = match song.on_deezer {
-                Some(track) => deezer::track_named(client, track)?,
-                None => None,
+                Some(track) => deezer::track_named(client, track),
+                None => Ok(None),
             };
 
-            Ok(song.named_with(twin))
+            Ok(song.named_after(twin))
         }
     }
 }
@@ -132,6 +132,17 @@ impl Song {
             artist: stated(entity.artist_name.as_deref()),
             on_deezer: held.on_deezer(SONG_ON_DEEZER),
         })
+    }
+
+    fn named_after(self, twin: Result<Option<LinkNames>>) -> Option<LinkNames> {
+        let twin = match twin {
+            Ok(twin) => twin,
+            Err(error) => {
+                tracing::warn!(%error, "the song.link Deezer twin could not be read");
+                None
+            }
+        };
+        self.named_with(twin)
     }
 
     fn named_with(self, twin: Option<LinkNames>) -> Option<LinkNames> {
@@ -241,6 +252,20 @@ struct Linked {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_optional_twin_preserves_the_song_link_answer() {
+        let song = Song::read(PAGE).expect("a song on the page");
+        let expected = song.clone().named_with(None);
+        assert!(expected.is_some());
+        assert_eq!(
+            song.named_after(Err(crate::Error::Offline {
+                host: Host::Deezer,
+                op: LookupOp::StreamLink,
+            })),
+            expected
+        );
+    }
 
     const PAGE: &str = include_str!("../tests/fixtures/song_link_page.html");
     const YOUTUBE_PAGE: &str = include_str!("../tests/fixtures/song_link_youtube_page.html");

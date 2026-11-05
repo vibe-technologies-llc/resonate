@@ -15,7 +15,17 @@ impl MobilePlayer {
     pub fn share_link(&self, id: u64) -> Result<Option<String>> {
         let shared = self.catalog.shared(id)?;
         let shared = if self.services.online.client().is_reaching() {
-            shared.streamed_where_asked(&self.services.online as &dyn Reference)
+            let mut shared = shared;
+            if !shared.goes_through_song_link()
+                && let Some(link) = (&self.services.online as &dyn Reference)
+                    .streamed_at(&shared.asked())
+                    .map_err(|source| {
+                        Error::reference(resonate_library::LookupOp::StreamLink, source)
+                    })?
+            {
+                shared.links.insert(0, link);
+            }
+            shared
         } else {
             shared
         };

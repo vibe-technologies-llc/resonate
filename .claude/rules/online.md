@@ -544,3 +544,5 @@ feature the twins answer `None`, `Error::NoReference`, `Corrected::uncorrected()
 `main.rs` reads the same names either way. All is built over the one `Arc<Client>` in
 `online::CLIENT` (made on first use over `INTRODUCTION`; `online::YIELDING` holds its yielding
 twin): one agent and its connections per process.
+
+A failed optional Deezer twin lookup preserves the names and codes already read from song.link.

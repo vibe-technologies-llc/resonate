@@ -1469,3 +1469,5 @@ A source registry may supply a writable spool folder with `Sources::spooling_und
 folder is tried when supplied; the Linux default remains `TMPDIR`, else `/var/tmp` then the
 system temporary folder. This lets a sandboxed document stream spill without changing process
 environment variables or treating a document URI as a path.
+
+Linux listen capture tests each create a separate null sink and explicitly select its monitor through `Listener::with_monitor`, keeping concurrent test signals apart.
