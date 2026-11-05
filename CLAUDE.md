@@ -25,7 +25,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
-| `sync.md` | resonate-sync, the binary's `sync.rs`, `driven.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network, one device driving another's zones |
+| `sync.md` | resonate-sync, resonate-driven, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network, one device driving another's zones |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
 | `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs`, the output settings pane, the phones' `rendering.rs` and `output/mod.rs` | network renderers: a renderer as a sink beside PipeWire's, Oboe's and RemoteIO's, the `Neighbours` seam, a resting network and its switch, SSDP, the description, SOAP, the paced live stream, seek, pause and volume past its buffer, the renderer's clock, multicast on the phones |
 | `cast.md` | resonate-cast, the binary's `rendering.rs` | Google Cast receivers: one more sink kind beside UPnP's, the mDNS browse, TLS and the hand-written `CastMessage` and JSON, the Default Media Receiver's launch and load, the receiver's clock, the volume |
@@ -67,7 +67,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-three crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Thirty-four crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -77,6 +77,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-mpris      session bus: MPRIS, notifications, idle inhibit, playlists
   ├── resonate-discord    what is playing, told to Discord  [`discord`]
   ├── resonate-sync       devices kept in step: sealed records, QUIC peers, LAN beacons and Bonjour, one device driving another's zones  [`sync`]
+  ├── resonate-driven     a device's zones as the sync crate's `Controlled`, over the engine, for the binary and the phones  [`sync`]
   ├── resonate-engine     transport, ring, pipeline policy  (also on analysis)
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither
@@ -114,7 +115,8 @@ the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `res
 hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`) and is reached by the binary and `resonate-mobile` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
 (capture and loopback on threads of its own, never `resonate-wasapi`); `resonate-analysis` reaches `resonate-dsp`;
-`resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server;
+`resonate-sync` reaches core alone and is reached by the binary, `resonate-driven`, `resonate-mobile` and the server;
+`resonate-driven` joins it to the engine and is reached by the binary and `resonate-mobile` alone;
 `resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and
 the binary alone, and is with `resonate-mobile` the only crate where `unsafe_code` is allowed.
 

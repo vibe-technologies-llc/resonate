@@ -37,7 +37,7 @@ use resonate_sync::{
 
 use crate::config::Config;
 #[cfg(feature = "sync")]
-use crate::{Error, Result, config, driven::Driven, error::ConfigKey};
+use crate::{Error, Result, config, error::ConfigKey};
 
 #[cfg(all(feature = "sync", not(windows)))]
 const DEVICE_NAME: &str = "Linux";
@@ -269,7 +269,7 @@ impl Syncing {
     }
 
     #[cfg(feature = "sync")]
-    pub(crate) fn drive(&self, driven: Driven) {
+    pub(crate) fn drive(&self, driven: resonate_driven::Driven) {
         let driven = Arc::new(driven) as Arc<dyn Controlled>;
         *self.service.driven.lock() = Some(Arc::clone(&driven));
         let trust = *self.service.trust.lock();

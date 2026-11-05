@@ -6058,6 +6058,7 @@ dependencies = [
  "resonate-codec",
  "resonate-core",
  "resonate-discord",
+ "resonate-driven",
  "resonate-dsp",
  "resonate-engine",
  "resonate-eq",
@@ -6192,6 +6193,17 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "resonate-driven"
+version = "0.4.0"
+dependencies = [
+ "crossbeam-channel",
+ "resonate-core",
+ "resonate-engine",
+ "resonate-sync",
  "tracing",
 ]
 

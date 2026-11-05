@@ -2,7 +2,7 @@
 paths:
   - "crates/resonate-sync/**"
   - "crates/resonate/src/sync.rs"
-  - "crates/resonate/src/driven.rs"
+  - "crates/resonate-driven/**"
   - "crates/resonate-library/src/synced.rs"
   - "crates/resonate-library/tests/synced.rs"
   - "crates/resonate-library/src/answers.rs"
@@ -610,7 +610,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
 - **Two requests on the peer wire.** `ToPeer::Control` (tag 8: the `ZoneId`, then a
   `RemoteCommand`: a kind byte, `Play` 0, `Pause` 1, `Toggle` 2, `Next` 3, `Previous` 4, `Seek` 5
   with milliseconds, `Volume` 6 with a `Permille`, `Move` 7 with two rows, `Remove` 8 and `Jump` 9
-  with one; rows count from 0 in the queue's load order), answered one `FromPeer::Controlled`
+  with one; rows count from 0 in the order the queue plays, as `PlayerState::queue_position` and the
+  engine's commands count them), answered one `FromPeer::Controlled`
   (tag 13, a `Controlling` byte: `Done`, `Untrusted`, `Uncontrollable`, `NoSuchZone`, `NoSuchRow`,
   `Failed`; a byte a later build adds reads as `Unanswered`), and `ToPeer::Watch` (tag 9), answered
   by `FromPeer::Zones` frames (tag 14: at most `ZONES_MIRRORED_AT_MOST`, 16, `RemoteZone`s, each
@@ -645,14 +646,23 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   after the last; `Sync::watched(device)` is a `Watched` (`Waiting`, `Mirrored(Mirror)`,
   `Refused(Controlling)`) and `unwatch` drops it
   (`a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_trusted`).
-- **The desktop is driven through `Zones::send`.** The binary's `driven::Driven` implements
-  `Controlled` over the window's `Zones` (every zone, by `ZoneId`) or, for headless `resonate play`,
-  the one player as zone 1; `Syncing::drive` hands it to every service the settings start. A row is
-  named by the engine's tag catalog (`Player::media`, never a probe on the sync thread), else the
-  file's stem; a row past the queue is `NoSuchRow` before anything is sent, a seek with nothing
-  playing is `NoSuchRow`, and the engine's refusal is `Failed`. The setting is `sync-control`
-  (`everything`, `transport`, `nothing`; part of the `Arrangement`, so a change restarts the
-  service with it).
+- **The reading is one crate over the engine and the wire.** `resonate-sync` may not see the engine,
+  so `resonate-driven` (core, engine, `resonate-sync`; reached by the binary behind `sync` and by
+  `resonate-mobile` alone) holds `Driven`, which implements `Controlled` over a `Zones` (every zone,
+  by `ZoneId`, each command through `Zones::send`) or, for headless `resonate play`, one `Player` as
+  zone 1. Where a row's name comes from is the `RowNames` seam: `ByTheirTags` is the engine's tag
+  catalog (`Player::media`, never a probe on the sync thread), else `unnamed`, the file's stem or the
+  location's URI. `Syncing::drive` hands the desktop's to every service the settings start. A row past
+  the queue is `NoSuchRow` before anything is sent, a seek with nothing playing is `NoSuchRow`, and the
+  engine's refusal is `Failed`. The setting is `sync-control` (`everything`, `transport`, `nothing`;
+  part of the `Arrangement`, so a change restarts the service with it). **Held over a real engine**:
+  `crates/resonate-driven/tests/engine.rs` plays silent WAVE files through a `Player` over a fake
+  `Backend` whose stream is pulled, and presses every command against what the mirror then says
+  (`a_real_engine_is_mirrored_and_takes_every_command_a_device_may_send`), a jump under shuffle
+  (`rows_are_counted_in_the_order_they_play_under_shuffle_and_a_jump_lands_on_the_row_named`), two
+  zones and the seam (`each_zone_is_driven_alone_named_as_the_seam_names_its_rows_and_gone_with_its_zones`)
+  and, over the peer wire between two `Sync`s told of each other on loopback, trust
+  (`a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted`).
 - **`resonate sync --control <DEVICE>`** prints what that device plays (each zone, or the one
   `--zone <N|NAME>` names: state, song and place, volume, the mirrored rows with the playing one
   marked); with one of `--press play|pause|toggle|next|previous`, `--seek TIME` (the `lasting`

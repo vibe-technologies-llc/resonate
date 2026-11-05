@@ -10,8 +10,6 @@ mod awake;
 mod cli;
 mod config;
 mod discord;
-#[cfg(feature = "sync")]
-mod driven;
 mod equaliser;
 mod error;
 mod favourites;
@@ -2599,7 +2597,7 @@ fn play_queue(
         .map(|library| sync::start(config, settings_path(cli).ok().as_deref(), library));
     #[cfg(feature = "sync")]
     if let Some(syncing) = syncing.as_ref() {
-        syncing.drive(driven::Driven::Player(Arc::downgrade(&player)));
+        syncing.drive(resonate_driven::Driven::player(&player));
     }
 
     let behind = input::played_in_the_background();
@@ -3083,7 +3081,10 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     });
     let syncing = sync::start(&config, Some(&places.config), &library);
     #[cfg(feature = "sync")]
-    syncing.drive(driven::Driven::Zones(Arc::downgrade(&zones)));
+    syncing.drive(resonate_driven::Driven::zones(
+        &zones,
+        resonate_driven::ByTheirTags,
+    ));
     let outcome = resonate_ui::run(
         Arc::clone(&zones),
         Arc::clone(&library),
