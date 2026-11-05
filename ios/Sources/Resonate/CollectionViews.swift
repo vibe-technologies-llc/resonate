@@ -1013,8 +1013,7 @@ struct ArtistView: View {
                                     openRelease = release
                                 } label: {
                                     VStack(alignment: .leading) {
-                                        OnlinePlaceholder(symbol: "opticaldisc")
-                                            .frame(width: albumEdge, height: albumEdge)
+                                        UnheldSleeve(release: release, edge: albumEdge)
                                         Text(release.title)
                                             .font(.subheadline.weight(.medium))
                                             .foregroundStyle(.secondary)
@@ -1091,6 +1090,11 @@ struct ArtistView: View {
             await readWhatIsLacked(native)
             if read == 0 { break }
         }
+        while !Task.isCancelled {
+            let covered = (try? await Work.aside { try native.learnArtistCovers(name: name) }) ?? 0
+            await readWhatIsLacked(native)
+            if covered == 0 { break }
+        }
     }
 
     private func readWhatIsLacked(_ native: MobilePlayer) async {
@@ -1144,6 +1148,44 @@ struct ArtistView: View {
 
 extension ReleaseNotHeld: @retroactive Identifiable {
     var id: String { group }
+}
+
+struct UnheldSleeve: View {
+    @Environment(Library.self) private var library
+    let release: ReleaseNotHeld
+    let edge: CGFloat
+    @State private var picture: UIImage?
+
+    var body: some View {
+        Group {
+            if let picture {
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: edge, height: edge)
+                    .clipped()
+                    .modifier(ArtworkClip(circle: false, corner: 8))
+                    .opacity(0.5)
+                    .accessibilityHidden(true)
+            } else {
+                OnlinePlaceholder(symbol: "opticaldisc")
+                    .frame(width: edge, height: edge)
+            }
+        }
+        .task(id: "\(release.group):\(release.covered)") {
+            guard release.covered, let native = try? await library.player() else {
+                picture = nil
+                return
+            }
+            let group = release.group
+            picture = try? await Work.aside {
+                guard let bytes = try native.unheldReleaseCover(group: group),
+                    let image = UIImage(data: bytes)
+                else { return nil }
+                return image.preparingForDisplay() ?? image
+            }
+        }
+    }
 }
 
 struct UnheldReleaseSheet: View {

@@ -15,9 +15,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.5.0] iOS's *Made for you* is six fixed mixes and one of the top artist: the desktop's lists
   read from listening (*On repeat*, *More like*, *deep cuts*, *Discover*, *Old flames*) need a filter or
   saved search over the phones' own catalog, and the daily turn with them
-- [S · 0.5.0] The phones' artist pages draw a release the library lacks as a placeholder tile, not
-  its sleeve: the desktop keeps `unheld_covers` (`library.md`) and the phones' catalog keeps no cover
-  of a release it does not hold
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns

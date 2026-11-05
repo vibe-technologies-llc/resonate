@@ -298,6 +298,14 @@ const LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN: &str = "
 CREATE INDEX listens_by_when ON listens(began);
 ";
 
+const UNHELD_RELEASES_KEEP_THEIR_SLEEVE: &str = "
+CREATE TABLE unheld_covers (
+    release_group TEXT PRIMARY KEY,
+    cover         BLOB,
+    asked         INTEGER NOT NULL
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -328,6 +336,7 @@ const MIGRATIONS: &[&str] = &[
     LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN,
     A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
     ARTISTS_KEEP_THEIR_DISCOGRAPHY,
+    UNHELD_RELEASES_KEEP_THEIR_SLEEVE,
 ];
 
 #[cfg(test)]
@@ -1697,6 +1706,59 @@ mod tests {
         assert_eq!(count("artist_discographies"), 0);
         assert_eq!(count("group_songs"), 0);
         assert_eq!(count("groups_read"), 0);
+        drop(connection);
+        drop(opened);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_catalog_of_before_unheld_sleeves_were_kept_keeps_its_discography_and_gains_an_empty_table()
+    {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-sleeves-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(UNHELD_RELEASES_KEEP_THEIR_SLEEVE)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO artist_releases (artist, release_group, title, kind, released)
+                 VALUES ('artist', 'group', 'Lacked', 'Album', '2010')",
+                [],
+            )
+            .expect("a release of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(UNHELD_RELEASES_KEEP_THEIR_SLEEVE)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let connection = opened.0.lock();
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table")
+        };
+
+        assert_eq!(count("artist_releases"), 1);
+        assert_eq!(count("unheld_covers"), 0);
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
