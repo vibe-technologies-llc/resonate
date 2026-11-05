@@ -96,6 +96,22 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.5.1] `a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever` fails every run of
+  the whole bus suite (`dbus-run-session -- cargo test -p resonate-mpris --test bus`, no
+  `TrackMetadataChanged` within its patience) and passes alone: another test on the shared bus reaches
+  it. It failed the same way before 0.5.0's work
+- [S · 0.5.1] `an_interpolated_kernel_stays_within_the_step_its_window_ends_on` fails on CI's runners and
+  passes here, so the job *Tests without the window* is red: a bound that holds on this machine's
+  floating point and not on theirs
+- [S · 0.5.1] Seven tests of the binary's file arguments in `main.rs` (`a_playlist_is_queued_as_the_rows_it_lists`,
+  `a_uri_a_file_manager_passes_names_the_file_it_points_at` and five beside them) fail on CI's Windows
+  job, a real Windows machine being the only place they run; whether the test or the reading is wrong
+  has not been looked at
+- [S · 0.5.1] `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` fails: at font scale 2 the Library
+  tab's `Songs`, `Albums` and `Artists` are called clipped in their `PrimaryScrollableTabRow`, whose
+  code had not moved since the sweep last passed. It fails on the emulator here; CI's Android job
+  is red too, though its log does not name the test. Nobody has yet looked at it on screen, so
+  whether a listener sees a cut word or the sweep misreads a scrollable row is open
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
