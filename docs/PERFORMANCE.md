@@ -9,8 +9,14 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## Later: Analysis
-- [S] `TruePeakMeter` multiplies out the phase at whole samples, whose weights are one tap of 1 and the rest 0; it is
-  a quarter of a study's meter and of the guard's, and the answer is the sample itself
+- [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the
+  answer is the sample itself) but skipping it saves nothing on a vector unit: the phases are lanes of one
+  vector, so the lane is free beside the fractions and dropping it only narrows the array (measured, 60 s of
+  stereo at 44.1 kHz, fifteen passes: 29.9 G instructions and 18.2 G cycles as it is; the same width with the
+  lane left to the fractions and the centre read apart 32.4 G and 18.6 G; arrays of exactly the three
+  fractions 60.3 G and 21.8 G, since LLVM does not vectorise three lanes; every read bit for bit the
+  same). Only a stereo pair's six fractions packed into one 8-lane vector would save, on AVX-512 alone (the
+  release baseline is x86-64-v3, four lanes), and a mono or odd channel has nothing to pack with
 - [S] `Mdct::coefficients` turns and writes every line while a grid reads only its band's (AAC's 4..16 kHz is
   half of them); it was about a tenth of the CPU on a minute of FLAC
 - [M] `workers_for` stayed at half the cores though each study now spreads over the crew: four
