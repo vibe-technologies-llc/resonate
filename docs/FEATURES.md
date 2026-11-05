@@ -36,15 +36,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Windows parity
-- [M · blocked: hardware] Nothing of the Windows build has been heard or seen on a Windows machine:
-  it is cross-checked (`cargo xwin`), its portable halves are tested on Linux and a hosted runner
-  builds and tests it, but WASAPI shared and exclusive playback at every rate and word, device
+- [M · blocked: hardware] Physical Windows devices still need WASAPI shared and exclusive playback
+  at every rate and word (`windows.md` records what has run on Windows 11 under QEMU/KVM), device
   hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
   per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
-  owner-only security descriptor, a client reaching it), the ARM64 files (cross-built on an x64
-  runner, never started), the installer (compiled by Inno Setup for the first time at a release; its
-  Start menu shortcut, file associations, the `resonate://` link handler and uninstall: whether a click on a shared or party link in a browser starts or reaches the window), a toast (whether one shows once a shortcut carries
+  owner-only security descriptor against another account), the ARM64 files (cross-built on an x64
+  runner, never started), the installer's Start menu shortcut, the default-app selection and the
+  `resonate://` link handler (whether a browser's shared or party link starts or reaches the window),
+  a toast (whether one shows once a shortcut carries
   `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
   transport, a replacement when the cover lands), the connection's `NetworkCostType` (a metered
   hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its

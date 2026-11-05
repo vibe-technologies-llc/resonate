@@ -29,6 +29,7 @@ pub enum Op {
     ReadConsoleMode,
     ReadFileIdentity,
     LeaveTheConsole,
+    HearConsoleInterrupts,
 }
 
 #[derive(Debug, thiserror::Error)]

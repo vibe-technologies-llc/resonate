@@ -46,9 +46,16 @@ in, assembles its ARM64 Windows code with `clang` whatever `CC` says, so a build
 needs clang on `PATH` (the hosted Windows image has LLVM); under `cargo xwin` on Linux the
 `/imsvc` flags xwin passes for `clang-cl` are not understood by that `clang`, so a local check
 puts a wrapper that rewrites `/imsvc <dir>` to `-isystem <dir>` ahead of it on `PATH`.
-Nothing here has been heard on a real Windows machine: this tree was cross-checked and the portable
-parts tested on the host, and `docs/FEATURES.md`'s *Windows parity* lists what only hardware can
-settle. `unsafe_code = "forbid"` holds everywhere but `resonate-win32`: a Win32 or COM call goes
+Windows 11 under QEMU/KVM has run the 0.5.0 x64 release: the installer and uninstaller, registry
+associations, scanning, paths and file URIs containing non-ASCII letters and escaped punctuation,
+the window's named-pipe handover and raising, shared playback and exclusive 16-bit playback at
+44.1, 48 and 96 kHz, media play/pause and next keys, settings and queue resumption. The inspector
+reported bit-perfect exclusive output and no underruns; this is a virtual endpoint, not a DAC
+measurement. A cross-built executable verified the corrected caption's minimise, maximise,
+restore, Snap Layouts, drag and close. The headless binary's 212 tests and all five ConPTY tests
+also ran there; the console tests exercised the virtual endpoint rather than skipping.
+`docs/FEATURES.md`'s *Windows parity* lists what only hardware can settle.
+`unsafe_code = "forbid"` holds everywhere but `resonate-win32`: a Win32 or COM call goes
 through a safe wrapper crate (`dependencies.md`), or through that crate's safe API where none
 exists (*The Win32 exception*, below).
 
@@ -289,6 +296,11 @@ exists (*The Win32 exception*, below).
   reaction replaced by whoever watches (`quit_when_told`, `cancel_when_told`, `leave_when_told`) and
   cleared when its `Interrupting` drops; the first interrupt asks to quit or cancels the pass, the
   second leaves with 130.
+  Once the handler is installed, `resonate_win32::hear_console_interrupts` clears the inherited
+  ignore-Ctrl-C attribute (`SetConsoleCtrlHandler(None, false)`). Without it an SSH-launched
+  process ignored `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` even though a typed Ctrl-C and
+  Ctrl-Break worked. The ConPTY helper starts each process in a new process group, which disables
+  Ctrl-C initially, so the interrupt test exercises this regardless of its launcher's attribute.
 - **A key at a time is `crossterm`'s raw mode**, not termios: key events become the bytes the Unix
   readers parse (arrows as `ESC [ A`), so `Keyed` and `Struck` are one state machine on both. Raw
   mode swallows Ctrl-C as a key, which `interrupted()` turns back into the interrupt. A piped stdin
@@ -311,6 +323,8 @@ exists (*The Win32 exception*, below).
   gpui's non-client handling rather than by `Control::act` (gpui's `zoom` only maximises, and the
   system's maximise is a toggle that offers Snap Layouts). Everything else clickable in the header
   stops the press, which gpui reads as the non-client press handled.
+  The header is never cached (`ui.md`): gpui's cached-view replay omits window-control hitboxes,
+  which made its caption and all three buttons inert after a reused frame on Windows 11 under KVM.
 
 ## The integration suites
 
@@ -325,7 +339,10 @@ Linux; what is Unix-only is gated per test with `#[cfg(unix)]`, never per suite,
   `signals` (the MCP server answering and leaving when its input closes, `mcp` feature).
 - **A test tree is canonical.** `Tree::new` in `library` and `studies` canonicalises its root, as
   the scan does (`\\?\C:\...` on Windows), so the paths a test writes are the paths the catalog
-  stores.
+  stores. The binary's file-argument tests name drive-qualified Windows URIs and expect verbatim
+  paths, including paths relative to the working directory; a list fixture canonicalises its
+  folder first. A test closes its catalog before removing its folder: Windows refuses to remove
+  the open SQLite file.
 - **A symlink needs a privilege Windows does not always give.** `tests/support::link_to_directory`
   and `link_to_file` create `symlink_dir`/`symlink_file` and answer `false` (the test returns, with
   a note on stderr) where the account lacks `SeCreateSymbolicLinkPrivilege` (`ERROR_PRIVILEGE_NOT_HELD`,
@@ -687,8 +704,10 @@ the output name as `/D` definitions the script reads (`the_build_script_compiles
   (`the_installer_writes_the_current_users_registry_and_removes_what_it_wrote`).
 - The publisher is `Resonate`; the script, the manifests and the scripts name no maintainer and
   no repository (`nothing_the_windows_installer_is_made_of_names_a_maintainer_or_a_repository`).
-  The installer is not run in CI and has not been compiled or run on this tree's host: a
-  Windows runner compiles it first at release (`docs/FEATURES.md`).
+  The installer is not run in CI; a Windows runner compiles it at release. The 0.5.0 x64 installer
+  ran on Windows 11 under KVM, registering the audio and link commands and uninstalling them while
+  preserving the settings. With the app closed, uninstall removed its executable; a reinstall
+  succeeded. ARM64 and the shell's actual default-app selection still need hardware checks.
 
 ### Signing
 

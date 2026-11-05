@@ -924,8 +924,12 @@ is never named.
   `RootView::region` via a weak handle (panes stay `RootView` methods, listeners bind to the root);
   `RootView::render` = shell (actions, overlays, menus, toasts). Each `Part` observes the root; a
   hover/scroll/frame asked inside a region notifies it alone. A cached view is laid out from a style,
-  not content, so `Region::laid_out` declares sizes. **The pane is held in flex columns, its root the
-  one item** (`Region::holding`): width is the cross axis, stretched and never measured; a pane root
+  not content, so `Region::laid_out` declares sizes. **The Windows header is always drawn whole**:
+  gpui replays ordinary hitboxes from a cached view but drops its window-control hitboxes, so a
+  reused header loses drag, minimise, maximise and close after its first frame. `part::cached`
+  uses the same plain holder as while a screen reader listens, keeping the other regions cached.
+  **The pane is held in flex columns, its root the one item** (`Region::holding`): width is the
+  cross axis, stretched and never measured; a pane root
   fills the height by `size_full` or is `kit::pane()` (column, `flex_1`, `min_w(0)`, `min_h(0)`), since
   height is the main axis, whose automatic minimum is the content's (a `flex_1` root without
   `min_h(0)` left the settings body and lyric sheet nothing to scroll). A one-cell grid

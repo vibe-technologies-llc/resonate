@@ -1,8 +1,12 @@
-use windows::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
+use windows::Win32::System::Console::{FreeConsole, GetConsoleProcessList, SetConsoleCtrlHandler};
 
 use crate::error::{Op, Result, refused};
 
 const THIS_PROCESS_ALONE: u32 = 1;
+
+pub fn hear_console_interrupts() -> Result<()> {
+    unsafe { SetConsoleCtrlHandler(None, false) }.map_err(refused(Op::HearConsoleInterrupts))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Console {

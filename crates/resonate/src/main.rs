@@ -4087,22 +4087,48 @@ mod tests {
 
     #[test]
     fn a_uri_a_file_manager_passes_names_the_file_it_points_at() {
-        assert_eq!(
-            located("file:///music/Pink%20Floyd/Echoes.flac"),
-            Some(MediaLocation::local("/music/Pink Floyd/Echoes.flac"))
-        );
+        let (uri, path) = if cfg!(windows) {
+            (
+                "file:///C:/music/Pink%20Floyd/Echoes.flac",
+                r"\\?\C:\music\Pink Floyd\Echoes.flac",
+            )
+        } else {
+            (
+                "file:///music/Pink%20Floyd/Echoes.flac",
+                "/music/Pink Floyd/Echoes.flac",
+            )
+        };
+        assert_eq!(located(uri), Some(MediaLocation::local(path)));
     }
 
     #[test]
     fn an_argument_that_is_a_path_rather_than_a_uri_is_read_as_the_path_it_is() {
-        for path in ["/music/Pink Floyd/Echoes.flac", "/music/a:b.flac"] {
-            assert_eq!(located(path), Some(MediaLocation::local(path)));
+        let paths = if cfg!(windows) {
+            [
+                (
+                    r"C:\music\Pink Floyd\Echoes.flac",
+                    r"\\?\C:\music\Pink Floyd\Echoes.flac",
+                ),
+                (r"C:\music\a.flac", r"\\?\C:\music\a.flac"),
+            ]
+        } else {
+            [
+                (
+                    "/music/Pink Floyd/Echoes.flac",
+                    "/music/Pink Floyd/Echoes.flac",
+                ),
+                ("/music/a:b.flac", "/music/a:b.flac"),
+            ]
+        };
+        for (argument, path) in paths {
+            assert_eq!(located(argument), Some(MediaLocation::local(path)));
         }
     }
 
     #[test]
     fn an_argument_naming_a_file_from_here_is_read_as_the_file_it_names() {
         let here = env::current_dir().expect("a working directory");
+        let here = resonate_core::path_text::verbatim(&here);
 
         assert_eq!(
             located("a.flac"),
@@ -4144,12 +4170,22 @@ mod tests {
 
     #[test]
     fn a_uri_naming_frames_queues_that_cut_and_one_naming_no_span_queues_nothing() {
-        let queued = queue_items(&[OsString::from("file:///music/Meddle.flac#frames=588-44100")]);
+        let (uri, path, unreadable) = if cfg!(windows) {
+            (
+                "file:///C:/music/Meddle.flac#frames=588-44100",
+                r"\\?\C:\music\Meddle.flac",
+                "file:///C:/music/Meddle.flac#frames=100-50",
+            )
+        } else {
+            (
+                "file:///music/Meddle.flac#frames=588-44100",
+                "/music/Meddle.flac",
+                "file:///music/Meddle.flac#frames=100-50",
+            )
+        };
+        let queued = queue_items(&[OsString::from(uri)]);
         assert_eq!(queued.len(), 1);
-        assert_eq!(
-            queued[0].location,
-            MediaLocation::local("/music/Meddle.flac")
-        );
+        assert_eq!(queued[0].location, MediaLocation::local(path));
         assert_eq!(
             queued[0].span,
             Some(FrameSpan::between(Frames(588), Frames(44_100))),
@@ -4157,7 +4193,7 @@ mod tests {
         );
 
         assert!(
-            queue_items(&[OsString::from("file:///music/Meddle.flac#frames=100-50")]).is_empty(),
+            queue_items(&[OsString::from(unreadable)]).is_empty(),
             "a cut that is no span was queued as the whole file"
         );
     }
@@ -4187,6 +4223,7 @@ mod tests {
         assert!(cuts.iter().all(|cut| cut.span.is_some()
             && cut.location.as_path() == Some(from_here(&folder.join("whole.wav")).as_path())));
 
+        drop(library);
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
     }
 
@@ -4249,6 +4286,9 @@ mod tests {
         let folder = env::temp_dir().join(format!("resonate-queued-list-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).expect("a scratch folder");
+        let folder = folder
+            .canonicalize()
+            .expect("the scratch folder is canonical");
         for name in ["one.wav", "two.wav"] {
             fs::write(folder.join(name), analyse::tests::silent_wave()).expect("a wave file");
         }
@@ -4308,6 +4348,7 @@ mod tests {
     #[test]
     fn an_argument_naming_a_source_this_build_does_not_hold_is_a_file_from_here() {
         let here = env::current_dir().expect("a working directory");
+        let here = resonate_core::path_text::verbatim(&here);
 
         for named in ["01:intro.flac", "subsonic:track/1"] {
             assert_eq!(located(named), Some(MediaLocation::local(here.join(named))));

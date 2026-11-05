@@ -57,11 +57,21 @@ impl Farewell {
 }
 
 fn watch(reaction: Reaction) -> bool {
-    let watching = *WATCHING.get_or_init(|| ctrlc::set_handler(interrupted).is_ok());
+    let watching = *WATCHING.get_or_init(start_watching);
     if watching {
         *REACTION.lock() = Some(reaction);
     }
     watching
+}
+
+fn start_watching() -> bool {
+    if ctrlc::set_handler(interrupted).is_err() {
+        return false;
+    }
+    if let Err(error) = resonate_win32::hear_console_interrupts() {
+        tracing::warn!(%error, "the console's inherited interrupt suppression could not be cleared");
+    }
+    true
 }
 
 pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, silence: Silencing) {

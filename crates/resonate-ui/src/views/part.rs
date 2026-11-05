@@ -112,7 +112,8 @@ impl Parts {
 }
 
 fn cached(part: &Entity<Part>, region: Region) -> AnyElement {
-    if !spoken::listening() {
+    let holds_caption = cfg!(windows) && region == Region::Header;
+    if !spoken::listening() && !holds_caption {
         return AnyView::from(part.clone())
             .cached(region.laid_out())
             .into_any_element();

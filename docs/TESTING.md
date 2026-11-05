@@ -101,12 +101,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `TrackMetadataChanged` within its patience) and passes alone: another test on the shared bus reaches
   it. It failed the same way before 0.5.0's work
 - [S · 0.5.1] `an_interpolated_kernel_stays_within_the_step_its_window_ends_on` fails on CI's runners and
-  passes here, so the job *Tests without the window* is red: a bound that holds on this machine's
-  floating point and not on theirs
-- [S · 0.5.1] Seven tests of the binary's file arguments in `main.rs` (`a_playlist_is_queued_as_the_rows_it_lists`,
-  `a_uri_a_file_manager_passes_names_the_file_it_points_at` and five beside them) fail on CI's Windows
-  job, a real Windows machine being the only place they run; whether the test or the reading is wrong
-  has not been looked at
+  locally with `RUSTFLAGS=` (Balanced, 44.1 kHz onto 47.993 kHz), so the job *Tests without the
+  window* is red: the bound depends on the target's floating-point code generation
+- [S · 0.5.1] The two Linux `resonate-listen --test capture` tests share the desktop's output while
+  running together: the sweep test read 26.1 dB at 1 kHz in the workspace run and passed alone.
+  Give each test an isolated output so the tone cannot contaminate the sweep
 - [S · 0.5.1] `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` fails: at font scale 2 the Library
   tab's `Songs`, `Albums` and `Artists` are called clipped in their `PrimaryScrollableTabRow`, whose
   code had not moved since the sweep last passed. It fails on the emulator here; CI's Android job
