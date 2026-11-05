@@ -22,9 +22,17 @@ are in [ROADMAP.md](ROADMAP.md).
   on sixteen songs), but a worker also waits on recognition, which was not measured
 - [M] `Bank`'s rows are read one chunk at a time on its own stage, and its forward pass cannot be parted, so it and
   `Metered`, 1 to 1.5 s each over 5 minutes at 44.1 kHz, are what a pass's wall time now waits for,
-  96 kHz most of all (4.5 s for 5 minutes)
-- [M] `peak_through`, `print` and `excerpt` still walk on one thread: *Fit the preamp to the music* over songs no
-  study has measured runs its chain in line
+  96 kHz most of all (4.5 s for 5 minutes); `Metered`'s meter, which restarts its running maximum every tile,
+  reads twice what one over the whole song does on a quiet master (158 to 200 ms against 74 to 96 ms for 60 s of
+  stereo at 44.1 kHz) and a tenth more on a loud one (122 against 107 ms for 46 s)
+- [M] `peak_through`, `print` and `excerpt` walk on one thread and the crew does not take them: it fans one
+  decode out to independent stages, and each of these has one stateful consumer in series (decode, the room's
+  convolver, the equaliser, the meter; decode, Chromaprint; decode, a mono mix), so a crew could only overlap
+  the decode with it. That is a fifth of `peak_through` (177 to 205 ms for 47 s of 16/44.1 stereo FLAC, 297 ms
+  for 40 s at 96 kHz, the decode alone 40 to 50 ms and 70 ms) and most of `print` (51 to 61 ms), and
+  `loudest_through` already runs half the cores' worth of cuts at once, so the cores that overlap would buy
+  are the ones the cuts use. A gain wants the chain parted, as a pipeline by stage or by channel, and the
+  convolver's two-by-two response ties the channels together
 
 ## Later: DSP
 - [M] The resampler's Very high is level with SoXR VHQ at 2:1, not ahead (`docs/RESAMPLING.md`: 0.041 % of a
