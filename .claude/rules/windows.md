@@ -680,6 +680,7 @@ the output name as `/D` definitions the script reads (`the_build_script_compiles
   `the_windows_installer_registers_an_extension_for_every_media_type_the_bus_offers`), so a format
   added to the scan fails until the script lists it. The list is written out line by line in the
   script, not generated, as the desktop entry's is.
+- **`resonate://` is a URL protocol the installer registers** (`HKCU\Software\Classes\resonate`: `URL:Resonate`, an empty `URL Protocol`, `DefaultIcon`, and `shell\open\command` `"resonate.exe" "%1"`, the scheme defined once as `LinkScheme`), as the desktop entry declares `x-scheme-handler/resonate`, so a shared playlist or party link clicked in a browser reaches the program as an argument (`binary.md`: an invitation, not a song) and a running window is handed it over its pipe as a file is. A pairing link `resonate://pair/` is delivered too and ignored, as on Linux (`the_installer_hands_resonate_links_to_the_program_as_the_desktop_entry_does`). The zip and a Scoop install register nothing.
 - **Uninstalling removes the program, the shortcut and every key and value setup wrote** (each row
   deletes its key or value, an extension's key only if left empty) and `ChangesAssociations=yes`
   tells the shell. Settings, catalog, vault and profiles in `%APPDATA%` and `%LOCALAPPDATA%` stay

@@ -2,6 +2,7 @@
 #define AppUserModelId "org.resonate.Resonate"
 #define ProgramId "Resonate.Audio"
 #define Executable "resonate.exe"
+#define LinkScheme "resonate"
 
 [Setup]
 AppId={{7052C132-1EB4-4DC5-9358-0DEEB4F1654F}
@@ -46,6 +47,10 @@ Filename: "{app}\{#Executable}"; Description: "Open {#AppName}"; Flags: nowait p
 Root: HKCU; Subkey: "Software\Classes\{#ProgramId}"; ValueType: string; ValueData: "Resonate audio file"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\{#ProgramId}\DefaultIcon"; ValueType: string; ValueData: "{app}\{#Executable},0"
 Root: HKCU; Subkey: "Software\Classes\{#ProgramId}\shell\open\command"; ValueType: string; ValueData: """{app}\{#Executable}"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\{#LinkScheme}"; ValueType: string; ValueData: "URL:{#AppName}"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\{#LinkScheme}"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\{#LinkScheme}\DefaultIcon"; ValueType: string; ValueData: "{app}\{#Executable},0"
+Root: HKCU; Subkey: "Software\Classes\{#LinkScheme}\shell\open\command"; ValueType: string; ValueData: """{app}\{#Executable}"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\Applications\{#Executable}"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#AppName}"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Applications\{#Executable}\shell\open\command"; ValueType: string; ValueData: """{app}\{#Executable}"" ""%1"""
 Root: HKCU; Subkey: "Software\{#AppName}"; ValueType: none; Flags: uninsdeletekey

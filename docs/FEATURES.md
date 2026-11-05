@@ -50,7 +50,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
   owner-only security descriptor, a client reaching it), the ARM64 files (cross-built on an x64
   runner, never started), the installer (compiled by Inno Setup for the first time at a release; its
-  Start menu shortcut, file associations and uninstall), a toast (whether one shows once a shortcut carries
+  Start menu shortcut, file associations, the `resonate://` link handler and uninstall: whether a click on a shared or party link in a browser starts or reaches the window), a toast (whether one shows once a shortcut carries
   `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
   transport, a replacement when the cover lands), the connection's `NetworkCostType` (a metered
   hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its
@@ -138,7 +138,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Handing the host's role to someone else in a party, when the host must go.
 - [S] A frozen snapshot of a past Wrapped, kept once its year is over, rather than read afresh from what history keeps.
 - [M] A browser view of a shared playlist's contents; today the page only hands its link to the app.
-- [S] Registering `resonate://` as a link handler on Windows, so a shared or party link opens the window there too.
 - [S] A guest's queue kept current as the host edits past the songs found ahead, rather than found again on reaching them.
 - [S] Measuring a party's offset between two people in different places, past the bound half their round trip gives.
 

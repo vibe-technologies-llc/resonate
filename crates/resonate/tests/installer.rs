@@ -164,6 +164,7 @@ fn the_installer_writes_the_current_users_registry_and_removes_what_it_wrote() {
     for line in registry_lines(&script) {
         let key = field(line, "Subkey").expect("a subkey");
         let beneath_a_key_that_goes = key.starts_with("Software\\Classes\\{#ProgramId}")
+            || key.starts_with("Software\\Classes\\{#LinkScheme}")
             || key.starts_with("Software\\Classes\\Applications\\{#Executable}")
             || key.starts_with("Software\\{#AppName}");
 
@@ -175,6 +176,37 @@ fn the_installer_writes_the_current_users_registry_and_removes_what_it_wrote() {
             "{line} would outlive the uninstall"
         );
     }
+}
+
+#[test]
+fn the_installer_hands_resonate_links_to_the_program_as_the_desktop_entry_does() {
+    let script = packaging(INSTALLER_SCRIPT);
+    let entry = packaging("resonate.desktop");
+
+    let scheme = script
+        .lines()
+        .find_map(|line| line.strip_prefix("#define LinkScheme "))
+        .map(|value| value.trim_matches('"'))
+        .expect("the installer script declares the scheme it takes");
+    let rows: Vec<&str> = registry_lines(&script)
+        .into_iter()
+        .filter(|line| {
+            field(line, "Subkey")
+                .is_some_and(|key| key.starts_with("Software\\Classes\\{#LinkScheme}"))
+        })
+        .collect();
+
+    assert!(entry.contains(&format!("x-scheme-handler/{scheme};")));
+    assert!(
+        rows.iter()
+            .any(|line| field(line, "ValueName") == Some("URL Protocol")),
+        "the scheme is not declared a URL protocol"
+    );
+    assert!(
+        rows.iter().any(|line| line.contains("shell\\open\\command")
+            && line.contains("\"\"{app}\\{#Executable}\"\" \"\"%1\"\"")),
+        "the scheme's command does not pass the link as an argument"
+    );
 }
 
 #[test]
