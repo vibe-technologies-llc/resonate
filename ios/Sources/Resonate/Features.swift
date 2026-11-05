@@ -1062,6 +1062,10 @@ final class Features {
         editPlaylist({ native in _ = try native.saveSearch(name: name, search: search) }, then: then)
     }
 
+    func keepSearchAsPlaylist(_ name: String, search: SavedSearch, then: PlaylistEdited? = nil) {
+        editPlaylist({ native in _ = try native.keepSearchAsPlaylist(name: name, search: search) }, then: then)
+    }
+
     func reviseSearch(_ id: UInt64, name: String, search: SavedSearch, then: PlaylistEdited? = nil) {
         editPlaylist({ native in
             guard let revision = try native.playlists().first(where: { $0.id == id })?.revision else { return }

@@ -1531,6 +1531,45 @@ impl Index {
             .collect()
     }
 
+    pub(crate) fn years_held(&self) -> Vec<(i32, u64)> {
+        let mut held: HashMap<i32, u64> = HashMap::new();
+        for year in self.rows.iter().filter_map(|row| row.year) {
+            *held.entry(year).or_default() += 1;
+        }
+
+        held.into_iter().collect()
+    }
+
+    pub(crate) fn genres_held(&self) -> Vec<(String, u64)> {
+        let mut held: HashMap<&str, u64> = HashMap::new();
+        for row in &self.rows {
+            let genre = row.track.genre.trim();
+            if !genre.is_empty() {
+                *held.entry(genre).or_default() += 1;
+            }
+        }
+
+        held.into_iter()
+            .map(|(genre, rows)| (genre.to_owned(), rows))
+            .collect()
+    }
+
+    pub(crate) fn genres_of_years(&self) -> Vec<(i32, String, u64)> {
+        let mut held: HashMap<(i32, &str), u64> = HashMap::new();
+        for row in &self.rows {
+            let genre = row.track.genre.trim();
+            if let Some(year) = row.year
+                && !genre.is_empty()
+            {
+                *held.entry((year, genre)).or_default() += 1;
+            }
+        }
+
+        held.into_iter()
+            .map(|((year, genre), rows)| (year, genre.to_owned(), rows))
+            .collect()
+    }
+
     pub(crate) fn genres_played(&self) -> Vec<(String, u64)> {
         let mut played: HashMap<&str, u64> = HashMap::new();
         for row in &self.rows {

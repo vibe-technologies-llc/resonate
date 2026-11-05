@@ -1001,7 +1001,10 @@ every route change (a pair of headphones at the same rate included), not from th
   reads the lists again (`OfferedMixes.named`), needing no statistics, and a mix no longer offered
   (the turn has moved on) reads "This mix is no longer offered". The round play button and the context
   menu (Play, Shuffle, Show songs) play every song it holds, read page by page (`Library.everyPage`), so
-  *Never heard* shuffles the whole of it. `SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.
+  *Never heard* shuffles the whole of it. A `MixView` of a list (a `SavedSearch` source, not a *Yours* filter)
+adds *Keep as a playlist that fills itself* to its `CollectionMenu` (`keeping`, `Features.keepSearchAsPlaylist`
+over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist fills itself from the same search.
+`SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.
 
 ## Search
 

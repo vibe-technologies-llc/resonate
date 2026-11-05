@@ -184,9 +184,9 @@ pub use crate::{
         weighed_again,
     },
     suggest::{
-        ARTISTS_OF_LATE_AT_MOST, ArtistHeard, Candidate, Kind as SuggestionKind, Kinship, OF_LATE,
-        PICTURED_BY_AT_MOST, Reason, Suggestion, Weighed, artists_as_heard, artists_heard_lately,
-        genres_ranked_by, listening_lists, the_shape_of_the_catalog, worth_offering,
+        ARTISTS_OF_LATE_AT_MOST, ArtistHeard, Candidate, Filing, Kind as SuggestionKind, Kinship,
+        OF_LATE, PICTURED_BY_AT_MOST, Reason, Suggestion, Weighed, artists_as_heard,
+        artists_heard_lately, genres_ranked_by, lists_to_offer, worth_offering,
     },
     sung::{BETTERED_AFTER, LyricsAhead, MISSED_AGAIN_AFTER},
     supply::{

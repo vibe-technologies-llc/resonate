@@ -236,6 +236,10 @@ struct SuggestedMix: Identifiable, Sendable {
         self.mark = mark
     }
 
+    var kept: SavedSearch? {
+        if case .search(let search) = source { search } else { nil }
+    }
+
     static var yours: [SuggestedMix] {
         var favourites = defaultTrackFilter()
         favourites.favourites = true
@@ -374,7 +378,7 @@ struct MixView: View {
                 .scrollContentBackground(.hidden)
                 .navigationTitle(mix.title)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { CollectionMenu(tracks: tracks) }
+                .toolbar { CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title) }
             } else if resolved {
                 ContentUnavailableView("This mix is no longer offered", systemImage: "sparkles")
             } else {

@@ -707,7 +707,9 @@ and the cover mosaic the boundary measured, and the Made for you page (`Suggesti
 shelf under its name after the *Your favourites* card. A card opens `Screen.Suggested`, which carries the
 list's name, detail and search as plain values (`SuggestedSearch`, so a restored back stack needs no
 catalog) and reads its songs with `saved_search_page` and its covers with `measure_saved_search`
-(`SuggestedViewModel`). The four filter `Mix`es (*Never heard*, *Most played*, *Recently added*, *High
+(`SuggestedViewModel`); its overflow menu offers *Keep as a playlist that fills itself*
+(`LibraryFeatures.keepSearchAsPlaylist`, `keep_search_as_playlist`: keeping the same list twice says
+*Already kept as ...* and makes no second playlist). The four filter `Mix`es (*Never heard*, *Most played*, *Recently added*, *High
 resolution*) remain the Search tab's browse tiles. `Listening` counts heard time rather than sought position; its half-track or
 four-minute threshold feeds the local history and statistics. History filters cover all time and
 the last week/month/year. Document playlists preserve repeated songs, use revision checks for

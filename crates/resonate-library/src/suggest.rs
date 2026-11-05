@@ -71,10 +71,7 @@ const THE_DECADES_THE_CATALOG_HOLDS: &str = "SELECT (a.year / ?1) * ?1 AS decade
             count(*) AS held
        FROM tracks t JOIN albums a ON a.id = t.album_id
       WHERE a.year IS NOT NULL AND a.year >= ?1
-      GROUP BY decade
-     HAVING held >= ?2
-      ORDER BY held DESC, decade DESC
-      LIMIT ?3";
+      GROUP BY decade";
 
 const THE_GENRES_THE_FILES_NAME: &str = "SELECT genre, count(*) FROM tracks
       WHERE genre IS NOT NULL AND trim(genre) <> ''
@@ -364,7 +361,7 @@ impl Kinship {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct Filing {
+pub struct Filing {
     decades: Vec<i32>,
     genres: Vec<String>,
     genres_of_decades: Vec<(i32, String)>,
@@ -372,16 +369,30 @@ pub(crate) struct Filing {
 }
 
 impl Filing {
+    pub fn of(
+        years: impl IntoIterator<Item = (i32, u64)>,
+        genres: impl IntoIterator<Item = (String, u64)>,
+        genres_of_years: impl IntoIterator<Item = (i32, String, u64)>,
+        kin: Kinship,
+    ) -> Self {
+        Self {
+            decades: decades_ranked_by(years),
+            genres: genres_ranked_by(genres),
+            genres_of_decades: genres_of_decades_ranked_by(genres_of_years),
+            kin,
+        }
+    }
+
     pub(crate) fn read(inner: &Inner) -> Result<Self> {
         let kin = Kinship::of(&inner.read(named_and_filed)?);
 
         Ok(Self {
-            decades: decades(inner)?,
+            decades: decades_ranked_by(decades_held(inner)?),
             genres: genres_ranked(
                 inner,
                 [THE_GENRES_THE_FILES_NAME, THE_GENRES_THE_ARTISTS_WERE_GIVEN],
             )?,
-            genres_of_decades: genres_of_decades(inner)?,
+            genres_of_decades: genres_of_decades_ranked_by(genres_of_decades_held(inner)?),
             kin,
         })
     }
@@ -470,13 +481,8 @@ pub(crate) fn suggestions(
     now: SystemTime,
 ) -> Result<Vec<Suggestion>> {
     let heard = the_artists_as_heard(inner)?;
-    let mut candidates: Vec<Candidate> = filing.decades.iter().copied().map(a_decade).collect();
-    candidates.extend(genres(filing, today));
-    candidates.extend(artist_mixes(&heard, today));
-    candidates.extend(the_shape_of_the_catalog());
-    candidates.extend(genres_of_a_decade(filing, today));
-    candidates.extend(from_what_you_play(inner, filing, &heard, today, now)?);
-    candidates.extend(the_sounds_the_catalog_holds());
+    let (lately, played_most) = what_you_play(inner, now)?;
+    let candidates = lists_to_offer(filing, &heard, &lately, &played_most, today, now);
 
     worth_offering(candidates, |query| -> Result<Weighed> {
         let measured = db::measured(inner, &TrackQuery::from(query))?;
@@ -547,29 +553,47 @@ fn taken_in_turn<T: Clone>(held: &[T], today: i64, most: usize) -> Vec<T> {
         .collect()
 }
 
-fn decades(inner: &Inner) -> Result<Vec<i32>> {
-    let held: Vec<i64> = inner.read(|connection| {
+fn decades_held(inner: &Inner) -> Result<Vec<(i32, u64)>> {
+    let held: Vec<(i64, i64)> = inner.read(|connection| {
         let mut statement = connection
             .prepare(THE_DECADES_THE_CATALOG_HOLDS)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
         statement
-            .query_map(
-                params![
-                    i64::from(YEARS_IN_A_DECADE),
-                    i64::from(ENOUGH_FOR_A_DECADE),
-                    MOST_DECADES as i64
-                ],
-                |row| row.get::<_, i64>(0),
-            )
+            .query_map(params![i64::from(YEARS_IN_A_DECADE)], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
 
     Ok(held
         .into_iter()
-        .filter_map(|decade| i32::try_from(decade).ok())
+        .filter_map(|(decade, held)| Some((i32::try_from(decade).ok()?, u64::try_from(held).ok()?)))
         .collect())
+}
+
+fn decades_ranked_by(counted: impl IntoIterator<Item = (i32, u64)>) -> Vec<i32> {
+    let mut held: AHashMap<i32, u64> = AHashMap::new();
+    for (year, rows) in counted {
+        if year >= YEARS_IN_A_DECADE {
+            let decade = (year / YEARS_IN_A_DECADE) * YEARS_IN_A_DECADE;
+            let total = held.entry(decade).or_default();
+            *total = total.saturating_add(rows);
+        }
+    }
+
+    let mut ranked: Vec<(i32, u64)> = held
+        .into_iter()
+        .filter(|(_, rows)| *rows >= u64::from(ENOUGH_FOR_A_DECADE))
+        .collect();
+    ranked.sort_by(|(decade, rows), (other, held)| held.cmp(rows).then(other.cmp(decade)));
+
+    ranked
+        .into_iter()
+        .take(MOST_DECADES)
+        .map(|(decade, _)| decade)
+        .collect()
 }
 
 fn a_decade(decade: i32) -> Candidate {
@@ -599,7 +623,7 @@ fn years_of(decade: i32) -> Conditions {
     ]
 }
 
-fn genres_of_decades(inner: &Inner) -> Result<Vec<(i32, String)>> {
+fn genres_of_decades_held(inner: &Inner) -> Result<Vec<(i32, String, u64)>> {
     let counted = inner.read(|connection| {
         let mut statement = connection
             .prepare(THE_GENRES_OF_EACH_DECADE)
@@ -617,13 +641,32 @@ fn genres_of_decades(inner: &Inner) -> Result<Vec<(i32, String)>> {
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
 
-    let mut billed: AHashMap<(i64, String), Spelt> = AHashMap::new();
-    for (decade, listed, rows) in counted {
+    Ok(counted
+        .into_iter()
+        .filter_map(|(decade, listed, rows)| {
+            Some((
+                i32::try_from(decade).ok()?,
+                listed,
+                u64::try_from(rows).unwrap_or_default(),
+            ))
+        })
+        .collect())
+}
+
+fn genres_of_decades_ranked_by(
+    counted: impl IntoIterator<Item = (i32, String, u64)>,
+) -> Vec<(i32, String)> {
+    let mut billed: AHashMap<(i32, String), Spelt> = AHashMap::new();
+    for (year, listed, rows) in counted {
+        if year < YEARS_IN_A_DECADE {
+            continue;
+        }
+        let decade = (year / YEARS_IN_A_DECADE) * YEARS_IN_A_DECADE;
         for name in offerable_genres(&listed) {
             billed
                 .entry((decade, store::folded_letters(name)))
                 .or_default()
-                .taking(name, u64::try_from(rows).unwrap_or_default());
+                .taking(name, rows);
         }
     }
 
@@ -633,7 +676,7 @@ fn genres_of_decades(inner: &Inner) -> Result<Vec<(i32, String)>> {
         .filter_map(|((decade, _), spelt)| {
             Some((
                 spelt.rows,
-                i32::try_from(decade).ok()?,
+                decade,
                 spelt.the_spelling_most_rows_hold()?.to_owned(),
             ))
         })
@@ -646,10 +689,9 @@ fn genres_of_decades(inner: &Inner) -> Result<Vec<(i32, String)>> {
             .then_with(|| one.2.cmp(&other.2))
     });
 
-    Ok(held
-        .into_iter()
+    held.into_iter()
         .map(|(_, decade, name)| (decade, name))
-        .collect())
+        .collect()
 }
 
 fn genres_of_a_decade(filing: &Filing, today: i64) -> Vec<Candidate> {
@@ -826,13 +868,7 @@ fn left_behind_of(heard: &[ArtistHeard], before: SystemTime) -> Vec<&str> {
         .collect()
 }
 
-fn from_what_you_play(
-    inner: &Inner,
-    filing: &Filing,
-    heard: &[ArtistHeard],
-    today: i64,
-    now: SystemTime,
-) -> Result<Vec<Candidate>> {
+fn what_you_play(inner: &Inner, now: SystemTime) -> Result<(Vec<String>, Vec<String>)> {
     let of_late = store::to_nanos(now.checked_sub(OF_LATE).unwrap_or(UNIX_EPOCH));
     let lately = inner.read(|connection| {
         names_read(
@@ -843,17 +879,36 @@ fn from_what_you_play(
     })?;
     let played_most = genres_ranked(inner, [THE_GENRES_PLAYED, THE_GENRES_OF_THE_ARTISTS_PLAYED])?;
 
-    Ok(listening_lists(
-        &filing.kin,
-        heard,
-        &lately,
-        &played_most,
-        today,
-        now,
-    ))
+    Ok((lately, played_most))
 }
 
-pub fn listening_lists(
+pub fn lists_to_offer(
+    filing: &Filing,
+    heard: &[ArtistHeard],
+    lately: &[String],
+    played_most: &[String],
+    today: i64,
+    now: SystemTime,
+) -> Vec<Candidate> {
+    let mut candidates: Vec<Candidate> = filing.decades.iter().copied().map(a_decade).collect();
+    candidates.extend(genres(filing, today));
+    candidates.extend(artist_mixes(heard, today));
+    candidates.extend(the_shape_of_the_catalog());
+    candidates.extend(genres_of_a_decade(filing, today));
+    candidates.extend(listening_lists(
+        &filing.kin,
+        heard,
+        lately,
+        played_most,
+        today,
+        now,
+    ));
+    candidates.extend(the_sounds_the_catalog_holds());
+
+    candidates
+}
+
+fn listening_lists(
     kin: &Kinship,
     heard: &[ArtistHeard],
     lately: &[String],
@@ -1189,7 +1244,7 @@ fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
     ]
 }
 
-pub fn the_shape_of_the_catalog() -> Vec<Candidate> {
+fn the_shape_of_the_catalog() -> Vec<Candidate> {
     vec![
         of_one_term(
             "Never heard",

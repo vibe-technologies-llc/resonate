@@ -10,7 +10,7 @@ const PLAYLIST_FILE_AT_MOST: usize = 8 * 1024 * 1024;
 
 const ROWS_AT_MOST: usize = 10_000;
 
-const NAMES_TRIED: u32 = 99;
+pub(crate) const NAMES_TRIED: u32 = 99;
 
 const FOLDER_ROOT: &str = "/";
 
