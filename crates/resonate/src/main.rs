@@ -16,6 +16,7 @@ mod favourites;
 #[cfg(test)]
 mod fixtures;
 mod followed;
+mod gaming;
 mod info;
 mod input;
 mod lastfm;
@@ -154,6 +155,7 @@ const TAKEN_AWAY: &str = "(taken away)";
 const RATING: &str = "rating";
 
 fn main() -> ExitCode {
+    gaming::watch();
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

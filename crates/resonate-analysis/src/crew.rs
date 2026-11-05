@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use parking_lot::{Condvar, Mutex};
@@ -15,7 +15,7 @@ const SAMPLES_A_SLAB_AT_LEAST: usize = 1 << 12;
 const BYTES_QUEUED_AT_MOST: usize = 8 << 20;
 const STOPPED_LOOKED_FOR_EVERY: Duration = Duration::from_millis(20);
 const CORES_KEPT_FROM_A_PASS: usize = 1;
-const CORES_A_PASS_OVER_THE_LIBRARY_SHARES: usize = 2;
+const BACKGROUND_REST_PER_BUSY: u32 = 3;
 
 pub(crate) trait Noting: Send {
     fn note(&mut self, interleaved: &[f32]);
@@ -28,25 +28,33 @@ pub(crate) trait Noting: Send {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Crew {
     AsTheMachineAllows,
-    HalfTheMachine,
+    Background,
 }
 
 impl Crew {
+    pub(crate) fn for_watch(watch: &dyn crate::Watching) -> Self {
+        if watch.is_background() {
+            Self::Background
+        } else {
+            Self::AsTheMachineAllows
+        }
+    }
+
     fn threads(self) -> usize {
         let cores = thread::available_parallelism().map_or(1, usize::from);
         match self {
             Self::AsTheMachineAllows => cores.saturating_sub(CORES_KEPT_FROM_A_PASS),
-            Self::HalfTheMachine => cores / CORES_A_PASS_OVER_THE_LIBRARY_SHARES,
+            Self::Background => 1,
         }
         .max(1)
     }
 
     fn pool(self) -> Option<&'static ThreadPool> {
         static WHOLE: OnceLock<Option<ThreadPool>> = OnceLock::new();
-        static HALF: OnceLock<Option<ThreadPool>> = OnceLock::new();
+        static BACKGROUND: OnceLock<Option<ThreadPool>> = OnceLock::new();
         let (held, name) = match self {
             Self::AsTheMachineAllows => (&WHOLE, "resonate-analyse"),
-            Self::HalfTheMachine => (&HALF, "resonate-studying"),
+            Self::Background => (&BACKGROUND, "resonate-studying"),
         };
         held.get_or_init(|| {
             ThreadPoolBuilder::new()
@@ -61,10 +69,24 @@ impl Crew {
         .as_ref()
     }
 
+    fn rest(self, began: Instant, stopped: &(dyn Fn() -> bool + Sync)) {
+        if self != Self::Background {
+            return;
+        }
+        let rest = began.elapsed() * BACKGROUND_REST_PER_BUSY;
+        let began = Instant::now();
+        while let Some(left) = rest.checked_sub(began.elapsed()) {
+            if stopped() {
+                break;
+            }
+            thread::sleep(left.min(STOPPED_LOOKED_FOR_EVERY));
+        }
+    }
+
     const fn slabs_a_second(self) -> usize {
         match self {
             Self::AsTheMachineAllows => 1,
-            Self::HalfTheMachine => 4,
+            Self::Background => 4,
         }
     }
 
@@ -72,20 +94,27 @@ impl Crew {
         self,
         samples_a_second: usize,
         stages: Vec<&'stages mut (dyn Noting + 'stages)>,
-        stopped: &(dyn Fn() -> bool + Sync),
+        stopped: &'stages (dyn Fn() -> bool + Sync),
         walk: impl FnOnce(&mut dyn FnMut(&[f32])) -> T,
     ) -> T {
         let Some(pool) = self.pool() else {
             let mut stages = stages;
             return walk(&mut |samples| {
                 for stage in &mut stages {
+                    if self == Self::Background {
+                        resonate_core::gaming::wait(stopped);
+                    }
+                    let began = Instant::now();
                     stage.note(samples);
+                    self.rest(began, stopped);
                 }
             });
         };
 
         let fan = Fan {
             lanes: stages.into_iter().map(Lane::of).collect(),
+            crew: self,
+            stopped,
             queued: Arc::new(Queued::default()),
             cancelled: AtomicBool::new(false),
         };
@@ -94,6 +123,9 @@ impl Crew {
         pool.in_place_scope(|scope| {
             let mut gathering = Slab::gathering(Arc::clone(&fan.queued));
             let answer = walk(&mut |samples| {
+                if self == Self::Background {
+                    resonate_core::gaming::wait(stopped);
+                }
                 gathering.hold(samples);
                 if gathering.samples.len() >= samples_a_slab {
                     let next = Slab::gathering(Arc::clone(&fan.queued));
@@ -126,15 +158,22 @@ impl<'stages> Lane<'stages> {
         }
     }
 
-    fn drain<'scope>(&'scope self, cancelled: &'scope AtomicBool, scope: &Scope<'scope>)
+    fn drain<'scope>(&'scope self, fan: &'scope Fan<'stages>, scope: &Scope<'scope>)
     where
         'stages: 'scope,
     {
+        if fan.crew == Crew::Background {
+            resonate_core::gaming::wait(fan.stopped);
+        }
+        if (fan.stopped)() {
+            fan.cancelled.store(true, Ordering::Relaxed);
+        }
         let mut stage = self.stage.lock();
         let slab = self.waiting.lock().slabs.pop_front();
         if let Some(slab) = slab
-            && !cancelled.load(Ordering::Relaxed)
+            && !fan.cancelled.load(Ordering::Relaxed)
         {
+            let began = Instant::now();
             if stage.hears_any_pieces_alike() {
                 stage.note(&slab.samples);
             } else {
@@ -142,6 +181,7 @@ impl<'stages> Lane<'stages> {
                     stage.note(piece);
                 }
             }
+            fan.crew.rest(began, fan.stopped);
         }
         drop(stage);
 
@@ -149,13 +189,15 @@ impl<'stages> Lane<'stages> {
         if waiting.slabs.is_empty() {
             waiting.draining = false;
         } else {
-            scope.spawn(move |scope| self.drain(cancelled, scope));
+            scope.spawn(move |scope| self.drain(fan, scope));
         }
     }
 }
 
 struct Fan<'stages> {
     lanes: Vec<Lane<'stages>>,
+    crew: Crew,
+    stopped: &'stages (dyn Fn() -> bool + Sync),
     queued: Arc<Queued>,
     cancelled: AtomicBool,
 }
@@ -176,8 +218,7 @@ impl<'stages> Fan<'stages> {
             waiting.slabs.push_back(Arc::clone(&slab));
             if !waiting.draining {
                 waiting.draining = true;
-                let cancelled = &self.cancelled;
-                scope.spawn(move |scope| lane.drain(cancelled, scope));
+                scope.spawn(move |scope| lane.drain(self, scope));
             }
         }
     }
@@ -285,8 +326,24 @@ mod tests {
     }
 
     #[test]
+    fn background_uses_one_thread_and_rests_between_slabs() {
+        assert_eq!(Crew::Background.threads(), 1);
+        let began = Instant::now();
+        let busy = began - Duration::from_millis(10);
+        Crew::Background.rest(busy, &|| false);
+        assert!(began.elapsed() >= Duration::from_millis(30));
+    }
+
+    #[test]
+    fn cancellation_skips_background_rest() {
+        let began = Instant::now();
+        Crew::Background.rest(began - Duration::from_secs(60), &|| true);
+        assert!(began.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
     fn every_stage_hears_every_piece_in_order_whatever_the_crew() {
-        for crew in [Crew::AsTheMachineAllows, Crew::HalfTheMachine] {
+        for crew in [Crew::AsTheMachineAllows, Crew::Background] {
             let (mut first, mut second) = (Gathered(Vec::new()), Gathered(Vec::new()));
 
             crew.fanned(RATE, vec![&mut first, &mut second], &|| false, |feed| {
@@ -314,7 +371,7 @@ mod tests {
         let mut slow = Slow(0);
         let piece = vec![0.0_f32; 1 << 18];
 
-        Crew::HalfTheMachine.fanned(RATE, vec![&mut slow], &|| false, |feed| {
+        Crew::Background.fanned(RATE, vec![&mut slow], &|| false, |feed| {
             for _ in 0..64 {
                 feed(&piece);
             }

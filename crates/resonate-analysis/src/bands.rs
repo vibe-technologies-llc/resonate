@@ -832,7 +832,7 @@ pub fn band_figures(
         .chain(splitting.stages())
         .collect();
     let samples_a_second = rate.hz() as usize * usize::from(info.spec.channels.count().get());
-    Crew::HalfTheMachine.fanned(
+    Crew::for_watch(watch).fanned(
         samples_a_second,
         stages,
         &|| watch.stopped(),

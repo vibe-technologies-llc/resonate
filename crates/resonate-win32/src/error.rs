@@ -2,6 +2,7 @@ use std::{io, path::PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
+    WatchGameMode,
     JoinProAudio,
     LeaveProAudio,
     ReadCounter,

@@ -26,9 +26,7 @@ use crate::{
 
 pub const HEARD_AT_LEAST: u8 = 80;
 
-const STUDY_WORKERS_AT_LEAST: usize = 1;
-
-const CORES_KEPT_FOR_EVERYTHING_ELSE: usize = 2;
+const STUDY_WORKERS_AT_MOST: usize = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Agreement {
@@ -732,6 +730,10 @@ impl Claims {
 }
 
 impl Watching for EnrichProgress {
+    fn is_background(&self) -> bool {
+        true
+    }
+
     fn stopped(&self) -> bool {
         self.is_cancelled()
     }
@@ -768,6 +770,7 @@ impl Studies {
                     .spawn(move || {
                         let sources = library.sources();
                         while let Some(one) = asked.get(next.fetch_add(1, Ordering::Relaxed)) {
+                            resonate_core::gaming::wait(&|| progress.is_cancelled());
                             if progress.is_cancelled() {
                                 return;
                             }
@@ -794,10 +797,7 @@ impl Studies {
 }
 
 fn workers_for(asked: usize) -> usize {
-    let cores = thread::available_parallelism().map_or(STUDY_WORKERS_AT_LEAST, usize::from);
-    (cores / CORES_KEPT_FOR_EVERYTHING_ELSE)
-        .max(STUDY_WORKERS_AT_LEAST)
-        .min(asked)
+    asked.min(STUDY_WORKERS_AT_MOST)
 }
 
 fn study_one(

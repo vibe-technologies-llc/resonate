@@ -786,7 +786,7 @@ mod tests {
         let owed = harness
             .player
             .catalog
-            .studies_without_bands()
+            .bands_to_measure(true)
             .expect("the studies owed a measure");
 
         let expected = -(20.0 * (0.5_f64 * 2.0).log10()) as f32;

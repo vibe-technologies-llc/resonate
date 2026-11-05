@@ -469,3 +469,5 @@ before writing (it holds secrets); `sync_all`s file and folder; renames over the
 with a flag is spelled as the flag spells it (`ValueEnum`s from `cli.rs`). `Setting::Theme`,
 `Accent`, `Online`, `Contact` never reach the engine; a cleared contact is `config::clear` on the
 key, not an empty string (`Config::contact` stays `None`, the User-Agent bare).
+
+The desktop starts its Game Mode watcher at entry: Linux through MPRIS's session bus worker, Windows through the Win32 effective power mode watch. `core::gaming` holds background enrichment and studies while active and releases them automatically afterward; playback and foreground analysis continue. The phones use the study duty limit without this desktop gate.

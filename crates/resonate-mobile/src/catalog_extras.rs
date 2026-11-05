@@ -539,7 +539,7 @@ impl Catalog {
         Ok(())
     }
 
-    pub(crate) fn studies_without_bands(&self) -> Result<Vec<(u64, String)>> {
+    pub(crate) fn bands_to_measure(&self, refresh: bool) -> Result<Vec<(u64, String)>> {
         let connection = self.0.lock();
         let read_error = |source| Error::store(StoreOp::Read, source);
         let mut statement = connection
@@ -547,21 +547,24 @@ impl Catalog {
                 "SELECT d.id, d.uri FROM documents d JOIN studies s ON s.track = d.id
                  WHERE d.missing = 0 AND (coalesce(length(s.band_levels), 0) != ?1
                                           OR coalesce(length(s.band_peaks), 0) != ?2)
+                 AND (?3 OR NOT EXISTS (SELECT 1 FROM unstudied u
+                     WHERE u.track = d.id AND u.under = ?4))
                  ORDER BY d.id",
             )
             .map_err(read_error)?;
         statement
-            .query_map([BANDS as i64, BAND_PEAKS_BYTES as i64], |row| {
-                Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
-            })
+            .query_map(
+                params![BANDS as i64, BAND_PEAKS_BYTES as i64, refresh, JUDGED_UNDER],
+                |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?)),
+            )
             .map_err(read_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)
     }
 
     pub(crate) fn keep_bands(&self, id: u64, figures: &BandFigures) -> Result<()> {
-        self.0
-            .lock()
+        let connection = self.0.lock();
+        connection
             .execute(
                 "UPDATE studies SET band_levels = ?2, band_peaks = ?3
                  WHERE track = ?1 AND (coalesce(length(band_levels), 0) != ?4
@@ -574,6 +577,9 @@ impl Catalog {
                     BAND_PEAKS_BYTES as i64
                 ],
             )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        connection
+            .execute("DELETE FROM unstudied WHERE track = ?1", [id as i64])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }

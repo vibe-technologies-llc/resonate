@@ -719,3 +719,5 @@ release without the secrets is built as before. `build.ps1` signs `resonate.exe`
 installer take it, and the installer after it is compiled (the uninstaller inside it is not signed).
 The certificate is written to a temporary file for the signing and removed at the end. Nothing here
 has run: it waits on a certificate (`docs/FEATURES.md`).
+
+`GameModeWatch` registers effective power mode V2 notifications and reports `EffectivePowerModeGameMode`, the active system mode rather than the Game Bar preference. Its callback only stores an atomic; dropping the watch unregisters it. The binary watches once for its lifetime and reports the state into `core::gaming` every 100 ms. Registration failure leaves enrichment available.

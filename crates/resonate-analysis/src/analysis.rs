@@ -70,7 +70,7 @@ pub fn study(
     watch: &dyn Watching,
 ) -> Result<Study> {
     walked(
-        Crew::HalfTheMachine,
+        Crew::for_watch(watch),
         sources,
         location,
         span,

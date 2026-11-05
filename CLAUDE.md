@@ -163,6 +163,7 @@ Invariants the layering protects (the rules files have the rest):
   since a provider crate may not see the library; *provider* means only a plugin that obtains media.
 - **A run of rows is one `resonate-core::Span`**, never empty; `Span::landing` is the one arithmetic
   of where a dropped span lands. `resonate-ui`'s `edit::Span` is a different type (text edits).
+- **Active desktop Game Mode holds background enrichment and studies** through `core::gaming`; Linux polls Feral GameMode on the session bus, Windows follows effective power mode V2. Cancellation releases the wait, and playback stays independent.
 - **Core carries what two mutually blind crates share**: `Resumption`, `Reordered`, `Appearance`,
   `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`, `titles`, `words_of_a_name`,
   `Answer` (what a lookup or study learnt, shared between devices).

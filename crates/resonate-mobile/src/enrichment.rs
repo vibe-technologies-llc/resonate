@@ -1212,6 +1212,10 @@ fn information_of(profile: &resonate_library::ArtistProfile) -> ArtistInformatio
 struct Hearing<'a>(&'a Told);
 
 impl Watching for Hearing<'_> {
+    fn is_background(&self) -> bool {
+        true
+    }
+
     fn stopped(&self) -> bool {
         self.0.is_cancelled()
     }
@@ -1222,8 +1226,9 @@ fn measure_the_unmeasured(
     sources: &Sources,
     told: &Told,
     at_most: Option<usize>,
+    refresh: bool,
 ) {
-    let mut owed = match catalog.studies_without_bands() {
+    let mut owed = match catalog.bands_to_measure(refresh) {
         Ok(owed) => owed,
         Err(error) => {
             tracing::warn!(%error, "the studies owed their bands could not be read");
@@ -1253,7 +1258,12 @@ fn measure_the_unmeasured(
             }
             Err(resonate_analysis::Error::Stopped) => return,
             Err(error) => {
-                tracing::debug!(%error, track, "a study's bands could not be measured, so they are measured another time");
+                tracing::debug!(%error, track, "a study's bands could not be measured");
+                if !error.is_out_of_reach()
+                    && let Err(error) = catalog.note_unstudied(track)
+                {
+                    tracing::warn!(%error, track, "a failed band measurement was not kept");
+                }
             }
         }
     }
@@ -1268,7 +1278,7 @@ fn hear_the_due(
     due: Due,
     at_most: Option<usize>,
 ) {
-    measure_the_unmeasured(catalog, sources, told, at_most);
+    measure_the_unmeasured(catalog, sources, told, at_most, due.refresh);
     let Some(printer) = asking.printer.as_deref() else {
         return;
     };
@@ -3570,6 +3580,45 @@ mod tests {
             );
             assert_ne!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
             assert_eq!(measured(&harness), 1);
+        }
+
+        #[test]
+        fn a_failed_band_measurement_is_skipped_until_refresh() {
+            let harness = sounding_library();
+            studied_before_the_bands(&harness, "a");
+            let path = harness.folder.join("a.wav");
+            let original = fs::read(&path).expect("the original audio");
+            fs::write(&path, b"damaged").expect("a damaged copy");
+            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            let catalog = &harness.player.catalog;
+            assert!(
+                catalog
+                    .bands_to_measure(false)
+                    .expect("the due rows")
+                    .is_empty()
+            );
+            assert_eq!(
+                catalog
+                    .bands_to_measure(true)
+                    .expect("refresh retries")
+                    .len(),
+                1
+            );
+            fs::write(&path, original).expect("the copy is repaired");
+            measure_the_unmeasured(
+                catalog,
+                &harness.player.sources,
+                &Told::default(),
+                None,
+                true,
+            );
+            assert_eq!(measured(&harness), 1);
+            let failed: i64 = catalog
+                .0
+                .lock()
+                .query_row("SELECT count(*) FROM unstudied", [], |row| row.get(0))
+                .expect("the failure marks read");
+            assert_eq!(failed, 0);
         }
 
         #[test]

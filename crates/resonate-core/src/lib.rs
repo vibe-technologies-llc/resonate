@@ -10,6 +10,7 @@ mod error;
 pub mod file_facts;
 mod fold;
 mod format;
+pub mod gaming;
 mod hints;
 mod hosted;
 mod id;

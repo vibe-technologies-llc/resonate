@@ -16,6 +16,8 @@ mod desk_bus;
 mod desk_toast;
 mod desktop;
 mod error;
+#[cfg(target_os = "linux")]
+mod gaming;
 mod host;
 mod icons;
 mod identity;
@@ -47,6 +49,9 @@ mod transport;
 #[cfg(unix)]
 mod trash;
 mod wire;
+
+#[cfg(target_os = "linux")]
+pub use gaming::watch_game_mode;
 
 #[cfg(windows)]
 pub use crate::costing::watch_the_meter;

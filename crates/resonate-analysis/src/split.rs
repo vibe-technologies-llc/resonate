@@ -852,7 +852,7 @@ mod tests {
 
         let alone = peaks_of(&long, 2, 4_096);
 
-        assert_eq!(alone, peaks_on_a_crew(&long, 2, Crew::HalfTheMachine));
+        assert_eq!(alone, peaks_on_a_crew(&long, 2, Crew::Background));
         assert_eq!(alone, peaks_on_a_crew(&long, 2, Crew::AsTheMachineAllows));
     }
 

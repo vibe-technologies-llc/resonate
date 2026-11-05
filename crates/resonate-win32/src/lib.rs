@@ -11,6 +11,8 @@ mod error;
 #[cfg(windows)]
 mod files;
 #[cfg(windows)]
+mod gaming;
+#[cfg(windows)]
 mod identity;
 #[cfg(windows)]
 mod mmcss;
@@ -32,6 +34,7 @@ pub use crate::{
     endpoint::{EndpointVolume, Level, VolumeWatch},
     error::{Error, Op, Result},
     files::{FileIdentity, file_identity},
+    gaming::GameModeWatch,
     identity::name_the_process,
     mmcss::ProAudioClass,
     security::carry_security,

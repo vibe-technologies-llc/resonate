@@ -44,9 +44,16 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   `a_study_alone_and_the_study_inside_an_analysis_are_one_answer`).
   **Two crews, so a library pass keeps its share of the machine.** `analyse` (a listener is waiting)
   takes `AsTheMachineAllows`, every core but one, a slab a second so a bank has chunks to settle
-  apart; `study` and `band_figures` take `HalfTheMachine`, half the cores shared by every study at
-  once, a slab a quarter of a second. Each pool starts on first use and sleeps after.
-  **Measured**, 5 minutes of stereo on a Ryzen 7 7700 (8 cores, 16 threads), a release-like build
+  apart; `study` and `band_figures` choose from `Watching::is_background`: enrichment
+  watches say true and take `Background`, one shared thread on every platform,
+  a slab a quarter of a second. After each stage slab it rests for three times the elapsed
+  processing time, checking cancellation every 20 ms: the expensive stages target a quarter of
+  one logical core, rather than half the machine. Decode and final reductions are outside this
+  budget, so this is a duty limit, not a process CPU guarantee. The inline fallback uses the same
+  pacing. Ordinary watches default to foreground, so a direct study or band measurement stays
+  responsive and independent of the desktop Game Mode gate. Each pool starts on first use and
+  sleeps after.
+  **Measured before the background duty limit**, 5 minutes of stereo on a Ryzen 7 7700 (8 cores, 16 threads), a release-like build
   (`--profile profiling`), bit for bit the answers of the single thread it replaced on FLAC 16/44.1,
   FLAC 24/96, FLAC holding a decoded MP3, LAME 256, Opus 128 and ffmpeg's AAC 256 (`Debug` of the
   `Study`, the `Analysis` and the `BandFigures`; FLAC 16/44.1 pinned to one core as well): a study of FLAC 16/44.1 from 14.1 s to 2.1 s, 21 to 139 times real time; lossy files, which
@@ -565,10 +572,10 @@ could change (stored studies and kept analyses are weighed against it).
   `to_study` and `Library::will_not_study` skip it until `unstudied_forget_a_changed_file` fires,
   `JUDGED_UNDER` moves, or `refresh` re-asks. Stopped studies and out-of-reach files
   (`Error::is_out_of_reach`: unmounted drive, downed share) leave no mark.
-- **Enrichment studies every track beside the pass.** `Studies`: `workers_for` = half
-  `available_parallelism` (min 1, capped at the work asked) threads named `resonate-study-<n>`, one
+- **Enrichment studies every track beside the pass.** `Studies`: `workers_for` = one worker
+  (zero for no work) thread named `resonate-study-<n>`, one
   shared counter, started before the pass, joined after the pictures, every one of them decoding and
-  sharing `Crew::HalfTheMachine` for the rest of a study. `to_study` = no study, older
+  sharing `Crew::Background` for the rest of a study. `to_study` = no study, older
   `JUDGED_UNDER`, or unrecognised print (only where something can recognise; `refresh` re-asks from
   the kept print, no second decode), or a current study with no `band_levels` or no `band_peaks`,
   which is measured alone (`ToStudy::unmeasured`) and never studied again for it. The list says only *whether* a print is kept
@@ -634,3 +641,5 @@ could change (stored studies and kept analyses are weighed against it).
   agreement. The recognition card leads where the audio isn't the song the file names. A refused or
   unreachable recognition is held for the row on screen only: following the row again asks again
   (`RECOGNITIONS_KEPT` keeps what was heard, never a refusal, for the run).
+
+Background slabs and the decode feed wait on `core::gaming` while desktop Game Mode is active. The wait checks cancellation every 100 ms; foreground analysis continues. Enrichment waits between lookups and picture fetches too, retaining its queue and progress until the game ends. An already running stage or request completes before waiting.

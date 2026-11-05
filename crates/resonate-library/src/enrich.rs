@@ -483,6 +483,7 @@ impl Verses {
             .name("resonate-lyrics".to_owned())
             .spawn(move || {
                 for track in asked {
+                    resonate_core::gaming::wait(&|| progress.is_cancelled());
                     if progress.is_cancelled() {
                         return;
                     }
@@ -653,6 +654,7 @@ fn fetch(
     progress: &EnrichProgress,
     picture: Picture,
 ) {
+    resonate_core::gaming::wait(&|| progress.is_cancelled());
     if progress.is_cancelled() {
         return;
     }
@@ -1628,6 +1630,7 @@ impl Pass<'_> {
         let mut spent = AHashSet::new();
         loop {
             while asked < queue.len() {
+                resonate_core::gaming::wait(&|| self.progress.is_cancelled());
                 if self.progress.is_cancelled() {
                     return Ok(());
                 }
@@ -1666,6 +1669,7 @@ impl Pass<'_> {
             .unheld_covers_due(SystemTime::now(), options.at_most.map(NonZeroUsize::get))?;
 
         for due in due {
+            resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
                 return Ok(());
             }
@@ -2089,6 +2093,7 @@ impl Pass<'_> {
 
         let since = self.refusals();
         for route in Route::ALL {
+            resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
                 return Ok(());
             }
@@ -2336,6 +2341,7 @@ impl Pass<'_> {
             return Ok(());
         }
         for member in members {
+            resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
                 return Ok(());
             }
@@ -2418,6 +2424,7 @@ impl Pass<'_> {
 
     fn look_again_for_covers(&self) -> Result<()> {
         for wanted in self.library.albums_wanting_a_cover()? {
+            resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
                 return Ok(());
             }
@@ -2441,6 +2448,7 @@ impl Pass<'_> {
 
     fn look_again_for_portraits(&self) -> Result<()> {
         for wanted in self.library.artists_wanting_a_portrait()? {
+            resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
                 return Ok(());
             }

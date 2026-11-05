@@ -227,7 +227,22 @@ fn a_study_alone_and_the_study_inside_an_analysis_are_one_answer() {
     let inside =
         analyse(&Sources::local(), &location, None, &Watch::default()).expect("an analysis");
 
+    struct Background;
+
+    impl Watching for Background {
+        fn stopped(&self) -> bool {
+            false
+        }
+
+        fn is_background(&self) -> bool {
+            true
+        }
+    }
+
+    let background =
+        study(&Sources::local(), &location, None, &Background).expect("a background study");
     assert_eq!(alone, inside.study);
+    assert_eq!(alone, background);
     assert!(!alone.band_peaks.is_silent());
 }
 

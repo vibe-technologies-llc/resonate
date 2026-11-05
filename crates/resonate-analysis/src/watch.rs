@@ -5,6 +5,10 @@ use resonate_core::Frames;
 pub trait Watching: Sync {
     fn stopped(&self) -> bool;
 
+    fn is_background(&self) -> bool {
+        false
+    }
+
     fn reached(&self, _done: Frames, _of: Option<Frames>) {}
 }
 
