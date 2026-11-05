@@ -353,6 +353,18 @@ fn artist_room() -> Div {
 }
 
 pub(crate) fn title_cell(title: SharedString, lit: Lit, playing: bool) -> Div {
+    if resonate_core::titles::rating_in_the_title(&title) == resonate_core::titles::Rating::Explicit
+    {
+        return tagged_title_cell(
+            title,
+            lit,
+            playing,
+            div()
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::muted()))
+                .child("[E]"),
+        );
+    }
     titled(
         title_room().truncate().ends_in_an_ellipsis(),
         title,

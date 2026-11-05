@@ -973,6 +973,27 @@ impl Menu {
         })
     }
 
+    pub(crate) fn looks_for_versions(self, title: String, artist: String) -> Self {
+        self.nests(Icon::Search, "Find another version", move |mut menu| {
+            for version in ["Clean", "Explicit"] {
+                let query = format!(
+                    "{} {} {}",
+                    resonate_core::titles::without_its_rating(&title),
+                    artist,
+                    version
+                );
+                menu = menu.does(
+                    Icon::Search,
+                    format!("Look for {version} version"),
+                    move |this, window, cx| {
+                        this.search_instead(query.clone(), window, cx);
+                    },
+                );
+            }
+            menu
+        })
+    }
+
     pub(crate) fn shares(self, track: TrackId) -> Self {
         self.does(Icon::Share, SHARE, move |this, _, cx| {
             this.library
