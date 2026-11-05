@@ -2,7 +2,6 @@ package org.resonate.android.ui.settings
 
 import java.text.Normalizer
 import java.util.Locale
-import org.resonate.android.ui.Mix
 
 enum class SettingsGroup(val title: String) {
     SOUND("Sound"),
@@ -91,8 +90,17 @@ enum class Setting(
     SUGGESTIONS(
         SettingsGroup.LIBRARY,
         "Made for you",
-        "Mixes from your library",
-        Mix.entries.map { it.title },
+        "Lists from your library and listening",
+        listOf(
+            "On repeat",
+            "More like",
+            "Deep cuts",
+            "Discover",
+            "Old flames",
+            "Never heard",
+            "Most played",
+            "Recently added",
+        ),
     ),
     WANTED(
         SettingsGroup.LIBRARY,

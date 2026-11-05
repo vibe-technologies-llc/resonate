@@ -526,26 +526,7 @@ fn measured_shown(suggestion: &Suggestion, shown: usize) -> String {
 }
 
 fn accents_of(suggestion: &Suggestion) -> (Accent, Accent) {
-    match suggestion.reason {
-        Reason::Decade(_) | Reason::GenreOfADecade(_) => (Accent::Amber, Accent::Peach),
-        Reason::NeverHeard | Reason::UnheardGenre => (Accent::Teal, Accent::Blue),
-        Reason::MostPlayed | Reason::OnRepeat => (Accent::Red, Accent::Peach),
-        Reason::RecentlyAdded | Reason::FreshArrivals => (Accent::Green, Accent::Teal),
-        Reason::BackCatalogue | Reason::OldFlames | Reason::SecondChances => {
-            (Accent::Amber, Accent::Mauve)
-        }
-        Reason::ForgottenFavourites | Reason::StarredUnheard => (Accent::Mauve, Accent::Red),
-        Reason::HiRes | Reason::Surround | Reason::Mono => (Accent::Green, Accent::Blue),
-        Reason::LongPlayers | Reason::SlowBurners | Reason::ShortAndSharp => {
-            (Accent::Blue, Accent::Mauve)
-        }
-        Reason::Genre
-        | Reason::Artist
-        | Reason::KindredArtists
-        | Reason::DeepCuts
-        | Reason::ArtistToDiscover
-        | Reason::ArtistLeftBehind => Accent::named_pair(&suggestion.name),
-    }
+    suggestion.reason.accents(&suggestion.name)
 }
 
 fn icon_of(reason: Reason) -> Icon {

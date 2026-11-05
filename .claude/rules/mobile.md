@@ -791,6 +791,30 @@ and `sync_stop`, so sync must be on. `together_named` keeps the typed name, empt
 follows the zone shown when it began, and `save_zone` leaves that zone's kept queue alone while following
 (`shared-playlists.md`, `party.md`).
 
+## Made for you
+
+`mixes.rs` offers the desktop's suggested lists over the document catalog, the code of `library.md`'s
+*A suggestion is a named saved query* and not a copy of it. `suggested_lists(time_zone, utc_offset_seconds)`
+reads the search index (`Index::artists_heard`, `genres_of_artists`, `genres_played`), the artists heard
+in the last ninety days from `listens` (counted listens, by heard time), hands them to
+`resonate_library::listening_lists` and `the_shape_of_the_catalog`, weighs every candidate query with
+`Searching::measured` (the grammar the phones already run: `plays:>=3@1mo`, `artist:="X" plays:<=1`,
+`or` over kindred artists) and keeps what `worth_offering` keeps. The day is the phone's zone's
+(`the_listeners_calendar`), so the turn of *Discover*, *More like*, *deep cuts* and *Back to* moves at the
+listener's midnight. The answer is kept under the index it was read from and the day (`KeptOffer`), so
+a catalog that has not moved and a day that has not turned cost one comparison; any write that moves
+the index, a counted listen included, offers again. Lists come in the desktop's shelf order
+(`SuggestionKind::ALL`, `SuggestedList.shelf` and `shelf_name`), each with its `SuggestionReason` (a
+front end draws its mark), `detail` (`Reason::says`), `accents`, song count, length, up to four covers
+and the `SavedSearch` it is, so opening one is `saved_search_page(search, offset, limit)` and its header
+`measure_saved_search(search)`; nothing is stored, and a list the catalog stops offering still opens as
+the query it was. The phones offer the shape of the catalog and the lists read from listening
+(*Made for you*, *Rediscover*, *From your listening*); the desktop's Eras, Genres, Artists and Sound
+shelves are open work (`FEATURES.md`). The artists are the index's groups (an album artist's songs
+count for the artist, as `artist:` reads them), not the desktop's `artists` rows. Held by
+`what_the_phone_heard_decides_the_lists_it_is_offered`, `a_list_holds_as_many_songs_when_it_is_opened_as_it_said`,
+`what_is_offered_to_discover_turns_a_day_at_a_time_and_reads_the_same_all_day` and the rest of `mixes.rs`'s tests.
+
 ## Resonate Wrapped
 
 `MobilePlayer::wrapped(year, time_zone, utc_offset_seconds)` answers a `WrappedYear` (the year, every year heard, `WrappedSlide`s, the summary) or nothing where no listen was ever kept; `resonate-mobile`'s `wrapped.rs` fills `resonate_core::wrapped::YearReview` from the document catalog (`library.md`), and the screens draw the slides as they come. The catalog's twenty-seventh step indexes `listens(began)`, since a year is read by time alone.

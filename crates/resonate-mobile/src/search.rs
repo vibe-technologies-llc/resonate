@@ -10,8 +10,8 @@ use resonate_analysis::Verdict;
 use resonate_codec::Codec;
 use resonate_core::{folded_letters, is_lettered};
 use resonate_library::{
-    Agreement, Column, Compare, Condition, Direction, Grain, Reach, SavedQuery, Search, Shape,
-    SortOrder, Spellings, Term, disc_in_folder,
+    Agreement, ArtistHeard, Column, Compare, Condition, Direction, Grain, Reach, SavedQuery,
+    Search, Shape, SortOrder, Spellings, Term, disc_in_folder,
 };
 use rusqlite::{Connection, params};
 
@@ -19,9 +19,10 @@ use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
     catalog::{Catalog, read},
     features::{TrackFilter, TrackOrder},
+    mixes::KeptOffer,
 };
 
-const LISTED_AT_MOST: u32 = 500;
+pub(crate) const LISTED_AT_MOST: u32 = 500;
 
 const STORED_PAGE: i64 = 2_000;
 
@@ -201,6 +202,7 @@ impl MobilePlayer {
 
 pub(crate) struct Measured {
     pub(crate) songs: u64,
+    pub(crate) length_ms: u64,
     pub(crate) covers: Vec<u64>,
 }
 
@@ -211,6 +213,7 @@ pub(crate) struct Searching {
     sung: Mutex<Option<Arc<Sung>>>,
     studied: Mutex<Option<Arc<Studied>>>,
     ordered: Mutex<Option<Ordered>>,
+    pub(crate) offering: Mutex<Option<KeptOffer>>,
 }
 
 type Admitted = (Arc<Index>, Arc<Vec<usize>>);
@@ -355,8 +358,30 @@ impl Searching {
 
         Ok(Measured {
             songs: found.len() as u64,
+            length_ms: found
+                .iter()
+                .map(|at| index.rows[*at].track.duration_ms)
+                .sum(),
             covers: index.pictured_among(&found),
         })
+    }
+
+    pub(crate) fn heard_lately(&self, catalog: &Catalog, since: i64) -> Result<Vec<(String, u64)>> {
+        let connection = catalog.0.lock();
+        let mut heard = connection
+            .prepare_cached("SELECT d.artist, sum(l.heard_ms) FROM listens l JOIN documents d ON d.id = l.track WHERE l.counted = 1 AND l.began >= ?1 AND d.missing = 0 GROUP BY d.artist")
+            .map_err(read_error)?;
+
+        heard
+            .query_map(params![since], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    u64::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
+                ))
+            })
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)
     }
 
     pub(crate) fn saved_page(
@@ -586,7 +611,7 @@ impl Searching {
             .unwrap_or_default())
     }
 
-    fn index(&self, catalog: &Catalog) -> Result<Arc<Index>> {
+    pub(crate) fn index(&self, catalog: &Catalog) -> Result<Arc<Index>> {
         if let Some(index) = self.current(catalog) {
             return Ok(index);
         }
@@ -1364,7 +1389,7 @@ impl ArtistGroup {
     }
 }
 
-struct Index {
+pub(crate) struct Index {
     revision: u64,
     rows: Vec<Row>,
     albums: Vec<AlbumGroup>,
@@ -1472,6 +1497,53 @@ impl Index {
             artist_at,
             spellings: OnceLock::new(),
         }
+    }
+
+    pub(crate) fn artists_heard(&self) -> Vec<ArtistHeard> {
+        self.artists
+            .iter()
+            .map(|group| ArtistHeard {
+                name: group.name.clone(),
+                plays: group.plays as i64,
+                held: group.rows.len() as i64,
+                last_played: group
+                    .rows
+                    .iter()
+                    .filter_map(|at| self.rows[*at].played())
+                    .max()
+                    .map(moment),
+            })
+            .collect()
+    }
+
+    pub(crate) fn genres_of_artists(&self) -> Vec<(String, String)> {
+        let mut shelved: HashSet<(&str, &str)> = HashSet::new();
+        for row in &self.rows {
+            let (artist, genre) = (row.track.artist.trim(), row.track.genre.trim());
+            if !artist.is_empty() && !genre.is_empty() {
+                shelved.insert((artist, genre));
+            }
+        }
+
+        shelved
+            .into_iter()
+            .map(|(artist, genre)| (artist.to_owned(), genre.to_owned()))
+            .collect()
+    }
+
+    pub(crate) fn genres_played(&self) -> Vec<(String, u64)> {
+        let mut played: HashMap<&str, u64> = HashMap::new();
+        for row in &self.rows {
+            let genre = row.track.genre.trim();
+            if !genre.is_empty() && row.plays() > 0 {
+                *played.entry(genre).or_default() += row.plays() as u64;
+            }
+        }
+
+        played
+            .into_iter()
+            .map(|(genre, plays)| (genre.to_owned(), plays))
+            .collect()
     }
 
     fn spellings(&self) -> &Spellings {
@@ -2077,6 +2149,10 @@ pub(crate) fn codec_named(codec: &str) -> Codec {
 
 fn marks_in(spelling: &str) -> usize {
     spelling.chars().filter(|letter| !letter.is_ascii()).count()
+}
+
+fn moment(seconds: i64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(seconds.max(0).unsigned_abs())
 }
 
 fn seconds_of(age: Duration) -> i64 {

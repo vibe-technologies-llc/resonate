@@ -157,6 +157,16 @@ rows read via `Player::media` like any unscanned row.
     reads only `the_artists_as_heard`, one scan answering the most played, the never played and
     those left behind, and measures the lists. On 300 000 synthetic tracks: about 6 s to read whole,
     about 4 s after a play, on the background executor; a catalog of hundreds of songs, 30 ms.
+  - **The lists read from listening are made once and offered by whoever holds the catalog.**
+    `listening_lists` (the lists above), `the_shape_of_the_catalog` and `worth_offering` (the
+    `enough` floor and the `GivesWayToTheSameRows` rule, generic over how a query is weighed) are
+    public and take plain readings, not a connection: `ArtistHeard`s (`artists_as_heard` sorts them),
+    the artists heard lately (`artists_heard_lately`), a `Kinship` (artists filed with their genres)
+    and the genres played most (`genres_ranked_by`). The desktop fills them from SQL
+    (`from_what_you_play`); the phones' document catalog fills them from its search index
+    (`mobile.md`'s *Made for you*), so a list means the same on all three and the turn
+    (`taken_in_turn` over `today`) is one arithmetic. `Reason::accents` is the accent pair a card wears
+    (the desktop's pane and the phones' `named_accents` agree because it is one table).
   `length` is an aggregate with no `ORDER BY` wherever the query has no limit/offset.
   `pictured_by` = `db::pictured_by`: albums holding a picture the search's rows fall on, most rows
   first, up to `PICTURED_BY_AT_MOST` (4), skipping an album whose picture another already stood for,

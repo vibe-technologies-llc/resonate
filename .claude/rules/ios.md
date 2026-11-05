@@ -777,8 +777,9 @@ every route change (a pair of headphones at the same rate included), not from th
 - **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
   Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
   appearing and coming forward), then *Favourites* and *Shuffle all* as two shortcut cards (`ShuffleAllCard`, the whole catalog
-  shuffled), *Made for you* (`HomeMixes`: every `SuggestedMix` as a card on a shelf, its covers from
-  `SuggestedMix.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
+  shuffled), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
+  *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
+  `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
   *Recently added* (`albums(order: .added)`) and *Artists* (`artists(order: .plays)`), twelve each read on
   `Work.onScreen` keyed by `collectionGeneration` and `catalogEpoch`, *Your playlists* (a *New playlist*
   button where there are none) and *Your listening* (below). An empty
@@ -907,7 +908,7 @@ every route change (a pair of headphones at the same rate included), not from th
   an artist's most played song); and the library in shares (`library_breakdown`: formats, sample
   rates, genres, decades, as bars of the library's songs, independent of the period). With no
   counted play the listening parts give way to *No plays yet* and the library shares remain.
-- **Recently played** is a Suggestions mix and a *Last played* sort (`TrackOrder.played`).
+- **Recently played** is a phone-only Suggestions mix (*Yours*) and a *Last played* sort (`TrackOrder.played`).
 
 ## Sharing
 
@@ -983,20 +984,24 @@ every route change (a pair of headphones at the same rate included), not from th
   accent's hue (mauve purple, amber yellow, peach orange). A name's accents are `named_accents(name)`,
   core's `Accent::named_pair`, so a genre, artist or playlist wears the colours it wears on the
   desktop. A playlist is drawn the same way from its first four albums.
-- **Suggestions is a grid of cards** (`SuggestionsView`, adaptive columns at least 160 pt): each
-  `SuggestedMix` is a `TrackFilter` with a title, a line saying what it holds, an accent pair and a
-  mark (Never heard teal/blue, Your favourites mauve/red, Most played red/peach, Recently added
-  green/teal, High-resolution green/blue, the most listened artist's mix, `listening_detail`'s first artist, its named accents). *Most played* and *Recently played* set `TrackFilter.played`, so they hold the songs heard and never run on into unheard ones. Covers are
-  `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
-  `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
-  holding a picture alone, at most four. Pressing the art pushes `Destination.mix(id)`, `MixView`, a page drawn as an album's (header
-  with the mosaic, Play and Shuffle, the songs as rows over the first song's backdrop) that reads
-  the mix's filter itself and never sets the Songs page's filter; `SuggestedMix.named` rebuilds a
-  mix from its id (the most listened artist's id carries the name), so a restored page needs no
-  statistics, and a mix no longer offered reads "This mix is no longer offered". The round
-  play button and the context menu (Play, Shuffle, Show songs) play every song it holds, read
-  page by page (`Library.everyPage`), so *Never heard* shuffles the whole of it.
-  `SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.
+- **Suggestions is the desktop's lists, in shelves of cards** (`SuggestionsView`, adaptive columns at
+  least 160 pt under a heading a shelf, `OfferedMixes.shelves`): `suggested_lists(time_zone,
+  utc_offset_seconds)` (`mobile.md`'s *Made for you*, read with `TimeZone.current`) answers *On repeat*,
+  *More like*, *deep cuts*, *Discover*, *Old flames*, *Never heard* and the rest in the desktop's shelf
+  order, turning at the phone's midnight, and each is a `SuggestedMix` of a `SavedSearch` with the
+  title, the `Reason::says` line, the accent pair the boundary gives and the SF Symbol of its reason
+  (`Suggestions.symbol`, `ResonateLogic`, held by `SuggestionsTests`). Two phone-only mixes of a
+  `TrackFilter` stand first under *Yours*, *Your favourites* mauve/red and *Recently played* amber/peach
+  (`TrackFilter.played`, so it holds the songs heard and never runs on into unheard ones). Covers are
+  the boundary's (`SuggestedList.covers`, `picturedBy` for a filter), read with the lists in one
+  `Work.aside` keyed by `collectionGeneration` and `catalogEpoch`. Pressing the art pushes
+  `Destination.mix(id)`, `MixView`, a page drawn as an album's (header with the mosaic, Play and Shuffle,
+  the songs as rows over the first song's backdrop) that reads the mix itself (`saved_search_page` or
+  `filtered_tracks`) and never sets the Songs page's filter; the id is the list's, so a restored page
+  reads the lists again (`OfferedMixes.named`), needing no statistics, and a mix no longer offered
+  (the turn has moved on) reads "This mix is no longer offered". The round play button and the context
+  menu (Play, Shuffle, Show songs) play every song it holds, read page by page (`Library.everyPage`), so
+  *Never heard* shuffles the whole of it. `SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.
 
 ## Search
 

@@ -19,18 +19,16 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.TrendingUp
-import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.HighQuality
-import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,43 +37,42 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import org.resonate.android.ui.Mix
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.nativecore.SuggestedList
+import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.icon
+import org.resonate.android.ui.library.Loaded
+import org.resonate.android.ui.library.Retry
+import org.resonate.android.ui.library.catalogRead
+import org.resonate.android.ui.library.valueOrNull
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.ui.screen
+import org.resonate.android.ui.suggestions
 
 private val CARD_LEAST = 168.dp
 
-private class Suggestion(
-    val key: String,
-    val title: String,
-    val subtitle: String,
-    val icon: ImageVector,
-    val screen: Screen,
-)
+class SuggestionsViewModel(resonate: Resonate) : ViewModel() {
+    val retry = Retry()
 
-private val Mix.icon: ImageVector
-    get() =
-        when (this) {
-            Mix.NEVER_HEARD -> Icons.Rounded.Explore
-            Mix.MOST_PLAYED -> Icons.AutoMirrored.Rounded.TrendingUp
-            Mix.RECENTLY_ADDED -> Icons.Rounded.NewReleases
-            Mix.HIGH_RESOLUTION -> Icons.Rounded.HighQuality
-        }
-
-private val suggestions =
-    Mix.entries.map { Suggestion(it.name, it.title, it.subtitle, it.icon, Screen.Mix(it)) } +
-        Suggestion(
-            "favourites",
-            "Your favourites",
-            "The ones you come back to.",
-            Icons.Rounded.Favorite,
-            Screen.Favourites,
-        )
+    val lists: StateFlow<Loaded<List<SuggestedList>>> =
+        resonate
+            .catalogRead(retry) { native -> native.suggestions() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Loaded.Loading)
+}
 
 @Composable
 fun SuggestionsScreen() {
+    val model = resonateViewModel { SuggestionsViewModel(it) }
+    val loaded by model.lists.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val scheme = MaterialTheme.colorScheme
     val palettes =
@@ -84,6 +81,7 @@ fun SuggestionsScreen() {
             scheme.secondaryContainer to scheme.onSecondaryContainer,
             scheme.surfaceContainerHighest to scheme.onSurface,
         )
+    val shelves = loaded.valueOrNull().orEmpty().groupBy { it.shelfName }
     Page("Made for you") { padding ->
         val direction = LocalLayoutDirection.current
         val fontScale = LocalDensity.current.fontScale
@@ -107,25 +105,52 @@ fun SuggestionsScreen() {
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        "Mixes drawn from your music and your listening.",
+                        "Lists drawn from your music and your listening, turning over each day.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
-                items(
-                    suggestions.size,
-                    key = { suggestions[it].key },
-                    span = {
-                        if (it == suggestions.lastIndex && suggestions.size % maxLineSpan != 0)
-                            GridItemSpan(maxLineSpan)
-                        else GridItemSpan(1)
-                    },
-                ) { index ->
-                    val suggestion = suggestions[index]
-                    val (container, content) = palettes[index % palettes.size]
-                    SuggestionCard(suggestion, container, content) {
-                        navigator.open(suggestion.screen)
+                item(key = "favourites") {
+                    SuggestionCard(
+                        key = "favourites",
+                        title = "Your favourites",
+                        subtitle = "The ones you come back to.",
+                        icon = Icons.Rounded.Favorite,
+                        container = palettes[0].first,
+                        content = palettes[0].second,
+                    ) {
+                        navigator.open(Screen.Favourites)
+                    }
+                }
+                if (loaded is Loaded.Failed) {
+                    item(key = "unread", span = { GridItemSpan(maxLineSpan) }) {
+                        TextButton(onClick = model.retry::again) {
+                            Text("Lists could not be read. Try again")
+                        }
+                    }
+                }
+                shelves.forEach { (shelf, lists) ->
+                    item(key = "shelf:$shelf", span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            shelf,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    items(lists.size, key = { lists[it].id }) { index ->
+                        val list = lists[index]
+                        val (container, content) = palettes[list.reason.ordinal % palettes.size]
+                        SuggestionCard(
+                            key = list.reason.name,
+                            title = list.name,
+                            subtitle = list.detail,
+                            icon = list.reason.icon,
+                            container = container,
+                            content = content,
+                        ) {
+                            navigator.open(list.screen)
+                        }
                     }
                 }
             }
@@ -135,7 +160,10 @@ fun SuggestionsScreen() {
 
 @Composable
 private fun SuggestionCard(
-    suggestion: Suggestion,
+    key: String,
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
     container: Color,
     content: Color,
     onClick: () -> Unit,
@@ -147,7 +175,7 @@ private fun SuggestionCard(
         modifier =
             Modifier.fillMaxWidth()
                 .heightIn(min = 176.dp)
-                .testTag("mix-${suggestion.key.lowercase()}"),
+                .testTag("mix-${key.lowercase()}"),
     ) {
         Column(Modifier.padding(16.dp)) {
             Surface(
@@ -157,13 +185,13 @@ private fun SuggestionCard(
                 modifier = Modifier.size(48.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(suggestion.icon, contentDescription = null)
+                    Icon(icon, contentDescription = null)
                 }
             }
             Spacer(Modifier.height(20.dp))
-            Text(suggestion.title, style = MaterialTheme.typography.titleMedium)
+            Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
-            Text(suggestion.subtitle, style = MaterialTheme.typography.bodyMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
