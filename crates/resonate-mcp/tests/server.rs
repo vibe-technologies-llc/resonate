@@ -2744,6 +2744,7 @@ fn a_session_that_cannot_push_offers_no_subscription() {
 
 struct Silent {
     source: SourceId,
+    signed_in_to_spotify: bool,
 }
 
 impl Reference for Silent {
@@ -2863,16 +2864,33 @@ impl Reference for Silent {
 
     fn playlist_linked(
         &self,
-        _link: &PlaylistLink,
+        link: &PlaylistLink,
     ) -> resonate_library::Result<Option<LinkedPlaylist>> {
-        Ok(None)
+        Ok(
+            (self.signed_in_to_spotify && *link == PlaylistLink::SpotifyLiked).then(|| {
+                LinkedPlaylist {
+                    name: "Liked Songs".to_owned(),
+                    songs: Vec::new(),
+                }
+            }),
+        )
     }
 
     fn profile_linked(
         &self,
-        _link: &ProfileLink,
+        link: &ProfileLink,
     ) -> resonate_library::Result<Option<LinkedProfile>> {
-        Ok(None)
+        Ok(
+            (self.signed_in_to_spotify && *link == ProfileLink::SpotifyAccount).then(|| {
+                LinkedProfile {
+                    name: "A Listener".to_owned(),
+                    playlists: vec![resonate_library::ProfilePlaylist {
+                        title: "Liked Songs".to_owned(),
+                        link: PlaylistLink::SpotifyLiked,
+                    }],
+                }
+            }),
+        )
     }
 
     fn artist_at(&self, _page: &str) -> resonate_library::Result<Option<Mbid>> {
@@ -2881,6 +2899,10 @@ impl Reference for Silent {
 }
 
 fn looking_up(after_a_scan: bool) -> Server {
+    consulting(after_a_scan, false)
+}
+
+fn consulting(after_a_scan: bool, signed_in_to_spotify: bool) -> Server {
     Server::new(
         Library::open_in_memory().expect("an in-memory catalog"),
         Fake::default(),
@@ -2888,10 +2910,39 @@ fn looking_up(after_a_scan: bool) -> Server {
     .looking_up_with(Lookups {
         reference: Some(Arc::new(Silent {
             source: SourceId::new("musicbrainz").expect("a nameable source"),
+            signed_in_to_spotify,
         })),
         after_a_scan,
         ..Lookups::none()
     })
+}
+
+#[test]
+fn a_spotify_account_is_followed_or_moved_where_it_is_signed_in_and_says_so_where_it_is_not() {
+    let account = json!({ "link": "spotify:account" });
+    let nobody = looking_up(false);
+    let signed_in = consulting(false, true);
+
+    let told = failed(&nobody, "follow_profile", account.clone());
+    let followed = called(&signed_in, "follow_profile", account.clone());
+    let moved = called(
+        &signed_in,
+        "follow_profile",
+        json!({ "link": "spotify:account", "in_step": false }),
+    );
+    let stopped = called(&signed_in, "stop_following", account);
+
+    assert!(told.contains("signed in"), "{told}");
+    assert_eq!(followed["profile"], "A Listener");
+    assert_eq!(followed["service"], "Spotify");
+    assert_eq!(followed["followed"], true);
+    assert_eq!(followed["playlists"][0]["playlist"]["name"], "Liked Songs");
+    assert_eq!(moved["followed"], false);
+    assert_eq!(moved["playlists"][0]["playlist"]["from_link"], Value::Null);
+    assert_eq!(
+        stopped["stopped"], false,
+        "moving it once ended the following"
+    );
 }
 
 #[test]
