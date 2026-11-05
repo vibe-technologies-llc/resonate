@@ -21,6 +21,7 @@ const UNIQUE_FILE_IDENTIFIER: &str = "UFID";
 const MUSICIAN_CREDITS: &str = "TMCL";
 const IDENTIFIER_OWNER: &str = "OWNER";
 const COMMENT_DESCRIPTION: &str = "SHORT_DESCRIPTION";
+const USER_TEXT_DESCRIPTION: &str = "DESCRIPTION";
 const ITUNES_DESCRIPTIONS_BEGIN: &str = "itun";
 const ITUNES_GAPLESS_NOTE: &str = "iTunSMPB";
 pub(crate) const ITUNES_SOUND_CHECK: &str = "iTunNORM";
@@ -184,6 +185,7 @@ pub struct Credits {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TagSet {
+    pub explicit: Option<bool>,
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
@@ -390,6 +392,35 @@ pub(crate) fn itunes_gapless_note(revisions: &Revisions, track: u32) -> Option<S
     newest
 }
 
+fn content_advisory(tag: &Tag) -> Option<Option<bool>> {
+    let key = ["itunesadvisory", "itunesadvistory", "rtng", "explicit"]
+        .into_iter()
+        .find(|key| {
+            tag.raw.key.eq_ignore_ascii_case(key)
+                || (tag.raw.key.eq_ignore_ascii_case("TXXX")
+                    && tag.raw.sub_fields.iter().flat_map(|fields| fields.iter()).any(|field| {
+                        field.field.eq_ignore_ascii_case(USER_TEXT_DESCRIPTION)
+                            && matches!(&field.value, RawValue::String(value) if value.trim().eq_ignore_ascii_case(key))
+                    }))
+        })?;
+    let value = tag.raw.value.to_string();
+    let value = value.trim().to_ascii_lowercase();
+    match key {
+        "itunesadvisory" | "itunesadvistory" | "rtng" => match value.as_str() {
+            "1" | "4" => Some(Some(true)),
+            "2" => Some(Some(false)),
+            "0" => Some(None),
+            _ => None,
+        },
+        "explicit" => match value.as_str() {
+            "1" | "true" | "yes" | "explicit" => Some(Some(true)),
+            "0" | "false" | "no" => Some(None),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn described_as(tag: &Tag, description: &str) -> bool {
     tag.raw
         .sub_fields
@@ -574,6 +605,9 @@ impl Builder {
         self.synced_in_this_revision = false;
         let naming = Naming::of(tags);
         for tag in tags {
+            if let Some(explicit) = content_advisory(tag) {
+                self.tags.explicit = explicit;
+            }
             match Id3DatePart::of(tag) {
                 Some(Id3DatePart::DayAndMonth(day)) => {
                     self.day_and_month = Some(day);
@@ -619,6 +653,15 @@ impl Builder {
         use StandardTag as T;
 
         match tag {
+            T::ContentAdvisory(value) => {
+                use symphonia::core::meta::ContentAdvisory;
+
+                self.tags.explicit = match value {
+                    ContentAdvisory::Explicit => Some(true),
+                    ContentAdvisory::Censored => Some(false),
+                    ContentAdvisory::None => None,
+                };
+            }
             T::TrackTitle(value) => given(&mut self.tags.title, value),
             T::Artist(value) => self.listed(Listed::Artist, value),
             T::Album(value) => given(&mut self.tags.album, value),
@@ -1231,6 +1274,32 @@ mod tests {
         let mut builder = Builder::default();
         builder.absorb(&tags.iter().collect::<Vec<_>>());
         builder.finish()
+    }
+
+    #[test]
+    fn content_advisories_are_read_without_guessing_that_unmarked_means_clean() {
+        for (key, value, expected) in [
+            ("ITUNESADVISORY", "1", Some(true)),
+            ("ITUNESADVISORY", "4", Some(true)),
+            ("ITUNESADVISORY", "2", Some(false)),
+            ("ITUNESADVISORY", "0", None),
+            ("EXPLICIT", "true", Some(true)),
+            ("EXPLICIT", "false", None),
+            ("EXPLICIT", "unknown", None),
+            ("COMMENT", "explicit", None),
+        ] {
+            assert_eq!(absorb(&[keyed(key, value)]).explicit, expected);
+        }
+        use symphonia::core::meta::ContentAdvisory;
+
+        assert_eq!(
+            absorb(&[tag(StandardTag::ContentAdvisory(ContentAdvisory::Explicit))]).explicit,
+            Some(true)
+        );
+        assert_eq!(
+            absorb(&[tag(StandardTag::ContentAdvisory(ContentAdvisory::Censored))]).explicit,
+            Some(false)
+        );
     }
 
     fn info(name: &str, value: &str) -> InfoTag {

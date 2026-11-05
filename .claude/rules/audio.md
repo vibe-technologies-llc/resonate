@@ -1471,3 +1471,5 @@ system temporary folder. This lets a sandboxed document stream spill without cha
 environment variables or treating a document URI as a path.
 
 Linux listen capture tests each create a separate null sink and explicitly select its monitor through `Listener::with_monitor`, keeping concurrent test signals apart.
+
+`TagSet::explicit` reads the standard content advisory and iTunes advisory tags (1 or 4 explicit, 2 censored, 0 unmarked), including ID3 user-text descriptions and Vorbis-style raw keys. An `EXPLICIT` true flag also marks a file; a false flag leaves it unmarked, since music with nothing to censor is not a censored take.

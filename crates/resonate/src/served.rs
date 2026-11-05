@@ -300,6 +300,7 @@ impl ServedBy {
 
     fn song(&self, song: Song) -> resonate_ui::ServedSong {
         resonate_ui::ServedSong {
+            rating: song.rating,
             location: self.0.location_of(&Named::Song(song.id)),
             title: song.title,
             artist: song.artist,

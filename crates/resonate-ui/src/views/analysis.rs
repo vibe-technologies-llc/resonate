@@ -351,14 +351,21 @@ fn verdict_card(analysis: &Analysis) -> Div {
                 .items_start()
                 .gap_2()
                 .text_size(px(theme::text_sm()))
+                .line_height(px(theme::text_sm() * FINDING_LEADING))
                 .text_color(rgb(theme::muted()))
-                .child(kit::mode_dot(finding_colour(finding)).mt(px(6.0)))
                 .child(
                     div()
                         .flex_none()
-                        .min_w(theme::width(theme::text_xs() * SEVERITY_WORD_EMS))
+                        .flex()
+                        .items_center()
+                        .h(px(theme::text_sm() * FINDING_LEADING))
+                        .child(kit::mode_dot(finding_colour(finding))),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .min_w(theme::width(theme::text_sm() * SEVERITY_WORD_EMS))
                         .whitespace_nowrap()
-                        .text_size(px(theme::text_xs()))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(theme::muted()))
                         .child(severity_word(finding)),
@@ -389,7 +396,8 @@ fn verdict_card(analysis: &Analysis) -> Div {
         .children(told)
 }
 
-const SEVERITY_WORD_EMS: f32 = 5.0;
+const SEVERITY_WORD_EMS: f32 = 4.0;
+const FINDING_LEADING: f32 = 1.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Severity {

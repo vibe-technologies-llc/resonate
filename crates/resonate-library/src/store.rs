@@ -2149,11 +2149,11 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              file_size, modified, sheet_modified, added, seen, span_start, span_frames,
              mbid, artist_mbid, release_track_mbid, isrc, tagged_title, tagged_artist,
              genre, lyrics, release_title, asked, answered, named_by_its_stem, packets,
-             title_sort, artist_sort, numbered_by_its_stem, track_total, walked
+             title_sort, artist_sort, numbered_by_its_stem, track_total, walked, explicit
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
              ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37, ?38, ?39
+             ?27, ?28, ?29, ?30, ?31, ?32, NULL, NULL, NULL, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40
          )
          ON CONFLICT(path, span_start) DO UPDATE SET
              root_id            = excluded.root_id,
@@ -2222,6 +2222,7 @@ static UPSERT_TRACK: LazyLock<String> = LazyLock::new(|| {
              artist_sort        = excluded.artist_sort,
              track_total        = excluded.track_total,
              genre              = excluded.genre,
+             explicit           = excluded.explicit,
              lyrics             = excluded.lyrics,
              probe_again        = 0,
              vault_key          = CASE
@@ -2315,6 +2316,7 @@ fn track(
             record.numbered_by_its_stem,
             record.tags.track_total.map(i64::from),
             record.walked.as_ref().map(Walked::written),
+            record.tags.explicit,
         ],
         |row| {
             Ok(Stored {

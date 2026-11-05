@@ -74,6 +74,7 @@ impl Pictured<'_> {
 }
 
 pub(crate) struct Row {
+    pub(crate) explicit: Option<bool>,
     pub(crate) track: Option<TrackId>,
     pub(crate) favourite: bool,
     pub(crate) title: SharedString,
@@ -88,6 +89,7 @@ pub(crate) struct Row {
 
 pub(crate) fn scanned(track: Track, favourite: bool) -> Row {
     Row {
+        explicit: track.explicit,
         track: Some(track.id),
         favourite,
         title: SharedString::from(track.title),
@@ -108,6 +110,7 @@ pub(crate) fn scanned(track: Track, favourite: bool) -> Row {
 
 pub(crate) fn read(info: &MediaInfo, location: &MediaLocation) -> Row {
     Row {
+        explicit: info.tags.explicit,
         track: None,
         favourite: false,
         title: SharedString::from(
@@ -132,6 +135,7 @@ pub(crate) fn read(info: &MediaInfo, location: &MediaLocation) -> Row {
 
 pub(crate) fn unread(location: &MediaLocation) -> Row {
     Row {
+        explicit: None,
         track: None,
         favourite: false,
         title: SharedString::from(format::stem(location)),
@@ -352,48 +356,51 @@ fn artist_room() -> Div {
         .overflow_hidden()
 }
 
+pub(crate) fn explicit_badge() -> Div {
+    kit::tag("E").flex_none()
+}
+
 pub(crate) fn title_cell(title: SharedString, lit: Lit, playing: bool) -> Div {
-    if resonate_core::titles::rating_in_the_title(&title) == resonate_core::titles::Rating::Explicit
-    {
-        return tagged_title_cell(
+    rated_title_cell(title, lit, playing, None)
+}
+
+pub(crate) fn rated_title_cell(
+    title: SharedString,
+    lit: Lit,
+    playing: bool,
+    explicit: Option<bool>,
+) -> Div {
+    use resonate_core::titles::Rating;
+
+    let stated = explicit.map(|explicit| {
+        if explicit {
+            Rating::Explicit
+        } else {
+            Rating::Clean
+        }
+    });
+    let marked = Rating::of(stated, &title, None) == Rating::Explicit;
+    title_room()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(titled(
+            div().min_w(px(0.0)).truncate().ends_in_an_ellipsis(),
             title,
             lit,
             playing,
-            div()
-                .text_size(px(theme::text_sm()))
-                .text_color(rgb(theme::muted()))
-                .child("[E]"),
-        );
-    }
-    titled(
-        title_room().truncate().ends_in_an_ellipsis(),
-        title,
-        lit,
-        playing,
-    )
+        ))
+        .when(marked, |cell| cell.child(explicit_badge()))
 }
 
 pub(crate) fn tagged_title_cell(
     title: SharedString,
     lit: Lit,
     playing: bool,
+    explicit: Option<bool>,
     tag: impl IntoElement,
 ) -> Div {
-    title_room()
-        .flex()
-        .items_center()
-        .gap_2()
-        .child(titled(
-            div()
-                .flex_1()
-                .min_w(px(0.0))
-                .truncate()
-                .ends_in_an_ellipsis(),
-            title,
-            lit,
-            playing,
-        ))
-        .child(tag)
+    rated_title_cell(title, lit, playing, explicit).child(tag)
 }
 
 fn titled(cell: Div, title: SharedString, lit: Lit, playing: bool) -> Div {

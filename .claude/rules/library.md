@@ -2190,3 +2190,5 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
     `count(*)` over `playlists`; `Playlists::listing` = `Library::playlist_names`, id and name with
     no join, `GetPlaylists`' `index` and `maxCount` as `OFFSET` and `LIMIT`. Both query SQLite on
     the bus thread. The bus cannot ask for a narrowing, so the seam takes none.
+
+A track keeps its file content advisory as nullable `tracks.explicit`: true for explicit, false for a censored take and null for unmarked. The appended `TRACKS_KEEP_THEIR_CONTENT_ADVISORY` migration marks existing rows `probe_again`, so the next incremental scan reads their advisory without discarding library metadata. A rescan replaces the advisory with what the file now says.

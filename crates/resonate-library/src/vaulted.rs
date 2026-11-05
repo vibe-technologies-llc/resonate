@@ -38,7 +38,7 @@ const STOOD_IN: &str = "SELECT t.vault_path, t.title, t.artist, coalesce(a.relea
             r.name, t.track_number, t.disc_number, coalesce(a.date, CAST(a.year AS TEXT)),
             t.genre, t.isrc, t.mbid, t.release_track_mbid, t.artist_mbid, a.mbid, r.mbid,
             a.release_group, t.rg_track_gain, t.rg_track_peak, t.rg_album_gain,
-            t.rg_album_peak, t.lyrics, t.id, t.vault_bits
+            t.rg_album_peak, t.lyrics, t.id, t.vault_bits, t.explicit
        FROM tracks t
        LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = a.artist_id
@@ -185,6 +185,7 @@ fn stood_in(row: &Row<'_>) -> rusqlite::Result<Standing> {
         musicbrainz_release_group_id: row.get(15)?,
         replay_gain: store::replay_gain(row.get(16)?, row.get(17)?, row.get(18)?, row.get(19)?),
         lyrics: row.get(20)?,
+        explicit: row.get(23)?,
         ..TagSet::default()
     };
 

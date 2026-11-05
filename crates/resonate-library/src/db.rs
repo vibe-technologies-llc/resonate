@@ -120,7 +120,7 @@ pub(crate) const TRACK_COLUMNS: &str =
      tracks.rg_album_gain, tracks.rg_album_peak, tracks.file_size, tracks.modified, tracks.added,
      tracks.plays, tracks.played, tracks.span_start, tracks.span_frames, tracks.artist_id,
      tracks.favourite, tracks.genre, tracks.hidden,
-     (SELECT count(*) FROM tracks x WHERE x.alternative_of = tracks.id), tracks.root_id IS NULL";
+     (SELECT count(*) FROM tracks x WHERE x.alternative_of = tracks.id), tracks.root_id IS NULL, tracks.explicit";
 
 pub(crate) const BESIDE_A_TRACK: usize = listed(TRACK_COLUMNS);
 
@@ -7699,6 +7699,7 @@ pub(crate) struct RawTrack {
     hidden: bool,
     alternatives: u32,
     delivered: bool,
+    explicit: Option<bool>,
 }
 
 impl RawTrack {
@@ -7740,6 +7741,7 @@ impl RawTrack {
             hidden: row.get(26)?,
             alternatives: row.get(27)?,
             delivered: row.get(28)?,
+            explicit: row.get(29)?,
         })
     }
 
@@ -7786,6 +7788,7 @@ impl RawTrack {
             hidden: self.hidden,
             alternatives: self.alternatives,
             delivered: self.delivered,
+            explicit: self.explicit,
         })
     }
 }

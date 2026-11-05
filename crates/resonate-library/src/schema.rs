@@ -21,6 +21,11 @@ CREATE TABLE wrapped_years (
 ) STRICT;
 ";
 
+const TRACKS_KEEP_THEIR_CONTENT_ADVISORY: &str = "
+ALTER TABLE tracks ADD COLUMN explicit INTEGER CHECK (explicit IN (0, 1));
+UPDATE tracks SET probe_again = 1;
+";
+
 const MIGRATIONS: &[&str] = &[
     LISTENS_NAME_THEIR_ORIGIN,
     SONGS_RECEIVED_NAME_THEIR_RECORDING,
@@ -40,6 +45,7 @@ const MIGRATIONS: &[&str] = &[
     A_PROFILE_IS_FOLLOWED_WHOLE,
     A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
     A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD,
+    TRACKS_KEEP_THEIR_CONTENT_ADVISORY,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -1416,6 +1422,40 @@ mod tests {
             Some(SCHEMA_FINGERPRINT)
         );
         assert!(lay_out(&connection).is_ok());
+    }
+
+    #[test]
+    fn an_existing_catalog_reads_content_advisories_on_its_next_scan() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        connection.execute_batch(V1).expect("the baseline");
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection.execute_batch("INSERT INTO tracks (path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen) VALUES ('/music/song.flac', 'A song', 44100, 2, 16, 1, 100, 1, 1, 1);").expect("an existing song");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                as_signed(STAMPS[MIGRATIONS.len() - 1].0),
+            )
+            .expect("the earlier stamp");
+        lay_out(&connection).expect("the advisory migration");
+        let kept = connection
+            .query_row(
+                "SELECT title, explicit, probe_again FROM tracks",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<bool>>(1)?,
+                        row.get::<_, bool>(2)?,
+                    ))
+                },
+            )
+            .expect("the carried song");
+        assert_eq!(kept, ("A song".to_owned(), None, true));
     }
 
     fn studies_hold_their_bands(connection: &Connection) -> bool {

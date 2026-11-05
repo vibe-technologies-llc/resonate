@@ -28,6 +28,7 @@ pub struct ServedAlbum {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServedSong {
+    pub rating: resonate_core::titles::Rating,
     pub location: MediaLocation,
     pub title: String,
     pub artist: Option<String>,

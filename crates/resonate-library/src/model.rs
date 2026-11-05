@@ -15,6 +15,7 @@ use crate::{Genre, Isrc, Kept, LifeSpan, Link, LyricText, Mbid, PlaylistSource, 
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
+    pub explicit: Option<bool>,
     pub id: TrackId,
     pub location: MediaLocation,
     pub title: String,

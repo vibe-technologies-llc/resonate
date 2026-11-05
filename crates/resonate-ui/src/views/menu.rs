@@ -1138,6 +1138,7 @@ mod tests {
 
     fn copy(id: u64, path: &str, codec: Codec, format: SampleFormat) -> Track {
         Track {
+            explicit: None,
             id: TrackId::new(id).expect("a valid id"),
             location: MediaLocation::local(path),
             title: "Echoes".to_owned(),

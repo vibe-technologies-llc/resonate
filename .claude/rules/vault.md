@@ -300,7 +300,7 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in 
   `Sources::standing_in`; `Decoder::open`, `open_span`, `probe`, `probe_span` ask it first; where the
   catalog names a `vault_path` for that `(path, span_start, span_frames)` they decode the object
   *whole* under a catalog-filled `TagSet`, including `rg_*` (`TagSet::heard_gain`) and
-  `tracks.lyrics`. An object that will not open falls back to the row's file. `info`, scan, import
+  `tracks.lyrics` and `tracks.explicit`. An object that will not open falls back to the row's file. `info`, scan, import
   have no stand-in: they read the file.
 - **What the catalog cannot fill, the import keeps.** `vaulted::FILLED_FROM_THE_CATALOG` names the
   nineteen `TagField`s the stand-in reads off `tracks`, `albums` and `artists`; every other field

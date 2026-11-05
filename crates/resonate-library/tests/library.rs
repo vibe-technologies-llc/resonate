@@ -549,6 +549,28 @@ fn a_scan_stores_what_the_probe_found() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn a_scan_keeps_content_advisories_and_updates_them_on_a_rescan() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    for (advisory, expected) in [("1", Some(true)), ("2", Some(false)), ("0", None)] {
+        tree.write(
+            "one.wav",
+            &Wav::new()
+                .text(TITLE, "A song")
+                .described("ITUNESADVISORY", advisory)
+                .build(),
+        );
+        let mut scanning = options(&tree);
+        scanning.incremental = false;
+        scan(&library, &scanning)?;
+        let tracks = all(&library)?;
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].explicit, expected);
+    }
+    Ok(())
+}
+
 fn a_variable_rate_stream() -> Vec<u8> {
     let mut file = Vec::new();
     for (header, length, count) in [

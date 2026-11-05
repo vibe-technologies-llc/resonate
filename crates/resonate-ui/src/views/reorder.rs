@@ -787,6 +787,7 @@ mod tests {
 
     fn song(id: u64) -> Track {
         Track {
+            explicit: None,
             id: TrackId::new(id).expect("a valid id"),
             location: MediaLocation::local(format!("/music/{id}.flac")),
             title: format!("Song {id}"),

@@ -1142,12 +1142,18 @@ impl RootView {
                     SharedString::from(track.title.clone()),
                     lit_title,
                     playing,
+                    track.explicit,
                     kit::tag(format!("+{}", track.alternatives))
                         .id(("track-copies", index))
                         .names(OTHER_COPIES_HINT),
                 )
             } else {
-                listing::title_cell(SharedString::from(track.title.clone()), lit_title, playing)
+                listing::rated_title_cell(
+                    SharedString::from(track.title.clone()),
+                    lit_title,
+                    playing,
+                    track.explicit,
+                )
             })
             .child(listing::artist_cell(
                 self.opens(

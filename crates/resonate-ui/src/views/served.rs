@@ -326,10 +326,27 @@ impl RootView {
                     .min_w(px(0.0))
                     .child(
                         div()
-                            .truncate()
-                            .ends_in_an_ellipsis()
-                            .text_color(rgb(theme::text()))
-                            .child(SharedString::from(title)),
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .min_w(px(0.0))
+                                    .truncate()
+                                    .ends_in_an_ellipsis()
+                                    .text_color(rgb(theme::text()))
+                                    .child(SharedString::from(title)),
+                            )
+                            .when(
+                                row.song().is_some_and(|song| {
+                                    resonate_core::titles::Rating::of(
+                                        Some(song.rating),
+                                        &song.title,
+                                        None,
+                                    ) == resonate_core::titles::Rating::Explicit
+                                }),
+                                |title| title.child(listing::explicit_badge()),
+                            ),
                     )
                     .when_some(by, |column, by| {
                         column.child(
@@ -745,6 +762,7 @@ mod tests {
 
     fn song(id: &str, title: &str, track: u32) -> ServedSong {
         ServedSong {
+            rating: resonate_core::titles::Rating::Unmarked,
             location: at(&format!("track/{id}")),
             title: title.to_owned(),
             artist: Some("Pink Floyd".to_owned()),
