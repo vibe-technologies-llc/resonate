@@ -2939,6 +2939,54 @@ impl LibraryModel {
         self.reload(cx);
     }
 
+    pub fn share_file(&mut self, track: TrackId, cx: &mut Context<Self>) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            toast::tell(
+                Notice::Noted("Turn Online on to upload a file".to_owned()),
+                cx,
+            );
+            return;
+        };
+        let library = Arc::clone(&self.library);
+        toast::tell(Notice::Noted("Uploading file to Catbox…".to_owned()), cx);
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let Some(track) = library.track(track)? else {
+                        return Ok(None);
+                    };
+                    if track.span.is_some() {
+                        return Ok(None);
+                    }
+                    let Some(path) = track
+                        .location
+                        .as_path()
+                        .filter(|_| track.location.is_local())
+                    else {
+                        return Ok(None);
+                    };
+                    reference.share_file(path)
+                })
+                .await;
+            let _ = this.update(cx, |_, cx| {
+                let notice = match result {
+                    Ok(Some(link)) => {
+                        clipboard::copy(link, cx);
+                        Notice::Done("Public Catbox file link is on the clipboard".to_owned())
+                    }
+                    Ok(None) => Notice::Noted(
+                        "Only whole local files can be uploaded with this build".to_owned(),
+                    ),
+                    Err(error) => toast::could_not("upload the file to Catbox", &error),
+                };
+                toast::tell(notice, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub fn share(&mut self, track: TrackId, cx: &mut Context<Self>) {
         self.share_each(vec![track], cx);
     }

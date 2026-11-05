@@ -62,6 +62,10 @@ impl Online {
 }
 
 impl Reference for Online {
+    fn share_file(&self, path: &std::path::Path) -> resonate_library::Result<Option<String>> {
+        Ok(self.client.upload_file(path)?)
+    }
+
     fn source(&self) -> &SourceId {
         &self.source
     }

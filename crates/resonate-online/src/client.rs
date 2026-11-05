@@ -200,6 +200,7 @@ impl Host {
             | Self::SpotifyApi
             | Self::SoundCloud
             | Self::SoundCloudPictures
+            | Self::Catbox
             | Self::SongLink
             | Self::LastFm
             | Self::Youtube
@@ -311,6 +312,7 @@ impl Host {
             | Self::SpotifyApi
             | Self::SoundCloud
             | Self::SoundCloudPictures
+            | Self::Catbox
             | Self::SongLink
             | Self::Youtube
             | Self::TidalEmbed
@@ -649,6 +651,69 @@ impl Client {
         })
     }
 
+    pub(crate) fn upload_file(&self, path: &std::path::Path) -> Result<Option<String>> {
+        self.upload_file_to(path, &format!("{}/user/api.php", Host::Catbox.base()))
+    }
+
+    fn upload_file_to(&self, path: &std::path::Path, url: &str) -> Result<Option<String>> {
+        let host = Host::Catbox;
+        let op = LookupOp::ShareFile;
+        self.reachable(host, op)?;
+        let file =
+            std::fs::File::open(path).map_err(|source| Error::Unreachable { host, op, source })?;
+        let size = file
+            .metadata()
+            .map_err(|source| Error::Unreachable { host, op, source })?
+            .len();
+        const MAX_UPLOAD: u64 = 200 * 1024 * 1024;
+        if size > MAX_UPLOAD {
+            return Err(Error::TooLarge {
+                host,
+                op,
+                limit: MAX_UPLOAD as usize,
+            });
+        }
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .filter(|value| value.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+            .unwrap_or("bin");
+        let boundary = format!("resonate{}", uuid::Uuid::new_v4().simple());
+        let prefix = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"fileToUpload\"; filename=\"audio.{extension}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        );
+        let suffix = format!("\r\n--{boundary}--\r\n");
+        let length = prefix.len() as u64 + size + suffix.len() as u64;
+        let mut body = std::io::Cursor::new(prefix.into_bytes())
+            .chain(file.take(size))
+            .chain(std::io::Cursor::new(suffix.into_bytes()));
+        self.pace(host);
+        self.reachable(host, op)?;
+        let response = self
+            .agent
+            .post(url)
+            .config()
+            .max_redirects(0)
+            .timeout_global(Some(Duration::from_secs(600)))
+            .build()
+            .header(USER_AGENT, self.introduction.user_agent_to(host))
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .header("Content-Length", length.to_string())
+            .send(ureq::SendBody::from_reader(&mut body))
+            .map_err(|error| Error::from_ureq(host, op, error))?;
+        let bytes = Self::read(response, host, op, 4096)?.ok_or(Error::Unreadable { host, op })?;
+        let link = std::str::from_utf8(&bytes)
+            .map_err(|_| Error::Unreadable { host, op })?
+            .trim();
+        if !valid_upload_link(link) {
+            return Err(Error::Unreadable { host, op });
+        }
+        Ok(Some(link.to_owned()))
+    }
+
     pub(crate) fn bytes(
         &self,
         host: Host,
@@ -885,6 +950,16 @@ fn named_cooling_off(headers: &HeaderMap) -> Option<Duration> {
     retry_after(headers, SystemTime::now()).map(|asked_for| asked_for.min(RETRY_AFTER_AT_MOST))
 }
 
+fn valid_upload_link(link: &str) -> bool {
+    link.strip_prefix("https://files.catbox.moe/")
+        .is_some_and(|name| {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.')
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1019,6 +1094,40 @@ mod tests {
             (head, body)
         });
         (url, served)
+    }
+
+    #[test]
+    fn a_file_upload_sends_bytes_without_its_local_name_and_refuses_an_invalid_answer() {
+        let path =
+            std::env::temp_dir().join(format!("private-title-{}.flac", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"test audio bytes").expect("a fixture");
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            Faked::new(),
+            Carried::Plain,
+        );
+        let (url, served) = serving_one_post();
+        let read = client.upload_file_to(&path, &url);
+        std::fs::remove_file(&path).expect("remove fixture");
+        let (head, body) = served.join().expect("the server");
+        let body = String::from_utf8(body).expect("ASCII fixture");
+        assert!(head.contains("multipart/form-data"));
+        assert!(body.contains("name=\"reqtype\"\r\n\r\nfileupload"));
+        assert!(body.contains("filename=\"audio.flac\""));
+        assert!(body.contains("test audio bytes"));
+        assert!(!body.contains("private-title"));
+        assert!(matches!(
+            read,
+            Err(Error::Unreadable {
+                host: Host::Catbox,
+                ..
+            })
+        ));
+        client.reach(false);
+        assert!(matches!(
+            client.upload_file(&path),
+            Err(Error::Offline { .. })
+        ));
     }
 
     fn serving_one_get(answer: String) -> (u16, JoinHandle<String>) {
@@ -1878,5 +1987,24 @@ mod tests {
             pacing.backed_off(Host::Lrclib, None, now),
             Duration::from_secs(2)
         );
+    }
+}
+
+#[cfg(test)]
+mod upload_tests {
+    #[test]
+    fn only_public_catbox_file_links_are_copied() {
+        assert!(super::valid_upload_link(
+            "https://files.catbox.moe/abc123.flac"
+        ));
+        for link in [
+            "https://files.catbox.moe/",
+            "https://files.catbox.moe.evil/a",
+            "http://files.catbox.moe/a",
+            "https://files.catbox.moe/a\nerror",
+            "Upload failed",
+        ] {
+            assert!(!super::valid_upload_link(link));
+        }
     }
 }

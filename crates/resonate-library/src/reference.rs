@@ -458,11 +458,13 @@ pub enum LookupOp {
     StreamLink,
     FollowLink,
     SpotifyAccount,
+    ShareFile,
 }
 
 impl LookupOp {
     pub const fn asked_for(self) -> &'static str {
         match self {
+            Self::ShareFile => "a public file upload",
             Self::Release => "a release",
             Self::FindRelease => "a release search",
             Self::Recording => "a recording",
@@ -492,6 +494,10 @@ impl LookupOp {
 }
 
 pub trait Reference: Send + Sync {
+    fn share_file(&self, _path: &std::path::Path) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     fn source(&self) -> &SourceId;
 
     fn release(&self, id: &Mbid) -> Result<Option<Release>>;

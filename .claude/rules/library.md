@@ -2192,3 +2192,5 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
     the bus thread. The bus cannot ask for a narrowing, so the seam takes none.
 
 A track keeps its file content advisory as nullable `tracks.explicit`: true for explicit, false for a censored take and null for unmarked. The appended `TRACKS_KEEP_THEIR_CONTENT_ADVISORY` migration marks existing rows `probe_again`, so the next incremental scan reads their advisory without discarding library metadata. A rescan replaces the advisory with what the file now says.
+
+`Reference::share_file` optionally uploads a whole local file and returns its public URL; references without upload support return nothing. This explicit file sharing action is separate from `Shared::written`, which still produces streaming links alone.

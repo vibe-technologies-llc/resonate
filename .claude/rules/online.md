@@ -546,3 +546,7 @@ feature the twins answer `None`, `Error::NoReference`, `Corrected::uncorrected()
 twin): one agent and its connections per process.
 
 A failed optional Deezer twin lookup preserves the names and codes already read from song.link.
+
+## Public file sharing
+
+`Reference::share_file` is an explicit listener action implemented by Catbox anonymous multipart uploads. The client streams at most 200 MiB with a generic filename retaining only an alphanumeric extension, never the local path. Online and metering gates apply before sending. Uploads have a ten-minute deadline, follow no redirects and are never retried automatically, so a lost response does not duplicate a public upload. Only HTTPS file URLs on files.catbox.moe are accepted, under a 4096-byte response cap. No account or deletion token is kept.

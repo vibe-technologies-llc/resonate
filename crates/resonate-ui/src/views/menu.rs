@@ -995,9 +995,19 @@ impl Menu {
     }
 
     pub(crate) fn shares(self, track: TrackId) -> Self {
-        self.does(Icon::Share, SHARE, move |this, _, cx| {
-            this.library
-                .update(cx, |library, cx| library.share(track, cx));
+        self.nests(Icon::Share, SHARE, move |menu| {
+            menu.does(Icon::Share, "song.link", move |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.share(track, cx));
+            })
+            .does(
+                Icon::Share,
+                "Upload file to Catbox (public)",
+                move |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.share_file(track, cx));
+                },
+            )
         })
     }
 
