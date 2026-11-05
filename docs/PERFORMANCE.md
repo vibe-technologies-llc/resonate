@@ -17,8 +17,6 @@ are in [ROADMAP.md](ROADMAP.md).
   fractions 60.3 G and 21.8 G, since LLVM does not vectorise three lanes; every read bit for bit the
   same). Only a stereo pair's six fractions packed into one 8-lane vector would save, on AVX-512 alone (the
   release baseline is x86-64-v3, four lanes), and a mono or odd channel has nothing to pack with
-- [S] `Mdct::coefficients` turns and writes every line while a grid reads only its band's (AAC's 4..16 kHz is
-  half of them); it was about a tenth of the CPU on a minute of FLAC
 - [M] `workers_for` stayed at half the cores though each study now spreads over the crew: four
   workers keep the same throughput as eight at three quarters of the memory (442 MB against 582 MB
   on sixteen songs), but a worker also waits on recognition, which was not measured

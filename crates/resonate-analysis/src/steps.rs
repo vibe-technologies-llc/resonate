@@ -1018,6 +1018,16 @@ impl Mdct {
     }
 
     pub(crate) fn coefficients(&mut self, samples: &[f32], shape: usize, into: &mut [f32]) {
+        self.coefficients_within(samples, shape, 0..self.hop, into);
+    }
+
+    pub(crate) fn coefficients_within(
+        &mut self,
+        samples: &[f32],
+        shape: usize,
+        lines: Range<usize>,
+        into: &mut [f32],
+    ) {
         let hop = self.hop;
         for ((slot, sample), weight) in self
             .windowed
@@ -1048,11 +1058,27 @@ impl Mdct {
         }
         self.fft
             .process_with_scratch(&mut self.buffer, &mut self.scratch);
-        for (nth, (value, turn)) in self.buffer.iter().zip(&self.turning_out).enumerate() {
+        let bins = self.bins_reaching(&lines);
+        let values = &self.buffer[bins.clone()];
+        let turns = &self.turning_out[bins.clone()];
+        for (nth, (value, turn)) in (bins.start..).zip(values.iter().zip(turns)) {
             let turned = value * turn;
             into[2 * nth] = turned.re;
             into[hop - 1 - 2 * nth] = -turned.im;
         }
+    }
+
+    fn bins_reaching(&self, lines: &Range<usize>) -> Range<usize> {
+        let bins = self.hop / 2;
+        if lines.is_empty() {
+            return 0..0;
+        }
+        let from_the_front = lines.start.div_ceil(2)..lines.end.div_ceil(2);
+        let from_the_back = self.hop.saturating_sub(lines.end).div_ceil(2)
+            ..(self.hop.saturating_sub(lines.start + 1) / 2 + 1);
+        let first = from_the_front.start.min(from_the_back.start);
+        let past = from_the_front.end.max(from_the_back.end);
+        first.min(bins)..past.min(bins)
     }
 
     #[cfg(test)]
@@ -1312,24 +1338,28 @@ impl Grid for Aac {
         self.eight = matches!(AAC_BLOCKS[kind], AacBlock::Eight);
         match AAC_BLOCKS[kind] {
             AacBlock::Long => {
-                self.long.coefficients(samples, shape, into);
+                self.long
+                    .coefficients_within(samples, shape, band.first..band.past, into);
                 band.first..band.past
             }
             AacBlock::Start => {
-                self.long.coefficients(samples, 2 + shape, into);
+                self.long
+                    .coefficients_within(samples, 2 + shape, band.first..band.past, into);
                 band.first..band.past
             }
             AacBlock::Stop => {
-                self.long.coefficients(samples, 4 + shape, into);
+                self.long
+                    .coefficients_within(samples, 4 + shape, band.first..band.past, into);
                 band.first..band.past
             }
             AacBlock::Eight => {
                 let width = self.short_band.width();
                 for window in 0..AAC_SHORTS {
                     let from = AAC_SHORTS_START + window * AAC_SHORT_HOP;
-                    self.short.coefficients(
+                    self.short.coefficients_within(
                         &samples[from..from + 2 * AAC_SHORT_HOP],
                         shape,
+                        self.short_band.first..self.short_band.past,
                         &mut self.shorts,
                     );
                     into[window * width..(window + 1) * width]
@@ -1380,6 +1410,19 @@ impl Grid for Vorbis {
 
     fn coefficients(&mut self, _: usize, samples: &[f32], _: u64, shape: usize, into: &mut [f32]) {
         self.mdct.coefficients(samples, shape, into);
+    }
+
+    fn frame(
+        &mut self,
+        taking: Taking,
+        samples: &[f32],
+        band: &Band,
+        into: &mut [f32],
+    ) -> Range<usize> {
+        let lines = band.first..band.past;
+        self.mdct
+            .coefficients_within(samples, taking.shape, lines.clone(), into);
+        lines
     }
 }
 
@@ -1626,6 +1669,61 @@ pub(crate) mod tests {
                 assert!((f64::from(*fast) - slow * scale).abs() < 1e-5);
             }
         }
+    }
+
+    #[test]
+    fn the_lines_of_a_band_are_the_lines_the_whole_transform_gives() {
+        let mut wandering = Wandering(11);
+        for hop in [AAC_SHORT_HOP, AAC_HOP, 960, 2 * AAC_HOP] {
+            let samples: Vec<f32> = (0..2 * hop)
+                .map(|_| (wandering.next() as f32 - 0.5) * 3.0)
+                .collect();
+            let mut mdct = Mdct::new(hop, vec![sine_window(2 * hop)]);
+            let mut whole = vec![0.0; hop];
+            mdct.coefficients(&samples, 0, &mut whole);
+
+            let bands = [
+                0..hop,
+                0..1,
+                hop - 1..hop,
+                1..2,
+                hop / 2..hop / 2 + 1,
+                hop / 2 - 1..hop / 2,
+                hop / 5..hop * 3 / 4,
+                hop * 9 / 100..hop * 36 / 100 + 1,
+                hop / 3..hop / 3 + 7,
+                hop / 4 + 1..hop,
+                0..hop / 2,
+                hop / 2..hop,
+                3..hop - 3,
+                hop / 4..hop / 4,
+                hop..hop,
+            ];
+            for band in bands {
+                let mut within = vec![f32::NAN; hop];
+                mdct.coefficients_within(&samples, 0, band.clone(), &mut within);
+
+                for line in band.clone() {
+                    assert_eq!(
+                        within[line].to_bits(),
+                        whole[line].to_bits(),
+                        "line {line} of {band:?} at hop {hop}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_band_the_grids_read_is_turned_in_fewer_bins_than_the_whole_transform() {
+        let mdct = Mdct::new(AAC_HOP, vec![sine_window(2 * AAC_HOP)]);
+        let band = Band::of(RATE, AAC_HOP, AAC_FROM_HZ, AAC_TO_HZ);
+
+        let bins = mdct.bins_reaching(&(band.first..band.past));
+
+        assert!(bins.len() < AAC_HOP / 2 * 7 / 10, "{bins:?}");
+        assert_eq!(mdct.bins_reaching(&(0..AAC_HOP)), 0..AAC_HOP / 2);
+        assert_eq!(mdct.bins_reaching(&(5..5)), 0..0);
     }
 
     #[test]

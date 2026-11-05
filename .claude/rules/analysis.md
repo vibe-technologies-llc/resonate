@@ -73,6 +73,12 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   the peak first, which every step must hold anyway, and `round_ties_even` for the distance to a
   step, which only a tie could tell from `round` and a tie is too far to pass. `Hearing` adds its
   table by column (`loudest_sum`), where `f32::max` frame by frame was most of its cost.
+  `Mdct::coefficients_within` turns and writes only the bins a band's lines come from (bin `n` gives
+  lines `2n` and `hop - 1 - 2n`, so AAC's 4..16 kHz at 44.1 kHz is 327 of 512), the folding, the FFT
+  and every line it writes the same operations as the whole transform's
+  (`the_lines_of_a_band_are_the_lines_the_whole_transform_gives`); `Aac` and `Vorbis` ask for their
+  band alone. The FFT is most of a transform and cannot be pruned to a band without changing its sums,
+  so this took 2.4% of the instructions of seven songs (676.7 G to 660.8 G) and 1 to 3% of their cycles.
 - **A stream that turns is brought back to the shape it opened in.** `study`, `analyse`, `print` and
   `excerpt` follow format changes (`Decoder::follow_format_changes`) through `conform::Walking`: on
   each `Reformatted` the previous segment's resampler is flushed, and the new shape gets a `Remix`
