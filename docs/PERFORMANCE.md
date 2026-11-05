@@ -9,8 +9,6 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## Later: Analysis
-- [S] A study's two true-peak meters read one signal: `Metering`'s whole-song maximum is `Metered`'s
-  tiles' (each is the exact maximum over every read it could not rule out), so the first could go
 - [S] `TruePeakMeter` multiplies out the phase at whole samples, whose weights are one tap of 1 and the rest 0; it is
   a quarter of a study's meter and of the guard's, and the answer is the sample itself
 - [S] `Mdct::coefficients` turns and writes every line while a grid reads only its band's (AAC's 4..16 kHz is

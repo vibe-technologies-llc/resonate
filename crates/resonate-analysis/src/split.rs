@@ -574,6 +574,11 @@ impl Metered {
     }
 }
 
+pub(crate) struct Split {
+    pub(crate) peaks: BandPeaks,
+    pub(crate) true_peak: f64,
+}
+
 pub(crate) struct Splitting {
     banks: Vec<Bank>,
     metered: Metered,
@@ -611,9 +616,12 @@ impl Splitting {
             .chain(self.coinciding.stages())
     }
 
-    pub(crate) fn finished(self) -> BandPeaks {
+    pub(crate) fn finished(self) -> Split {
         if self.metered.noted == 0 {
-            return BandPeaks::SILENT;
+            return Split {
+                peaks: BandPeaks::SILENT,
+                true_peak: 0.0,
+            };
         }
 
         let mut tiles = Vec::new();
@@ -630,7 +638,11 @@ impl Splitting {
                 }
             }
         }
-        for (heights, [whole]) in tiles.iter_mut().zip(self.metered.finished().loudest) {
+        let metered = self.metered.finished().loudest;
+        let metered_peak = metered
+            .iter()
+            .fold(0.0, |loudest, [whole]| f64::max(loudest, *whole));
+        for (heights, [whole]) in tiles.iter_mut().zip(metered) {
             heights[WHOLE] = whole;
         }
 
@@ -642,7 +654,10 @@ impl Splitting {
         let true_peak = tiles
             .iter()
             .fold(0.0, |loudest, heights| f64::max(loudest, heights[WHOLE]));
-        grouped(&tiles).held_together(self.coinciding.finished(true_peak).as_ref())
+        Split {
+            peaks: grouped(&tiles).held_together(self.coinciding.finished(true_peak).as_ref()),
+            true_peak: metered_peak,
+        }
     }
 }
 
@@ -707,7 +722,7 @@ mod tests {
         for part in signal.chunks(piece * channels) {
             splitting.note(part);
         }
-        splitting.finished()
+        splitting.finished().peaks
     }
 
     fn peaks_on_a_crew(signal: &[f32], channels: usize, crew: Crew) -> BandPeaks {
@@ -722,7 +737,7 @@ mod tests {
                 }
             },
         );
-        splitting.finished()
+        splitting.finished().peaks
     }
 
     fn leaves(peaks: &BandPeaks) -> Vec<f64> {
@@ -758,6 +773,59 @@ mod tests {
         assert!((0.8..0.8 * 1.05).contains(&together), "{together}");
         assert!(loudest < 0.8 * 0.6, "{loudest}");
         assert!((whole(&measured) - 0.8).abs() < 0.8 * 0.02, "{measured:?}");
+    }
+
+    fn loud_and_bright(channels: usize) -> Vec<f32> {
+        let frames = RATE.hz() as usize * 3;
+        let mut state = 0x2545_f491_u32;
+        (0..frames)
+            .flat_map(|frame| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let hiss = f64::from(state) / f64::from(u32::MAX) - 0.5;
+                let swell = 0.2 + 0.7 * (PI * frame as f64 / frames as f64).sin().powi(2);
+                (0..channels).map(move |channel| {
+                    let tone = (TAU * (9_000.0 + 2_300.0 * channel as f64) * frame as f64
+                        / f64::from(RATE.hz()))
+                    .sin();
+                    (swell * (0.7 * tone + 0.3 * hiss)) as f32
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_peak_of_the_tiles_is_the_one_a_true_peak_meter_reads_over_the_whole_song() {
+        for channels in [1, 2, 6] {
+            let signal = loud_and_bright(channels);
+            let mut meter =
+                TruePeakMeter::at(RATE, NonZeroUsize::new(channels).expect("a channel"));
+            meter.note(&signal);
+            let read_whole = meter.finish();
+            let sampled = signal.iter().fold(0.0_f64, |loudest, sample| {
+                loudest.max(f64::from(sample.abs()))
+            });
+            assert!(read_whole > sampled, "{read_whole} against {sampled}");
+
+            for piece in [signal.len() / channels, 1_000, 7_919] {
+                let mut splitting = Splitting::new(RATE, channels);
+                for part in signal.chunks(piece * channels) {
+                    splitting.note(part);
+                }
+
+                assert_eq!(
+                    splitting.finished().true_peak.to_bits(),
+                    read_whole.to_bits(),
+                    "{channels} channels in pieces of {piece}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_song_with_no_frames_has_no_true_peak() {
+        assert_eq!(Splitting::new(RATE, 2).finished().true_peak, 0.0);
     }
 
     #[test]
