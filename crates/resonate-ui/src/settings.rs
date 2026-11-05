@@ -686,6 +686,7 @@ impl fmt::Debug for TidalSignIn {
 pub enum Followed {
     Bindings(Bindings),
     Tidal(TidalSignIn),
+    PartyOffered(String),
 }
 
 struct Withheld;

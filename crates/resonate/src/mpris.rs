@@ -215,7 +215,7 @@ impl Host for Desktop {
 
     #[cfg(feature = "sync")]
     fn invited(&self, uri: &str) -> bool {
-        crate::together::accepted(uri)
+        crate::together::accepted(uri, crate::together::Arrival::FromOutside)
     }
 
     fn open(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Opened {

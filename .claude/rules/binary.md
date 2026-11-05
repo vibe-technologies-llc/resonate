@@ -68,7 +68,7 @@ paths:
   waits up to 20 s for what it did to reach the server. A window holding `shared.lock` makes it
   `Error::SharedBusy`. **A `resonate://shared/` or `resonate://party/` argument or `OpenUri` is an
   invitation, not a song** (`together::accepted`, `Host::invited`), though `resonate` is a played-in-place
-  scheme; the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list; the Windows installer registers the scheme in the user's registry (`windows.md`).
+  scheme (a shared playlist joins at once; a party's link is offered to the window first, `party.md`); the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list; the Windows installer registers the scheme in the user's registry (`windows.md`).
 
 - **`party start FILES` and `party join LINK` run until interrupted or the room ends** (`party.rs`), printing
   the invitation and each change of standing, with no keys and no bus, since the host's queue is the

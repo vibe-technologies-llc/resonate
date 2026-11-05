@@ -134,10 +134,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Together
 
 - [M] Chat and reactions in a listening party.
-- [S] Asking before a party's link takes over playback in the window, as the phones ask: a
-  `resonate://party/` argument or `OpenUri` from outside joins the first zone at once
-  (`party_room::accept`); it needs a confirmation sheet (a `Sheet` of `views/sheets.rs`) naming
-  what the link takes over
 - [M] Handing the host's role to someone else in a party, when the host must go.
 - [S] A frozen snapshot of a past Wrapped, kept once its year is over, rather than read afresh from what history keeps.
 - [M] A browser view of a shared playlist's contents; today the page only hands its link to the app.

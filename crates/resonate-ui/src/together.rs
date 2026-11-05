@@ -88,6 +88,8 @@ pub trait Together: Send + Sync {
 
     fn accept(&self, invitation: &str) -> bool;
 
+    fn join_party(&self, invitation: &str, zone: ZoneId) -> bool;
+
     fn named(&self, name: &str);
 
     fn party(&self) -> Option<PartySeen>;

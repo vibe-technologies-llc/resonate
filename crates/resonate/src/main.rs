@@ -3030,7 +3030,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             Some(mpris::Window {
                 attention,
                 raise: asked_to_raise,
-                followed: follow,
+                followed: follow.clone(),
             }),
             &notify,
         ),
@@ -3080,6 +3080,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         server: sync::server_of(&config),
         trusted: config.sync_server_certificate.clone(),
         name: config.shared_name.clone().unwrap_or_default(),
+        told: follow,
     });
     let syncing = sync::start(&config, Some(&places.config), &library);
     #[cfg(feature = "sync")]

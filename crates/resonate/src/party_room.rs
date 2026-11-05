@@ -1,9 +1,11 @@
 use std::{
+    mem,
     sync::{Arc, LazyLock},
     thread,
     time::{Duration, Instant},
 };
 
+use crossbeam_channel::Sender;
 use parking_lot::Mutex;
 use resonate_engine::{Command, Placement, Player, QueueItem, Seat, ZoneId, Zones};
 use resonate_library::Library;
@@ -12,6 +14,7 @@ use resonate_sync::{
     party::{Going, Party, PartyFinder as _, PartyFollowed, PartyShown},
     shared::{Invited, invitation_in},
 };
+use resonate_ui::Followed;
 
 use crate::{
     error::{Error, Result},
@@ -35,19 +38,79 @@ pub(crate) struct Seats {
     pub(crate) server: Server,
     pub(crate) trusted: Option<std::path::PathBuf>,
     pub(crate) name: String,
+    pub(crate) told: Sender<Followed>,
+}
+
+enum Offering {
+    Waiting(Vec<String>),
+    Told(Sender<Followed>),
+}
+
+impl Offering {
+    fn offer(&mut self, link: String) {
+        match self {
+            Self::Waiting(links) => links.push(link),
+            Self::Told(told) => tell_of(link, told),
+        }
+    }
+
+    fn opened_to(&mut self, told: Sender<Followed>) {
+        let waiting = mem::replace(self, Self::Told(told.clone()));
+        if let Self::Waiting(links) = waiting {
+            for link in links {
+                tell_of(link, &told);
+            }
+        }
+    }
+
+    fn closed(&mut self) {
+        *self = Self::Waiting(Vec::new());
+    }
 }
 
 static SEATS: LazyLock<Mutex<Option<Seats>>> = LazyLock::new(|| Mutex::new(None));
 
 static ROOM: LazyLock<Mutex<Option<Room>>> = LazyLock::new(|| Mutex::new(None));
 
+static OFFERING: Mutex<Offering> = Mutex::new(Offering::Waiting(Vec::new()));
+
+fn tell_of(link: String, told: &Sender<Followed>) {
+    if told.send(Followed::PartyOffered(link)).is_err() {
+        tracing::warn!("a party's link came while no window was left to ask about it");
+    }
+}
+
 pub(crate) fn in_the_window(seats: Seats) {
+    let told = seats.told.clone();
     *SEATS.lock() = Some(seats);
+
+    OFFERING.lock().opened_to(told);
 }
 
 pub(crate) fn out_of_the_window() {
     leave();
     *SEATS.lock() = None;
+    OFFERING.lock().closed();
+}
+
+pub(crate) fn offer(text: &str) -> bool {
+    if !invitation_in(text).is_some_and(|one| one.to == Invited::Party) {
+        return false;
+    }
+
+    OFFERING.lock().offer(text.to_owned());
+
+    true
+}
+
+pub(crate) fn join_in(text: &str, zone: ZoneId) -> bool {
+    let Some(invitation) = invitation_in(text).filter(|one| one.to == Invited::Party) else {
+        return false;
+    };
+
+    join(&invitation.code, invitation.server, zone)
+        .inspect_err(|error| tracing::warn!(%error, "a party could not be joined"))
+        .is_ok()
 }
 
 fn opened(party: Party, player: Arc<Player>, zone: ZoneId, seats: &Seats) -> Result<Room> {
@@ -208,4 +271,77 @@ pub(crate) fn following(zone: ZoneId) -> bool {
     ROOM.lock()
         .as_ref()
         .is_some_and(|room| room.zone == zone && !room.going.shown().hosting)
+}
+
+#[cfg(test)]
+mod tests {
+    use crossbeam_channel::{Receiver, unbounded};
+
+    use super::*;
+
+    const A_PARTY: &str = "resonate://party/ABCDE";
+
+    fn heard(told: &Receiver<Followed>) -> Vec<Followed> {
+        told.try_iter().collect()
+    }
+
+    #[test]
+    fn links_that_came_before_the_window_are_told_to_it_once_it_opens_in_the_order_they_came() {
+        let (told, listening) = unbounded();
+        let mut offering = Offering::Waiting(Vec::new());
+
+        offering.offer("resonate://party/AAAAA".to_owned());
+        offering.offer("resonate://party/BBBBB".to_owned());
+        assert!(heard(&listening).is_empty());
+
+        offering.opened_to(told);
+
+        assert_eq!(
+            heard(&listening),
+            vec![
+                Followed::PartyOffered("resonate://party/AAAAA".to_owned()),
+                Followed::PartyOffered("resonate://party/BBBBB".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_link_that_comes_while_the_window_is_open_is_told_at_once() {
+        let (told, listening) = unbounded();
+        let mut offering = Offering::Waiting(Vec::new());
+        offering.opened_to(told);
+
+        offering.offer(A_PARTY.to_owned());
+
+        assert_eq!(
+            heard(&listening),
+            vec![Followed::PartyOffered(A_PARTY.to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_window_that_closed_holds_the_next_links_for_the_next_window() {
+        let (told, _closed) = unbounded();
+        let (next, listening) = unbounded();
+        let mut offering = Offering::Waiting(Vec::new());
+        offering.opened_to(told);
+
+        offering.closed();
+        offering.offer(A_PARTY.to_owned());
+        offering.opened_to(next);
+
+        assert_eq!(
+            heard(&listening),
+            vec![Followed::PartyOffered(A_PARTY.to_owned())]
+        );
+    }
+
+    #[test]
+    fn only_a_party_link_is_offered() {
+        assert!(!offer("resonate://shared/E-ABCDE"));
+        assert!(!offer("resonate://pair/ABCDE"));
+        assert!(!offer("a song.flac"));
+        assert!(offer(A_PARTY));
+        assert!(offer("https://resonate.tecnio.dev/p/#ABCDE"));
+    }
 }

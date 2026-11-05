@@ -597,6 +597,7 @@ pub struct RootView {
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
+    pub(crate) party_offered: Option<String>,
     pub(crate) incoming: Option<Incoming>,
     pub(crate) taking_in: Option<TakingIn>,
     pub(crate) watching_the_drag: Task<()>,
@@ -1249,6 +1250,7 @@ impl RootView {
             downloads_open: false,
             downloads_pressed_off: None,
             deleting: None,
+            party_offered: None,
             incoming: None,
             taking_in: None,
             watching_the_drag: Task::ready(()),
@@ -3726,6 +3728,7 @@ impl RootView {
             && self.magnified.is_none()
             && self.record.is_none()
             && self.deleting.is_none()
+            && self.party_offered.is_none()
             && self.ordering.is_none()
             && self.menu.is_none()
             && !cx.has_active_drag()
@@ -4270,6 +4273,8 @@ impl RootView {
     ) -> bool {
         if self.deleting.is_some() {
             self.keep_the_track(cx);
+        } else if self.party_offered.is_some() {
+            self.not_joining_the_party(cx);
         } else if self.listening_open {
             self.close_the_listener(cx);
         } else if self.magnified.is_some() {
@@ -4305,6 +4310,7 @@ impl RootView {
             || self.ordering.is_some()
             || self.listening_open
             || self.deleting.is_some()
+            || self.party_offered.is_some()
     }
 
     fn reach_by_hand(&mut self, cx: &mut Context<Self>) {
@@ -6215,6 +6221,13 @@ impl Render for RootView {
                     motion::ARRIVES_OVER,
                 ))
             })
+            .when(self.party_offered.is_some(), |app| {
+                app.child(motion::faded_in(
+                    self.party_offer_sheet(cx),
+                    "party-offer-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
             .when_some(self.deleting.clone(), |app, deleting| {
                 app.child(motion::faded_in(
                     self.deletion_sheet(&deleting, cx),
@@ -6757,11 +6770,12 @@ mod tests {
         use resonate_library::{Cut, Direction, Library, PlaylistOrder};
 
         use crate::{
-            Notice,
+            Followed, Notice, ResonateApp,
             driven::{Driven, Folder},
             toast,
             views::{
                 menu::Menu,
+                party_offer,
                 playlists::Held,
                 reorder::{Reach, Shift},
                 root::{Deleting, Magnified, Pane, RootView},
@@ -7096,6 +7110,109 @@ mod tests {
 
             assert!(driven.read(|root, _| root.deleting.is_none()));
             assert!(driven.cx.update(|window, _| opener.is_focused(window)));
+        }
+
+        const A_PARTY_LINK: &str = "resonate://party/ABCDE";
+
+        fn offering_a_party(driven: &mut Driven) {
+            let root = driven.root.clone();
+
+            driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| {
+                    root.follow(Followed::PartyOffered(A_PARTY_LINK.to_owned()), cx);
+                });
+            });
+            driven.settle();
+            driven.settle();
+        }
+
+        fn together_over(driven: &mut Driven, together: Arc<dyn crate::Together>) {
+            driven.cx.update(|_, cx| {
+                cx.global_mut::<ResonateApp>().together = Some(together);
+            });
+        }
+
+        #[gpui::test]
+        fn a_party_link_from_outside_asks_first_and_focus_lands_on_the_control_that_declines(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            let joining = Arc::new(party_offer::joined::Joining::default());
+            together_over(&mut driven, joining.clone());
+
+            offering_a_party(&mut driven);
+
+            assert!(driven.read(|root, _| root.party_offered.is_some()));
+            assert!(focused_is(&mut driven, "not-joining-the-party"));
+            assert!(!focused_is(&mut driven, "join-the-party"));
+            assert!(joining.joined.lock().is_empty(), "nothing joins unasked");
+
+            driven.cx.simulate_keystrokes("enter");
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.party_offered.is_none()));
+            assert!(
+                joining.joined.lock().is_empty(),
+                "no key confirms a join, enter included"
+            );
+        }
+
+        #[gpui::test]
+        fn escape_declines_a_party_link_and_the_sheet_holds_the_keys_back(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+            let joining = Arc::new(party_offer::joined::Joining::default());
+            together_over(&mut driven, joining.clone());
+
+            driven.cx.simulate_keystrokes("down down");
+            offering_a_party(&mut driven);
+            driven.focus_the_window();
+            nothing_behind_the_sheet_answers_to(&mut driven, 3, "backspace alt-up down ctrl-z");
+
+            driven.cx.simulate_keystrokes("escape");
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.party_offered.is_none()));
+            assert!(joining.joined.lock().is_empty());
+        }
+
+        #[gpui::test]
+        fn joining_an_offered_party_hands_the_link_and_the_zone_shown_to_the_seam(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            let joining = Arc::new(party_offer::joined::Joining::default());
+            together_over(&mut driven, joining.clone());
+            let zone = driven.read(|root, _| root.switcher.selected());
+
+            offering_a_party(&mut driven);
+            driven.click("join-the-party");
+            driven.settle();
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.party_offered.is_none()));
+            assert_eq!(
+                *joining.joined.lock(),
+                vec![(A_PARTY_LINK.to_owned(), zone)]
+            );
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Party);
+        }
+
+        #[gpui::test]
+        fn a_party_that_will_not_be_joined_is_told_and_the_pane_stays(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one"]);
+            together_over(&mut driven, party_offer::joined::Joining::refusing());
+
+            offering_a_party(&mut driven);
+            driven.click("join-the-party");
+            driven.settle();
+            driven.settle();
+
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
+            assert!(driven.read(|_, cx| RootView::noticed(cx)));
         }
 
         #[gpui::test]
