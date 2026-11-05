@@ -72,6 +72,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Scrobbling : Screen
 
+    @Serializable data object Spotify : Screen
+
     @Serializable data object Sync : Screen
 
     @Serializable data object Party : Screen

@@ -268,15 +268,17 @@ impl Tool {
             Self::KeepPlaylistInStep => "Say whether a playlist imported from a link is kept in \
                                          step with it or left as it stands. Needs no player."
                 .to_owned(),
-            Self::FollowProfile => "Follow a public Deezer profile whole: every playlist it made \
-                                    and its loved tracks become playlists here kept in step, and \
-                                    following it again takes its new playlists, lets go of those \
-                                    deleted there and leaves alone any no longer kept in step. With \
-                                    in_step false every playlist is moved to Resonate once and the \
+            Self::FollowProfile => "Follow a public Deezer profile, or the signed-in Spotify \
+                                    account, whole: every playlist it made and its loved or liked \
+                                    songs become playlists here kept in step, and following it \
+                                    again takes its new playlists, lets go of those deleted there \
+                                    and leaves alone any no longer kept in step. With in_step \
+                                    false every playlist is moved to Resonate once and the \
                                     profile is followed no longer. Songs the library lacks are \
-                                    wanted. Needs no player."
+                                    wanted. A Spotify account is signed in to only by the listener, \
+                                    in the window or with `resonate spotify`. Needs no player."
                 .to_owned(),
-            Self::StopFollowing => "Stop following a Deezer profile; its playlists stay as they \
+            Self::StopFollowing => "Stop following a profile; its playlists stay as they \
                                     are, each still kept in step with its own link. Needs no \
                                     player."
                 .to_owned(),
@@ -486,7 +488,8 @@ impl Tool {
             Self::FollowProfile => json!({
                 "link": {
                     "type": "string",
-                    "description": "The profile's link, as deezer.com shares it.",
+                    "description": "The profile's link, as deezer.com shares it, or \
+                                    spotify:account for the Spotify account signed in.",
                 },
                 "in_step": {
                     "type": "boolean",
@@ -497,7 +500,8 @@ impl Tool {
             Self::StopFollowing => json!({
                 "link": {
                     "type": "string",
-                    "description": "The profile's link, as deezer.com shares it.",
+                    "description": "The profile's link, as deezer.com shares it, or \
+                                    spotify:account for the Spotify account.",
                 },
             }),
             Self::KeepPlaylistInStep => json!({

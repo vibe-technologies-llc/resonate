@@ -25,6 +25,7 @@ import org.resonate.android.ui.settings.ProcessingScreen
 import org.resonate.android.ui.settings.ProviderAccountScreen
 import org.resonate.android.ui.settings.ProvidersScreen
 import org.resonate.android.ui.settings.ScrobblingScreen
+import org.resonate.android.ui.settings.SpotifyScreen
 import org.resonate.android.ui.settings.SettingsScreen
 import org.resonate.android.ui.settings.StatisticsScreen
 import org.resonate.android.ui.settings.IdenticalSongsScreen
@@ -67,6 +68,7 @@ fun ScreenContent(screen: Screen) {
         Screen.Providers -> ProvidersScreen()
         is Screen.ProviderAccount -> ProviderAccountScreen(screen)
         Screen.Scrobbling -> ScrobblingScreen()
+        Screen.Spotify -> SpotifyScreen()
         Screen.Sync -> SyncScreen()
         Screen.Party -> PartyScreen()
         Screen.Appearance -> AppearanceScreen()

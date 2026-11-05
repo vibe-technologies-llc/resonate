@@ -423,6 +423,7 @@ impl Driven {
                 reference,
                 scrobblers: None,
                 signs_in: None,
+                spotify: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),
@@ -4455,6 +4456,379 @@ mod tests {
         assert_eq!(
             driven.read(|_, cx| cx.global::<ResonateApp>().online.lastfm_key.clone()),
             "a key"
+        );
+    }
+
+    struct ApprovedAtOnce;
+
+    impl resonate_library::SpotifyApproval for ApprovedAtOnce {
+        fn address(&self) -> &str {
+            "https://accounts.example/authorize"
+        }
+
+        fn approved(
+            &self,
+            _: &dyn Fn() -> bool,
+        ) -> std::result::Result<Option<String>, resonate_library::SpotifySignInFailure> {
+            Ok(Some("a refresh token".to_owned()))
+        }
+    }
+
+    #[derive(Default)]
+    struct SignsInOnce {
+        asked: parking_lot::Mutex<Vec<String>>,
+    }
+
+    impl resonate_library::SignsInToSpotify for SignsInOnce {
+        fn authorizing(
+            &self,
+            client_id: &str,
+        ) -> std::result::Result<
+            Box<dyn resonate_library::SpotifyApproval>,
+            resonate_library::SpotifySignInFailure,
+        > {
+            self.asked.lock().push(client_id.to_owned());
+            Ok(Box::new(ApprovedAtOnce))
+        }
+    }
+
+    struct AccountOfOnePlaylist {
+        source: resonate_core::SourceId,
+    }
+
+    impl Reference for AccountOfOnePlaylist {
+        fn source(&self) -> &resonate_core::SourceId {
+            &self.source
+        }
+
+        fn release(
+            &self,
+            _: &resonate_library::Mbid,
+        ) -> resonate_library::Result<Option<resonate_library::Release>> {
+            Ok(None)
+        }
+
+        fn find_release(
+            &self,
+            _: &resonate_library::ReleaseAsked,
+        ) -> resonate_library::Result<Vec<resonate_library::ReleaseMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn releases_by_barcode(
+            &self,
+            _: &resonate_library::Barcode,
+        ) -> resonate_library::Result<Vec<resonate_library::BarcodeMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn recording(
+            &self,
+            _: &resonate_library::Mbid,
+        ) -> resonate_library::Result<Option<resonate_library::Recording>> {
+            Ok(None)
+        }
+
+        fn recordings_of_isrc(
+            &self,
+            _: &resonate_library::Isrc,
+        ) -> resonate_library::Result<Vec<resonate_library::Recording>> {
+            Ok(Vec::new())
+        }
+
+        fn find_recording(
+            &self,
+            _: &resonate_library::RecordingAsked,
+        ) -> resonate_library::Result<Vec<resonate_library::RecordingMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn find_songs(
+            &self,
+            _: &resonate_library::SongsAsked,
+        ) -> resonate_library::Result<Vec<resonate_library::RecordingMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn release_group(
+            &self,
+            _: &resonate_library::Mbid,
+        ) -> resonate_library::Result<Option<resonate_library::ReleaseGroup>> {
+            Ok(None)
+        }
+
+        fn find_release_group(
+            &self,
+            _: &resonate_library::GroupAsked,
+        ) -> resonate_library::Result<Vec<resonate_library::GroupMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn find_albums(
+            &self,
+            _: &str,
+        ) -> resonate_library::Result<Vec<resonate_library::AlbumMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn group_cover(
+            &self,
+            _: &resonate_library::Mbid,
+        ) -> resonate_library::Result<Option<resonate_library::CoverArt>> {
+            Ok(None)
+        }
+
+        fn artist(
+            &self,
+            _: &resonate_library::Mbid,
+        ) -> resonate_library::Result<Option<resonate_library::ArtistProfile>> {
+            Ok(None)
+        }
+
+        fn find_artist(
+            &self,
+            _: &str,
+        ) -> resonate_library::Result<Vec<resonate_library::ArtistMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn release_groups_of(
+            &self,
+            _: &resonate_library::Mbid,
+            _: u32,
+        ) -> resonate_library::Result<resonate_library::Discography> {
+            Ok(resonate_library::Discography {
+                releases: Vec::new(),
+                unread: 0,
+                read_to: 0,
+            })
+        }
+
+        fn releases_of_group(
+            &self,
+            _: &resonate_library::Mbid,
+        ) -> resonate_library::Result<Vec<resonate_library::Release>> {
+            Ok(Vec::new())
+        }
+
+        fn releases_of_artist(
+            &self,
+            _: &resonate_library::Mbid,
+            _: u32,
+        ) -> resonate_library::Result<resonate_library::ArtistPressings> {
+            Ok(resonate_library::ArtistPressings::default())
+        }
+
+        fn cover(
+            &self,
+            _: &resonate_library::Mbid,
+            _: Option<&resonate_library::Mbid>,
+        ) -> resonate_library::Result<Option<resonate_library::CoverArt>> {
+            Ok(None)
+        }
+
+        fn portrait(
+            &self,
+            _: &[resonate_library::Link],
+        ) -> resonate_library::Result<Option<resonate_library::CoverArt>> {
+            Ok(None)
+        }
+
+        fn streamed_at(
+            &self,
+            _: &resonate_library::StreamAsked,
+        ) -> resonate_library::Result<Option<resonate_library::Link>> {
+            Ok(None)
+        }
+
+        fn lyrics(
+            &self,
+            _: &resonate_library::LyricsAsked,
+        ) -> resonate_library::Result<Option<resonate_library::LyricText>> {
+            Ok(None)
+        }
+
+        fn song_linked(
+            &self,
+            _: &resonate_library::SongLink,
+        ) -> resonate_library::Result<Option<resonate_library::LinkNames>> {
+            Ok(None)
+        }
+
+        fn album_linked(
+            &self,
+            _: &resonate_library::AlbumLink,
+        ) -> resonate_library::Result<Option<resonate_library::AlbumNames>> {
+            Ok(None)
+        }
+
+        fn artist_linked(
+            &self,
+            _: &resonate_library::ArtistLink,
+        ) -> resonate_library::Result<Option<String>> {
+            Ok(None)
+        }
+
+        fn playlist_linked(
+            &self,
+            link: &resonate_library::PlaylistLink,
+        ) -> resonate_library::Result<Option<resonate_library::LinkedPlaylist>> {
+            Ok(
+                (*link == resonate_library::PlaylistLink::SpotifyLiked).then(|| {
+                    resonate_library::LinkedPlaylist {
+                        name: "Liked Songs".to_owned(),
+                        songs: Vec::new(),
+                    }
+                }),
+            )
+        }
+
+        fn profile_linked(
+            &self,
+            link: &resonate_library::ProfileLink,
+        ) -> resonate_library::Result<Option<resonate_library::LinkedProfile>> {
+            Ok(
+                (*link == resonate_library::ProfileLink::SpotifyAccount).then(|| {
+                    resonate_library::LinkedProfile {
+                        name: "A Listener".to_owned(),
+                        playlists: vec![resonate_library::ProfilePlaylist {
+                            title: "Liked Songs".to_owned(),
+                            link: resonate_library::PlaylistLink::SpotifyLiked,
+                        }],
+                    }
+                }),
+            )
+        }
+
+        fn artist_at(&self, _: &str) -> resonate_library::Result<Option<resonate_library::Mbid>> {
+            Ok(None)
+        }
+    }
+
+    #[gpui::test]
+    fn a_spotify_account_is_signed_in_to_followed_and_let_go_from_its_group_and_offered_only_with_a_client(
+        cx: &mut TestAppContext,
+    ) {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let folder = Folder::new();
+        let signs_in = Arc::new(SignsInOnce::default());
+        let mut driven = Driven::reaching(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            Reaching {
+                reference: Arc::new(AccountOfOnePlaylist {
+                    source: resonate_core::SourceId::new("account").expect("a source name"),
+                }),
+                register: Arc::new(|_: &crate::Supplying<'_>| {
+                    resonate_providers::Providers::none()
+                }),
+            },
+        );
+        driven.cx.update(|_, cx| {
+            let given = Arc::clone(&signs_in);
+            cx.update_global::<ResonateApp, _>(move |global, _| {
+                global.spotify = Some(given);
+                global.online.enabled = true;
+            });
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("spotify client");
+        driven.settle();
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.sign_in_to_spotify(cx);
+        });
+        driven.settle();
+        assert!(
+            signs_in.asked.lock().is_empty(),
+            "with no client ID nothing is asked"
+        );
+
+        driven.focus(|root| &root.spotify_client);
+        driven.cx.simulate_input("registered");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        driven.click("spotify-sign-in");
+        driven.until(|_, cx| {
+            !cx.global::<ResonateApp>()
+                .online
+                .spotify_refresh_token
+                .is_empty()
+        });
+        assert_eq!(*signs_in.asked.lock(), ["registered"]);
+
+        driven.click("spotify-follow");
+        let followed = Arc::clone(&library);
+        driven.until(move |_, _| {
+            !followed
+                .profiles_followed()
+                .expect("the catalog reads")
+                .is_empty()
+        });
+        driven.settle();
+        let kept = library.playlists_kept_in_step().expect("the catalog reads");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].1.link, resonate_library::PlaylistLink::SpotifyLiked);
+
+        driven.click("tab-settings");
+        driven.settle();
+        driven.click("spotify-sign-out");
+        let let_go = Arc::clone(&library);
+        driven.until(move |_, _| {
+            let_go
+                .profiles_followed()
+                .expect("the catalog reads")
+                .is_empty()
+        });
+        driven.settle();
+        assert!(
+            library
+                .playlists_kept_in_step()
+                .expect("the catalog reads")
+                .is_empty()
+        );
+        assert_eq!(
+            driven.read(|_, cx| cx
+                .global::<ResonateApp>()
+                .online
+                .spotify_refresh_token
+                .clone()),
+            ""
+        );
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().online.spotify_client_id.clone()),
+            "registered"
+        );
+    }
+
+    #[gpui::test]
+    fn a_spotify_sign_in_made_at_the_terminal_reaches_the_window(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.follow(
+                crate::Followed::Spotify(crate::SpotifySignIn {
+                    client_id: "registered".to_owned(),
+                    refresh_token: "a refresh token".to_owned(),
+                }),
+                cx,
+            );
+        });
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.spotify_client.read(cx).text().to_owned()),
+            "registered"
+        );
+        assert_eq!(
+            driven.read(|_, cx| cx
+                .global::<ResonateApp>()
+                .online
+                .spotify_refresh_token
+                .clone()),
+            "a refresh token"
         );
     }
 

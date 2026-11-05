@@ -100,6 +100,8 @@ pub enum ConfigKey {
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
+    SpotifyClientId,
+    SpotifyRefreshToken,
     HifiApi,
     HifiSecret,
     Monochrome,
@@ -183,7 +185,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 119] = [
+    pub const ALL: [Self; 121] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -274,6 +276,8 @@ impl ConfigKey {
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
+        Self::SpotifyClientId,
+        Self::SpotifyRefreshToken,
         Self::HifiApi,
         Self::HifiSecret,
         Self::Monochrome,
@@ -397,6 +401,8 @@ impl ConfigKey {
             Self::TidalClientId => "tidal-client-id",
             Self::TidalClientSecret => "tidal-client-secret",
             Self::TidalRefreshToken => "tidal-refresh-token",
+            Self::SpotifyClientId => "spotify-client-id",
+            Self::SpotifyRefreshToken => "spotify-refresh-token",
             Self::HifiApi => "hifi-api",
             Self::HifiSecret => "hifi-secret",
             Self::Monochrome => "monochrome",
@@ -758,6 +764,27 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error("the TIDAL sign-in was cancelled before it was approved")]
     SignInCancelled,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "spotify-client-id is not set in the settings; register an app at \
+         developer.spotify.com and name its client ID there"
+    )]
+    NoSpotifyClient,
+
+    #[cfg(feature = "online")]
+    #[error("the Spotify sign-in was cancelled before it was approved")]
+    SpotifySignInCancelled,
+
+    #[cfg(feature = "online")]
+    #[error(transparent)]
+    SpotifySignIn(#[from] resonate_online::SpotifySignInError),
+
+    #[error("no Spotify account is signed in; `resonate spotify` signs in")]
+    NotSignedInToSpotify,
+
+    #[error("Spotify refused the account's refresh token; `resonate spotify` signs in again")]
+    SpotifySignInLapsed,
 
     #[cfg(feature = "online")]
     #[error(

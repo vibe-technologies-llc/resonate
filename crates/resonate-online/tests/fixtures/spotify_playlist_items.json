@@ -1,0 +1,84 @@
+{
+  "href": "https://api.spotify.com/v1/playlists/3cEYpjA9oz9GiPac4AsH4n/items?offset=0&limit=50",
+  "limit": 50,
+  "next": null,
+  "offset": 0,
+  "previous": null,
+  "total": 4,
+  "items": [
+    {
+      "added_at": "2024-03-01T12:00:00Z",
+      "added_by": { "id": "a.listener", "type": "user", "uri": "spotify:user:a.listener" },
+      "is_local": false,
+      "item": {
+        "album": { "album_type": "album", "name": "Glass", "id": "2up3OPMp9Tb4dAKM2erWXQ", "type": "album" },
+        "artists": [
+          { "id": "0TnOYISbd1XYRBk9myaseg", "name": "First Billed", "type": "artist" },
+          { "id": "1vCWHaC5f2uS3yhpwWbIA6", "name": "Second Billed", "type": "artist" }
+        ],
+        "disc_number": 1,
+        "duration_ms": 234567,
+        "explicit": false,
+        "external_ids": { "isrc": "USRC17607839" },
+        "external_urls": { "spotify": "https://open.spotify.com/track/11dFghVXANMlKmJXsNCbNl" },
+        "href": "https://api.spotify.com/v1/tracks/11dFghVXANMlKmJXsNCbNl",
+        "id": "11dFghVXANMlKmJXsNCbNl",
+        "is_local": false,
+        "is_playable": true,
+        "name": "Sea of Glass",
+        "track_number": 1,
+        "type": "track",
+        "uri": "spotify:track:11dFghVXANMlKmJXsNCbNl"
+      },
+      "track": {
+        "artists": [{ "name": "First Billed" }, { "name": "Second Billed" }],
+        "duration_ms": 234567,
+        "external_ids": { "isrc": "USRC17607839" },
+        "is_local": false,
+        "name": "Sea of Glass",
+        "type": "track"
+      }
+    },
+    {
+      "added_at": "2024-03-02T12:00:00Z",
+      "added_by": { "id": "a.listener", "type": "user", "uri": "spotify:user:a.listener" },
+      "is_local": true,
+      "item": {
+        "album": { "name": "", "type": "album" },
+        "artists": [{ "name": "", "type": "artist" }],
+        "disc_number": 0,
+        "duration_ms": 0,
+        "explicit": false,
+        "external_ids": {},
+        "external_urls": {},
+        "href": null,
+        "id": null,
+        "is_local": true,
+        "name": "Ripped from a tape",
+        "track_number": 0,
+        "type": "track",
+        "uri": "spotify:local:::Ripped+from+a+tape:0"
+      }
+    },
+    {
+      "added_at": "2024-03-03T12:00:00Z",
+      "added_by": { "id": "a.listener", "type": "user", "uri": "spotify:user:a.listener" },
+      "is_local": false,
+      "item": {
+        "description": "A talk",
+        "duration_ms": 1800000,
+        "id": "512ojhOuo1ktJprKbVcKyQ",
+        "name": "An Episode",
+        "type": "episode",
+        "uri": "spotify:episode:512ojhOuo1ktJprKbVcKyQ"
+      }
+    },
+    {
+      "added_at": null,
+      "added_by": null,
+      "is_local": false,
+      "item": null,
+      "track": null
+    }
+  ]
+}

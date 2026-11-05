@@ -248,6 +248,8 @@ pub enum SettingKey {
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
+    SpotifyClientId,
+    SpotifyRefreshToken,
     HifiApi,
     HifiSecret,
     Monochrome,
@@ -270,7 +272,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 114] = [
+    pub const ALL: [Self; 116] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -366,6 +368,8 @@ impl SettingKey {
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
+        Self::SpotifyClientId,
+        Self::SpotifyRefreshToken,
         Self::HifiApi,
         Self::HifiSecret,
         Self::Monochrome,
@@ -491,6 +495,8 @@ pub enum Setting {
     TidalClientId(String),
     TidalClientSecret(String),
     TidalRefreshToken(String),
+    SpotifyClientId(String),
+    SpotifyRefreshToken(String),
     HifiApi(String),
     HifiSecret(String),
     Monochrome(String),
@@ -616,6 +622,8 @@ impl Setting {
             Self::TidalClientId(_) => SettingKey::TidalClientId,
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
+            Self::SpotifyClientId(_) => SettingKey::SpotifyClientId,
+            Self::SpotifyRefreshToken(_) => SettingKey::SpotifyRefreshToken,
             Self::HifiApi(_) => SettingKey::HifiApi,
             Self::HifiSecret(_) => SettingKey::HifiSecret,
             Self::Monochrome(_) => SettingKey::Monochrome,
@@ -663,6 +671,8 @@ pub struct Online {
     pub tidal_client_id: String,
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
+    pub spotify_client_id: String,
+    pub spotify_refresh_token: String,
     pub hifi_api: String,
     pub hifi_secret: String,
     pub monochrome: String,
@@ -686,10 +696,26 @@ impl fmt::Debug for TidalSignIn {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct SpotifySignIn {
+    pub client_id: String,
+    pub refresh_token: String,
+}
+
+impl fmt::Debug for SpotifySignIn {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SpotifySignIn")
+            .field("client_id", &self.client_id)
+            .field("refresh_token", &withheld(&self.refresh_token))
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Followed {
     Bindings(Bindings),
     Tidal(TidalSignIn),
+    Spotify(SpotifySignIn),
 }
 
 struct Withheld;
@@ -729,6 +755,8 @@ impl fmt::Debug for Online {
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
+            spotify_client_id,
+            spotify_refresh_token,
             hifi_api,
             hifi_secret,
             monochrome,
@@ -758,6 +786,8 @@ impl fmt::Debug for Online {
             .field("tidal_client_id", tidal_client_id)
             .field("tidal_client_secret", &withheld(tidal_client_secret))
             .field("tidal_refresh_token", &withheld(tidal_refresh_token))
+            .field("spotify_client_id", spotify_client_id)
+            .field("spotify_refresh_token", &withheld(spotify_refresh_token))
             .field("hifi_api", hifi_api)
             .field("hifi_secret", &withheld(hifi_secret))
             .field("monochrome", monochrome)
@@ -1439,6 +1469,7 @@ mod tests {
             jellyfin_password: "jellyfin-sesame".to_owned(),
             tidal_client_secret: "tidal-hush".to_owned(),
             tidal_refresh_token: "tidal-sesame".to_owned(),
+            spotify_refresh_token: "spotify-sesame".to_owned(),
             lastfm_secret: "lastfm-hush".to_owned(),
             lastfm_session: "lastfm-sesame".to_owned(),
             listenbrainz_token: "listenbrainz-sesame".to_owned(),
@@ -1460,6 +1491,7 @@ mod tests {
             "jellyfin-sesame",
             "tidal-hush",
             "tidal-sesame",
+            "spotify-sesame",
             "lastfm-hush",
             "lastfm-sesame",
             "listenbrainz-sesame",

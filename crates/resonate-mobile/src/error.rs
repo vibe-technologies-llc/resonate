@@ -238,6 +238,16 @@ pub enum Error {
     NotAProfileLink,
     #[error("That profile is private, or shows no playlist")]
     NoProfileAtTheLink,
+    #[error("No Spotify account is signed in")]
+    NotSignedInToSpotify,
+    #[error("Give the client ID of your Spotify app first")]
+    NoSpotifyClient,
+    #[error("Spotify no longer knows this account: sign in again")]
+    SpotifySignInLapsed,
+    #[error("The Spotify sign-in did not finish: {failure}")]
+    SpotifySignIn {
+        failure: resonate_library::SpotifySignInFailure,
+    },
     #[error("The link this playlist came from can no longer be read")]
     UnreadablePlaylistLink,
     #[error("The playlist file is larger than eight MiB ({bytes} bytes)")]

@@ -88,6 +88,15 @@ impl Posted {
         }
     }
 
+    pub(crate) fn form(fields: Params) -> Self {
+        Self {
+            content_type: FORM.to_owned(),
+            encoded: Encoded::Plain,
+            bytes: fields.finish_as_form().into_bytes(),
+            authorization: None,
+        }
+    }
+
     pub(crate) fn packed_form(fields: Params) -> Self {
         let plain = fields.finish_as_form().into_bytes();
         let mut packing = GzEncoder::new(Vec::new(), Compression::best());
@@ -187,6 +196,8 @@ impl Host {
             | Self::DeezerPictures
             | Self::Spotify
             | Self::SpotifyPictures
+            | Self::SpotifyAccounts
+            | Self::SpotifyApi
             | Self::SoundCloud
             | Self::SoundCloudPictures
             | Self::SongLink
@@ -296,6 +307,8 @@ impl Host {
             | Self::DeezerPictures
             | Self::Spotify
             | Self::SpotifyPictures
+            | Self::SpotifyAccounts
+            | Self::SpotifyApi
             | Self::SoundCloud
             | Self::SoundCloudPictures
             | Self::SongLink
@@ -605,6 +618,7 @@ impl Client {
         op: LookupOp,
         url: &str,
         authorization: &str,
+        largest: usize,
     ) -> Result<Option<T>> {
         self.answered(
             host,
@@ -613,7 +627,7 @@ impl Client {
             Sending::Get {
                 authorization: Some(authorization),
             },
-            LARGEST_DOCUMENT,
+            largest,
         )
     }
 

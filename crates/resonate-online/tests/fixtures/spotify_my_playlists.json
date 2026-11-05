@@ -1,0 +1,60 @@
+{
+  "href": "https://api.spotify.com/v1/me/playlists?offset=0&limit=50",
+  "limit": 50,
+  "next": null,
+  "offset": 0,
+  "previous": null,
+  "total": 3,
+  "items": [
+    {
+      "collaborative": false,
+      "description": null,
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/3cEYpjA9oz9GiPac4AsH4n" },
+      "href": "https://api.spotify.com/v1/playlists/3cEYpjA9oz9GiPac4AsH4n",
+      "id": "3cEYpjA9oz9GiPac4AsH4n",
+      "images": [],
+      "name": "Kept for the road",
+      "owner": {
+        "display_name": "A Listener",
+        "external_urls": { "spotify": "https://open.spotify.com/user/a.listener" },
+        "href": "https://api.spotify.com/v1/users/a.listener",
+        "id": "a.listener",
+        "type": "user",
+        "uri": "spotify:user:a.listener"
+      },
+      "public": false,
+      "snapshot_id": "MTY4NjkxMjM0NSwwMDAw",
+      "items": { "href": "https://api.spotify.com/v1/playlists/3cEYpjA9oz9GiPac4AsH4n/items", "total": 4 },
+      "type": "playlist",
+      "uri": "spotify:playlist:3cEYpjA9oz9GiPac4AsH4n"
+    },
+    {
+      "collaborative": false,
+      "description": "Someone else's",
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd" },
+      "href": "https://api.spotify.com/v1/playlists/37i9dQZF1DX0XUsuxWHRQd",
+      "id": "37i9dQZF1DX0XUsuxWHRQd",
+      "images": [],
+      "name": "Followed, not owned",
+      "owner": {
+        "display_name": "Spotify",
+        "external_urls": { "spotify": "https://open.spotify.com/user/spotify" },
+        "href": "https://api.spotify.com/v1/users/spotify",
+        "id": "spotify",
+        "type": "user",
+        "uri": "spotify:user:spotify"
+      },
+      "public": true,
+      "snapshot_id": "MTY4NjkxMjM0NiwwMDAw",
+      "type": "playlist",
+      "uri": "spotify:playlist:37i9dQZF1DX0XUsuxWHRQd"
+    },
+    null,
+    {
+      "collaborative": false,
+      "id": "not-a-playlist-id",
+      "name": "An id that names nothing",
+      "type": "playlist"
+    }
+  ]
+}

@@ -11,9 +11,9 @@ use resonate_library::{
 };
 
 use crate::{
-    Client, Error, Identity, Result, apple, client::passed_over_when_refused, commons, coverart,
-    deezer, linked, listenbrainz, lyrics, musicbrainz, soundcloud, spotify, tidal, wikidata,
-    wikipedia, youtube,
+    Client, Error, Host, Identity, Result, apple, client::passed_over_when_refused, commons,
+    coverart, deezer, linked, listenbrainz, lyrics, musicbrainz, soundcloud, spotify,
+    spotify_account::SpotifyAccount, tidal, wikidata, wikipedia, youtube,
 };
 
 const MUSICBRAINZ: &str = "musicbrainz";
@@ -21,6 +21,7 @@ const MUSICBRAINZ: &str = "musicbrainz";
 pub struct Online {
     client: Arc<Client>,
     source: SourceId,
+    spotify: Option<Arc<SpotifyAccount>>,
 }
 
 impl Online {
@@ -32,7 +33,27 @@ impl Online {
         Self {
             client,
             source: SourceId::new(MUSICBRAINZ).unwrap_or_else(|_| SourceId::local()),
+            spotify: None,
         }
+    }
+
+    pub fn with_spotify(mut self, account: Arc<SpotifyAccount>) -> Self {
+        self.spotify = Some(account);
+        self
+    }
+
+    fn spotify_playlist(&self, playlist: &str) -> resonate_library::Result<Option<LinkedPlaylist>> {
+        let pages = match &self.spotify {
+            Some(account) => {
+                if let Some(read) = account.playlist(&self.client, playlist)? {
+                    return Ok(Some(read));
+                }
+                account.pages()
+            }
+            None => Host::Spotify.base(),
+        };
+
+        Ok(spotify::playlist_named(&self.client, pages, playlist)?)
     }
 
     pub fn client(&self) -> &Arc<Client> {
@@ -159,7 +180,11 @@ impl Reference for Online {
             PlaylistLink::ListenBrainz(playlist) => {
                 Ok(listenbrainz::playlist_named(&self.client, playlist)?)
             }
-            PlaylistLink::Spotify(playlist) => Ok(spotify::playlist_named(&self.client, playlist)?),
+            PlaylistLink::Spotify(playlist) => self.spotify_playlist(playlist),
+            PlaylistLink::SpotifyLiked => match &self.spotify {
+                Some(account) => Ok(account.liked(&self.client)?),
+                None => Ok(None),
+            },
             PlaylistLink::AppleMusic { storefront, id } => {
                 Ok(apple::playlist_named(&self.client, storefront, id)?)
             }
@@ -174,6 +199,10 @@ impl Reference for Online {
     ) -> resonate_library::Result<Option<LinkedProfile>> {
         match link {
             ProfileLink::Deezer(user) => Ok(deezer::profile_named(&self.client, *user)?),
+            ProfileLink::SpotifyAccount => match &self.spotify {
+                Some(account) => Ok(account.account_named(&self.client)?),
+                None => Ok(None),
+            },
         }
     }
 

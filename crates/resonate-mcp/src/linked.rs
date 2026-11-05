@@ -34,7 +34,10 @@ pub(crate) fn follow_profile(
 ) -> Result<Value> {
     let followed = library
         .follow_profile(reference, link, upkeep)?
-        .ok_or(Error::NoProfileAtTheLink)?;
+        .ok_or(match link {
+            ProfileLink::SpotifyAccount => Error::NotSignedInToSpotify,
+            ProfileLink::Deezer(_) => Error::NoProfileAtTheLink,
+        })?;
     let mut playlists = Vec::with_capacity(followed.playlists.len());
     for read in &followed.playlists {
         playlists.push(answered(library, reference, read)?);

@@ -121,7 +121,10 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   playlist as `import_playlist_link` does, with `let_go`, `gone` and `unread`; `stop_following` is
   `Library::stop_following` and answers whether it was followed; a link that is no profile is
   `Refusal::Unreadable`, a private one `Error::NoProfileAtTheLink`
-  (`a_profile_is_followed_only_with_a_reference_and_a_private_one_says_so`).
+  (`a_profile_is_followed_only_with_a_reference_and_a_private_one_says_so`). `spotify:account` is such
+  a link, the account `online.md` names: signed out it is `Error::NotSignedInToSpotify`, and no tool
+  signs in, since a sign-in is the listener's in a browser
+  (`a_spotify_account_is_followed_or_moved_where_it_is_signed_in_and_says_so_where_it_is_not`).
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,

@@ -57,6 +57,11 @@ pub enum Error {
     #[error("the profile is private, or the service shows no playlist of it")]
     NoProfileAtTheLink,
 
+    #[error(
+        "no Spotify account is signed in; the listener signs in, in the window or at the terminal"
+    )]
+    NotSignedInToSpotify,
+
     #[error("{path} is not a folder that can be scanned", path = path.display())]
     NoSuchFolder { path: PathBuf },
 

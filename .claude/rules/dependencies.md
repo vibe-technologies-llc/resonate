@@ -179,7 +179,8 @@ here, add it there.
 - **`resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome`** take `ureq`, `serde`, `serde_json` themselves
   and `resonate-fetch` for shared plumbing, not `resonate-online`; the binary takes them only under
   `online`. `resonate-fetch` is core, the seam, `ureq` and the three certificate crates alone;
-  `resonate-online` takes it for `retry_after`. `uuid`: Jellyfin's generated device id. `md-5`: Subsonic's token (and Last.fm signing in
+  `resonate-online` takes it for `retry_after`, `sha2` (pure Rust, no default features) and `base64`
+  for a Spotify sign-in's PKCE challenge. `uuid`: Jellyfin's generated device id. `md-5`: Subsonic's token (and Last.fm signing in
   online). TIDAL: `base64` (`alloc`), `roxmltree` (`std`; DASH MPD), at 0.21 against gpui's 0.20:
   a second copy of a small crate, not a held-back pin.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.

@@ -32,6 +32,7 @@ struct SettingsView: View {
     private static let providerWords = "Download providers TIDAL Subsonic Jellyfin Emby Monochrome metered connection cellular wait"
     private static let serverWords = "Server Subsonic Navidrome Jellyfin Emby TIDAL Monochrome browse stream"
     private static let scrobblingWords = "Scrobbling ListenBrainz Last.fm"
+    private static let spotifyWords = "Spotify account playlists liked songs follow move client ID"
     private static let erasingWords = "Erase all data reset everything delete start over"
     private static let historyWords = "Keep search history recent searches privacy"
     private static let noticeWords = "Notices found new songs hidden kept from your devices notifications popups"
@@ -90,6 +91,11 @@ struct SettingsView: View {
                     if shown(Self.scrobblingWords) {
                         NavigationLink(value: Destination.scrobbling) {
                             ToolRow(title: "Scrobbling", detail: scrobblingDetail(features.scrobbleAccount), symbol: "dot.radiowaves.left.and.right")
+                        }
+                    }
+                    if shown(Self.spotifyWords) {
+                        NavigationLink(value: Destination.spotify) {
+                            ToolRow(title: "Spotify", detail: "Your playlists and liked songs, with an app you register", symbol: "link")
                         }
                     }
                     if matches(syncEntry.searched) {
@@ -243,13 +249,13 @@ struct SettingsView: View {
 
     private var nothingMatches: Bool {
         let listed = (soundEntries + sourceEntries + [syncEntry]).map(\.searched)
-        let unlisted = [Self.onlineWords, Self.providerWords, Self.scrobblingWords, Self.erasingWords, Self.historyWords, Self.noticeWords, Self.appearanceWords]
+        let unlisted = [Self.onlineWords, Self.providerWords, Self.scrobblingWords, Self.spotifyWords, Self.erasingWords, Self.historyWords, Self.noticeWords, Self.appearanceWords]
             + (library.features.online ? [Self.enrichmentWords] : [])
         return !terms.isEmpty && !(listed + unlisted).contains(where: matches)
     }
 
     private func connectedShown(_ syncEntry: SettingsEntry) -> Bool {
-        shown(Self.onlineWords) || shown(Self.providerWords) || shown(Self.scrobblingWords) || matches(syncEntry.searched)
+        shown(Self.onlineWords) || shown(Self.providerWords) || shown(Self.scrobblingWords) || shown(Self.spotifyWords) || matches(syncEntry.searched)
     }
 
     private func matches(_ searched: String) -> Bool {

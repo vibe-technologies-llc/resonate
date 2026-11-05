@@ -58,6 +58,21 @@ class ProviderAccountStore(context: Context) {
         check(edit.commit()) { "Scrobbling accounts could not be saved" }
     }
 
+    @Synchronized
+    fun readSpotify() =
+        SpotifyAccount(decrypt("spotify-client-id"), decrypt("spotify-refresh-token"))
+
+    @Synchronized
+    fun writeSpotify(account: SpotifyAccount) {
+        val edit = storage.edit()
+        mapOf(
+                "spotify-client-id" to account.clientId,
+                "spotify-refresh-token" to account.refreshToken,
+            )
+            .forEach { (key, value) -> edit.putString(key, encrypt(value)) }
+        check(edit.commit()) { "The Spotify account could not be saved" }
+    }
+
     @Synchronized fun readRecognitionKey() = decrypt("acoustid-key")
 
     @Synchronized fun readAuddToken() = decrypt("audd-token")

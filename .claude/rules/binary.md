@@ -41,6 +41,16 @@ paths:
   --refresh` follows every followed profile, then reads every playlist kept in step now; `playlist NAME --refresh`,
   `--upkeep once|in-step` and `--forget-link` act on one; the listing's FROM column says the service
   and how it follows.
+- **`spotify` signs in to an app the listener registered and reads that account** (`spotify.rs`):
+  bare, it prints the address to approve and waits (`online::signed_in_to_spotify`,
+  `NoSpotifyClient` before anything is asked, the first interrupt `SpotifySignInCancelled`), keeping
+  the refresh token as `spotify-refresh-token`. `--follow` and `--move` are
+  `Library::follow_profile` on `ProfileLink::SpotifyAccount` in step and once, as `import
+  spotify:account --upkeep ...` is too; signed out both are `NotSignedInToSpotify`, and `playlists
+  --refresh` says so of a followed account and goes on. A refresh token Spotify refuses is
+  `SpotifySignInLapsed`. `--forget` clears the token and `Library::let_go_of_the_profile`: each
+  playlist kept from the account keeps its rows and forgets its link, or the next refresh of a public
+  one would mirror what the public page holds (`online.md`'s *A Spotify account*).
 - **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
   <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
   on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows
@@ -383,6 +393,11 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `Setting::EqualiserMeasurer` and `Setting::EqualiserMeasurerFor` and worn at once on
   `ResonateApp::measurers` and the model (`RootView::prefer_a_measurer`, `prefer_a_measurer_for`), and
   the group's mark removes both keys.
+- `spotify-client-id`: the client ID of an app the listener registered (empty by default; none set,
+  nothing is offered or asked). `spotify-refresh-token`: written by `resonate spotify`, rewritten as
+  Spotify rotates it (`online::KeptInTheSettings`, one for the process, which reads both keys again
+  where the file's mtime moved, so a sign-in elsewhere is heard at the next read), cleared by
+  `--forget`; `Config`'s `Debug` withholds it.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
@@ -426,7 +441,7 @@ batch of `SettingChange`s through one `config::edit`, writing only if something 
 file cannot say (a non-UTF-8 folder) is `SettingNotStored` while the rest land.
 
 **A subcommand's write is delivered to the players already running.** `reloading::delivering` wraps
-the write of `resonate eq`, `tidal`, `lastfm` and `sync`: it compares the settings file before and
+the write of `resonate eq`, `tidal`, `spotify`, `lastfm` and `sync`: it compares the settings file before and
 after and, when it moved, lists the players on the bus (`Running::listed`) and calls `Reload` on each
 with the group the command changed (`Reloadable`) and the file's path. A player that took it is
 said to take it up; one that refused, or is too old to know `Reload`, is said to keep the settings it
@@ -440,7 +455,8 @@ read again (`resonate_ui::Followed::Bindings`); `Submission` and `Sync` are `App
 the player has a catalog, since `submitting`'s token and the sync watcher (`sync.md`) follow the file
 themselves; `Tidal` (named by `resonate tidal`) reads the account again and hands a window
 `Followed::Tidal`, which the window writes into its own `Online` and TIDAL fields before asking
-every unheld want again, and a windowless player refuses it (it registers no providers). The
+every unheld want again, and a windowless player refuses it (it registers no providers); `Spotify`
+reads the account again and hands a window `Followed::Spotify`. The
 window drains `Bus::followed` on the foreground (`follow_when_told`, as it drains `raise`).
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a

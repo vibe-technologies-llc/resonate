@@ -13,9 +13,14 @@ use resonate_library::{
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{Detail, LyricProvider, Timing, Voice, Wanted};
-use resonate_online::{AutoEq, Client, Identity, ListenBrainz, Online, OnlineLyrics, Shazam};
+use resonate_online::{
+    AutoEq, Client, Identity, ListenBrainz, Online, OnlineLyrics, Shazam, SpotifyAccount,
+    SpotifyGrant, SpotifyGrants,
+};
 
 const GATE: &str = "RESONATE_ONLINE_TESTS";
+const SPOTIFY_CLIENT_ID: &str = "RESONATE_SPOTIFY_CLIENT_ID";
+const SPOTIFY_TOKEN_FILE: &str = "RESONATE_SPOTIFY_TOKEN_FILE";
 const MEDDLE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
 const PINK_FLOYD: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const ECHOES_LASTS: Duration = Duration::from_secs(1412);
@@ -751,4 +756,74 @@ fn a_public_deezer_profile_names_the_playlists_it_made_and_its_loved_tracks() {
             .all(|playlist| playlist.link != PlaylistLink::Deezer(6_399_367_984)),
         "a playlist it only follows is not"
     );
+}
+
+struct TokenInAFile {
+    client_id: String,
+    file: std::path::PathBuf,
+}
+
+impl SpotifyGrants for TokenInAFile {
+    fn grant(&self) -> Option<SpotifyGrant> {
+        Some(SpotifyGrant {
+            client_id: self.client_id.clone(),
+            refresh_token: std::fs::read_to_string(&self.file).ok()?.trim().to_owned(),
+        })
+    }
+
+    fn renewed(&self, _grant: &SpotifyGrant, token: &str) {
+        std::fs::write(&self.file, token).expect("the rotated token is kept for the next run");
+    }
+}
+
+#[test]
+fn a_signed_in_spotify_account_names_its_playlists_and_its_liked_songs_with_their_isrcs() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let (Some(client_id), Some(file)) = (
+        env::var_os(SPOTIFY_CLIENT_ID),
+        env::var_os(SPOTIFY_TOKEN_FILE),
+    ) else {
+        eprintln!("skipped: set {SPOTIFY_CLIENT_ID} and {SPOTIFY_TOKEN_FILE} to read an account");
+        return;
+    };
+    let online = Online::with_client(client).with_spotify(Arc::new(SpotifyAccount::new(Arc::new(
+        TokenInAFile {
+            client_id: client_id.to_string_lossy().into_owned(),
+            file: file.into(),
+        },
+    ))));
+
+    let profile = online
+        .profile_linked(&ProfileLink::SpotifyAccount)
+        .expect("Spotify answered")
+        .expect("the account is signed in");
+    assert_eq!(profile.playlists[0].link, PlaylistLink::SpotifyLiked);
+
+    let liked = online
+        .playlist_linked(&PlaylistLink::SpotifyLiked)
+        .expect("Spotify answered")
+        .expect("the liked songs");
+    let coded = liked
+        .songs
+        .iter()
+        .filter(|song| matches!(song, ListedSong::Named(names) if !names.isrcs.is_empty()))
+        .count();
+    eprintln!("{} liked songs, {coded} with an ISRC", liked.songs.len());
+    assert!(
+        liked.songs.is_empty() || coded > 0,
+        "the Web API names each song's code"
+    );
+
+    for listed in profile.playlists.iter().skip(1) {
+        let read = online
+            .playlist_linked(&listed.link)
+            .expect("Spotify answered");
+        eprintln!(
+            "{}: {:?} songs",
+            listed.title,
+            read.map(|playlist| playlist.songs.len())
+        );
+    }
 }

@@ -457,6 +457,7 @@ pub enum LookupOp {
     Token,
     StreamLink,
     FollowLink,
+    SpotifyAccount,
 }
 
 impl LookupOp {
@@ -484,6 +485,7 @@ impl LookupOp {
             Self::Love => "a favourite told to a listening service",
             Self::Token => "a check of a listening service's token",
             Self::StreamLink => "a look for where a track streams",
+            Self::SpotifyAccount => "a sign-in to the Spotify account",
             Self::FollowLink => "what a link names",
         }
     }

@@ -104,8 +104,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Search
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its
   public page holds (TIDAL's embed page fifty, the others at most a hundred), since none offers a keyless
-  route past it (their APIs want a registered client or the listener's sign-in); Spotify's and Apple
-  Music's name no ISRC either, so each of their songs is found by the strict title and artist search
+  route past it (their APIs want a registered client or the listener's sign-in; a Spotify account signed
+  in reads its own and its collaborative playlists whole); Spotify's and Apple Music's name no ISRC either,
+  so each of their songs is found by the strict title and artist search
 - [L · blocked: service] A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 
@@ -130,13 +131,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] Measuring a party's offset between two people in different places, past the bound half their round trip gives.
 
 ## Later: Sources and providers
-- [L] A Spotify account cannot be synced: sign in with an app the listener registers at
-  developer.spotify.com (its client ID typed into a setting, empty by default, as Last.fm's key is)
-  through an authorisation-code sign-in with PKCE like TIDAL's, its refresh token kept in the
-  settings; then read every playlist the account owns or follows, private ones included, and the
-  liked songs through the Web API with each song's ISRC (past the embed page's hundred songs and
-  its strict name search), and either keep them in step or move them to Resonate once. CLI,
-  window, MCP and both phones
+- [M · blocked: service] A Spotify playlist the account only follows is read off its public page,
+  at most a hundred songs with no ISRC and nothing where it is private: Spotify's development mode
+  answers `403` on `/playlists/<id>/items` unless the account owns or collaborates on it, and extended
+  quota, which lifts that, is open only to organisations with 250 000 monthly listeners
 - [S · blocked: TIDAL's CDN] A TIDAL song a DASH manifest delivers in segments seeks only once the
   codec has spooled it whole: the codec seeks by byte, and the remuxed FLAC's offsets are the sum of
   every earlier segment's `mdat`, which the manifest's timeline (times alone) does not give; asking

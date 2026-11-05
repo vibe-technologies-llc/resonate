@@ -21,6 +21,7 @@ mod shared;
 mod shazam;
 mod soundcloud;
 mod spotify;
+mod spotify_account;
 mod tidal;
 mod wikidata;
 mod wikipedia;
@@ -48,4 +49,8 @@ pub use crate::{
     lyrics::{OnlineLyrics, source_of as lyric_source_of},
     reference::Online,
     shazam::Shazam,
+    spotify_account::{
+        SPOTIFY_REDIRECT, SpotifyAccount, SpotifyAuthorizing, SpotifyEndpoints, SpotifyGrant,
+        SpotifyGrants, SpotifySignIn, SpotifySignInError, SpotifySignedIn,
+    },
 };

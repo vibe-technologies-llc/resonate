@@ -147,7 +147,7 @@ Invariants the layering protects (the rules files have the rest):
   `cargo tree -p resonate --no-default-features` builds with no HTTP client. Same for `Scrobbler`,
   `Fingerprints`, `Corrections`, `LyricProvider`.
 - **A request says what this build is and nothing else**: User-Agent `resonate/<version>`; a contact,
-  AcoustID key, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
+  AcoustID key, Spotify client ID, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
   default; `online = false` stops every request (`online.md`).
 - **A metered connection is one `resonate_core::Metering`, read through `Gate`s**: a detector
   (`resonate-mpris` on NetworkManager, the phones' own callbacks) reports `Meter::{Unknown,
@@ -252,7 +252,7 @@ stack's test harness:
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
-- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).
+- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,
   `--control <device>` to see and drive another device's zones).

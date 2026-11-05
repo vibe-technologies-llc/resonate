@@ -51,11 +51,15 @@ pub(crate) fn artist(url: &str) -> Option<&str> {
     names_an_id(id).then_some(id)
 }
 
-pub(crate) fn playlist_named(client: &Client, playlist: &str) -> Result<Option<LinkedPlaylist>> {
+pub(crate) fn playlist_named(
+    client: &Client,
+    pages: &str,
+    playlist: &str,
+) -> Result<Option<LinkedPlaylist>> {
     if !names_an_id(playlist) {
         return Ok(None);
     }
-    let page = format!("{}{EMBEDDED_PLAYLIST}{playlist}", Host::Spotify.base());
+    let page = format!("{pages}{EMBEDDED_PLAYLIST}{playlist}");
     let held = client.bytes(Host::Spotify, LookupOp::FollowLink, &page, LARGEST_DOCUMENT)?;
 
     Ok(held.and_then(|held| embedded(&String::from_utf8_lossy(&held))))

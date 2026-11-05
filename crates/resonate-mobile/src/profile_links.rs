@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use resonate_library::{KEPT_IN_STEP_EVERY, PlaylistLink, ProfileLink, Reference as _};
+use resonate_library::{KEPT_IN_STEP_EVERY, LookupOp, PlaylistLink, ProfileLink, Reference as _};
 use rusqlite::{Connection, params};
 
 use crate::{Error, MobilePlayer, Result, StoreOp, collections::ImportedPlaylist};
@@ -24,7 +24,9 @@ pub struct ProfileFollowed {
 
 #[uniffi::export]
 pub fn profile_link_service(text: String) -> Option<String> {
-    ProfileLink::read(&text).map(|link| link.service().to_owned())
+    ProfileLink::read(&text)
+        .filter(|link| *link != ProfileLink::SpotifyAccount)
+        .map(|link| link.service().to_owned())
 }
 
 #[uniffi::export]
@@ -36,8 +38,11 @@ impl MobilePlayer {
             .services
             .online
             .profile_linked(&link)
-            .map_err(follow_error)?
-            .ok_or(Error::NoProfileAtTheLink)?;
+            .map_err(account_error)?
+            .ok_or(match link {
+                ProfileLink::SpotifyAccount => Error::NotSignedInToSpotify,
+                ProfileLink::Deezer(_) => Error::NoProfileAtTheLink,
+            })?;
         let known = pages_of(&self.catalog.0.lock(), &link)?;
         let mut followed = FollowedProfile {
             name: profile.name,
@@ -199,8 +204,14 @@ fn seconds(at: SystemTime) -> i64 {
     })
 }
 
-fn follow_error(source: resonate_library::Error) -> Error {
-    crate::collections::follow_error(source)
+fn account_error(source: resonate_library::Error) -> Error {
+    match source {
+        resonate_library::Error::Refused {
+            op: LookupOp::SpotifyAccount,
+            ..
+        } => Error::SpotifySignInLapsed,
+        source => crate::collections::follow_error(source),
+    }
 }
 
 fn read_error(source: rusqlite::Error) -> Error {

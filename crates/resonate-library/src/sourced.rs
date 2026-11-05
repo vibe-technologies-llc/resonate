@@ -560,6 +560,22 @@ impl Library {
         })
     }
 
+    pub fn let_go_of_the_profile(&self, link: &ProfileLink) -> Result<usize> {
+        let mut let_go = 0;
+        for page in self.pages_of(link)? {
+            let Some(was) = PlaylistLink::read(&page) else {
+                continue;
+            };
+            if let Some(playlist) = self.playlist_kept_from(&was)? {
+                self.forget_playlist_source(playlist)?;
+                let_go += 1;
+            }
+        }
+        self.stop_following(link)?;
+
+        Ok(let_go)
+    }
+
     fn pages_of(&self, link: &ProfileLink) -> Result<Vec<String>> {
         self.inner().read(|connection| {
             let mut statement = connection

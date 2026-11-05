@@ -48,7 +48,8 @@ counted play), only under a token or session the listener signed in for.
   is (library `Unreachable` on `NetworkDown`, which ends a pass; the lyric, eq and listen
   vocabularies' unreachable; `tidal.rs` and `youtube.rs` stop asking further). **`Host::is_an_enrichment`
   draws the line**: every host is gated except ListenBrainz and Last.fm (a counted play is the
-  listener's own record, not enrichment) and Shazam and AudD (the listener asked to listen). A
+  listener's own record, not enrichment), Shazam and AudD (the listener asked to listen) and Spotify's
+  accounts host (a sign-in; a read weighs the gate of its API host first). A
   listener's own search gated the same as a pass's, so a metered connection answers a typed search
   with the same refusal until the switch is on; the yielding twin shares the gate. **Unknown is not
   metered**: a gate is shut only by `Meter::Metered`, never `Unknown` or `Unmetered`, so a build
@@ -271,7 +272,8 @@ before a source joined is asked again by `look_again_for_portraits`.
   - Spotify: the public `/embed/playlist/<id>` page, whose `__NEXT_DATA__` (`shared::next_data`)
     holds `name` and a `trackList` of title, `subtitle` (artists as billed) and milliseconds; no
     ISRC; at most what Spotify puts on the embed (fifty to a hundred), with no continuation and no
-    keyless route past it (its Web API wants a registered client).
+    keyless route past it (its Web API wants a registered client: *A Spotify account* below). A
+    signed-in account asks the Web API first; only what it refuses to list (`403`) falls to this page.
   - TIDAL (`Host::TidalEmbed`, the others' pace): the public `embed.tidal.com/playlists/<uuid>` page,
     asked with no login, key or token (`tidal.com/playlist/<uuid>` itself is a shell that holds only
     the name). The page is server-rendered markup, not JSON: the name is the anchor in
@@ -329,6 +331,62 @@ before a source joined is asked again by `look_again_for_portraits`.
   playlist it only follows is not its own
   (`a_profile_offers_the_playlists_it_made_and_its_loved_tracks_and_none_it_only_follows`, live:
   `a_public_deezer_profile_names_the_playlists_it_made_and_its_loved_tracks`).
+
+## A Spotify account
+
+`spotify_account.rs` is what a listener signed in to with an app they registered at
+developer.spotify.com reads; it is not a provider (it obtains no media) and adds nothing a want
+does not already do. **No client ID, or no refresh token, is no account: nothing is offered and
+nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its_public_page`).
+
+- **`Online::with_spotify` takes a `SpotifyAccount`, which reads a `SpotifyGrants` before every
+  question**, so a sign-in, a sign-out or a second process's write is heard at the next read. A
+  grant's refresh token that differs from the one given and the one rotated to starts a new
+  session; `SpotifyGrant`, `SpotifySignedIn` and `SpotifyAuthorizing` print no secret.
+- **The sign-in is PKCE over one loopback redirect** (`SpotifySignIn`): `authorizing` binds
+  `SPOTIFY_REDIRECT` (`http://127.0.0.1:43879/spotify`, one fixed address every device registers
+  once: Spotify refuses `localhost` and wants an exact match, and a bound port that is taken is
+  `SpotifySignInError::NoPlaceToComeBack` before anything is asked), writes the `authorize` address
+  (`S256` challenge, a fresh `state`, `SCOPES`: `playlist-read-private playlist-read-collaborative
+  user-library-read`), and `authorized` answers the browser's one request and posts the code with its
+  verifier to `/api/token` (no secret, no `Authorization`). A request of any other path or `state` is
+  answered and waited past, so another page cannot end or feed the sign-in
+  (`a_sign_in_asks_with_pkce_catches_the_redirect_and_keeps_the_refresh_token`). A cancel is heard
+  within `LOOKED_AT_EVERY`; `A_SIGN_IN_LAPSES_AFTER` (10 min) of silence is `Lapsed`, `error=` with
+  the right state `Denied`
+  (`a_sign_in_refused_cancelled_or_left_alone_ends_with_no_token`).
+- **A rotated refresh token is handed back** (`SpotifyGrants::renewed`): PKCE's refresh answers a new
+  one, so it is used from then on whatever the settings still say. The access token is kept for its
+  `expires_in` less `RENEWED_BEFORE_IT_LAPSES`; a `401` lapses it and asks once more
+  (`a_token_is_renewed_once_when_refused_and_a_rotated_one_handed_back`). A refresh Spotify refuses
+  (`invalid_grant`, also what a token past its six months gets) is `Refused` under
+  `LookupOp::SpotifyAccount`, which is how a front end says to sign in again
+  (`a_refresh_token_refused_is_said_as_the_accounts_refusal`). The token's host is no enrichment and
+  a sign-in goes through a metered connection; a *read* is, so `access` weighs the API host's gate
+  before refreshing (`a_switch_off_or_a_metered_connection_sends_nothing`).
+- **`Reference::profile_linked(ProfileLink::SpotifyAccount)` names the account** (`/me`'s
+  `display_name`, else its `id`) with the liked songs first (`PlaylistLink::SpotifyLiked`,
+  `https://open.spotify.com/collection/tracks`), then every playlist `/me/playlists` lists, owned or
+  followed, private included, up to `PLAYLISTS_READ_AT_MOST`
+  (`a_signed_in_account_offers_its_liked_songs_and_every_playlist_it_lists`).
+- **A list is read whole, page by page, each song as `ListedSong::Named` with its ISRC**:
+  `/playlists/<id>/items` (`item`, the older `track` beside it) and `/me/tracks`, `ASKED_A_PAGE` (50)
+  at a time up to `SONGS_READ_AT_MOST`; an episode, a gap and a local file's missing code are passed
+  over or left to the strict search. **A page that fails part way fails the read**, so mirroring never
+  acts on half a list (`a_page_failing_part_way_fails_the_read_rather_than_answering_a_short_list`).
+- **What Spotify's Web API allows a listener's own app, as read in November 2026.** A registered app
+  stays in *development mode* unless its owner is an organisation with 250 000 monthly listeners; its
+  owner needs Premium, and at most five allow-listed accounts may sign in. There
+  `GET /playlists/<id>/items` answers `403` unless the account owns or collaborates on the playlist,
+  so **a followed playlist falls to the public page** (`Online::spotify_playlist`: at most what the
+  embed holds, no ISRC, each song to the strict search; a private one someone else owns is unread),
+  and an app with extended quota reads it whole unchanged
+  (`a_playlist_the_api_will_not_list_is_read_off_the_public_page_with_no_token`). `external_ids` was
+  removed from a track in February 2026 and restored in March. No request has been made of the real
+  service (`docs/TESTING.md`); the fixtures (`spotify_*.json`) are written from the published
+  reference and `a_signed_in_spotify_account_names_its_playlists_and_its_liked_songs_with_their_isrcs`
+  is the live test, under `RESONATE_ONLINE_TESTS`, `RESONATE_SPOTIFY_CLIENT_ID` and
+  `RESONATE_SPOTIFY_TOKEN_FILE`.
 
 ## ListenBrainz
 

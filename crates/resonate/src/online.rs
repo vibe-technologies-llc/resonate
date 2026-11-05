@@ -22,14 +22,19 @@ use resonate_online::OnlineLyrics;
 #[cfg(feature = "online")]
 use resonate_online::{
     AcoustId, Application, Audd, AutoEq, ByEar, Client, Identity, Introduction, LastFm,
-    ListenBrainz, Online, Session, Shazam,
+    ListenBrainz, Online, Session, Shazam, SpotifyAccount, SpotifyGrant, SpotifyGrants,
+    SpotifySignIn,
 };
 
 #[cfg(feature = "online")]
-use crate::config::{self, LastfmAccount};
-#[cfg(feature = "online")]
 use crate::metered;
 use crate::{Error, Result, config::Config};
+#[cfg(feature = "online")]
+use crate::{
+    config::{self, LastfmAccount},
+    error::ConfigKey,
+    signals,
+};
 
 #[cfg(feature = "online")]
 static INTRODUCTION: OnceLock<Introduction> = OnceLock::new();
@@ -39,6 +44,9 @@ static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
 
 #[cfg(feature = "online")]
 static YIELDING: OnceLock<Arc<Client>> = OnceLock::new();
+
+#[cfg(feature = "online")]
+static SPOTIFY: OnceLock<Arc<SpotifyAccount>> = OnceLock::new();
 
 #[cfg(feature = "online")]
 static REACHING: AtomicBool = AtomicBool::new(true);
@@ -148,9 +156,171 @@ pub fn reach(_on: bool) {}
 
 #[cfg(feature = "online")]
 pub fn reference(config: &Config, asking: Asking) -> Option<Arc<dyn Reference>> {
-    config
-        .online_enabled()
-        .then(|| Arc::new(Online::with_client(client_for(config, asking))) as Arc<dyn Reference>)
+    config.online_enabled().then(|| {
+        Arc::new(Online::with_client(client_for(config, asking)).with_spotify(spotify(config)))
+            as Arc<dyn Reference>
+    })
+}
+
+#[cfg(feature = "online")]
+fn spotify(config: &Config) -> Arc<SpotifyAccount> {
+    Arc::clone(
+        SPOTIFY
+            .get_or_init(|| Arc::new(SpotifyAccount::new(Arc::new(KeptInTheSettings::of(config))))),
+    )
+}
+
+#[cfg(feature = "online")]
+struct KeptInTheSettings {
+    settings: Option<PathBuf>,
+    read: Mutex<(Option<SystemTime>, Option<SpotifyGrant>)>,
+}
+
+#[cfg(feature = "online")]
+impl KeptInTheSettings {
+    fn of(config: &Config) -> Self {
+        let given = config.spotify_signed_in().then(|| SpotifyGrant {
+            client_id: config.spotify_client_id.clone().unwrap_or_default(),
+            refresh_token: config.spotify_refresh_token.clone().unwrap_or_default(),
+        });
+        Self {
+            settings: config
+                .read_from
+                .clone()
+                .or_else(|| config::config_path().ok()),
+            read: Mutex::new((None, given)),
+        }
+    }
+}
+
+#[cfg(feature = "online")]
+impl SpotifyGrants for KeptInTheSettings {
+    fn grant(&self) -> Option<SpotifyGrant> {
+        let mut read = self.read.lock();
+        let Some(settings) = &self.settings else {
+            return read.1.clone();
+        };
+        let moved = fs::metadata(settings).and_then(|file| file.modified()).ok();
+        if moved != read.0 {
+            match config::spotify_in(settings) {
+                Ok(given) => {
+                    *read = (
+                        moved,
+                        given.map(|(client_id, refresh_token)| SpotifyGrant {
+                            client_id,
+                            refresh_token,
+                        }),
+                    );
+                }
+                Err(error) => tracing::warn!(%error, "the Spotify account could not be read"),
+            }
+        }
+        read.1.clone()
+    }
+
+    fn renewed(&self, _grant: &SpotifyGrant, token: &str) {
+        let Some(settings) = &self.settings else {
+            tracing::error!("Spotify rotated the refresh token and no settings file can keep it");
+            return;
+        };
+        if let Err(error) = config::store(settings, ConfigKey::SpotifyRefreshToken, token) {
+            tracing::error!(%error, "the refresh token Spotify rotated could not be kept");
+        }
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+struct SignInForTheWindow {
+    signs_in: SpotifySignIn,
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+struct ApprovalForTheWindow {
+    signs_in: SpotifySignIn,
+    authorizing: resonate_online::SpotifyAuthorizing,
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+impl resonate_library::SignsInToSpotify for SignInForTheWindow {
+    fn authorizing(
+        &self,
+        client_id: &str,
+    ) -> std::result::Result<
+        Box<dyn resonate_library::SpotifyApproval>,
+        resonate_library::SpotifySignInFailure,
+    > {
+        Ok(Box::new(ApprovalForTheWindow {
+            signs_in: self.signs_in.clone(),
+            authorizing: self.signs_in.authorizing(client_id)?,
+        }))
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+impl resonate_library::SpotifyApproval for ApprovalForTheWindow {
+    fn address(&self) -> &str {
+        &self.authorizing.authorize_at
+    }
+
+    fn approved(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+    ) -> std::result::Result<Option<String>, resonate_library::SpotifySignInFailure> {
+        self.signs_in
+            .authorized(&self.authorizing, cancelled)
+            .map(|signed_in| signed_in.map(|signed_in| signed_in.refresh_token))
+            .map_err(Into::into)
+    }
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn signs_in_to_spotify(config: &Config) -> Option<Arc<dyn resonate_library::SignsInToSpotify>> {
+    Some(Arc::new(SignInForTheWindow {
+        signs_in: SpotifySignIn::new(client_for(config, Asking::ForTheListener)),
+    }))
+}
+
+#[cfg(all(not(feature = "online"), feature = "ui"))]
+pub fn signs_in_to_spotify(
+    _config: &Config,
+) -> Option<Arc<dyn resonate_library::SignsInToSpotify>> {
+    None
+}
+
+#[cfg(feature = "online")]
+pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    if !config.online_enabled() {
+        return Err(Error::OnlineOff);
+    }
+    let client_id = config
+        .spotify_client_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .ok_or(Error::NoSpotifyClient)?;
+
+    let signs_in = SpotifySignIn::new(client_for(config, Asking::ForTheListener));
+    let authorizing = signs_in.authorizing(client_id)?;
+    said!(
+        "open this address to sign in to Spotify, with {} listed among the app's redirect URIs:",
+        resonate_online::SPOTIFY_REDIRECT
+    );
+    said!("{}", authorizing.authorize_at);
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let stopping = Arc::clone(&cancelled);
+    let _interrupting = signals::cancel_when_told(move || stopping.store(true, Ordering::Relaxed));
+    signs_in
+        .authorized(&authorizing, &|| cancelled.load(Ordering::Relaxed))?
+        .map(|signed_in| signed_in.refresh_token)
+        .ok_or(Error::SpotifySignInCancelled)
+}
+
+#[cfg(not(feature = "online"))]
+pub fn signed_in_to_spotify(_config: &Config) -> Result<String> {
+    Err(Error::NoSignIn)
 }
 
 #[cfg(feature = "online")]

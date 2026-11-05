@@ -25479,6 +25479,126 @@ fn a_profile_followed_takes_its_new_playlists_lets_go_of_its_deleted_ones_and_ne
     Ok(())
 }
 
+fn a_spotify_account_listing(songs: Vec<ListedSong>) -> Fake {
+    let own = PlaylistLink::Spotify("3cEYpjA9oz9GiPac4AsH4n".to_owned());
+    Fake::new(Canned {
+        profile_linked: Some(LinkedProfile {
+            name: "A Listener".to_owned(),
+            playlists: vec![
+                ProfilePlaylist {
+                    title: "Liked Songs".to_owned(),
+                    link: PlaylistLink::SpotifyLiked,
+                },
+                ProfilePlaylist {
+                    title: "Kept for the road".to_owned(),
+                    link: own.clone(),
+                },
+            ],
+        }),
+        playlists_linked: vec![
+            (
+                PlaylistLink::SpotifyLiked,
+                LinkedPlaylist {
+                    name: "Liked Songs".to_owned(),
+                    songs: songs.clone(),
+                },
+            ),
+            (
+                own,
+                LinkedPlaylist {
+                    name: "Kept for the road".to_owned(),
+                    songs,
+                },
+            ),
+        ],
+        isrcs: vec![(
+            Isrc::new("USRC17607839").expect("a code"),
+            echoes_found().into_recording(),
+        )],
+        recordings: vec![echoes_found().into_recording()],
+        ..Canned::default()
+    })
+}
+
+#[test]
+fn a_spotify_account_is_followed_as_a_profile_each_song_by_its_isrc_and_one_not_found_said_so()
+-> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let coded = ListedSong::Named(LinkNames {
+        isrcs: vec![Isrc::new("USRC17607839").expect("a code")],
+        length: None,
+        title: Some("Echoes".to_owned()),
+        artist: Some("Pink Floyd".to_owned()),
+    });
+    let nothing_knows = ListedSong::Named(LinkNames {
+        isrcs: vec![Isrc::new("ZZZZZ0000000").expect("a code")],
+        length: Some(Duration::from_secs(200)),
+        title: Some("Near the same name".to_owned()),
+        artist: Some("Someone else".to_owned()),
+    });
+    let account = a_spotify_account_listing(vec![coded, nothing_knows]);
+
+    let followed = library
+        .follow_profile(&account, &ProfileLink::SpotifyAccount, Upkeep::InStep)?
+        .expect("the account read");
+    let liked = library.playlist_source(followed.playlists[0].playlist)?;
+
+    assert_eq!(followed.name, "A Listener");
+    assert_eq!(followed.playlists.len(), 2);
+    assert_eq!(followed.playlists[0].name, "Liked Songs");
+    assert_eq!(followed.playlists[0].found.len(), 1, "found by its ISRC");
+    assert_eq!(
+        followed.playlists[0].unnamed, 1,
+        "one nothing names strictly is reported, never matched loosely"
+    );
+    assert_eq!(
+        liked.map(|source| (source.link, source.upkeep)),
+        Some((PlaylistLink::SpotifyLiked, Upkeep::InStep))
+    );
+    assert_eq!(
+        library
+            .profiles_followed()?
+            .into_iter()
+            .map(|(link, _)| link)
+            .collect::<Vec<_>>(),
+        [ProfileLink::SpotifyAccount]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_spotify_account_with_nobody_signed_in_names_nothing_and_starts_no_playlist() -> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let nobody = Fake::new(Canned::default());
+
+    assert_eq!(
+        library.follow_profile(&nobody, &ProfileLink::SpotifyAccount, Upkeep::InStep)?,
+        None
+    );
+    assert!(library.profiles_followed()?.is_empty());
+    assert!(library.playlists_kept_in_step()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_profile_let_go_keeps_its_playlists_rows_and_no_longer_follows_them() -> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let account = a_spotify_account_listing(vec![ListedSong::Recording(mbid(RECORDING))]);
+
+    let followed = library
+        .follow_profile(&account, &ProfileLink::SpotifyAccount, Upkeep::InStep)?
+        .expect("the account read");
+    let let_go = library.let_go_of_the_profile(&ProfileLink::SpotifyAccount)?;
+
+    assert_eq!(let_go, 2);
+    assert!(library.profiles_followed()?.is_empty());
+    for read in &followed.playlists {
+        assert_eq!(library.playlist_source(read.playlist)?, None);
+        assert_eq!(library.playlist_entries(read.playlist, None)?.len(), 1);
+    }
+    Ok(())
+}
+
 #[test]
 fn a_profile_moved_once_leaves_its_playlists_with_no_link_and_is_not_followed() -> Result<()> {
     let (_tree, library) = orbits_with_the_first_held_by_recording()?;

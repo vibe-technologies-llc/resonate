@@ -168,6 +168,36 @@ pub trait Scrobbler: Send + Sync {
     fn token_held(&self) -> Result<TokenHeld>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SpotifySignInFailure {
+    #[error("the sign-in's answer has nowhere to come back to")]
+    NoPlaceToComeBack,
+    #[error("the sign-in was not approved in time")]
+    Lapsed,
+    #[error("Spotify was told not to sign in")]
+    Denied,
+    #[error("Spotify refused the sign-in")]
+    Refused,
+    #[error("Spotify could not be reached")]
+    Unreached,
+}
+
+pub trait SpotifyApproval: Send {
+    fn address(&self) -> &str;
+
+    fn approved(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+    ) -> std::result::Result<Option<String>, SpotifySignInFailure>;
+}
+
+pub trait SignsInToSpotify: Send + Sync {
+    fn authorizing(
+        &self,
+        client_id: &str,
+    ) -> std::result::Result<Box<dyn SpotifyApproval>, SpotifySignInFailure>;
+}
+
 pub trait Scrobblers: Send + Sync {
     fn under(&self, token: String) -> Arc<dyn Scrobbler>;
 

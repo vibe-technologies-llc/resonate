@@ -32,6 +32,8 @@ use crate::{
 
 pub(crate) struct Services {
     pub(crate) online: Online,
+    pub(crate) spotify_grants: Arc<crate::spotify::KeptByThePhone>,
+    pub(crate) spotify_signing: crate::spotify::SigningIn,
     pub(crate) metering: Metering,
     pub(crate) lookups: Gate,
     pub(crate) downloads: Gate,
@@ -44,18 +46,30 @@ pub(crate) struct Services {
     pub(crate) watching: crate::watching::Watching,
 }
 
+impl Services {
+    pub(crate) fn spotify_sign_in(&self) -> resonate_online::SpotifySignIn {
+        resonate_online::SpotifySignIn::new(Arc::clone(self.online.client()))
+    }
+}
+
 impl Default for Services {
     fn default() -> Self {
         let metering = Metering::new();
         let lookups = Gate::new(metering.clone(), true);
         let downloads = Gate::new(metering.clone(), false);
+        let spotify_grants = Arc::new(crate::spotify::KeptByThePhone::default());
         let online = Online::with_client(Arc::new(
             Client::new(Identity::of_this_build()).gated_by(lookups.clone()),
-        ));
+        ))
+        .with_spotify(Arc::new(resonate_online::SpotifyAccount::new(
+            Arc::clone(&spotify_grants) as Arc<dyn resonate_online::SpotifyGrants>,
+        )));
         online.client().reach(false);
         let auto_eq = resonate_online::AutoEq::new(Arc::clone(online.client()), None);
         Self {
             online,
+            spotify_grants,
+            spotify_signing: crate::spotify::SigningIn::default(),
             metering,
             lookups,
             downloads,

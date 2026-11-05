@@ -297,6 +297,7 @@ impl Host for Desktop {
             }
             Reloadable::Submission | Reloadable::Sync => Reloaded::Refused,
             Reloadable::Tidal => self.tidal_signed_in_again(Path::new(settings)),
+            Reloadable::Spotify => self.spotify_signed_in_again(Path::new(settings)),
         }
     }
 
@@ -383,6 +384,21 @@ impl Desktop {
         self.tell_the_window(resonate_ui::Followed::Bindings(equaliser::bound(config)));
     }
 
+    fn spotify_signed_in_again(&self, settings: &Path) -> Reloaded {
+        match config::load(Some(settings)) {
+            Ok(config) => {
+                self.tell_the_window(resonate_ui::Followed::Spotify(resonate_ui::SpotifySignIn {
+                    client_id: config.spotify_client_id.clone().unwrap_or_default(),
+                    refresh_token: config.spotify_refresh_token.clone().unwrap_or_default(),
+                }))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the Spotify account could not be read again from the settings");
+                Reloaded::Refused
+            }
+        }
+    }
+
     fn tidal_signed_in_again(&self, settings: &Path) -> Reloaded {
         match config::load(Some(settings)) {
             Ok(config) => {
@@ -401,6 +417,10 @@ impl Desktop {
     fn tell_the_window_of_the_bindings(&self, _config: &config::Config) {}
 
     fn tidal_signed_in_again(&self, _settings: &Path) -> Reloaded {
+        Reloaded::Refused
+    }
+
+    fn spotify_signed_in_again(&self, _settings: &Path) -> Reloaded {
         Reloaded::Refused
     }
 }

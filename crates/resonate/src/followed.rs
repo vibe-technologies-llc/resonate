@@ -2,8 +2,8 @@ use std::path::Path;
 
 use resonate_core::PlaylistId;
 use resonate_library::{
-    Found, FromTheLink, Library, Playlist, PlaylistLink, PlaylistSource, ProfileLink, Reference,
-    Upkeep,
+    Found, FromTheLink, Library, LookupOp, Playlist, PlaylistLink, PlaylistSource, ProfileLink,
+    Reference, Upkeep,
 };
 
 use crate::{
@@ -41,6 +41,16 @@ pub fn follow_profile(
     profile_followed(library, reference.as_ref(), link, upkeep)
 }
 
+fn said_to_sign_in_again(error: Error) -> Error {
+    match error {
+        Error::Library(resonate_library::Error::Refused {
+            op: LookupOp::SpotifyAccount,
+            ..
+        }) => Error::SpotifySignInLapsed,
+        error => error,
+    }
+}
+
 fn profile_followed(
     library: &Library,
     reference: &dyn Reference,
@@ -48,8 +58,12 @@ fn profile_followed(
     upkeep: Upkeep,
 ) -> Result<()> {
     let followed = library
-        .follow_profile(reference, link, upkeep)?
-        .ok_or(Error::NoProfileAtTheLink)?;
+        .follow_profile(reference, link, upkeep)
+        .map_err(|error| said_to_sign_in_again(error.into()))?
+        .ok_or(match link {
+            ProfileLink::SpotifyAccount => Error::NotSignedInToSpotify,
+            ProfileLink::Deezer(_) => Error::NoProfileAtTheLink,
+        })?;
     for read in &followed.playlists {
         let wanted = want_the_rest(library, reference, &read.found);
         said!(
@@ -132,10 +146,14 @@ pub fn refresh_every_kept(library: &Library, config: &Config) -> Result<()> {
 
     let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
     for (profile, _) in profiles {
+        if profile == ProfileLink::SpotifyAccount && !config.spotify_signed_in() {
+            said!("the Spotify account is followed but not signed in; `resonate spotify` signs in");
+            continue;
+        }
         profile_followed(library, reference.as_ref(), &profile, Upkeep::InStep)?;
     }
     for (playlist, source) in library.playlists_kept_in_step()? {
-        refreshed(library, reference.as_ref(), playlist, &source)?;
+        refreshed(library, reference.as_ref(), playlist, &source).map_err(said_to_sign_in_again)?;
     }
     Ok(())
 }
