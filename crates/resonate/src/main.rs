@@ -52,6 +52,7 @@ mod signals;
 #[path = "interrupts.rs"]
 mod signals;
 mod sleep;
+mod spotify;
 #[cfg(feature = "ui")]
 mod starting;
 mod stats;
@@ -351,6 +352,19 @@ fn run() -> Result<()> {
             reloading::delivering(&settings, Some(Reloadable::Tidal), || {
                 providers::sign_in_to_tidal(&config, &settings)
             })
+        }
+        Some(Sub::Spotify(args)) => {
+            let settings = settings_path(&cli)?;
+            match (args.follow, args.move_once, args.forget) {
+                (true, ..) => {
+                    spotify::follow(&open_library(&cli, &config)?, &config, Upkeep::InStep)
+                }
+                (_, true, _) => {
+                    spotify::follow(&open_library(&cli, &config)?, &config, Upkeep::Once)
+                }
+                (.., true) => spotify::sign_out(&open_library(&cli, &config)?, &settings),
+                _ => spotify::sign_in(&config, &settings),
+            }
         }
         Some(Sub::Lastfm { user, forget }) => {
             let settings = settings_path(&cli)?;

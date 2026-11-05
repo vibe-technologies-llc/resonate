@@ -1236,6 +1236,31 @@ pub struct BrowsingArgs {
 }
 
 #[derive(Debug, Args)]
+#[group(multiple = false)]
+pub struct SpotifyArgs {
+    #[arg(
+        long,
+        help = "Keep the liked songs and every playlist of the signed-in account in step, each a \
+                playlist here, and want every song the library lacks"
+    )]
+    pub follow: bool,
+
+    #[arg(
+        long = "move",
+        help = "Copy the liked songs and every playlist of the signed-in account here once, and \
+                follow none of them"
+    )]
+    pub move_once: bool,
+
+    #[arg(
+        long,
+        help = "Forget the refresh token and stop following the account; its playlists keep their \
+                rows here"
+    )]
+    pub forget: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct ServedArgs {
     #[arg(
         long,
@@ -1393,6 +1418,14 @@ pub enum Sub {
                  set"
     )]
     Tidal,
+
+    #[command(
+        about = "Sign in to Spotify with an app you registered at developer.spotify.com: print \
+                 the address to approve it at, wait for the approval and keep the refresh token \
+                 in the settings file. Needs spotify-client-id set, and the app listing \
+                 http://127.0.0.1:43879/spotify as a redirect URI"
+    )]
+    Spotify(SpotifyArgs),
 
     #[command(
         about = "Sign in to Last.fm so what is heard is scrobbled there: read the account's \

@@ -236,6 +236,8 @@ pub struct Config {
     pub tidal_client_id: Option<String>,
     pub tidal_client_secret: Option<String>,
     pub tidal_refresh_token: Option<String>,
+    pub spotify_client_id: Option<String>,
+    pub spotify_refresh_token: Option<String>,
     pub hifi_api: Option<String>,
     pub hifi_secret: Option<String>,
     pub monochrome: Option<String>,
@@ -372,6 +374,8 @@ impl fmt::Debug for Config {
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
+            spotify_client_id,
+            spotify_refresh_token,
             hifi_api,
             hifi_secret,
             monochrome,
@@ -499,6 +503,11 @@ impl fmt::Debug for Config {
             .field(
                 "tidal_refresh_token",
                 &withheld(tidal_refresh_token.as_ref()),
+            )
+            .field("spotify_client_id", spotify_client_id)
+            .field(
+                "spotify_refresh_token",
+                &withheld(spotify_refresh_token.as_ref()),
             )
             .field("hifi_api", hifi_api)
             .field("hifi_secret", &withheld(hifi_secret.as_ref()))
@@ -928,6 +937,18 @@ impl fmt::Debug for Accounts {
 }
 
 #[cfg(feature = "online")]
+pub fn spotify_in(path: &Path) -> Result<Option<(String, String)>> {
+    let read = |key: ConfigKey| -> Result<Option<String>> {
+        match item_in(path, key)? {
+            Some(value) => Ok(given(At { path, key }.string(&value)?)),
+            None => Ok(None),
+        }
+    };
+
+    Ok(read(ConfigKey::SpotifyClientId)?.zip(read(ConfigKey::SpotifyRefreshToken)?))
+}
+
+#[cfg(feature = "online")]
 pub fn submitting_in(path: &Path) -> Result<Accounts> {
     let online = ConfigKey::Online;
     let switched_on = match item_in(path, online)? {
@@ -1143,6 +1164,10 @@ impl Config {
             }
             ConfigKey::TidalRefreshToken => {
                 config.tidal_refresh_token = given(at.string(value)?);
+            }
+            ConfigKey::SpotifyClientId => config.spotify_client_id = given(at.string(value)?),
+            ConfigKey::SpotifyRefreshToken => {
+                config.spotify_refresh_token = given(at.string(value)?);
             }
             ConfigKey::HifiApi => config.hifi_api = given(at.string(value)?),
             ConfigKey::HifiSecret => config.hifi_secret = given(at.string(value)?),
@@ -1816,6 +1841,14 @@ fn replay_gain(text: &str) -> Option<ReplayGainMode> {
     }
 }
 
+impl Config {
+    pub fn spotify_signed_in(&self) -> bool {
+        let given =
+            |held: &Option<String>| held.as_deref().is_some_and(|held| !held.trim().is_empty());
+        given(&self.spotify_client_id) && given(&self.spotify_refresh_token)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -2025,6 +2058,7 @@ mod tests {
              subsonic-password = \"subsonic-sesame\"\njellyfin = \"https://jelly.home.arpa\"\n\
              jellyfin-user = \"listener\"\njellyfin-password = \"jellyfin-sesame\"\ntidal-client-id = \"client\"\n\
              tidal-client-secret = \"tidal-hush\"\ntidal-refresh-token = \"tidal-sesame\"\n\
+             spotify-refresh-token = \"spotify-sesame\"\n\
              audd-token = \"audd-sesame\"\nlistenbrainz-token = \"listenbrainz-sesame\"\n\
              acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n\
              sync-key = \"sync-sesame\"\n",
@@ -2042,6 +2076,7 @@ mod tests {
             "jellyfin-sesame",
             "tidal-hush",
             "tidal-sesame",
+            "spotify-sesame",
             "audd-sesame",
             "listenbrainz-sesame",
             "acoustid-sesame",
@@ -2688,6 +2723,22 @@ mod tests {
             config.previous_restarts(),
             PreviousRestarts::RestartsTheTrack
         );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_spotify_account_is_read_out_of_the_file_only_where_both_keys_are_given() {
+        let scratch = Scratch::new().seed("spotify-client-id = \"registered\"\n");
+        assert_eq!(spotify_in(&scratch.path).expect("it reads"), None);
+
+        let scratch = scratch
+            .seed("spotify-client-id = \" registered \"\nspotify-refresh-token = \"sesame\"\n");
+        assert_eq!(
+            spotify_in(&scratch.path).expect("it reads"),
+            Some(("registered".to_owned(), "sesame".to_owned()))
+        );
+
+        let _ = fs::remove_file(&scratch.path);
     }
 
     #[cfg(feature = "online")]

@@ -295,6 +295,13 @@ String, secret. That client's secret. Default: none.
 .B tidal-refresh-token
 String, secret. Written by resonate\-tidal, and rewritten when TIDAL rotates it. Default: none.
 .TP
+.B spotify-client-id
+String. The client ID of an app you registered at developer.spotify.com, whose redirect URIs list
+http://127.0.0.1:43879/spotify. With none set, no Spotify account is offered or asked. Default: none.
+.TP
+.B spotify-refresh-token
+String, secret. Written by resonate\-spotify, and rewritten when Spotify rotates it. Default: none.
+.TP
 .B hifi-api
 String. The address of a TIDAL-compatible server of the listener's. Default: none.
 .TP
