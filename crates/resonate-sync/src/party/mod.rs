@@ -1,3 +1,4 @@
+mod ahead;
 mod clock;
 mod follow;
 mod key;
@@ -6,6 +7,7 @@ mod seat;
 mod service;
 
 pub use self::{
+    ahead::{Ahead, SONGS_FOUND_AHEAD, wanted_ahead},
     clock::{CLOCK_WINDOW, ServerClock},
     follow::{
         Doing, FAR_ENOUGH_TO_SEEK, Follow, HANDED_ON_WITHIN, Mine, NUDGES_APART, OUT_OF_STEP_PAST,

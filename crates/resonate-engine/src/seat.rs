@@ -2,11 +2,14 @@ use std::{sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
 use resonate_audio::Moment;
-use resonate_core::{Frames, QueueStamp, Resumable, Resumption};
+use resonate_core::{Frames, QueueStamp, Resumable, Resumption, Span};
 
 use crate::{
-    Command, HeardAt, HeardClock, PlaybackState, Player, RepeatMode, Result, resumption_of,
+    Command, HeardAt, HeardClock, Placement, PlaybackState, Player, QueueItem, RepeatMode, Result,
+    Unclaimed, resumption_of,
 };
+
+pub const TOO_NEAR_THE_END_TO_CHANGE_WHAT_FOLLOWS: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sounding {
@@ -177,6 +180,71 @@ impl Seat {
                 .send(Command::KeepInStepWith(self.clock.clone()))?;
             self.player.request(Command::Play)?.wait()?;
         }
+
+        Ok(true)
+    }
+
+    pub fn keep_ahead(&self, ahead: &[Resumable]) -> Result<bool> {
+        let state = self.player.state();
+        let Some(playing) = state.queue_position else {
+            return Ok(false);
+        };
+        if let Some(track) = state.current.as_ref()
+            && let Some(length) = track.duration
+        {
+            let rate = track.source.rate.hz();
+            let left = seconds_of(
+                Frames(length.get().saturating_sub(track.position.get())),
+                rate,
+            );
+            if left < TOO_NEAR_THE_END_TO_CHANGE_WHAT_FOLLOWS {
+                return Ok(false);
+            }
+        }
+
+        let queued = self.player.queued();
+        let standing: Vec<QueueStamp> = queued
+            .rows
+            .iter()
+            .skip(playing + 1)
+            .map(|item| QueueStamp::of([(&item.location, item.span)]))
+            .collect();
+        let alike = standing
+            .iter()
+            .zip(ahead)
+            .take_while(|(standing, wanted)| **standing == row_stamp(wanted))
+            .count();
+        let first_unlike = playing + 1 + alike;
+
+        if standing.len() > alike {
+            self.player
+                .request(Command::Remove(Span::between(
+                    first_unlike,
+                    queued.rows.len() - 1,
+                )))?
+                .wait()?;
+        }
+
+        let rest = ahead.get(alike..).unwrap_or_default();
+        if rest.is_empty() {
+            return Ok(true);
+        }
+        let mut minting = Unclaimed::beside(queued.rows.iter().map(AsRef::as_ref));
+        let items = rest
+            .iter()
+            .map(|row| QueueItem {
+                id: minting.mint(),
+                location: row.location.clone(),
+                span: row.span,
+            })
+            .collect();
+        self.player
+            .request(Command::Insert {
+                items,
+                at: Placement::At(first_unlike),
+                play: false,
+            })?
+            .wait()?;
 
         Ok(true)
     }
