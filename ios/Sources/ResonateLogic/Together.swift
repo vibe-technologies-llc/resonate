@@ -61,6 +61,15 @@ public enum SharedPlaylistWords {
         mayEdit ? "Shared" : "Followed"
     }
 
+    public static func mayEdit(shared: Bool?, followed: Bool) -> Bool {
+        shared ?? !followed
+    }
+
+    public static func kind(shared mayEdit: Bool?, followed: Bool) -> String? {
+        if let mayEdit { return kind(mayEdit: mayEdit) }
+        return followed ? kind(mayEdit: false) : nil
+    }
+
     public static func reach(_ reach: SharedPlaylistReach) -> String? {
         switch reach {
         case .waiting: "Reaching the server…"

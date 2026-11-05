@@ -259,6 +259,44 @@ mod tests {
     }
 
     #[test]
+    fn a_followed_list_is_told_from_the_others_with_sync_off() {
+        let there = folder("shared-followed-listed");
+        let phone = player(&there);
+        let song = song(&phone, "content://test/four.flac", "Four", None);
+        let followed = phone
+            .create_playlist("Followed".to_owned())
+            .expect("a list");
+        let own = phone.create_playlist("Own".to_owned()).expect("a list");
+        phone
+            .add_to_playlist(followed, vec![song.id])
+            .expect("a song on it");
+        let documents = documents_of(&phone, &there);
+        let at = phone.synced_playlist(followed).expect("its identity");
+
+        documents.shared_flag(at, false).expect("flagged");
+
+        let listed = phone.playlists().expect("listed");
+        let followed_ids: Vec<u64> = listed
+            .iter()
+            .filter(|list| list.followed)
+            .map(|list| list.id)
+            .collect();
+
+        assert_eq!(followed_ids, vec![followed]);
+        assert!(listed.iter().any(|list| list.id == own && !list.followed));
+
+        documents.shared_flag(at, true).expect("made editable");
+
+        assert!(
+            phone
+                .playlists()
+                .expect("listed")
+                .iter()
+                .all(|list| !list.followed)
+        );
+    }
+
+    #[test]
     fn a_shared_list_written_here_is_flagged_as_it_is_made_and_keeps_only_what_is_held() {
         let there = folder("shared-write");
         let phone = player(&there);

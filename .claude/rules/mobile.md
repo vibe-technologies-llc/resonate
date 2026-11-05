@@ -803,7 +803,7 @@ else is, and an empty remainder is `NoProvider`
 keyed by `playlist` and `created`, leaves a flagged list out of `Catalog::playlists`; a list written for a
 friend is flagged in the transaction that writes it, a followed one refuses `edit_playlist`
 (`Error::PlaylistFollowed`), and `shared.sqlite` lives beside the ledger, started and stopped by `sync_start`
-and `sync_stop`, so sync must be on. `together_named` keeps the typed name, empty until asked. A party
+and `sync_stop`, so sync must be on. `together_named` keeps the typed name, empty until asked. `playlists()` marks a followed one (`MusicPlaylist.followed`, the flag `edit_playlist` refuses by), so a front end hides its edit controls with sync off too (`a_followed_list_is_told_from_the_others_with_sync_off`). A party
 follows the zone shown when it began, and `save_zone` leaves that zone's kept queue alone while following
 (`shared-playlists.md`, `party.md`).
 

@@ -409,7 +409,7 @@ struct PlaylistShelfRow: View {
     let playlist: MusicPlaylist
 
     var body: some View {
-        let kind = library.features.together.shared(playlist.id).map { SharedPlaylistWords.kind(mayEdit: $0.mayEdit) } ?? "Playlist"
+        let kind = SharedPlaylistWords.kind(shared: library.features.together.shared(playlist.id)?.mayEdit, followed: playlist.followed) ?? "Playlist"
         HStack(spacing: 14) {
             PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {

@@ -35,6 +35,8 @@ pub struct MusicPlaylist {
     pub search: Option<SavedSearch>,
     #[uniffi(default = None)]
     pub link: Option<PlaylistLinkInfo>,
+    #[uniffi(default = false)]
+    pub followed: bool,
 }
 
 #[derive(Clone)]
@@ -76,6 +78,7 @@ impl MobilePlayer {
                             .collect::<rusqlite::Result<Vec<_>>>()?,
                         search: None,
                         link: None,
+                        followed: false,
                     })
                 })
                 .map_err(read_error)?
@@ -85,6 +88,7 @@ impl MobilePlayer {
                 .map(|mut playlist| {
                     let query = saved_query(&connection, playlist.id)?;
                     playlist.link = info_of(&connection, playlist.id);
+                    playlist.followed = is_followed(&connection, playlist.id)?;
                     Ok((playlist, query))
                 })
                 .collect::<Result<Vec<_>>>()?

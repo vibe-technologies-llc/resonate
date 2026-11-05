@@ -112,6 +112,17 @@ class TogetherWordsTest {
     }
 
     @Test
+    fun aFollowedListIsToldFromTheOthersWithSyncOffToo() {
+        assertEquals("Followed", TogetherWords.badge(null, followed = true))
+        assertNull(TogetherWords.badge(null, followed = false))
+        assertEquals("Shared", TogetherWords.badge(list, followed = true))
+        assertEquals(true, TogetherWords.mayEdit(null, followed = false))
+        assertEquals(false, TogetherWords.mayEdit(null, followed = true))
+        assertEquals(true, TogetherWords.mayEdit(list, followed = true))
+        assertEquals(false, TogetherWords.mayEdit(list.copy(mayEdit = false), followed = false))
+    }
+
+    @Test
     fun aListReachedSaysNothingOfItsReach() {
         assertNull(TogetherWords.reach(SharedPlaylistReach.REACHED))
         SharedPlaylistReach.entries.filter { it != SharedPlaylistReach.REACHED }.forEach {

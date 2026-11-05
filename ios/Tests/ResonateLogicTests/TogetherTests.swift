@@ -71,6 +71,16 @@ private func person(_ name: String, me: Bool = false, host: Bool = false) -> Tog
         #expect(SharedPlaylistWords.kind(mayEdit: false) == "Followed")
     }
 
+    @Test func aFollowedListIsToldFromTheOthersWithSyncOffToo() {
+        #expect(SharedPlaylistWords.mayEdit(shared: nil, followed: false))
+        #expect(!SharedPlaylistWords.mayEdit(shared: nil, followed: true))
+        #expect(SharedPlaylistWords.mayEdit(shared: true, followed: true))
+        #expect(!SharedPlaylistWords.mayEdit(shared: false, followed: false))
+        #expect(SharedPlaylistWords.kind(shared: nil, followed: true) == "Followed")
+        #expect(SharedPlaylistWords.kind(shared: nil, followed: false) == nil)
+        #expect(SharedPlaylistWords.kind(shared: true, followed: false) == "Shared")
+    }
+
     @Test func reachIsSaidOnlyWhenTheServerWasNotReached() {
         #expect(SharedPlaylistWords.reach(.reached) == nil)
         for reach in [SharedPlaylistReach.waiting, .unreached, .serverTooOld, .turnedAway, .noServer] {

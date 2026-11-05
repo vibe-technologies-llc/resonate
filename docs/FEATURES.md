@@ -136,7 +136,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `resonate://party/` argument or `OpenUri` from outside joins the first zone at once
   (`party_room::accept`); it needs a confirmation sheet (a `Sheet` of `views/sheets.rs`) naming
   what the link takes over
-- [S] A followed list told apart on the phones while sync is off, so its edit controls hide instead of answering with a refusal.
 - [S] A party on the phones reaching the listener's own server while sync is off; the boundary learns the server only as sync starts.
 - [M] Handing the host's role to someone else in a party, when the host must go.
 - [S] A frozen snapshot of a past Wrapped, kept once its year is over, rather than read afresh from what history keeps.

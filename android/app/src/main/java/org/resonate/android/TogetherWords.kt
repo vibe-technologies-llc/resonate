@@ -81,12 +81,14 @@ object TogetherWords {
                 "This device is set to use no server, so nothing can be shared."
         }
 
-    fun badge(list: SharedPlaylist?): String? =
+    fun badge(list: SharedPlaylist?, followed: Boolean = false): String? =
         when {
-            list == null -> null
+            list == null -> if (followed) FOLLOWED else null
             list.mayEdit -> SHARED
             else -> FOLLOWED
         }
+
+    fun mayEdit(list: SharedPlaylist?, followed: Boolean): Boolean = list?.mayEdit ?: !followed
 
     fun notHeld(titles: List<String>): String? {
         if (titles.isEmpty()) return null
