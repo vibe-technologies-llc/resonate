@@ -23,7 +23,7 @@ pub struct AlbumNotHeld {
     pub pressing: Option<Mbid>,
 }
 
-pub(crate) fn pressing_of(releases: Vec<Release>) -> Option<Release> {
+pub fn pressing_of(releases: Vec<Release>) -> Option<Release> {
     let mut counted: AHashMap<u32, usize> = AHashMap::new();
     for release in &releases {
         let tracks = release.track_count();

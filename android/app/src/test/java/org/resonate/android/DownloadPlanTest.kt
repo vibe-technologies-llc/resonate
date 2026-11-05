@@ -154,4 +154,19 @@ class DownloadPlanTest {
         assertTrue(finding.single { it.key == 2L }.cancelling)
         assertEquals(jobs, done)
     }
+
+    @Test
+    fun aSongStandsOnlyWhereAnUnsettledJobHoldsIt() {
+        val jobs =
+            listOf(
+                job(1, "a", DownloadState.DOWNLOADING),
+                job(2, "b", DownloadState.DONE),
+                job(3, "c", DownloadState.WAITING),
+            )
+
+        assertEquals(DownloadState.DOWNLOADING, DownloadPlan.standing(jobs, song("a")))
+        assertNull(DownloadPlan.standing(jobs, song("b")))
+        assertEquals(DownloadState.WAITING, DownloadPlan.standing(jobs, song("c")))
+        assertNull(DownloadPlan.standing(jobs, song("d")))
+    }
 }

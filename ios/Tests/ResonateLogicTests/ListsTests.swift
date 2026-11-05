@@ -358,3 +358,29 @@ import Testing
         #expect(placing.takes(6) == nil)
     }
 }
+
+@Suite struct NotInYourLibraryTests {
+    private func release(kind: String = "Album", year: UInt32? = 2010) -> ReleaseNotHeld {
+        ReleaseNotHeld(group: "g", title: "Lacked", kind: kind, year: year, songs: 0, songsRead: false)
+    }
+
+    @Test func theHeadingCountsWhatTheLibraryLacks() {
+        #expect(NotInYourLibrary.heading(1, "release") == "Not in your library · 1 release")
+        #expect(NotInYourLibrary.heading(3, "release") == "Not in your library · 3 releases")
+    }
+
+    @Test func onlyTheFirstSongsLackedAreShownUntilAllAreAsked() {
+        let songs = (0..<30).map { searchSong("Song \($0)") }
+
+        #expect(NotInYourLibrary.shown(songs, all: false).count == NotInYourLibrary.songsShownFirst)
+        #expect(NotInYourLibrary.shown(songs, all: false).first?.title == "Song 0")
+        #expect(NotInYourLibrary.shown(songs, all: true).count == 30)
+        #expect(NotInYourLibrary.shown([], all: false).isEmpty)
+    }
+
+    @Test func aReleaseLackedIsToldByItsKindAndYearWhereItHasThem() {
+        #expect(NotInYourLibrary.line(release()) == "Album · 2010")
+        #expect(NotInYourLibrary.line(release(year: nil)) == "Album")
+        #expect(NotInYourLibrary.line(release(kind: "", year: 1999)) == "1999")
+    }
+}

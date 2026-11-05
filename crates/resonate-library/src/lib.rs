@@ -99,7 +99,7 @@ pub use crate::{
         REFUSALS_THAT_END_A_PASS, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought, WAITS, Waits,
         agreement, best_recording, best_release, closest_release, group_asked,
         needs_its_releases_told, recording_asked, release_asked, the_strict_recording, top_group,
-        top_release,
+        top_release, worth_keeping,
     },
     enriched::{COVERS_ASKED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, due_again, due_parameters},
     error::{
@@ -172,7 +172,7 @@ pub use crate::{
         Described, Listed, Sheet, SheetRow, Timed, parse as read_sheet, text_of as written_sheet,
     },
     sheeted::{SheetWanted, SheetWrite},
-    songs::AlbumNotHeld,
+    songs::{AlbumNotHeld, pressing_of},
     sourced::{
         FilledFromTheLink, FollowedProfile, FromTheLink, KEPT_IN_STEP_EVERY, PlaylistSource, Upkeep,
     },

@@ -209,8 +209,53 @@ offered again. `SearchSong` carries disc and position, so a row is a download as
 `one_file_answers_for_one_song_of_a_name_a_release_holds_twice`,
 `a_song_landed_under_another_album_is_held_by_its_recording`,
 `an_album_with_a_release_is_asked_once_and_one_without_is_never_asked`,
-`a_catalog_of_before_albums_kept_their_songs_keeps_its_rows_and_owes_each_matched_album_a_read`). iOS draws them; Android does
-not yet (`FEATURES.md`).
+`a_catalog_of_before_albums_kept_their_songs_keeps_its_rows_and_owes_each_matched_album_a_read`). Both phones draw them (`ios.md`'s
+*Collection header*, `android.md`'s *Collection pages*).
+
+## The releases and songs an artist lacks
+
+`artist_discography.rs` is the phones' half of `ui.md`'s *What an artist's discography holds that the
+library does not is on the artist's page, greyed* and `library.md`'s *A discography is kept once the
+profile lands*, over the document catalog, which kept no discography. Step 29
+(`ARTISTS_KEEP_THEIR_DISCOGRAPHY`) made `artist_releases` (the artist's MusicBrainz id and the release
+group, with its title, kind and first release date), `artist_discographies` (when an artist's was read),
+`group_songs` (the songs of the pressing read for a release group, the shape of `release_songs`) and
+`groups_read` (a group read, though it held nothing). An artist page is keyed by name, so the artist's id
+is the one most of the songs under that folded name carry (`documents.artist_mbid`); a name with no id
+asks and shows nothing. Everything reuses the desktop's rules: `worth_keeping` (Album, EP and Single with
+no secondary type but Soundtrack) keeps a release group, `pressing_of` picks the pressing whose songs are
+read, and a song is offered with the disc and position `songs_of` gives it, so a row is a download as
+any online row is.
+
+`learn_artist_discography(name)` asks `Reference::release_groups_of` (the first page and at most three
+further, `FURTHER_PAGES_AT_MOST`) when none was kept within thirty days
+(`DISCOGRAPHY_KEPT_FOR_SECONDS`) and answers whether releases were kept; `learn_artist_songs(name)` reads
+the pressing (`releases_of_group`) of up to eight unheld groups not yet read (`GROUPS_READ_AT_MOST`)
+and answers how many it read, so a front end asks again until it answers 0, reading its lists between
+the batches and stopping when the page leaves; `learn_release_songs(group)` reads one group for the sheet
+of a release. Each is `Ok(false)` or `Ok(0)` while online is off, and a metered connection's shut gate is
+the client's own `Error::Metered` (`online.md`), so a lookup the listener's settings forbid is never sent.
+The reads below make no request.
+
+`artist_releases_not_held(name)` lists the kept release groups the library does not hold, Albums before
+EPs before Singles and each newest first, with the songs of each still lacking (`ReleaseNotHeld`,
+`songs_read` false until its pressing was read). **A release is held by** any of the artist's songs
+carrying its group (`documents.release_group`, or the group of an album matched through `album_art`), a
+song of its pressing the library holds (`documents.release`, which a download sets), an album of the
+same folded title, or, for a single, a song of the same folded title. `artist_songs_not_held(name)` lists
+the songs of those releases the library lacks, a song on two releases once (by recording, else by folded
+title) and left out when the artist holds a song of its title or `local_match` finds it, and
+`release_songs_not_held(artist, group)` the same for one release
+(`a_release_the_albums_group_or_title_names_is_held_and_the_rest_are_listed_newest_first`,
+`a_single_is_held_wherever_its_song_is_and_a_live_album_is_never_kept`,
+`the_songs_of_an_unheld_release_are_read_once_and_listed_without_what_is_held`,
+`a_song_on_two_releases_is_offered_once_and_a_release_with_no_pressing_is_read_empty`,
+`a_song_downloaded_from_a_release_makes_the_release_held`,
+`a_discography_is_asked_once_a_month_and_an_artist_without_an_id_is_never_asked`,
+`a_discography_with_more_to_read_is_followed_a_few_pages_and_kept_whole`,
+`a_catalog_of_before_discographies_were_kept_keeps_its_songs_and_gains_empty_tables`). Both phones draw
+them (`ios.md`'s *Collection header*, `android.md`'s *Collection pages*). A release has no sleeve here:
+the desktop's `unheld_covers` is not kept, so its card wears a quiet placeholder.
 
 ## Logging
 

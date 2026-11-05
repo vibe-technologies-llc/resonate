@@ -1,5 +1,6 @@
 package org.resonate.android.ui.library
 
+import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.length
@@ -14,16 +15,54 @@ fun playlistEntries(rows: List<Track>): List<PlaylistEntry> {
     }
 }
 
-data class Disc(val number: UInt?, val rows: List<IndexedValue<Track>>)
+sealed interface AlbumRow {
+    data class Held(val index: Int, val track: Track) : AlbumRow
 
-fun discsOf(tracks: List<Track>): List<Disc> {
-    val indexed = tracks.withIndex().toList()
-    val numbers = tracks.mapNotNull { it.discNumber }.distinct()
-    if (numbers.size < 2) return listOf(Disc(null, indexed))
-    return indexed
-        .groupBy { it.value.discNumber }
-        .map { (number, rows) -> Disc(number, rows) }
+    data class NotHeld(val song: SearchSong) : AlbumRow
 }
+
+data class Disc(val number: UInt?, val rows: List<AlbumRow>) {
+    val held: List<IndexedValue<Track>>
+        get() = rows.filterIsInstance<AlbumRow.Held>().map { IndexedValue(it.index, it.track) }
+}
+
+private const val FIRST_DISC = 1u
+
+fun discsOf(tracks: List<Track>, notHeld: List<SearchSong> = emptyList()): List<Disc> {
+    val indexed = tracks.withIndex().toList()
+    val numbers = (tracks.mapNotNull { it.discNumber } + notHeld.map { it.disc ?: FIRST_DISC }).distinct()
+    if (numbers.size < 2) return listOf(Disc(null, laidIn(indexed, notHeld)))
+    val heldOn = indexed.groupBy { it.value.discNumber }
+    val lackingOn = notHeld.groupBy { it.disc ?: FIRST_DISC }
+    return discOrder(heldOn.keys, lackingOn.keys).map { number ->
+        Disc(number, laidIn(heldOn[number].orEmpty(), lackingOn[number].orEmpty()))
+    }
+}
+
+private fun discOrder(held: Set<UInt?>, lacking: Set<UInt>): List<UInt?> {
+    val order = held.toMutableList()
+    lacking.filter { it !in held }.sorted().forEach { number ->
+        val after = order.indexOfFirst { it != null && it > number }
+        order.add(if (after < 0) order.size else after, number)
+    }
+    return order
+}
+
+private fun laidIn(held: List<IndexedValue<Track>>, lacking: List<SearchSong>): List<AlbumRow> {
+    val rows = held.map { AlbumRow.Held(it.index, it.value) }.toMutableList<AlbumRow>()
+    lacking.forEach { song ->
+        val place = song.position ?: UInt.MAX_VALUE
+        val before = rows.indexOfFirst { placeOf(it) > place }
+        rows.add(if (before < 0) rows.size else before, AlbumRow.NotHeld(song))
+    }
+    return rows
+}
+
+private fun placeOf(row: AlbumRow): UInt =
+    when (row) {
+        is AlbumRow.Held -> row.track.trackNumber ?: 0u
+        is AlbumRow.NotHeld -> row.song.position ?: 0u
+    }
 
 fun trackNumber(track: Track, index: Int): String = (track.trackNumber?.toString() ?: "${index + 1}")
 

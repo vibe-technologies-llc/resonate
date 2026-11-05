@@ -202,3 +202,19 @@ public enum FilterChip: Identifiable, Sendable {
         return cleared
     }
 }
+
+public enum NotInYourLibrary {
+    public static let songsShownFirst = 20
+
+    public static func heading(_ count: Int, _ noun: String) -> String {
+        "Not in your library · \(counted(count, noun))"
+    }
+
+    public static func shown(_ songs: [SearchSong], all: Bool) -> [SearchSong] {
+        all ? songs : Array(songs.prefix(songsShownFirst))
+    }
+
+    public static func line(_ release: ReleaseNotHeld) -> String {
+        [release.kind, release.year.map(String.init)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}

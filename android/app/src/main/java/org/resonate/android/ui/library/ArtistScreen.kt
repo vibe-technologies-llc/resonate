@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -45,8 +46,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.DownloadJob
+import org.resonate.android.DownloadPlan
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistInformation
+import org.resonate.android.nativecore.ReleaseNotHeld
+import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
@@ -63,19 +68,51 @@ import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.ui.search.DownloadChooser
+import org.resonate.android.ui.search.Downloads
+import org.resonate.android.ui.search.OnlineSongSheet
+import org.resonate.android.ui.search.onlineSongActions
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.rememberSeedOf
 
-data class ArtistPage(val albums: List<AlbumHit>, val tracks: List<Track>)
+data class ArtistPage(
+    val albums: List<AlbumHit>,
+    val tracks: List<Track>,
+    val releasesLacked: List<ReleaseNotHeld>,
+    val songsLacked: List<SearchSong>,
+)
 
 class ArtistViewModel(private val resonate: Resonate, name: String) : ViewModel() {
     private val shared = SharingStarted.WhileSubscribed(5_000)
 
     val retry = Retry()
+    val downloads = Downloads(resonate, viewModelScope)
+
+    val jobs: StateFlow<List<DownloadJob>> = resonate.features.downloads.jobs
+
+    init {
+        viewModelScope.launch {
+            val learned =
+                resonate.read { native -> withContext(Dispatchers.IO) { native.learnArtistDiscography(name) } }
+            if (learned.getOrDefault(false)) retry.again()
+            do {
+                val read =
+                    resonate
+                        .read { native -> withContext(Dispatchers.IO) { native.learnArtistSongs(name) } }
+                        .getOrDefault(0u)
+                if (read > 0u) retry.again()
+            } while (read > 0u)
+        }
+    }
 
     val page: StateFlow<Loaded<ArtistPage>> =
         combine(
-                resonate.catalogRead(retry) { native -> ArtistPage(native.albumsBy(name), native.artistTracks(name)) },
+                resonate.catalogRead(retry) { native -> ArtistPage(
+                        native.albumsBy(name),
+                        native.artistTracks(name),
+                        native.artistReleasesNotHeld(name),
+                        native.artistSongsNotHeld(name),
+                    ) },
                 resonate.library.allTracks,
             ) { loaded, _ ->
                 when (loaded) {
@@ -113,7 +150,12 @@ fun ArtistScreen(screen: Screen.Artist) {
     val loaded by model.page.collectAsStateWithLifecycle()
     val information by model.information.collectAsStateWithLifecycle()
     val playing by model.playing.collectAsStateWithLifecycle()
+    val jobs by model.jobs.collectAsStateWithLifecycle()
     var everySong by rememberSaveable { mutableStateOf(false) }
+    var everySongLacked by rememberSaveable { mutableStateOf(false) }
+    var openRelease by remember { mutableStateOf<ReleaseNotHeld?>(null) }
+    var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
+    var acting by remember { mutableStateOf<SearchSong?>(null) }
     val page = loaded.valueOrNull()
     val portraitSong = screen.artworkTrack ?: page?.tracks?.firstOrNull()?.id
     val name = screen.name.ifBlank { "Unknown artist" }
@@ -199,6 +241,20 @@ fun ArtistScreen(screen: Screen.Artist) {
                     }
                 }
             }
+            if (shown.releasesLacked.isNotEmpty()) {
+                item("releases-lacked-title") {
+                    SectionHeader(notInYourLibraryHeading(shown.releasesLacked.size, "release"))
+                }
+                item("releases-lacked") {
+                    Shelf(shown.releasesLacked, key = { it.group }) { release ->
+                        UnheldReleaseCard(
+                            release,
+                            onClick = { openRelease = release },
+                            modifier = Modifier.width(Shelves.albumWidth),
+                        )
+                    }
+                }
+            }
             if (tracks.isEmpty()) item("empty") { EmptyCollection(detail = "No songs by this artist are in your library.") }
             else {
                 val showing = if (everySong || tracks.size <= SONGS_FOLDED) tracks else tracks.take(SONGS_FOLDED)
@@ -227,6 +283,32 @@ fun ArtistScreen(screen: Screen.Artist) {
                     }
                 }
             }
+            if (shown.songsLacked.isNotEmpty()) {
+                val lacked = shown.songsLacked
+                item("songs-lacked-title") {
+                    SectionHeader(
+                        notInYourLibraryHeading(lacked.size, "song"),
+                        action =
+                            when {
+                                lacked.size <= SONGS_LACKED_FOLDED -> null
+                                everySongLacked -> "Show fewer"
+                                else -> "Show all ${lacked.size}"
+                            },
+                        onAction = { everySongLacked = !everySongLacked },
+                    )
+                }
+                firstOf(lacked, everySongLacked).forEachIndexed { index, song ->
+                    item("song-lacked:$index:${song.recording}:${song.title}") {
+                        NotHeldSongRow(
+                            song,
+                            standing = DownloadPlan.standing(jobs, song),
+                            onDownload = { model.downloads.request(listOf(song)) { choosing = listOf(song) } },
+                            onMore = { acting = song },
+                            withAlbum = true,
+                        )
+                    }
+                }
+            }
             val links = about?.links.orEmpty().distinct()
             if (links.isNotEmpty()) {
                 item("links-title") { SectionHeader("Elsewhere") }
@@ -245,6 +327,32 @@ fun ArtistScreen(screen: Screen.Artist) {
             }
         }
     }
+
+    openRelease?.let { release ->
+        UnheldReleaseSheet(
+            resonate,
+            name,
+            release,
+            jobs,
+            onDownload = { songs -> model.downloads.request(songs) { choosing = songs } },
+            dismiss = { openRelease = null },
+        )
+    }
+    acting?.let { song ->
+        OnlineSongSheet(
+            song = song,
+            held = false,
+            dismiss = { acting = null },
+            actions =
+                onlineSongActions(
+                    save = { resonate.features.saveWanted(listOf(song)) },
+                    download = { model.downloads.request(listOf(song)) { choosing = listOf(song) } },
+                    album = null,
+                    artist = null,
+                ),
+        )
+    }
+    choosing?.let { songs -> DownloadChooser(songs, model.downloads) { choosing = null } }
 }
 
 @Composable
