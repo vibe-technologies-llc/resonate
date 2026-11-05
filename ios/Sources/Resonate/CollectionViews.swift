@@ -1142,8 +1142,8 @@ struct ArtistView: View {
     }
 }
 
-extension ReleaseNotHeld: @retroactive Identifiable {
-    var id: String { group }
+extension ReleaseNotHeld: Identifiable {
+    public var id: String { group }
 }
 
 struct UnheldReleaseSheet: View {
