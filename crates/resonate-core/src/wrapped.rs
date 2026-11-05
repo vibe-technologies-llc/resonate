@@ -5,6 +5,10 @@ use std::{
 
 use crate::{Calendar, CivilDate, folded_letters};
 
+mod frozen;
+
+pub use frozen::{FROZEN_LAYOUT, Unfrozen};
+
 pub const REVIEW_NAME: &str = "Resonate Wrapped";
 
 pub const RANKED_AT_MOST: usize = 5;

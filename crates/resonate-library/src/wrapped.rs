@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use resonate_codec::{Codec, LISTED_APART_BY};
 use resonate_core::{
@@ -19,6 +19,13 @@ const CD_SAMPLE_RATE: i64 = 44_100;
 const CD_SAMPLE_DEPTH: u8 = 16;
 
 const GENRE_ROWS_RANKED_AT_MOST: i64 = 10_000;
+
+const THE_YEARS_KEPT: &str = "SELECT year FROM wrapped_years";
+
+const THE_YEAR_KEPT: &str = "SELECT review FROM wrapped_years WHERE year = ?1";
+
+const KEEP_THE_YEAR: &str =
+    "INSERT OR REPLACE INTO wrapped_years (year, frozen, review) VALUES (?1, ?2, ?3)";
 
 const THE_FIRST_LISTEN_EVER: &str = "SELECT min(at) FROM (
          SELECT min(at) AS at FROM listens
@@ -120,6 +127,26 @@ const THE_FIRST_SONG_OF_THE_YEAR: &str = "SELECT t.title, coalesce(t.artist, '')
       LIMIT 1";
 
 pub(crate) fn years_heard(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>> {
+    let mut years = years_listened(inner, calendar)?;
+    years.extend(inner.read(years_kept)?);
+    years.sort_unstable_by(|one, other| other.cmp(one));
+    years.dedup();
+
+    Ok(years)
+}
+
+fn years_kept(connection: &Connection) -> Result<Vec<i64>> {
+    let mut statement = connection
+        .prepare(THE_YEARS_KEPT)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map([], |row| row.get(0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn years_listened(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>> {
     inner.read(|connection| {
         let bound = |sql: &str| -> Result<Option<i64>> {
             connection
@@ -135,7 +162,7 @@ pub(crate) fn years_heard(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>
         let first = calendar.date_at(store::from_nanos(first)).year;
         let last = calendar.date_at(store::from_nanos(last)).year;
         let mut years = Vec::new();
-        for year in (first..=last).rev() {
+        for year in first..=last {
             let (from, to) = bounds_of(calendar, year);
             let held = connection
                 .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
@@ -151,7 +178,83 @@ pub(crate) fn years_heard(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>
     })
 }
 
+enum Kept {
+    Review(Box<YearReview>),
+    Nothing,
+    OfALaterBuild,
+}
+
+fn kept_year(connection: &Connection, year: i64) -> Result<Kept> {
+    let Some(bytes) = connection
+        .query_row(THE_YEAR_KEPT, params![year], |row| row.get::<_, Vec<u8>>(0))
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+    else {
+        return Ok(Kept::Nothing);
+    };
+
+    match YearReview::unfrozen(&bytes) {
+        Ok(review) => Ok(Kept::Review(Box::new(review))),
+        Err(error) => {
+            tracing::warn!(%error, year, "a year kept as it was heard could not be read");
+            Ok(if error.is_from_a_later_build() {
+                Kept::OfALaterBuild
+            } else {
+                Kept::Nothing
+            })
+        }
+    }
+}
+
+fn keep_year(inner: &Inner, review: &YearReview, now: SystemTime) -> Result<()> {
+    inner.write(|transaction| {
+        transaction
+            .execute(
+                KEEP_THE_YEAR,
+                params![review.year, store::to_nanos(now), review.frozen()],
+            )
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Insert, source))
+    })
+}
+
+pub(crate) fn freeze_the_finished_years(
+    inner: &Inner,
+    calendar: &Calendar,
+    history: HistoryKept,
+    now: SystemTime,
+) -> Result<()> {
+    for year in years_listened(inner, calendar)? {
+        if year < calendar.date_at(now).year {
+            year_review(inner, year, calendar, history, now)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn year_review(
+    inner: &Inner,
+    year: i64,
+    calendar: &Calendar,
+    history: HistoryKept,
+    now: SystemTime,
+) -> Result<YearReview> {
+    let kept = inner.read(|connection| kept_year(connection, year))?;
+    let of_a_later_build = matches!(kept, Kept::OfALaterBuild);
+    if let Kept::Review(review) = kept {
+        return Ok(*review);
+    }
+
+    let review = year_review_afresh(inner, year, calendar, history)?;
+    if year < calendar.date_at(now).year && review.holds_anything() && !of_a_later_build {
+        keep_year(inner, &review, now)?;
+    }
+
+    Ok(review)
+}
+
+fn year_review_afresh(
     inner: &Inner,
     year: i64,
     calendar: &Calendar,
@@ -348,7 +451,10 @@ fn how_long(nanos: i64) -> Duration {
 mod tests {
     use std::time::UNIX_EPOCH;
 
-    use resonate_core::{SampleFormat, wrapped::SlideKind};
+    use resonate_core::{
+        SampleFormat,
+        wrapped::{FROZEN_LAYOUT, SlideKind},
+    };
 
     use super::*;
     use crate::Library;
@@ -431,10 +537,34 @@ mod tests {
         }
     }
 
-    fn review_of_2025(library: &Library, history: HistoryKept) -> YearReview {
-        library
-            .year_review(2025, &Calendar::utc(), history)
+    fn day_of_2025(days: u64) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs((THE_FIRST_OF_JANUARY_2025 + days) * SECONDS_A_DAY)
+    }
+
+    fn while_2025_runs() -> SystemTime {
+        day_of_2025(180)
+    }
+
+    fn when_2025_is_over() -> SystemTime {
+        day_of_2025(500)
+    }
+
+    fn review_at(
+        library: &Library,
+        year: i64,
+        history: HistoryKept,
+        now: SystemTime,
+    ) -> YearReview {
+        year_review(library.inner(), year, &Calendar::utc(), history, now)
             .expect("the catalog answers for a year")
+    }
+
+    fn review_of_2025(library: &Library, history: HistoryKept) -> YearReview {
+        review_at(library, 2025, history, while_2025_runs())
+    }
+
+    fn years_kept_in(library: &Library) -> Vec<i64> {
+        library.inner().read(years_kept).expect("the years kept")
     }
 
     #[test]
@@ -584,13 +714,113 @@ mod tests {
             .iter()
             .map(|slide| slide.kind)
             .collect();
-        let empty = library
-            .year_review(1999, &Calendar::utc(), HistoryKept::Forever)
-            .expect("the catalog answers for a year");
+        let empty = review_at(&library, 1999, HistoryKept::Forever, when_2025_is_over());
 
         assert_eq!(kinds.first(), Some(&SlideKind::Whole));
         assert!(kinds.contains(&SlideKind::Songs));
         assert_eq!(kinds.last(), Some(&SlideKind::Farewell));
         assert!(!empty.holds_anything());
+    }
+
+    #[test]
+    fn a_year_over_is_frozen_when_first_shown_and_later_listening_or_forgetting_leaves_it_as_it_was()
+     {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        heard(&library, &a_song("Within", 0, 90));
+
+        let first = review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+        assert_eq!(years_kept_in(&library), [2025]);
+
+        heard(&library, &a_song("Within", 1, 60));
+        library
+            .inner()
+            .write(|transaction| {
+                transaction
+                    .execute_batch("DELETE FROM listens; DELETE FROM tracks;")
+                    .map_err(|source| Error::store(StoreOp::Delete, source))
+            })
+            .expect("the history and the song forgotten");
+
+        let again = review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+
+        assert_eq!(again, first);
+        assert_eq!(again.top_songs[0].name, "Within");
+        assert_eq!(
+            years_heard(library.inner(), &Calendar::utc()).expect("the years"),
+            [2025],
+            "a year kept is a year heard though its listens are gone"
+        );
+    }
+
+    #[test]
+    fn a_year_still_running_is_read_afresh_and_a_year_with_nothing_in_it_is_never_kept() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        heard(&library, &a_song("Within", 0, 30));
+
+        let before = review_of_2025(&library, HistoryKept::Forever);
+        heard(&library, &a_song("Within", 1, 30));
+        let after = review_of_2025(&library, HistoryKept::Forever);
+        review_at(&library, 1999, HistoryKept::Forever, when_2025_is_over());
+
+        assert_eq!(before.plays, 1);
+        assert_eq!(after.plays, 2);
+        assert_eq!(years_kept_in(&library), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn a_year_kept_by_a_later_build_is_shown_afresh_and_left_and_a_damaged_one_is_kept_again() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        heard(&library, &a_song("Within", 0, 30));
+        let keep = |bytes: &[u8]| {
+            library
+                .inner()
+                .write(|transaction| {
+                    transaction
+                        .execute(KEEP_THE_YEAR, params![2025, 1, bytes])
+                        .map(drop)
+                        .map_err(|source| Error::store(StoreOp::Insert, source))
+                })
+                .expect("a year kept");
+        };
+        let kept = || -> Vec<u8> {
+            library
+                .inner()
+                .read(|connection| {
+                    connection
+                        .query_row(THE_YEAR_KEPT, params![2025], |row| row.get(0))
+                        .map_err(|source| Error::store(StoreOp::Query, source))
+                })
+                .expect("the year")
+        };
+
+        let later = [FROZEN_LAYOUT + 1, 9, 9];
+        keep(&later);
+        let fresh = review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+        assert_eq!(fresh.plays, 1);
+        assert_eq!(kept(), later);
+
+        keep(&[FROZEN_LAYOUT, 1]);
+        review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+        assert_eq!(
+            YearReview::unfrozen(&kept()).map(|review| review.plays),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn ageing_the_history_freezes_the_years_over_first_so_forgetting_listens_does_not_shrink_them()
+    {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        heard(&library, &a_song("Early", 0, 60));
+        heard(&library, &a_song("Early", 1, 60));
+        let a_year = HistoryKept::for_days(365).expect("a span is a span");
+
+        let aged = library.age_the_history(a_year).expect("the history ages");
+        let review = review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+
+        assert_eq!(aged.listens, 2);
+        assert_eq!(years_kept_in(&library), [2025]);
+        assert_eq!(review.plays, 2);
+        assert_eq!(review.listened, Duration::from_secs(2 * 3_600));
     }
 }

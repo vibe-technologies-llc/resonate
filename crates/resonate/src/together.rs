@@ -319,7 +319,11 @@ impl resonate_ui::Together for Seen {
     }
 
     fn accept(&self, invitation: &str) -> bool {
-        accepted(invitation)
+        accepted(invitation, Arrival::Pasted)
+    }
+
+    fn join_party(&self, invitation: &str, zone: ZoneId) -> bool {
+        crate::party_room::join_in(invitation, zone)
     }
 
     fn named(&self, name: &str) {
@@ -414,22 +418,35 @@ pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
             if invitation_in(&text).is_none() {
                 return true;
             }
-            accepted(&text);
+            accepted(&text, Arrival::FromOutside);
             false
         })
         .cloned()
         .collect()
 }
 
-pub(crate) fn accepted(text: &str) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Arrival {
+    #[cfg(feature = "ui")]
+    Pasted,
+    FromOutside,
+}
+
+pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
     let Some(invitation) = invitation_in(text) else {
         return false;
     };
     if invitation.to == Invited::Party {
         #[cfg(feature = "ui")]
-        return crate::party_room::accept(text);
+        return match arrival {
+            Arrival::Pasted => crate::party_room::accept(text),
+            Arrival::FromOutside => crate::party_room::offer(text),
+        };
         #[cfg(not(feature = "ui"))]
-        return false;
+        return {
+            let _ = arrival;
+            false
+        };
     }
 
     thread::spawn(move || {

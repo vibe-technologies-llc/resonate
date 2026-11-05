@@ -661,6 +661,7 @@ type TakenUp = (Vec<u64>, u64, bool);
 #[derive(Clone, Default)]
 struct Told {
     taken_up: Arc<Mutex<Vec<TakenUp>>>,
+    kept_ahead: Arc<Mutex<Vec<Vec<u64>>>>,
     paused: Arc<AtomicBool>,
     put_back: Arc<AtomicBool>,
 }
@@ -670,6 +671,7 @@ struct FakeSeat {
     told: Told,
     hosting: bool,
     row: Arc<Mutex<Option<u64>>>,
+    next: Arc<Mutex<Vec<u64>>>,
     began: u64,
 }
 
@@ -701,7 +703,10 @@ impl PartySeat for FakeSeat {
 
     fn songs_up_next(&self) -> (Option<PartySong>, Vec<PartySong>) {
         if self.hosting {
-            (Some(a_song(1)), vec![a_song(2)])
+            (
+                Some(a_song(1)),
+                self.next.lock().iter().copied().map(a_song).collect(),
+            )
         } else {
             (None, Vec::new())
         }
@@ -717,6 +722,11 @@ impl PartySeat for FakeSeat {
             .lock()
             .push((rows.to_vec(), position, sounding));
         *self.row.lock() = rows.first().map(|row| row + 1_000);
+        true
+    }
+
+    fn keep_ahead(&self, rows: &[u64]) -> bool {
+        self.told.kept_ahead.lock().push(rows.to_vec());
         true
     }
 
@@ -762,6 +772,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
         told: host_told,
         hosting: true,
         row: Arc::new(Mutex::new(Some(1))),
+        next: Arc::new(Mutex::new(vec![2])),
     };
     let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
 
@@ -774,6 +785,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
         told: told.clone(),
         hosting: false,
         row: Arc::new(Mutex::new(None)),
+        next: Arc::new(Mutex::new(vec![2])),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
     let mut going =
@@ -811,6 +823,7 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
         told: Told::default(),
         hosting: true,
         row: Arc::new(Mutex::new(Some(1))),
+        next: Arc::new(Mutex::new(vec![2])),
     };
     let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
 
@@ -823,6 +836,7 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
         told: told.clone(),
         hosting: false,
         row: Arc::new(Mutex::new(None)),
+        next: Arc::new(Mutex::new(vec![2])),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
     let going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(0))).expect("the guest's seat");
@@ -833,6 +847,66 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
     .await;
 
     assert!(told.taken_up.lock().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_ahead() {
+    let server = hosted(Limits::default()).await;
+    let host_settings = party_settings(server, "Host");
+    let host_now = Arc::clone(&host_settings.now_nanos);
+    let host = Party::host(host_settings).expect("the host starts");
+    let code = host.shown().code;
+    let host_next = Arc::new(Mutex::new(vec![2, 3]));
+    let host_seat = FakeSeat {
+        began: host_now(),
+        now_nanos: host_now,
+        told: Told::default(),
+        hosting: true,
+        row: Arc::new(Mutex::new(Some(1))),
+        next: Arc::clone(&host_next),
+    };
+    let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(9))).expect("the host's seat");
+
+    let guest_settings = party_settings(server, "Guest");
+    let guest_now = Arc::clone(&guest_settings.now_nanos);
+    let told = Told::default();
+    let guest_seat = FakeSeat {
+        began: guest_now(),
+        now_nanos: guest_now,
+        told: told.clone(),
+        hosting: false,
+        row: Arc::new(Mutex::new(None)),
+        next: Arc::new(Mutex::new(Vec::new())),
+    };
+    let guest = Party::join(guest_settings, &code).expect("the guest joins");
+    let _going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(9))).expect("the guest's seat");
+
+    until("the guest to take the queue up", || {
+        !told.taken_up.lock().is_empty()
+    })
+    .await;
+    assert_eq!(told.taken_up.lock()[0].0, vec![1, 2, 3]);
+
+    *host_next.lock() = vec![2, 3, 4, 5];
+    until("the guest to be given the song the host added", || {
+        !told.kept_ahead.lock().is_empty()
+    })
+    .await;
+    assert_eq!(told.kept_ahead.lock()[0], vec![2, 3, 4]);
+
+    *host_next.lock() = vec![2, 4, 5];
+    until(
+        "the guest to be given the queue without the song the host took out",
+        || told.kept_ahead.lock().len() == 2,
+    )
+    .await;
+    assert_eq!(told.kept_ahead.lock()[1], vec![2, 4, 5]);
+    let taken = told.taken_up.lock().clone();
+    assert_eq!(
+        taken.len(),
+        1,
+        "the song playing was never taken up again: {taken:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

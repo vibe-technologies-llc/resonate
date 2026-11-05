@@ -803,7 +803,7 @@ is never named.
   - **Static text and landmarks.** `Spoken::headed(level, label)` (a heading), `read_plainly` (text a
     reader can land on) and `dialog` (`Role::Dialog`) join the builders, no-ops while nobody listens.
   - **A sheet is a dialog with its own focus** (`views/sheets.rs`): the delete sheet, Listen sheet,
-    playlist picker, magnifier and record card name a `Sheet`; opening one remembers the opener and
+    playlist picker, magnifier, record card and the party offer (*Join this listening party?*, landing on *Cancel*, `party.md`) name a `Sheet`; opening one remembers the opener and
     lands focus on the safe control (Cancel for a deletion, no key confirms), Tab steps inside it
     (`step_the_focus`), and closing returns focus to the opener.
   - **A click has a name and a tab stop.** `views/audit.rs` scans `views/` for `.on_click(` sites that

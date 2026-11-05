@@ -989,8 +989,13 @@ fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
                             let Some(root) = handle.downcast::<RootView>() else {
                                 continue;
                             };
-                            let _ =
-                                root.update(cx, |root, _, cx| root.follow(followed.clone(), cx));
+                            let arrives = matches!(followed, Followed::PartyOffered(_));
+                            let _ = root.update(cx, |root, window, cx| {
+                                root.follow(followed.clone(), cx);
+                                if arrives {
+                                    window.activate_window();
+                                }
+                            });
                         }
                     });
                 }

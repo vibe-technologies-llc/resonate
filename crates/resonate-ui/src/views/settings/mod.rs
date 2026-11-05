@@ -113,6 +113,7 @@ impl RootView {
             Followed::Spotify(signed_in) => {
                 self.follow_the_spotify_sign_in_made_elsewhere(signed_in, cx)
             }
+            Followed::PartyOffered(link) => self.offer_a_party(link, cx),
         }
     }
 

@@ -2317,6 +2317,79 @@ fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_q
 }
 
 #[test]
+fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_not_near_its_end()
+-> Result<()> {
+    let tree = Tree::new();
+    let long = pcm(16, RATE as usize * 10).file;
+    let [a, b, c, d] = ["a", "b", "c", "d"].map(|name| tree.write(&format!("{name}.wav"), &long));
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    let seat = Seat::on(Arc::clone(&first));
+    let [row_a, row_b, row_c, row_d] = [&a, &b, &c, &d].map(|path| kept(path));
+    let queue = |player: &Player| locations(&player.queue());
+    let here = |paths: &[&PathBuf]| -> Vec<MediaLocation> {
+        paths
+            .iter()
+            .map(|path| MediaLocation::local(*path))
+            .collect()
+    };
+
+    assert!(seat.take_up(
+        &[row_a.clone(), row_b.clone(), row_c.clone()],
+        Duration::from_secs(1),
+        Moment::now(),
+        false,
+    )?);
+    let id_of_b = first.queue().iter().nth(1).map(|row| row.id);
+
+    assert!(seat.keep_ahead(&[row_b.clone(), row_c.clone(), row_d.clone()])?);
+    wait_for(
+        &first,
+        |player| queue(player) == here(&[&a, &b, &c, &d]),
+        "the song added behind to be queued",
+    );
+    assert_eq!(
+        first.queue().iter().nth(1).map(|row| row.id),
+        id_of_b,
+        "a row that already stood was neither taken out nor queued again"
+    );
+
+    assert!(seat.keep_ahead(&[row_d.clone(), row_c.clone()])?);
+    wait_for(
+        &first,
+        |player| queue(player) == here(&[&a, &d, &c]),
+        "the queue behind the song to follow the host's order",
+    );
+    assert_eq!(first.state().queue_position, Some(0));
+
+    assert!(seat.keep_ahead(&[])?);
+    wait_for(
+        &first,
+        |player| queue(player) == here(&[&a]),
+        "everything behind the song to be taken out",
+    );
+
+    let near_its_end = Resumable {
+        location: MediaLocation::local(&b),
+        span: None,
+        held: None,
+    };
+    assert!(seat.take_up(
+        std::slice::from_ref(&near_its_end),
+        Duration::from_secs(9),
+        Moment::now(),
+        false,
+    )?);
+    assert!(
+        !seat.keep_ahead(&[row_c, row_d])?,
+        "a song a moment from its end is not edited behind"
+    );
+    assert_eq!(queue(&first), here(&[&b]));
+    Ok(())
+}
+
+#[test]
 fn a_paused_zone_hands_over_paused_where_it_stood_and_a_handover_is_refused_where_it_cannot_land()
 -> Result<()> {
     let tree = Tree::new();

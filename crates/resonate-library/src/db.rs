@@ -1932,7 +1932,12 @@ impl Library {
     }
 
     pub fn age_the_history(&self, kept: HistoryKept) -> Result<Aged> {
-        history::age(&self.inner, kept, SystemTime::now())
+        let now = SystemTime::now();
+        if kept.before(now).is_some() {
+            wrapped::freeze_the_finished_years(&self.inner, &Calendar::local(), kept, now)?;
+        }
+
+        history::age(&self.inner, kept, now)
     }
 
     pub fn statistics(&self, window: Window) -> Result<Statistics> {
@@ -1961,7 +1966,7 @@ impl Library {
         calendar: &Calendar,
         history: HistoryKept,
     ) -> Result<YearReview> {
-        wrapped::year_review(&self.inner, year, calendar, history)
+        wrapped::year_review(&self.inner, year, calendar, history, SystemTime::now())
     }
 
     pub fn shareable(&self, track: TrackId) -> Result<Option<Shared>> {

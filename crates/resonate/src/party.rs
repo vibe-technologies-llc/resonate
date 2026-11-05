@@ -153,6 +153,13 @@ impl PartySeat for ZoneSeat {
             .unwrap_or(false)
     }
 
+    fn keep_ahead(&self, rows: &[Resumable]) -> bool {
+        self.seat
+            .keep_ahead(rows)
+            .inspect_err(|error| tracing::debug!(%error, "a party's queue ahead was not kept"))
+            .unwrap_or(false)
+    }
+
     fn nudge(&self, position_nanos: u64, at_nanos: u64) {
         let nudged = self.seat.nudge(
             Duration::from_nanos(position_nanos),

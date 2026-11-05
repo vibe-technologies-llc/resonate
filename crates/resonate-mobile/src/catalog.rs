@@ -310,6 +310,14 @@ const DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC: &str = "
 CREATE INDEX documents_by_isrc ON documents(isrc) WHERE isrc IS NOT NULL;
 ";
 
+const A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD: &str = "
+CREATE TABLE wrapped_years (
+    year   INTEGER PRIMARY KEY,
+    frozen INTEGER NOT NULL,
+    review BLOB NOT NULL
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -342,6 +350,7 @@ const MIGRATIONS: &[&str] = &[
     ARTISTS_KEEP_THEIR_DISCOGRAPHY,
     UNHELD_RELEASES_KEEP_THEIR_SLEEVE,
     DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC,
+    A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD,
 ];
 
 #[cfg(test)]
@@ -1764,6 +1773,57 @@ mod tests {
 
         assert_eq!(count("artist_releases"), 1);
         assert_eq!(count("unheld_covers"), 0);
+        drop(connection);
+        drop(opened);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_catalog_of_before_years_were_kept_keeps_its_listens_and_gains_an_empty_table() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-wrapped-years-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO listens (began, heard_ms) VALUES (1000, 2000)",
+                [],
+            )
+            .expect("a listen of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let connection = opened.0.lock();
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table")
+        };
+
+        assert_eq!(count("listens"), 1);
+        assert_eq!(count("wrapped_years"), 0);
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();

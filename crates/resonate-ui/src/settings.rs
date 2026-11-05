@@ -716,6 +716,7 @@ pub enum Followed {
     Bindings(Bindings),
     Tidal(TidalSignIn),
     Spotify(SpotifySignIn),
+    PartyOffered(String),
 }
 
 struct Withheld;

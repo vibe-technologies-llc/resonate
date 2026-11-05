@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use resonate_codec::LISTED_APART_BY;
 use resonate_core::{
-    Calendar, seconds_since_the_epoch,
+    Calendar, CivilDate, seconds_since_the_epoch,
     wrapped::{
         FirstSong, FormatHeard, FormatShares, QuarterHeard, RANKED_AT_MOST, Ranked, Rhythm, Slide,
         YearReview, genres_tallied, year_worth_showing,
@@ -19,6 +19,13 @@ const CD_SAMPLE_RATE: i64 = 44_100;
 const CD_SAMPLE_DEPTH: i64 = 16;
 
 const GENRE_ROWS_RANKED_AT_MOST: i64 = 10_000;
+
+const THE_YEARS_KEPT: &str = "SELECT year FROM wrapped_years";
+
+const THE_YEAR_KEPT: &str = "SELECT review FROM wrapped_years WHERE year = ?1";
+
+const KEEP_THE_YEAR: &str =
+    "INSERT OR REPLACE INTO wrapped_years (year, frozen, review) VALUES (?1, ?2, ?3)";
 
 const THE_FIRST_LISTEN_EVER: &str = "SELECT min(began) FROM listens";
 
@@ -163,13 +170,21 @@ impl Catalog {
         year: Option<i64>,
         calendar: &Calendar,
     ) -> Result<Option<WrappedYear>> {
+        self.wrapped_on(year, calendar, calendar.date_at(SystemTime::now()))
+    }
+
+    fn wrapped_on(
+        &self,
+        year: Option<i64>,
+        calendar: &Calendar,
+        today: CivilDate,
+    ) -> Result<Option<WrappedYear>> {
         let connection = self.0.lock();
         let years = years_heard(&connection, calendar)?;
-        let today = calendar.date_at(SystemTime::now());
         let Some(year) = year.or_else(|| year_worth_showing(&years, today)) else {
             return Ok(None);
         };
-        let review = year_review(&connection, year, calendar)?;
+        let review = reviewed(&connection, year, calendar, today)?;
         drop(connection);
 
         Ok(Some(WrappedYear {
@@ -179,6 +194,68 @@ impl Catalog {
             summary: review.summary(),
         }))
     }
+}
+
+fn reviewed(
+    connection: &Connection,
+    year: i64,
+    calendar: &Calendar,
+    today: CivilDate,
+) -> Result<YearReview> {
+    let kept = kept_year(connection, year)?;
+    let of_a_later_build = matches!(kept, Kept::OfALaterBuild);
+    if let Kept::Review(review) = kept {
+        return Ok(*review);
+    }
+
+    let review = year_review(connection, year, calendar)?;
+    if year < today.year && review.holds_anything() && !of_a_later_build {
+        keep_year(connection, &review)?;
+    }
+
+    Ok(review)
+}
+
+enum Kept {
+    Review(Box<YearReview>),
+    Nothing,
+    OfALaterBuild,
+}
+
+fn kept_year(connection: &Connection, year: i64) -> Result<Kept> {
+    let Some(bytes) = connection
+        .query_row(THE_YEAR_KEPT, params![year], |row| row.get::<_, Vec<u8>>(0))
+        .optional()
+        .map_err(read_error)?
+    else {
+        return Ok(Kept::Nothing);
+    };
+
+    match YearReview::unfrozen(&bytes) {
+        Ok(review) => Ok(Kept::Review(Box::new(review))),
+        Err(error) => {
+            tracing::warn!(%error, year, "a year kept as it was heard could not be read");
+            Ok(if error.is_from_a_later_build() {
+                Kept::OfALaterBuild
+            } else {
+                Kept::Nothing
+            })
+        }
+    }
+}
+
+fn keep_year(connection: &Connection, review: &YearReview) -> Result<()> {
+    connection
+        .execute(
+            KEEP_THE_YEAR,
+            params![
+                review.year,
+                seconds_since_the_epoch(SystemTime::now()),
+                review.frozen()
+            ],
+        )
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Write, source))
 }
 
 fn read_error(source: rusqlite::Error) -> Error {
@@ -191,27 +268,38 @@ fn years_heard(connection: &Connection, calendar: &Calendar) -> Result<Vec<i64>>
             .query_row(sql, [], |row| row.get(0))
             .map_err(read_error)
     };
-    let (Some(first), Some(last)) = (bound(THE_FIRST_LISTEN_EVER)?, bound(THE_LAST_LISTEN_EVER)?)
-    else {
-        return Ok(Vec::new());
-    };
-
-    let first = calendar.date_at(moment(first)).year;
-    let last = calendar.date_at(moment(last)).year;
     let mut years = Vec::new();
-    for year in (first..=last).rev() {
-        let (from, to) = bounds_of(calendar, year);
-        let held = connection
-            .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
-                row.get::<_, bool>(0)
-            })
-            .map_err(read_error)?;
-        if held {
-            years.push(year);
+    if let (Some(first), Some(last)) = (bound(THE_FIRST_LISTEN_EVER)?, bound(THE_LAST_LISTEN_EVER)?)
+    {
+        let first = calendar.date_at(moment(first)).year;
+        let last = calendar.date_at(moment(last)).year;
+        for year in first..=last {
+            let (from, to) = bounds_of(calendar, year);
+            let held = connection
+                .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
+                    row.get::<_, bool>(0)
+                })
+                .map_err(read_error)?;
+            if held {
+                years.push(year);
+            }
         }
     }
+    years.extend(years_kept(connection)?);
+    years.sort_unstable_by(|one, other| other.cmp(one));
+    years.dedup();
 
     Ok(years)
+}
+
+fn years_kept(connection: &Connection) -> Result<Vec<i64>> {
+    let mut statement = connection.prepare(THE_YEARS_KEPT).map_err(read_error)?;
+
+    statement
+        .query_map([], |row| row.get(0))
+        .map_err(read_error)?
+        .collect::<std::result::Result<_, _>>()
+        .map_err(read_error)
 }
 
 fn year_review(connection: &Connection, year: i64, calendar: &Calendar) -> Result<YearReview> {
@@ -396,7 +484,7 @@ fn how_long(milliseconds: i64) -> Duration {
 mod tests {
     use std::path::Path;
 
-    use resonate_core::CivilDate;
+    use resonate_core::wrapped::FROZEN_LAYOUT;
 
     use super::*;
     use crate::Track;
@@ -607,5 +695,110 @@ mod tests {
         assert_eq!(shown.slides[0].headline, "1 hour of music");
         assert!(shown.summary.starts_with("My 2025 on Resonate"));
         assert_eq!(empty.slides.len(), 1);
+    }
+
+    const WHEN_2025_IS_OVER: CivilDate = CivilDate {
+        year: 2026,
+        month: 6,
+        day: 1,
+    };
+
+    const WHILE_2025_RUNS: CivilDate = CivilDate {
+        year: 2025,
+        month: 6,
+        day: 1,
+    };
+
+    fn shown(catalog: &Catalog, year: i64, today: CivilDate) -> WrappedYear {
+        catalog
+            .wrapped_on(Some(year), &Calendar::utc(), today)
+            .expect("the catalog answers")
+            .expect("a year asked for is answered")
+    }
+
+    fn kept_years(catalog: &Catalog) -> i64 {
+        catalog
+            .0
+            .lock()
+            .query_row("SELECT count(*) FROM wrapped_years", [], |row| row.get(0))
+            .expect("a count")
+    }
+
+    #[test]
+    fn a_year_over_is_frozen_when_first_shown_and_a_later_listen_or_deleted_song_leaves_it_as_it_was()
+     {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = held(&catalog, &PLAIN);
+        heard(&catalog, song, 0, 90, 1);
+
+        let first = shown(&catalog, 2025, WHEN_2025_IS_OVER);
+        assert_eq!(kept_years(&catalog), 1);
+
+        heard(&catalog, song, 1, 60, 1);
+        catalog
+            .0
+            .lock()
+            .execute("DELETE FROM listens", [])
+            .expect("history forgotten");
+        catalog
+            .0
+            .lock()
+            .execute("DELETE FROM documents", [])
+            .expect("the song deleted");
+
+        let again = shown(&catalog, 2025, WHEN_2025_IS_OVER);
+
+        assert_eq!(again, first);
+        assert_eq!(again.slides[0].headline, "1 hour of music");
+        assert_eq!(again.years, [2025], "a year kept is a year heard");
+    }
+
+    #[test]
+    fn a_year_still_running_is_read_afresh_and_a_year_with_nothing_in_it_is_never_kept() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = held(&catalog, &PLAIN);
+        heard(&catalog, song, 0, 30, 1);
+
+        let before = shown(&catalog, 2025, WHILE_2025_RUNS);
+        heard(&catalog, song, 1, 30, 1);
+        let after = shown(&catalog, 2025, WHILE_2025_RUNS);
+        shown(&catalog, 1999, WHEN_2025_IS_OVER);
+
+        assert_ne!(before.slides[0].headline, after.slides[0].headline);
+        assert_eq!(kept_years(&catalog), 0);
+    }
+
+    #[test]
+    fn a_year_kept_by_a_later_build_is_shown_afresh_and_left_and_a_damaged_one_is_kept_again() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = held(&catalog, &PLAIN);
+        heard(&catalog, song, 0, 30, 1);
+        let keep = |bytes: &[u8]| {
+            catalog
+                .0
+                .lock()
+                .execute(KEEP_THE_YEAR, params![2025, 1, bytes])
+                .expect("a year kept");
+        };
+        let kept = || -> Vec<u8> {
+            catalog
+                .0
+                .lock()
+                .query_row(THE_YEAR_KEPT, params![2025], |row| row.get(0))
+                .expect("the year")
+        };
+
+        let later = [FROZEN_LAYOUT + 1, 9, 9];
+        keep(&later);
+        let fresh = shown(&catalog, 2025, WHEN_2025_IS_OVER);
+        assert_eq!(fresh.slides[0].headline, "30 minutes of music");
+        assert_eq!(kept(), later);
+
+        keep(&[FROZEN_LAYOUT, 1]);
+        shown(&catalog, 2025, WHEN_2025_IS_OVER);
+        assert_eq!(
+            YearReview::unfrozen(&kept()).map(|review| review.plays),
+            Ok(1)
+        );
     }
 }

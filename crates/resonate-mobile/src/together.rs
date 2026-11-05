@@ -250,6 +250,13 @@ impl PartySeat for PhoneSeat {
             .unwrap_or(false)
     }
 
+    fn keep_ahead(&self, rows: &[Resumable]) -> bool {
+        self.seat
+            .keep_ahead(rows)
+            .inspect_err(|error| tracing::debug!(%error, "a party's queue ahead was not kept"))
+            .unwrap_or(false)
+    }
+
     fn nudge(&self, position: u64, at: u64) {
         let nudged = self
             .seat

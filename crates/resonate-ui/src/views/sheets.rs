@@ -22,13 +22,18 @@ pub(crate) const SHARING_PANEL: &str = "sharing-panel";
 
 pub(crate) const ORDER_PANEL: &str = "order-panel";
 
+pub(crate) const PARTY_OFFER_PANEL: &str = "party-offer-panel";
+
 pub(crate) const KEEP_THE_TRACK: &str = "keep-the-track";
+
+pub(crate) const NOT_JOINING: &str = "not-joining-the-party";
 
 pub(crate) const LISTEN_CLOSE: &str = "listen-close";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Sheet {
     Deleting,
+    Offering,
     Listening,
     Magnifying,
     Naming,
@@ -50,6 +55,7 @@ impl Sheet {
     pub(crate) const fn panel(self) -> Option<&'static str> {
         match self {
             Self::Deleting => Some(DELETE_PANEL),
+            Self::Offering => Some(PARTY_OFFER_PANEL),
             Self::Listening => Some(LISTEN_PANEL),
             Self::Magnifying => Some(MAGNIFIER_PANEL),
             Self::Naming => Some(PICKER_PANEL),
@@ -64,6 +70,7 @@ impl Sheet {
     pub(crate) const fn welcome(self) -> Welcome {
         match self {
             Self::Deleting => Welcome::Control(KEEP_THE_TRACK),
+            Self::Offering => Welcome::Control(NOT_JOINING),
             Self::Listening => Welcome::Control(LISTEN_CLOSE),
             Self::Magnifying => Welcome::Panel(MAGNIFIER_PANEL),
             Self::Recording => Welcome::Panel(RECORD_PANEL),
@@ -139,6 +146,8 @@ impl RootView {
     pub(crate) fn sheet_in_front(&self) -> Option<Sheet> {
         if self.deleting.is_some() {
             Some(Sheet::Deleting)
+        } else if self.party_offered.is_some() {
+            Some(Sheet::Offering)
         } else if self.listening_open {
             Some(Sheet::Listening)
         } else if self.magnified.is_some() {
@@ -297,6 +306,11 @@ mod tests {
             Sheet::Deleting.welcome(),
             Welcome::Control(KEEP_THE_TRACK),
             "no key may land on the control that deletes"
+        );
+        assert_eq!(
+            Sheet::Offering.welcome(),
+            Welcome::Control(NOT_JOINING),
+            "no key may land on the control that joins"
         );
         assert_eq!(Sheet::Listening.welcome(), Welcome::Control(LISTEN_CLOSE));
         assert_eq!(Sheet::Magnifying.welcome(), Welcome::Panel(MAGNIFIER_PANEL));

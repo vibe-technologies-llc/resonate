@@ -70,7 +70,7 @@ paths:
   catalog are its own and cannot be swapped from outside, so handing files over while ignoring those
   flags would play them from a catalog the listener did not name.
 
-- **`wrapped [--year Y] [--summary]` prints Resonate Wrapped** (`wrapped.rs`): each `Slide` as text, its rankings as tables, or with `--summary` the few lines `YearReview::summary` writes. With nothing ever played it is `Error::NothingHeardYet`, exit 1; a year named with nothing in it says so and exits 0.
+- **`wrapped [--year Y] [--summary]` prints Resonate Wrapped** (`wrapped.rs`): each `Slide` as text, its rankings as tables, or with `--summary` the few lines `YearReview::summary` writes. With nothing ever played it is `Error::NothingHeardYet`, exit 1; a year named with nothing in it says so and exits 0. A year that is over is the copy kept the first time it was shown, so the table, the window and the phones agree on it for good (`library.md`).
 
 - **`shared` is the terminal's way into shared playlists** (`together.rs`, `shared-playlists.md`): bare, a
   table of them; `--share PLAYLIST` prints the two links; `--join LINK`, `--leave PLAYLIST`,
@@ -78,7 +78,7 @@ paths:
   waits up to 20 s for what it did to reach the server. A window holding `shared.lock` makes it
   `Error::SharedBusy`. **A `resonate://shared/` or `resonate://party/` argument or `OpenUri` is an
   invitation, not a song** (`together::accepted`, `Host::invited`), though `resonate` is a played-in-place
-  scheme; the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list; the Windows installer registers the scheme in the user's registry (`windows.md`).
+  scheme (a shared playlist joins at once; a party's link is offered to the window first, `party.md`); the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list; the Windows installer registers the scheme in the user's registry (`windows.md`).
 
 - **`party start FILES` and `party join LINK` run until interrupted or the room ends** (`party.rs`), printing
   the invitation and each change of standing, with no keys and no bus, since the host's queue is the

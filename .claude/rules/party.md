@@ -52,7 +52,25 @@ one room. A song whose copies differ (another master, leading silence) lines up 
   copy counts, then by ISRC where tags give one; then `found_exactly` over `PlaysInPlace::search`: folded
   title and artist equal, both lengths known and within 3 s, since `Song` has no ISRC. The current song
   and the next three are found so songs hand on gaplessly; a next song not held ends the run, and the
-  queue is found again when the host reaches past it.
+  queue behind the song playing is kept current as the host edits it (below).
+- **The queue behind the song is kept current, not found again on reaching it** (`party/ahead.rs`,
+  `PartySeat::keep_ahead`, `Seat::keep_ahead`). While the guest is on the host's row, `Ahead::step` weighs
+  the first `SONGS_FOUND_AHEAD` (3) rows of the host's `next` against the host rows standing behind
+  the playing row in the guest's own queue; where they differ and that wanted run has not been asked
+  for, one finder thread looks for those songs (one search in flight, a run the host has edited since
+  is not taken, a run asked for once is not asked again until the host's moves) and `keep_ahead`
+  replaces what lies behind the playing row with the held run. The engine's `Seat` keeps the longest
+  common prefix by `QueueStamp` where it stands (the next row's gapless preparation is untouched),
+  removes the rest and inserts the remainder, and **leaves a song within
+  `TOO_NEAR_THE_END_TO_CHANGE_WHAT_FOLLOWS` (2 s) of its end alone** (the row could change under the
+  edit), answering `false` so the run is asked for again once the next song plays. The seat's
+  own stamps are put in `rows` right after the call, in the look that made it, so `added_here`
+  never reads them as songs added here. A song added or moved in the host's queue a few rows ahead is
+  thereby in the guest's queue by the time the song before it ends; the full `Find`/`take_up` remains
+  for the row the guest is not on. A look that took a song up reads the seat again before
+  deciding, so one `take_up` is not followed by a second for the same row
+  (`a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_ahead`,
+  `a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_not_near_its_end`).
 - **`Seat::take_up` is ordered as a zone handover is** (`zones.rs`): `SetRepeat(Off)`, `Resume` at the
   start to read the row's rate, `Resume` at the place, tell the clock, `KeepInStepWith`, `Play`. `Load`
   would keep the guest's `next` rows; a wrong row or rate steps in at once (`engine.rs`) and no clock
@@ -106,10 +124,11 @@ old seat puts its queue back before the new one remembers it.
 
 The window's **Listening Party** pane (`views/party.rs`; it says that in the sidebar with `Icon::Party`, headphones, though `party` stays its tab name in `last-tab`, so a kept tab still reads): with no party a welcome, what happens in three steps and *Start a listening party*; at one, a card of the song, with the cover where the zone shown is hearing it, the standing and the round trip, the host's invitation (the QR code, the link and *Copy link*), who is here and what is asked for, in two columns where the pane has room, and *End the party* or *Leave* in the heading. And `resonate party
 start FILES` and `resonate party join LINK`, which run until interrupted or the room ends. Pasting a link
-into the search field, a `resonate://party/` argument or `OpenUri` joins (`binary.md`). The phones read
+into the search field joins at once, being asked for; a `resonate://party/` argument or `OpenUri` asks first (below, `binary.md`). The phones read
 one `ListeningParty` through `party_shown`, polled while shown. **A party link that arrives from outside the
 app asks first on the phones** (*Join this listening party?*, as pairing asks *Join these devices?*): iOS's
 `Library.open` hands it to `TogetherState.arrive`, which holds a party link as `partyOffered` for the
 `PartyOffer` alert and joins at once any other invitation; Android's `MainActivity` does the same through
 `Together.arriving` (`InvitationLinks.isAParty` tells a party link by scheme, host and page without the
 native library) and `PartyOffer`. A link the listener pastes or types joins at once, being asked for.
+**The window asks the same way** (`views/party_offer.rs`, a `Sheet::Offering` of `views/sheets.rs`): `together::accepted` with `Arrival::FromOutside` (an argument, `OpenUri`) hands a party link to `party_room::offer`, which tells the window `Followed::PartyOffered(link)` down the channel the bus already uses (links that came before the window held in `Offering::Waiting` and told in order once it opens), and `RootView::offer_a_party` sets `party_offered`. The sheet reads *Join this listening party?* and says what the link takes over as the phones' words do, naming the zone shown (*the zone Kitchen*) where there are several and *this computer* alone; focus lands on *Cancel*, no key confirms, escape declines and the window is raised. *Join* sends `Together::join_party(link, zone)` for the zone shown and opens the Listening Party pane, a refusal a toast (`a_party_link_from_outside_asks_first_and_focus_lands_on_the_control_that_declines`). `Arrival::Pasted` (the search field) still goes through `Together::accept`, the first zone, at once.
