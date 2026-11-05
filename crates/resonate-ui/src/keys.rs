@@ -223,7 +223,7 @@ mod tests {
                 binding
                     .keystrokes()
                     .iter()
-                    .map(|stroke| stroke.unparse())
+                    .map(|stroke| stroke.unparse(gpui::OperatingSystem::Linux))
                     .collect::<Vec<_>>()
                     .join(" ")
             })

@@ -1445,7 +1445,7 @@ mod tests {
         );
     }
 
-    fn pressed_and_released(driven: &mut Driven, key: &str) {
+    fn pressed_and_released(driven: &mut Driven, key: &'static str) {
         let keystroke = gpui::Keystroke::parse(key).expect("a key to press");
         driven.cx.simulate_keystrokes(key);
         driven.cx.simulate_event(gpui::KeyUpEvent { keystroke });
