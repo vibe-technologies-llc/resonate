@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.toShape
@@ -136,6 +137,7 @@ fun MixScreen(mix: Mix) {
 
 @Composable
 fun SuggestedScreen(suggested: Screen.Suggested) {
+    val resonate = LocalResonate.current
     val model =
         resonateViewModel(key = "suggested:${suggested.name}:${suggested.search}") {
             SuggestedViewModel(it, suggested.search)
@@ -152,6 +154,7 @@ fun SuggestedScreen(suggested: Screen.Suggested) {
         playing = playing,
         tag = "suggested",
         empty = "Nothing fits this list right now. Listen a little and come back.",
+        keep = { resonate.features.keepSearchAsPlaylist(suggested.name, suggested.search.native()) },
     ) { side ->
         PlaylistCover(covers, side, shape = MaterialTheme.shapes.extraLarge)
     }
@@ -174,6 +177,7 @@ private fun SongCollection(
     tag: String,
     empty: String,
     detail: String? = null,
+    keep: (() -> Unit)? = null,
     cover: @Composable (androidx.compose.ui.unit.Dp) -> Unit,
 ) {
     val resonate = LocalResonate.current
@@ -205,7 +209,18 @@ private fun SongCollection(
                         MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { resonate.addToQueue(tracks) },
                         MenuEntry.Action("Add to playlist", Icons.AutoMirrored.Rounded.PlaylistAdd) { sheets.addToPlaylist(tracks) },
                     )
-                ),
+                ) +
+                    listOfNotNull(
+                        keep?.let { keep ->
+                            listOf(
+                                MenuEntry.Action(
+                                    KEEP_AS_PLAYLIST,
+                                    Icons.Rounded.AutoAwesome,
+                                    run = keep,
+                                )
+                            )
+                        }
+                    ),
                 description = "$title options",
             )
         },
@@ -247,3 +262,5 @@ private fun SongCollection(
         }
     }
 }
+
+private const val KEEP_AS_PLAYLIST = "Keep as a playlist that fills itself"

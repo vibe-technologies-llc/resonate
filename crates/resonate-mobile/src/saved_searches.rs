@@ -1,7 +1,7 @@
 use resonate_library::{Direction, SavedQuery, SortOrder};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{Error, MobilePlayer, Result, StoreOp};
+use crate::{Error, MobilePlayer, Result, StoreOp, playlist_files::NAMES_TRIED};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum SearchOrder {
@@ -93,10 +93,63 @@ pub fn search_order_reads_descending(order: SearchOrder) -> bool {
     SortOrder::from(order).reads() == Direction::Descending
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct KeptSearch {
+    pub id: u64,
+    pub name: String,
+}
+
+const THE_PLAYLIST_FILLING_FROM: &str = "SELECT q.playlist, p.name
+       FROM playlist_queries q JOIN playlists p ON p.id = q.playlist
+      WHERE q.text IS ?1 AND q.sort = ?2 AND q.reading = ?3 AND q.max_rows IS ?4
+      ORDER BY q.playlist
+      LIMIT 1";
+
 #[uniffi::export]
 impl MobilePlayer {
     pub fn save_search(&self, name: String, search: SavedSearch) -> Result<u64> {
         self.make_saved_search(name, &search.query())
+    }
+
+    pub fn playlist_filling_from(&self, search: SavedSearch) -> Result<Option<KeptSearch>> {
+        let stored = StoredQuery::of(&search.query());
+
+        self.catalog
+            .0
+            .lock()
+            .query_row(
+                THE_PLAYLIST_FILLING_FROM,
+                params![stored.text, stored.sort, stored.reading, stored.rows],
+                |row| {
+                    Ok(KeptSearch {
+                        id: row.get::<_, i64>(0)? as u64,
+                        name: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
+    pub fn keep_search_as_playlist(&self, name: String, search: SavedSearch) -> Result<KeptSearch> {
+        if let Some(kept) = self.playlist_filling_from(search.clone())? {
+            return Ok(kept);
+        }
+
+        let wanted = name.trim();
+        let query = search.query();
+        let mut attempt = 1;
+        loop {
+            let named = if attempt == 1 {
+                wanted.to_owned()
+            } else {
+                format!("{wanted} ({attempt})")
+            };
+            match self.make_saved_search(named.clone(), &query) {
+                Err(Error::DuplicatePlaylistName) if attempt < NAMES_TRIED => attempt += 1,
+                made => return made.map(|id| KeptSearch { id, name: named }),
+            }
+        }
     }
 
     pub fn revise_search(
@@ -463,6 +516,44 @@ mod tests {
         );
         assert_eq!(listed(&player, rock).name, "Rock");
         assert_eq!(titles(&player, list), ["One"]);
+    }
+
+    #[test]
+    fn a_list_kept_fills_itself_under_a_free_name_and_is_kept_once() {
+        let player = player();
+        song(&player, "One", "Jazz", false);
+        let jazz = SavedSearch {
+            text: "genre:jazz".into(),
+            ..SavedSearch::default()
+        };
+        let rock = SavedSearch {
+            text: "genre:rock".into(),
+            ..SavedSearch::default()
+        };
+        player.create_playlist("Genres".into()).expect("a list");
+
+        let nothing_yet = player.playlist_filling_from(jazz.clone()).expect("asked");
+        let kept = player
+            .keep_search_as_playlist("genres".into(), jazz.clone())
+            .expect("kept");
+        let again = player
+            .keep_search_as_playlist("Genres".into(), jazz.clone())
+            .expect("kept again");
+        let other = player
+            .keep_search_as_playlist("Genres".into(), rock.clone())
+            .expect("another kept");
+
+        assert_eq!(nothing_yet, None);
+        assert_eq!(kept.name, "genres (2)");
+        assert_eq!(again, kept);
+        assert_eq!(other.name, "Genres (3)");
+        assert_ne!(other.id, kept.id);
+        assert_eq!(
+            player.playlist_filling_from(jazz).expect("asked"),
+            Some(kept.clone())
+        );
+        assert_eq!(titles(&player, kept.id), ["One"]);
+        assert_eq!(player.playlists().expect("the playlists").len(), 3);
     }
 
     #[test]

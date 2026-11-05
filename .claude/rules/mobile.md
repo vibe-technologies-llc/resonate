@@ -811,9 +811,9 @@ follows the zone shown when it began, and `save_zone` leaves that zone's kept qu
 
 `mixes.rs` offers the desktop's suggested lists over the document catalog, the code of `library.md`'s
 *A suggestion is a named saved query* and not a copy of it. `suggested_lists(time_zone, utc_offset_seconds)`
-reads the search index (`Index::artists_heard`, `genres_of_artists`, `genres_played`), the artists heard
-in the last ninety days from `listens` (counted listens, by heard time), hands them to
-`resonate_library::listening_lists` and `the_shape_of_the_catalog`, weighs every candidate query with
+reads the search index (`Index::artists_heard`, `genres_of_artists`, `genres_played`, `years_held`,
+`genres_held`, `genres_of_years`), the artists heard in the last ninety days from `listens` (counted
+listens, by heard time), hands them to `resonate_library::lists_to_offer` through a `Filing`, weighs every candidate query with
 `Searching::measured` (the grammar the phones already run: `plays:>=3@1mo`, `artist:="X" plays:<=1`,
 `or` over kindred artists) and keeps what `worth_offering` keeps. The day is the phone's zone's
 (`the_listeners_calendar`), so the turn of *Discover*, *More like*, *deep cuts* and *Back to* moves at the
@@ -824,10 +824,18 @@ the index, a counted listen included, offers again. Lists come in the desktop's 
 front end draws its mark), `detail` (`Reason::says`), `accents`, song count, length, up to four covers
 and the `SavedSearch` it is, so opening one is `saved_search_page(search, offset, limit)` and its header
 `measure_saved_search(search)`; nothing is stored, and a list the catalog stops offering still opens as
-the query it was. The phones offer the shape of the catalog and the lists read from listening
-(*Made for you*, *Rediscover*, *From your listening*); the desktop's Eras, Genres, Artists and Sound
-shelves are open work (`FEATURES.md`). The artists are the index's groups (an album artist's songs
-count for the artist, as `artist:` reads them), not the desktop's `artists` rows. Held by
+the query it was. The phones offer every shelf the desktop does (*Made for you*, *Rediscover*, *From
+your listening*, *Eras*, *Genres*, *Artists*, *Sound*). Where the phones' reading is poorer than the
+desktop's: the artists are the index's groups (an album artist's songs count for the artist, as
+`artist:` reads them), not the desktop's `artists` rows; a year is the song's own `date` (its first
+four digits), not the album's release year; and the ranked genres and the genres each artist is filed
+under are the songs' own `genre` tags alone, since the phones keep no enriched `artist_genres`, so a
+genre only an artist's profile names is neither offered nor a kinship. **A list opened is kept as a
+playlist that fills itself** by `keep_search_as_playlist(name, search)`: it answers the playlist
+already filling itself from that same search (`playlist_filling_from`, so keeping twice makes one),
+else makes the saved search under the first free `Name`, `Name (2)`, ... (`KeptSearch`: its id and the
+name taken). Held by `the_eras_genres_artists_and_sounds_of_the_catalog_are_offered_as_the_desktop_offers_them`,
+`a_list_kept_fills_itself_under_a_free_name_and_is_kept_once`,
 `what_the_phone_heard_decides_the_lists_it_is_offered`, `a_list_holds_as_many_songs_when_it_is_opened_as_it_said`,
 `what_is_offered_to_discover_turns_a_day_at_a_time_and_reads_the_same_all_day` and the rest of `mixes.rs`'s tests.
 

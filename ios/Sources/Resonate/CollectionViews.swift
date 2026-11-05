@@ -706,9 +706,12 @@ extension CollectionHeader where Artwork == CollectionCover {
 
 struct CollectionMenu: View {
     @Environment(Navigation.self) private var navigation
+    @Environment(Library.self) private var library
     let tracks: [Track]
     var artist: String?
     var editsTags = false
+    var keeping: SavedSearch?
+    var keepingAs = ""
     @State private var choosingPlaylist = false
     @State private var queued = 0
 
@@ -725,10 +728,32 @@ struct CollectionMenu: View {
                     Button("Edit album tags", systemImage: "pencil") { navigation.editTags(tracks) }
                 }
             }
+            if let keeping {
+                Section {
+                    if library.features.playlists.contains(where: { $0.search == keeping }) {
+                        Button("Kept as a playlist", systemImage: "checkmark") {}.disabled(true)
+                    } else {
+                        Button("Keep as a playlist that fills itself", systemImage: "bookmark") { keep(keeping) }
+                    }
+                }
+            }
         }
         .disabled(tracks.isEmpty)
         .sensoryFeedback(.success, trigger: queued)
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: tracks).sheetSized() }
+    }
+}
+
+extension CollectionMenu {
+    private func keep(_ search: SavedSearch) {
+        let name = keepingAs
+        library.features.keepSearchAsPlaylist(name, search: search) { problem in
+            if let problem {
+                library.fail(problem)
+            } else {
+                library.notice("Kept \(name) among your playlists")
+            }
+        }
     }
 }
 

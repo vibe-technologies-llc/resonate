@@ -6,9 +6,8 @@ use std::{
 
 use resonate_core::{Accent, Calendar};
 use resonate_library::{
-    Candidate, Kinship, OF_LATE, Reason, SavedQuery, SuggestionKind, Weighed, artists_as_heard,
-    artists_heard_lately, genres_ranked_by, listening_lists, the_shape_of_the_catalog,
-    worth_offering,
+    Candidate, Filing, Kinship, OF_LATE, Reason, SavedQuery, SuggestionKind, Weighed,
+    artists_as_heard, artists_heard_lately, genres_ranked_by, lists_to_offer, worth_offering,
 };
 
 use crate::{
@@ -255,18 +254,14 @@ pub(crate) fn offer(
     let of_late = now.checked_sub(OF_LATE).unwrap_or(UNIX_EPOCH);
     let lately =
         artists_heard_lately(searching.heard_lately(catalog, seconds_since_the_epoch(of_late))?);
-    let kin = Kinship::of(&index.genres_of_artists());
+    let filing = Filing::of(
+        index.years_held(),
+        index.genres_held(),
+        index.genres_of_years(),
+        Kinship::of(&index.genres_of_artists()),
+    );
     let played_most = genres_ranked_by(index.genres_played());
-
-    let mut candidates = the_shape_of_the_catalog();
-    candidates.extend(listening_lists(
-        &kin,
-        &heard,
-        &lately,
-        &played_most,
-        today,
-        now,
-    ));
+    let candidates = lists_to_offer(&filing, &heard, &lately, &played_most, today, now);
 
     let mut pictured: HashMap<String, Vec<u64>> = HashMap::new();
     let mut offered: Vec<Offered> = worth_offering(candidates, |query| -> Result<Weighed> {
@@ -407,6 +402,7 @@ mod tests {
         shelve(&catalog, "Played Lately", "Krautrock", 6, 0, A_WEEK, now);
         shelve(&catalog, "A Neighbour", "Krautrock", 7, 0, A_WEEK, now);
         shelve(&catalog, "Long Gone", "Polka", 12, 5, LONG_AGO, now);
+        shelve(&catalog, "Faded Out", "Fado", 5, 6, LONG_AGO, now);
         for quiet in ["Quiet One", "Quiet Two", "Quiet Three"] {
             shelve(&catalog, quiet, "Ambient", 6, 0, A_WEEK, now);
         }
@@ -440,7 +436,7 @@ mod tests {
         let offered = offer(&searching, &catalog, &Calendar::utc(), now).expect("lists");
 
         assert_eq!(songs_of(&offered, "On repeat"), 12);
-        assert_eq!(songs_of(&offered, "Old flames"), 12);
+        assert_eq!(songs_of(&offered, "Old flames"), 17);
         assert_eq!(songs_of(&offered, "Played Lately, deep cuts"), 6);
         assert_eq!(songs_of(&offered, "More like Played Lately"), 7);
         assert!(
@@ -537,6 +533,69 @@ mod tests {
         let after = offer(&searching, &catalog, &Calendar::utc(), now).expect("lists");
 
         assert_eq!(songs_of(&after, "On repeat"), 22);
+    }
+
+    fn dated(catalog: &Catalog, artist: &str, date: &str) {
+        catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET date = ?2 WHERE artist = ?1",
+                params![artist, date],
+            )
+            .expect("a date");
+    }
+
+    fn offered_in(offered: &[Offered], shelf: SuggestionShelf) -> Vec<&str> {
+        offered
+            .iter()
+            .filter(|held| SuggestionShelf::from(held.candidate.reason.kind()) == shelf)
+            .map(|held| held.candidate.name.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn the_eras_genres_artists_and_sounds_of_the_catalog_are_offered_as_the_desktop_offers_them() {
+        let now = SystemTime::now();
+        let catalog = a_listeners_catalog(now);
+        dated(&catalog, "Played Lately", "1975-03-01");
+        dated(&catalog, "A Neighbour", "1976");
+        dated(&catalog, "Long Gone", "1989-05-05");
+        shelve(&catalog, "Cut One", "Punk", 6, 0, A_WEEK, now);
+        shelve(&catalog, "Cut Two", "Grunge", 6, 0, A_WEEK, now);
+        catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET duration_ms = 90000 WHERE artist LIKE 'Cut %'",
+                [],
+            )
+            .expect("short songs");
+        let searching = Searching::default();
+
+        let offered = offer(&searching, &catalog, &Calendar::utc(), now).expect("lists");
+
+        assert_eq!(
+            offered_in(&offered, SuggestionShelf::Eras)[0],
+            "The seventies"
+        );
+        assert_eq!(songs_of(&offered, "The seventies"), 25);
+        assert!(offered_in(&offered, SuggestionShelf::Genres).contains(&"Krautrock"));
+        assert_eq!(songs_of(&offered, "Krautrock"), 25);
+        assert!(offered_in(&offered, SuggestionShelf::Artists).contains(&"Played Lately"));
+        assert_eq!(songs_of(&offered, "Short and sharp"), 12);
+        assert!(offered_in(&offered, SuggestionShelf::Sound).contains(&"Short and sharp"));
+        for held in offered.iter() {
+            let opened = searching
+                .saved_page(&catalog, &held.candidate.query, 0, 500)
+                .expect("the list opens");
+            assert_eq!(
+                opened.len() as u32,
+                held.weighed.rows.min(500),
+                "{}",
+                held.candidate.name
+            );
+        }
     }
 
     #[test]

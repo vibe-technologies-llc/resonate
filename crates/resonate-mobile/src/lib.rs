@@ -91,7 +91,7 @@ pub use crate::{
     },
     rendering::{NetworkRenderer, RendererKind},
     rewriting::DocumentRewriting,
-    saved_searches::{SavedSearch, SearchOrder, search_order_reads_descending},
+    saved_searches::{KeptSearch, SavedSearch, SearchOrder, search_order_reads_descending},
     together::{
         InvitationKind, ListeningParty, PartyConnection, PartyFollowing, PartyRequest,
         SharedPlaylist, SharedPlaylistReach, TogetherPerson, invitation_kind,

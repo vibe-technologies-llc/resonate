@@ -1296,6 +1296,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
         library.notice("Saved “$name” among your playlists")
     }
 
+    fun keepSearchAsPlaylist(name: String, search: SavedSearch) = work { native ->
+        val already = native.playlistFillingFrom(search) != null
+        val kept = native.keepSearchAsPlaylist(name, search)
+        playlists.value = native.playlists()
+        library.notice(
+            if (already) "Already kept as “${kept.name}” among your playlists"
+            else "Kept “${kept.name}” among your playlists"
+        )
+    }
+
     fun addToPlaylist(id: ULong, track: Track) = addToPlaylist(id, listOf(track))
 
     fun addToPlaylist(id: ULong, tracks: List<Track>) = work { native ->
