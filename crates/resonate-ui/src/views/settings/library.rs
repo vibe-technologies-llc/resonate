@@ -480,8 +480,8 @@ impl RootView {
 
     pub(super) fn updating_group(&mut self, cx: &mut Context<Self>) -> Div {
         kit::section_body()
-            .child(self.files_part(cx))
             .child(self.details_part(cx))
+            .child(self.files_part(cx))
             .child(self.tags_part(cx))
     }
 

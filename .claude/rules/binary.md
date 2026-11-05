@@ -471,3 +471,5 @@ with a flag is spelled as the flag spells it (`ValueEnum`s from `cli.rs`). `Sett
 key, not an empty string (`Config::contact` stays `None`, the User-Agent bare).
 
 The desktop starts its Game Mode watcher at entry: Linux through MPRIS's session bus worker, Windows through the Win32 effective power mode watch. `core::gaming` holds background enrichment and studies while active and releases them automatically afterward; playback and foreground analysis continue. The phones use the study duty limit without this desktop gate.
+
+Desktop settings separate Accounts (service credentials and sign-ins) and Enrichment (scan, lookup progress and tag controls) from Library and Online. Category identifiers are additive so existing remembered categories still load.

@@ -37,6 +37,8 @@ pub enum SettingsCategory {
     Equaliser,
     Library,
     Filters,
+    Enrichment,
+    Accounts,
     Online,
     Recognition,
     Scrobbling,
@@ -47,12 +49,14 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::Output,
         Self::Processing,
         Self::Equaliser,
         Self::Library,
         Self::Filters,
+        Self::Enrichment,
+        Self::Accounts,
         Self::Online,
         Self::Recognition,
         Self::Scrobbling,
@@ -69,6 +73,8 @@ impl SettingsCategory {
             Self::Equaliser => "equaliser",
             Self::Library => "library",
             Self::Filters => "filters",
+            Self::Enrichment => "enrichment",
+            Self::Accounts => "accounts",
             Self::Online => "online",
             Self::Recognition => "recognition",
             Self::Scrobbling => "scrobbling",

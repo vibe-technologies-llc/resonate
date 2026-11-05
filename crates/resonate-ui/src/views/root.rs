@@ -407,10 +407,10 @@ impl Pane {
         Self::Artists,
         Self::Tracks,
         Self::Statistics,
-        Self::Playlists,
-        Self::Party,
         Self::Favourites,
+        Self::Playlists,
         Self::Suggestions,
+        Self::Party,
         Self::Missing,
         Self::Lyrics,
         Self::Inspector,
@@ -5668,7 +5668,7 @@ impl RootView {
             row,
             |this, _, cx| {
                 this.set_pane(Pane::Settings, cx);
-                this.show_settings(Category::Library, cx);
+                this.show_settings(Category::Enrichment, cx);
             },
             cx,
         )

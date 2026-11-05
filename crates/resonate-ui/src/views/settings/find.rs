@@ -11,6 +11,8 @@ impl Category {
             Self::Equaliser => "Equaliser",
             Self::Library => "Library",
             Self::Filters => "Filters",
+            Self::Enrichment => "Enrichment",
+            Self::Accounts => "Accounts",
             Self::Online => "Online",
             Self::Recognition => "Recognition",
             Self::Scrobbling => "Scrobbling",
@@ -34,6 +36,8 @@ impl Category {
                 "The folders a scan walks, the scan itself, and how the files are filed"
             }
             Self::Filters => "Which file extensions and track lengths appear in your library",
+            Self::Enrichment => "Live lookup progress and controls for library enrichment",
+            Self::Accounts => "Music services, sign-ins and server credentials",
             Self::Online => {
                 "Whether the player may reach the network, what a request says about you, and what \
                  is looked up when"
@@ -63,7 +67,7 @@ impl Category {
             Self::Equaliser => Icon::Equaliser,
             Self::Library => Icon::Folder,
             Self::Filters => Icon::Search,
-            Self::Online => Icon::Globe,
+            Self::Enrichment | Self::Accounts | Self::Online => Icon::Globe,
             Self::Recognition => Icon::Listen,
             Self::Scrobbling => Icon::Statistics,
             Self::Sync => Icon::Sync,
@@ -257,25 +261,26 @@ impl Group {
             | Self::Abx => Category::Equaliser,
             Self::MusicExtensions | Self::MinimumLength => Category::Filters,
             Self::Folders
-            | Self::Updating
             | Self::Organising
             | Self::Vault
             | Self::Inbox
-            | Self::ResonateKey
+            | Self::Resuming
+            | Self::History
+            | Self::Repeating
+            | Self::PreviousButton => Category::Library,
+            Self::Updating => Category::Enrichment,
+            Self::ResonateKey
             | Self::Subsonic
             | Self::Jellyfin
             | Self::Tidal
             | Self::Spotify
             | Self::Served
-            | Self::Resuming
-            | Self::History
-            | Self::Repeating
-            | Self::PreviousButton => Category::Library,
+            | Self::Lastfm => Category::Accounts,
             Self::Lookups | Self::AfterScan | Self::Metered | Self::Lyrics | Self::Contact => {
                 Category::Online
             }
             Self::Studies | Self::Recognition | Self::Listening => Category::Recognition,
-            Self::Submitting | Self::Lastfm => Category::Scrobbling,
+            Self::Submitting => Category::Scrobbling,
             Self::Syncing
             | Self::Pairing
             | Self::SyncDevices

@@ -2324,3 +2324,5 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   answer false); `Raise` sends on it, `raise_when_asked` drains it on the gpui foreground and calls
   `activate_window` on every window (a compositor may still refuse without an activation token). `Quit`
   sends on the channel `resonate play` uses, drained by the gpui foreground on the frame timer.
+
+The desktop collection orders Favourites, Playlists, Suggestions and Listening Party before Missing. The enrichment status opens the Enrichment settings category, with live lookup counts and cancellation alongside scan and tag controls. Accounts holds service sign-ins and server credentials, including Spotify, TIDAL, Subsonic, Jellyfin and Last.fm; Online retains network policy. Existing category identifiers remain valid so remembered settings pages survive the additional categories.
