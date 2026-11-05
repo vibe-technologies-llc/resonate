@@ -36,6 +36,10 @@ final class Enrichment {
     @ObservationIgnored private let settings = UserDefaults(suiteName: "library-features") ?? .standard
     @ObservationIgnored private var watching: Task<Void, Never>?
     @ObservationIgnored private var foreground = true
+    @ObservationIgnored private var away = UIApplication.shared.applicationState == .background
+    @ObservationIgnored private var owedOnComingForward = false
+    @ObservationIgnored private var lane: Task<Void, Never>?
+    @ObservationIgnored private lazy var pausing = BackgroundHold(name: "Pausing the lookup")
     @ObservationIgnored private var erased = false
     @ObservationIgnored private var sought: UInt64?
     @ObservationIgnored private var portraits: UInt32 = 0
@@ -106,6 +110,7 @@ final class Enrichment {
         erased = true
         watching?.cancel()
         watching = nil
+        await lane?.value
         guard let native = library.native else { return }
         _ = try? await Work.aside { native.stopEnrichment() }
     }
@@ -113,7 +118,8 @@ final class Enrichment {
     func stop() {
         watching?.cancel()
         watching = nil
-        Task {
+        owedOnComingForward = false
+        inTurn { [self] in
             guard let native = try? await library.player(),
                 let read = try? await Work.aside({
                     native.stopEnrichment()
@@ -142,6 +148,29 @@ final class Enrichment {
         read()
     }
 
+    func wentToBackground() {
+        away = true
+        pausing.hold(true)
+        inTurn { [self] in
+            defer { pausing.hold(false) }
+            guard away, let native = library.native,
+                let before = try? await Work.aside({ native.enrichmentStatus() }), before.running,
+                let read = try? await Work.aside({
+                    native.pauseEnrichment()
+                    return native.enrichmentStatus()
+                })
+            else { return }
+            owedOnComingForward = true
+            publish(read)
+            carryOn()
+        }
+    }
+
+    func cameForward() {
+        away = false
+        carryOn()
+    }
+
     func read() {
         Task {
             guard let native = try? await library.player(),
@@ -164,9 +193,28 @@ final class Enrichment {
         }
     }
 
+    private func carryOn() {
+        guard owedOnComingForward, !away else { return }
+        owedOnComingForward = false
+        guard !automatic || !unmeteredOnly || library.features.unmetered else { return }
+        start(everything, stoppingFirst: false, seeking: library.snapshot?.current?.id)
+    }
+
+    private func inTurn(_ step: @escaping @MainActor () async -> Void) {
+        let before = lane
+        lane = Task {
+            await before?.value
+            await step()
+        }
+    }
+
     private func start(_ options: EnrichmentOptions, stoppingFirst: Bool, seeking track: UInt64?) {
-        guard !erased else { return }
-        Task {
+        inTurn { [self] in
+            guard !erased else { return }
+            guard !away else {
+                owedOnComingForward = true
+                return
+            }
             guard let native = try? await library.player(),
                 let read = try? await Work.aside({
                     if stoppingFirst { native.stopEnrichment() }
@@ -320,7 +368,7 @@ struct RefreshArtworkRow: View {
             Button("Cancel", role: .cancel) {}
             Button("Refresh") { enrichment.refresh() }
         } message: {
-            Text("Covers, artist portraits, details and lyrics are looked up again for \(counted(songs, "song")). This runs in the background and can take a while.")
+            Text("Covers, artist portraits, details and lyrics are looked up again for \(counted(songs, "song")). This runs while Resonate is open and can take a while.")
         }
     }
 }

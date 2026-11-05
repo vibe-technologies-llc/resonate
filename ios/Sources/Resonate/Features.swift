@@ -614,11 +614,13 @@ final class Features {
 
     func wentToBackground() {
         leftAt = Date()
+        enrichment.wentToBackground()
     }
 
     func cameForward() {
         let wasAway = leftAt != nil
         leftAt = nil
+        enrichment.cameForward()
         if secretsUnread { readSecretsAgain() }
         guard wasAway else { return }
         library.openAgain()

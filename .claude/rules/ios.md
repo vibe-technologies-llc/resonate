@@ -534,7 +534,7 @@ tab bar minimised on scroll) it measures itself and keeps what fits, the width r
 button always, the title with the artist beneath it from 150 pt, as Apple Music's minimised player draws them, and no next (the capsule beside the search
 button is about 220 pt, and the artist line fills what next held), tighter spacing and a
 12 pt inset each side, so the square cover clears the capsule's rounded end; the title stays the
-accessibility label. **What the placement or the fit changes appears at once** (`transaction(value:)` with no animation on both): the system animates the accessory itself as the Search tab's field widens and the bar collapses, and the contents (artist line, previous, cover size) animating inside it as well made that animation judder. **Previous and next wait for the accessory to regrow**: laid in at once while the system still moved the play button across the widening capsule, they showed through it as the bar came back from inline, so on returning to expanded they stand hidden and untappable for `accessoryRegrowsWithin` (450 ms) and then fade in over `Arrival.animation` (at once under Reduce Motion). The artist line, expanded or inline, is `Color.primary` at 60 % opacity, never the
+accessibility label. **What the placement or the fit changes appears at once** (`transaction(value:)` with no animation on both): the system animates the accessory itself as the Search tab's field widens and the bar collapses, and the contents (artist line, previous, cover size) animating inside it as well made that animation judder. **Previous and next stay in the view inline, drawn at no width and no opacity** (`RidesWithThePlayButton`, in an `HStack` of their own with the play button, so they add no spacing there): inserted as the bar came back from inline, they stood at their final places at once while the system still moved the play button across the widening capsule, and held back from that they were missing for the whole regrowth and popped in after it. Kept, they move with the play button through the regrowth and fade in over `Arrival.animation` from its first frame (at once under Reduce Motion), untappable and hidden from VoiceOver while inline. The artist line, expanded or inline, is `Color.primary` at 60 % opacity, never the
 hierarchical `.secondary`: that is drawn vibrant against the accessory's glass, which is not drawn
 while Now Playing zooms back into it, so the artist showed only once the zoom ended. The output page holds `AVRoutePickerView`, since iOS owns the route, and draws the session's route,
 hardware rate and latency from `Library.routeReading`, which `NowPlaying.reportRoute` reads again on
@@ -1309,7 +1309,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 ## Artwork and details
 
-- **The background lookup starts itself** (`Enrichment.swift`): `Enrichment.begin` asks
+- **The lookup starts itself and runs only with the app in front** (`Enrichment.swift`): `Enrichment.begin` asks
   `start_enrichment` once the player opens (`Features.initialize`), after a scan
   (`Features.scanned`), after songs land from another device or a download, when online features
   turn on and when the network becomes unmetered. It is refused while "Fetch artwork and details
@@ -1323,8 +1323,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   `Enrichment.playing`, which calls `seek_enrichment` while a pass runs. A song a download landed
   (`Enrichment.landed`) is looked up before the rest by the boundary itself, in a running pass
   and in every later one (`android.md`'s *A download is looked up first*).
+- **A pass never runs in the background**, where its network and decoding beside playing music got the app killed: `.background` (`Enrichment.wentToBackground`, under a plain `BackgroundHold` while the threads join) asks `pause_enrichment`, which leaves the mark, and coming forward (`cameForward`) starts it again, carrying on a refresh; a start asked while away, a background launch's included (`away` reads `applicationState` at first), is owed to coming forward the same way, unless *Only on Wi-Fi* then holds it. Every start, stop and pause takes its turn on one lane (`inTurn`), so a start in flight is paused after it lands and a pass joining is never overlapped by the next. `.inactive` (Control Centre, a call banner) pauses nothing. An artist page's `learnTheDiscography` (its releases, songs and sleeves) is keyed on the scene being in the background too, so leaving cancels its loop after the batch in flight and coming back asks on from where it stands; a single ask a listener made (the Inspector's `enrich_track`, an album page's or a release sheet's one read) is left to finish.
 - **The status is polled every 2 s while a pass runs and the scene is active**: going inactive
-  cancels the poll (the pass goes on in Rust), coming back reads the status once and resumes it.
+  cancels the poll (the pass goes on in Rust until `.background`), coming back reads the status once and resumes it.
   The line reads "Finding artwork and details · N of M", "Artwork and details up to date" or the
   `EnrichmentStop` in words; a finished pass refreshes the library once, and one that ended while the scene was away is settled the same way when it comes forward (`Enrichment.read`, `unsettled`). Switching *Fetch automatically* off, or *Only on Wi-Fi* on while the path is metered, stops a running pass. Settings' *Artwork and
   details* group (shown while online) holds both toggles, "Look again for missing covers"

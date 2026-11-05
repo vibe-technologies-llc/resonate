@@ -1025,8 +1025,8 @@ clause and `WAITS`; refusals end the pass at `REFUSALS_THAT_END_A_PASS` in a row
 requests for `stop_enrichment`, offline and the network. `enrichment_status` counts what was due,
 asked, matched, covers, portraits, lyrics and refusals and names how it stopped (`EnrichmentStop`).
 The `enrichment` mark is removed when the pass finishes or the listener stops it; a pass ended by
-the reference, the network or the app closing leaves it, and the next start carries its refresh,
-skipping rows asked since it began. **A download is looked up first**: every pass puts the album and
+the reference, the network, the app closing or `pause_enrichment` (iOS, on going to the background,
+`ios.md`) leaves it, and the next start carries its refresh, skipping rows asked since it began. **A download is looked up first**: every pass puts the album and
 song asks of each `downloaded` document still due ahead of the rest, the newest download first, and
 orders the artists, the lyric reader and the study worker the same way
 (`a_downloaded_song_is_looked_up_before_the_songs_held_before_it`); `index_download` also seeks the

@@ -967,6 +967,7 @@ struct ArtistView: View {
     private static let topSongs: UInt32 = 5
 
     @Environment(Library.self) private var library
+    @Environment(\.scenePhase) private var phase
     @ScaledMetric(relativeTo: .subheadline) private var albumEdge: CGFloat = 140
     @State private var name: String
     @State private var albums: [AlbumHit] = []
@@ -1101,11 +1102,11 @@ struct ArtistView: View {
             UnheldReleaseSheet(artist: name, release: release)
         }
         .task(id: "\(name):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
-        .task(id: name) { await learnTheDiscography() }
+        .task(id: "\(name):\(phase == .background)") { await learnTheDiscography() }
     }
 
     private func learnTheDiscography() async {
-        guard let native = try? await library.player() else { return }
+        guard phase != .background, let native = try? await library.player() else { return }
         let name = name
         if (try? await Work.aside { try native.learnArtistDiscography(name: name) }) == true {
             await readWhatIsLacked(native)

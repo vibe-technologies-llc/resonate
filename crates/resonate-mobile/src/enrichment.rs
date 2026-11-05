@@ -128,7 +128,7 @@ impl Asking {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Leaving {
     Listener,
-    Closing,
+    ForNow,
 }
 
 #[derive(Default)]
@@ -149,15 +149,15 @@ impl Sought {
 #[derive(Default)]
 struct Told {
     cancelled: AtomicBool,
-    closing: AtomicBool,
+    for_now: AtomicBool,
     asked_first: Sought,
     sung_first: Sought,
 }
 
 impl Told {
     fn cancel(&self, leaving: Leaving) {
-        self.closing
-            .fetch_or(leaving == Leaving::Closing, Ordering::AcqRel);
+        self.for_now
+            .fetch_or(leaving == Leaving::ForNow, Ordering::AcqRel);
         self.cancelled.store(true, Ordering::Release);
     }
 
@@ -166,7 +166,7 @@ impl Told {
     }
 
     fn keeps_the_mark(&self) -> bool {
-        self.closing.load(Ordering::Acquire)
+        self.for_now.load(Ordering::Acquire)
     }
 
     fn seek(&self, track: u64) {
@@ -250,6 +250,10 @@ impl MobilePlayer {
         self.stop_enriching(Leaving::Listener);
     }
 
+    pub fn pause_enrichment(&self) {
+        self.stop_enriching(Leaving::ForNow);
+    }
+
     pub fn enrichment_status(&self) -> EnrichmentStatus {
         self.enriching.tally.status()
     }
@@ -315,10 +319,6 @@ impl MobilePlayer {
                 false
             }
         }
-    }
-
-    pub(crate) fn stop_enriching_to_close(&self) {
-        self.stop_enriching(Leaving::Closing);
     }
 
     fn stop_enriching(&self, leaving: Leaving) {
@@ -2998,13 +2998,58 @@ mod tests {
                 ..EnrichmentOptions::default()
             }
         ));
-        player.stop_enriching_to_close();
+        player.pause_enrichment();
         let carried = player
             .catalog
             .carried_on(false, SystemTime::now())
             .expect("the carried mark");
 
         assert_eq!(marks(&player.catalog), 1);
+        assert!(carried.refresh);
+    }
+
+    #[test]
+    fn a_pass_paused_ends_at_once_and_the_next_start_carries_it_on() {
+        let player = player();
+        let fake = Arc::new(Fake {
+            each_takes: Duration::from_millis(20),
+            ..Fake::default()
+        });
+        songs(&player.catalog, "", 200);
+
+        assert!(player.start_enriching(
+            asking(&fake),
+            EnrichmentOptions {
+                refresh: true,
+                ..EnrichmentOptions::default()
+            }
+        ));
+        let waited = Instant::now();
+        while fake.calls.load(Ordering::SeqCst) == 0 && waited.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let pausing = Instant::now();
+        player.pause_enrichment();
+        let paused = player.enrichment_status();
+        let asked_by_then = fake.calls.load(Ordering::SeqCst);
+
+        assert!(pausing.elapsed() < Duration::from_secs(2));
+        assert!(!paused.running);
+        assert_eq!(paused.stopped, Some(EnrichmentStop::Cancelled));
+        assert!(asked_by_then < 200);
+
+        thread::sleep(Duration::from_millis(60));
+
+        assert_eq!(fake.calls.load(Ordering::SeqCst), asked_by_then);
+        assert_eq!(marks(&player.catalog), 1);
+
+        assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+        player.pause_enrichment();
+        let carried = player
+            .catalog
+            .carried_on(false, SystemTime::now())
+            .expect("the carried mark");
+
         assert!(carried.refresh);
     }
 

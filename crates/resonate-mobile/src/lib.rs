@@ -583,7 +583,7 @@ impl MobilePlayer {
 
     pub fn shutdown(&self) -> Result<()> {
         self.sync_stop();
-        self.stop_enriching_to_close();
+        self.pause_enrichment();
         self.configure_online(false);
         self.cancel_analysis();
         self.downloads.cancel_every_job();
