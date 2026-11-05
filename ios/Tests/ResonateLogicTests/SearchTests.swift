@@ -104,7 +104,7 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
         }
 
         search.text = "slow"
-        try? await Task.sleep(for: .milliseconds(60))
+        await eventually { await slow.texts == ["slow"] }
         search.text = "quick"
         await eventually { search.answered == "quick" }
         try? await Task.sleep(for: .milliseconds(200))
