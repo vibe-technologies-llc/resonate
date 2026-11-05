@@ -851,7 +851,7 @@ pub fn band_figures(
 
     Ok(BandFigures {
         levels: BandLevels::of(&transforming.finished()),
-        peaks: splitting.finished(),
+        peaks: splitting.finished().peaks,
     })
 }
 

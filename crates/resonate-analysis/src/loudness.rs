@@ -123,12 +123,11 @@ pub(crate) struct Metering {
     in_dr_block: u64,
     dr_open: Vec<DrBlock>,
     dr_closed: Vec<Vec<DrBlock>>,
-    peaking: TruePeakMeter,
 }
 
 impl Metering {
     pub(crate) fn new(placements: &[Placement], sample_rate: SampleRate) -> Self {
-        let channels = placements.len().max(1);
+        let channels = channels_of(placements).get();
         let rate = sample_rate.hz();
         let hz = f64::from(rate);
         Self {
@@ -149,15 +148,10 @@ impl Metering {
             in_dr_block: 0,
             dr_open: vec![DrBlock::default(); channels],
             dr_closed: vec![Vec::new(); channels],
-            peaking: TruePeakMeter::at(
-                sample_rate,
-                NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN),
-            ),
         }
     }
 
     pub(crate) fn note(&mut self, interleaved: &[f32]) {
-        self.peaking.note(interleaved);
         for frame in interleaved.chunks_exact(self.channels) {
             for (((sample, weighting), weight), block) in frame
                 .iter()
@@ -195,7 +189,7 @@ impl Metering {
         self.in_dr_block = 0;
     }
 
-    pub(crate) fn finished(mut self) -> Loudness {
+    pub(crate) fn finished(mut self, true_peak: f64) -> Loudness {
         let no_whole_block = self.dr_closed.first().is_none_or(Vec::is_empty);
         if self.in_dr_block > 0 && no_whole_block {
             self.close_a_dr_block();
@@ -209,7 +203,7 @@ impl Metering {
             momentary_max: loudest(&momentary),
             short_term_max: loudest(&short_term),
             dynamic_range: dynamic_range(&self.dr_closed),
-            true_peak: self.peaking.finish() as f32,
+            true_peak: true_peak as f32,
         }
     }
 }
@@ -220,20 +214,31 @@ impl Noting for Metering {
     }
 }
 
-pub struct LoudnessMeter(Metering);
+pub struct LoudnessMeter {
+    metering: Metering,
+    peaking: TruePeakMeter,
+}
 
 impl LoudnessMeter {
     pub fn new(placements: &[Placement], sample_rate: SampleRate) -> Self {
-        Self(Metering::new(placements, sample_rate))
+        Self {
+            metering: Metering::new(placements, sample_rate),
+            peaking: TruePeakMeter::at(sample_rate, channels_of(placements)),
+        }
     }
 
     pub fn note(&mut self, interleaved: &[f32]) {
-        self.0.note(interleaved);
+        self.peaking.note(interleaved);
+        self.metering.note(interleaved);
     }
 
     pub fn finished(self) -> Loudness {
-        self.0.finished()
+        self.metering.finished(self.peaking.finish())
     }
+}
+
+fn channels_of(placements: &[Placement]) -> NonZeroUsize {
+    NonZeroUsize::new(placements.len()).unwrap_or(NonZeroUsize::MIN)
 }
 
 fn weights_of(placements: &[Placement], channels: usize) -> Vec<f64> {
@@ -360,10 +365,15 @@ mod tests {
     fn metered(channels: usize, interleaved: &[f32]) -> Loudness {
         let placements = resonate_codec::Speakers::UNNAMED.placements(channels as u8);
         let mut metering = Metering::new(&placements, SampleRate::HZ_48000);
+        let mut peaking = TruePeakMeter::at(
+            SampleRate::HZ_48000,
+            NonZeroUsize::new(channels).expect("a channel"),
+        );
         for block in interleaved.chunks(4_096 * channels) {
+            peaking.note(block);
             metering.note(block);
         }
-        metering.finished()
+        metering.finished(peaking.finish())
     }
 
     #[test]

@@ -9,20 +9,30 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## Later: Analysis
-- [S] A study's two true-peak meters read one signal: `Metering`'s whole-song maximum is `Metered`'s
-  tiles' (each is the exact maximum over every read it could not rule out), so the first could go
-- [S] `TruePeakMeter` multiplies out the phase at whole samples, whose weights are one tap of 1 and the rest 0; it is
-  a quarter of a study's meter and of the guard's, and the answer is the sample itself
-- [S] `Mdct::coefficients` turns and writes every line while a grid reads only its band's (AAC's 4..16 kHz is
-  half of them); it was about a tenth of the CPU on a minute of FLAC
+- [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the
+  answer is the sample itself) but skipping it saves nothing on a vector unit: the phases are lanes of one
+  vector, so the lane is free beside the fractions and dropping it only narrows the array (measured, 60 s of
+  stereo at 44.1 kHz, fifteen passes: 29.9 G instructions and 18.2 G cycles as it is; the same width with the
+  lane left to the fractions and the centre read apart 32.4 G and 18.6 G; arrays of exactly the three
+  fractions 60.3 G and 21.8 G, since LLVM does not vectorise three lanes; every read bit for bit the
+  same). Only a stereo pair's six fractions packed into one 8-lane vector would save, on AVX-512 alone (the
+  release baseline is x86-64-v3, four lanes), and a mono or odd channel has nothing to pack with
 - [M] `workers_for` stayed at half the cores though each study now spreads over the crew: four
   workers keep the same throughput as eight at three quarters of the memory (442 MB against 582 MB
   on sixteen songs), but a worker also waits on recognition, which was not measured
 - [M] `Bank`'s rows are read one chunk at a time on its own stage, and its forward pass cannot be parted, so it and
   `Metered`, 1 to 1.5 s each over 5 minutes at 44.1 kHz, are what a pass's wall time now waits for,
-  96 kHz most of all (4.5 s for 5 minutes)
-- [M] `peak_through`, `print` and `excerpt` still walk on one thread: *Fit the preamp to the music* over songs no
-  study has measured runs its chain in line
+  96 kHz most of all (4.5 s for 5 minutes); `Metered`'s meter, which restarts its running maximum every tile,
+  reads twice what one over the whole song does on a quiet master (158 to 200 ms against 74 to 96 ms for 60 s of
+  stereo at 44.1 kHz) and a tenth more on a loud one (122 against 107 ms for 46 s)
+- [M] `peak_through`, `print` and `excerpt` walk on one thread and the crew does not take them: it fans one
+  decode out to independent stages, and each of these has one stateful consumer in series (decode, the room's
+  convolver, the equaliser, the meter; decode, Chromaprint; decode, a mono mix), so a crew could only overlap
+  the decode with it. That is a fifth of `peak_through` (177 to 205 ms for 47 s of 16/44.1 stereo FLAC, 297 ms
+  for 40 s at 96 kHz, the decode alone 40 to 50 ms and 70 ms) and most of `print` (51 to 61 ms), and
+  `loudest_through` already runs half the cores' worth of cuts at once, so the cores that overlap would buy
+  are the ones the cuts use. A gain wants the chain parted, as a pipeline by stage or by channel, and the
+  convolver's two-by-two response ties the channels together
 
 ## Later: DSP
 - [M] The resampler's Very high is level with SoXR VHQ at 2:1, not ahead (`docs/RESAMPLING.md`: 0.041 % of a

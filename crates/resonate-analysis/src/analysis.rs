@@ -337,6 +337,7 @@ fn walked<D: Drawing>(
     let spectrum = transforming.finished();
     let levels = leveling.finished();
     let steps = weighing.finished();
+    let split = splitting.finished();
     let judgement = judged(Weighed {
         codec,
         rate: rate.hz(),
@@ -351,12 +352,12 @@ fn walked<D: Drawing>(
         Study {
             examined,
             levels,
-            loudness: metering.finished(),
+            loudness: metering.finished(split.true_peak),
             spectrum,
             steps,
             judgement,
             print: printing.finished(examined.length),
-            band_peaks: splitting.finished(),
+            band_peaks: split.peaks,
         },
         drawn,
     ))

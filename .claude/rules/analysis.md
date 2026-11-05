@@ -73,6 +73,12 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   the peak first, which every step must hold anyway, and `round_ties_even` for the distance to a
   step, which only a tie could tell from `round` and a tie is too far to pass. `Hearing` adds its
   table by column (`loudest_sum`), where `f32::max` frame by frame was most of its cost.
+  `Mdct::coefficients_within` turns and writes only the bins a band's lines come from (bin `n` gives
+  lines `2n` and `hop - 1 - 2n`, so AAC's 4..16 kHz at 44.1 kHz is 327 of 512), the folding, the FFT
+  and every line it writes the same operations as the whole transform's
+  (`the_lines_of_a_band_are_the_lines_the_whole_transform_gives`); `Aac` and `Vorbis` ask for their
+  band alone. The FFT is most of a transform and cannot be pruned to a band without changing its sums,
+  so this took 2.4% of the instructions of seven songs (676.7 G to 660.8 G) and 1 to 3% of their cycles.
 - **A stream that turns is brought back to the shape it opened in.** `study`, `analyse`, `print` and
   `excerpt` follow format changes (`Decoder::follow_format_changes`) through `conform::Walking`: on
   each `Reformatted` the previous segment's resampler is flushed, and the new shape gets a `Remix`
@@ -187,7 +193,13 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   Matches `ffmpeg -af ebur128` to the tenth, 5.1 included (`tests/references.rs`: stereo at 44.1, 48, 88.2, 96 and 192 kHz and 5.1 with rears or sides against ffmpeg, EBU Tech 3341's tone and gating cases, Tech 3342's range steps, a print at Chromaprint's own 11 025 Hz equal to `fpcalc`'s). True peak = `TruePeakMeter::at(rate, ..)` (the engine
   guard's own interpolator, folding 4×, 2× or not at all by rate as the guard does, so study and
   playback agree about an over; `TruePeakMeter::new` is the 8× read the visualiser's meter has no rate for), stored `track_studies.true_peak`, handed
-  to the player by `Library::hinting` (`audio.md`).
+  to the player by `Library::hinting` (`audio.md`). **A study runs one such meter, not two**: `Metering`
+  reads loudness and dynamic range alone, and the true peak is the largest of `Metered`'s tiles
+  (`Split::true_peak`), since a tile's maximum is the exact maximum of every read the meter could not
+  rule out and so the largest tile is the song's, bit for bit
+  (`the_peak_of_the_tiles_is_the_one_a_true_peak_meter_reads_over_the_whole_song`); `LoudnessMeter`,
+  the audition's, has no tiles and runs a meter of its own. Dropping the second meter took about
+  0.1 s of one core from 46 to 60 s of stereo at 44.1 kHz (84 to 123 ms, the meter alone on two songs).
 - **Print = Chromaprint, first `PRINTED_FOR` only**: `rusty-chromaprint`
   `Configuration::preset_test2` (the AcoustID default), URL-safe base64, unpadded.
   `resonate_core::Chromaprint` carries it with whole-track length; lookups ask with the track's
