@@ -19,7 +19,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.PrimaryTabRow
@@ -123,12 +123,12 @@ fun LibraryScreen() {
                 enter = scaleIn(),
                 exit = scaleOut(),
             ) {
-                ExtendedFloatingActionButton(
+                FloatingActionButton(
                     onClick = newPlaylist,
-                    icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                    text = { Text("New playlist") },
                     modifier = Modifier.testTag("new-playlist"),
-                )
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "New playlist")
+                }
             }
         },
     ) { padding ->

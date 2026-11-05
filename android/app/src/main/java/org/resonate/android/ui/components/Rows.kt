@@ -388,9 +388,10 @@ fun EmptyState(
     action: String? = null,
     onAction: (() -> Unit)? = null,
     second: (@Composable () -> Unit)? = null,
+    verticalPadding: Dp = 32.dp,
 ) {
     Column(
-        modifier.fillMaxSize().padding(32.dp),
+        modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = verticalPadding),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

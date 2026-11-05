@@ -25,7 +25,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MyLocation
@@ -116,16 +118,14 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
         when {
             loading && shown == null -> LoadingIndicator()
             shown == null && unread == track.id ->
-                EmptyState(
-                    Icons.Rounded.Lyrics,
+                NoLyrics(
                     "Lyrics could not be read",
                     detail = "Try again to ask for them once more.",
                     action = "Try again",
                     onAction = { features.loadLyrics(track.id, refresh = true) },
                 )
             shown == null ->
-                EmptyState(
-                    Icons.Rounded.Lyrics,
+                NoLyrics(
                     "No lyrics for this song",
                     detail =
                         if (online) "Saved lyrics work offline, and none were found online for this song."
@@ -135,6 +135,23 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
                 )
             else -> LyricLines(track, shown, style)
         }
+    }
+}
+
+@Composable
+private fun NoLyrics(title: String, detail: String, action: String?, onAction: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        EmptyState(
+            Icons.Rounded.Lyrics,
+            title,
+            detail = detail,
+            action = action,
+            onAction = onAction,
+            verticalPadding = 0.dp,
+        )
     }
 }
 

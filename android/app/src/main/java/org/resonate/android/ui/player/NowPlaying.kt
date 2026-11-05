@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -90,6 +91,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -590,41 +592,52 @@ private fun PlayerActions(
     val zones by LocalResonate.current.features.zones.listed.collectAsStateWithLifecycle()
     val zoneShown = zones.firstOrNull { it.shown }?.name?.takeIf { zones.size > 1 }
     val large = rememberLargeText()
+    val style = actionLabelStyle()
+    val measurer = rememberTextMeasurer()
+    val aroundLabel =
+        with(LocalDensity.current) { (ACTION_SIDE_PADDING * 2 + ACTION_ICON + ACTION_ICON_GAP).toPx() }
+    val zonesLabel = zoneShown ?: "Zones"
+    val sleepLabel = remaining?.let { clock(it) } ?: "Sleep"
     FlowRow(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         maxItemsInEachRow = if (large) 2 else Int.MAX_VALUE,
     ) {
+        fun sharedByWidth(label: String) =
+            Modifier.weight(measurer.measure(label, style, maxLines = 1).size.width + aroundLabel)
         ActionToggle(
             Icons.Rounded.Lyrics,
             "Lyrics",
             pane == Pane.LYRICS,
             onLyrics,
-            Modifier.weight(1f),
+            sharedByWidth("Lyrics"),
             enabled = playing?.track?.served != true,
         )
-        ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue, Modifier.weight(1f))
+        ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue, sharedByWidth("Queue"))
         ActionToggle(
             Icons.Rounded.Speaker,
-            zoneShown ?: "Zones",
+            zonesLabel,
             false,
             onZones,
-            Modifier.weight(1f),
+            sharedByWidth(zonesLabel),
             description = zoneShown?.let { "Zones, $it shown" } ?: "Zones",
         )
         if (playing?.sleep != null) {
             ActionToggle(
                 Icons.Rounded.Bedtime,
-                remaining?.let { clock(it) } ?: "Sleep",
+                sleepLabel,
                 true,
                 { sheets.sleeping = true },
-                Modifier.weight(1f),
+                sharedByWidth(sleepLabel),
                 description = "Sleep timer",
             )
         }
     }
 }
+
+@Composable
+private fun actionLabelStyle() = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
 
 @Composable
 private fun ActionToggle(
@@ -641,13 +654,20 @@ private fun ActionToggle(
         onCheckedChange = { onClick() },
         enabled = enabled,
         colors = FilledTonalToggleButtonDefaults.colors(),
+        contentPadding = PaddingValues(horizontal = ACTION_SIDE_PADDING, vertical = 8.dp),
         modifier = modifier.widthIn(min = 48.dp).semantics { contentDescription = description },
     ) {
-        Icon(icon, null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
+        Icon(icon, null, modifier = Modifier.size(ACTION_ICON))
+        Spacer(Modifier.width(ACTION_ICON_GAP))
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = actionLabelStyle())
     }
 }
+
+private val ACTION_SIDE_PADDING: Dp = 16.dp
+
+private val ACTION_ICON: Dp = 18.dp
+
+private val ACTION_ICON_GAP: Dp = 8.dp
 
 private val COVER_AT_MOST: Dp = 520.dp
 
