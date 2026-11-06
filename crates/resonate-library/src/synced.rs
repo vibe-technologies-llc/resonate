@@ -820,9 +820,9 @@ fn named_alike(
         .collect())
 }
 
-struct HeldRow {
-    path: PathBuf,
-    within_the_vault: Option<PathBuf>,
+pub(crate) struct HeldRow {
+    pub(crate) path: PathBuf,
+    pub(crate) within_the_vault: Option<PathBuf>,
 }
 
 impl HeldRow {
@@ -840,7 +840,7 @@ impl HeldRow {
         ))
     }
 
-    fn stands(&self, vault: Option<&Vault>) -> bool {
+    pub(crate) fn stands(&self, vault: Option<&Vault>) -> bool {
         self.path.exists()
             || self.within_the_vault.as_deref().is_some_and(|within| {
                 vault.is_none_or(|vault| vault.at(within).is_ok_and(|object| object.exists()))
@@ -1601,7 +1601,7 @@ pub(crate) fn vaulted_already(inner: &Inner, kept: &Kept) -> Result<Option<PathB
     })
 }
 
-fn scanned_once_free(library: &Library, root: PathBuf) {
+pub(crate) fn scanned_once_free(library: &Library, root: PathBuf) {
     let mut tries = 1;
     loop {
         match library
@@ -1613,7 +1613,7 @@ fn scanned_once_free(library: &Library, root: PathBuf) {
                 thread::sleep(SCAN_TRIED_AGAIN_AFTER);
             }
             Err(error) => {
-                tracing::warn!(%error, "the folder a song from another device was filed in could not be read yet");
+                tracing::warn!(%error, "the folder a song was filed in could not be read yet");
                 return;
             }
             Ok(_) => return,

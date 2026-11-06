@@ -14,9 +14,10 @@ use resonate_codec::{
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
-    StreamSpec, TrackId, path_text,
+    StreamSpec, TrackId, path_text, title_words, words_of_a_name,
 };
 pub use resonate_core::{folded_letters, is_lettered};
+use resonate_providers::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Identity};
 use resonate_vault::{Form, VaultKey};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
@@ -27,6 +28,7 @@ use unicode_normalization::UnicodeNormalization as _;
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
     REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
+    synced::HeldRow,
 };
 
 const UNIT_SEPARATOR: char = '\u{1f}';
@@ -2650,6 +2652,78 @@ pub fn replay_gain(
         album_gain: decibels(album_gain),
         album_peak: album_peak.map(|peak| peak as f32),
     }
+}
+
+pub(crate) struct HeldAlike {
+    pub(crate) track: TrackId,
+    pub(crate) span: Option<FrameSpan>,
+    pub(crate) held: HeldRow,
+}
+
+fn spelt_as(name: &str) -> String {
+    words_of_a_name(name).concat()
+}
+
+fn led_by(credit: &str) -> Option<String> {
+    let credited = Identity {
+        artist: Some(credit.to_owned()),
+        ..Identity::default()
+    };
+    credited.lead_artist().map(spelt_as)
+}
+
+fn lasts_alike(frames: i64, rate: i64, length: Duration) -> bool {
+    u32::try_from(rate).is_ok_and(|rate| rate > 0)
+        && Duration::try_from_secs_f64(frames as f64 / rate as f64)
+            .is_ok_and(|heard| heard.abs_diff(length) <= A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY)
+}
+
+pub(crate) fn held_named_alike(
+    connection: &Connection,
+    title: &str,
+    lead: &str,
+    length: Duration,
+) -> Result<Vec<HeldAlike>> {
+    let words = title_words(title);
+    let lead = spelt_as(lead);
+    if words.is_empty() || lead.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path,
+                    t.artist, a.key, t.duration, t.sample_rate
+               FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
+              WHERE t.title_words = ?1
+              ORDER BY t.hidden, t.alternative_of IS NOT NULL, t.id",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let rows = statement
+        .query_map(params![words], |row| {
+            let lasts: Option<i64> = row.get(7)?;
+            let credit: Option<String> = row.get(5)?;
+            let key: Option<String> = row.get(6)?;
+            let alike = lasts.is_some_and(|frames| {
+                row.get::<_, i64>(8)
+                    .is_ok_and(|rate| lasts_alike(frames, rate, length))
+            }) && (key.as_deref().map(spelt_as).as_ref() == Some(&lead)
+                || credit.as_deref().and_then(led_by).as_ref() == Some(&lead));
+            if !alike {
+                return Ok(None);
+            }
+            Ok(Some(HeldAlike {
+                track: TrackId::new(row.get::<_, i64>(0)?.cast_unsigned())
+                    .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, 0))?,
+                span: span(row.get(2)?, row.get(3)?),
+                held: HeldRow {
+                    path: path_of(&row.get::<_, String>(1)?),
+                    within_the_vault: row.get::<_, Option<String>>(4)?.as_deref().map(path_of),
+                },
+            }))
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    Ok(rows.into_iter().flatten().collect())
 }
 
 #[cfg(test)]

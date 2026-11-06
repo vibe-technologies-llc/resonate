@@ -502,6 +502,25 @@ pub(crate) fn a_free_name_for(inner: &Inner, wanted: &str) -> Result<String> {
         .map(|name| name.as_str().to_owned())
 }
 
+pub(crate) fn name_a_list_may_hold(connection: &Connection, name: &str) -> Result<PlaylistName> {
+    let wanted = wanted_name(name)?;
+    let held = connection
+        .query_row(
+            "SELECT id FROM playlists WHERE folded = ?1 ORDER BY id LIMIT 1",
+            params![folded(wanted.as_str())],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some(held) = held else {
+        return Ok(wanted);
+    };
+    match asked_in(connection, PlaylistId::new(held as u64)?)? {
+        Some(_) => a_free_name(connection, wanted.as_str()),
+        None => Ok(wanted),
+    }
+}
+
 fn a_free_name(connection: &Connection, name: &str) -> Result<PlaylistName> {
     let taken = |name: &PlaylistName| {
         connection
@@ -1750,8 +1769,8 @@ fn refuse_a_kept_order(transaction: &Transaction<'_>, id: PlaylistId) -> Result<
     }
 }
 
-pub(crate) fn kept_in(transaction: &Transaction<'_>, id: PlaylistId) -> Result<Option<Kept>> {
-    let held = transaction
+pub(crate) fn kept_in(connection: &Connection, id: PlaylistId) -> Result<Option<Kept>> {
+    let held = connection
         .query_row(
             "SELECT kept_order, kept_reading FROM playlists WHERE id = ?1",
             params![id.get() as i64],

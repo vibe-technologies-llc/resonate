@@ -198,6 +198,9 @@ pub enum Error {
     #[error("another process is already running a {pass:?}, and only one may ask at a time")]
     AlreadyAsking { pass: PassKind },
 
+    #[error("a kept song lands in the music folder, and none is set")]
+    NoDeliveryFolder,
+
     #[error("reading tags from {path} failed", path = path.display())]
     Tags {
         path: PathBuf,

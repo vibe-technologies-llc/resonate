@@ -46,7 +46,7 @@ pub const ANSWERS_WITHIN: Duration = Duration::from_secs(30);
 pub const FIRST_BYTES_WITHIN: Duration = Duration::from_secs(90);
 const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNKS_AHEAD: usize = 4;
-const HEEDED_EVERY: Duration = Duration::from_millis(50);
+pub(crate) const HEEDED_EVERY: Duration = Duration::from_millis(50);
 pub const WANTS_ASKED_AT_ONCE: NonZeroUsize = NonZeroUsize::new(3).unwrap();
 
 impl Want {
@@ -73,9 +73,7 @@ impl Want {
     }
 
     pub(crate) fn lasts_as_long_as(&self, heard: Frames, rate: SampleRate) -> bool {
-        let heard = heard.to_duration(rate);
-        self.length
-            .is_none_or(|wanted| wanted.abs_diff(heard) <= LENGTHS_AGREE_WITHIN)
+        lasts_as_long_as(self.length, heard, rate)
     }
 
     pub fn due_at(&self) -> Option<SystemTime> {
@@ -92,6 +90,11 @@ impl Want {
 
         tried.checked_add(wait)
     }
+}
+
+pub(crate) fn lasts_as_long_as(listed: Option<Duration>, heard: Frames, rate: SampleRate) -> bool {
+    let heard = heard.to_duration(rate);
+    listed.is_none_or(|listed| listed.abs_diff(heard) <= LENGTHS_AGREE_WITHIN)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -336,7 +339,7 @@ impl PollProgress {
         }
     }
 
-    fn waits_out_the_meter(&self, gate: &Gate) -> bool {
+    pub(crate) fn waits_out_the_meter(&self, gate: &Gate) -> bool {
         while gate.is_shut() && !self.is_cancelled() {
             self.waits_on_the_meter(true);
             gate.wait_while_shut(HEEDED_EVERY);
@@ -371,7 +374,7 @@ enum Landed {
     Unkept,
 }
 
-enum Unopened {
+pub(crate) enum Unopened {
     Gone,
     Refused(resonate_providers::Error),
 }
@@ -417,7 +420,7 @@ fn landed(
             let mut pumped = match Pumped::from(
                 opening,
                 progress,
-                want.id,
+                Some(want.id),
                 Silence::of(options),
                 library.download_gate(),
             ) {
@@ -495,7 +498,7 @@ impl Silence {
 }
 
 struct Pumped<'a> {
-    want: WantId,
+    want: Option<WantId>,
     gate: Gate,
     chunks: Receiver<Pumping>,
     held: Vec<u8>,
@@ -512,7 +515,7 @@ impl<'a> Pumped<'a> {
     fn from(
         opening: Opening,
         progress: &'a PollProgress,
-        want: WantId,
+        want: Option<WantId>,
         silence: Silence,
         gate: Gate,
     ) -> io::Result<Self> {
@@ -608,7 +611,9 @@ impl Read for Pumped<'_> {
                 return Err(io::Error::from(io::ErrorKind::ConnectionAborted));
             }
             self.held = self.next_chunk()?;
-            self.progress.received_more(self.want, self.held.len());
+            if let Some(want) = self.want {
+                self.progress.received_more(want, self.held.len());
+            }
             self.read = 0;
             self.ended = self.held.is_empty();
         }
@@ -618,13 +623,15 @@ impl Read for Pumped<'_> {
 struct Counted<'a, R> {
     reader: R,
     progress: &'a PollProgress,
-    want: WantId,
+    want: Option<WantId>,
 }
 
 impl<R: Read> Read for Counted<'_, R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.reader.read(into)?;
-        self.progress.received_more(self.want, read);
+        if let Some(want) = self.want {
+            self.progress.received_more(want, read);
+        }
         Ok(read)
     }
 }
@@ -687,6 +694,66 @@ pub(crate) fn start(
     Ok(PassHandle::of(PassKind::Poll, owned, thread))
 }
 
+pub(crate) struct Drawing<'a> {
+    pub(crate) progress: &'a PollProgress,
+    pub(crate) want: Option<WantId>,
+    pub(crate) options: PollOptions,
+    pub(crate) gate: Gate,
+}
+
+pub(crate) enum Drawn {
+    Read(std::result::Result<Filed, Unfiled>),
+    Unopened(Unopened),
+    Stalled,
+}
+
+pub(crate) fn drawn(
+    delivery: Delivery,
+    drawing: &Drawing<'_>,
+    file: impl FnOnce(&mut dyn Read, &str) -> std::result::Result<Filed, Unfiled>,
+) -> Result<Drawn> {
+    match delivery {
+        Delivery::File(path) => {
+            let extension = path
+                .extension()
+                .and_then(OsStr::to_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            Ok(Drawn::Read(match File::open(&path) {
+                Ok(opened) => file(
+                    &mut Counted {
+                        reader: opened,
+                        progress: drawing.progress,
+                        want: drawing.want,
+                    },
+                    &extension,
+                ),
+                Err(error) => Err(Unfiled::Io(error)),
+            }))
+        }
+        Delivery::Stream {
+            extension, opening, ..
+        } => {
+            let mut pumped = Pumped::from(
+                opening,
+                drawing.progress,
+                drawing.want,
+                Silence::of(drawing.options),
+                drawing.gate.clone(),
+            )
+            .map_err(|source| Error::ThreadSpawn { source })?;
+            let outcome = file(&mut pumped, extension.as_str());
+            if let Some(unopened) = pumped.unopened.take() {
+                return Ok(Drawn::Unopened(unopened));
+            }
+            if pumped.stalled {
+                return Ok(Drawn::Stalled);
+            }
+            Ok(Drawn::Read(outcome))
+        }
+    }
+}
+
 fn filed_in_the_music_folder(
     library: &Library,
     want: &Want,
@@ -706,50 +773,24 @@ fn filed_in_the_music_folder(
         });
     };
 
-    let outcome = match delivered.delivery {
-        Delivery::File(path) => {
-            let extension = path
-                .extension()
-                .and_then(OsStr::to_str)
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            match File::open(&path) {
-                Ok(file) => filed::filed(
-                    library,
-                    &into,
-                    want,
-                    &mut Counted {
-                        reader: file,
-                        progress,
-                        want: want.id,
-                    },
-                    &extension,
-                ),
-                Err(error) => Err(Unfiled::Io(error)),
-            }
-        }
-        Delivery::Stream {
-            extension, opening, ..
-        } => {
-            let mut pumped = Pumped::from(
-                opening,
-                progress,
-                want.id,
-                Silence::of(landing.options),
-                library.download_gate(),
-            )
-            .map_err(|source| Error::ThreadSpawn { source })?;
-            let outcome = filed::filed(library, &into, want, &mut pumped, extension.as_str());
-            if let Some(unopened) = pumped.unopened.take() {
-                return Ok(Landed::Unopened(unopened));
-            }
-            if pumped.stalled {
-                tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
-                progress.late.fetch_add(1, Ordering::Relaxed);
-                landing.away.lock().note(&delivered.provider);
-                return Ok(Landed::Stalled);
-            }
-            outcome
+    let drawn = drawn(
+        delivered.delivery,
+        &Drawing {
+            progress,
+            want: Some(want.id),
+            options: landing.options,
+            gate: library.download_gate(),
+        },
+        |reader, extension| filed::filed_for(library, &into, want, reader, extension),
+    )?;
+    let outcome = match drawn {
+        Drawn::Read(outcome) => outcome,
+        Drawn::Unopened(unopened) => return Ok(Landed::Unopened(unopened)),
+        Drawn::Stalled => {
+            tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
+            progress.late.fetch_add(1, Ordering::Relaxed);
+            landing.away.lock().note(&delivered.provider);
+            return Ok(Landed::Stalled);
         }
     };
 
