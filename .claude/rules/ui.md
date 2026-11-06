@@ -1448,6 +1448,18 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `COVERS_FETCHED_AT_ONCE` (4) at a time, decoded on the `Drawer` at the drawn side, held in a
   `Recent` of `COVERS_HELD` (256) keyed by name and side, a failed one asked again after a minute.
   The magnifier opens `Magnified::Served` at the now-playing size.
+- **YouTube Music is a group in the Library category, and what it holds is kept, not played.**
+  `Group::YoutubeMusic` (`views/settings/youtube_music.rs`): the switch, the cookies and `yt-dlp`
+  fields, the keep-order switch, the terms in one plain sentence beside them and *Check connection*,
+  which asks the `ChecksYoutubeMusic` seam (`Lookups::checks_youtube_music`) on the background executor
+  and toasts what it heard. In the server pane a service that `Serves::keeps_songs` draws a *Keep* mark
+  on a song row (`server-row-keep-<n>`) and *Keep* on a mix's heading (`server-keep`, once its rows are
+  read, the name on the row it was opened from carried in `Place::Mix`), and no *Play* where
+  `Serves::plays_songs` says no. A press is `LibraryModel::keep` or `keep_mix`, its pass followed through
+  the sidebar's *Downloading… · N left* (`downloads::keeping_said`, `keeps_left` read each second) and a
+  *Keeping songs* row with *Stop* at the head of the *Downloads* panel, a toast telling what came of it;
+  no music folder is a toast saying to choose one (`providers.md`'s *Keeping a song from a service*;
+  `a_service_that_keeps_songs_offers_a_keep_on_a_song_and_a_mix_and_a_press_queues_them`).
 - **Missing pane = what the catalog knows it is short of, headed by run, one half at a time.**
   `Pane::Missing` under `Section::Collection`; sidebar count `Missing::tracks`, hidden at zero. Two
   tabs, `missing_tabs` (*Tracks*/*Releases*, counts), `RootView::missing_shows` (`MissingShows`, kept

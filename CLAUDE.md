@@ -22,7 +22,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, `vaulted.rs`, `supply.rs`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
-| `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
+| `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs`, `keeps.rs` | the seam, the registry, the last resort, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, a YouTube Music account, a keep's queue, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `sync.md` | resonate-sync, resonate-driven, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network, one device driving another's zones |
@@ -67,7 +67,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-four crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Thirty-five crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -100,6 +100,7 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/jellyfin  resonate-jellyfin, Jellyfin and Emby played in place  [`online`]
   ├── providers/subsonic  resonate-subsonic  [`online`]
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
+  ├── providers/ytmusic   resonate-ytmusic, songs kept from a YouTube Music account through yt-dlp  [`online`]
   ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec)
   └── resonate-core       domain vocabulary
 
@@ -229,8 +230,8 @@ Invariants the layering protects (the rules files have the rest):
   (`setsid`, a pseudo-terminal) and, on Windows, `resonate --test console` (ConPTY, an audio
   endpoint `sinks` lists); `resonate --test dragging` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
   in python3, `spectacle`); `resonate-mpris --test trash` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
-  sandboxed case). `resonate-subsonic`, `-jellyfin`, `-tidal` and `-monochrome` serve fake servers
-  on loopback.
+  sandboxed case). `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers
+  on loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).
 - `cargo run -p resonate-server -- --help`: the sync server. `cargo test -p resonate-server` runs
   it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's
   key); `cargo test -p resonate-sync` holds the ledger, wire and sealing.
@@ -253,7 +254,7 @@ stack's test harness:
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
-- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account).
+- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,
   `--control <device>` to see and drive another device's zones).

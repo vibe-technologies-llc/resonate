@@ -32,7 +32,7 @@ shared_library_dependencies() {
 }
 
 write_control() {
-    local name=$1 section=$2 depends=$3 description=$4 long=$5
+    local name=$1 section=$2 depends=$3 description=$4 long=$5 suggests=${6:-}
     local size
     size=$(du -sk "$stage" | cut -f1)
     mkdir -p "$stage/DEBIAN"
@@ -45,6 +45,9 @@ write_control() {
         printf 'Priority: optional\n'
         printf 'Installed-Size: %s\n' "$size"
         printf 'Depends: %s\n' "$depends"
+        if [ -n "$suggests" ]; then
+            printf 'Suggests: %s\n' "$suggests"
+        fi
         printf 'Homepage: %s\n' "$homepage"
         printf 'Description: %s\n' "$description"
         printf ' %s\n' "$long"
@@ -81,7 +84,8 @@ build_player() {
     libraries=$(shared_library_dependencies target/release/resonate)
     write_control resonate sound "${libraries:+$libraries, }pipewire (>= 0.3.50), libvulkan1" \
         'High-fidelity music player with native PipeWire output' \
-        'Resonate plays music through PipeWire with a native Wayland interface. Built for x86-64-v3 processors.'
+        'Resonate plays music through PipeWire with a native Wayland interface. Built for x86-64-v3 processors.' \
+        yt-dlp
     seal resonate
 }
 

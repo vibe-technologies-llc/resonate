@@ -79,6 +79,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   manifest's own permissions have never been in the path
 
 ## Providers and network
+- [S · 0.5.1] The live test of YouTube Music the design named (`RESONATE_YTMUSIC_TESTS`, off in CI, run
+  by hand on the listener's account) was never built: `resonate-ytmusic` is proved against a fake
+  `yt-dlp` and a fake InnerTube on loopback, and a real keep of an album song and a playlist is on the
+  listener's acceptance list
 - [S · blocked: NetworkManager] `resonate-mpris`'s `metered.rs` has only been run against a
   stand-in `org.freedesktop.NetworkManager` on a private bus: the `Metered` values a real manager
   sends for a phone hotspot or a connection the listener marked metered, and that it announces a
@@ -86,6 +90,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S · blocked: network] That the hosted hifi service still answers a request carrying neither
   `Origin` nor `Referer` is proved by its gated live test alone (`RESONATE_HIFI_LIVE_TESTS`), which
   nothing here has run
+- [S · blocked: an account without Opus 774] A kept song's AAC tier (`Aac141`, `.m4a`) has not been
+  measured: nothing here has downloaded one, so whether the tag writer takes DASH's fragmented MP4 and
+  the decoder probes it is unproved; it is reached only where `774` is absent
 - [S · blocked: registered app] No real Spotify account has been read: the sign-in and the reads are
   proved against a fake server on loopback whose fixtures are written from the published Web API
   reference, and `resonate-online`'s gated live test (`RESONATE_ONLINE_TESTS`,

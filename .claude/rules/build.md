@@ -90,7 +90,7 @@ the listener, never by a script.
   detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-five targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
   `cue`, `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
-  indexing and the reader), `padding` (the tag writer's padded heads), `journal` (an undo journal,
+  indexing and the reader), `padding` (the tag writer's padded heads and its Matroska rewrite, kind 5), `journal` (an undo journal,
   sealed by the seam so the checksum is not the fuzzer's to guess), `overlay` (the write overlay
   driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings), `transcode` (the vault's JPEG-to-JXL transcode and its reconstruction),
   `pages` (the shared-page, Spotify, YouTube, TIDAL embed and song.link readers), `manifest` (TIDAL's BTS and
