@@ -12,9 +12,10 @@ use std::{
 };
 
 use resonate_codec::{
-    Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Faststart, FileTags,
-    Holes, ImageFormat, LocalFiles, Media, MediaProvider, Picturing, Popularity, Rated, Sources,
-    TagEdit, TagField, TagSet, TagSink, TagSource, Writing, probe, probe_cover_art, probe_stream,
+    Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Error, Faststart,
+    FileTags, Holes, ImageFormat, LocalFiles, Media, MediaProvider, Picturing, Popularity, Rated,
+    Sources, TagEdit, TagField, TagSet, TagSink, TagSource, Writing, probe, probe_cover_art,
+    probe_stream,
 };
 use resonate_core::{
     AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
@@ -4669,4 +4670,537 @@ fn an_mpeg_stream_turning_from_mono_to_stereo_decodes_the_stereo_rather_than_sil
         decoder.position().get(),
         runs.iter().map(Run::frames).sum::<u64>()
     );
+}
+
+const EBML_SEGMENT: u32 = 0x1853_8067;
+const EBML_SEEK_HEAD: u32 = 0x114D_9B74;
+const EBML_SEEK: u32 = 0x4DBB;
+const EBML_SEEK_ID: u32 = 0x53AB;
+const EBML_SEEK_POSITION: u32 = 0x53AC;
+const EBML_INFO: u32 = 0x1549_A966;
+const EBML_TRACKS: u32 = 0x1654_AE6B;
+const EBML_CUES: u32 = 0x1C53_BB6B;
+const EBML_CUE_POINT: u32 = 0xBB;
+const EBML_CUE_TRACK_POSITIONS: u32 = 0xB7;
+const EBML_CUE_CLUSTER_POSITION: u32 = 0xF1;
+const EBML_TAGS: u32 = 0x1254_C367;
+const EBML_CLUSTER: u32 = 0x1F43_B675;
+const EBML_SIMPLE_BLOCK: u32 = 0xA3;
+const EBML_BLOCK_GROUP: u32 = 0xA0;
+const EBML_VOID: u32 = 0xEC;
+const EBML_NOTHING_ANY_READER_KNOWS: u32 = 0x1A00_0001;
+const EBML_WIDEST_SIZE: u32 = 8;
+const EBML_SIZE_UNKNOWN: [u8; 8] = [0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+const CLUSTERS_LAST_MILLISECONDS: &str = "200";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ebml {
+    id: u32,
+    at: usize,
+    body: usize,
+    end: usize,
+}
+
+fn ebml_width(lead: u8) -> usize {
+    lead.leading_zeros() as usize + 1
+}
+
+fn ebml_element(bytes: &[u8], at: usize) -> Ebml {
+    let id_width = ebml_width(bytes[at]);
+    let id = bytes[at..at + id_width]
+        .iter()
+        .fold(0_u32, |id, byte| (id << 8) | u32::from(*byte));
+    let width = ebml_width(bytes[at + id_width]);
+    let body = at + id_width + width;
+    let marker = 1_u64 << (7 * width);
+    let size = bytes[at + id_width..body]
+        .iter()
+        .fold(0_u64, |size, byte| (size << 8) | u64::from(*byte))
+        & (marker - 1);
+    Ebml {
+        id,
+        at,
+        body,
+        end: body + size as usize,
+    }
+}
+
+fn ebml_within(bytes: &[u8], from: usize, to: usize) -> Vec<Ebml> {
+    let mut found = Vec::new();
+    let mut at = from;
+    while at < to {
+        let element = ebml_element(bytes, at);
+        found.push(element);
+        at = element.end;
+    }
+    found
+}
+
+fn ebml_segment(bytes: &[u8]) -> Ebml {
+    ebml_element(bytes, ebml_element(bytes, 0).end)
+}
+
+fn ebml_top(bytes: &[u8]) -> Vec<Ebml> {
+    let segment = ebml_segment(bytes);
+    ebml_within(bytes, segment.body, segment.end)
+}
+
+fn ebml_one(bytes: &[u8], within: Ebml, id: u32) -> Ebml {
+    ebml_within(bytes, within.body, within.end)
+        .into_iter()
+        .find(|child| child.id == id)
+        .expect("an element the parent was written with")
+}
+
+fn ebml_number(bytes: &[u8], element: Ebml) -> usize {
+    bytes[element.body..element.end]
+        .iter()
+        .fold(0_usize, |number, byte| (number << 8) | usize::from(*byte))
+}
+
+fn ebml_sized(id: u32, body: &[u8]) -> Vec<u8> {
+    let mut bytes: Vec<u8> = id
+        .to_be_bytes()
+        .into_iter()
+        .skip_while(|byte| *byte == 0)
+        .collect();
+    let marked = (1_u64 << (7 * EBML_WIDEST_SIZE)) | body.len() as u64;
+    bytes.extend_from_slice(&marked.to_be_bytes());
+    bytes.extend_from_slice(body);
+    bytes
+}
+
+fn seek_entries(bytes: &[u8]) -> Vec<(u32, usize)> {
+    let head = ebml_top(bytes)
+        .into_iter()
+        .find(|element| element.id == EBML_SEEK_HEAD)
+        .expect("a seek head");
+    ebml_within(bytes, head.body, head.end)
+        .into_iter()
+        .filter(|child| child.id == EBML_SEEK)
+        .map(|seek| {
+            let id = ebml_one(bytes, seek, EBML_SEEK_ID);
+            let position = ebml_one(bytes, seek, EBML_SEEK_POSITION);
+            (ebml_number(bytes, id) as u32, ebml_number(bytes, position))
+        })
+        .collect()
+}
+
+fn cue_positions(bytes: &[u8]) -> Vec<usize> {
+    let cues = ebml_top(bytes)
+        .into_iter()
+        .find(|element| element.id == EBML_CUES)
+        .expect("cues");
+    ebml_within(bytes, cues.body, cues.end)
+        .into_iter()
+        .filter(|child| child.id == EBML_CUE_POINT)
+        .map(|point| {
+            let positions = ebml_one(bytes, point, EBML_CUE_TRACK_POSITIONS);
+            let cluster = ebml_one(bytes, positions, EBML_CUE_CLUSTER_POSITION);
+            ebml_number(bytes, cluster)
+        })
+        .collect()
+}
+
+fn clusters_of(bytes: &[u8]) -> Vec<Ebml> {
+    ebml_top(bytes)
+        .into_iter()
+        .filter(|element| element.id == EBML_CLUSTER)
+        .collect()
+}
+
+fn tags_elements(bytes: &[u8]) -> usize {
+    ebml_top(bytes)
+        .iter()
+        .filter(|element| element.id == EBML_TAGS)
+        .count()
+}
+
+fn packets_of(path: &Path) -> Vec<Vec<u8>> {
+    let bytes = fs::read(path).expect("a Matroska file reads");
+    clusters_of(&bytes)
+        .into_iter()
+        .flat_map(|cluster| ebml_within(&bytes, cluster.body, cluster.end))
+        .filter(|child| matches!(child.id, EBML_SIMPLE_BLOCK | EBML_BLOCK_GROUP))
+        .map(|block| bytes[block.body..block.end].to_vec())
+        .collect()
+}
+
+fn opus_in_webm(tree: &Tree, name: &str) -> Option<PathBuf> {
+    shaped(
+        tree,
+        BROADCAST,
+        name,
+        &[
+            "-c:a",
+            "libopus",
+            "-f",
+            "webm",
+            "-cluster_time_limit",
+            CLUSTERS_LAST_MILLISECONDS,
+        ],
+    )
+    .map(|(path, _)| path)
+}
+
+fn laid_out_as_youtube_lays_it_out(bytes: &[u8]) -> Vec<u8> {
+    let segment = ebml_segment(bytes);
+    let top = ebml_top(bytes);
+    let whole = |id: u32| {
+        let element = top
+            .iter()
+            .find(|element| element.id == id)
+            .expect("an element ffmpeg writes");
+        &bytes[element.at..element.end]
+    };
+    let first_cluster = top
+        .iter()
+        .find(|element| element.id == EBML_CLUSTER)
+        .expect("a cluster");
+    let last_cluster = top
+        .iter()
+        .rfind(|element| element.id == EBML_CLUSTER)
+        .expect("a cluster");
+    let (info, tracks, cues) = (whole(EBML_INFO), whole(EBML_TRACKS), whole(EBML_CUES));
+
+    let seek_head_bytes = 68;
+    let tracks_at = seek_head_bytes + info.len();
+    let cues_at = tracks_at + tracks.len();
+    let mut seeks = Vec::new();
+    for (id, position) in [
+        (EBML_INFO, seek_head_bytes),
+        (EBML_TRACKS, tracks_at),
+        (EBML_CUES, cues_at),
+    ] {
+        let mut entry = Vec::new();
+        entry.extend_from_slice(&[0x53, 0xAB, 0x84]);
+        entry.extend_from_slice(&id.to_be_bytes());
+        entry.extend_from_slice(&[0x53, 0xAC, 0x88]);
+        entry.extend_from_slice(&(position as u64).to_be_bytes());
+        seeks.extend_from_slice(&[0x4D, 0xBB, 0x80 | entry.len() as u8]);
+        seeks.extend_from_slice(&entry);
+    }
+
+    let mut head = vec![0x11, 0x4D, 0x9B, 0x74, 0x80 | seeks.len() as u8];
+    head.extend_from_slice(&seeks);
+    assert_eq!(head.len(), seek_head_bytes);
+    head.extend_from_slice(info);
+    head.extend_from_slice(tracks);
+    head.extend_from_slice(cues);
+
+    let wanted = first_cluster.at - segment.body;
+    let filler_header_bytes = 12;
+    let filler = wanted - head.len() - filler_header_bytes;
+    head.extend_from_slice(&ebml_sized(EBML_NOTHING_ANY_READER_KNOWS, &vec![0; filler]));
+    assert_eq!(head.len(), wanted);
+    head.extend_from_slice(&bytes[first_cluster.at..last_cluster.end]);
+
+    let mut file = bytes[..segment.at].to_vec();
+    file.extend_from_slice(&ebml_sized(EBML_SEGMENT, &head));
+    file
+}
+
+fn opus_as_youtube_sends_it(tree: &Tree, name: &str) -> Option<PathBuf> {
+    let path = opus_in_webm(tree, name)?;
+    let bytes = fs::read(&path).expect("a Matroska file reads");
+    fs::write(&path, laid_out_as_youtube_lays_it_out(&bytes)).expect("a writable fixture");
+    Some(path)
+}
+
+fn with_its_tags_after_the_clusters(bytes: &[u8]) -> Vec<u8> {
+    let segment = ebml_segment(bytes);
+    let tags = ebml_top(bytes)
+        .into_iter()
+        .find(|element| element.id == EBML_TAGS)
+        .expect("tags ffmpeg writes");
+    let mut moved = bytes.to_vec();
+    moved.extend_from_slice(&bytes[tags.at..tags.end]);
+
+    let held = tags.end - tags.at;
+    let void = ebml_sized(EBML_VOID, &vec![0; held - 9]);
+    moved[tags.at..tags.end].copy_from_slice(&void);
+
+    let size_at = segment.at + 4;
+    let grown = (1_u64 << 56) | (segment.end - segment.body + held) as u64;
+    moved[size_at..size_at + 8].copy_from_slice(&grown.to_be_bytes());
+
+    let head = ebml_top(&moved)
+        .into_iter()
+        .find(|element| element.id == EBML_SEEK_HEAD)
+        .expect("a seek head");
+    let seek = ebml_within(&moved, head.body, head.end)
+        .into_iter()
+        .filter(|child| child.id == EBML_SEEK)
+        .find(|seek| {
+            ebml_number(&moved, ebml_one(&moved, *seek, EBML_SEEK_ID)) == EBML_TAGS as usize
+        })
+        .expect("ffmpeg indexes its tags");
+    let position = ebml_one(&moved, seek, EBML_SEEK_POSITION);
+    let moved_to = (segment.end - segment.body) as u64;
+    let width = position.end - position.body;
+    moved[position.body..position.end].copy_from_slice(&moved_to.to_be_bytes()[8 - width..]);
+    moved
+}
+
+fn title_and_artist(title: &str, artist: &str) -> [TagEdit; 2] {
+    [
+        TagEdit {
+            field: TagField::Title,
+            value: title.to_owned(),
+        },
+        TagEdit {
+            field: TagField::Artist,
+            value: artist.to_owned(),
+        },
+    ]
+}
+
+fn only_edits(edits: &[TagEdit]) -> Writing<'_> {
+    Writing {
+        edits,
+        taken: &[],
+        picture: None,
+        unpictured: false,
+        popularity: None,
+    }
+}
+
+fn tags_of(location: &MediaLocation) -> TagSet {
+    FileTags::over(Sources::local())
+        .read(location, Picturing::Whether)
+        .expect("a readable Matroska file")
+        .tags
+}
+
+#[test]
+fn a_matroska_file_is_tagged_and_every_audio_packet_stays_as_it_was() {
+    let tree = Tree::new();
+    let Some(path) = opus_as_youtube_sends_it(&tree, "song.mka") else {
+        return;
+    };
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::over(Sources::local());
+    let before = packets_of(&path);
+    let samples = decode(&path).samples;
+    assert!(!before.is_empty(), "a song with no packets proves nothing");
+    assert!(tags.writes(&location), "a .mka was not offered for writing");
+
+    tags.write(
+        &location,
+        only_edits(&title_and_artist("Creep", "Radiohead")),
+    )
+    .expect("a written Matroska file");
+
+    let read = tags_of(&location);
+    assert_eq!(read.title.as_deref(), Some("Creep"));
+    assert_eq!(read.artist.as_deref(), Some("Radiohead"));
+    assert_eq!(read.album, None);
+    assert_eq!(read.album_artist, None);
+    assert_eq!(packets_of(&path), before);
+    assert_eq!(decode(&path).samples, samples);
+    assert!(matches!(tags.rated(&location), Ok(Rated::Unrateable)));
+}
+
+#[test]
+fn a_matroska_tag_written_twice_is_replaced_and_lands_in_the_room_left_for_it() {
+    let tree = Tree::new();
+    let Some(path) = opus_as_youtube_sends_it(&tree, "song.mka") else {
+        return;
+    };
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::over(Sources::local());
+
+    tags.write(
+        &location,
+        only_edits(&title_and_artist("Creep", "Radiohead")),
+    )
+    .expect("a first write");
+    let first = fs::read(&path).expect("a written file");
+
+    tags.write(
+        &location,
+        only_edits(&title_and_artist("Karma Police", "Radiohead")),
+    )
+    .expect("a second write");
+    let second = fs::read(&path).expect("a written file");
+
+    assert_eq!(tags_elements(&second), 1);
+    assert_eq!(second.len(), first.len());
+    assert_eq!(tags_of(&location).title.as_deref(), Some("Karma Police"));
+    assert!(
+        !second.windows(5).any(|held| held == b"Creep"),
+        "the old title is still in the file"
+    );
+}
+
+#[test]
+fn a_matroska_seek_head_still_finds_every_element_after_a_write() {
+    let tree = Tree::new();
+    for (name, path) in [
+        ("packed.mka", opus_as_youtube_sends_it(&tree, "packed.mka")),
+        ("ffmpeg.mka", opus_in_webm(&tree, "ffmpeg.mka")),
+    ] {
+        let Some(path) = path else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        FileTags::over(Sources::local())
+            .write(
+                &location,
+                only_edits(&title_and_artist(
+                    "A title long enough that ffmpeg's tags have no room for it",
+                    "Radiohead",
+                )),
+            )
+            .expect("a written Matroska file");
+
+        let bytes = fs::read(&path).expect("a written file");
+        let segment = ebml_segment(&bytes);
+        let entries = seek_entries(&bytes);
+        assert!(
+            entries.iter().any(|(id, _)| *id == EBML_TAGS),
+            "{name} does not index its tags"
+        );
+        for (id, position) in entries {
+            assert_eq!(
+                ebml_element(&bytes, segment.body + position).id,
+                id,
+                "{name}'s seek head points at something else"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_matroska_cue_still_points_at_its_cluster_after_a_write() {
+    let tree = Tree::new();
+    for path in [
+        opus_as_youtube_sends_it(&tree, "packed.mka"),
+        opus_in_webm(&tree, "ffmpeg.mka"),
+    ] {
+        let Some(path) = path else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        let aimed_at = Frames(48_000);
+        let heard = |path: &Path| {
+            let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(path))
+                .expect("a well-formed file opens");
+            let landed = decoder.seek(aimed_at).expect("a seekable stream seeks");
+            let mut block = AudioBuffer::empty(info.spec);
+            assert_eq!(
+                decoder.next_block(&mut block).expect("a clean decode"),
+                DecodeStatus::Decoded
+            );
+            (landed, block.frames())
+        };
+        let landed_before = heard(&path);
+        let before = fs::read(&path).expect("a Matroska file reads");
+        let clusters = clusters_of(&before);
+        let cues = cue_positions(&before);
+        assert!(cues.len() > 1, "one cue proves little about a seek");
+
+        FileTags::over(Sources::local())
+            .write(
+                &location,
+                only_edits(&title_and_artist("Creep", "Radiohead")),
+            )
+            .expect("a written Matroska file");
+
+        let after = fs::read(&path).expect("a written file");
+        let segment = ebml_segment(&after);
+        assert_eq!(cue_positions(&after), cues);
+        assert_eq!(clusters_of(&after), clusters);
+        for position in cue_positions(&after) {
+            assert_eq!(
+                ebml_element(&after, segment.body + position).id,
+                EBML_CLUSTER
+            );
+        }
+        assert_eq!(heard(&path), landed_before);
+    }
+}
+
+#[test]
+fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed() {
+    let tree = Tree::new();
+    let Some(path) = opus_in_webm(&tree, "song.mka") else {
+        return;
+    };
+    let bytes = fs::read(&path).expect("a Matroska file reads");
+    fs::write(&path, with_its_tags_after_the_clusters(&bytes)).expect("a writable fixture");
+    let location = MediaLocation::local(&path);
+    assert_eq!(tags_of(&location).artist.as_deref(), Some("Pink Floyd"));
+    let before = packets_of(&path);
+
+    FileTags::over(Sources::local())
+        .write(
+            &location,
+            only_edits(&title_and_artist("Creep", "Radiohead")),
+        )
+        .expect("a written Matroska file");
+
+    let after = fs::read(&path).expect("a written file");
+    let read = tags_of(&location);
+    assert_eq!(tags_elements(&after), 1);
+    assert_eq!(read.title.as_deref(), Some("Creep"));
+    assert_eq!(read.artist.as_deref(), Some("Radiohead"));
+    assert_eq!(read.album.as_deref(), Some("Meddle"));
+    assert_eq!(read.album_artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(packets_of(&path), before);
+    assert_eq!(
+        after
+            .windows(10)
+            .filter(|held| *held == b"Pink Floyd")
+            .count(),
+        1,
+        "the old artist is still in the file beside the album artist"
+    );
+}
+
+#[test]
+fn a_matroska_segment_of_unknown_size_is_refused_rather_than_guessed_at() {
+    let tree = Tree::new();
+    let Some(path) = opus_in_webm(&tree, "song.mka") else {
+        return;
+    };
+    let mut bytes = fs::read(&path).expect("a Matroska file reads");
+    let size_at = ebml_segment(&bytes).at + 4;
+    bytes[size_at..size_at + 8].copy_from_slice(&EBML_SIZE_UNKNOWN);
+    fs::write(&path, &bytes).expect("a writable fixture");
+
+    let refused = FileTags::over(Sources::local()).write(
+        &MediaLocation::local(&path),
+        only_edits(&title_and_artist("Creep", "Radiohead")),
+    );
+
+    assert!(matches!(refused, Err(Error::Unwritable { .. })));
+    assert_eq!(fs::read(&path).expect("the file"), bytes);
+}
+
+#[test]
+fn every_field_written_alone_into_a_matroska_file_reads_back() {
+    let tree = Tree::new();
+    let Some(path) = opus_as_youtube_sends_it(&tree, "song.mka") else {
+        return;
+    };
+    let untouched = fs::read(&path).expect("a Matroska file reads");
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::over(Sources::local());
+
+    for field in TagField::ALL {
+        fs::write(&path, &untouched).expect("a writable fixture");
+        let edit = [TagEdit {
+            field,
+            value: written_as(field),
+        }];
+        tags.write(&location, only_edits(&edit))
+            .expect("a written Matroska file");
+
+        assert_eq!(
+            field.read(&tags_of(&location)).as_deref(),
+            Some(edit[0].value.as_str()),
+            "{field} did not read back"
+        );
+    }
 }

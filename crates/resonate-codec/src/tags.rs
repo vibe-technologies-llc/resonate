@@ -43,7 +43,7 @@ const R128_STEPS_PER_DB: f32 = 256.0;
 const R128_BELOW_REPLAY_GAIN_DB: f32 = 5.0;
 pub const LISTED_APART_BY: &str = "; ";
 
-const VORBIS_COMMENT_ONLY: [&str; 28] = [
+const VORBIS_COMMENT_ONLY: [&str; 32] = [
     "ALBUM",
     "ALBUMARTIST",
     "ALBUM_ARTIST",
@@ -72,6 +72,10 @@ const VORBIS_COMMENT_ONLY: [&str; 28] = [
     "REPLAYGAIN_TRACK_PEAK",
     "REPLAYGAIN_ALBUM_GAIN",
     "REPLAYGAIN_ALBUM_PEAK",
+    "ARTISTSORT",
+    "ALBUMARTISTSORT",
+    "TITLESORT",
+    "ALBUMSORT",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -972,7 +976,7 @@ fn scoped_name(key: &str) -> &str {
     key.split_once('@').map_or(key, |(_, name)| name)
 }
 
-fn is_vorbis_comment_only(name: &str) -> bool {
+pub(crate) fn is_vorbis_comment_only(name: &str) -> bool {
     VORBIS_COMMENT_ONLY
         .iter()
         .any(|known| known.eq_ignore_ascii_case(name))

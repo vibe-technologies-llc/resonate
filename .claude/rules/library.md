@@ -1047,9 +1047,9 @@ Write-back is a seam; this build writes only what it reads back. `resonate-codec
 writable field), `TagEdit`, `Writing` (edits, `taken` fields, optional front cover, `unpictured`,
 `popularity`: one call), `TagSink` (seam over `TagSource`), `FileTags` (lofty writes, symphonia
 reads, so a write is weighed against what the rest of the build sees). `FileTags::writes` refuses
-formats this build would not read back: it answers for AAC, AIFF, Monkey's Audio, FLAC, MP3, MP4,
-Ogg Vorbis, Opus, WAV, WavPack (WAV: `riff.rs` reads the `id3 ` chunk lofty writes); `.caf`, `.mka`,
-`.oga` and the DSD containers are passed over. `Library::retag` is the pass behind `resonate tag`
+formats this build would not read back: it answers for AAC, AIFF, Monkey's Audio, FLAC, Matroska
+audio (`.mka`), MP3, MP4, Ogg Vorbis, Opus, WAV, WavPack (WAV: `riff.rs` reads the `id3 ` chunk lofty
+writes); `.caf`, `.oga` and the DSD containers are passed over. `Library::retag` is the pass behind `resonate tag`
 (preview until `--apply`, like `organise`); the settings pane's *Rescan, refresh and retag* group has the same
 preview-then-arm shape as *Organising*.
 
@@ -1114,6 +1114,31 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Rated::differs_from` weighs the favourite always, plays wherever the tag keeps a count (RIFF
   `INFO` keeps none). Undo keeps both in one integer: favourite's plays as is, an unfavoured row's
   negated less one. `RetagStats::ratings` counts them.
+- **A Matroska write moves no cluster, so no `CueClusterPosition` goes stale.** lofty has no
+  Matroska; `matroska_tags::rewritten` walks the Segment's children (clusters are skipped by size,
+  never parsed) and answers a `Rewrite`, a list of bytes at offsets `landed` lays on the staged copy
+  or an `Overlay` behind `Lands`, confirming the walk and every cluster's place before anything
+  settles. Symphonia reads the top level up to the first `Cluster` and follows the first `SeekHead`
+  past it, so there are three homes for the one `Tags` element: where the old one sat, with the
+  `Void`s after it, where it fits; grown past the file's end where the old one was last; else
+  appended after everything with a `Void` of `PADDING_LEFT_FOR_THE_NEXT_EDIT`, the old one (every
+  old one, where a file held several) turned to a zeroed `Void`. Only the `Segment` size, the
+  `SeekHead` and that tail change. The `SeekHead` is laid again with its positions at their
+  narrowest, in its own bytes and the `Void`s after it, which is how YouTube's 63 bytes of
+  eight-byte positions take a fourth entry; a rewritten `SeekHead` or `Tags` drops its `CRC-32`
+  rather than carry a stale one. **Refused with the file untouched** (`Error::Unwritable`): a
+  `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
+  `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it, a
+  `SeekHead` with no room, a second `SeekHead` where `Tags` move, a picture (no attachment is
+  written). `TagSink::rated` answers `Rated::Unrateable`.
+- **A Matroska name is spelled so it reads alike under both `tags::Naming`s.** `TITLE` and `ARTIST`
+  go in a `Tag` at level 30, since at 50 the container's naming reads them as the album and album
+  artist and a Vorbis-only key beside them turns that around; the rest go at level 50 under the
+  names `spelling` gives, each either mapped by symphonia or itself in `VORBIS_COMMENT_ONLY`. What
+  the old `Tags` held is kept byte for byte unless a field asked for reads from it, as
+  `Reading::field_of` works out from its name, level and the naming that revision was read under;
+  a `TITLE` or `ARTIST` left at level 50 is moved to the name it read as, so no later edit turns its
+  meaning. `Tag`s aimed at an edition, chapter or attachment are left alone.
 - **A field cleared is cleared from every tag the file holds.** lofty edits only the primary tag
   while the reader takes a name from whichever tag still says it: `writing::cleared_elsewhere`
   copies every other tag holding a field in `Writing::taken`, removes it and saves each into the
