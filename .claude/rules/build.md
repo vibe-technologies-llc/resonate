@@ -50,6 +50,10 @@ paths:
   for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
   `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens.
 
+The CI image installs DejaVu fonts so the window's kerning and ellipsis regression can render
+through the platform text system; GPUI's fixed-width mock cannot reproduce a name clipped at its
+shaped width.
+
 ## Android
 
 The Android job builds the Compose APK against compile SDK 37, runs Android lint and the JVM tests,

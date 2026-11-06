@@ -464,8 +464,8 @@ is never named.
     pin; `Icon::More` opening the index card's right-press menu. The title opens the shared rename
     field. `kit::way_back` reads *Playlists*, above eyebrow *PLAYLIST* or *SAVED SEARCH*.
   - **A title that is a link is `kit::linked_title`, never `kit::title` over an `opens`** (the link got
-    no width). Such a link is cut before drawing, as gpui never truncates no-wrap text past its first
-    measure: `RootView::playing_heading` (lyrics, visualiser, analysis headings) measures into
+    no width). Such a link is cut before drawing at the room its parent measures:
+    `RootView::playing_heading` (lyrics, visualiser, analysis headings) measures into
     `heading_room` a frame behind and cuts with `kit::cut_to_fit`; the inspector cuts at
     `inspected_room`; `by_line` cuts the artist at its room, the album taking the rest. The artist
     under a title is `kit::linked_subtitle` (`kit::subtitle` over an `opens` stretched the link across
@@ -978,9 +978,8 @@ is never named.
     separator, album (the inspector's heading is the same line); `keeps_its_width` holds the artist at
     `flex_none` under `max_w_full` so the album gives way first.
   - **What gives way ends in an ellipsis, not a square cut, each given a width it can be cut at.**
-    gpui's text element truncates only inside its measure and keeps a no-wrap text's first measure: a
-    `truncate`d name in a content-sized flex item is laid out whole and sliced by the parent's clip; a
-    `line_clamp` there is measured at min-content width and draws nothing. Title and album go through
+    A content-sized flex item needs the room its parent offers to decide where to cut. Title and
+    album go through
     `kit::cut_to_fit`: title at `RootView::playing_room` (a frame behind) less the star; album at the
     room `by_line` is handed less artist and separator (`kit::width_of` sums font advances; a glyphless
     character counts one em); no room left = artist alone. The inspector uses `inspected_room`.
@@ -1094,23 +1093,19 @@ is never named.
   `flex_shrink` under `ends_in_an_ellipsis` in a cell, as wide as the name. `listing::Row` has
   `artist_id` beside `artist` (`listing::scanned` fills it; `None` from `read`/`unread`/`unheld_row`).
 - **A name past its room ends in an ellipsis; `kit::EndsInAnEllipsis` is the one place that knows how.**
-  Bare `truncate` cuts silently: under a content-sized flex item no ellipsis came (taffy measures under
-  `MaxContent` and gpui's text cache answers that for every later measure of `nowrap` text).
-  `ends_in_an_ellipsis` = `whitespace_normal` + `line_clamp(1)` after `truncate()`: a single-line *wrap*
-  escapes the cache, the clamp draws the ellipsis. **No `truncate` stands alone** except two in
+  `ends_in_an_ellipsis` = `whitespace_nowrap` + `line_clamp(1)` after `truncate()`. GPUI's no-wrap
+  path checks the shaped width before truncating, so a content-sized name keeps every letter when
+  it fits. The wrapped path sums individual character advances without kerning even for a one-line
+  clamp, so a short name measured at its intrinsic width could become *AVAT…* instead of *AVATAR*
+  despite spare room in the cell. The driven regression uses the platform text system rather than
+  GPUI's fixed-width mock (`names_that_fit_stay_whole_and_long_names_end_in_an_ellipsis`).
+  **No `truncate` stands alone** except two in
   `views/search.rs` (a quoted query inside `kit::title`, a section's faint hint line). **A content-sized
   box does not wrap**: `kit::KeepsItsWidth::keeps_its_width` (`flex_none`, `max_w_full`) sets
-  `whitespace_nowrap` back over the clamp (taffy measures such a box at min-content width, so wrapped
-  clamped text drew nothing); those boxes are cut by `kit::cut_to_fit`; a `flex_shrink` cell keeps the
-  clamp.
-- **gpui truncates the runs it is handed, once for every measure.** gpui 0.2.2's `TextLayout::layout`
-  moves one `Vec<TextRun>` into its measure closure and `truncate_line` cuts it in place on every call;
-  if taffy measures narrower first and wider afterwards, the wider layout keeps the narrow runs (a 0 px
-  measure cuts them to the ellipsis's three bytes: underline, highlight colour and weight stop there).
-  A grid with `minmax(0, 1fr)` tracks causes it (taffy measures the item at the column's 0 base size;
-  `uniform_list` rows escape it). Any new layout around a plain-div listing is checked by an
-  `eprintln!` in `TextLayout::layout`'s measure closure of a `[patch.crates-io]` gpui copy and a driven
-  test rendering a long cut name.
+  `whitespace_nowrap`; those boxes are cut by `kit::cut_to_fit`; a `flex_shrink` cell keeps the clamp.
+  GPUI remeasures a truncated layout for later unconstrained probes and preserves the original
+  text runs between measures; neither the earlier no-wrap cache workaround nor mutable truncated
+  runs apply to the pinned revision.
 
 ## Driven by tests
 

@@ -144,7 +144,7 @@ impl<T: Styled> KeepsItsWidth for T {}
 
 pub(crate) trait EndsInAnEllipsis: Styled + Sized {
     fn ends_in_an_ellipsis(self) -> Self {
-        self.whitespace_normal().line_clamp(1)
+        self.whitespace_nowrap().line_clamp(1)
     }
 }
 
@@ -1337,6 +1337,58 @@ impl<E: InteractiveElement> Found for E {}
 mod tests {
     use super::*;
     use crate::views::spoken::{self, node_of};
+
+    struct Names {
+        layouts: Vec<gpui::TextLayout>,
+    }
+
+    impl gpui::Render for Names {
+        fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+            self.layouts.clear();
+            let mut row = div()
+                .flex()
+                .w(px(600.0))
+                .font_family("sans-serif")
+                .text_size(px(14.0));
+            for name in [
+                "AVATAR",
+                "Taylor Swift",
+                "A very long song title ".repeat(30).as_str(),
+            ] {
+                let text = gpui::StyledText::new(name.to_owned());
+                self.layouts.push(text.layout().clone());
+                row = row.child(
+                    div().flex().w(px(180.0)).flex_none().child(
+                        div()
+                            .min_w(px(0.0))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(text),
+                    ),
+                );
+            }
+            row
+        }
+    }
+
+    #[gpui::test]
+    fn names_that_fit_stay_whole_and_long_names_end_in_an_ellipsis(cx: &mut gpui::TestAppContext) {
+        let platform = gpui_platform::current_platform(true);
+        let mut real = gpui::TestAppContext::build_with_text_system(
+            cx.dispatcher.clone(),
+            None,
+            platform.text_system(),
+        );
+        let (names, cx) = real.add_window_view(|_, _| Names {
+            layouts: Vec::new(),
+        });
+        cx.run_until_parked();
+        names.read_with(cx, |names, _| {
+            assert_eq!(names.layouts[0].text(), "AVATAR");
+            assert_eq!(names.layouts[1].text(), "Taylor Swift");
+            assert!(names.layouts[2].text().ends_with('…'));
+        });
+    }
 
     #[test]
     fn every_kit_control_says_what_it_is_and_what_state_it_stands_in() {
