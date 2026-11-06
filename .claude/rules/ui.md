@@ -2273,7 +2273,8 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   still speak in queue rows; `QueueParts::line_of`/`line` are the one mapping to the list's lines
   (`every_row_is_shown_at_the_line_that_draws_it`).
 - **Every major listing is ordered from a dialogue and a header.** Tracks, albums, artists each hold an
-  order and a reading on `LibraryModel::sorting`, kept for the run. Two writers: a sort icon opening the
+  order and a reading on `LibraryModel::sorting`, kept for the run. Tracks start in date-added order,
+  newest first, so newly scanned or synced songs appear at the top. Two writers: a sort icon opening the
   Sort dialogue, and the pressable column header (a press names the order; a second on the one
   in force reverses it; the column in force wears the accent and a chevron). `views/sorting.rs`:
   `Ordering` is the trait the five order enums implement. **The dialogue is one sheet**

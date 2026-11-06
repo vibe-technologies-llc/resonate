@@ -500,8 +500,8 @@ pub struct Sorting {
 impl Default for Sorting {
     fn default() -> Self {
         Self {
-            tracks: SortOrder::default(),
-            tracks_read: SortOrder::default().reads(),
+            tracks: SortOrder::DateAdded,
+            tracks_read: SortOrder::DateAdded.reads(),
             albums: AlbumOrder::default(),
             albums_read: AlbumOrder::default().reads(),
             artists: ArtistOrder::default(),

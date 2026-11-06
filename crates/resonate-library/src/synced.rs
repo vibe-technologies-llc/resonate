@@ -1039,9 +1039,17 @@ pub(crate) fn note_received_at(
         for key in &keys {
             transaction
                 .execute(
-                    "INSERT INTO songs_received (recording, path) VALUES (?1, ?2)
-                     ON CONFLICT (recording) DO UPDATE SET path = excluded.path",
-                    params![key.as_str(), text],
+                    "INSERT INTO songs_received (recording, path, title, artist, album)
+                     VALUES (?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT (recording) DO UPDATE SET path = excluded.path,
+                         title = excluded.title, artist = excluded.artist, album = excluded.album",
+                    params![
+                        key.as_str(),
+                        text,
+                        recording.title,
+                        recording.artist,
+                        recording.album
+                    ],
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
@@ -1395,6 +1403,29 @@ pub(crate) fn recover_received(
 ) -> Result<()> {
     if record.span.is_some() {
         return Ok(());
+    }
+    let spelling = connection
+        .query_row(
+            "SELECT title, artist, album FROM songs_received
+             WHERE path = ?1 AND title IS NOT NULL ORDER BY recording LIMIT 1",
+            [store::path_text(&record.path)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if let Some((title, artist, album)) = spelling {
+        if !title.trim().is_empty() && (record.named_by_its_stem || record.tags.title.is_none()) {
+            record.tags.title = Some(title);
+            record.named_by_its_stem = false;
+        }
+        fill_gap(&mut record.tags.artist, &artist);
+        fill_gap(&mut record.tags.album, &album);
     }
     let mut query = connection
         .prepare("SELECT recording FROM songs_received WHERE path = ?1 ORDER BY recording")
@@ -1753,8 +1784,8 @@ mod tests {
                         Ok((row.get(0)?, row.get(1)?, row.get(2)?))
                     })
                     .expect("track");
-                assert_eq!(recovered.0, "echoes");
-                assert_eq!(recovered.1.as_deref(), Some("pink floyd"));
+                assert_eq!(recovered.0, "Echoes");
+                assert_eq!(recovered.1.as_deref(), Some("Pink Floyd"));
                 assert_eq!(recovered.2, recording.mbid.map(|id| id.to_string()));
                 Ok(())
             })

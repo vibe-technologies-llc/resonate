@@ -461,8 +461,9 @@ artist, album and MBID and the supplied album artist, date and numbers into its 
 existing file tags winning. A mobile download may have its identity only in the phone's catalog;
 copying its audio alone otherwise leaves a filename in place of the title and no artist to enrich.
 An incremental scan reprobes received rows missing an artist or a received MBID and fills absent
-identity from `songs_received` before storing the probe. Named receipts retain folded words, so
-recovery restores searchable names rather than original typography; declared file tags still win.
+identity from `songs_received` before storing the probe. Receipts retain the sender's original title, artist and album beside the matching keys, so recovery preserves capitalization;
+declared file tags still win. The appended `RECEIVED_SONGS_KEEP_THEIR_SPELLING` migration adds
+nullable columns, with older receipts falling back to their folded matching words until received again.
 This recovery changes the catalog only and keeps working on later scans of the untagged bytes.
 **A song filed is held by what was asked for, never landed twice**: the catalog's
 `songs_received` keeps each recording key a song was filed for (`key` and `named_key`) against its
