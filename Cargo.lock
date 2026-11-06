@@ -6714,6 +6714,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-ytmusic"
+version = "0.5.0"
+dependencies = [
+ "parking_lot 0.13.0",
+ "resonate-core",
+ "resonate-fetch",
+ "resonate-providers",
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
+]
+
+[[package]]
 name = "resvg"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
