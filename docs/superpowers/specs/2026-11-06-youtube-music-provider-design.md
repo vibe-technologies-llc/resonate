@@ -215,7 +215,9 @@ Existing checks still apply after delivery: the decoder must probe it and
 - `search` lists Songs over InnerTube (albums and artists are `Found` left empty in this version),
   then `Found::explicit_first`.
 - `first_page` lists the account's own playlists and liked songs as `Found::mixes`. Without cookies
-  it is empty.
+  it is empty. Measured: `music.youtube.com/library/playlists` is refused by `yt-dlp` (a redirect to a
+  404); `www.youtube.com/feed/playlists` answers `LL`, `WL` and the listener's own lists. So `LM` is
+  listed first as *Liked songs*, then that feed without `LL` and `WL`.
 - `mix` lists a playlist's songs.
 - `PlaysInPlace` gains `plays_songs` (default true), false here, so the window offers no *Play* on
   these rows. `streamed` is `NotOffered` under `ProviderOp::Stream`. **Builder's call:** no playing in place in
