@@ -30,6 +30,7 @@ const ANOTHER: &str = "QQnc-hM80UQ";
 const CHECKED_WITH: &str = "9RfVp-GhKfs";
 const AUDIO: &str = "the served stream";
 const PACED_APART: Duration = Duration::from_millis(40);
+const A_SHORT_WAIT_FOR_A_TURN: Duration = Duration::from_millis(100);
 const THE_TURN_IS_HELD_FOR_AT_LEAST: Duration = Duration::from_millis(300);
 const A_TURN_FREED_IS_TAKEN_WITHIN: Duration = Duration::from_secs(5);
 const LAPSED: &str = "echo 'WARNING: [youtube] The provided YouTube account cookies are no longer valid. They have likely been rotated in the browser as a security measure.' >&2";
@@ -503,6 +504,26 @@ fn a_want_with_a_youtube_music_link_takes_that_video_with_no_search() {
 }
 
 #[test]
+fn a_link_is_taken_though_the_want_names_no_length_or_artist_and_no_search_is_sent() {
+    let fake = keeping(&[("774", 1)]);
+    let music = Music::answering(SONGS);
+
+    let obtained = music
+        .provider(&fake, Cookies::None)
+        .find(&Identity {
+            links: vec![Link::new(
+                "streaming",
+                format!("https://music.youtube.com/watch?v={ANOTHER}"),
+            )],
+            ..Identity::named("You And Whose Army?")
+        })
+        .expect("an answer");
+
+    assert_eq!(&*key_of(obtained), "track/QQnc-hM80UQ");
+    assert!(music.asked().is_empty());
+}
+
+#[test]
 fn a_want_with_a_plain_youtube_link_is_searched_for() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(SONGS);
@@ -740,6 +761,28 @@ fn the_account_is_asked_about_once_a_poll_however_many_songs_lack_premium() {
 }
 
 #[test]
+fn a_lapse_heard_in_a_download_outranks_an_account_checked_premium() {
+    let fake = Fake::answering(&format!(
+        "case \" $* \" in *\" -J \"*v={CHECKED_WITH}*) echo '{}' ;; *\" -J \"*) echo '{}' ;; *) {LAPSED}; printf '{AUDIO}' ;; esac",
+        listed(&[("774", 1)]),
+        listed(&[("251", 1)]),
+    ));
+    let music = no_server();
+    let provider = music.provider(&fake, Cookies::read("/home/a/cookies.txt"));
+    let (_, _, opening) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
+
+    reader_of(opening)
+        .read_to_end(&mut Vec::new())
+        .expect("the bytes asked for");
+    let refused = provider
+        .find(&song_at("second"))
+        .expect_err("cookies heard lapsed");
+
+    assert!(refused.is_the_provider_away());
+    assert!(matches!(refused, Error::Unwelcome { .. }));
+}
+
+#[test]
 fn one_download_runs_at_a_time_for_as_long_as_its_reader_lives() {
     let fake = keeping(&[("774", 1)]);
     let music = no_server();
@@ -760,6 +803,33 @@ fn one_download_runs_at_a_time_for_as_long_as_its_reader_lives() {
     took_its_turn
         .recv_timeout(A_TURN_FREED_IS_TAKEN_WITHIN)
         .expect("the second download");
+}
+
+#[test]
+fn a_turn_not_had_within_its_limit_is_busy_and_starts_no_tool() {
+    let fake = keeping(&[("774", 1)]);
+    let music = no_server();
+    let provider = music
+        .provider(&fake, Cookies::None)
+        .waiting_for_a_turn_at_most(A_SHORT_WAIT_FOR_A_TURN);
+    let (_, _, first) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
+    let (_, _, second) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
+    let _reader = reader_of(first);
+    let started = fake.calls().len();
+
+    let Err(refused) = second.open() else {
+        panic!("a second download opened beside the first");
+    };
+
+    assert!(!refused.is_the_provider_away());
+    assert!(matches!(
+        refused,
+        Error::Busy {
+            op: ProviderOp::Download,
+            ..
+        }
+    ));
+    assert_eq!(fake.calls().len(), started);
 }
 
 #[test]

@@ -156,6 +156,10 @@ mod faked {
         }
     }
 
+    fn told_by(read: &io::Error) -> Option<&Error> {
+        read.get_ref()?.downcast_ref()
+    }
+
     fn still_running(fake: &Fake) -> bool {
         let pid = fs::read_to_string(fake.folder().join("pid")).expect("the tool's pid");
         Command::new("kill")
@@ -354,8 +358,17 @@ mod faked {
         let mut reader = opened(&fake.tool(Cookies::None), Tier::Opus774);
         let mut read = Vec::new();
 
-        assert!(matches!(reader.read_to_end(&mut read), Err(_)));
+        let died = reader.read_to_end(&mut read).expect_err("a cut download");
+
         assert_eq!(read, b"part");
+        assert!(matches!(
+            told_by(&died),
+            Some(Error::ToolFailed {
+                op: ProviderOp::Download,
+                code: Some(1),
+                ..
+            })
+        ));
         assert!(reader.read(&mut [0; 8]).is_err());
     }
 
@@ -415,12 +428,12 @@ mod faked {
         let mut reader = opened(&tool, Tier::Opus774);
         let began = Instant::now();
 
-        let read = reader.read_to_end(&mut Vec::new());
+        let stalled = reader
+            .read_to_end(&mut Vec::new())
+            .expect_err("a stalled download");
 
-        assert_eq!(
-            read.expect_err("a stalled download").kind(),
-            io::ErrorKind::TimedOut
-        );
+        assert_eq!(stalled.kind(), io::ErrorKind::TimedOut);
+        assert!(told_by(&stalled).is_some_and(Error::is_the_provider_away));
         assert!(
             began.elapsed() < GIVEN_UP_WELL_BEFORE,
             "{:?}",
@@ -541,6 +554,67 @@ mod faked {
                 .iter()
                 .any(|argument| argument == "--no-warnings")
         );
+    }
+
+    #[test]
+    fn a_lapse_heard_with_nothing_sent_is_unwelcome_though_the_video_reads_as_gone() {
+        let fake = Fake::answering(&format!(
+            "{COOKIES_LAPSED}\necho 'ERROR: [youtube] abc: Video unavailable' >&2\nexit 1"
+        ));
+
+        assert!(matches!(
+            fake.tool(Cookies::read("/home/a/cookies.txt"))
+                .download(&song(), Tier::Opus774),
+            Err(Error::Unwelcome {
+                op: ProviderOp::Download,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_lapse_heard_at_the_end_of_a_download_makes_the_next_listing_unwelcome() {
+        let fake = Fake::answering(&format!(
+            "case \" $* \" in *\" -J \"*) echo '{{\"formats\":[{{\"format_id\":\"251\"}}]}}' ;; *) {COOKIES_LAPSED}; printf bytes ;; esac"
+        ));
+        let tool = fake.tool(Cookies::read("/home/a/cookies.txt"));
+        let mut read = Vec::new();
+
+        tool.formats(&song()).expect("a listing");
+        opened(&tool, Tier::Opus251)
+            .read_to_end(&mut read)
+            .expect("the bytes asked for");
+        let refused = tool.formats(&song()).expect_err("cookies heard lapsed");
+
+        assert_eq!(read, b"bytes");
+        assert!(matches!(
+            refused,
+            Error::Unwelcome {
+                op: ProviderOp::Search,
+                ..
+            }
+        ));
+        assert_eq!(fake.calls().len(), 2);
+    }
+
+    #[test]
+    fn a_lapse_said_once_holds_for_the_next_listing_though_the_tool_never_says_it_again() {
+        let fake = Fake::answering(&format!(
+            "[ -e \"$here/warned\" ] || {{ touch \"$here/warned\"; {COOKIES_LAPSED}; }}\necho '{{\"formats\":[{{\"format_id\":\"251\"}}]}}'"
+        ));
+        let tool = fake.tool(Cookies::read("/home/a/cookies.txt"));
+
+        for _ in 0..2 {
+            assert!(matches!(
+                tool.formats(&song()),
+                Err(Error::Unwelcome {
+                    op: ProviderOp::Search,
+                    ..
+                })
+            ));
+        }
+
+        assert_eq!(fake.calls().len(), 1);
     }
 
     #[test]

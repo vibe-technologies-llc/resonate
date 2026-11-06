@@ -23,7 +23,8 @@ const YTMUSIC: &str = "ytmusic";
 const THE_SERVICE: &str = "https://music.youtube.com";
 const ASKED_APART: Duration = Duration::from_secs(2);
 const CHECKED_WITH: &str = "9RfVp-GhKfs";
-const A_POLL_LASTS: Duration = Duration::from_secs(10 * 60);
+pub(crate) const A_POLL_LASTS: Duration = Duration::from_secs(10 * 60);
+const A_TURN_IS_WAITED_ON_FOR: Duration = Duration::from_secs(45);
 const PREMIUM_LOST: u16 = 402;
 const A_VIDEO_IS_NAMED_BY: &str = "v=";
 
@@ -36,13 +37,16 @@ struct OneAtATime {
 struct Turn(Arc<OneAtATime>);
 
 impl OneAtATime {
-    fn turn(self: &Arc<Self>) -> Turn {
+    fn turn_within(self: &Arc<Self>, within: Duration) -> Option<Turn> {
+        let by = Instant::now() + within;
         let mut taken = self.taken.lock();
         while *taken {
-            self.freed.wait(&mut taken);
+            if self.freed.wait_until(&mut taken, by).timed_out() && *taken {
+                return None;
+            }
         }
         *taken = true;
-        Turn(Arc::clone(self))
+        Some(Turn(Arc::clone(self)))
     }
 }
 
@@ -95,6 +99,7 @@ pub struct YtMusic {
     client_version: Arc<Mutex<Option<String>>>,
     account: Arc<Mutex<Option<AccountChecked>>>,
     downloads: Arc<OneAtATime>,
+    turn_within: Duration,
 }
 
 impl YtMusic {
@@ -116,6 +121,7 @@ impl YtMusic {
             client_version: Arc::default(),
             account: Arc::default(),
             downloads: Arc::default(),
+            turn_within: A_TURN_IS_WAITED_ON_FOR,
         }
     }
 
@@ -123,6 +129,14 @@ impl YtMusic {
     pub fn asked_apart(self, apart: Duration) -> Self {
         Self {
             pacing: Arc::new(Pacing::new(apart)),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn waiting_for_a_turn_at_most(self, within: Duration) -> Self {
+        Self {
+            turn_within: within,
             ..self
         }
     }
@@ -224,8 +238,13 @@ impl YtMusic {
     fn opening(&self, video: VideoId, tier: Tier, length: Option<u64>) -> Opening {
         let tool = Arc::clone(&self.tool);
         let downloads = Arc::clone(&self.downloads);
+        let within = self.turn_within;
+        let provider = self.source.clone();
         Opening::new(move || {
-            let turn = downloads.turn();
+            let turn = downloads.turn_within(within).ok_or(Error::Busy {
+                provider,
+                op: ProviderOp::Download,
+            })?;
             Ok(match tool.download(&video, tier)? {
                 Opened::Reading { reader, .. } => Opened::Reading {
                     reader: Box::new(Downloading {
@@ -250,11 +269,9 @@ impl Provider for YtMusic {
     }
 
     fn find(&self, identity: &Identity) -> Result<Obtained> {
-        if !identity.may_be_listed() {
-            return Ok(Obtained::Nothing);
-        }
         let video = match self.linked(identity) {
             Some(video) => video,
+            None if !identity.may_be_listed() => return Ok(Obtained::Nothing),
             None => match self.listed(identity)? {
                 Some(row) => row.video,
                 None => return Ok(Obtained::Nothing),

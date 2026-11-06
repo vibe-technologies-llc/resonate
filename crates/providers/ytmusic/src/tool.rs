@@ -19,7 +19,7 @@ use resonate_providers::{Error, Opened, ProviderOp, Result};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-use crate::YTMUSIC;
+use crate::{A_POLL_LASTS, YTMUSIC};
 
 const THE_PROGRAM: &str = "yt-dlp";
 const A_SONG_IS_AT: &str = "https://music.youtube.com/watch?v=";
@@ -217,6 +217,21 @@ fn says_the_video_is_gone(said: &str) -> bool {
     THE_VIDEO_IS_GONE.iter().any(|words| said.contains(words))
 }
 
+#[derive(Clone, Debug, Default)]
+struct Lapse(Arc<Mutex<Option<Instant>>>);
+
+impl Lapse {
+    fn heard(&self) {
+        *self.0.lock() = Some(Instant::now());
+    }
+
+    fn stands(&self) -> bool {
+        self.0
+            .lock()
+            .is_some_and(|heard| heard.elapsed() < A_POLL_LASTS)
+    }
+}
+
 struct Reaped(Child);
 
 impl Reaped {
@@ -356,11 +371,12 @@ struct Reading {
     ended: Option<Ended>,
     silent_for: Duration,
     provider: SourceId,
+    lapse: Lapse,
 }
 
 impl Reading {
     fn ending(&mut self) -> Ended {
-        match self.running.child.exited_within(self.silent_for) {
+        let ended = match self.running.child.exited_within(self.silent_for) {
             Ok(Some(status)) if status.success() => Ended::Whole,
             Ok(Some(status)) => Ended::Failed(status.code()),
             Ok(None) => Ended::Silent,
@@ -368,7 +384,11 @@ impl Reading {
                 tracing::debug!(%error, "yt-dlp could not be waited on");
                 Ended::Failed(None)
             }
+        };
+        if self.running.complaints.said().contains(COOKIES_LAPSED) {
+            self.lapse.heard();
         }
+        ended
     }
 
     fn take_next(&mut self) {
@@ -402,7 +422,16 @@ impl Read for Reading {
             }
             match self.ended {
                 Some(Ended::Whole) => return Ok(0),
-                Some(Ended::Silent) => return Err(ErrorKind::TimedOut.into()),
+                Some(Ended::Silent) => {
+                    return Err(io::Error::new(
+                        ErrorKind::TimedOut,
+                        Error::Io {
+                            provider: self.provider.clone(),
+                            op: ProviderOp::Download,
+                            source: ErrorKind::TimedOut.into(),
+                        },
+                    ));
+                }
                 Some(Ended::Failed(code)) => {
                     return Err(io::Error::other(Error::ToolFailed {
                         provider: self.provider.clone(),
@@ -424,6 +453,7 @@ pub struct Tool {
     runtime: Option<&'static str>,
     asked_within: Duration,
     left_silent_for: Duration,
+    lapse: Lapse,
 }
 
 impl Tool {
@@ -435,6 +465,7 @@ impl Tool {
             runtime: runtime_named_on(env::var_os("PATH").as_deref()),
             asked_within: ASKED_WITHIN,
             left_silent_for: LEFT_SILENT_FOR,
+            lapse: Lapse::default(),
         }
     }
 
@@ -486,6 +517,14 @@ impl Tool {
         }
     }
 
+    fn cookies_lapsed(&self, op: ProviderOp) -> Error {
+        Error::Unwelcome {
+            provider: self.provider.clone(),
+            op,
+            code: COOKIES_TURNED_DOWN,
+        }
+    }
+
     fn unreadable(&self, op: ProviderOp) -> Error {
         Error::Unreadable {
             provider: self.provider.clone(),
@@ -513,6 +552,9 @@ impl Tool {
 
     pub fn formats(&self, video: &VideoId) -> Result<Formats> {
         let op = ProviderOp::Search;
+        if self.lapse.stands() {
+            return Err(self.cookies_lapsed(op));
+        }
         let by = Instant::now() + self.asked_within;
         let arguments = self.arguments(&["-J", "--skip-download"], video);
         let mut running = self.running(op, &arguments)?;
@@ -525,11 +567,8 @@ impl Tool {
         let said = running.complaints.said();
 
         if said.contains(COOKIES_LAPSED) {
-            return Err(Error::Unwelcome {
-                provider: self.provider.clone(),
-                op,
-                code: COOKIES_TURNED_DOWN,
-            });
+            self.lapse.heard();
+            return Err(self.cookies_lapsed(op));
         }
         if status.success() {
             return serde_json::from_slice::<Listing>(&listing)
@@ -566,6 +605,7 @@ impl Tool {
                 ended: None,
                 silent_for: self.left_silent_for,
                 provider: self.provider.clone(),
+                lapse: self.lapse.clone(),
             }),
             length: None,
         })
@@ -578,7 +618,12 @@ impl Tool {
             .exited_within(self.left_silent_for)
             .map_err(|source| self.failed_io(op, source))?
             .ok_or_else(|| self.hung(op))?;
-        if says_the_video_is_gone(&running.complaints.said()) {
+        let said = running.complaints.said();
+        if said.contains(COOKIES_LAPSED) {
+            self.lapse.heard();
+            return Err(self.cookies_lapsed(op));
+        }
+        if says_the_video_is_gone(&said) {
             return Ok(Opened::Gone);
         }
         Err(self.failed(op, status.code()))
@@ -638,6 +683,18 @@ mod tests {
             .position(|argument| argument == "--js-runtimes")
             .expect("the runtime named");
         assert_eq!(arguments[at + 1], "node");
+    }
+
+    #[test]
+    fn a_lapse_stands_for_a_poll_and_no_longer() {
+        let lapse = Lapse::default();
+        assert!(!lapse.stands());
+
+        lapse.heard();
+        assert!(lapse.stands());
+
+        *lapse.0.lock() = Instant::now().checked_sub(A_POLL_LASTS);
+        assert!(!lapse.stands());
     }
 
     #[test]
