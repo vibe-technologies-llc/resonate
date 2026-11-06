@@ -347,12 +347,10 @@ impl RootView {
                     .w_full()
                     .gap_1()
                     .child(
-                        div()
+                        kit::figure(place)
                             .flex()
                             .items_center()
-                            .h_full()
-                            .min_w_0()
-                            .child(kit::figure(place).line_height(px(theme::text_xs()))),
+                            .h(px(theme::row_control())),
                     )
                     .child(controls),
             )
