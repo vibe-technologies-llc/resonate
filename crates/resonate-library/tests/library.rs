@@ -28012,3 +28012,45 @@ fn a_last_resort_is_never_foreseen_nor_started_by_a_search() -> Result<()> {
     assert!(tube.asked().is_empty());
     Ok(())
 }
+
+#[test]
+fn a_refusal_heard_while_foreseeing_bars_the_last_resort_and_the_miss_from_the_poll() -> Result<()>
+{
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let mut release = meddle_release();
+    for row in &mut release.media[0].tracks {
+        row.length = Some(Duration::from_secs(1_411));
+    }
+    let fake = Fake::new(Canned {
+        found_songs: vec![echoes_found()],
+        releases: vec![release],
+        ..Canned::default()
+    });
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let broken = Unanswering::new("broken", unreachable_server);
+    let short = a_provider_offering_echoes("shop");
+    let tube = a_provider_offering_echoes("tube");
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&broken) as Arc<dyn Provider>)
+            .and(Arc::clone(&short) as Arc<dyn Provider>)
+            .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>),
+    );
+
+    assert!(library.foresee(&providers, &found[0]));
+    library.want_found(&fake, &found[0])?;
+    let summary = library
+        .poll(Arc::clone(&providers), PollOptions::default())?
+        .join()?;
+
+    assert!(tube.asked().is_empty());
+    assert_eq!(summary.stats.refused, 1);
+    let wants = library.wants()?;
+    assert_eq!(wants[0].tried, None);
+    assert_eq!(wants[0].misses, 0);
+    assert!(wants[0].held.is_none());
+    Ok(())
+}

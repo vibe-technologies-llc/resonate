@@ -1073,6 +1073,9 @@ impl<'a> Lanes<'a> {
                 .into_iter()
                 .filter(|heard| registered.contains(heard))
                 .collect(),
+            refused: foreseen.unheard.refused,
+            late: foreseen.unheard.late,
+            passed_over: foreseen.unheard.passed_over,
             ..Answer::default()
         })
     }
