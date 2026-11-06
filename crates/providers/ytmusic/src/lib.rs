@@ -15,13 +15,14 @@ use resonate_core::{MediaLocation, Service, SourceId};
 use resonate_fetch::{Patience, Trusted, asking_agent};
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider,
-    ProviderOp, Result,
+    ProviderOp, Result, Song,
 };
 use ureq::Agent;
 
 use crate::search::Row;
 pub use crate::{
     connection::Connection,
+    playlists::Playlist,
     tool::{Cookies, Formats, Tier, Tool, VideoId, stop_the_tools},
 };
 
@@ -145,6 +146,10 @@ impl YtMusic {
             turn_within: within,
             ..self
         }
+    }
+
+    pub fn song(&self, video: &VideoId) -> Result<Option<Song>> {
+        self.tool.song(video)
     }
 
     fn key_of(video: &VideoId) -> String {

@@ -68,6 +68,8 @@ mod vault;
 mod vocabulary;
 mod wanting;
 mod wrapped;
+#[cfg(feature = "online")]
+mod ytmusic;
 #[cfg(feature = "ui")]
 mod zoning;
 
@@ -370,6 +372,14 @@ fn run() -> Result<()> {
                 }
             })
         }
+        #[cfg(feature = "online")]
+        Some(Sub::Ytmusic(wanted)) => {
+            ytmusic::run(&config, settings_path(&cli).ok(), wanted, || {
+                open_library(&cli, &config)
+            })
+        }
+        #[cfg(not(feature = "online"))]
+        Some(Sub::Ytmusic(_)) => Err(Error::NoServed),
         Some(Sub::Lastfm { user, forget }) => {
             let settings = settings_path(&cli)?;
             reloading::delivering(&settings, Some(Reloadable::Submission), || {

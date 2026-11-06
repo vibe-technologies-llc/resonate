@@ -672,10 +672,15 @@ impl Tool {
         }
     }
 
-    pub fn formats(&self, video: &VideoId) -> Result<Formats> {
+    pub(crate) fn refused_while_lapsed(&self) -> Result<()> {
         if self.lapse.stands() {
             return Err(self.cookies_lapsed(ProviderOp::Search));
         }
+        Ok(())
+    }
+
+    pub fn formats(&self, video: &VideoId) -> Result<Formats> {
+        self.refused_while_lapsed()?;
         self.formats_asked(video)
     }
 
@@ -686,6 +691,18 @@ impl Tool {
     }
 
     fn formats_asked(&self, video: &VideoId) -> Result<Formats> {
+        let Some(listing) = self.video_listed(video)? else {
+            return Ok(Formats::default());
+        };
+        serde_json::from_slice::<Listing>(&listing)
+            .map(|listing| listing.formats())
+            .map_err(|error| {
+                tracing::debug!(%error, "yt-dlp's listing was not the document expected");
+                self.unreadable(ProviderOp::Search)
+            })
+    }
+
+    pub(crate) fn video_listed(&self, video: &VideoId) -> Result<Option<Vec<u8>>> {
         let op = ProviderOp::Search;
         let by = Instant::now() + self.asked_within;
         let arguments = self.arguments(&["-J", "--skip-download"], video);
@@ -703,15 +720,10 @@ impl Tool {
             return Err(self.cookies_lapsed(op));
         }
         if status.success() {
-            return serde_json::from_slice::<Listing>(&listing)
-                .map(|listing| listing.formats())
-                .map_err(|error| {
-                    tracing::debug!(%error, "yt-dlp's listing was not the document expected");
-                    self.unreadable(op)
-                });
+            return Ok(Some(listing));
         }
         if says_the_video_is_gone(&said) {
-            return Ok(Formats::default());
+            return Ok(None);
         }
         Err(self.failed(op, status.code()))
     }

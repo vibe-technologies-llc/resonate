@@ -4,8 +4,11 @@ use std::{
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
     slice,
-    sync::Arc,
-    thread,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -26,16 +29,17 @@ use resonate_library::{
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
     GroupRelease, Habits, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress,
-    ImportStats, ImportSummary, Imported, Issued, Kept, Layout, Learning, Library, Listen, Maker,
-    Mbid, Meant, Measured, Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions,
-    OrganiseProgress, OrganiseStats, OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry,
-    PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
-    RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
-    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked,
-    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Upkeep, Window, Wording, albums_still_answering, artists_still_answering,
-    folded_letters, songs_asked, still_answering, weighed_for,
+    ImportStats, ImportSummary, Imported, Issued, KeepSummary, Kept, KeptSong, Layout, Learning,
+    Library, Listen, Maker, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
+    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Performer,
+    Playing, Playlist, PlaylistEntry, PlaylistOrder, PlaylistToKeep, PollOptions, PollProgress,
+    PollStats, PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference,
+    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
+    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
+    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
+    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Upkeep, Window, Wording,
+    albums_still_answering, artists_still_answering, folded_letters, songs_asked, still_answering,
+    weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -47,6 +51,7 @@ use crate::{
     drawing::Drawer,
     format,
     recent::{Leaving, Recent},
+    serving::{Row, song_to_keep},
     settings::{Asking, Online, Sourcing},
     theme, toast,
     views::statistics::{BARS_AT_MOST, Chart},
@@ -126,6 +131,10 @@ fn read_further(read: usize) -> String {
     }
 }
 
+const NO_MUSIC_FOLDER: &str = "Choose a music folder to keep songs in";
+const ALREADY_HELD: &str = "Already in your library";
+const KEEP_THREAD: &str = "resonate-keep";
+const KEEPS_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
 const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
 const NO_PROVIDER: &str = "No provider is set up to download it";
 
@@ -692,6 +701,11 @@ impl Work {
     }
 }
 
+struct KeepPass {
+    stop: Arc<AtomicBool>,
+    left: u64,
+}
+
 #[derive(Clone)]
 pub struct Consulted {
     pub reference: Option<Arc<dyn Reference>>,
@@ -870,6 +884,10 @@ pub struct LibraryModel {
     roots_waiting: Vec<RootWaiting>,
     poll_owed: Option<PollOptions>,
     _owed: Task<()>,
+    keeping: Option<KeepPass>,
+    keep_owed: bool,
+    _keeping: Task<()>,
+    _keep_again: Task<()>,
     downloads: Downloads,
     downloads_restored: bool,
     to_file: Option<ToFile>,
@@ -903,6 +921,35 @@ impl Followed {
         } else {
             Wanted::ThePlaylists
         })
+    }
+}
+
+fn kept(summary: &KeepSummary) -> Option<Notice> {
+    let songs = |count: usize| {
+        if count == 1 {
+            "1 song".to_owned()
+        } else {
+            format!("{count} songs")
+        }
+    };
+    if summary.stopped_by.is_some() {
+        return Some(Notice::Trouble(
+            "The service stopped answering, so the rest stays queued".to_owned(),
+        ));
+    }
+    if summary.yielded {
+        return None;
+    }
+    let missed = summary.gone + summary.unkept;
+    match (summary.landed, missed) {
+        (0, 0) => None,
+        (landed, 0) => Some(Notice::Done(format!("Kept {}", songs(landed)))),
+        (0, missed) => Some(Notice::Trouble(format!("{} not kept", songs(missed)))),
+        (landed, missed) => Some(Notice::Noted(format!(
+            "Kept {}, {} not",
+            songs(landed),
+            songs(missed)
+        ))),
     }
 }
 
@@ -1096,6 +1143,10 @@ impl LibraryModel {
             roots_waiting: Vec::new(),
             poll_owed: None,
             _owed: Task::ready(()),
+            keeping: None,
+            keep_owed: false,
+            _keeping: Task::ready(()),
+            _keep_again: Task::ready(()),
             downloads: Downloads::default(),
             downloads_restored: false,
             to_file: None,
@@ -1115,6 +1166,7 @@ impl LibraryModel {
         model.watch_the_roots(cx);
         model.watch_the_inbox(cx);
         model.keep_the_linked_in_step(cx);
+        model.keep_what_was_left_queued(cx);
         model
     }
 
@@ -5566,11 +5618,15 @@ impl LibraryModel {
 
     fn fetch_what_was_wanted(&mut self, options: PollOptions, cx: &mut Context<Self>) {
         if !self.poll_with(Prompted::OnItsOwn, options, cx) {
-            self.poll_owed = Some(match self.poll_owed {
-                Some(owed) if owed.every_want => owed,
-                Some(_) | None => options,
-            });
+            self.owe_a_poll(options);
         }
+    }
+
+    fn owe_a_poll(&mut self, options: PollOptions) {
+        self.poll_owed = Some(match self.poll_owed {
+            Some(owed) if owed.every_want => owed,
+            Some(_) | None => options,
+        });
     }
 
     fn poll_as(&mut self, prompted: Prompted, cx: &mut Context<Self>) -> bool {
@@ -5615,6 +5671,11 @@ impl LibraryModel {
         self.library.deliver_into(delivery_folder(cx));
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,
+            Err(resonate_library::Error::AlreadyAsking { .. }) if self.keeping.is_some() => {
+                tracing::debug!("the keep pass gives way, and this poll follows it");
+                self.owe_a_poll(options);
+                return false;
+            }
             Err(resonate_library::Error::AlreadyAsking { .. }) => {
                 tracing::debug!("another process is asking the providers; this poll waits for it");
                 if prompted == Prompted::ByHand {
@@ -5658,6 +5719,7 @@ impl LibraryModel {
                     this.poll_owed.get_or_insert(PollOptions::default());
                 }
                 this.take_up_what_waited(cx);
+                this.keep_what_is_owed(cx);
                 let joined = handle.join();
                 if let Some(notice) = this.sourcing.unkept_notice() {
                     toast::tell(notice, cx);
@@ -5695,6 +5757,264 @@ impl LibraryModel {
             let _ = finished;
         });
         true
+    }
+
+    pub(crate) fn keep(&mut self, row: &Row, cx: &mut Context<Self>) {
+        let Some(song) = row.song().and_then(song_to_keep) else {
+            return;
+        };
+        self.keep_what_was_pressed(
+            move |library| {
+                Ok(match library.keep_song(song)? {
+                    KeptSong::Queued => None,
+                    KeptSong::AlreadyHeld(_) => Some(ALREADY_HELD.to_owned()),
+                })
+            },
+            cx,
+        );
+    }
+
+    pub(crate) fn keep_mix(&mut self, name: String, rows: &[Row], cx: &mut Context<Self>) {
+        let songs = rows
+            .iter()
+            .filter_map(Row::song)
+            .filter_map(song_to_keep)
+            .collect();
+        let ordered = cx
+            .try_global::<ResonateApp>()
+            .is_some_and(|app| app.online.youtube_music_keep_order);
+        self.keep_what_was_pressed(
+            move |library| {
+                let kept = library.keep_playlist(PlaylistToKeep {
+                    name: name.clone(),
+                    ordered,
+                    songs,
+                })?;
+                Ok(Some(format!(
+                    "{name}: {} queued, {} already held",
+                    kept.queued, kept.held
+                )))
+            },
+            cx,
+        );
+    }
+
+    fn keep_what_was_pressed(
+        &mut self,
+        press: impl FnOnce(&Library) -> resonate_library::Result<Option<String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.library.deliver_into(delivery_folder(cx));
+        let library = Arc::clone(&self.library);
+        cx.spawn(async move |this, cx| {
+            let pressed = cx
+                .background_executor()
+                .spawn(async move { press(&library) })
+                .await;
+            let _ = this.update(cx, |this, cx| match pressed {
+                Ok(said) => {
+                    if let Some(said) = said {
+                        toast::tell(Notice::Done(said), cx);
+                    }
+                    this.keep_what_is_queued(cx);
+                }
+                Err(error) => this.tell_of_a_keep_refused(&error, cx),
+            });
+        })
+        .detach();
+    }
+
+    fn tell_of_a_keep_refused(&mut self, error: &resonate_library::Error, cx: &mut Context<Self>) {
+        tracing::error!(%error, "a song could not be kept");
+        let notice = match error {
+            resonate_library::Error::NoDeliveryFolder => {
+                Notice::Trouble(NO_MUSIC_FOLDER.to_owned())
+            }
+            error => toast::could_not("keep the song", error),
+        };
+        toast::tell(notice, cx);
+        cx.notify();
+    }
+
+    fn keep_what_was_left_queued(&mut self, cx: &mut Context<Self>) {
+        let turned_on = cx
+            .try_global::<ResonateApp>()
+            .is_some_and(|app| app.online.enabled && app.online.youtube_music);
+        if !turned_on {
+            return;
+        }
+        let library = Arc::clone(&self.library);
+        self._keeping = cx.spawn(async move |this, cx| {
+            let queued = cx
+                .background_executor()
+                .spawn(async move { library.keeps_pending() })
+                .await;
+            match queued {
+                Ok(0) => {}
+                Ok(_) => {
+                    let _ = this.update(cx, |this, cx| this.keep_what_is_queued(cx));
+                }
+                Err(error) => tracing::warn!(%error, "what was left to keep could not be read"),
+            }
+        });
+    }
+
+    fn keep_what_is_owed(&mut self, cx: &mut Context<Self>) {
+        if mem::take(&mut self.keep_owed) {
+            self.keep_what_is_queued(cx);
+        }
+    }
+
+    fn keep_what_is_queued(&mut self, cx: &mut Context<Self>) {
+        if self.keeping.is_some() || self.work.polling().is_some() {
+            self.keep_owed = true;
+            return;
+        }
+        self.library.deliver_into(delivery_folder(cx));
+        let providers = self.providers(cx);
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = Arc::clone(&stop);
+        let library = Arc::clone(&self.library);
+        let began = thread::Builder::new()
+            .name(KEEP_THREAD.to_owned())
+            .spawn(move || {
+                let cancelled = || stopped.load(Ordering::Relaxed);
+                library.keep_pending(&providers, &cancelled)
+            });
+        let handle = match began {
+            Ok(handle) => handle,
+            Err(error) => {
+                tracing::error!(%error, "the keep pass could not start");
+                toast::tell(
+                    Notice::Trouble("The songs could not be kept".to_owned()),
+                    cx,
+                );
+                return;
+            }
+        };
+        self.keeping = Some(KeepPass { stop, left: 0 });
+        cx.notify();
+        self.follow_the_keep(handle, cx);
+    }
+
+    fn follow_the_keep(
+        &mut self,
+        handle: JoinHandle<resonate_library::Result<KeepSummary>>,
+        cx: &mut Context<Self>,
+    ) {
+        let library = Arc::clone(&self.library);
+        self._keeping = cx.spawn(async move |this, cx| {
+            while !handle.is_finished() {
+                cx.background_executor().timer(KEEPS_LOOKED_AT_EVERY).await;
+                let reading = Arc::clone(&library);
+                let left = cx
+                    .background_executor()
+                    .spawn(async move { reading.keeps_pending() })
+                    .await;
+                if this
+                    .update(cx, |this, cx| this.keeps_left_moved(left, cx))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            let _ = this.update(cx, |this, cx| {
+                let ended = handle.join();
+                this.keep_pass_ended(ended, cx);
+            });
+        });
+    }
+
+    fn keeps_left_moved(&mut self, left: resonate_library::Result<u64>, cx: &mut Context<Self>) {
+        let left = match left {
+            Ok(left) => left,
+            Err(error) => {
+                tracing::warn!(%error, "what is left to keep could not be read");
+                return;
+            }
+        };
+        let Some(pass) = self.keeping.as_mut() else {
+            return;
+        };
+        let settled_one = left < pass.left;
+        if left != pass.left {
+            pass.left = left;
+            cx.notify();
+        }
+        if settled_one {
+            self.read(Wanted::Everything, cx);
+        }
+    }
+
+    fn keep_pass_ended(
+        &mut self,
+        ended: thread::Result<resonate_library::Result<KeepSummary>>,
+        cx: &mut Context<Self>,
+    ) {
+        self.keeping = None;
+        let turned_away = match ended {
+            Ok(Ok(summary)) => {
+                self.keep_pass_answered(&summary, cx);
+                false
+            }
+            Ok(Err(resonate_library::Error::AlreadyAsking { .. })) => {
+                tracing::debug!("another process is asking the providers; the keep waits for it");
+                self.keep_owed = true;
+                true
+            }
+            Ok(Err(error)) => {
+                self.tell_of_a_keep_refused(&error, cx);
+                false
+            }
+            Err(_) => {
+                tracing::error!("the keep pass stopped");
+                toast::tell(
+                    Notice::Trouble("The songs could not be kept".to_owned()),
+                    cx,
+                );
+                false
+            }
+        };
+        self.take_up_what_waited(cx);
+        if turned_away {
+            self.keep_again_after(OWED_ASKED_AGAIN_AFTER, cx);
+        } else {
+            self.keep_what_is_owed(cx);
+        }
+        self.reload(cx);
+    }
+
+    fn keep_pass_answered(&mut self, summary: &KeepSummary, cx: &mut Context<Self>) {
+        if summary.landed > 0 {
+            self.enrich_new_songs(cx);
+        }
+        if summary.yielded {
+            self.keep_owed = true;
+            self.poll_owed.get_or_insert(PollOptions::default());
+        }
+        if let Some(notice) = kept(summary) {
+            toast::tell(notice, cx);
+        }
+    }
+
+    fn keep_again_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
+        self._keep_again = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(waiting).await;
+            let _ = this.update(cx, |this, cx| this.keep_what_is_owed(cx));
+        });
+    }
+
+    pub fn keeps_left(&self) -> Option<u64> {
+        self.keeping.as_ref().map(|pass| pass.left)
+    }
+
+    pub fn stop_keeping(&mut self, cx: &mut Context<Self>) {
+        let Some(pass) = &self.keeping else {
+            return;
+        };
+        pass.stop.store(true, Ordering::Relaxed);
+        self.keep_owed = false;
+        cx.notify();
     }
 
     fn ask_what_is_owed_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
@@ -7443,19 +7763,351 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::{AlbumId, ArtistId};
-    use resonate_library::{
-        AlbumFound, Direction, Found, Isrc, Library, Mbid, PollStats, SortOrder,
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        thread,
+        time::Duration,
     };
 
+    use gpui::{BorrowAppContext as _, Entity, TestAppContext};
+    use parking_lot::Mutex;
+    use resonate_core::{AlbumId, ArtistId, MediaLocation, SourceId};
+    use resonate_library::{
+        AlbumFound, Direction, Found, Isrc, KeepSummary, Library, Mbid, PollStats, SortOrder,
+    };
+    use resonate_providers::{Identity, Obtained, Provider, Providers};
+
     use super::{
-        Arranging, Beyond, Change, Favourited, Followed, ListedRow, MissingRow,
+        Arranging, Beyond, Change, Favourited, Followed, LibraryModel, ListedRow, MissingRow,
         NO_LINK_TO_SHARE_ANY, Notice, POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching,
-        Shared, Wanted, albums_kept_before_the_rest, arranged, beyond_the_listing,
-        elsewhere_standing, headed_by_disc, held_at, held_in, kept_before_the_rest, landed_since,
-        missing_track_rows, on_the_clipboard, renewed, retried_after, sharing_told,
+        Shared, Wanted, albums_kept_before_the_rest, arranged, beyond_the_listing, delivery_folder,
+        elsewhere_standing, headed_by_disc, held_at, held_in, kept, kept_before_the_rest,
+        landed_since, missing_track_rows, on_the_clipboard, renewed, retried_after, sharing_told,
         unheld_release_rows,
     };
+    use crate::{
+        ResonateApp,
+        driven::{Driven, Folder},
+        served::ServedSong,
+        serving::{Row, song_to_keep},
+        settings::{Online, Supplying},
+    };
+
+    const KEPT_FROM: &str = "kept-from";
+    const HELD_FOR_A_LOOK: Duration = Duration::from_millis(5);
+
+    struct Gated {
+        source: SourceId,
+        asked: Arc<Mutex<Vec<String>>>,
+        released: Arc<AtomicBool>,
+    }
+
+    impl Provider for Gated {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn find(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
+            self.asked.lock().push(identity.title.clone());
+            while !self.released.load(Ordering::Relaxed) {
+                thread::sleep(HELD_FOR_A_LOOK);
+            }
+            Ok(Obtained::Nothing)
+        }
+    }
+
+    struct Keeping {
+        driven: Driven,
+        model: Entity<LibraryModel>,
+        asked: Arc<Mutex<Vec<String>>>,
+        released: Arc<AtomicBool>,
+        _music: Folder,
+    }
+
+    impl Keeping {
+        fn open(cx: &mut TestAppContext, online: Online, music_folder: bool) -> Self {
+            let music = Folder::new();
+            let catalog = music.path().join("library.db");
+            let library = Arc::new(Library::open(&catalog).expect("a catalog on disc"));
+            let mut driven = Driven::open(cx, library);
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let released = Arc::new(AtomicBool::new(false));
+            let (hearing, holding) = (Arc::clone(&asked), Arc::clone(&released));
+            let path = music.path().to_path_buf();
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                cx.update_global::<ResonateApp, _>(|global, _| {
+                    global.online = online;
+                    global.music_folder = music_folder.then_some(path);
+                });
+                model.update(cx, |library, _| {
+                    library.sourcing.register = Arc::new(move |_: &Supplying<'_>| {
+                        Providers::none().and(Arc::new(Gated {
+                            source: SourceId::new(KEPT_FROM).expect("a source"),
+                            asked: Arc::clone(&hearing),
+                            released: Arc::clone(&holding),
+                        }))
+                    });
+                });
+            });
+            Self {
+                driven,
+                model,
+                asked,
+                released,
+                _music: music,
+            }
+        }
+
+        fn pressed(&mut self, song: &str) {
+            let row = kept_row(song);
+            let model = self.model.clone();
+            self.driven
+                .cx
+                .update(|_, cx| model.update(cx, |library, cx| library.keep(&row, cx)));
+        }
+
+        fn until_asked(&mut self, songs: usize) {
+            let asked = Arc::clone(&self.asked);
+            self.driven.until(|_, _| asked.lock().len() >= songs);
+        }
+
+        fn until_the_pass_ends(&mut self) {
+            let model = self.model.clone();
+            self.driven
+                .until(|_, cx| model.read(cx).keeps_left().is_none());
+        }
+
+        fn queued(&mut self) -> u64 {
+            let model = self.model.clone();
+            self.driven.cx.update(|_, cx| {
+                model
+                    .read(cx)
+                    .library
+                    .keeps_pending()
+                    .expect("what is queued read")
+            })
+        }
+    }
+
+    fn kept_row(title: &str) -> Row {
+        Row::Song(ServedSong {
+            rating: resonate_core::titles::Rating::Unmarked,
+            location: MediaLocation::from_uri(&format!("{KEPT_FROM}:track/{title}"))
+                .expect("a location"),
+            title: title.to_owned(),
+            artist: Some("Ada".to_owned()),
+            album: None,
+            track: None,
+            length: None,
+            format: None,
+            cover: None,
+            favourite: None,
+        })
+    }
+
+    fn turned_on() -> Online {
+        Online {
+            enabled: true,
+            youtube_music: true,
+            ..Online::default()
+        }
+    }
+
+    #[gpui::test]
+    fn a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass(
+        cx: &mut TestAppContext,
+    ) {
+        let mut keeping = Keeping::open(cx, turned_on(), true);
+
+        keeping.pressed("one");
+        keeping.until_asked(1);
+        keeping.pressed("two");
+        let queued = keeping.model.clone();
+        keeping.driven.until(|_, cx| queued.read(cx).keep_owed);
+        assert_eq!(keeping.queued(), 2);
+        assert_eq!(
+            keeping.asked.lock().clone(),
+            ["one"],
+            "no second pass began"
+        );
+
+        keeping.released.store(true, Ordering::Relaxed);
+        keeping.until_asked(2);
+        keeping.until_the_pass_ends();
+
+        assert_eq!(keeping.asked.lock().clone(), ["one", "two"]);
+        assert_eq!(keeping.queued(), 0);
+    }
+
+    #[gpui::test]
+    fn a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_it(
+        cx: &mut TestAppContext,
+    ) {
+        let mut keeping = Keeping::open(cx, turned_on(), true);
+        let model = keeping.model.clone();
+        keeping.driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| {
+                library.library.deliver_into(delivery_folder(cx));
+                for title in ["one", "two"] {
+                    let song = song_to_keep(kept_row(title).song().expect("a song"));
+                    library
+                        .library
+                        .keep_song(song.expect("a song to keep"))
+                        .expect("the song queued");
+                }
+                library.keep_what_is_queued(cx);
+            });
+        });
+        keeping.until_asked(1);
+        keeping
+            .driven
+            .cx
+            .update(|_, cx| model.update(cx, |library, cx| library.poll(cx)));
+        let owing = keeping.model.clone();
+        keeping
+            .driven
+            .until(|_, cx| owing.read(cx).poll_owed.is_some());
+
+        keeping.released.store(true, Ordering::Relaxed);
+        keeping.until_asked(2);
+        keeping.until_the_pass_ends();
+
+        assert_eq!(keeping.asked.lock().clone(), ["one", "two"]);
+        assert_eq!(keeping.queued(), 0);
+    }
+
+    #[gpui::test]
+    fn a_pass_that_gave_way_owes_the_poll_it_gave_way_to_and_a_pass_after_it(
+        cx: &mut TestAppContext,
+    ) {
+        let mut keeping = Keeping::open(cx, turned_on(), true);
+        let model = keeping.model.clone();
+
+        keeping.driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| {
+                library.keep_pass_answered(
+                    &KeepSummary {
+                        yielded: true,
+                        ..KeepSummary::default()
+                    },
+                    cx,
+                );
+            });
+        });
+
+        let (owes_a_pass, owes_a_poll) = keeping.driven.cx.update(|_, cx| {
+            let library = model.read(cx);
+            (library.keep_owed, library.poll_owed.is_some())
+        });
+        assert!(owes_a_pass);
+        assert!(owes_a_poll);
+    }
+
+    #[gpui::test]
+    fn a_pass_stopped_leaves_the_rest_queued_and_owes_nothing(cx: &mut TestAppContext) {
+        let mut keeping = Keeping::open(cx, turned_on(), true);
+        keeping.pressed("one");
+        keeping.until_asked(1);
+        keeping.pressed("two");
+        let model = keeping.model.clone();
+        keeping.driven.until(|_, cx| model.read(cx).keep_owed);
+
+        keeping
+            .driven
+            .cx
+            .update(|_, cx| model.update(cx, |library, cx| library.stop_keeping(cx)));
+        keeping.until_the_pass_ends();
+        keeping.released.store(true, Ordering::Relaxed);
+        keeping.driven.settle();
+
+        assert_eq!(keeping.asked.lock().clone(), ["one"]);
+        assert_eq!(keeping.queued(), 2);
+    }
+
+    #[gpui::test]
+    fn a_keep_with_no_music_folder_is_refused_and_nothing_is_queued(cx: &mut TestAppContext) {
+        let mut keeping = Keeping::open(cx, turned_on(), false);
+
+        keeping.pressed("one");
+        keeping.driven.settle();
+        keeping.until_the_pass_ends();
+
+        assert!(keeping.asked.lock().is_empty());
+        assert_eq!(keeping.queued(), 0);
+    }
+
+    #[gpui::test]
+    fn what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on(
+        cx: &mut TestAppContext,
+    ) {
+        let mut off = Keeping::open(
+            cx,
+            Online {
+                youtube_music: false,
+                ..turned_on()
+            },
+            true,
+        );
+        let left = off.model.clone();
+        off.driven.cx.update(|_, cx| {
+            left.update(cx, |library, cx| {
+                library.library.deliver_into(delivery_folder(cx));
+                library
+                    .library
+                    .keep_song(song_to_keep(kept_row("one").song().expect("a song")).expect("kept"))
+                    .expect("the song queued");
+                library.keep_what_was_left_queued(cx);
+            });
+        });
+        off.driven.settle();
+        assert!(off.asked.lock().is_empty());
+
+        off.driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|global, _| global.online = turned_on());
+            left.update(cx, |library, cx| library.keep_what_was_left_queued(cx));
+        });
+        off.released.store(true, Ordering::Relaxed);
+        off.until_asked(1);
+        off.until_the_pass_ends();
+
+        assert_eq!(off.queued(), 0);
+    }
+
+    #[test]
+    fn a_pass_that_gave_way_says_nothing_and_one_stopped_by_its_service_says_so() {
+        let landed = KeepSummary {
+            landed: 2,
+            ..KeepSummary::default()
+        };
+
+        assert_eq!(kept(&KeepSummary::default()), None);
+        assert_eq!(kept(&landed), Some(Notice::Done("Kept 2 songs".to_owned())));
+        assert_eq!(
+            kept(&KeepSummary {
+                unkept: 1,
+                ..landed.clone()
+            }),
+            Some(Notice::Noted("Kept 2 songs, 1 song not".to_owned()))
+        );
+        assert_eq!(
+            kept(&KeepSummary {
+                yielded: true,
+                ..landed.clone()
+            }),
+            None
+        );
+        assert!(matches!(
+            kept(&KeepSummary {
+                stopped_by: SourceId::new(KEPT_FROM).ok(),
+                ..landed
+            }),
+            Some(Notice::Trouble(_))
+        ));
+    }
 
     #[test]
     fn providers_that_keep_refusing_are_asked_less_and_less_often() {

@@ -92,6 +92,12 @@ pub fn in_place_named(config: &Config, settings: Option<PathBuf>) -> InPlace {
     in_place(&Accounts::of(config), &made_once(settings))
 }
 
+#[cfg(feature = "online")]
+pub fn youtube_music_named(config: &Config, settings: Option<PathBuf>) -> Option<Arc<YtMusic>> {
+    let account = Accounts::of(config).ytmusic?;
+    Some(ytmusic_of(&made_once(settings), &account))
+}
+
 #[cfg(all(feature = "ui", feature = "online"))]
 pub fn in_place_given(online: &resonate_ui::Online, settings: Option<PathBuf>) -> InPlace {
     in_place(&Accounts::given(online), &made_once(settings))

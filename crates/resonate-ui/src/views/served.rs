@@ -38,6 +38,10 @@ const PLAY_THIS_HINT: &str = "Play this, and what follows it here";
 
 const NOT_PLAYED_HERE_HINT: &str = "This service's songs are not played from here";
 
+const KEEP_HINT: &str = "Keep this song in the music folder";
+
+const KEEP_ALL_HINT: &str = "Keep every song here in the music folder, as a playlist";
+
 const ASK_AGAIN_HINT: &str = "Ask the server again";
 
 pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter";
@@ -146,6 +150,31 @@ impl RootView {
                     },
                     cx,
                 ));
+        }
+        let keepable = match (place, page) {
+            (Place::Mix { location, name }, Page::Read(rows))
+                if !rows.is_empty() && self.server.read(cx).keeps_songs(location) =>
+            {
+                Some((name.clone(), Arc::clone(rows)))
+            }
+            _ => None,
+        };
+        if let Some((name, rows)) = keepable {
+            actions = actions.child(self.in_the_pane_ring(
+                kit::button(
+                    "server-keep",
+                    Some(Icon::Download),
+                    "Keep",
+                    KEEP_ALL_HINT,
+                    Tone::Primary,
+                ),
+                move |this, _, cx| {
+                    this.library.update(cx, |library, cx| {
+                        library.keep_mix(name.clone(), &rows, cx);
+                    });
+                },
+                cx,
+            ));
         }
         actions = actions.child(self.server_search_field(cx));
 
@@ -395,6 +424,20 @@ impl RootView {
         favourite: Option<ServedSong>,
         cx: &mut Context<Self>,
     ) -> Div {
+        let keepable = favourite
+            .clone()
+            .filter(|song| self.server.read(cx).keeps_songs(&song.location));
+        let keep = keepable.map(|song| {
+            let row = Row::Song(song);
+            self.in_the_pane_ring(
+                kit::icon_button(("server-row-keep", index), Icon::Download, KEEP_HINT),
+                move |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.keep(&row, cx));
+                },
+                cx,
+            )
+        });
         let starred =
             favourite.filter(|song| self.server.read(cx).keeps_favourites(&song.location));
         let star = starred.map(|song| {
@@ -411,7 +454,10 @@ impl RootView {
         let playing = location.clone();
         let next = location.clone();
         let queued = location;
-        let controls = self.row_controls(("server-controls", index), cx);
+        let controls = self
+            .row_controls(("server-controls", index), cx)
+            .children(star)
+            .children(keep);
 
         div()
             .flex()
@@ -419,7 +465,7 @@ impl RootView {
             .items_center()
             .justify_end()
             .w(px(controls_width(SERVER_CONTROLS)))
-            .child(controls.children(star).when(plays, |controls| {
+            .child(controls.when(plays, |controls| {
                 controls
                     .child(self.in_the_pane_ring(
                         kit::icon_button(("server-row-play", index), Icon::Play, PLAY_HINT),
@@ -1245,7 +1291,9 @@ mod tests {
         assert_eq!(stars, [false, true]);
     }
 
-    struct NotPlayed;
+    struct NotPlayed {
+        keeps: bool,
+    }
 
     impl Serves for NotPlayed {
         fn scheme(&self) -> &SourceId {
@@ -1301,16 +1349,60 @@ mod tests {
             false
         }
 
+        fn keeps_songs(&self) -> bool {
+            self.keeps
+        }
+
         fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
             Searched.cover(&at("track/so-1"), None, 0)
         }
+    }
+
+    fn the_mix_opened(driven: &mut Driven) {
+        open_the_server(driven);
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
+        );
+        driven.settle();
+        driven.click("server-row-1");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Mix { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+        driven.settle();
+    }
+
+    #[gpui::test]
+    fn a_service_that_keeps_songs_offers_a_keep_on_a_song_and_a_mix_and_a_press_queues_them(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = crate::driven::Folder::new();
+        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: true })], an_account());
+        let music = folder.path().to_path_buf();
+        driven.cx.update(|_, cx| {
+            gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
+                global.music_folder = Some(music);
+            });
+        });
+        the_mix_opened(&mut driven);
+
+        assert!(driven.cx.debug_bounds("server-row-keep-0").is_some());
+        driven.click("server-keep");
+        let library = driven.read(|_, cx| Arc::clone(&cx.global::<crate::ResonateApp>().library));
+        driven.until(|_, _| library.keeps_pending().is_ok_and(|queued| queued == 1));
+        driven.until(|root, cx| root.library.read(cx).keeps_left().is_none());
+
+        driven.click("server-row-keep-0");
+        driven.settle();
+        driven.until(|root, cx| root.library.read(cx).keeps_left().is_none());
+        assert_eq!(library.keeps_pending().expect("a count"), 2);
     }
 
     #[gpui::test]
     fn a_mix_of_a_service_that_plays_no_song_opens_and_offers_nothing_to_play_or_queue(
         cx: &mut TestAppContext,
     ) {
-        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed)], an_account());
+        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: false })], an_account());
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
@@ -1333,6 +1425,8 @@ mod tests {
             "server-row-play-0",
             "server-row-next-0",
             "server-row-queue-0",
+            "server-keep",
+            "server-row-keep-0",
         ] {
             assert!(driven.cx.debug_bounds(offered).is_none(), "{offered}");
         }

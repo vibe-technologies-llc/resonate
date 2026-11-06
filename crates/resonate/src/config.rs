@@ -627,7 +627,7 @@ impl Config {
         self.youtube_music.unwrap_or(false)
     }
 
-    #[cfg(any(feature = "ui", test))]
+    #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn keeps_youtubes_order(&self) -> bool {
         self.youtube_music_keep_order.unwrap_or(true)
     }

@@ -768,6 +768,36 @@ pub enum Error {
     BlankServerId,
 
     #[cfg(feature = "online")]
+    #[error("youtube-music is off in the settings, so nothing was asked of YouTube Music")]
+    YoutubeMusicOff,
+
+    #[cfg(feature = "online")]
+    #[error("{link} is not a link to a song or a playlist on YouTube Music")]
+    NotAYoutubeMusicLink { link: String },
+
+    #[cfg(feature = "online")]
+    #[error("YouTube Music shows no video {video}; it may be private or gone")]
+    NoSuchVideo { video: String },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "another pass is asking the providers, so nothing was fetched now; what was asked for \
+         stays queued for the next keep, here or when the window next opens"
+    )]
+    KeepWaitsItsTurn,
+
+    #[cfg(feature = "online")]
+    #[error("the keep was cancelled; what landed stays and the rest stays queued")]
+    KeepCancelled,
+
+    #[cfg(feature = "online")]
+    #[error("{provider} stopped answering, so {left} kept songs stay queued")]
+    KeepStopped {
+        provider: resonate_core::SourceId,
+        left: u64,
+    },
+
+    #[cfg(feature = "online")]
     #[error(
         "tidal-client-id is not set in the settings, and TIDAL's sign-in needs the client it names"
     )]

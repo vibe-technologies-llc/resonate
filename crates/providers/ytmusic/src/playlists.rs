@@ -32,8 +32,32 @@ fn entries_readable<'de, D: Deserializer<'de>>(
 
 #[derive(Default, Deserialize)]
 struct Flat {
+    #[serde(default)]
+    title: Option<String>,
     #[serde(default, deserialize_with = "entries_readable")]
     entries: Vec<Entry>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Playlist {
+    pub name: Option<String>,
+    pub songs: Vec<Song>,
+}
+
+#[derive(Deserialize)]
+struct Video {
+    #[serde(default)]
+    track: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    artist: Option<String>,
+    #[serde(default)]
+    channel: Option<String>,
+    #[serde(default)]
+    album: Option<String>,
+    #[serde(default)]
+    duration: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -54,18 +78,44 @@ fn named(text: Option<&str>) -> Option<&str> {
     text.map(str::trim).filter(|text| !text.is_empty())
 }
 
+fn length_of(duration: Option<&Value>) -> Option<Duration> {
+    Duration::try_from_secs_f64(duration?.as_f64()?).ok()
+}
+
+fn artist_of(channel: &str) -> String {
+    channel
+        .strip_suffix(A_TOPIC_CHANNEL_ENDS)
+        .unwrap_or(channel)
+        .to_owned()
+}
+
+impl Video {
+    fn song(&self, video: &VideoId) -> Option<Song> {
+        let title = named(self.track.as_deref())
+            .or(named(self.title.as_deref()))?
+            .to_owned();
+        Some(Song {
+            rating: Rating::of(None, &title, None),
+            artist: named(self.artist.as_deref())
+                .map(str::to_owned)
+                .or_else(|| named(self.channel.as_deref()).map(artist_of)),
+            album: named(self.album.as_deref()).map(str::to_owned),
+            length: length_of(self.duration.as_ref()),
+            title,
+            ..Song::only(Id::new(video.as_str())?)
+        })
+    }
+}
+
 impl Entry {
     fn length(&self) -> Option<Duration> {
-        let seconds = self.duration.as_ref()?.as_f64()?;
-        Duration::try_from_secs_f64(seconds).ok()
+        length_of(self.duration.as_ref())
     }
 
     fn artist(&self) -> Option<String> {
-        let channel = named(self.channel.as_deref()).or(named(self.uploader.as_deref()))?;
-        let artist = channel
-            .strip_suffix(A_TOPIC_CHANNEL_ENDS)
-            .unwrap_or(channel);
-        Some(artist.to_owned())
+        named(self.channel.as_deref())
+            .or(named(self.uploader.as_deref()))
+            .map(artist_of)
     }
 
     fn thumbnail(&self) -> Option<Id> {
@@ -116,7 +166,22 @@ impl Tool {
             .collect())
     }
 
-    pub fn playlist(&self, id: &Id) -> Result<Vec<Song>> {
+    pub fn song(&self, video: &VideoId) -> Result<Option<Song>> {
+        let op = ProviderOp::Search;
+        self.refused_while_lapsed()?;
+        let Some(listing) = self.video_listed(video)? else {
+            return Ok(None);
+        };
+        let read: Video = serde_json::from_slice(&listing).map_err(|error| {
+            tracing::debug!(%error, "a video was not the document expected");
+            self.unreadable(op)
+        })?;
+        read.song(video)
+            .map(Some)
+            .ok_or_else(|| self.unreadable(op))
+    }
+
+    pub fn playlist(&self, id: &Id) -> Result<Playlist> {
         let op = ProviderOp::Browse;
         let id = playlist_id(id.as_str()).ok_or_else(|| self.unreadable(op))?;
         let listing = self.listed_at(&format!("{A_PLAYLIST_IS_AT}{id}"))?;
@@ -125,6 +190,9 @@ impl Tool {
             self.unreadable(op)
         })?;
 
-        Ok(flat.entries.iter().filter_map(Entry::song).collect())
+        Ok(Playlist {
+            name: named(flat.title.as_deref()).map(str::to_owned),
+            songs: flat.entries.iter().filter_map(Entry::song).collect(),
+        })
     }
 }

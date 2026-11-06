@@ -152,6 +152,13 @@ pub(crate) fn summed_up(fetching: &[Fetching], arriving: bool) -> SharedString {
     }
 }
 
+pub(crate) fn keeping_said(left: u64) -> SharedString {
+    match left {
+        0 | 1 => SharedString::new_static(DOWNLOADING),
+        more => SharedString::from(format!("{DOWNLOADING} · {more} left")),
+    }
+}
+
 fn finished(fetching: &[Fetching]) -> SharedString {
     let downloaded = fetching
         .iter()

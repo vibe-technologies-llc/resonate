@@ -202,6 +202,10 @@ const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
 
 const CANCEL_DOWNLOAD_HINT: &str = "Stop downloading this song";
 
+const KEEPING_SONGS: &str = "Keeping songs";
+
+const STOP_KEEPING_HINT: &str = "Stop keeping songs; the rest stays queued for the next time";
+
 const PLAY_DOWNLOAD_HINT: &str = "Play this song";
 
 const OPEN_DOWNLOAD_HINT: &str = "Open the album this song is on";
@@ -5021,7 +5025,7 @@ impl RootView {
         let plays = library.statistics().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
         let enriching = library.is_enriching();
-        let downloads = !library.downloads().is_empty();
+        let downloads = !library.downloads().is_empty() || library.keeps_left().is_some();
         let mut browse = div().flex().flex_col().gap_4();
         for section in Section::ALL {
             let mut listed = div()
@@ -5188,13 +5192,17 @@ impl RootView {
             .iter()
             .map(|download| library.fetching(download))
             .collect();
-        let underway = fetching.iter().copied().any(Fetching::is_underway);
+        let keeping = library.keeps_left();
+        let underway = keeping.is_some() || fetching.iter().copied().any(Fetching::is_underway);
         let arriving = library.downloads().iter().any(|download| {
             library
                 .fetched(download)
                 .is_some_and(|fetched| fetched.is_arriving())
         });
-        let said = downloads::summed_up(&fetching, arriving);
+        let said = keeping.map_or_else(
+            || downloads::summed_up(&fetching, arriving),
+            downloads::keeping_said,
+        );
         let open = self.downloads_open;
         let hint = if open {
             HIDE_DOWNLOADS_HINT
@@ -5265,7 +5273,8 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Option<AnimationElement<Stateful<Div>>> {
         let library = self.library.read(cx);
-        if !self.downloads_open || library.downloads().is_empty() {
+        let keeping = library.keeps_left();
+        if !self.downloads_open || (library.downloads().is_empty() && keeping.is_none()) {
             return None;
         }
         let rows: Vec<(Download, Fetching)> = library
@@ -5281,7 +5290,8 @@ impl RootView {
             .flex_col()
             .gap_0p5()
             .max_h(px(theme::downloads_height()))
-            .overflow_y_scroll();
+            .overflow_y_scroll()
+            .when_some(keeping, |list, left| list.child(self.keep_row(left, cx)));
         for (at, (download, fetching)) in rows.into_iter().enumerate() {
             list = list.child(self.download_row(at, &download, fetching, cx));
         }
@@ -5368,6 +5378,48 @@ impl RootView {
     fn close_the_downloads(&mut self, cx: &mut Context<Self>) {
         self.downloads_open = false;
         cx.notify();
+    }
+
+    fn keep_row(&self, left: u64, cx: &mut Context<Self>) -> Div {
+        let said = downloads::keeping_said(left);
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .text_size(px(theme::text_sm()))
+                            .text_color(rgb(theme::text()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(KEEPING_SONGS),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::accent()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(said),
+                    ),
+            )
+            .child(self.in_the_pane_ring(
+                kit::icon_button("stop-keeping", Icon::Stop, STOP_KEEPING_HINT),
+                |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.stop_keeping(cx));
+                },
+                cx,
+            ))
     }
 
     fn download_row(

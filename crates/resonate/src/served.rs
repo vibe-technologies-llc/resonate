@@ -418,6 +418,10 @@ impl resonate_ui::Serves for ServedBy {
         self.0.plays_songs()
     }
 
+    fn keeps_songs(&self) -> bool {
+        self.0.keeps_songs()
+    }
+
     fn favour(&self, song: &MediaLocation, favoured: bool) -> resonate_providers::Result<()> {
         match self.0.named_by(song) {
             Some(Named::Song(id)) => self.0.favour(&id, favoured),

@@ -1,0 +1,509 @@
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
+use resonate_core::{Service, SourceId};
+use resonate_library::{KeepSummary, KeptSong, Library, PlaylistToKeep, SongToKeep};
+use resonate_providers::{Id, PlaysInPlace as _, Providers, Song};
+use resonate_ytmusic::{Connection, VideoId, YtMusic};
+
+use crate::{Error, Result, cli::YtmusicArgs, config::Config, counted, providers, signals};
+
+const AFTER_THE_SCHEME: &str = "://";
+const SHORT_LINKS_ARE_ON: &str = "youtu.be";
+const A_SONGS_PATH: &str = "watch";
+const A_PLAYLISTS_PATH: &str = "playlist";
+const A_SONG_IS_NAMED_BY: &str = "v";
+const A_PLAYLIST_IS_NAMED_BY: &str = "list";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Keeping {
+    Song(String),
+    Playlist(String),
+    Elsewhere,
+}
+
+enum Asked {
+    Song(VideoId),
+    Playlist(Id),
+}
+
+fn named_in<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
+        .filter(|value| !value.is_empty())
+}
+
+pub fn keep_of(link: &str) -> Keeping {
+    let link = link.trim();
+    if !matches!(
+        Service::of_url(link),
+        Service::YoutubeMusic | Service::Youtube
+    ) {
+        return Keeping::Elsewhere;
+    }
+    let Some((_, reached)) = link.split_once(AFTER_THE_SCHEME) else {
+        return Keeping::Elsewhere;
+    };
+    let reached = reached.split('#').next().unwrap_or_default();
+    let (address, query) = reached.split_once('?').unwrap_or((reached, ""));
+    let (host, path) = address.split_once('/').unwrap_or((address, ""));
+    let path = path.trim_end_matches('/');
+
+    if host.eq_ignore_ascii_case(SHORT_LINKS_ARE_ON) && !path.is_empty() {
+        return Keeping::Song(path.to_owned());
+    }
+    match path {
+        A_SONGS_PATH => named_in(query, A_SONG_IS_NAMED_BY)
+            .map_or(Keeping::Elsewhere, |video| Keeping::Song(video.to_owned())),
+        A_PLAYLISTS_PATH => named_in(query, A_PLAYLIST_IS_NAMED_BY)
+            .map_or(Keeping::Elsewhere, |list| {
+                Keeping::Playlist(list.to_owned())
+            }),
+        _ => Keeping::Elsewhere,
+    }
+}
+
+fn asked_of(link: &str) -> Result<Asked> {
+    let refused = || Error::NotAYoutubeMusicLink {
+        link: link.to_owned(),
+    };
+    match keep_of(link) {
+        Keeping::Song(video) => VideoId::read(&video).map(Asked::Song).ok_or_else(refused),
+        Keeping::Playlist(list) => Id::new(&list).map(Asked::Playlist).ok_or_else(refused),
+        Keeping::Elsewhere => Err(refused()),
+    }
+}
+
+fn account(config: &Config, settings: Option<PathBuf>) -> Result<Arc<YtMusic>> {
+    if !config.online_enabled() {
+        return Err(Error::OnlineOff);
+    }
+    providers::youtube_music_named(config, settings).ok_or(Error::YoutubeMusicOff)
+}
+
+fn to_keep(source: &SourceId, song: Song) -> SongToKeep {
+    SongToKeep {
+        source: source.clone(),
+        video: song.id.to_string(),
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        length: song.length,
+    }
+}
+
+fn queue_the_song(music: &YtMusic, video: &VideoId, library: &Library) -> Result<()> {
+    let song = music.song(video)?.ok_or_else(|| Error::NoSuchVideo {
+        video: video.as_str().to_owned(),
+    })?;
+    let title = song.title.clone();
+    match library.keep_song(to_keep(music.scheme(), song))? {
+        KeptSong::Queued => said!("{title} is queued"),
+        KeptSong::AlreadyHeld(_) => said!("{title} is already held, so nothing was queued"),
+    }
+    Ok(())
+}
+
+fn queue_the_playlist(music: &YtMusic, list: &Id, ordered: bool, library: &Library) -> Result<()> {
+    let listed = music.mix(list)?;
+    let name = listed.mix.name;
+    let songs = listed
+        .songs
+        .into_iter()
+        .filter(|song| !song.title.trim().is_empty())
+        .map(|song| to_keep(music.scheme(), song))
+        .collect();
+    let kept = library.keep_playlist(PlaylistToKeep {
+        name: name.clone(),
+        ordered,
+        songs,
+    })?;
+    said!(
+        "{name}: {} queued, {} already held",
+        counted(kept.queued as u64, "song", "songs"),
+        counted(kept.held as u64, "song", "songs"),
+    );
+    Ok(())
+}
+
+fn queue(asked: &Asked, music: &YtMusic, ordered: bool, library: &Library) -> Result<()> {
+    let _leaving = signals::leave_when_told();
+    match asked {
+        Asked::Song(video) => queue_the_song(music, video, library),
+        Asked::Playlist(list) => queue_the_playlist(music, list, ordered, library),
+    }
+}
+
+fn walked(library: &Library, music: Arc<YtMusic>, stopping: &AtomicBool) -> Result<KeepSummary> {
+    let providers = Providers::none().and(music);
+    let cancelled = || stopping.load(Ordering::Relaxed);
+    library
+        .keep_pending(&providers, &cancelled)
+        .map_err(|error| match error {
+            resonate_library::Error::AlreadyAsking { .. } => Error::KeepWaitsItsTurn,
+            error => error.into(),
+        })
+}
+
+fn walked_until_told(library: &Library, music: Arc<YtMusic>) -> Result<()> {
+    let stopping = Arc::new(AtomicBool::new(false));
+    let told = Arc::clone(&stopping);
+    let _interrupting = signals::cancel_when_told(move || told.store(true, Ordering::Relaxed));
+    let summary = walked(library, music, &stopping)?;
+    said!(
+        "landed {} | gone {} | unkept {}",
+        summary.landed,
+        summary.gone,
+        summary.unkept
+    );
+    if stopping.load(Ordering::Relaxed) {
+        return Err(Error::KeepCancelled);
+    }
+    match summary.stopped_by {
+        Some(provider) => Err(Error::KeepStopped {
+            provider,
+            left: library.keeps_pending()?,
+        }),
+        None => Ok(()),
+    }
+}
+
+fn keep(
+    config: &Config,
+    settings: Option<PathBuf>,
+    link: &str,
+    library: impl FnOnce() -> Result<Library>,
+) -> Result<()> {
+    let asked = asked_of(link)?;
+    let music = account(config, settings)?;
+    let library = library()?;
+    queue(&asked, &music, config.keeps_youtubes_order(), &library)?;
+    walked_until_told(&library, music)
+}
+
+const fn connection_said(connection: Connection) -> &'static str {
+    match connection {
+        Connection::Premium => "Premium formats available",
+        Connection::SignedInWithoutPremium => "signed in, but this account has no Premium formats",
+        Connection::NotSignedIn => "not signed in",
+        Connection::ToolMissing => "yt-dlp could not be run; it is a separate install",
+    }
+}
+
+fn check(config: &Config, settings: Option<PathBuf>) -> Result<()> {
+    let music = account(config, settings)?;
+    let _leaving = signals::leave_when_told();
+    said!("{}", connection_said(music.check()));
+    Ok(())
+}
+
+pub fn run(
+    config: &Config,
+    settings: Option<PathBuf>,
+    wanted: &YtmusicArgs,
+    library: impl FnOnce() -> Result<Library>,
+) -> Result<()> {
+    match wanted {
+        YtmusicArgs::Keep { url } => keep(config, settings, url, library),
+        YtmusicArgs::Check => check(config, settings),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const A_SONG: &str = "https://music.youtube.com/watch?v=abc123";
+
+    fn turned_on() -> Config {
+        Config {
+            youtube_music: Some(true),
+            ..Config::default()
+        }
+    }
+
+    fn never_opened() -> Result<Library> {
+        panic!("the catalog was opened for a keep refused before it")
+    }
+
+    #[test]
+    fn a_keep_is_read_from_a_song_link_and_a_playlist_link() {
+        assert_eq!(keep_of(A_SONG), Keeping::Song("abc123".into()));
+        assert_eq!(
+            keep_of("https://music.youtube.com/playlist?list=PLx"),
+            Keeping::Playlist("PLx".into())
+        );
+    }
+
+    #[test]
+    fn a_song_in_a_list_is_the_song_and_other_spellings_of_youtube_read_alike() {
+        for link in [
+            "https://music.youtube.com/watch?list=PLx&v=abc123&si=shared",
+            "https://www.youtube.com/watch?v=abc123#t=4",
+            "https://youtu.be/abc123?si=shared",
+            "  https://music.youtube.com/watch?v=abc123  ",
+        ] {
+            assert_eq!(keep_of(link), Keeping::Song("abc123".into()), "{link}");
+        }
+    }
+
+    #[test]
+    fn a_keep_with_youtube_music_off_says_so_and_asks_nothing() {
+        let off = Config {
+            yt_dlp: Some("/nowhere/yt-dlp".to_owned()),
+            ..Config::default()
+        };
+
+        assert!(matches!(
+            keep(&off, None, A_SONG, never_opened),
+            Err(Error::YoutubeMusicOff)
+        ));
+    }
+
+    #[test]
+    fn a_keep_with_online_off_says_so_and_asks_nothing() {
+        let offline = Config {
+            online: Some(false),
+            ..turned_on()
+        };
+
+        assert!(matches!(
+            keep(&offline, None, A_SONG, never_opened),
+            Err(Error::OnlineOff)
+        ));
+    }
+
+    #[test]
+    fn a_link_to_anywhere_else_is_refused() {
+        for link in [
+            "https://example.com/watch?v=abc123",
+            "https://music.youtube.com.example.com/watch?v=abc123",
+            "https://music.youtube.com/channel/UCY2qt3dw2TQJxvBrXwstEPQ",
+            "https://music.youtube.com/watch",
+            "https://music.youtube.com/watch?v=",
+            "music.youtube.com/watch?v=abc123",
+            "not a link",
+        ] {
+            assert_eq!(keep_of(link), Keeping::Elsewhere, "{link}");
+            assert!(
+                matches!(
+                    keep(&turned_on(), None, link, never_opened),
+                    Err(Error::NotAYoutubeMusicLink { .. })
+                ),
+                "{link}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_link_naming_what_no_video_is_called_is_refused() {
+        assert!(matches!(
+            keep(
+                &turned_on(),
+                None,
+                "https://music.youtube.com/watch?v=a%20b",
+                never_opened
+            ),
+            Err(Error::NotAYoutubeMusicLink { .. })
+        ));
+    }
+
+    #[test]
+    fn every_standing_of_the_account_is_said_in_words_of_its_own() {
+        let said = [
+            Connection::Premium,
+            Connection::SignedInWithoutPremium,
+            Connection::NotSignedIn,
+            Connection::ToolMissing,
+        ]
+        .map(connection_said);
+
+        for (at, words) in said.iter().enumerate() {
+            assert!(!said[..at].contains(words), "{words}");
+        }
+    }
+
+    #[cfg(unix)]
+    mod with_the_tool {
+        use std::{
+            env, fs,
+            os::unix::fs::PermissionsExt as _,
+            path::{Path, PathBuf},
+            process,
+            sync::atomic::AtomicU32,
+            thread,
+            time::{Duration, Instant},
+        };
+
+        use resonate_library::{DeliveryFolder, Layout};
+        use resonate_ytmusic::{Cookies, Tool};
+
+        use super::*;
+
+        const EXECUTABLE: u32 = 0o755;
+        const FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN: Duration = Duration::from_millis(20);
+        const THE_TOOL_IS_REACHED_WITHIN: Duration = Duration::from_secs(10);
+        const LOOKED_AT_EVERY: Duration = Duration::from_millis(10);
+
+        static MADE: AtomicU32 = AtomicU32::new(0);
+
+        struct Folder(PathBuf);
+
+        impl Folder {
+            fn holding_a_tool(body: &str) -> Self {
+                let folder = env::temp_dir().join(format!(
+                    "resonate-keep-{}-{}",
+                    process::id(),
+                    MADE.fetch_add(1, Ordering::Relaxed)
+                ));
+                fs::create_dir_all(folder.join("music")).expect("a folder");
+                let program = folder.join("yt-dlp");
+                fs::write(
+                    &program,
+                    format!("#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/asked\"\n{body}\n"),
+                )
+                .expect("the fake tool");
+                fs::set_permissions(&program, fs::Permissions::from_mode(EXECUTABLE))
+                    .expect("the fake tool made executable");
+                thread::sleep(FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN);
+                Self(folder)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+
+            fn music(&self) -> Arc<YtMusic> {
+                let tool = Tool::new(Some(self.0.join("yt-dlp")), Cookies::None);
+                Arc::new(YtMusic::new(tool))
+            }
+
+            fn asked(&self) -> Vec<String> {
+                fs::read_to_string(self.0.join("asked"))
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_owned)
+                    .collect()
+            }
+        }
+
+        impl Drop for Folder {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+
+        fn delivering_into(library: &Library, folder: &Folder) {
+            library.deliver_into(Some(DeliveryFolder {
+                path: folder.path().join("music"),
+                layout: Layout::default(),
+            }));
+        }
+
+        #[test]
+        fn a_song_link_is_named_by_the_tool_queued_and_asked_for_by_the_pass() {
+            let folder = Folder::holding_a_tool(
+                r#"echo '{"track":"Creep","artist":"Radiohead","duration":238,"formats":[]}'"#,
+            );
+            let library = Library::open_in_memory().expect("a catalog");
+            delivering_into(&library, &folder);
+            let music = folder.music();
+            let asked = asked_of(A_SONG).expect("a song");
+
+            queue(&asked, &music, true, &library).expect("the song queued");
+            assert_eq!(library.keeps_pending().expect("a count"), 1);
+            assert_eq!(folder.asked().len(), 1);
+
+            let summary =
+                walked(&library, music, &AtomicBool::new(false)).expect("the pass answered");
+
+            assert_eq!(summary.unkept, 1);
+            assert_eq!(library.keeps_pending().expect("a count"), 0);
+            assert_eq!(folder.asked().len(), 2);
+        }
+
+        #[test]
+        fn a_link_to_a_video_gone_is_said_to_be_gone_and_nothing_is_queued() {
+            let folder = Folder::holding_a_tool("echo 'ERROR: Video unavailable' >&2\nexit 1");
+            let library = Library::open_in_memory().expect("a catalog");
+            delivering_into(&library, &folder);
+            let asked = asked_of(A_SONG).expect("a song");
+
+            assert!(matches!(
+                queue(&asked, &folder.music(), true, &library),
+                Err(Error::NoSuchVideo { .. })
+            ));
+            assert_eq!(library.keeps_pending().expect("a count"), 0);
+        }
+
+        #[test]
+        fn a_keep_with_no_music_folder_is_refused_as_the_library_says() {
+            let folder = Folder::holding_a_tool(r#"echo '{"track":"Creep","artist":"Radiohead"}'"#);
+            let library = Library::open_in_memory().expect("a catalog");
+            let asked = asked_of(A_SONG).expect("a song");
+
+            assert!(matches!(
+                queue(&asked, &folder.music(), true, &library),
+                Err(Error::Library(resonate_library::Error::NoDeliveryFolder))
+            ));
+        }
+
+        #[test]
+        fn a_playlist_link_keeps_the_list_under_its_own_title() {
+            let folder = Folder::holding_a_tool(
+                r#"echo '{"title":"Road trip","entries":[{"id":"one","title":"One","channel":"Ada"},{"id":"blank","title":" "}]}'"#,
+            );
+            let library = Library::open_in_memory().expect("a catalog");
+            delivering_into(&library, &folder);
+            let asked = asked_of("https://music.youtube.com/playlist?list=PLx").expect("a list");
+
+            queue(&asked, &folder.music(), true, &library).expect("the list queued");
+
+            assert_eq!(library.keeps_pending().expect("a count"), 1);
+        }
+
+        #[test]
+        fn a_pass_met_by_another_says_so_and_leaves_the_song_queued() {
+            let folder = Folder::holding_a_tool("exec sleep 30");
+            let catalog = folder.path().join("library.db");
+            let walking = Library::open(&catalog).expect("a catalog");
+            let waiting = Library::open(&catalog).expect("the catalog again");
+            delivering_into(&walking, &folder);
+            delivering_into(&waiting, &folder);
+            walking
+                .keep_song(SongToKeep {
+                    source: SourceId::new("ytmusic").expect("a source"),
+                    video: "abc123".to_owned(),
+                    title: "Creep".to_owned(),
+                    artist: None,
+                    album: None,
+                    length: None,
+                })
+                .expect("the song queued");
+            let stopping = Arc::new(AtomicBool::new(false));
+
+            thread::scope(|scope| {
+                let told = Arc::clone(&stopping);
+                let music = folder.music();
+                let first = scope.spawn(move || walked(&walking, music, &told));
+                let began = Instant::now();
+                while folder.asked().is_empty() && began.elapsed() < THE_TOOL_IS_REACHED_WITHIN {
+                    thread::sleep(LOOKED_AT_EVERY);
+                }
+
+                let second = walked(&waiting, folder.music(), &AtomicBool::new(false));
+
+                stopping.store(true, Ordering::Relaxed);
+                assert!(matches!(second, Err(Error::KeepWaitsItsTurn)));
+                first.join().expect("the first pass").expect("its summary");
+            });
+            assert_eq!(waiting.keeps_pending().expect("a count"), 1);
+        }
+    }
+}

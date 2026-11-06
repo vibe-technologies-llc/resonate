@@ -7,8 +7,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use gpui::{Context, Task};
 use resonate_core::{MediaLocation, SourceId};
-use resonate_library::{CoverArt, ImageFormat};
-use resonate_providers::Error as ProviderError;
+use resonate_library::{CoverArt, ImageFormat, SongToKeep};
+use resonate_providers::{Error as ProviderError, Named};
 
 use crate::{
     ResonateApp,
@@ -109,6 +109,21 @@ impl Row {
             Self::Heading(_) | Self::Artist(_) | Self::Album(_) | Self::Mix(_) => None,
         }
     }
+}
+
+pub(crate) fn song_to_keep(song: &ServedSong) -> Option<SongToKeep> {
+    let source = song.location.source().clone();
+    let Some(Named::Song(video)) = Named::read(&song.location, &source) else {
+        return None;
+    };
+    (!song.title.trim().is_empty()).then(|| SongToKeep {
+        source,
+        video: video.to_string(),
+        title: song.title.clone(),
+        artist: song.artist.clone(),
+        album: song.album.clone(),
+        length: song.length,
+    })
 }
 
 pub(crate) fn first_rows(first: ServedFound) -> Vec<Row> {
@@ -290,6 +305,11 @@ impl ServerModel {
     pub(crate) fn plays_songs(&self, location: &MediaLocation) -> bool {
         self.serving(location)
             .is_none_or(|serves| serves.plays_songs())
+    }
+
+    pub(crate) fn keeps_songs(&self, location: &MediaLocation) -> bool {
+        self.serving(location)
+            .is_some_and(|serves| serves.keeps_songs())
     }
 
     pub(crate) fn is_favoured(&self, song: &ServedSong) -> bool {

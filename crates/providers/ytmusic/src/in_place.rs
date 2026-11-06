@@ -120,13 +120,14 @@ impl PlaysInPlace for YtMusic {
     }
 
     fn mix(&self, id: &Id) -> Result<MixSongs> {
+        let listed = self.tool.playlist(id)?;
         let name = if id.as_str() == LIKED_SONGS_ID {
             LIKED_SONGS.to_owned()
         } else {
-            id.to_string()
+            listed.name.unwrap_or_else(|| id.to_string())
         };
         Ok(MixSongs {
-            songs: self.tool.playlist(id)?,
+            songs: listed.songs,
             mix: Mix {
                 id: id.clone(),
                 name,
@@ -141,6 +142,10 @@ impl PlaysInPlace for YtMusic {
 
     fn plays_songs(&self) -> bool {
         false
+    }
+
+    fn keeps_songs(&self) -> bool {
+        true
     }
 
     fn cover(&self, cover: &Id, _side: u32) -> Result<Vec<u8>> {

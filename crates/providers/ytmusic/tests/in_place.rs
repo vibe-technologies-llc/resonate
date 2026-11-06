@@ -110,6 +110,10 @@ fn an_id(id: &str) -> Id {
     Id::new(id).expect("an id")
 }
 
+fn a_video(id: &str) -> VideoId {
+    VideoId::read(id).expect("a video id")
+}
+
 fn the_accounts_playlists() -> Value {
     json!({ "_type": "playlist", "entries": [
         { "_type": "url", "ie_key": "YoutubeTab", "id": "LL", "title": "Liked videos" },
@@ -280,7 +284,8 @@ fn a_song_short_of_a_field_shows_what_it_has_and_costs_no_call_of_its_own() {
     let songs = fake
         .tool(cookies())
         .playlist(&an_id("PLa"))
-        .expect("an answer");
+        .expect("an answer")
+        .songs;
 
     assert_eq!(songs[0].title, "Short");
     assert_eq!(songs[0].artist, None);
@@ -288,6 +293,93 @@ fn a_song_short_of_a_field_shows_what_it_has_and_costs_no_call_of_its_own() {
     assert_eq!(songs[1].artist.as_deref(), Some("Ada"));
     assert_eq!(songs[1].length, None);
     assert_eq!(fake.calls().len(), 1);
+}
+
+#[test]
+fn a_playlist_is_named_by_its_own_title_and_liked_songs_by_their_name_whatever_it_says() {
+    let fake = answering(&json!({ "title": " Road trip ", "entries": [] }));
+    let music = music(&fake, cookies());
+
+    assert_eq!(
+        music.mix(&an_id("PLa")).expect("an answer").mix.name,
+        "Road trip"
+    );
+    assert_eq!(
+        music.mix(&an_id("LM")).expect("an answer").mix.name,
+        "Liked songs"
+    );
+}
+
+#[test]
+fn a_playlist_that_gives_no_title_is_named_by_its_id() {
+    let fake = answering(&json!({ "entries": [] }));
+
+    let mix = music(&fake, cookies())
+        .mix(&an_id("PLa"))
+        .expect("an answer");
+
+    assert_eq!(mix.mix.name, "PLa");
+}
+
+#[test]
+fn a_song_is_named_from_one_listing_by_its_track_artist_and_album() {
+    let fake = answering(&json!({
+        "track": "Creep", "title": "Creep (Official)", "artist": "Radiohead",
+        "channel": "Radiohead - Topic", "album": "Pablo Honey", "duration": 238.6,
+    }));
+
+    let song = music(&fake, cookies())
+        .song(&a_video("9RfVp-GhKfs"))
+        .expect("an answer")
+        .expect("a song");
+
+    assert_eq!(song.id.as_str(), "9RfVp-GhKfs");
+    assert_eq!(song.title, "Creep");
+    assert_eq!(song.artist.as_deref(), Some("Radiohead"));
+    assert_eq!(song.album.as_deref(), Some("Pablo Honey"));
+    assert_eq!(song.length, Some(Duration::from_millis(238_600)));
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 1);
+    for asked in ["--ignore-config", "--no-playlist", "--cookies", "-J"] {
+        assert!(calls[0].iter().any(|argument| argument == asked), "{asked}");
+    }
+    assert_eq!(
+        calls[0].last().map(String::as_str),
+        Some("https://music.youtube.com/watch?v=9RfVp-GhKfs")
+    );
+}
+
+#[test]
+fn a_video_with_no_track_is_named_by_its_title_and_its_channel_short_of_the_topic() {
+    let fake = answering(&json!({ "title": "Луна", "channel": "Кошка - Topic", "duration": 201 }));
+
+    let song = music(&fake, cookies())
+        .song(&a_video("abc"))
+        .expect("an answer")
+        .expect("a song");
+
+    assert_eq!(song.title, "Луна");
+    assert_eq!(song.artist.as_deref(), Some("Кошка"));
+    assert_eq!(song.album, None);
+    assert_eq!(song.length, Some(Duration::from_secs(201)));
+}
+
+#[test]
+fn a_video_gone_names_no_song_and_a_listing_naming_nothing_is_unreadable() {
+    let gone = Fake::answering("echo 'ERROR: Video unavailable' >&2\nexit 1");
+    let blank = answering(&json!({ "title": "  ", "channel": "Ada" }));
+
+    assert!(matches!(
+        music(&gone, cookies()).song(&a_video("abc")),
+        Ok(None)
+    ));
+    assert!(matches!(
+        music(&blank, cookies()).song(&a_video("abc")),
+        Err(Error::Unreadable {
+            op: ProviderOp::Search,
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -333,6 +425,7 @@ fn a_song_is_not_offered_for_playing_in_place() {
     let id = an_id("9RfVp-GhKfs");
 
     assert!(!music.plays_songs());
+    assert!(music.keeps_songs());
     assert!(matches!(music.streamed(&id), Err(Error::NotOffered { .. })));
     assert!(fake.calls().is_empty());
 }
