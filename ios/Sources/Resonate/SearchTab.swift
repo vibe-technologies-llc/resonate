@@ -50,17 +50,11 @@ struct SearchTab: View {
             .themedRows()
         }
         .listStyle(.plain)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        .safeAreaBar(edge: .top, spacing: 0) {
             if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
-                Picker("Search in", selection: $area) {
-                    ForEach(SearchArea.allCases, id: \.self) { area in
-                        Text(area.rawValue).tag(area)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.bar)
+                SearchAreaChooser(area: $area)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
             }
         }
         .scrollDismissesKeyboard(.immediately)
@@ -236,6 +230,44 @@ struct LibraryFindings: View {
                 showsCollections: !compact
             )
         }
+    }
+}
+
+private struct SearchAreaChooser: View {
+    @Binding var area: SearchArea
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var chosen
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(SearchArea.allCases, id: \.self) { offered in
+                let isChosen = offered == area
+                Button {
+                    withAnimation(reduceMotion ? nil : Flip.animation) { area = offered }
+                } label: {
+                    Text(offered.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
+                        .background {
+                            if isChosen {
+                                Capsule()
+                                    .fill(Color.worn)
+                                    .matchedGeometryEffect(id: "chosen", in: chosen)
+                            }
+                        }
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isChosen ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .glassEffect(.regular, in: .capsule)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Search in")
     }
 }
 

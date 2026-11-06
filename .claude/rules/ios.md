@@ -1044,7 +1044,10 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   that clears it. Playlists are reached from the Library tab and Home, Suggestions from Home's *Made for you*,
   online search from the Search tab.
 - **The Search tab keeps library and online results within one tap** (`SearchTab.swift`): a pinned
-  segmented picker offers *All*, *Library* and *Online* under the navigation bar. *All* shows at
+  chooser offers *All*, *Library* and *Online* under the navigation bar (`SearchAreaChooser`: a
+  glass capsule whose chosen area is a capsule of `Color.worn` lettered `Color.wornInk`, sliding
+  between areas in `Flip.animation`, in a `safeAreaBar` so the scroll edge effect sits under it;
+  the system segmented picker on a `.bar` material read as a grey strip over the themed field). *All* shows at
   most three library songs and *All library results* before the online results, so album and artist
   shelves cannot push online songs several screens down. *Library* shows the full Top with its
   song, album and artist sections and *See all*; *Online* starts with online results. The same
