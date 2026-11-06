@@ -1,7 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
-    Context, Div, FontWeight, Role, SharedString, Stateful, Window, div, prelude::*, px, rgb,
+    Canvas, Context, Div, FontWeight, Role, SharedString, Stateful, Window, canvas, div,
+    prelude::*, px, rgb,
 };
 use resonate_core::Recording;
 use resonate_library::{Library, Track};
@@ -168,38 +169,99 @@ impl RootView {
         let room = (window.viewport_size().height
             - px(theme::header_height() + theme::transport_height()))
             * 0.45;
-        let cards = self
-            .remote_songs
-            .iter()
-            .map(|song| self.remote_card(song, cx));
+        let collapsed = self.remote_collapsed;
+        let label = if collapsed {
+            "Expand other devices"
+        } else {
+            "Collapse other devices"
+        };
+        let mut heading = kit::button(
+            "toggle-other-devices",
+            Some(if collapsed {
+                Icon::ChevronRight
+            } else {
+                Icon::ChevronDown
+            }),
+            "Other devices",
+            label,
+            kit::Tone::Ghost,
+        )
+        .w_full()
+        .when(super::spoken::listening(), |heading| {
+            heading.aria_expanded(!collapsed)
+        });
+        self.remote_controls
+            .captioned_by_its_name("toggle-other-devices", &mut heading);
+        let handle = self.remote_controls.at("toggle-other-devices", cx);
+        let heading = Self::ringed(
+            &handle,
+            heading,
+            |this, _, cx| {
+                this.remote_collapsed = !this.remote_collapsed;
+                cx.notify();
+            },
+            cx,
+        );
         Some(
             div()
                 .flex()
                 .flex_col()
                 .gap_1()
                 .py_1()
-                .child(kit::eyebrow("Other devices").px_1())
-                .child(
-                    div()
-                        .relative()
-                        .child(
-                            div()
-                                .id("remote-devices")
-                                .debug_selector(|| "remote-devices".to_owned())
-                                .flex()
-                                .flex_col()
-                                .gap_1p5()
-                                .max_h(room.min(px(theme::sidebar_width() * 2.0)))
-                                .overflow_y_scroll()
-                                .track_scroll(&self.remote_scroll)
-                                .children(cards),
-                        )
-                        .child(
-                            Scrollbars::of(cx)
-                                .vertical("remote-devices-scrollbar", self.remote_scroll.clone()),
-                        ),
-                ),
+                .child(heading)
+                .when(!collapsed, |panel| {
+                    let cards: Vec<_> = self
+                        .remote_songs
+                        .iter()
+                        .map(|song| self.remote_card(song, cx))
+                        .collect();
+                    panel.child(
+                        div()
+                            .relative()
+                            .child(
+                                div()
+                                    .id("remote-devices")
+                                    .debug_selector(|| "remote-devices".to_owned())
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1p5()
+                                    .max_h(room.min(px(theme::sidebar_width() * 2.0)))
+                                    .overflow_y_scroll()
+                                    .track_scroll(&self.remote_scroll)
+                                    .children(cards),
+                            )
+                            .child(
+                                Scrollbars::of(cx).vertical(
+                                    "remote-devices-scrollbar",
+                                    self.remote_scroll.clone(),
+                                ),
+                            ),
+                    )
+                }),
         )
+    }
+
+    pub(super) fn collapse_remote_when_categories_scroll(&self, cx: &Context<Self>) -> Canvas<()> {
+        let expanded = !self.remote_collapsed && !self.remote_songs.is_empty();
+        let scroll = self.sidebar_scroll.clone();
+        let this = cx.entity().downgrade();
+        canvas(
+            |_, _, _| (),
+            move |_, _, _, cx| {
+                if expanded && scroll.max_offset().y > px(0.0) {
+                    cx.defer(move |cx| {
+                        let _ = this.update(cx, |this, cx| {
+                            if !this.remote_collapsed {
+                                this.remote_collapsed = true;
+                                cx.notify();
+                            }
+                        });
+                    });
+                }
+            },
+        )
+        .absolute()
+        .inset_0()
     }
 
     fn remote_card(&self, song: &RemoteSong, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -410,6 +472,75 @@ mod tests {
             },
         )
         .expect("a song in a mirrored window")
+    }
+
+    #[gpui::test]
+    fn other_devices_can_be_collapsed_and_expanded(cx: &mut gpui::TestAppContext) {
+        let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.remote_songs = vec![song()];
+            cx.notify();
+        });
+        driven.settle();
+        assert!(driven.cx.debug_bounds("remote-devices").is_some());
+
+        driven.click("toggle-other-devices");
+        assert!(driven.read(|root, _| root.remote_collapsed));
+        assert!(driven.cx.debug_bounds("remote-devices").is_none());
+
+        let handle = driven.read(|root, cx| root.remote_controls.at("toggle-other-devices", cx));
+        driven.cx.update(|window, cx| handle.focus(window, cx));
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(!driven.read(|root, _| root.remote_collapsed));
+        assert!(driven.cx.debug_bounds("remote-devices").is_some());
+    }
+
+    #[gpui::test]
+    fn devices_collapse_when_the_categories_need_their_space_and_stay_closed(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.remote_songs = vec![song()];
+            cx.notify();
+        });
+        driven.settle();
+        assert!(!driven.read(|root, _| root.remote_collapsed));
+        let available = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        driven.click("toggle-other-devices");
+        let categories = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        let cards = categories - available;
+        assert!(cards > px(0.0));
+        driven.click("toggle-other-devices");
+        let content = driven.read(|root, _| {
+            root.sidebar_scroll
+                .bounds_for_item(0)
+                .expect("the categories")
+                .size
+                .height
+        });
+        let height = crate::driven::TALL - f32::from(available - content) - f32::from(cards) / 2.0;
+        driven
+            .cx
+            .simulate_resize(gpui::size(px(crate::driven::WIDE), px(height)));
+        driven.settle();
+        assert!(driven.read(|root, _| root.remote_collapsed));
+        assert!(driven.cx.debug_bounds("remote-devices").is_none());
+        assert_eq!(
+            driven.read(|root, _| root.sidebar_scroll.max_offset().y),
+            px(0.0)
+        );
+        assert!(driven.bounds_of("tab-settings").bottom() <= px(height));
+
+        driven
+            .cx
+            .simulate_resize(gpui::size(px(crate::driven::WIDE), px(crate::driven::TALL)));
+        driven.settle();
+        assert!(driven.read(|root, _| root.remote_collapsed));
+        driven.click("toggle-other-devices");
+        assert!(!driven.read(|root, _| root.remote_collapsed));
+        assert!(driven.cx.debug_bounds("remote-devices").is_some());
     }
 
     #[test]

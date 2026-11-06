@@ -686,6 +686,7 @@ pub struct RootView {
     pub(crate) code_regenerated: bool,
     pub(crate) pairing_shown: bool,
     pub(super) remote_songs: Vec<super::remote::RemoteSong>,
+    pub(super) remote_collapsed: bool,
     pub(super) remote_controls: Controls,
     pub(super) remote_scroll: ScrollHandle,
     pub(crate) driving: Option<(String, String)>,
@@ -1349,6 +1350,7 @@ impl RootView {
             code_regenerated: false,
             pairing_shown: false,
             remote_songs: Vec::new(),
+            remote_collapsed: false,
             remote_controls: Controls::default(),
             remote_scroll: ScrollHandle::new(),
             driving: None,
@@ -5078,6 +5080,7 @@ impl RootView {
 
         div()
             .id("sidebar")
+            .relative()
             .named_as(Role::Navigation, SIDEBAR, "")
             .flex()
             .flex_none()
@@ -5110,6 +5113,7 @@ impl RootView {
                     ),
             )
             .child(foot)
+            .child(self.collapse_remote_when_categories_scroll(cx))
     }
 
     fn pinned_rows(&self, cx: &mut Context<Self>) -> Vec<Stateful<Div>> {

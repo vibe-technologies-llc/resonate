@@ -2343,7 +2343,13 @@ device refusing remote control offers none. Controls address that device and zon
 changes. Album names and covers come from a matching recording in the desktop catalog, resolved off
 the window thread and reused until the recording or catalog names stamp changes; an unheld recording
 draws a disc and omits the album. The card list scrolls within a share of the window's height, keeping
-Settings reachable. Watches are released when the device, sync service or window goes away.
+Settings reachable. The *Other devices* heading is a keyboard-accessible disclosure: it hides or
+shows the cards for the run and reports its expanded state to a screen reader. After layout, if the
+categories above need to scroll while cards are expanded, the cards collapse automatically. This
+uses the actual category overflow, including pinned rows and live status height, rather than a
+window-height threshold. An automatic collapse stays closed until the heading is pressed, so
+reclaiming the space cannot reopen the cards and make the layout oscillate. Watches are released
+when the device, sync service or window goes away.
 
 A song marked explicit by its file content advisory, provider rating or title qualifier wears an E badge beside its title, including beside an alternate-copy badge. A clean advisory overrides a title qualifier; an unmarked title is never assumed clean. A held track menu offers clean and explicit version searches using the title without its rating qualifier and the artist. These searches change no files; results still need the listener to choose a recording.
 
