@@ -456,7 +456,15 @@ or hid the row, or a second sender naming it otherwise is never refused and fetc
 `a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_never_vaulted_beside_it`);
 every vault landing notes `songs_received` as a filing does. With no vault, a song is
 filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and its
-root scanned. **A song filed is held by what was asked for, never landed twice**: the catalog's
+root scanned. Before scanning a newly placed file, the receiver writes the recording's title,
+artist, album and MBID and the supplied album artist, date and numbers into its tags, with
+existing file tags winning. A mobile download may have its identity only in the phone's catalog;
+copying its audio alone otherwise leaves a filename in place of the title and no artist to enrich.
+An incremental scan reprobes received rows missing an artist or a received MBID and fills absent
+identity from `songs_received` before storing the probe. Named receipts retain folded words, so
+recovery restores searchable names rather than original typography; declared file tags still win.
+This recovery changes the catalog only and keeps working on later scans of the untagged bytes.
+**A song filed is held by what was asked for, never landed twice**: the catalog's
 `songs_received` keeps each recording key a song was filed for (`key` and `named_key`) against its
 path, and `synced::resolved` asks it after the MBID and before the tag match, so a sender whose
 catalog names the song otherwise than its file does is not fetched again on every follow

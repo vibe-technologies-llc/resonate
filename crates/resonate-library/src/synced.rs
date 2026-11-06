@@ -7,7 +7,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use resonate_codec::TagSet;
+use resonate_codec::{
+    FileTags, Picturing, Sources, TagEdit, TagField, TagSet, TagSink as _, TagSource as _, Writing,
+};
 use resonate_core::{
     FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, WholeFile, folded_letters,
 };
@@ -1310,6 +1312,127 @@ pub enum SongFiled {
     Refused,
 }
 
+fn tag_received(path: &Path, recording: &Recording, passed: &HeldTags) {
+    let location = MediaLocation::local(path);
+    let sink = FileTags::over(Sources::local());
+    if !sink.writes(&location) {
+        return;
+    }
+    let Ok(tagged) = sink.read(&location, Picturing::Whether) else {
+        return;
+    };
+    let mut tags = tagged.tags;
+    passed.fill(&mut tags);
+    let values = [
+        (
+            TagField::Compilation,
+            tags.compilation.then(|| "1".to_owned()),
+        ),
+        (
+            TagField::Title,
+            tags.title
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| Some(recording.title.clone())),
+        ),
+        (
+            TagField::Artist,
+            tags.artist
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| Some(recording.artist.clone())),
+        ),
+        (
+            TagField::Album,
+            tags.album
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| Some(recording.album.clone())),
+        ),
+        (
+            TagField::MusicBrainzTrackId,
+            tags.musicbrainz_track_id
+                .or_else(|| recording.mbid.as_ref().map(ToString::to_string)),
+        ),
+        (TagField::AlbumArtist, tags.album_artist),
+        (TagField::Date, tags.date),
+        (
+            TagField::TrackNumber,
+            tags.track_number.map(|n| n.to_string()),
+        ),
+        (
+            TagField::TrackTotal,
+            tags.track_total.map(|n| n.to_string()),
+        ),
+        (
+            TagField::DiscNumber,
+            tags.disc_number.map(|n| n.to_string()),
+        ),
+        (TagField::DiscTotal, tags.disc_total.map(|n| n.to_string())),
+    ];
+    let edits: Vec<_> = values
+        .into_iter()
+        .filter_map(|(field, value)| {
+            value
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| TagEdit { field, value })
+        })
+        .collect();
+    if let Err(error) = sink.write(
+        &location,
+        Writing {
+            edits: &edits,
+            taken: &[],
+            picture: None,
+            unpictured: false,
+            popularity: None,
+        },
+    ) {
+        tracing::warn!(%error, path = %path.display(), "a received song could not keep its identity in tags");
+    }
+}
+
+pub(crate) fn recover_received(
+    connection: &Connection,
+    record: &mut store::TrackRecord,
+) -> Result<()> {
+    if record.span.is_some() {
+        return Ok(());
+    }
+    let mut query = connection
+        .prepare("SELECT recording FROM songs_received WHERE path = ?1 ORDER BY recording")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let keys = query
+        .query_map([store::path_text(&record.path)], |row| {
+            row.get::<_, String>(0)
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    for key in keys {
+        if let Some(mbid) = key.strip_prefix("mbid:").and_then(|id| Mbid::new(id).ok()) {
+            fill_gap(
+                &mut record.tags.musicbrainz_track_id,
+                &Some(mbid.to_string()),
+            );
+        }
+        if let Some(named) = key.strip_prefix("named:") {
+            let parts: Vec<_> = named.split('\u{1f}').collect();
+            if let [artist, title, album] = parts.as_slice() {
+                if (record.named_by_its_stem || record.tags.title.is_none()) && !title.is_empty() {
+                    record.tags.title = Some((*title).to_owned());
+                    record.named_by_its_stem = false;
+                }
+                for (held, value) in [
+                    (&mut record.tags.artist, artist),
+                    (&mut record.tags.album, album),
+                ] {
+                    if !value.is_empty() {
+                        fill_gap(held, &Some((*value).to_owned()));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn file_song(
     library: &Library,
     recording: &Recording,
@@ -1371,6 +1494,7 @@ pub(crate) fn file_song(
                 library.note_song_received_at(recording, &held, ReceivedAt::AlreadyHeld)?;
                 return Ok(SongFiled::Filed(held));
             }
+            tag_received(&path, recording, tags);
             library.note_song_received_at(recording, &path, ReceivedAt::NewlyPlaced)?;
             scanned_once_free(library, root);
             Ok(SongFiled::Filed(path))
@@ -1557,6 +1681,84 @@ mod tests {
             album: "Meddle".into(),
             length: Some(Duration::from_secs(1)),
         }
+    }
+
+    #[test]
+    fn a_received_identity_is_written_into_a_bare_file_and_declared_tags_win() {
+        let scratch = Scratch::new("received-tags");
+        let path = scratch.path.join("song.wav");
+        fs::write(&path, named_wav("File title")).expect("a wave");
+        let recording = Recording {
+            mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an id")),
+            ..song("Sender title")
+        };
+        tag_received(
+            &path,
+            &recording,
+            &HeldTags {
+                track_total: Some(6),
+                ..HeldTags::default()
+            },
+        );
+        let tags = FileTags::over(Sources::local())
+            .read(&MediaLocation::local(&path), Picturing::Whether)
+            .expect("tags")
+            .tags;
+        assert_eq!(tags.title.as_deref(), Some("File title"));
+        assert_eq!(
+            tags.musicbrainz_track_id,
+            recording.mbid.map(|id| id.to_string())
+        );
+        assert_eq!(tags.track_total, Some(6));
+    }
+
+    #[test]
+    fn an_incremental_scan_recovers_a_previously_received_bare_song() {
+        let scratch = Scratch::new("recover-received");
+        let path = scratch.path.join("12345.wav");
+        let mut bytes = named_wav("unused");
+        let list = bytes
+            .windows(4)
+            .position(|part| part == b"LIST")
+            .expect("list");
+        let length =
+            u32::from_le_bytes(bytes[list + 4..list + 8].try_into().expect("length")) as usize;
+        bytes.drain(list..list + 8 + length);
+        let size = (bytes.len() - 8) as u32;
+        bytes[4..8].copy_from_slice(&size.to_le_bytes());
+        fs::write(&path, bytes).expect("bare wave");
+        let library = Library::open_in_memory().expect("library");
+        library
+            .scan(scanning(scratch.path.clone()))
+            .expect("scan")
+            .join()
+            .expect("scanned");
+        let recording = Recording {
+            mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("id")),
+            ..song("Echoes")
+        };
+        library
+            .note_song_received_at(&recording, &path, ReceivedAt::AlreadyHeld)
+            .expect("receipt");
+        library
+            .scan(scanning(scratch.path.clone()))
+            .expect("scan")
+            .join()
+            .expect("recovered");
+        library
+            .inner()
+            .read(|connection| {
+                let recovered: (String, Option<String>, Option<String>) = connection
+                    .query_row("SELECT title, artist, mbid FROM tracks", [], |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                    })
+                    .expect("track");
+                assert_eq!(recovered.0, "echoes");
+                assert_eq!(recovered.1.as_deref(), Some("pink floyd"));
+                assert_eq!(recovered.2, recording.mbid.map(|id| id.to_string()));
+                Ok(())
+            })
+            .expect("read");
     }
 
     #[test]

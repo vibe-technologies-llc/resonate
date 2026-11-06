@@ -341,7 +341,9 @@ impl Known {
             known.volumes = volumes::held(connection)?;
             let mut statement = connection
                 .prepare(
-                    "SELECT path, id, file_size, modified, sheet_modified, probe_again FROM tracks
+                    "SELECT path, id, file_size, modified, sheet_modified, (probe_again OR
+                        (coalesce(trim(artist), '') = '' AND EXISTS (SELECT 1 FROM songs_received s WHERE s.path = tracks.path AND s.recording LIKE 'named:%')) OR
+                        (mbid IS NULL AND EXISTS (SELECT 1 FROM songs_received s WHERE s.path = tracks.path AND s.recording LIKE 'mbid:%'))) FROM tracks
                      WHERE path >= ?1 AND path < ?2 ORDER BY path, span_start",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -1931,10 +1933,11 @@ fn commit(
 
     if stores {
         inner.write(|transaction| {
-            for outcome in batch.iter() {
+            for outcome in batch.iter_mut() {
                 match outcome {
                     Outcome::Seen(_) | Outcome::Kept(_) => {}
                     Outcome::Store(record) => {
+                        crate::synced::recover_received(transaction, record)?;
                         let stored = store::apply(
                             transaction,
                             cache,
