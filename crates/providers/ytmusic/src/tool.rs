@@ -447,6 +447,10 @@ impl Tool {
         }
     }
 
+    pub(crate) fn holds_cookies(&self) -> bool {
+        self.cookies != Cookies::None
+    }
+
     fn arguments(&self, asked: &[&str], video: &VideoId) -> Vec<OsString> {
         let mut arguments: Vec<OsString> = vec!["--ignore-config".into(), "--no-playlist".into()];
         if let Some(runtime) = self.runtime {
