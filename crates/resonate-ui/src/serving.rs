@@ -287,6 +287,11 @@ impl ServerModel {
             .is_some_and(|serves| serves.keeps_favourites())
     }
 
+    pub(crate) fn plays_songs(&self, location: &MediaLocation) -> bool {
+        self.serving(location)
+            .is_none_or(|serves| serves.plays_songs())
+    }
+
     pub(crate) fn is_favoured(&self, song: &ServedSong) -> bool {
         self.favoured
             .get(&song.location)

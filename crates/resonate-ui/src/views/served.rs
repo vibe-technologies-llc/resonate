@@ -36,6 +36,8 @@ const OPEN_HINT: &str = "See what the server holds under this";
 
 const PLAY_THIS_HINT: &str = "Play this, and what follows it here";
 
+const NOT_PLAYED_HERE_HINT: &str = "This service's songs are not played from here";
+
 const ASK_AGAIN_HINT: &str = "Ask the server again";
 
 pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter";
@@ -116,7 +118,10 @@ impl RootView {
             (Place::Artists, Page::Read(rows)) if favourites_in(rows) => FAVOURITES.to_owned(),
             _ => place.title(),
         };
-        let playable = place.location().cloned();
+        let playable = place
+            .location()
+            .filter(|whole| self.server.read(cx).plays_songs(whole))
+            .cloned();
 
         let mut actions = kit::actions();
         if let Some(whole) = playable {
@@ -294,6 +299,8 @@ impl RootView {
 
         let from = songs_here.then(|| songs_from(rows, index)).flatten();
         let pressed = row.clone();
+        let plays = self.server.read(cx).plays_songs(&location);
+        let press_does_nothing = row.song().is_some() && !plays;
         let song_number = row
             .song()
             .and_then(|song| song.track)
@@ -308,9 +315,10 @@ impl RootView {
             .h_full()
             .items_center()
             .gap(px(listing::COLUMN_GAP))
-            .cursor_pointer()
+            .when(!press_does_nothing, |open| open.cursor_pointer())
             .listed_as(move || said.clone())
             .names(match row {
+                Row::Song(_) if !plays => NOT_PLAYED_HERE_HINT,
                 Row::Song(_) => PLAY_THIS_HINT,
                 Row::Heading(_) | Row::Artist(_) | Row::Album(_) | Row::Mix(_) => OPEN_HINT,
             })
@@ -361,7 +369,9 @@ impl RootView {
             )
             .when_some(figure, |open, figure| open.child(kit::figure(figure)))
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.press_a_row_of_the_server(pressed.clone(), from.clone(), cx);
+                if !press_does_nothing {
+                    this.press_a_row_of_the_server(pressed.clone(), from.clone(), cx);
+                }
             }));
 
         let favourite = row.song().cloned();
@@ -397,6 +407,7 @@ impl RootView {
                 cx,
             )
         });
+        let plays = self.server.read(cx).plays_songs(&location);
         let playing = location.clone();
         let next = location.clone();
         let queued = location;
@@ -408,9 +419,8 @@ impl RootView {
             .items_center()
             .justify_end()
             .w(px(controls_width(SERVER_CONTROLS)))
-            .child(
+            .child(controls.children(star).when(plays, |controls| {
                 controls
-                    .children(star)
                     .child(self.in_the_pane_ring(
                         kit::icon_button(("server-row-play", index), Icon::Play, PLAY_HINT),
                         move |this, _, cx| this.play_what_the_server_holds(playing.clone(), cx),
@@ -429,8 +439,8 @@ impl RootView {
                             this.queue_what_the_server_holds(queued.clone(), Placement::Queued, cx);
                         },
                         cx,
-                    )),
-            )
+                    ))
+            }))
     }
 
     fn served_cover(
@@ -1233,6 +1243,103 @@ mod tests {
             ]
         );
         assert_eq!(stars, [false, true]);
+    }
+
+    struct NotPlayed;
+
+    impl Serves for NotPlayed {
+        fn scheme(&self) -> &SourceId {
+            Searched.scheme()
+        }
+
+        fn title(&self) -> &str {
+            "YouTube Music"
+        }
+
+        fn names(&self, location: &MediaLocation) -> bool {
+            location.source() == self.scheme()
+        }
+
+        fn artists(&self) -> Result<Vec<ServedArtist>> {
+            Ok(Vec::new())
+        }
+
+        fn first_page(&self) -> Result<ServedFound> {
+            Ok(ServedFound {
+                mixes: vec![ServedAlbum {
+                    location: MediaLocation::from_uri("tidal:mix/LM").expect("a location"),
+                    name: "Liked songs".to_owned(),
+                    artist: None,
+                    year: None,
+                    songs: None,
+                    cover: None,
+                }],
+                ..ServedFound::default()
+            })
+        }
+
+        fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(Vec::new())
+        }
+
+        fn songs_of(&self, _: &MediaLocation) -> Result<Vec<ServedSong>> {
+            Ok(vec![ServedSong {
+                location: MediaLocation::from_uri("tidal:track/13").expect("a location"),
+                ..song("so-3", "Summer '68", 1)
+            }])
+        }
+
+        fn search(&self, _: &str) -> Result<ServedFound> {
+            Ok(ServedFound::default())
+        }
+
+        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+            Ok(vec![named.clone()])
+        }
+
+        fn plays_songs(&self) -> bool {
+            false
+        }
+
+        fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
+            Searched.cover(&at("track/so-1"), None, 0)
+        }
+    }
+
+    #[gpui::test]
+    fn a_mix_of_a_service_that_plays_no_song_opens_and_offers_nothing_to_play_or_queue(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed)], an_account());
+        open_the_server(&mut driven);
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
+        );
+        driven.settle();
+        assert!(driven.cx.debug_bounds("server-row-1").is_some());
+        assert!(driven.cx.debug_bounds("server-row-play-1").is_none());
+
+        driven.click("server-row-1");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Mix { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+        driven.settle();
+
+        assert!(driven.cx.debug_bounds("server-row-0").is_some());
+        for offered in [
+            "server-play",
+            "server-queue",
+            "server-row-play-0",
+            "server-row-next-0",
+            "server-row-queue-0",
+        ] {
+            assert!(driven.cx.debug_bounds(offered).is_none(), "{offered}");
+        }
+
+        driven.click("server-row-0");
+        driven.settle();
+        assert!(driven.read(|root, cx| root.player.read(cx).queue().is_empty()));
     }
 
     #[gpui::test]

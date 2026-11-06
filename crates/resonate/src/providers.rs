@@ -118,6 +118,9 @@ fn in_place(accounts: &Accounts, made: &Made) -> InPlace {
     if let Some(monochrome) = &accounts.monochrome {
         served.push(monochrome_of(made, monochrome));
     }
+    if let Some(account) = &accounts.ytmusic {
+        served.push(ytmusic_of(made, account));
+    }
     served
 }
 
@@ -986,6 +989,37 @@ mod tests {
         assert_eq!(
             providers.names().last().map(SourceId::as_str),
             Some("ytmusic")
+        );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn youtube_music_is_served_after_monochrome_only_where_it_is_turned_on() {
+        let schemes = |config: &Config| -> Vec<String> {
+            in_place(&Accounts::of(config), &Made::new(None))
+                .iter()
+                .map(|served| served.scheme().as_str().to_owned())
+                .collect()
+        };
+        let off = Config {
+            hosted_services: Some(true),
+            ..Config::default()
+        };
+        let on = Config {
+            youtube_music: Some(true),
+            ..off.clone()
+        };
+
+        assert!(!schemes(&off).contains(&"ytmusic".to_owned()));
+        assert_eq!(
+            schemes(&on).last().map(String::as_str),
+            Some("ytmusic"),
+            "{:?}",
+            schemes(&on)
+        );
+        assert_eq!(
+            schemes(&on).iter().rev().nth(1).map(String::as_str),
+            Some("monochrome")
         );
     }
 

@@ -752,7 +752,7 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error(
         "no service is set in the settings to play in place (subsonic, jellyfin, tidal-refresh-token, \
-         hifi-secret, hifi-api, monochrome or hosted-services)"
+         hifi-secret, hifi-api, monochrome, hosted-services or youtube-music)"
     )]
     NoServedService,
 

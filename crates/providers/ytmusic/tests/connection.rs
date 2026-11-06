@@ -1,6 +1,9 @@
 #![cfg(unix)]
 
-use resonate_ytmusic::{Connection, Cookies, YtMusic};
+use std::fs;
+
+use resonate_providers::Error;
+use resonate_ytmusic::{Connection, Cookies, VideoId, YtMusic};
 
 #[allow(dead_code)]
 mod support;
@@ -42,6 +45,33 @@ fn a_connection_is_checked_on_the_album_song_alone() {
     let calls = fake.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].last().map(String::as_str), Some(CHECKED_WITH));
+}
+
+#[test]
+fn a_check_asks_though_a_lapse_was_noted_and_a_good_answer_clears_it() {
+    let fake = Fake::answering(&format!(
+        "if [ -e \"$here/exported\" ]; then echo '{{\"formats\":[{{\"format_id\":\"774\"}}]}}'; else {LAPSED}; fi"
+    ));
+    let tool = fake.tool(cookies());
+    let music = YtMusic::new(tool.clone());
+    let song = VideoId::read("abc").expect("a video id");
+    let lapsed = |asked: Result<_, Error>| matches!(asked, Err(Error::Unwelcome { .. }));
+
+    assert!(lapsed(tool.formats(&song)));
+    assert!(lapsed(tool.formats(&song)));
+    assert_eq!(fake.calls().len(), 1, "a lapse noted spares the tool");
+
+    assert_eq!(music.check(), Connection::NotSignedIn);
+    assert_eq!(fake.calls().len(), 2, "a check asks whatever was noted");
+    assert!(lapsed(tool.formats(&song)));
+    assert_eq!(fake.calls().len(), 2, "a lapse heard again stands");
+
+    fs::write(fake.folder().join("exported"), b"").expect("the cookies exported again");
+    assert_eq!(music.check(), Connection::Premium);
+    assert_eq!(fake.calls().len(), 3);
+
+    assert!(tool.formats(&song).is_ok());
+    assert_eq!(fake.calls().len(), 4, "a good answer clears the note");
 }
 
 #[test]

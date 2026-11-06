@@ -31,6 +31,7 @@ const BROWSER_NAME_ENDS_AT: [char; 2] = [':', '+'];
 const FOUND_BY_ITSELF: &str = "deno";
 const RUNTIMES_NAMED: [&str; 2] = ["node", "bun"];
 const ASKED_WITHIN: Duration = Duration::from_secs(60);
+const A_WHOLE_PLAYLIST_TAKES_AT_MOST: u32 = 5;
 const LEFT_SILENT_FOR: Duration = Duration::from_secs(120);
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(10);
 const STDERR_ENDS_WITHIN: Duration = Duration::from_secs(1);
@@ -229,6 +230,10 @@ impl Lapse {
         self.0
             .lock()
             .is_some_and(|heard| heard.elapsed() < A_POLL_LASTS)
+    }
+
+    fn forgotten(&self) {
+        *self.0.lock() = None;
     }
 }
 
@@ -525,7 +530,7 @@ impl Tool {
         }
     }
 
-    fn unreadable(&self, op: ProviderOp) -> Error {
+    pub(crate) fn unreadable(&self, op: ProviderOp) -> Error {
         Error::Unreadable {
             provider: self.provider.clone(),
             op,
@@ -551,10 +556,20 @@ impl Tool {
     }
 
     pub fn formats(&self, video: &VideoId) -> Result<Formats> {
-        let op = ProviderOp::Search;
         if self.lapse.stands() {
-            return Err(self.cookies_lapsed(op));
+            return Err(self.cookies_lapsed(ProviderOp::Search));
         }
+        self.formats_asked(video)
+    }
+
+    pub(crate) fn formats_checked(&self, video: &VideoId) -> Result<Formats> {
+        let formats = self.formats_asked(video)?;
+        self.lapse.forgotten();
+        Ok(formats)
+    }
+
+    fn formats_asked(&self, video: &VideoId) -> Result<Formats> {
+        let op = ProviderOp::Search;
         let by = Instant::now() + self.asked_within;
         let arguments = self.arguments(&["-J", "--skip-download"], video);
         let mut running = self.running(op, &arguments)?;
@@ -582,6 +597,44 @@ impl Tool {
             return Ok(Formats::default());
         }
         Err(self.failed(op, status.code()))
+    }
+
+    fn answered_to(&self, arguments: &[OsString], within: Duration) -> Result<Vec<u8>> {
+        let op = ProviderOp::Browse;
+        let by = Instant::now() + within;
+        let mut running = self.running(op, arguments)?;
+        let listing = self.listed_within(&running, op, by)?;
+        let status = running
+            .child
+            .exited_within(by.saturating_duration_since(Instant::now()))
+            .map_err(|source| self.failed_io(op, source))?
+            .ok_or_else(|| self.hung(op))?;
+        if running.complaints.said().contains(COOKIES_LAPSED) {
+            self.lapse.heard();
+            return Err(self.cookies_lapsed(op));
+        }
+        if status.success() {
+            return Ok(listing);
+        }
+        Err(self.failed(op, status.code()))
+    }
+
+    pub(crate) fn listed_at(&self, address: &str) -> Result<Vec<u8>> {
+        let mut arguments: Vec<OsString> = vec!["--ignore-config".into()];
+        if let Some(runtime) = self.runtime {
+            arguments.extend(["--js-runtimes".into(), runtime.into()]);
+        }
+        arguments.extend(self.cookies.arguments());
+        arguments.extend(["-J".into(), "--flat-playlist".into(), address.into()]);
+        self.answered_to(
+            &arguments,
+            self.asked_within * A_WHOLE_PLAYLIST_TAKES_AT_MOST,
+        )
+    }
+
+    pub(crate) fn listed_song(&self, video: &VideoId) -> Result<Vec<u8>> {
+        let arguments = self.arguments(&["-J", "--skip-download"], video);
+        self.answered_to(&arguments, self.asked_within)
     }
 
     pub fn download(&self, video: &VideoId, format: Tier) -> Result<Opened> {

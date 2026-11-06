@@ -29,13 +29,14 @@ use crate::{
 };
 
 #[cfg(feature = "online")]
-const PLAYED_IN_PLACE: [&str; 6] = [
+const PLAYED_IN_PLACE: [&str; 7] = [
     "subsonic",
     "jellyfin",
     "tidal",
     "resonate",
     "hifi-api",
     "monochrome",
+    "ytmusic",
 ];
 
 #[derive(Clone, Default)]
@@ -394,6 +395,10 @@ impl resonate_ui::Serves for ServedBy {
 
     fn keeps_favourites(&self) -> bool {
         self.0.keeps_favourites()
+    }
+
+    fn plays_songs(&self) -> bool {
+        self.0.plays_songs()
     }
 
     fn favour(&self, song: &MediaLocation, favoured: bool) -> resonate_providers::Result<()> {

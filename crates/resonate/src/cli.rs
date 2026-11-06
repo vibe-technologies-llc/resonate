@@ -1265,7 +1265,7 @@ pub struct ServedArgs {
     #[arg(
         long,
         value_name = "NAME",
-        help = "The service to browse: subsonic, jellyfin, tidal, resonate, hifi-api or monochrome; \
+        help = "The service to browse: subsonic, jellyfin, tidal, resonate, hifi-api, monochrome or ytmusic; \
                 without it, the first the settings set"
     )]
     pub service: Option<String>,

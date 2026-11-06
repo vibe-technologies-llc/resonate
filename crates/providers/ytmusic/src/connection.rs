@@ -21,7 +21,7 @@ impl YtMusic {
         let Some(video) = VideoId::read(CHECKED_WITH) else {
             return Connection::NotSignedIn;
         };
-        let best = match self.tool.formats(&video) {
+        let best = match self.tool.formats_checked(&video) {
             Ok(formats) => formats.best,
             Err(error) if the_tool_did_not_run(&error) => {
                 tracing::warn!(%error, "yt-dlp could not be run");

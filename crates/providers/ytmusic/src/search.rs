@@ -184,7 +184,7 @@ impl YtMusic {
             .map_err(|error| self.unreachable(op, error))
     }
 
-    fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
+    pub(crate) fn unreachable(&self, op: ProviderOp, error: ureq::Error) -> Error {
         tracing::debug!(%error, ?op, "YouTube Music could not be reached");
         unreached(self.source.clone(), op, error)
     }

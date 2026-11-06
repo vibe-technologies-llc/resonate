@@ -1,4 +1,6 @@
 mod connection;
+mod in_place;
+mod playlists;
 mod search;
 mod tool;
 
