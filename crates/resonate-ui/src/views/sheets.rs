@@ -242,6 +242,7 @@ impl RootView {
                     || here == self.menu_focus
                     || self.controls.owns(&here)
                     || self.standing_controls.owns(&here)
+                    || self.remote_controls.owns(&here)
                     || self.sheet_panels.owns(&here)
             }
         }

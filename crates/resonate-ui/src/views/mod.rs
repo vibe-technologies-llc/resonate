@@ -25,6 +25,7 @@ pub(crate) mod playlists;
 pub(crate) mod plot;
 mod pointed;
 mod queue;
+mod remote;
 pub(crate) mod reorder;
 mod root;
 mod scrollbar;

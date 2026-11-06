@@ -1074,7 +1074,13 @@ impl RootView {
         line
     }
 
-    fn press_on_the_device(&mut self, id: &str, zone: u32, key: RemoteKey, cx: &mut Context<Self>) {
+    pub(crate) fn press_on_the_device(
+        &mut self,
+        id: &str,
+        zone: u32,
+        key: RemoteKey,
+        cx: &mut Context<Self>,
+    ) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
             self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
             return;
@@ -1614,7 +1620,10 @@ fn clock_of(length: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     use gpui::TestAppContext;
     use parking_lot::Mutex;
@@ -1629,6 +1638,11 @@ mod tests {
     #[derive(Default)]
     struct Stage {
         pressed: Mutex<Vec<(String, u32, RemoteKey)>>,
+        unwatched: Mutex<Vec<String>>,
+        second: AtomicBool,
+        away: AtomicBool,
+        refused: AtomicBool,
+        paused: AtomicBool,
     }
 
     fn row(title: &str) -> RemoteRowShown {
@@ -1657,16 +1671,26 @@ mod tests {
 
     impl Syncing for Stage {
         fn shown(&self) -> SyncShown {
+            let desk = SyncedDevice {
+                id: "desk".to_owned(),
+                name: "Desk".to_owned(),
+                platform: SyncedPlatform::Linux,
+                online: !self.away.load(Ordering::Relaxed),
+                nearby: false,
+                this: false,
+            };
+            let mut devices = vec![desk.clone()];
+            if self.second.load(Ordering::Relaxed) {
+                devices.push(SyncedDevice {
+                    id: "phone".to_owned(),
+                    name: "Phone".to_owned(),
+                    platform: SyncedPlatform::Android,
+                    ..desk
+                });
+            }
             SyncShown {
                 standing: SyncStanding::Connected,
-                devices: vec![SyncedDevice {
-                    id: "desk".to_owned(),
-                    name: "Desk".to_owned(),
-                    platform: SyncedPlatform::Linux,
-                    online: true,
-                    nearby: false,
-                    this: false,
-                }],
+                devices,
                 ..SyncShown::default()
             }
         }
@@ -1697,12 +1721,27 @@ mod tests {
             Continuing::default()
         }
 
-        fn watch(&self, _: &str) -> RemoteShown {
-            RemoteShown::Zones(vec![a_zone()])
+        fn watch(&self, device: &str) -> RemoteShown {
+            if device == "phone" && self.refused.load(Ordering::Relaxed) {
+                return RemoteShown::Refused;
+            }
+            let mut zone = a_zone();
+            zone.sounding = !self.paused.load(Ordering::Relaxed);
+            if device == "phone" {
+                zone.zone = 7;
+            }
+            RemoteShown::Zones(vec![zone])
+        }
+
+        fn unwatch(&self, device: &str) {
+            self.unwatched.lock().push(device.to_owned());
         }
 
         fn press(&self, device: &str, zone: u32, key: RemoteKey) -> bool {
             self.pressed.lock().push((device.to_owned(), zone, key));
+            if key == RemoteKey::Toggle {
+                self.paused.fetch_xor(true, Ordering::Relaxed);
+            }
             true
         }
     }
@@ -1724,6 +1763,64 @@ mod tests {
 
     fn in_memory() -> Library {
         Library::open_in_memory().expect("a catalog")
+    }
+
+    #[gpui::test]
+    fn sidebar_players_drive_the_named_device_across_panes_and_follow_its_permission(
+        cx: &mut TestAppContext,
+    ) {
+        let (mut driven, stage) = opened_on_the_sync_group(cx);
+        stage.second.store(true, Ordering::Relaxed);
+        driven.until(|root, _| root.remote_songs.len() == 2);
+
+        driven.click("remote-desk-1-previous");
+        driven.click("remote-phone-7-toggle");
+        driven.until(|_, _| stage.pressed.lock().len() == 2);
+        driven.click("tab-albums");
+        let root = driven.root.clone();
+        driven.cx.update(|window, cx| {
+            let next = root
+                .read(cx)
+                .remote_controls
+                .handle("remote-phone-7-next")
+                .expect("the remote controls survive a pane change");
+            window.focus(&next, cx);
+        });
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|_, _| stage.pressed.lock().len() == 3);
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+        let root = driven.root.clone();
+        assert!(
+            driven
+                .cx
+                .update(|window, cx| !root.read(cx).remote_controls.holds_the_caret(window))
+        );
+        assert_eq!(
+            *stage.pressed.lock(),
+            vec![
+                ("desk".to_owned(), 1, RemoteKey::Previous),
+                ("phone".to_owned(), 7, RemoteKey::Toggle),
+                ("phone".to_owned(), 7, RemoteKey::Next),
+            ]
+        );
+        assert!(driven.read(|root, cx| root.player.read(cx).state().current.is_none()));
+
+        stage.refused.store(true, Ordering::Relaxed);
+        driven.until(|root, _| root.remote_songs.len() == 1);
+        driven.settle();
+        assert!(driven.cx.debug_bounds("remote-phone-7-toggle").is_none());
+        stage.away.store(true, Ordering::Relaxed);
+        driven.until(|root, _| root.remote_songs.is_empty());
+        assert!(
+            stage
+                .unwatched
+                .lock()
+                .iter()
+                .any(|device| device == "phone")
+        );
+        assert!(stage.unwatched.lock().iter().any(|device| device == "desk"));
+        assert!(driven.bounds_of("tab-settings").size.height > px(0.0));
     }
 
     #[gpui::test]

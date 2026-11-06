@@ -2322,6 +2322,17 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 
 The desktop collection orders Favourites, Playlists, Suggestions and Listening Party before Missing. The enrichment status opens the Enrichment settings category, with live lookup counts and cancellation alongside scan and tag controls. Accounts holds service sign-ins and server credentials, including Spotify, TIDAL, Subsonic, Jellyfin and Last.fm; Online retains network policy. Existing category identifiers remain valid so remembered settings pages survive the additional categories.
 
-Other devices playing appear in the sidebar across panes. A one-second window task watches online paired devices through the existing remote-control seam, renders their named songs, playing or paused state and position, and releases subscriptions when the device or window goes away. A song marked explicit by its file content advisory, provider rating or title qualifier wears an E badge beside its title, including beside an alternate-copy badge. A clean advisory overrides a title qualifier; an unmarked title is never assumed clean. A held track menu offers clean and explicit version searches using the title without its rating qualifier and the artist. These searches change no files; results still need the listener to choose a recording.
+Other devices playing appear as compact cards at the sidebar foot across panes (`views/remote.rs`):
+platform mark and device name, cover beside title, artist and album, playing or paused state, zone and
+position, then previous, play or pause and next. A one-second window task watches online paired devices
+through the existing remote-control seam; only an accepted mirror offers a card and controls, so a
+device refusing remote control offers none. Controls address that device and zone through
+`press_on_the_device` on the background executor and keep their own pruned keyboard ring across pane
+changes. Album names and covers come from a matching recording in the desktop catalog, resolved off
+the window thread and reused until the recording or catalog names stamp changes; an unheld recording
+draws a disc and omits the album. The card list scrolls within a share of the window's height, keeping
+Settings reachable. Watches are released when the device, sync service or window goes away.
+
+A song marked explicit by its file content advisory, provider rating or title qualifier wears an E badge beside its title, including beside an alternate-copy badge. A clean advisory overrides a title qualifier; an unmarked title is never assumed clean. A held track menu offers clean and explicit version searches using the title without its rating qualifier and the artist. These searches change no files; results still need the listener to choose a recording.
 
 A song row nests Share into song.link and Upload file to Catbox (public). The upload runs on the background executor and copies the returned public URL, with progress and failure toasts. Only whole local files are uploaded; cue spans and remote sources are refused rather than exposing an entire backing file.

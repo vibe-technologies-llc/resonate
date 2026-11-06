@@ -685,7 +685,9 @@ pub struct RootView {
     pub(crate) regenerating_the_code: bool,
     pub(crate) code_regenerated: bool,
     pub(crate) pairing_shown: bool,
-    remote_songs: Vec<String>,
+    pub(super) remote_songs: Vec<super::remote::RemoteSong>,
+    pub(super) remote_controls: Controls,
+    pub(super) remote_scroll: ScrollHandle,
     pub(crate) driving: Option<(String, String)>,
     pub(crate) driving_redraws: Option<Task<()>>,
     pub(crate) driving_rails: std::collections::BTreeMap<u32, crate::views::slider::Rail>,
@@ -1239,75 +1241,7 @@ impl RootView {
         })
         .detach();
 
-        cx.spawn(async move |this, cx| {
-            let mut watched: Vec<String> = Vec::new();
-            let mut previous_syncing: Option<Arc<dyn crate::Syncing>> = None;
-            loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
-                if this
-                    .update(cx, |this, cx| {
-                        let syncing = cx.global::<ResonateApp>().syncing.clone();
-                        let mut songs = Vec::new();
-                        if let Some(previous) = previous_syncing.as_ref()
-                            && syncing
-                                .as_ref()
-                                .is_none_or(|current| !Arc::ptr_eq(previous, current))
-                        {
-                            for id in watched.drain(..) {
-                                previous.unwatch(&id);
-                            }
-                        }
-                        if let Some(syncing) = syncing.as_ref() {
-                            let devices = syncing.shown().devices;
-                            let mut current = Vec::new();
-                            for device in devices
-                                .into_iter()
-                                .filter(|device| !device.this && device.online)
-                            {
-                                current.push(device.id.clone());
-                                if let crate::RemoteShown::Zones(zones) = syncing.watch(&device.id)
-                                {
-                                    for zone in zones {
-                                        if let Some(song) = zone.song {
-                                            let state =
-                                                if zone.sounding { "Playing" } else { "Paused" };
-                                            songs.push(format!(
-                                                "{} · {state}: {song} · {}:{:02}",
-                                                device.name,
-                                                zone.position.as_secs() / 60,
-                                                zone.position.as_secs() % 60
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                            for id in watched.iter().filter(|id| !current.contains(id)) {
-                                syncing.unwatch(id);
-                            }
-                            watched = current;
-                        } else if let Some(previous) = previous_syncing.as_ref() {
-                            for id in watched.drain(..) {
-                                previous.unwatch(&id);
-                            }
-                        }
-                        previous_syncing = syncing;
-                        if this.remote_songs != songs {
-                            this.remote_songs = songs;
-                            cx.notify();
-                        }
-                    })
-                    .is_err()
-                {
-                    if let Some(syncing) = previous_syncing {
-                        for id in watched {
-                            syncing.unwatch(&id);
-                        }
-                    }
-                    break;
-                }
-            }
-        })
-        .detach();
+        Self::watch_remote_playback(cx);
 
         let view = Self {
             player,
@@ -1415,6 +1349,8 @@ impl RootView {
             code_regenerated: false,
             pairing_shown: false,
             remote_songs: Vec::new(),
+            remote_controls: Controls::default(),
+            remote_scroll: ScrollHandle::new(),
             driving: None,
             driving_redraws: None,
             driving_rails: std::collections::BTreeMap::new(),
@@ -3756,7 +3692,9 @@ impl RootView {
 
     fn let_the_control_go(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.disarm();
-        let let_go = self.controls.lets_go(window, cx) | self.standing_controls.lets_go(window, cx);
+        let let_go = self.controls.lets_go(window, cx)
+            | self.standing_controls.lets_go(window, cx)
+            | self.remote_controls.lets_go(window, cx);
         if let_go {
             cx.notify();
         }
@@ -3799,6 +3737,7 @@ impl RootView {
         self.controls
             .caption_of_the_focused(window)
             .or_else(|| self.standing_controls.caption_of_the_focused(window))
+            .or_else(|| self.remote_controls.caption_of_the_focused(window))
     }
 
     fn hints_are_wanted(&self, cx: &App) -> bool {
@@ -5063,7 +5002,7 @@ impl RootView {
             ))
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn sidebar(&self, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let library = self.library.read(cx);
         let albums = library.albums_counted() as usize;
         let artists = library.artists_counted() as usize;
@@ -5132,7 +5071,7 @@ impl RootView {
             .w(px(theme::sidebar_width() - 1.0))
             .when(downloads, |column| column.child(self.download_status(cx)))
             .when(enriching, |column| column.child(self.enrichment_status(cx)))
-            .when_some(self.remote_playback(cx), |column, panel| {
+            .when_some(self.remote_playback(window, cx), |column, panel| {
                 column.child(panel)
             })
             .child(self.pane_row(Pane::Settings, None, cx));
@@ -5713,27 +5652,6 @@ impl RootView {
             .child(motion::lifted_in(card, "delete-sheet-arrives"))
     }
 
-    fn remote_playback(&self, _cx: &mut Context<Self>) -> Option<Div> {
-        if self.remote_songs.is_empty() {
-            return None;
-        }
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .p_3()
-                .text_size(px(theme::text_sm()))
-                .text_color(rgb(theme::muted()))
-                .child("OTHER DEVICES")
-                .children(
-                    self.remote_songs
-                        .iter()
-                        .map(|song| div().child(song.clone())),
-                ),
-        )
-    }
-
     fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let row = div()
             .id("enriching")
@@ -5968,7 +5886,7 @@ impl RootView {
     ) -> AnyElement {
         match region {
             Region::Header => self.header(window, cx).into_any_element(),
-            Region::Sidebar => self.sidebar(cx).into_any_element(),
+            Region::Sidebar => self.sidebar(window, cx).into_any_element(),
             Region::Pane => {
                 self.grid_width.seen_in(window.viewport_size().width);
                 self.finding_holds_the_caret = self.finding.read(cx).is_focused(window);
