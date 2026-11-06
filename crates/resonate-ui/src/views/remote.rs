@@ -198,6 +198,7 @@ impl RootView {
             kit::Tone::Ghost,
         )
         .w_full()
+        .font_weight(FontWeight::NORMAL)
         .when(super::spoken::listening(), |heading| {
             heading.aria_expanded(!collapsed)
         });
