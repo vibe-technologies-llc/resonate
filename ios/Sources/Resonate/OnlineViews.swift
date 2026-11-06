@@ -24,7 +24,6 @@ struct OnlineSearchContent: View {
         } else if current, found.isWhole, found.isEmpty, !features.searching {
             OnlineNothingFound(text: text)
         } else {
-            DownloadProgress()
             if features.searching, !current {
                 OnlinePending(text: text, awaited: nil)
             }
@@ -176,11 +175,11 @@ struct OnlineSongsPage: View {
 
     var body: some View {
         List {
-            DownloadProgress().themedRows()
             OnlineSongsSection(songs: songs, actions: $actions).themedRows()
         }
         .listStyle(.plain)
         .navigationTitle("Songs")
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { DownloadsButton() } }
         .onlineSongActions($actions)
     }
 }
@@ -685,7 +684,6 @@ struct OnlineReleasePage: View {
 
     var body: some View {
         ThemedList {
-            DownloadProgress()
             OnlineSongsSection(songs: songs, heading: release.title, collected: true, actions: $actions)
             if failed {
                 ReadFailure(text: "The songs could not be read.") { Task { await readSongs() } }
@@ -695,6 +693,7 @@ struct OnlineReleasePage: View {
         }
         .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
         .navigationTitle(release.title)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { DownloadsButton() } }
         .navigationBarTitleDisplayMode(.inline)
         .onlineSongActions($actions)
         .task { await readSongs() }

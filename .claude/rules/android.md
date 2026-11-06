@@ -1281,6 +1281,14 @@ release, artist id, disc and position where the document names none, and missing
 without writing tags, so an untagged file is still recognised as a held want; the wanted row it
 answered is stamped `offered_at`. A rescan preserves those names when the document supplies none.
 
+**Text searches share the desktop's ranking before any limit**: `searched_songs` hands every
+recording returned by `find_songs` to `resonate_library::ranked_songs`, including the title/artist
+reading, grouping, original-versus-variant fit, distinct release counts and compatible ISRCs.
+Only then are the best twelve mapped to `SearchSong` and their local holding checked. Taking
+fifty in service order discarded originals further down and let remixes lead on both phones.
+`an_online_search_ranks_every_answer_before_choosing_the_songs_shown_on_the_phone` puts the
+original at position ninety among a hundred variants and checks its identity, code and place.
+
 **Found songs carry their place and whether they are held.** `SearchSong` holds release, release
 group, artist id, disc and position beside the recording; `search_song` places a found recording on
 the release whose title holds the typed words the title and credit do not, else the first
@@ -1477,4 +1485,6 @@ until every request for that album has completed.
 
 A metadata pass that fails cancels its picture, lyric and study workers before joining them,
 keeping the original failure and its resumable mark. A network failure must not leave the pass
-shown as running while an otherwise unrelated library decode continues.
+shown as running while an otherwise unrelated library decode continues. Cleanup only supplies
+its own cancellation when the caller has not already stopped the pass; a listener's Stop removes
+the mark, while shutdown preserves it. Overriding that choice made every explicit Stop resume.

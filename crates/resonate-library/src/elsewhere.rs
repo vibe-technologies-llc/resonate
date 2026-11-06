@@ -453,6 +453,7 @@ fn the_take_worth_offering(
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Fit {
     Titled,
+    SpeltTitle,
     Answered,
     Partly,
 }
@@ -472,25 +473,52 @@ fn same_words(one: &[String], other: &[String]) -> bool {
 }
 
 fn fit_of(matched: &RecordingMatch, asked: &SongsAsked) -> Fit {
-    let titled = words_of_a_name(titles::dequalified(&matched.title));
+    let titled = words_of_a_name(titles::without_guests(titles::without_its_rating(
+        &matched.title,
+    )));
     if let Some(by) = &asked.by
         && by.answered_by(matched)
     {
-        return match same_words(&titled, &words_of_a_name(&by.title)) {
-            true => Fit::Titled,
-            false => Fit::Answered,
-        };
+        return title_fit(&titled, &words_of_a_name(&by.title));
     }
 
     let words = words_of_a_name(&asked.typed);
     let credited = words_of_a_name(&matched.credited_as());
     let named: Vec<String> = titled.iter().chain(&credited).cloned().collect();
-    if !words.is_empty() && (same_words(&titled, &words) || same_words(&named, &words)) {
-        return Fit::Titled;
+    if !words.is_empty() {
+        let fit = std::iter::once(titled.clone())
+            .chain(std::iter::once(named.clone()))
+            .chain(matched.credit.iter().map(|credit| {
+                titled
+                    .iter()
+                    .cloned()
+                    .chain(words_of_a_name(&credit.name))
+                    .collect()
+            }))
+            .map(|named| title_fit(&named, &words))
+            .min()
+            .unwrap_or(Fit::Partly);
+        if fit < Fit::Answered {
+            return fit;
+        }
     }
     match !words.is_empty() && words.iter().all(|word| word_answers(word, &named)) {
         true => Fit::Answered,
         false => Fit::Partly,
+    }
+}
+
+fn title_fit(named: &[String], typed: &[String]) -> Fit {
+    if same_words(named, typed) {
+        Fit::Titled
+    } else if named.len() == typed.len()
+        && typed
+            .iter()
+            .all(|word| named.iter().any(|name| spelt_alike(word, name)))
+    {
+        Fit::SpeltTitle
+    } else {
+        Fit::Answered
     }
 }
 
@@ -524,6 +552,30 @@ pub(crate) fn found_among(
     asked: Option<&SongsAsked>,
     held: impl Fn(&Mbid) -> bool,
 ) -> Vec<Found> {
+    recordings_among(matches, asked, held)
+        .into_iter()
+        .map(|matched| Found {
+            performer: leading_performer(&matched.credit),
+            release: meant_release(&matched.releases).cloned(),
+            artist: matched.credited_as(),
+            releases: matched.releases,
+            recording: matched.recording,
+            title: matched.title,
+            length: matched.length,
+            isrcs: matched.isrcs,
+        })
+        .collect()
+}
+
+pub fn ranked_songs(asked: &SongsAsked, matches: Vec<RecordingMatch>) -> Vec<RecordingMatch> {
+    recordings_among(weighed_for(asked, matches), Some(asked), |_| false)
+}
+
+fn recordings_among(
+    matches: Vec<RecordingMatch>,
+    asked: Option<&SongsAsked>,
+    held: impl Fn(&Mbid) -> bool,
+) -> Vec<RecordingMatch> {
     let mut takes: Vec<Takes> = Vec::new();
     for (place, matched) in matches.into_iter().enumerate() {
         if held(&matched.recording) || !is_worth_offering(&matched) {
@@ -551,11 +603,12 @@ pub(crate) fn found_among(
                 .map(|matched| fit_of(matched, asked))
                 .min()
                 .unwrap_or(Fit::Partly);
-            let released_on: usize = takes
+            let released_on = takes
                 .same
                 .iter()
-                .map(|matched| matched.releases.len())
-                .sum();
+                .flat_map(|matched| matched.releases.iter().map(|release| &release.id))
+                .collect::<std::collections::HashSet<_>>()
+                .len();
             (fit, Reverse(released_on), takes.first)
         });
     }
@@ -567,17 +620,7 @@ pub(crate) fn found_among(
         };
         let isrcs = codes_alike(matched, &same);
         let matched = matched.clone();
-        let artist = matched.credited_as();
-        found.push(Found {
-            performer: leading_performer(&matched.credit),
-            release: meant_release(&matched.releases).cloned(),
-            releases: matched.releases,
-            recording: matched.recording,
-            title: matched.title,
-            artist,
-            length: matched.length,
-            isrcs,
-        });
+        found.push(RecordingMatch { isrcs, ..matched });
         if found.len() == FOUND_ELSEWHERE_AT_MOST {
             break;
         }
@@ -969,6 +1012,55 @@ mod tests {
                 .map(|release| issued(&numbered(1000 + release), "1999", "Album", &[], "Official"))
                 .collect(),
         )
+    }
+
+    #[test]
+    fn the_original_title_outranks_variants_with_guests_and_a_mistyped_title() {
+        let mut original = on_releases(1, "Promiscuous (feat. Timbaland)", "Nelly Furtado", 40);
+        original.credit[0].joined_by = " feat. ".to_owned();
+        original.credit.push(Credit {
+            name: "Timbaland".to_owned(),
+            joined_by: String::new(),
+            mbid: None,
+        });
+        let remix = on_releases(2, "Promiscuous (Remix)", "Nelly Furtado", 100);
+        for query in [
+            "promiscuous",
+            "promiscious",
+            "nelly furtado promiscuous",
+            "promiscious by nelly furtado",
+        ] {
+            let asked = songs_asked(query).expect("a search");
+            let found = found_among(vec![remix.clone(), original.clone()], Some(&asked), |_| {
+                false
+            });
+            assert_eq!(found[0].recording, original.recording, "{query}");
+        }
+        let original = on_releases(3, "Morning After Dark", "Timbaland", 40);
+        let remix = on_releases(4, "Morning After Dark (Remix)", "Timbaland", 100);
+        let asked = songs_asked("morning after dark").expect("a search");
+        let found = found_among(vec![remix, original.clone()], Some(&asked), |_| false);
+        assert_eq!(found[0].recording, original.recording);
+
+        let radio = on_releases(5, "Morning After Dark (Radio Edit)", "Timbaland", 100);
+        let found = found_among(vec![radio.clone(), original.clone()], Some(&asked), |_| {
+            false
+        });
+        assert_eq!(found[0].recording, original.recording);
+        let asked = songs_asked("morning after dark radio edit").expect("a search");
+        let found = found_among(vec![original, radio.clone()], Some(&asked), |_| false);
+        assert_eq!(found[0].recording, radio.recording);
+    }
+
+    #[test]
+    fn repeated_search_answers_do_not_inflate_a_recordings_popularity() {
+        let original = on_releases(1, "Morning After Dark", "Timbaland", 40);
+        let variant = on_releases(2, "Morning After Dark", "Timbaland feat. SoShy", 20);
+        let mut answers = vec![variant; 4];
+        answers.push(original.clone());
+        let asked = songs_asked("morning after dark").expect("a search");
+        let found = found_among(answers, Some(&asked), |_| false);
+        assert_eq!(found[0].recording, original.recording);
     }
 
     #[test]

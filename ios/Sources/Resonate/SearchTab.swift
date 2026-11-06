@@ -2,12 +2,19 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
+private enum SearchArea: String, CaseIterable {
+    case all = "All"
+    case library = "Library"
+    case online = "Online"
+}
+
 struct SearchTab: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var seeAll: SearchScope?
     @State private var actions = OnlineSongActions()
     @State private var savingSearch = false
+    @State private var area = SearchArea.all
 
     var body: some View {
         let search = library.tabSearch
@@ -18,21 +25,44 @@ struct SearchTab: View {
                 if search.query.isEmpty {
                     SearchStart(search: search, choose: enter)
                 } else {
-                    if !OnlineAsked.isLink(search.query) {
+                    let link = OnlineAsked.isLink(search.query)
+                    if !link, area != .online {
                         SearchHeading(title: "In your library")
-                        LibraryFindings(search: search, seeAll: $seeAll, chosen: stowKeyboard)
+                        LibraryFindings(search: search, seeAll: $seeAll, compact: area == .all, chosen: stowKeyboard)
+                        if area == .all, search.hasAnswer, !search.matchedNothing {
+                            Button { area = .library } label: {
+                                Label("All library results", systemImage: "chevron.forward")
+                                    .font(.subheadline)
+                            }
+                            .listRowSeparator(.hidden)
+                        }
                     }
-                    SearchHeading(title: "Online")
-                    if online {
-                        OnlineSearchContent(actions: $actions)
-                    } else {
-                        OnlineOffRow()
+                    if link || area != .library {
+                        SearchHeading(title: "Online")
+                        if online {
+                            OnlineSearchContent(actions: $actions)
+                        } else {
+                            OnlineOffRow()
+                        }
                     }
                 }
             }
             .themedRows()
         }
         .listStyle(.plain)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
+                Picker("Search in", selection: $area) {
+                    ForEach(SearchArea.allCases, id: \.self) { area in
+                        Text(area.rawValue).tag(area)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.bar)
+            }
+        }
         .scrollDismissesKeyboard(.immediately)
         .searchable(text: Binding(get: { search.text }, set: enter), prompt: "Search")
         .textInputAutocapitalization(.never)
@@ -41,6 +71,9 @@ struct SearchTab: View {
         .navigationTitle("Search")
         .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                DownloadsButton()
+            }
             if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { savingSearch = true } label: { Label("Save as playlist", systemImage: "bookmark") }
@@ -174,6 +207,7 @@ struct SearchStart: View {
 struct LibraryFindings: View {
     let search: SearchModel
     @Binding var seeAll: SearchScope?
+    var compact = false
     let chosen: () -> Void
 
     var body: some View {
@@ -194,7 +228,13 @@ struct LibraryFindings: View {
                 .listRowSeparator(.hidden)
                 .announced("Nothing in your library matches \(search.answered)")
         } else {
-            SearchResults(search: search, scope: Binding(get: { .top }, set: { seeAll = $0 }), chosen: chosen)
+            SearchResults(
+                search: search,
+                scope: Binding(get: { .top }, set: { seeAll = $0 }),
+                chosen: chosen,
+                songsAtTop: compact ? 3 : 5,
+                showsCollections: !compact
+            )
         }
     }
 }

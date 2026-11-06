@@ -191,6 +191,10 @@ pub fn dequalified(title: &str) -> &str {
     without_brackets_that(title, is_a_version_qualifier)
 }
 
+pub fn without_guests(title: &str) -> &str {
+    without_brackets_that(title, names_a_guest)
+}
+
 fn without_a_qualifying_suffix(title: &str) -> Option<&str> {
     SPACED_DASHES.iter().find_map(|dash| {
         let (kept, suffix) = title.rsplit_once(dash)?;
@@ -256,6 +260,25 @@ mod tests {
         assert_eq!(dequalified("Creep (2009 Remaster) [Explicit]"), "Creep");
         assert_eq!(dequalified("Creep (Acoustic)"), "Creep (Acoustic)");
         assert_eq!(dequalified("(Remastered)"), "(Remastered)");
+    }
+
+    #[test]
+    fn a_guest_is_left_out_without_losing_the_requested_version() {
+        assert_eq!(
+            without_guests("Promiscuous (feat. Timbaland)"),
+            "Promiscuous"
+        );
+        for title in [
+            "Promiscuous (Radio Edit)",
+            "Promiscuous (Remix)",
+            "Promiscuous (Live)",
+        ] {
+            assert_eq!(without_guests(title), title);
+        }
+        assert_eq!(
+            without_guests("Promiscuous (Radio Edit) (feat. Timbaland)"),
+            "Promiscuous (Radio Edit)"
+        );
     }
 
     #[test]

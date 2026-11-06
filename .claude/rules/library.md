@@ -1673,13 +1673,22 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   search at once and kept it out after a failed download. **Of the takes of one folded title and credit
   it offers the one a provider can deliver** (`the_take_worth_offering`: ISRC first, then the best
   standing and kind of release, then the most releases). **Songs are ranked before the cap**:
-  `found_among` orders groups by `Fit` (`Titled`, `Answered`, `Partly`), then by the releases the
-  group's takes are on, then first place in the answer; to `FOUND_ELSEWHERE_AT_MOST` (12). The
+  `found_among` orders groups by `Fit` (`Titled`, `SpeltTitle`, `Answered`, `Partly`), then by the
+  distinct releases the group's takes are on, then first place in the answer; to
+  `FOUND_ELSEWHERE_AT_MOST` (12). The
   answer it ranks is up to a hundred recordings (`online.md`), where the original of a title many
   artists recorded sits far down MusicBrainz's order of equal scores yet leads on its releases
-  (`a_song_on_the_most_releases_leads_a_hundred_answers_however_far_down_they_put_it`). **A found
-  song carries the codes of every take of it as long as it** (`Found::isrcs`, within
-  `LENGTHS_AGREE_WITHIN`). Words are weighed by `resonate_core::words_of_a_name` (`Found::answers`,
+  (`a_song_on_the_most_releases_leads_a_hundred_answers_however_far_down_they_put_it`). A title
+  is weighed through `titles::without_guests` after removing its rating, keeping radio edits, remasters, remixes and
+  live takes distinct while dropping a featured guest. Title plus each individual credit is
+  weighed beside the whole credit, so an untyped featured artist never demotes the original.
+  A whole title spelt nearly alike leads a partial match, and a release counts once even when
+  several search routes return the same recording. **A found song carries the codes of every take
+  of it as long as it** (`Found::isrcs`, within
+  `LENGTHS_AGREE_WITHIN`). `ranked_songs` exports the same grouping and ranking as
+  `RecordingMatch` values with those compatible codes, so both phones rank the whole answer
+  before mapping it, while `found_among` applies the catalog's held-recording filter first.
+  Words are weighed by `resonate_core::words_of_a_name` (`Found::answers`,
   `still_answering`, `artists_named_by`, `albums_named_by`, `albums_kept_named_by`: *cant* answers
   *Can't*); the SQL haystacks keep their stored splitting. Halves are public apart (the window keeps
   the reference's answer and reweighs it): `songs_asked` = title, artist, album words only,

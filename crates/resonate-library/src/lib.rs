@@ -91,7 +91,7 @@ pub use crate::{
         ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, AlbumFound, ArtistFound,
         Covering, FOUND_ELSEWHERE_AT_MOST, Found, Performer, SongsAsked, Sung, Uncovered,
         albums_still_answering, artists_still_answering, asks_elsewhere,
-        in_the_order_worth_offering, songs_asked, still_answering, weighed_for,
+        in_the_order_worth_offering, ranked_songs, songs_asked, still_answering, weighed_for,
     },
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fit, Fruitless,

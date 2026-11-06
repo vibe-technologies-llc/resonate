@@ -223,6 +223,35 @@ fn a_title_many_artists_recorded_and_a_typo_of_one_find_the_original_first() {
 }
 
 #[test]
+fn popular_collaborations_and_a_mistyped_title_find_the_original_before_variants() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let library = Library::open_in_memory().expect("a catalog in memory");
+    for (query, title, artist) in [
+        ("promiscuous", "Promiscuous", "Nelly Furtado"),
+        ("promiscious", "Promiscuous", "Nelly Furtado"),
+        ("nelly furtado promiscuous", "Promiscuous", "Nelly Furtado"),
+        ("morning after dark", "Morning After Dark", "Timbaland"),
+    ] {
+        let asked = songs_asked(query).expect("a search");
+        let answered = weighed_for(
+            &asked,
+            online.find_songs(&asked).expect("musicbrainz answered"),
+        );
+        let found = library
+            .unheld_among(answered, Some(&asked))
+            .expect("the catalog read");
+        let first = found
+            .first()
+            .unwrap_or_else(|| panic!("{query} found nothing"));
+        assert_eq!(first.title, title, "{query}: {found:?}");
+        assert!(first.artist.starts_with(artist), "{query}: {found:?}");
+    }
+}
+
+#[test]
 fn a_link_to_a_song_on_spotify_tidal_and_apple_music_names_its_isrc() {
     let Some(client) = reached() else {
         return;

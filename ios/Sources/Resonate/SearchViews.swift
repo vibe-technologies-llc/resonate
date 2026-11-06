@@ -11,7 +11,6 @@ extension ArtistHit {
 }
 
 struct SearchResults: View {
-    private static let topSongs = 5
     private static let topCollections = 6
 
     @Environment(Library.self) private var library
@@ -19,6 +18,8 @@ struct SearchResults: View {
     let search: SearchModel
     @Binding var scope: SearchScope
     var chosen: () -> Void = {}
+    var songsAtTop = 5
+    var showsCollections = true
 
     var body: some View {
         let found = search.found
@@ -42,20 +43,20 @@ struct SearchResults: View {
     @ViewBuilder
     private func top(_ found: LibrarySearch, _ query: String) -> some View {
         Section {
-            ForEach(found.tracks.prefix(Self.topSongs), id: \.id) { track in
+            ForEach(found.tracks.prefix(songsAtTop), id: \.id) { track in
                 songRow(track, among: found.tracks, query)
             }
         } header: {
-            SeeAllHeader(title: "Songs", more: found.trackCount > Self.topSongs) { scope = .songs }
+            SeeAllHeader(title: "Songs", more: found.trackCount > songsAtTop) { scope = .songs }
         }
-        if !found.albums.isEmpty {
+        if showsCollections, !found.albums.isEmpty {
             Section {
                 AlbumShelf(albums: Array(found.albums.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {
                 SeeAllHeader(title: "Albums", more: found.albums.count > Self.topCollections) { scope = .albums }
             }
         }
-        if !found.artists.isEmpty {
+        if showsCollections, !found.artists.isEmpty {
             Section {
                 ArtistShelf(artists: Array(found.artists.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {

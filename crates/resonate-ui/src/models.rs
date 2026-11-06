@@ -811,6 +811,7 @@ pub struct LibraryModel {
     previewed_tags: Planned,
     sourcing: Sourcing,
     enriching: Option<Arc<EnrichProgress>>,
+    enrich_owed: bool,
     looked_up: Option<EnrichSummary>,
     sought: Arc<Sought>,
     reach: usize,
@@ -1036,6 +1037,7 @@ impl LibraryModel {
             previewed_tags: Planned::Not,
             sourcing,
             enriching: None,
+            enrich_owed: false,
             looked_up: None,
             sought: Arc::default(),
             reach,
@@ -5055,12 +5057,8 @@ impl LibraryModel {
                         }
                         let brought = summary.stats.added + summary.stats.updated > 0;
                         let worth_asking = prompted == Prompted::ByHand || brought;
-                        if !summary.cancelled
-                            && this.after_scan
-                            && this.can_enrich()
-                            && worth_asking
-                        {
-                            this.enrich(false, cx);
+                        if !summary.cancelled && worth_asking {
+                            this.enrich_new_songs(cx);
                         }
                     }
                     Err(error) => {
@@ -5089,6 +5087,7 @@ impl LibraryModel {
         self.restate_the_listing();
         if online {
             self.sources_moved(cx);
+            self.enrich_new_songs(cx);
         }
         cx.notify();
     }
@@ -5261,6 +5260,17 @@ impl LibraryModel {
         self.enrich_with(asked, cx);
     }
 
+    fn enrich_new_songs(&mut self, cx: &mut Context<Self>) {
+        if !self.after_scan || !self.can_enrich() {
+            return;
+        }
+        if self.enriching.is_some() {
+            self.enrich_owed = true;
+        } else {
+            self.enrich(false, cx);
+        }
+    }
+
     fn only_the_covers(&self) -> EnrichOptions {
         EnrichOptions {
             refresh: false,
@@ -5293,6 +5303,7 @@ impl LibraryModel {
         };
 
         self.enriching = Some(Arc::clone(handle.progress()));
+        self.enrich_owed = false;
         self.looked_up = None;
         cx.notify();
 
@@ -5316,8 +5327,11 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.enriching = None;
+                let owed = mem::take(&mut this.enrich_owed);
+                let mut finished = false;
                 match handle.join() {
                     Ok(summary) => {
+                        finished = !summary.cancelled && summary.stopped_by.is_none();
                         this.looked_up = Some(summary);
                         toast::tell(looked_up(&summary), cx);
                     }
@@ -5327,6 +5341,9 @@ impl LibraryModel {
                     }
                 }
                 this.reload(cx);
+                if owed && finished {
+                    this.enrich_new_songs(cx);
+                }
             });
             let _ = finished;
         });
@@ -5344,6 +5361,7 @@ impl LibraryModel {
             }
         };
         let Some(left) = left else {
+            self.enrich_new_songs(cx);
             return;
         };
 
@@ -5356,6 +5374,7 @@ impl LibraryModel {
     }
 
     pub fn stop_enrich(&mut self, cx: &mut Context<Self>) {
+        self.enrich_owed = false;
         let Some(progress) = self.enriching.as_ref() else {
             return;
         };
@@ -5645,6 +5664,9 @@ impl LibraryModel {
                 }
                 match joined {
                     Ok(summary) => {
+                        if summary.stats.kept > 0 {
+                            this.enrich_new_songs(cx);
+                        }
                         if !summary.cancelled {
                             this.providers_unheard =
                                 summary.stats.refused > 0 || summary.stats.late > 0;

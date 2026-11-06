@@ -833,10 +833,15 @@ fn songs_coded_search(words: &str, spelt: Spelt) -> Option<String> {
     if words.is_empty() {
         return None;
     }
-    let words = words.join(" ");
+    let terms = words
+        .iter()
+        .map(|word| format!("+(recording:{word} artist:{word})"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let title = lucene_quoted(&words.join(" "));
     Some(searched(
         "/recording/",
-        &format!("+(recording:({words}) artist:({words})) {AN_ISRC_HELD} {A_TAGGED_ONE_FIRST}"),
+        &format!("{terms} recording:{title}^2 {AN_ISRC_HELD} {A_TAGGED_ONE_FIRST}"),
         SONGS_FOUND_AT_MOST,
     ))
 }
@@ -2209,7 +2214,7 @@ mod tests {
             path.contains(&format!(
                 "query={}",
                 crate::query::escape_query(
-                    "+(recording:(teardrop massive attack) artist:(teardrop massive attack)) +isrc:* tag:*"
+                    r#"+(recording:teardrop artist:teardrop) +(recording:massive artist:massive) +(recording:attack artist:attack) recording:"teardrop massive attack"^2 +isrc:* tag:*"#
                 )
             )),
             "{path}"
@@ -2218,7 +2223,7 @@ mod tests {
             loosely.contains(&format!(
                 "query={}",
                 crate::query::escape_query(
-                    "+(recording:(dont~ stop~ me now) artist:(dont~ stop~ me now)) +isrc:* tag:*"
+                    r#"+(recording:dont~ artist:dont~) +(recording:stop~ artist:stop~) +(recording:me artist:me) +(recording:now artist:now) recording:"dont~ stop~ me now"^2 +isrc:* tag:*"#
                 )
             )),
             "{loosely}"

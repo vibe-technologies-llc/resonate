@@ -499,7 +499,7 @@ fn run(
         }
     });
     let cancelled_by_caller = told.is_cancelled();
-    if ended.is_err() {
+    if ended.is_err() && !cancelled_by_caller {
         told.cancel(Leaving::ForNow);
     }
     drop(pass);

@@ -161,6 +161,11 @@ pin each byte.
      holds every word in its title or credit (`answers_every_word`, `Spelt::AsTyped`); **else asked
      again with words of `SPELT_LOOSELY_FROM` letters or more spelt loosely** (`Spelt::Loosely`,
      `w~`); else the loose dismax words (`songs_search`).
+  **Every word of the coded search is required in either title or credit**, one
+  `+(recording:word artist:word)` per word, with the whole title phrase boosted. Grouping all
+  title words and all artist words under one required OR admitted any single word, letting
+  *Morning After Dark* search tens of thousands of partial matches and lose its original before
+  ranking. Fuzzy words keep the same per-word requirements.
   The order of the answer is not its rank: the library ranks. **`find_albums` asks the same two ways
   of `/release-group/`** (`albums_credited_search`, then `albums_search`, each
   `ALBUMS_FOUND_AT_MOST`), reading `primary-type`, `secondary-types`, `first-release-date` into an

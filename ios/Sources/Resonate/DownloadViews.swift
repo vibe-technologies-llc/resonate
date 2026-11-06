@@ -2,21 +2,28 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-struct DownloadProgress: View {
+struct DownloadsButton: View {
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
 
     var body: some View {
         let downloads = library.features.downloads
-        if downloads.needsProvider {
-            Section {
-                Text("No download provider is ready. Switch one on and fill in what it needs.")
-                Button("Set up a download provider") {
-                    downloads.missedProvider = false
-                    navigation.open(.providers)
-                }
-            }
+        let active = downloads.jobs.filter { $0.state.inFlight || $0.state == .waiting }.count
+        NavigationLink {
+            DownloadsView()
+        } label: {
+            Label("Downloads", systemImage: active > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
         }
+        .accessibilityValue(active > 0 ? "\(active) active" : "")
+        .simultaneousGesture(TapGesture().onEnded { Keyboard.stow() })
+    }
+}
+
+struct DownloadProgress: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let downloads = library.features.downloads
+        DownloadProviderPrompt()
         if !downloads.jobs.isEmpty {
             Section {
                 NavigationLink {
@@ -24,6 +31,24 @@ struct DownloadProgress: View {
                 } label: {
                     DownloadSummary(jobs: downloads.jobs, waitsOnTheMeter: downloads.waitsOnTheMeter)
                 }
+            }
+        }
+    }
+}
+
+struct DownloadProviderPrompt: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        if library.features.downloads.needsProvider {
+            Section {
+                NavigationLink {
+                    ProviderView()
+                } label: {
+                    Label("Set up a download provider", systemImage: "arrow.down.circle")
+                }
+            } footer: {
+                Text("No download provider is ready. Switch one on and fill in what it needs.")
             }
         }
     }
@@ -73,6 +98,7 @@ struct DownloadsView: View {
     var body: some View {
         let downloads = library.features.downloads
         ThemedList {
+            DownloadProviderPrompt()
             if downloads.jobs.isEmpty {
                 ContentUnavailableView(
                     "No downloads",

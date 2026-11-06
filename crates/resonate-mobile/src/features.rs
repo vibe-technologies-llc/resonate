@@ -13,7 +13,8 @@ use resonate_core::{
 use resonate_engine::{Counting, Tapped};
 use resonate_library::{
     Fingerprints, HeardAs, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease,
-    Reference, SongLink, Sounded, TrackToAsk, Wording, agreement, in_the_order_worth_offering,
+    Reference, SongLink, SongsAsked, Sounded, TrackToAsk, Wording, agreement,
+    in_the_order_worth_offering, ranked_songs,
 };
 use resonate_online::{Client, Identity, Online};
 use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
@@ -611,21 +612,11 @@ impl MobilePlayer {
         let Some(asked) = resonate_library::songs_asked(&text) else {
             return Ok(Vec::new());
         };
-        let typed = words_of_a_name(&asked.words);
         self.services
             .online
             .find_songs(&asked)
             .map_err(|source| Error::reference(LookupOp::FindRecording, source))
-            .map(|songs| {
-                songs
-                    .into_iter()
-                    .take(50)
-                    .map(|song| {
-                        let album = album_words_asked(&typed, &song);
-                        search_song(song, &album)
-                    })
-                    .collect()
-            })
+            .map(|songs| searched_songs(&asked, songs))
             .and_then(|songs| self.offered(songs, Listing::Searched))
     }
 
@@ -852,6 +843,17 @@ pub(crate) fn search_song(song: RecordingMatch, album_asked: &[String]) -> Searc
     }
 }
 
+fn searched_songs(asked: &SongsAsked, songs: Vec<RecordingMatch>) -> Vec<SearchSong> {
+    let typed = words_of_a_name(&asked.words);
+    ranked_songs(asked, songs)
+        .into_iter()
+        .map(|song| {
+            let album = album_words_asked(&typed, &song);
+            search_song(song, &album)
+        })
+        .collect()
+}
+
 fn release_meant<'a>(
     releases: &'a [RecordingRelease],
     album_asked: &[String],
@@ -1018,6 +1020,50 @@ mod tests {
                     2,
                 ),
             ],
+        }
+    }
+
+    #[test]
+    fn an_online_search_ranks_every_answer_before_choosing_the_songs_shown_on_the_phone() {
+        for (query, title, artist) in [
+            ("promiscious", "Promiscuous", "Nelly Furtado"),
+            ("morning after dark", "Morning After Dark", "Timbaland"),
+        ] {
+            let mut original = joga();
+            original.title = title.to_owned();
+            original.credit[0].name = artist.to_owned();
+            original.isrcs = vec![resonate_library::Isrc::new("USUM70907072").expect("an isrc")];
+            original.releases = (0..40)
+                .map(|index| {
+                    pressed(
+                        &format!("{index:08x}-0000-4000-8000-000000000000"),
+                        "Album",
+                        "Album",
+                        1,
+                    )
+                })
+                .collect();
+            let mut answers: Vec<RecordingMatch> = (0..99)
+                .map(|index| {
+                    let mut variant = original.clone();
+                    variant.recording =
+                        Mbid::new(&format!("{index:08x}-0000-4000-8000-000000000001"))
+                            .expect("an mbid");
+                    variant.title = format!("{title} (Remix {index})");
+                    variant
+                })
+                .collect();
+            answers.insert(90, original.clone());
+            let asked = resonate_library::songs_asked(query).expect("a search");
+            let found = searched_songs(&asked, answers);
+            assert_eq!(
+                found[0].recording,
+                original.recording.to_string(),
+                "{query}"
+            );
+            assert_eq!(found[0].isrcs, ["USUM70907072"]);
+            assert_eq!(found[0].disc, Some(1));
+            assert_eq!(found.len(), resonate_library::FOUND_ELSEWHERE_AT_MOST);
         }
     }
 

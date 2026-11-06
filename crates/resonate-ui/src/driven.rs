@@ -4494,6 +4494,76 @@ mod tests {
 
     struct AccountOfOnePlaylist {
         source: resonate_core::SourceId,
+        recordings: Option<Arc<PausedRecordings>>,
+    }
+
+    struct PausedRecordings {
+        waiting: AtomicBool,
+        resume: Receiver<()>,
+    }
+
+    #[gpui::test]
+    fn a_song_scanned_during_a_lookup_gets_its_metadata_in_the_following_pass(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("First.wav", 1, &[(b"INAM", "First"), (b"IART", "Singer")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let (resume, resumed) = crossbeam_channel::bounded(1);
+        let recordings = Arc::new(PausedRecordings {
+            waiting: AtomicBool::new(false),
+            resume: resumed,
+        });
+        let mut driven = Driven::reaching(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            Reaching {
+                reference: Arc::new(AccountOfOnePlaylist {
+                    source: resonate_core::SourceId::new("metadata").expect("a source name"),
+                    recordings: Some(Arc::clone(&recordings)),
+                }),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            },
+        );
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| {
+                model.set_after_scan(true, cx);
+                model.enrich(false, cx);
+            });
+        });
+        driven.until(|_, _| recordings.waiting.load(Ordering::SeqCst));
+        let added = folder.tagged("Second.wav", 1, &[(b"INAM", "Second"), (b"IART", "Singer")]);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| model.rescan(cx));
+        });
+        driven.until(|root, cx| {
+            !root.library.read(cx).is_busy()
+                && library
+                    .track_at(&added, None)
+                    .is_ok_and(|track| track.is_some())
+        });
+        let track = library
+            .track_at(&added, None)
+            .expect("the new song")
+            .expect("a row")
+            .id;
+        assert!(
+            library
+                .track_to_ask(track)
+                .expect("the new song")
+                .expect("a row")
+                .mbid
+                .is_none()
+        );
+        resume.send(()).expect("the lookup released");
+        driven.until(|root, cx| {
+            !root.library.read(cx).is_enriching()
+                && library
+                    .track_to_ask(track)
+                    .is_ok_and(|track| track.is_some_and(|track| track.mbid.is_some()))
+        });
     }
 
     impl Reference for AccountOfOnePlaylist {
@@ -4538,9 +4608,31 @@ mod tests {
 
         fn find_recording(
             &self,
-            _: &resonate_library::RecordingAsked,
+            asked: &resonate_library::RecordingAsked,
         ) -> resonate_library::Result<Vec<resonate_library::RecordingMatch>> {
-            Ok(Vec::new())
+            let Some(recordings) = &self.recordings else {
+                return Ok(Vec::new());
+            };
+            if !recordings.waiting.swap(true, Ordering::SeqCst) {
+                recordings
+                    .resume
+                    .recv_timeout(PATIENCE)
+                    .expect("the lookup released");
+            }
+            Ok(vec![resonate_library::RecordingMatch {
+                recording: resonate_library::Mbid::new("00000001-0000-4000-8000-000000000000")
+                    .expect("an mbid"),
+                score: 100,
+                title: asked.title.clone(),
+                credit: vec![resonate_library::Credit {
+                    name: asked.artist.clone().expect("a tagged artist"),
+                    joined_by: String::new(),
+                    mbid: None,
+                }],
+                length: asked.length,
+                isrcs: Vec::new(),
+                releases: Vec::new(),
+            }])
         }
 
         fn find_songs(
@@ -4719,6 +4811,7 @@ mod tests {
             Reaching {
                 reference: Arc::new(AccountOfOnePlaylist {
                     source: resonate_core::SourceId::new("account").expect("a source name"),
+                    recordings: None,
                 }),
                 register: Arc::new(|_: &crate::Supplying<'_>| {
                     resonate_providers::Providers::none()

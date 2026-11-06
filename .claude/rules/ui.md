@@ -428,6 +428,15 @@ is never named.
     row, only its counted outcomes: `lookup_lines`), with a note where it was stopped or the
     reference could not be reached (`lookup_ending`). Unlike the other passes' counts it stays
     after the toast, since the toast says only the albums and artists answered.
+- **New songs always owe a lookup while automatic enrichment is on.** A successful scan that
+  brought songs and a provider poll that kept any call `LibraryModel::enrich_new_songs`, gated by
+  `after_scan` and `can_enrich`. A running lookup reads its queue at the start, so such arrivals
+  set `enrich_owed`; its successful completion consumes that flag into one further pass. Stop
+  clears it, and cancellation or an unreachable reference never starts a retry loop. Startup with
+  no unfinished pass and turning Online on also ask for due metadata, covering songs already in
+  the catalog that no lookup reached. `a_song_scanned_during_a_lookup_gets_its_metadata_in_the_following_pass`
+  holds the first lookup open while a real scan adds another song, then checks that song's
+  recording identity lands after it is released.
 - **What a listener reaches for is what the lookup asks next.** `LibraryModel` holds one `Sought` for
   the run and hands it to every `enrich`. Set via `LibraryModel::ask_about`: scoping the tracks pane
   to an album or artist, playing a row, and `ask_about_what_is_drawn` whenever a listing is read with

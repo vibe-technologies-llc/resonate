@@ -1043,17 +1043,20 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the picker as a small capsule token
   that clears it. Playlists are reached from the Library tab and Home, Suggestions from Home's *Made for you*,
   online search from the Search tab.
-- **The Search tab is one search of the library and online** (`SearchTab.swift`), with no scope to
-  choose: `tabSearch.text` and `Features.onlineQuery` move together (`SearchTab` follows the text, so *Did you mean*, a completion and Listen's *Find it* ask online as typing does), and the page lists *In
-  your library* (the completions' row, then the Songs results' Top with *See all* pushing the full
-  list, or, matching nothing, *Did you mean* and one line saying so) above *Online* (the online
-  Top, below), each under a heading row of its own (`SearchHeading`). With online features off
-  nothing reaches the network (`Features.askOnline` asks nothing then) and *Online* is one row
-  that opens Settings (`OnlineOffRow`); a link (`OnlineAsked.isLink`) shows *Online* alone. The tab
-  has no `.searchSuggestions`. With no text the page leads with Discover: a labelled *Recognise a
-  song* button and *Saved for later*, then the recent searches and a hint. The ear in the toolbar
-  remains a shortcut while searching. Library
-  tools' *Search* opens this tab (`Navigation.openSearch`); there is no destination of its own.
+- **The Search tab keeps library and online results within one tap** (`SearchTab.swift`): a pinned
+  segmented picker offers *All*, *Library* and *Online* under the navigation bar. *All* shows at
+  most three library songs and *All library results* before the online results, so album and artist
+  shelves cannot push online songs several screens down. *Library* shows the full Top with its
+  song, album and artist sections and *See all*; *Online* starts with online results. The same
+  `tabSearch.text` and `Features.onlineQuery` move together whichever area is shown, including a
+  completion, *Did you mean* and Listen's *Find it*. A shared link shows online alone and hides
+  the picker. With online features off no request leaves and `OnlineOffRow` opens Settings.
+  Downloads live on a toolbar button's page (`DownloadsButton`), also on the online Songs and
+  release pages, never above their results; its filled icon and spoken active count follow the
+  queue independently of the search page. The page keeps provider setup, retry, cancellation and
+  clearing finished jobs. With no text, Discover offers *Recognise a song* and *Saved for later*,
+  followed by recent searches and a hint. There is no `.searchSuggestions` overlay; the ear stays
+  in the toolbar. Library tools' *Search* opens this tab through `Navigation.openSearch`.
 - **Search's rows sit close**: a completion is a glass capsule 8 pt taller than its line, its row
   inset 6 pt above and 2 pt below and scrolled within 16 pt content margins
   (`contentMargins(.horizontal:for: .scrollContent)`), and *See all* reaches 12 pt above and below
