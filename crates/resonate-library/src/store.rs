@@ -2662,12 +2662,24 @@ pub(crate) struct HeldAlike {
     pub(crate) held: HeldRow,
 }
 
+macro_rules! a_held_copy {
+    ($narrowed:literal) => {
+        concat!(
+            "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path, t.title,
+                    t.artist, a.key, t.duration, t.sample_rate,
+                    t.hidden, t.alternative_of IS NOT NULL
+               FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
+              WHERE ",
+            $narrowed
+        )
+    };
+}
+
 pub(crate) const HELD_BY_THEIR_FIRST_WORDS: &str =
-    "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path, t.title,
-            t.artist, a.key, t.duration, t.sample_rate,
-            t.hidden, t.alternative_of IS NOT NULL
-       FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
-      WHERE t.title_words >= ?1 AND t.title_words < ?1 || '!'";
+    a_held_copy!("t.title_words >= ?1 AND t.title_words < ?1 || '!'");
+
+pub(crate) const HELD_BY_THEIR_ARTIST: &str =
+    a_held_copy!("t.artist_id = (SELECT id FROM artists WHERE key = ?1)");
 
 struct Candidate {
     shown_last: bool,
@@ -2706,16 +2718,7 @@ impl NamedAlike<'_> {
 
     fn first_words(&self) -> Vec<String> {
         let title = bare(self.title);
-        let joined = words_of_a_name(title);
-        let mut asked = vec![title_words(title), joined.join(" ")];
-        for (at, word) in joined.iter().enumerate() {
-            for (cut, _) in word.char_indices().skip(1) {
-                let mut parted = joined.clone();
-                parted[at] = format!("{} {}", &word[..cut], &word[cut..]);
-                asked.push(parted.join(" "));
-            }
-        }
-        asked.sort();
+        let mut asked = vec![title_words(title), words_of_a_name(title).join(" ")];
         asked.dedup();
         asked
     }
@@ -2764,13 +2767,19 @@ pub(crate) fn held_named_alike(
     if song.bare.is_empty() || song.lead.is_empty() {
         return Ok(Vec::new());
     }
-    let mut statement = connection
-        .prepare_cached(HELD_BY_THEIR_FIRST_WORDS)
-        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let mut found: AHashMap<TrackId, Candidate> = AHashMap::new();
-    for words in song.first_words() {
+    let lead_key = folded_letters(lead.trim());
+    let first_words = song.first_words();
+    let asked = first_words
+        .iter()
+        .map(|words| (HELD_BY_THEIR_FIRST_WORDS, words))
+        .chain([(HELD_BY_THEIR_ARTIST, &lead_key)]);
+    for (sql, value) in asked {
+        let mut statement = connection
+            .prepare_cached(sql)
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         let candidates = statement
-            .query_map(params![words], |row| candidate_at(row, &song))
+            .query_map(params![value], |row| candidate_at(row, &song))
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         for candidate in candidates.into_iter().flatten() {
@@ -2824,7 +2833,7 @@ mod tests {
     }
 
     #[test]
-    fn a_held_copy_is_looked_for_along_the_index_of_title_words() {
+    fn a_held_copy_is_looked_for_along_the_indexes_of_its_words_and_its_artist() {
         let connection = Connection::open_in_memory().expect("a catalog");
         crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
         crate::schema::lay_out(&connection).expect("the schema applies");

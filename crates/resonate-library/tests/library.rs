@@ -28155,6 +28155,8 @@ const STAGED_DELIVERY: &str = ".resonate-delivery";
 
 const A_REFUSED_WALK_HOLDS_NO_SONG_UP_FOR: Duration = Duration::from_secs(30);
 
+const A_WALK_ENDS_AFTER_THE_LANDING: Duration = Duration::from_millis(1_500);
+
 #[derive(Clone, Copy)]
 enum TubeAnswer {
     Lasting(usize),
@@ -29238,6 +29240,10 @@ fn a_held_copy_differing_only_in_a_version_a_guest_or_a_spelling_is_held_either_
         ("Dont", "Don\u{2019}t"),
         ("Don't", "Dont"),
         ("Don't Stop (Remastered)", "Dont Stop"),
+        ("S.O.S.", "SOS"),
+        ("SOS", "S.O.S."),
+        ("Hifi", "Hi-Fi"),
+        ("Hi-Fi", "Hifi"),
     ] {
         assert!(
             matches!(answered_with_held(held, pressed)?, KeptSong::AlreadyHeld(_)),
@@ -29573,35 +29579,176 @@ fn a_press_seats_the_rows_it_added_and_leaves_the_order_the_listener_gave_the_re
     Ok(())
 }
 
+fn followed(database: &Path, list: &str) {
+    beside(database)
+        .execute(
+            "INSERT INTO playlist_shares (playlist_id, created, editable)
+             SELECT id, created, 0 FROM playlists WHERE name = ?1",
+            [list],
+        )
+        .expect("the list is followed");
+}
+
+fn the_listeners_again(database: &Path) {
+    beside(database)
+        .execute("DELETE FROM playlist_shares", [])
+        .expect("the list is the listener's again");
+}
+
 #[test]
-fn a_song_that_could_not_be_placed_stays_queued_and_is_placed_once_it_can_be() -> Result<()> {
+fn a_list_followed_since_the_press_asks_for_nothing_and_holds_nothing_up() -> Result<()> {
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
     library.create_playlist("Mix")?;
-    beside(&database)
-        .execute(
-            "INSERT INTO playlist_shares (playlist_id, created, editable)
-             SELECT id, created, 0 FROM playlists",
-            [],
-        )
-        .expect("the list is followed");
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
+    library.keep_song(song_to_keep("two", "Two"))?;
+    followed(&database, "Mix");
 
-    assert!(matches!(
-        pass(&library, &tube),
-        Err(Error::PlaylistReadOnly(_))
-    ));
+    let summary = pass(&library, &tube)?;
+
+    assert_eq!(
+        summary,
+        KeepSummary {
+            landed: 1,
+            unkept: 1,
+            ..KeepSummary::default()
+        }
+    );
+    assert_eq!(pass(&library, &tube)?.unkept, 1);
+    assert_eq!(tube.videos_asked(), ["two"]);
+    assert_eq!(songs_under(&tree).len(), 1);
     assert_eq!(library.keeps_pending()?, 1, "the song reads as removed");
 
-    beside(&database)
-        .execute("DELETE FROM playlist_shares", [])
-        .expect("the list is the listener's again");
+    the_listeners_again(&database);
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
     assert_eq!(titles_in(&library, "Mix")?, ["One"]);
+    assert_eq!(tube.videos_asked(), ["two", "one"]);
+    assert_eq!(songs_under(&tree).len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_list_followed_as_its_song_was_fetched_holds_nothing_up_and_fetches_nothing_twice() -> Result<()>
+{
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.create_playlist("Mix")?;
+    library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
+    library.keep_song(song_to_keep("two", "Two"))?;
+    let following = database.clone();
+    tube.when_asked_for("one", move || followed(&following, "Mix"));
+
+    let summary = pass(&library, &tube)?;
+
+    assert_eq!(
+        summary,
+        KeepSummary {
+            landed: 1,
+            unkept: 1,
+            ..KeepSummary::default()
+        }
+    );
+    assert_eq!(pass(&library, &tube)?.unkept, 1);
+    assert_eq!(tube.videos_asked(), ["one", "two"]);
+    assert_eq!(library.keeps_pending()?, 1, "the song reads as removed");
+
+    the_listeners_again(&database);
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+
+    assert_eq!(titles_in(&library, "Mix")?, ["One"]);
+    assert_eq!(tube.videos_asked(), ["one", "two"]);
+    assert_eq!(songs_under(&tree).len(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_kept_list_named_as_a_followed_list_stands_beside_it() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    held_as(&tree, "held.wav", "Held", A_SECOND_OF_FRAMES);
+    scan(&library, &options(&tree))?;
+    library.create_playlist("Mix")?;
+    followed(&database, "Mix");
+    let list = list_to_keep("Mix", true, &[("held", "Held"), ("one", "One")]);
+
+    let kept = library.keep_playlist(list.clone())?;
+
+    assert_eq!(kept, KeptList { queued: 1, held: 1 });
+    pass(&library, &tube)?;
+    assert_eq!(titles_in(&library, "Mix (copy)")?, ["Held", "One"]);
+    assert_eq!(titles_in(&library, "Mix")?, Vec::<String>::new());
+    assert_eq!(library.keeps_pending()?, 0);
+
+    the_listeners_again(&database);
+    let kept = library.keep_playlist(list)?;
+
+    assert_eq!(kept, KeptList { queued: 0, held: 2 });
+    assert_eq!(titles_in(&library, "Mix")?, ["Held", "One"]);
     assert_eq!(tube.videos_asked(), ["one"]);
-    assert_eq!(songs_under(&tree).len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_folder_forgotten_stays_forgotten_whatever_landed_in_it() -> Result<()> {
+    let tree = Tree::new();
+    let (_database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    pass(&library, &tube)?;
+    assert_eq!(library.roots()?.len(), 1);
+
+    assert!(library.remove_root(tree.path())?);
+
+    assert_eq!(
+        library.keeps_pending()?,
+        0,
+        "a file outside every root owed"
+    );
+    assert_eq!(pass(&library, &tube)?, KeepSummary::default());
+    assert_eq!(library.roots()?, Vec::<PathBuf>::new());
+    Ok(())
+}
+
+#[test]
+fn a_landed_file_outside_every_root_owes_no_pass_once_the_music_folder_moved() -> Result<()> {
+    let tree = Tree::new();
+    let elsewhere = Tree::new();
+    let (_database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    pass(&library, &tube)?;
+    assert!(library.remove_root(tree.path())?);
+    delivering_into(&library, &elsewhere);
+
+    assert_eq!(library.keeps_pending()?, 0);
+    assert_eq!(pass(&library, &tube)?, KeepSummary::default());
+    assert_eq!(library.roots()?, Vec::<PathBuf>::new());
+    Ok(())
+}
+
+#[test]
+fn the_last_landing_the_walk_refused_is_read_before_the_pass_ends() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
+    let held = walk_held_by_another_process(&database);
+    tube.when_asked_for("one", move || {
+        thread::spawn(move || {
+            thread::sleep(A_WALK_ENDS_AFTER_THE_LANDING);
+            drop(held);
+        });
+    });
+
+    let summary = pass(&library, &tube)?;
+
+    assert_eq!(summary.landed, 1);
+    assert_eq!(titles_in(&library, "Mix")?, ["One"]);
+    assert_eq!(library.keeps_pending()?, 0);
     Ok(())
 }
 

@@ -22,7 +22,7 @@ use crate::{
     Sources, StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, Narrowed, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
-    sourced, store,
+    sourced, store, synced,
     undo::{self, Change, Edit, Reach},
     volumes,
 };
@@ -502,23 +502,35 @@ pub(crate) fn a_free_name_for(inner: &Inner, wanted: &str) -> Result<String> {
         .map(|name| name.as_str().to_owned())
 }
 
-pub(crate) fn name_a_list_may_hold(connection: &Connection, name: &str) -> Result<PlaylistName> {
-    let wanted = wanted_name(name)?;
-    let held = connection
+fn held_as(connection: &Connection, wanted: &PlaylistName) -> Result<Option<PlaylistId>> {
+    connection
         .query_row(
             "SELECT id FROM playlists WHERE folded = ?1 ORDER BY id LIMIT 1",
             params![folded(wanted.as_str())],
             |row| row.get::<_, i64>(0),
         )
         .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
-    let Some(held) = held else {
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+        .map(|held| PlaylistId::new(held as u64).map_err(Error::from))
+        .transpose()
+}
+
+pub(crate) fn is_followed(connection: &Connection, name: &str) -> Result<bool> {
+    match held_as(connection, &wanted_name(name)?)? {
+        Some(held) => synced::is_read_only(connection, held),
+        None => Ok(false),
+    }
+}
+
+pub(crate) fn name_a_list_may_hold(connection: &Connection, name: &str) -> Result<PlaylistName> {
+    let wanted = wanted_name(name)?;
+    let Some(held) = held_as(connection, &wanted)? else {
         return Ok(wanted);
     };
-    match asked_in(connection, PlaylistId::new(held as u64)?)? {
-        Some(_) => a_free_name(connection, wanted.as_str()),
-        None => Ok(wanted),
+    if asked_in(connection, held)?.is_some() || synced::is_read_only(connection, held)? {
+        return a_free_name(connection, wanted.as_str());
     }
+    Ok(wanted)
 }
 
 fn a_free_name(connection: &Connection, name: &str) -> Result<PlaylistName> {

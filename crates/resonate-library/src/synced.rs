@@ -455,8 +455,8 @@ pub(crate) fn write_shared_playlist(
     written_with(inner, at, name, entries, Some(editable))
 }
 
-pub(crate) fn is_read_only(transaction: &Transaction<'_>, id: PlaylistId) -> Result<bool> {
-    transaction
+pub(crate) fn is_read_only(connection: &Connection, id: PlaylistId) -> Result<bool> {
+    connection
         .query_row(
             "SELECT EXISTS (SELECT 1 FROM playlist_shares s JOIN playlists p
                                ON p.id = s.playlist_id AND p.created = s.created

@@ -157,7 +157,6 @@ enum WhatLanded {
 struct Pressed<'a> {
     song: &'a SongToKeep,
     place: Option<i64>,
-    landed: Option<String>,
     what_landed: WhatLanded,
 }
 
@@ -250,14 +249,12 @@ impl Library {
                 Some(Standing::Landed) if the_list_stands => None,
                 Some(Standing::Landed | Standing::GivenUp) | None => self.copy_of(song)?,
             };
-            let mut landed = None;
             let mut what_landed = WhatLanded::Stays;
             match (stands, copy) {
                 (Some(Standing::Landed), None) if the_list_stands => kept.held += 1,
                 (_, Some(copy)) => {
                     kept.held += 1;
-                    landed = Some(playlist::local_path(&copy.cut.location)?.into_owned());
-                    to_place.push((copy.cut, place));
+                    to_place.push((pressed.len(), copy.cut, place));
                 }
                 (Some(Standing::Landed), None) => {
                     kept.queued += 1;
@@ -268,7 +265,6 @@ impl Library {
             pressed.push(Pressed {
                 song,
                 place,
-                landed,
                 what_landed,
             });
         }
@@ -279,25 +275,33 @@ impl Library {
                 .try_for_each(|pressed| queued_in(transaction, name, pressed))
         })?;
         if !to_place.is_empty() {
-            self.placed(name, &to_place)?;
+            let cuts: Vec<(Cut, Option<i64>)> = to_place
+                .iter()
+                .map(|(_, cut, place)| (cut.clone(), *place))
+                .collect();
+            self.placed(name, &cuts)?;
+            self.inner().write(|transaction| {
+                to_place.iter().try_for_each(|(at, cut, _)| {
+                    landed_in(transaction, name, pressed[*at].song, cut)
+                })
+            })?;
         }
         Ok(kept)
     }
 
     pub fn keeps_pending(&self) -> Result<u64> {
-        let (queued, unread) = self.inner().read(|connection| {
-            let queued = connection
+        let queued = self.inner().read(|connection| {
+            connection
                 .query_row(
                     "SELECT count(*) FROM kept_songs WHERE landed IS NULL AND gone = 0",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
                 .map(i64::cast_unsigned)
-                .map_err(|source| Error::store(StoreOp::Query, source))?;
-            Ok((queued, landed_unread(connection)?))
+                .map_err(|source| Error::store(StoreOp::Query, source))
         })?;
 
-        Ok(queued + unread.iter().filter(|path| path.exists()).count() as u64)
+        Ok(queued + self.roots_owed_a_read()?.len() as u64)
     }
 
     pub fn keep_pending(
@@ -344,18 +348,17 @@ impl Library {
         })
     }
 
-    fn read_what_landed_unread(&self) -> Result<()> {
+    fn roots_owed_a_read(&self) -> Result<Vec<PathBuf>> {
         let unread = self.inner().read(landed_unread)?;
-        let folder = self
-            .delivering_into()
-            .and_then(|into| into.path.canonicalize().ok());
         let mut roots = Vec::new();
         for path in unread.iter().filter(|path| path.exists()) {
-            let root = self
-                .root_reaching(path)?
-                .or_else(|| folder.clone().filter(|folder| path.starts_with(folder)));
-            roots.extend(root);
+            roots.extend(self.root_reaching(path)?);
         }
+        Ok(roots)
+    }
+
+    fn read_what_landed_unread(&self) -> Result<()> {
+        let mut roots = self.roots_owed_a_read()?;
         roots.sort();
         roots.dedup();
         for root in roots {
@@ -424,9 +427,15 @@ impl Library {
     }
 
     fn turn(&self, row: &Queued, walking: &mut Walking<'_>) -> Result<Turn> {
+        if self.is_kept_for_a_list_it_cannot_enter(row)? {
+            tracing::info!(
+                video = row.song.video,
+                "a kept song waits while its list is followed and takes no song"
+            );
+            return Ok(Turn::Unkept);
+        }
         if let Some(copy) = self.copy_of(&row.song)? {
-            self.settled_by(row, &copy.cut)?;
-            return Ok(Turn::Landed);
+            return self.settled_turn(row, &copy.cut);
         }
 
         let progress = walking.progress;
@@ -464,11 +473,11 @@ impl Library {
         match drawn {
             Drawn::Read(Ok(filed)) => {
                 let cut = Cut::whole(MediaLocation::local(&filed.path));
-                let settled = self.settled_by(row, &cut);
+                let settled = self.settled_turn(row, &cut);
                 if !synced::scanned_if_free(self, filed.root.clone()) {
                     walking.unread.push(filed.root);
                 }
-                settled.map(|()| Turn::Landed)
+                settled
             }
             Drawn::Read(Err(_)) if progress.is_cancelled() => Ok(Turn::Over),
             Drawn::Read(Err(Unfiled::Catalog(error))) => Err(error),
@@ -572,6 +581,22 @@ impl Library {
         }))
     }
 
+    fn is_kept_for_a_list_it_cannot_enter(&self, row: &Queued) -> Result<bool> {
+        let Some(list) = &row.playlist else {
+            return Ok(false);
+        };
+        self.inner()
+            .read(|connection| playlist::is_followed(connection, list))
+    }
+
+    fn settled_turn(&self, row: &Queued, cut: &Cut) -> Result<Turn> {
+        match self.settled_by(row, cut) {
+            Ok(()) => Ok(Turn::Landed),
+            Err(Error::PlaylistReadOnly(_)) => Ok(Turn::Unkept),
+            Err(error) => Err(error),
+        }
+    }
+
     fn settled_by(&self, row: &Queued, cut: &Cut) -> Result<()> {
         let path = playlist::local_path(&cut.location)?.into_owned();
         if let Some(list) = &row.playlist {
@@ -618,7 +643,7 @@ impl Library {
             if let Some(place) = place
                 && !already.contains(&playlist::Row::of(cut)?)
             {
-                self.seated(filled.playlist, list, cut, *place)?;
+                self.seated(filled.playlist, list, cuts, cut, *place)?;
             }
         }
         Ok(())
@@ -628,11 +653,12 @@ impl Library {
         &self,
         id: resonate_core::PlaylistId,
         list: &str,
+        cuts: &[(Cut, Option<i64>)],
         cut: &Cut,
         place: i64,
     ) -> Result<()> {
         let wanted = playlist::Row::of(cut)?;
-        let (rows, places, kept_in_an_order) = self.inner().read(|connection| {
+        let (rows, mut places, kept_in_an_order) = self.inner().read(|connection| {
             Ok((
                 playlist::rows(connection, id)?,
                 places_in(connection, list)?,
@@ -641,6 +667,11 @@ impl Library {
         })?;
         if kept_in_an_order {
             return Ok(());
+        }
+        for (placing, at) in cuts {
+            if let Some(at) = at {
+                places.insert(playlist::Row::of(placing)?.path, *at);
+            }
         }
         let Some(at) = rows.iter().position(|row| *row == wanted) else {
             return Ok(());
@@ -731,12 +762,11 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
     transaction
         .execute(
             "INSERT INTO kept_songs
-                 (source, video, title, artist, album, length, playlist, place, asked, landed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 (source, video, title, artist, album, length, playlist, place, asked)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT (source, video, playlist)
              DO UPDATE SET place = excluded.place, gone = 0,
-                           landed = CASE WHEN ?11 THEN NULL
-                                         ELSE coalesce(excluded.landed, landed) END",
+                           landed = CASE WHEN ?10 THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
                 song.video,
@@ -747,12 +777,32 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
                 list,
                 pressed.place,
                 store::to_nanos(SystemTime::now()),
-                pressed.landed,
                 pressed.what_landed == WhatLanded::IsForgotten,
             ],
         )
         .map(drop)
         .map_err(|source| Error::store(StoreOp::Insert, source))
+}
+
+fn landed_in(
+    transaction: &Transaction<'_>,
+    list: &str,
+    song: &SongToKeep,
+    cut: &Cut,
+) -> Result<()> {
+    transaction
+        .execute(
+            "UPDATE kept_songs SET landed = ?4, gone = 0
+              WHERE source = ?1 AND video = ?2 AND playlist = ?3",
+            params![
+                song.source.as_str(),
+                song.video,
+                list,
+                playlist::local_path(&cut.location)?,
+            ],
+        )
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 fn standing_in(
