@@ -1150,6 +1150,16 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
     Ok(id)
 }
 
+pub(crate) fn register_root_beside_a_walk(tx: &Transaction<'_>, canonical: &Path) -> Result<()> {
+    let widens = roots_held(tx)?
+        .iter()
+        .any(|(_, held)| canonical != held && held.starts_with(canonical));
+    if widens {
+        return Ok(());
+    }
+    register_root(tx, canonical).map(drop)
+}
+
 fn roots_held(tx: &Transaction<'_>) -> Result<Vec<(i64, PathBuf)>> {
     let mut statement = tx
         .prepare("SELECT id, path FROM roots ORDER BY path")
@@ -2838,19 +2848,20 @@ mod tests {
         crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
         crate::schema::lay_out(&connection).expect("the schema applies");
 
-        let plan: Vec<String> = connection
-            .prepare(&format!("EXPLAIN QUERY PLAN {HELD_BY_THEIR_FIRST_WORDS}"))
-            .and_then(|mut plan| {
-                plan.query_map(params!["song"], |row| row.get::<_, String>(3))?
-                    .collect()
-            })
-            .expect("a plan");
+        for (sql, index) in [
+            (HELD_BY_THEIR_FIRST_WORDS, "tracks_by_title_words"),
+            (HELD_BY_THEIR_ARTIST, "tracks_by_artist "),
+        ] {
+            let plan: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .and_then(|mut plan| {
+                    plan.query_map(params!["song"], |row| row.get::<_, String>(3))?
+                        .collect()
+                })
+                .expect("a plan");
 
-        assert!(
-            plan.iter()
-                .any(|step| step.contains("tracks_by_title_words")),
-            "{plan:?}"
-        );
+            assert!(plan.iter().any(|step| step.contains(index)), "{plan:?}");
+        }
     }
 
     #[test]

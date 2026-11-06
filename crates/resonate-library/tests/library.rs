@@ -28149,6 +28149,8 @@ const KEPT_BY: &str = "tube";
 
 const KILLED_KEEP_FOLDER: &str = "RESONATE_KILLED_KEEP_FOLDER";
 
+const UNREAD_KEEP_FOLDER: &str = "RESONATE_UNREAD_KEEP_FOLDER";
+
 const A_KILLED_KEEP_IS_STAGED_WITHIN: Duration = Duration::from_secs(60);
 
 const STAGED_DELIVERY: &str = ".resonate-delivery";
@@ -29727,6 +29729,127 @@ fn a_landed_file_outside_every_root_owes_no_pass_once_the_music_folder_moved() -
     assert_eq!(library.keeps_pending()?, 0);
     assert_eq!(pass(&library, &tube)?, KeepSummary::default());
     assert_eq!(library.roots()?, Vec::<PathBuf>::new());
+    Ok(())
+}
+
+fn keeps_with_the_walk_refused(folder: &Path) -> Result<()> {
+    let library = Library::open(&folder.join("library.db"))?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: folder.to_path_buf(),
+        layout: Layout::default(),
+    }));
+    pass(&library, &Tube::new()).map(drop)
+}
+
+fn root_left_by_a_keep_under_way(library: &Library) -> Result<()> {
+    let began = Instant::now();
+    while library.roots()?.is_empty() {
+        assert!(
+            began.elapsed() < A_KILLED_KEEP_IS_STAGED_WITHIN,
+            "the landing left no root"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
+#[test]
+fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_landing() -> Result<()>
+{
+    if let Some(folder) = env::var_os(UNREAD_KEEP_FOLDER) {
+        return keeps_with_the_walk_refused(Path::new(&folder));
+    }
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "San Tropez")]))?;
+    assert_eq!(library.roots()?, Vec::<PathBuf>::new());
+    let walk = walk_held_by_another_process(&database);
+
+    let mut killed = Command::new(env::current_exe().expect("the test binary"))
+        .args([
+            "a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_landing",
+            "--exact",
+        ])
+        .env(UNREAD_KEEP_FOLDER, tree.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the test binary runs");
+    root_left_by_a_keep_under_way(&library)?;
+    killed.kill().expect("the keep is killed");
+    killed.wait().expect("the keep is gone");
+    drop(walk);
+
+    assert_eq!(titles_in(&library, "Mix")?, [""]);
+    assert_eq!(library.keeps_pending()?, 1, "the read owed was not counted");
+
+    let tube = Tube::new();
+    assert_eq!(pass(&library, &tube)?, KeepSummary::default());
+
+    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(library.keeps_pending()?, 0);
+    assert!(tube.videos_asked().is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_press_of_a_song_landed_in_a_forgotten_folder_brings_the_folder_back() -> Result<()> {
+    let tree = Tree::new();
+    let (_database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    let by_link = SongToKeep {
+        artist: None,
+        length: None,
+        ..song_to_keep("abc123", "San Tropez")
+    };
+    library.keep_song(by_link.clone())?;
+    pass(&library, &tube)?;
+    assert!(library.remove_root(tree.path())?);
+
+    assert_eq!(library.keep_song(by_link.clone())?, KeptSong::Queued);
+    assert_eq!(library.keeps_pending()?, 1);
+    pass(&library, &tube)?;
+
+    assert_eq!(library.roots()?.len(), 1);
+    assert_eq!(
+        tube.videos_asked(),
+        ["abc123"],
+        "the song was fetched again"
+    );
+    assert!(matches!(
+        library.keep_song(by_link)?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_song_of_a_new_list_landed_in_a_forgotten_folder_is_read_by_the_pass() -> Result<()> {
+    let tree = Tree::new();
+    let (_database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    let by_link = SongToKeep {
+        artist: None,
+        length: None,
+        ..song_to_keep("abc123", "San Tropez")
+    };
+    library.keep_song(by_link.clone())?;
+    pass(&library, &tube)?;
+    assert!(library.remove_root(tree.path())?);
+
+    library.keep_playlist(PlaylistToKeep {
+        name: "Mix".to_owned(),
+        ordered: true,
+        songs: vec![by_link],
+    })?;
+    pass(&library, &tube)?;
+
+    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(
+        tube.videos_asked(),
+        ["abc123"],
+        "the song was fetched again"
+    );
     Ok(())
 }
 

@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, SystemTime},
@@ -211,8 +211,11 @@ impl Library {
         {
             return Ok(Kept::AlreadyHeld(track));
         }
-        let what_landed = match copy {
-            Some(_) => WhatLanded::Stays,
+        let what_landed = match &copy {
+            Some(copy) => {
+                self.root_of_an_unread_copy(copy)?;
+                WhatLanded::Stays
+            }
             None => WhatLanded::IsForgotten,
         };
         self.inner()
@@ -254,6 +257,7 @@ impl Library {
                 (Some(Standing::Landed), None) if the_list_stands => kept.held += 1,
                 (_, Some(copy)) => {
                     kept.held += 1;
+                    self.root_of_an_unread_copy(&copy)?;
                     to_place.push((pressed.len(), copy.cut, place));
                 }
                 (Some(Standing::Landed), None) => {
@@ -348,6 +352,36 @@ impl Library {
         })
     }
 
+    fn root_stands(&self, root: &Path) -> Result<()> {
+        if self.root_reaching(root)?.is_some() {
+            return Ok(());
+        }
+        match self.add_root(root) {
+            Err(Error::AlreadyWalking) => self
+                .inner()
+                .write(|transaction| store::register_root_beside_a_walk(transaction, root)),
+            added => added,
+        }
+    }
+
+    fn root_of_an_unread_copy(&self, copy: &HeldCopy) -> Result<Option<PathBuf>> {
+        let (None, Some(path)) = (copy.track, copy.cut.location.as_path()) else {
+            return Ok(None);
+        };
+        let reached = self.root_reaching(path)?;
+        if reached.is_some() {
+            return Ok(reached);
+        }
+        let folder = self
+            .delivering_into()
+            .and_then(|into| into.path.canonicalize().ok())
+            .filter(|folder| path.starts_with(folder));
+        if let Some(folder) = &folder {
+            self.root_stands(folder)?;
+        }
+        Ok(folder)
+    }
+
     fn roots_owed_a_read(&self) -> Result<Vec<PathBuf>> {
         let unread = self.inner().read(landed_unread)?;
         let mut roots = Vec::new();
@@ -435,6 +469,7 @@ impl Library {
             return Ok(Turn::Unkept);
         }
         if let Some(copy) = self.copy_of(&row.song)? {
+            walking.unread.extend(self.root_of_an_unread_copy(&copy)?);
             return self.settled_turn(row, &copy.cut);
         }
 
@@ -474,6 +509,7 @@ impl Library {
             Drawn::Read(Ok(filed)) => {
                 let cut = Cut::whole(MediaLocation::local(&filed.path));
                 let settled = self.settled_turn(row, &cut);
+                self.root_stands(&filed.root)?;
                 if !synced::scanned_if_free(self, filed.root.clone()) {
                     walking.unread.push(filed.root);
                 }
