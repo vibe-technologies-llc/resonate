@@ -19601,6 +19601,67 @@ fn a_cover_the_catalog_holds_is_written_into_a_file_that_carries_none() -> Resul
     Ok(())
 }
 
+fn matroska_named(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build a {name}");
+        return None;
+    }
+
+    let held = Tree::new();
+    let source = held.write("tone.wav", &Wav::new().frames(88_200).build());
+    let target = tree.path().join(name);
+    let mut command = Command::new("ffmpeg");
+    command
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .args(["-c:a", "flac"]);
+    for tag in tags {
+        command.args(["-metadata", tag]);
+    }
+    let encoded = command
+        .arg(&target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
+        eprintln!("skipped: ffmpeg would not encode {name}");
+        return None;
+    }
+    Some(target)
+}
+
+#[test]
+fn a_matroska_under_an_album_with_a_cover_takes_its_names_and_is_offered_no_picture() -> Result<()>
+{
+    let tree = Tree::new();
+    let Some(file) = matroska_named(
+        &tree,
+        "1.mka",
+        &["title=Echos", "artist=The Orbiters", "album=Orbits"],
+    ) else {
+        return Ok(());
+    };
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    covered(&library, &png_art(512))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
+    let preview = retagged(&library, false)?;
+    assert_eq!(preview.retagging.writes.len(), 1);
+    assert_eq!(preview.retagging.writes[0].picture, None);
+
+    let applied = retagged(&library, true)?;
+    assert_eq!(applied.stats.written, 1, "{:?}", why_passed_over(&applied));
+    assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
+
+    let again = retagged(&library, true)?;
+    assert_eq!(why_passed_over(&again), Vec::new());
+    assert_eq!(again.stats.written, 0);
+    Ok(())
+}
+
 #[test]
 fn a_file_that_carries_a_picture_keeps_the_one_it_has() -> Result<()> {
     let held = png_art(64);

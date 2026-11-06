@@ -1130,7 +1130,8 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
   `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it, a
   `SeekHead` with no room, a second `SeekHead` where `Tags` move, a picture (no attachment is
-  written). `TagSink::rated` answers `Rated::Unrateable`.
+  written). `TagSink::rated` answers `Rated::Unrateable` and `TagSink::holds_pictures` false, so a
+  retag offers such a file no sleeve and its names still land.
 - **A Matroska name is spelled so it reads alike under both `tags::Naming`s.** `TITLE` and `ARTIST`
   go in a `Tag` at level 30, since at 50 the container's naming reads them as the album and album
   artist and a Vorbis-only key beside them turns that around; the rest go at level 50 under the
@@ -1138,7 +1139,11 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   the old `Tags` held is kept byte for byte unless a field asked for reads from it, as
   `Reading::field_of` works out from its name, level and the naming that revision was read under;
   a `TITLE` or `ARTIST` left at level 50 is moved to the name it read as, so no later edit turns its
-  meaning. `Tag`s aimed at an edition, chapter or attachment are left alone.
+  meaning. A nested `SORT_WITH` is read as its sort field: it goes where that field is asked for,
+  and where its parent goes it is carried as that field's own name. Each old `Tags` was a revision
+  of its own, so a field a later one says, blank aside, leaves the earlier ones before they join
+  (`Date` by the rank `tags.rs` weighs, a better date in an earlier one standing). `Tag`s aimed at
+  an edition, chapter or attachment are left alone.
 - **A field cleared is cleared from every tag the file holds.** lofty edits only the primary tag
   while the reader takes a name from whichever tag still says it: `writing::cleared_elsewhere`
   copies every other tag holding a field in `Writing::taken`, removes it and saves each into the

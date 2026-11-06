@@ -411,6 +411,10 @@ pub trait TagSink: TagSource {
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()>;
     fn rated(&self, location: &MediaLocation) -> Result<Rated>;
 
+    fn holds_pictures(&self, _: &MediaLocation) -> bool {
+        true
+    }
+
     fn standing(&self, location: &MediaLocation, picturing: Picturing) -> Result<Standing> {
         Ok(Standing {
             tagged: self.read(location, picturing)?,
@@ -521,6 +525,10 @@ impl TagSink for FileTags {
 
     fn rated(&self, location: &MediaLocation) -> Result<Rated> {
         self.rating_of(location)
+    }
+
+    fn holds_pictures(&self, location: &MediaLocation) -> bool {
+        !location.as_path().is_some_and(names_a_matroska)
     }
 
     fn standing(&self, location: &MediaLocation, picturing: Picturing) -> Result<Standing> {

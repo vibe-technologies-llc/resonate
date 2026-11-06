@@ -4688,6 +4688,16 @@ const EBML_CLUSTER: u32 = 0x1F43_B675;
 const EBML_SIMPLE_BLOCK: u32 = 0xA3;
 const EBML_BLOCK_GROUP: u32 = 0xA0;
 const EBML_VOID: u32 = 0xEC;
+const EBML_TAG: u32 = 0x7373;
+const EBML_TARGETS: u32 = 0x63C0;
+const EBML_TARGET_TYPE_VALUE: u32 = 0x68CA;
+const EBML_SIMPLE_TAG: u32 = 0x67C8;
+const EBML_TAG_NAME: u32 = 0x45A3;
+const EBML_TAG_STRING: u32 = 0x4487;
+const EBML_TRACK_LEVEL: u8 = 30;
+const EBML_ALBUM_LEVEL: u8 = 50;
+const EBML_ONE_BYTE_SIZE_AT_MOST: usize = 126;
+const EBML_TWO_BYTE_SIZE: u16 = 0x4000;
 const EBML_NOTHING_ANY_READER_KNOWS: u32 = 0x1A00_0001;
 const EBML_WIDEST_SIZE: u32 = 8;
 const EBML_SIZE_UNKNOWN: [u8; 8] = [0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
@@ -5203,4 +5213,231 @@ fn every_field_written_alone_into_a_matroska_file_reads_back() {
             "{field} did not read back"
         );
     }
+}
+
+fn ebml_narrow(id: u32, body: &[u8]) -> Vec<u8> {
+    let mut bytes: Vec<u8> = id
+        .to_be_bytes()
+        .into_iter()
+        .skip_while(|byte| *byte == 0)
+        .collect();
+    if body.len() <= EBML_ONE_BYTE_SIZE_AT_MOST {
+        bytes.push(0x80 | body.len() as u8);
+    } else {
+        bytes.extend_from_slice(&(EBML_TWO_BYTE_SIZE | body.len() as u16).to_be_bytes());
+    }
+    bytes.extend_from_slice(body);
+    bytes
+}
+
+fn simple_tag_holding(name: &str, value: &str, nested: &[u8]) -> Vec<u8> {
+    let mut body = ebml_narrow(EBML_TAG_NAME, name.as_bytes());
+    body.extend_from_slice(&ebml_narrow(EBML_TAG_STRING, value.as_bytes()));
+    body.extend_from_slice(nested);
+    ebml_narrow(EBML_SIMPLE_TAG, &body)
+}
+
+fn simple_tag_of(name: &str, value: &str) -> Vec<u8> {
+    simple_tag_holding(name, value, &[])
+}
+
+fn sorted_under(name: &str, value: &str, sort: &str) -> Vec<u8> {
+    simple_tag_holding(name, value, &simple_tag_of("SORT_WITH", sort))
+}
+
+fn tag_at(level: u8, simple: &[Vec<u8>]) -> Vec<u8> {
+    let mut body = ebml_narrow(EBML_TARGETS, &ebml_narrow(EBML_TARGET_TYPE_VALUE, &[level]));
+    body.extend_from_slice(&simple.concat());
+    ebml_narrow(EBML_TAG, &body)
+}
+
+fn tags_of_tag(tags: &[Vec<u8>]) -> Vec<u8> {
+    ebml_narrow(EBML_TAGS, &tags.concat())
+}
+
+fn opus_holding(tree: &Tree, name: &str, elements: &[Vec<u8>]) -> Option<(PathBuf, MediaLocation)> {
+    let path = opus_in_webm(tree, name)?;
+    let mut bytes = fs::read(&path).expect("a Matroska file reads");
+    let held = ebml_top(&bytes)
+        .into_iter()
+        .find(|element| element.id == EBML_TAGS)
+        .expect("tags ffmpeg writes");
+    let laid = elements.concat();
+    let filler = held.end - held.at - laid.len() - 9;
+    let mut room = laid;
+    room.extend_from_slice(&ebml_sized(EBML_VOID, &vec![0; filler]));
+    bytes[held.at..held.end].copy_from_slice(&room);
+    fs::write(&path, &bytes).expect("a writable fixture");
+    let location = MediaLocation::local(&path);
+    Some((path, location))
+}
+
+fn edit_of(field: TagField, value: &str) -> [TagEdit; 1] {
+    [TagEdit {
+        field,
+        value: value.to_owned(),
+    }]
+}
+
+#[test]
+fn a_field_nobody_asked_to_change_reads_alike_once_several_tags_elements_are_one() {
+    let tree = Tree::new();
+    let Some((path, location)) = opus_holding(
+        &tree,
+        "song.mka",
+        &[
+            tags_of_tag(&[tag_at(
+                EBML_TRACK_LEVEL,
+                &[simple_tag_of("ARTIST", "Old Artist")],
+            )]),
+            tags_of_tag(&[tag_at(
+                EBML_TRACK_LEVEL,
+                &[simple_tag_of("ARTIST", "New Artist")],
+            )]),
+        ],
+    ) else {
+        return;
+    };
+    assert_eq!(tags_of(&location).artist.as_deref(), Some("New Artist"));
+
+    FileTags::over(Sources::local())
+        .write(&location, only_edits(&edit_of(TagField::Genre, "Rock")))
+        .expect("a written Matroska file");
+
+    let after = fs::read(&path).expect("a written file");
+    let read = tags_of(&location);
+    assert_eq!(tags_elements(&after), 1);
+    assert_eq!(read.genre.as_deref(), Some("Rock"));
+    assert_eq!(read.artist.as_deref(), Some("New Artist"));
+}
+
+#[test]
+fn a_matroska_comment_written_leaves_a_description_the_reader_never_took_for_one() {
+    let tree = Tree::new();
+    let Some((path, location)) = opus_holding(
+        &tree,
+        "song.mka",
+        &[tags_of_tag(&[tag_at(
+            EBML_TRACK_LEVEL,
+            &[simple_tag_of("DESCRIPTION", "Keep me")],
+        )])],
+    ) else {
+        return;
+    };
+
+    FileTags::over(Sources::local())
+        .write(
+            &location,
+            only_edits(&edit_of(TagField::Comment, "A remaster")),
+        )
+        .expect("a written Matroska file");
+
+    let after = fs::read(&path).expect("a written file");
+    assert_eq!(tags_of(&location).comment.as_deref(), Some("A remaster"));
+    assert!(
+        after.windows(7).any(|held| held == b"Keep me"),
+        "a description was taken for a comment and lost"
+    );
+}
+
+#[test]
+fn a_matroska_tagged_by_its_targets_keeps_what_it_read_through_a_write_of_something_else() {
+    let tree = Tree::new();
+    let Some((_, location)) = opus_holding(
+        &tree,
+        "song.mka",
+        &[tags_of_tag(&[
+            tag_at(
+                EBML_ALBUM_LEVEL,
+                &[
+                    simple_tag_of("TITLE", "Meddle"),
+                    sorted_under("ARTIST", "Band", "Band, The"),
+                ],
+            ),
+            tag_at(
+                EBML_TRACK_LEVEL,
+                &[
+                    simple_tag_of("TITLE", "Echoes"),
+                    sorted_under("ARTIST", "Singer", "Singer, The"),
+                ],
+            ),
+        ])],
+    ) else {
+        return;
+    };
+    let tags = FileTags::over(Sources::local());
+    let before = tags_of(&location);
+    assert_eq!(before.album.as_deref(), Some("Meddle"));
+    assert_eq!(before.album_artist_sort.as_deref(), Some("Band, The"));
+    assert_eq!(before.artist_sort.as_deref(), Some("Singer, The"));
+
+    tags.write(&location, only_edits(&edit_of(TagField::TrackNumber, "4")))
+        .expect("a written Matroska file");
+
+    let read = tags_of(&location);
+    assert_eq!(read.track_number, Some(4));
+    assert_eq!(read.title.as_deref(), Some("Echoes"));
+    assert_eq!(read.album.as_deref(), Some("Meddle"));
+    assert_eq!(read.artist.as_deref(), Some("Singer"));
+    assert_eq!(read.album_artist.as_deref(), Some("Band"));
+    assert_eq!(read.album_artist_sort.as_deref(), Some("Band, The"));
+    assert_eq!(read.artist_sort.as_deref(), Some("Singer, The"));
+}
+
+#[test]
+fn a_matroska_artist_edited_keeps_the_sort_name_nested_under_it() {
+    let tree = Tree::new();
+    let Some((_, location)) = opus_holding(
+        &tree,
+        "song.mka",
+        &[tags_of_tag(&[tag_at(
+            EBML_TRACK_LEVEL,
+            &[sorted_under("ARTIST", "Singer", "Singer, The")],
+        )])],
+    ) else {
+        return;
+    };
+
+    FileTags::over(Sources::local())
+        .write(
+            &location,
+            only_edits(&edit_of(TagField::Artist, "Vocalist")),
+        )
+        .expect("a written Matroska file");
+
+    let read = tags_of(&location);
+    assert_eq!(read.artist.as_deref(), Some("Vocalist"));
+    assert_eq!(read.artist_sort.as_deref(), Some("Singer, The"));
+}
+
+#[test]
+fn a_sort_name_written_over_one_nested_in_a_matroska_replaces_it() {
+    let tree = Tree::new();
+    let Some((_, location)) = opus_holding(
+        &tree,
+        "song.mka",
+        &[tags_of_tag(&[tag_at(
+            EBML_TRACK_LEVEL,
+            &[sorted_under("ARTIST", "Singer", "Singer, The")],
+        )])],
+    ) else {
+        return;
+    };
+    let tags = FileTags::over(Sources::local());
+
+    tags.write(
+        &location,
+        Writing {
+            edits: &[],
+            taken: &[TagField::ArtistSort],
+            picture: None,
+            unpictured: false,
+            popularity: None,
+        },
+    )
+    .expect("a written Matroska file");
+
+    let read = tags_of(&location);
+    assert_eq!(read.artist.as_deref(), Some("Singer"));
+    assert_eq!(read.artist_sort, None);
 }

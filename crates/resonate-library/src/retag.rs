@@ -406,7 +406,10 @@ fn planned(
             continue;
         }
 
-        let sleeved = row.album_id.and_then(|album| sleeve.of(library, album));
+        let sleeved = row
+            .album_id
+            .filter(|_| tags.holds_pictures(&location))
+            .and_then(|album| sleeve.of(library, album));
         let picturing = match sleeved {
             Some(_) => Picturing::Copied,
             None => Picturing::Whether,

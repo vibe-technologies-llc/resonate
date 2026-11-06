@@ -24,6 +24,7 @@ const TAG_ATTACHMENT_UID: u32 = 0x63C6;
 const SIMPLE_TAG: u32 = 0x67C8;
 const TAG_NAME: u32 = 0x45A3;
 const TAG_STRING: u32 = 0x4487;
+const SORT_WITH: &[u8] = b"SORT_WITH";
 
 const DOC_TYPES: [&[u8]; 2] = [b"matroska", b"webm"];
 const SEGMENT_ID_BYTES: u64 = 4;
@@ -123,7 +124,7 @@ const fn spelling(field: TagField) -> Spelling {
         F::Remixer => spelled(Album, "REMIXED_BY", &["REMIXER", "MIXARTIST"]),
         F::Engineer => spelled(Album, "SOUND_ENGINEER", &["ENGINEER", "MASTERED_BY"]),
         F::Producer => spelled(Album, "PRODUCER", &[]),
-        F::Comment => spelled(Album, "COMMENT", &["DESCRIPTION"]),
+        F::Comment => spelled(Album, "COMMENT", &[]),
         F::BeatsPerMinute => spelled(Album, "BPM", &[]),
         F::Compilation => spelled(Album, "COMPILATION", &[]),
         F::Grouping => spelled(Album, "CONTENTGROUP", &["GROUPING"]),
@@ -178,6 +179,16 @@ impl Reading {
                 let spelled = spelling(*field);
                 spelled.name == name || spelled.read_too.contains(&name)
             }),
+        }
+    }
+
+    fn sort_field_of(self, name: &str) -> Option<TagField> {
+        match name {
+            "ARTIST" if self.at_the_album() => Some(TagField::AlbumArtistSort),
+            "ARTIST" => Some(TagField::ArtistSort),
+            "TITLE" if self.at_the_album() => Some(TagField::AlbumSort),
+            "TITLE" if self.level == Some(Level::Track.value()) => Some(TagField::TitleSort),
+            _ => None,
         }
     }
 
@@ -462,6 +473,14 @@ struct SimpleTag<'a> {
     whole: &'a [u8],
     name: String,
     value: Option<&'a str>,
+    sort: Option<&'a str>,
+    unsorted: Vec<&'a [u8]>,
+}
+
+impl SimpleTag<'_> {
+    fn laid_unsorted(&self) -> Vec<u8> {
+        sized(SIMPLE_TAG, &self.unsorted.concat())
+    }
 }
 
 struct HeldTag<'a> {
@@ -473,20 +492,45 @@ struct HeldTag<'a> {
     simple: Vec<SimpleTag<'a>>,
 }
 
+fn sort_within<'a>(nested: &Within<'a>) -> Refusable<Option<&'a str>> {
+    let mut sorts = false;
+    let mut value = None;
+    for child in within(nested.body)? {
+        match child.id {
+            TAG_NAME => sorts = child.body == SORT_WITH,
+            TAG_STRING => value = str::from_utf8(child.body).ok(),
+            _ => {}
+        }
+    }
+    Ok(value.filter(|_| sorts))
+}
+
 fn simple_tag_of<'a>(simple: &Within<'a>) -> Refusable<SimpleTag<'a>> {
     let mut name = String::new();
     let mut value = None;
+    let mut sort = None;
+    let mut unsorted = Vec::new();
     for child in within(simple.body)? {
+        let nested_sort = match child.id {
+            SIMPLE_TAG => sort_within(&child)?,
+            _ => None,
+        };
         match child.id {
             TAG_NAME => name = String::from_utf8_lossy(child.body).to_ascii_uppercase(),
             TAG_STRING => value = str::from_utf8(child.body).ok(),
             _ => {}
+        }
+        match nested_sort {
+            Some(held) => sort = Some(held),
+            None => unsorted.push(child.whole),
         }
     }
     Ok(SimpleTag {
         whole: simple.whole,
         name,
         value,
+        sort,
+        unsorted,
     })
 }
 
@@ -582,25 +626,99 @@ impl Asked<'_> {
     }
 }
 
+type Said = (TagField, DateStanding);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DateStanding {
+    Recorded,
+    Released,
+    Original,
+}
+
+impl DateStanding {
+    fn of(name: &str) -> Self {
+        match name {
+            "DATE" | "DATE_RELEASE" | "DATE_RELEASED" => Self::Released,
+            "ORIGINALDATE" | "ORIGINAL_DATE" => Self::Original,
+            _ => Self::Recorded,
+        }
+    }
+}
+
+struct Gone<'a> {
+    asked: &'a Asked<'a>,
+    said_later: &'a [Said],
+}
+
+impl Gone<'_> {
+    fn takes(&self, field: TagField, name: &str) -> bool {
+        self.asked.names(field) || self.said_later.contains(&(field, DateStanding::of(name)))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Naming {
+    vorbis: bool,
+    parted: bool,
+}
+
+impl Naming {
+    fn of(tags: &[HeldTag<'_>]) -> Self {
+        let read = || tags.iter().filter(|tag| !tag.aimed_elsewhere);
+        Self {
+            vorbis: read()
+                .flat_map(|tag| &tag.simple)
+                .any(|simple| is_vorbis_comment_only(&simple.name)),
+            parted: read().any(|tag| tag.level == Some(PART_LEVEL)),
+        }
+    }
+
+    const fn at(self, tag: &HeldTag<'_>) -> Reading {
+        Reading {
+            level: tag.level,
+            vorbis: self.vorbis,
+            parted: self.parted,
+        }
+    }
+}
+
+fn said_in(tags: &[HeldTag<'_>]) -> Vec<Said> {
+    let naming = Naming::of(tags);
+    let mut said = Vec::new();
+    for tag in tags.iter().filter(|tag| !tag.aimed_elsewhere) {
+        let reading = naming.at(tag);
+        for simple in &tag.simple {
+            let given = simple.value.is_some_and(|value| !value.trim().is_empty());
+            if let (true, Some(field)) = (given, reading.field_of(&simple.name)) {
+                said.push((field, DateStanding::of(&simple.name)));
+            }
+            if let (Some(_), Some(field)) = (simple.sort, reading.sort_field_of(&simple.name)) {
+                said.push((field, DateStanding::Recorded));
+            }
+        }
+    }
+    said
+}
+
 fn merged(held: &[Vec<u8>], asked: &Asked<'_>) -> Refusable<Vec<u8>> {
     let mut kept = Vec::new();
     let mut carried = Vec::new();
 
-    for body in held {
-        let tags = held_tags_in(body)?;
-        let read = || tags.iter().filter(|tag| !tag.aimed_elsewhere);
-        let vorbis = read()
-            .flat_map(|tag| &tag.simple)
-            .any(|simple| is_vorbis_comment_only(&simple.name));
-        let parted = read().any(|tag| tag.level == Some(PART_LEVEL));
+    let bodies = held
+        .iter()
+        .map(|body| held_tags_in(body))
+        .collect::<Refusable<Vec<_>>>()?;
+    let said: Vec<Vec<Said>> = bodies.iter().map(|tags| said_in(tags)).collect();
 
-        for tag in &tags {
-            let reading = Reading {
-                level: tag.level,
-                vorbis,
-                parted,
-            };
-            kept.extend(kept_of(tag, reading, asked, &mut carried));
+    for (index, tags) in bodies.iter().enumerate() {
+        let naming = Naming::of(tags);
+        let said_later = said[index + 1..].concat();
+        let gone = Gone {
+            asked,
+            said_later: &said_later,
+        };
+        for tag in tags {
+            kept.extend(kept_of(tag, naming.at(tag), &gone, &mut carried));
         }
     }
 
@@ -641,22 +759,37 @@ fn merged(held: &[Vec<u8>], asked: &Asked<'_>) -> Refusable<Vec<u8>> {
 fn kept_of(
     tag: &HeldTag<'_>,
     reading: Reading,
-    asked: &Asked<'_>,
+    gone: &Gone<'_>,
     carried: &mut Vec<(TagField, String)>,
 ) -> Option<Kept> {
     let mut simple = Vec::new();
     let mut touched = false;
     for held in &tag.simple {
-        let field = (!tag.aimed_elsewhere)
-            .then(|| reading.field_of(&held.name))
-            .flatten();
-        match (field, held.value) {
-            (Some(field), _) if asked.names(field) => touched = true,
-            (Some(field), Some(value)) if reading.turns_with_the_naming(&held.name) => {
+        if tag.aimed_elsewhere {
+            simple.push(held.whole.to_vec());
+            continue;
+        }
+
+        let field = reading.field_of(&held.name);
+        let sort = held.sort.zip(reading.sort_field_of(&held.name));
+        let turned = field
+            .zip(held.value)
+            .filter(|_| reading.turns_with_the_naming(&held.name));
+        let replaced = field.is_some_and(|field| gone.takes(field, &held.name));
+
+        if replaced || turned.is_some() {
+            touched = true;
+            if let (false, Some((field, value))) = (replaced, turned) {
                 carried.push((field, value.to_owned()));
-                touched = true;
             }
-            _ => simple.push(held.whole.to_vec()),
+            if let Some((value, field)) = sort.filter(|(_, field)| !gone.takes(*field, "")) {
+                carried.push((field, value.to_owned()));
+            }
+        } else if sort.is_some_and(|(_, field)| gone.takes(field, "")) {
+            touched = true;
+            simple.push(held.laid_unsorted());
+        } else {
+            simple.push(held.whole.to_vec());
         }
     }
     if touched && simple.is_empty() {
