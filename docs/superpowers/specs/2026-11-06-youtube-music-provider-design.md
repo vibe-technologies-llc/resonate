@@ -142,7 +142,8 @@ of `node`, `bun` found on `PATH`.
 3. Otherwise for each of `Identity::wordings`, search YouTube Music's Songs filter over InnerTube,
    signed out, at most 25 listings, and hand each to `Choosing` as a `Listed`. The seam decides.
    YouTube gives no ISRC, so this is always the named-alike rule: lengths within 2 s, titles and lead
-   artist equal. The client version is read as `resonate-online`'s `youtube.rs` reads it, not pinned.
+   artist equal. The client version is read from `/sw.js_data`, not pinned: under `resonate/<version>` the home page
+   redirects to consent and then a "browser out of date" page with no version in it.
 4. Only songs. Uploaded music videos are not taken, since a video's audio is often a different cut.
 5. Probe the chosen listing for its formats. If no wanted format exists, answer `Nothing`.
 6. Answer `Obtained::Found(Delivery::Stream { key: "track/<videoId>", extension, opening })`.
