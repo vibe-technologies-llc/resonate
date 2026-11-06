@@ -88,8 +88,17 @@ On 2026-11-06, `yt-dlp` 2026.10.26:
   length and a `MUSIC_EXPLICIT_BADGE` where explicit. No cookies, so a search never touches the
   account.
 
-Not yet measured: fields of a private playlist listing, the AAC path, and a real `774` download
-playing and tagging in Resonate.
+- **A private playlist's flat listing names the song.** `LM` through the listener's cookies gave `id`,
+  `title`, `duration`, `channel` and `uploader` for each row, with no album. The channel is the artist:
+  `Кошка - Topic` on an album song, a plain `noone` on an upload. So a kept playlist needs no call per
+  song, and the ` - Topic` suffix is cut.
+- **A real `774` download.** `9RfVp-GhKfs` (*Creep*, from the Songs filter) landed as a 7.8 MB `.mka`:
+  Opus, 48 kHz, stereo, 263 kbps, 238.7 s. Its DocType is `webm`. The Segment has a known size in an
+  8-byte field. Top level: `SeekHead` (Info, Tracks, Cues), `Info`, `Tracks`, `Cues`, 24 `Cluster`s. There
+  is no `Tags` and no `Void`, and the `Cues` sit ahead of the clusters, so an element added ahead of them
+  shifts every cue position.
+
+Not yet measured: the AAC path.
 
 ## Shape
 
