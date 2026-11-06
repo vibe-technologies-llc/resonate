@@ -88,6 +88,13 @@ pub enum Error {
     #[error("the sign-in to the {provider} provider was turned down")]
     AuthorizationDenied { provider: SourceId },
 
+    #[error("{op:?} ran the {provider} provider's tool, which failed with {code:?}")]
+    ToolFailed {
+        provider: SourceId,
+        op: ProviderOp,
+        code: Option<i32>,
+    },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
@@ -111,7 +118,8 @@ impl Error {
             | Self::StillQueued { .. }
             | Self::Untrusted { .. }
             | Self::Unaddressable { .. }
-            | Self::NotTheService { .. } => true,
+            | Self::NotTheService { .. }
+            | Self::ToolFailed { .. } => true,
             Self::Refused { status, .. } => {
                 *status >= SERVER_TROUBLE || TURNED_AWAY_WHOEVER_ASKS.contains(status)
             }
@@ -197,6 +205,24 @@ mod tests {
         assert!(a_page.is_the_provider_away());
         assert!(is_a_page(b"\n  <!DOCTYPE html><html>"));
         assert!(!is_a_page(br#"{"subsonic-response":{}}"#));
+    }
+
+    #[test]
+    fn a_tool_that_failed_is_the_provider_away_whether_or_not_it_left_a_code() {
+        let provider = SourceId::new("youtube-music").expect("a nameable source");
+        let crashed = Error::ToolFailed {
+            provider: provider.clone(),
+            op: ProviderOp::Download,
+            code: Some(1),
+        };
+        let killed = Error::ToolFailed {
+            provider,
+            op: ProviderOp::Download,
+            code: None,
+        };
+
+        assert!(crashed.is_the_provider_away());
+        assert!(killed.is_the_provider_away());
     }
 
     #[test]

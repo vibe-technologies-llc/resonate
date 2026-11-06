@@ -324,6 +324,10 @@ pub trait PlaysInPlace: Send + Sync {
         false
     }
 
+    fn plays_songs(&self) -> bool {
+        true
+    }
+
     fn favour(&self, _song: &Id, _favoured: bool) -> Result<()> {
         Err(not_offered(self.scheme(), ProviderOp::Favourite))
     }
@@ -647,6 +651,16 @@ mod tests {
         let found = found_exactly(&[service], &wanted()).expect("the song is offered");
 
         assert!(found.to_uri().contains("this-one"));
+    }
+
+    #[test]
+    fn a_service_plays_songs_unless_it_says_it_does_not() {
+        let service = OneSearch {
+            scheme: SourceId::new("subsonic").expect("a scheme"),
+            songs: Vec::new(),
+        };
+
+        assert!(service.plays_songs());
     }
 
     #[test]
