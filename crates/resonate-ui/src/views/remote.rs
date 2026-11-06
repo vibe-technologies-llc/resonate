@@ -259,7 +259,12 @@ impl RootView {
         if let Some(album) = &song.album {
             words = words.child(remote_line(album, theme::faint()));
         }
-        let mut controls = div().flex().flex_none().items_center().gap_1();
+        let mut controls = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .h(px(theme::row_control()))
+            .gap_1();
         for (which, icon, label, key) in [
             (
                 "previous",
@@ -338,8 +343,17 @@ impl RootView {
                     .flex()
                     .items_center()
                     .justify_between()
+                    .h(px(theme::row_control()))
+                    .w_full()
                     .gap_1()
-                    .child(kit::figure(place).text_size(px(theme::text_xs())))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .h_full()
+                            .min_w_0()
+                            .child(kit::figure(place).line_height(px(theme::text_xs()))),
+                    )
                     .child(controls),
             )
     }

@@ -2324,7 +2324,8 @@ The desktop collection orders Favourites, Playlists, Suggestions and Listening P
 
 Other devices playing appear as compact cards at the sidebar foot across panes (`views/remote.rs`):
 platform mark, device name and playing or paused state on one line, cover beside title, artist and
-album, then position beside previous, play or pause and next. Padding and gaps stay tight; the zone is
+album, then position beside previous, play or pause and next. The clock and controls share the
+control's height, with the clock's text line centred inside it. Padding and gaps stay tight; the zone is
 named by the card and each control's hint. A one-second window task watches online paired devices
 through the existing remote-control seam; only an accepted mirror offers a card and controls, so a
 device refusing remote control offers none. Controls address that device and zone through
