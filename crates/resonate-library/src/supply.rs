@@ -1108,6 +1108,8 @@ impl<'a> Lanes<'a> {
                     passing: &rounds.passing,
                     apart: TURNED_TO_APART,
                     grace: WAITED_ON_AFTER_AN_OFFER,
+                    earlier_rounds_said_no: rounds.every_provider_heard
+                        || self.providers.is_narrowed(),
                 },
                 &mut away,
             )

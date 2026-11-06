@@ -60,6 +60,7 @@ pub struct Asking<'a> {
     pub passing: &'a [SourceId],
     pub apart: Duration,
     pub grace: Duration,
+    pub earlier_rounds_said_no: bool,
 }
 
 #[derive(Debug, Default)]
@@ -164,6 +165,19 @@ impl Providers {
         self
     }
 
+    #[must_use]
+    pub fn without_last_resorts(&self) -> Self {
+        Self {
+            providers: self
+                .providers
+                .iter()
+                .filter(|provider| !provider.last_resort())
+                .cloned()
+                .collect(),
+            narrowed: self.narrowed,
+        }
+    }
+
     pub fn names(&self) -> Vec<SourceId> {
         self.providers
             .iter()
@@ -232,7 +246,9 @@ impl Providers {
                 {
                     continue;
                 }
-                if provider.last_resort() && !answer.every_earlier_turn_said_no() {
+                if provider.last_resort()
+                    && !(asking.earlier_rounds_said_no && answer.every_earlier_turn_said_no())
+                {
                     answer.passed_over += 1;
                     turns[at] = Turn::Over;
                     continue;
@@ -699,6 +715,7 @@ mod tests {
             passing: &[],
             apart: TURNED_TO_APART,
             grace: WAITED_ON_AFTER_AN_OFFER,
+            earlier_rounds_said_no: true,
         }
     }
 
@@ -1155,5 +1172,54 @@ mod tests {
 
         assert_eq!(delivered_by(&answer), Some("tube"));
         assert!(answer.narrowed);
+    }
+
+    #[test]
+    fn a_last_resort_is_passed_over_when_an_earlier_round_of_the_want_did_not_say_no() {
+        let tube = Slow::registered("tube", Duration::ZERO, found);
+        let providers = Providers::none().and(LastResort::registered(tube.clone()));
+        let asking = Asking {
+            earlier_rounds_said_no: false,
+            ..racing(10, 10)
+        };
+
+        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+
+        assert!(answer.delivered.is_none());
+        assert_eq!(answer.passed_over, 1);
+        assert!(!tube.was_asked());
+    }
+
+    #[test]
+    fn a_last_resort_is_asked_in_a_later_round_though_earlier_providers_are_passing() {
+        let tube = Slow::registered("tube", Duration::ZERO, found);
+        let providers = Providers::none()
+            .and(Fixed::registered("offers", found))
+            .and(LastResort::registered(tube.clone()));
+        let passing = [SourceId::new("offers").expect("a nameable source")];
+        let asking = Asking {
+            passing: &passing,
+            ..racing(10, 10)
+        };
+
+        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+
+        assert_eq!(delivered_by(&answer), Some("tube"));
+    }
+
+    #[test]
+    fn a_last_resort_is_asked_after_an_earlier_offer_the_poll_declined() {
+        let providers = Providers::none()
+            .and(Fixed::registered("offers", found))
+            .and(LastResort::registered(Fixed::registered("tube", found)));
+        let asking = Asking {
+            declined: &|delivered| delivered.provider.as_str() == "offers",
+            ..racing(10, 10)
+        };
+
+        let answer = providers.first(&Identity::named("Echoes"), &asking, &mut Away::default());
+
+        assert_eq!(answer.declined, 1);
+        assert_eq!(delivered_by(&answer), Some("tube"));
     }
 }

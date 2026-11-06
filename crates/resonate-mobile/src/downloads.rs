@@ -674,6 +674,7 @@ impl Downloads {
                 passing: &[],
                 apart: TURNED_TO_APART,
                 grace: WAITED_ON_AFTER_AN_OFFER,
+                earlier_rounds_said_no: true,
             },
             &mut Away::default(),
         );

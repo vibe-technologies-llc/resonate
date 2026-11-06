@@ -27927,3 +27927,88 @@ fn a_lyric_the_service_refused_is_not_asked_for_again_on_the_next_pass() -> Resu
     assert_eq!(library.lyrics_to_ask(true)?.len(), ORBITS_TITLES.len());
     Ok(())
 }
+
+struct LastResort(Arc<Offering>);
+
+impl Provider for LastResort {
+    fn source(&self) -> &SourceId {
+        self.0.source()
+    }
+
+    fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+        self.0.find(identity)
+    }
+
+    fn last_resort(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn a_last_resort_is_not_asked_in_a_later_round_after_an_earlier_provider_refused() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let broken = Unanswering::new("broken", unreachable_server);
+    let wrong = half_of_san_tropez();
+    let tube = the_whole_of_san_tropez("tube");
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&broken) as Arc<dyn Provider>)
+            .and(Arc::clone(&wrong) as Arc<dyn Provider>)
+            .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>),
+    );
+
+    let summary = library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!(summary.stats.offered, 1);
+    assert_eq!(summary.stats.kept, 0);
+    assert!(tube.asked().is_empty());
+    let wants = library.wants()?;
+    assert!(wants[0].held.is_none());
+    assert_eq!(wants[0].tried, None);
+    Ok(())
+}
+
+#[test]
+fn a_last_resort_is_asked_after_an_earlier_offer_was_not_the_song() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let wrong = half_of_san_tropez();
+    let tube = the_whole_of_san_tropez("tube");
+    let providers = Arc::new(
+        Providers::none()
+            .and(Arc::clone(&wrong) as Arc<dyn Provider>)
+            .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>),
+    );
+
+    let summary = library.poll(providers, PollOptions::default())?.join()?;
+
+    assert_eq!((summary.stats.offered, summary.stats.kept), (2, 1));
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_last_resort_is_never_foreseen_nor_started_by_a_search() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let fake = meddle_fake();
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let empty = Arc::new(Offering::new("shop", Delivering::Nothing));
+    let tube = a_provider_offering_echoes("tube");
+    let providers = Providers::none()
+        .and(Arc::clone(&empty) as Arc<dyn Provider>)
+        .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>);
+
+    assert!(!library.foresee(&providers, &found[0]));
+    assert!(tube.asked().is_empty());
+    Ok(())
+}

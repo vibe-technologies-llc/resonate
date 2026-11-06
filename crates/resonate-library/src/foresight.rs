@@ -102,7 +102,7 @@ impl Library {
             return false;
         };
 
-        let answer = providers.first(
+        let answer = providers.without_last_resorts().first(
             &found.identity(),
             &Asking {
                 within: ANSWERS_WITHIN,
@@ -112,6 +112,7 @@ impl Library {
                 passing: &[],
                 apart: TURNED_TO_APART,
                 grace: WAITED_ON_AFTER_AN_OFFER,
+                earlier_rounds_said_no: true,
             },
             &mut Away::default(),
         );
