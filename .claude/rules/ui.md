@@ -2323,8 +2323,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 The desktop collection orders Favourites, Playlists, Suggestions and Listening Party before Missing. The enrichment status opens the Enrichment settings category, with live lookup counts and cancellation alongside scan and tag controls. Accounts holds service sign-ins and server credentials, including Spotify, TIDAL, Subsonic, Jellyfin and Last.fm; Online retains network policy. Existing category identifiers remain valid so remembered settings pages survive the additional categories.
 
 Other devices playing appear as compact cards at the sidebar foot across panes (`views/remote.rs`):
-platform mark and device name, cover beside title, artist and album, playing or paused state, zone and
-position, then previous, play or pause and next. A one-second window task watches online paired devices
+platform mark, device name and playing or paused state on one line, cover beside title, artist and
+album, then position beside previous, play or pause and next. Padding and gaps stay tight; the zone is
+named by the card and each control's hint. A one-second window task watches online paired devices
 through the existing remote-control seam; only an accepted mirror offers a card and controls, so a
 device refusing remote control offers none. Controls address that device and zone through
 `press_on_the_device` on the background executor and keep their own pruned keyboard ring across pane

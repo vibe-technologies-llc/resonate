@@ -176,8 +176,8 @@ impl RootView {
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .py_2()
+                .gap_1()
+                .py_1()
                 .child(kit::eyebrow("Other devices").px_1())
                 .child(
                     div()
@@ -188,7 +188,7 @@ impl RootView {
                                 .debug_selector(|| "remote-devices".to_owned())
                                 .flex()
                                 .flex_col()
-                                .gap_2()
+                                .gap_1p5()
                                 .max_h(room.min(px(theme::sidebar_width() * 2.0)))
                                 .overflow_y_scroll()
                                 .track_scroll(&self.remote_scroll)
@@ -259,7 +259,7 @@ impl RootView {
         if let Some(album) = &song.album {
             words = words.child(remote_line(album, theme::faint()));
         }
-        let mut controls = div().flex().items_center().justify_center().gap_2();
+        let mut controls = div().flex().flex_none().items_center().gap_1();
         for (which, icon, label, key) in [
             (
                 "previous",
@@ -283,7 +283,6 @@ impl RootView {
             let saying = format!("{label} on {} · {}", device.name, song.zone.name);
             let button = if key == RemoteKey::Toggle {
                 kit::lit_mark(SharedString::from(named.clone()), icon, saying)
-                    .size(px(theme::button_height()))
                     .rounded_full()
                     .bg(theme::tinted(theme::accent(), 0x18))
             } else {
@@ -311,8 +310,8 @@ impl RootView {
             .flex()
             .flex_none()
             .flex_col()
-            .gap_2p5()
-            .p_3()
+            .gap_1()
+            .p_2()
             .rounded_lg()
             .bg(rgb(theme::raised()))
             .border_1()
@@ -323,7 +322,8 @@ impl RootView {
                     .items_center()
                     .gap_2()
                     .child(icons::icon(mark, theme::text_sm(), colour))
-                    .child(remote_line(&device.name, theme::muted()).flex_1().min_w_0()),
+                    .child(remote_line(&device.name, theme::muted()).flex_1().min_w_0())
+                    .child(remote_line(state, colour).flex_none()),
             )
             .child(
                 div()
@@ -339,14 +339,9 @@ impl RootView {
                     .items_center()
                     .justify_between()
                     .gap_1()
-                    .child(
-                        remote_line(&format!("{state} · {}", song.zone.name), colour)
-                            .flex_1()
-                            .min_w_0(),
-                    )
-                    .child(kit::figure(place).text_size(px(theme::text_xs()))),
+                    .child(kit::figure(place).text_size(px(theme::text_xs())))
+                    .child(controls),
             )
-            .child(controls)
     }
 }
 
