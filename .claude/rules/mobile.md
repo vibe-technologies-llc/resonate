@@ -868,4 +868,4 @@ name taken). Held by `the_eras_genres_artists_and_sounds_of_the_catalog_are_offe
 
 A share lookup propagates service failures to the caller instead of returning an empty share after logging them.
 
-A failed enrichment band measurement is marked in `unstudied` under `JUDGED_UNDER`, as a failed whole study is. The bands query excludes that mark until refresh, a new judgement, or a changed file clears it. An out-of-reach document and cancellation leave no mark, so a drive or File Provider returning still gets its bands. This prevents a damaged document being fully decoded on every enrichment pass.
+A failed enrichment band measurement in an opted-in recognition pass is marked in `unstudied` under `JUDGED_UNDER`, as a failed whole study is. The bands query excludes that mark until refresh, a new judgement, or a changed file clears it. An out-of-reach document and cancellation leave no mark, so a drive or File Provider returning still gets its bands. This prevents a damaged document being fully decoded on every enrichment pass.

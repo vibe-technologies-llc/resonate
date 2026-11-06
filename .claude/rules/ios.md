@@ -1429,9 +1429,15 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 - **An online song row downloads on a tap** (`OnlineSongRow`): the whole row is the button, which
   stows the keyboard and enqueues the one song, and its trailing `DownloadBadge` and caption read
   `DownloadStanding.of` (the latest job of the song by `SearchSong.id`, or the library holding it):
-  a download icon to start, a ring with a stop square while it finds or downloads (a tap cancels,
+  a download icon to start, a 24 pt ring while it finds or downloads (a separate trailing button cancels,
   the caption saying "Finding a match" or the percentage), a check and "In your library" once held,
   and a red retry glyph with the reason after a failure or cancel, where a tap starts it again.
+  A held result plays its local song on a tap and draws its artwork. The completed job supplies
+  that song immediately; `match_local_song` resolves earlier downloads through the catalog's
+  identity and name matching on `Work.onScreen`, refreshed when the song or catalog changes.
+  The row's play/download button and its cancellation button are siblings, so a cancellation never
+  triggers the row action. A determinate ring is drawn as a circle; an indeterminate spinner has
+  no overlaid glyph, which clipped inside the system spinner.
   *Save for later* is the row's swipe and context menu entry beside *Download*
   (`DownloadStandingTests`).
 - **Wants are asked on their own while the scene is active** (`DownloadQueue.askForWants`): the loop
@@ -1854,3 +1860,9 @@ so a followed list shows edit controls and an edit answers `PlaylistFollowed` (`
   (*Orientation and iPad*).
 
 Learning a release refreshes both its local and missing rows together; cancelled album reads cannot publish after navigation. Album rows suppress stale missing songs at a locally held disc and position and repeated missing row identities, so independently refreshed reads cannot display a song twice.
+
+Artwork enrichment without a recognition key performs no audio decoding. Its native pass sleeps
+until a priority request or worker completion wakes it. A network turn stalled behind searches
+or a long service cooldown ends within the client's pacing bound; cancellation frees a paced wait
+without switching off online features. The progress count includes the item currently being looked
+up, so a slow first album is shown as started.

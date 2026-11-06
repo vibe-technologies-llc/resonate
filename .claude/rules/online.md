@@ -71,7 +71,7 @@ counted play), only under a token or session the listener signed in for.
   `Paced::answered` condvar. A yielding caller waits while any listener is counted, then asks only
   once the host is free (later of: last slot + interval, any `cooling`, listener's answer +
   interval), reserving nothing ahead: a listener waits at most the rest of one interval, never
-  behind the pass. The cost, meant: a lookup pass stands still while the listener keeps a host busy
+  behind the pass. A yielding call waits at most `PACING_WITHIN` (30 s) while the listener keeps a host busy
   (`a_listener_asks_back_to_back_while_a_yielding_client_waits_for_it`,
   `a_yielding_client_waits_a_whole_interval_after_the_listeners_answer`). The switch is re-read
   after the wait.
@@ -550,3 +550,9 @@ A failed optional Deezer twin lookup preserves the names and codes already read 
 ## Public file sharing
 
 `Reference::share_file` is an explicit listener action implemented by Catbox anonymous multipart uploads. The client streams at most 200 MiB with a generic filename retaining only an alphanumeric extension, never the local path. Online and metering gates apply before sending. Uploads have a ten-minute deadline, follow no redirects and are never retried automatically, so a lost response does not duplicate a public upload. Only HTTPS file URLs on files.catbox.moe are accepted, under a 4096-byte response cap. No account or deletion token is kept.
+
+Pacing and retry sleeps are bounded separately from HTTP's deadline. A turn beyond `PACING_WITHIN`
+or a Retry-After longer than that ends the call as unreachable with a timed-out cause, preserving
+the host cooldown so a later call never asks early. `Client::cancellable` gives a pass its own
+cancellation flag without changing the shared online switch; condvar waits and its retry sleeps
+check that flag within 250 ms. An HTTP request already sent retains `ANSWER_WITHIN` (30 s).

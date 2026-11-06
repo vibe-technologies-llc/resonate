@@ -151,6 +151,11 @@ impl MobilePlayer {
         })
     }
 
+    pub fn match_local_song(&self, song: SearchSong) -> Result<Option<crate::Track>> {
+        let matched = local_match(&self.catalog.0.lock(), &song)?;
+        matched.map(|id| self.catalog.track(id)).transpose()
+    }
+
     pub fn index_download(&self, job: u64, uri: String, name: String) -> Result<crate::Track> {
         let job = self.downloads.job(job)?;
         job.moved_to(DownloadPhase::Validating)?;
@@ -565,6 +570,41 @@ mod tests {
 
     use super::*;
     use crate::Track;
+
+    #[test]
+    fn an_online_song_resolves_to_the_visible_local_track_for_playback() {
+        let harness = crate::harness::Harness::new();
+        let track = harness
+            .player
+            .catalog
+            .upsert(Track {
+                artist: "Artist".into(),
+                ..harness.songs[0].clone()
+            })
+            .expect("a song");
+        let song = SearchSong {
+            title: track.title.clone(),
+            artist: track.artist.clone(),
+            duration_ms: Some(track.duration_ms),
+            ..SearchSong::default()
+        };
+        let matched = harness
+            .player
+            .match_local_song(song.clone())
+            .expect("a match");
+        assert_eq!(matched.map(|matched| matched.id), Some(track.id));
+        let absent = SearchSong {
+            title: "Absent".into(),
+            ..song
+        };
+        assert!(
+            harness
+                .player
+                .match_local_song(absent)
+                .expect("no match")
+                .is_none()
+        );
+    }
 
     #[test]
     fn saved_wants_are_idempotent_and_local_matches_use_identity_or_folded_names_and_length() {

@@ -1030,7 +1030,13 @@ the reference, the network, the app closing or `pause_enrichment` (iOS, on going
 song asks of each `downloaded` document still due ahead of the rest, the newest download first, and
 orders the artists, the lyric reader and the study worker the same way
 (`a_downloaded_song_is_looked_up_before_the_songs_held_before_it`); `index_download` also seeks the
-song it landed. `seek_enrichment(track)` lifts the song's album, the song and
+song it landed. The metadata pass keeps serving sought songs while its picture, lyric and study workers
+finish, waking on a seek, cancellation or worker completion; a download landing in that interval gets its album and cover in
+that pass instead of waiting for another start
+(`a_download_landing_while_lyrics_finish_gets_its_cover_in_the_running_pass`).
+`match_local_song` returns the visible document matched by the same `local_match` used for wants,
+so an online result plays the local recording without depending on the search answer's stale held flag.
+`seek_enrichment(track)` lifts the song's album, the song and
 its artist to the front where still due, and the song to the front of the lyric reader's list, and
 a lifted or downloaded ask fetches its cover or portrait on the pass's own thread rather than behind
 the pictures already waiting (`a_song_sought_has_its_album_and_words_asked_before_the_rest`). `enrich_track` is the same album, song and artist asks
@@ -1046,7 +1052,7 @@ the doubled wait its misses earned.
 
 **The pass studies and recognises beside it** when it is given an AcoustID key
 (`EnrichmentOptions::acoustid_key`, the key both phones keep encrypted and read at each start; a blank key
-studies and recognises nothing, so a phone with no key never decodes its library in the background, and
+studies, measures bands and recognises nothing, so a phone with no key never decodes its library in the background, and
 saving a key starts a pass). `resonate-study` is one thread (the desktop's pool is half the cores; a phone
 keeps one) over `tracks_to_hear`: visible documents with no `studies.agreement`, and those studied under this
 `JUDGED_UNDER` keeping a print with no `recognised` (every visible one under
@@ -1459,3 +1465,13 @@ unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws n
   `fontScale = 2` pass for clipped text and a pass for unnamed clickables; the sweep needs an emulator). **Clipped is a line wider than its box or lines cut off with no ellipsis** (`isClipped`, `ClippedTextTest`): `didOverflowWidth` weighs the box against the paragraph's layout width, so it reads every label narrower than its container as overflowing.
 
 Share lookup failures appear as a notice; coroutine cancellation still propagates.
+
+Artwork lookup without a recognition key never repairs missing audio measurements. Band measurements
+are decoded only by an opted-in recognition pass or an explicit analysis or equaliser fit, so opening
+the app to fetch covers does not spend battery decoding a previously studied library. Metadata progress
+counts an item when it starts, including a slow first album, rather than leaving the row at zero
+until every request for that album has completed.
+
+A metadata pass that fails cancels its picture, lyric and study workers before joining them,
+keeping the original failure and its resumable mark. A network failure must not leave the pass
+shown as running while an otherwise unrelated library decode continues.

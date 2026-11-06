@@ -90,6 +90,13 @@ final class DownloadQueue {
         DownloadStanding.of(song, in: jobs, starting: held.contains(song.id))
     }
 
+    func finishedTrack(for song: SearchSong) -> Track? {
+        guard let job = jobs.last(where: { $0.song.id == song.id }),
+            case .done(let track) = job.state
+        else { return nil }
+        return track
+    }
+
     func cancel(_ song: SearchSong) {
         for job in jobs where job.song.id == song.id && !job.state.settled { cancel(job.id) }
     }

@@ -11,7 +11,7 @@ use std::{
 };
 
 use crossbeam_channel::{Sender, bounded};
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use resonate_analysis::{Watching, band_figures};
 use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
 use resonate_core::{AlbumId, Chromaprint, Isrc, Link, Mbid, SourceId, TrackId};
@@ -148,7 +148,10 @@ impl Sought {
 
 #[derive(Default)]
 struct Told {
-    cancelled: AtomicBool,
+    cancelled: Arc<AtomicBool>,
+    finished_workers: AtomicU32,
+    waking: Mutex<u64>,
+    woken: Condvar,
     for_now: AtomicBool,
     asked_first: Sought,
     sung_first: Sought,
@@ -159,6 +162,7 @@ impl Told {
         self.for_now
             .fetch_or(leaving == Leaving::ForNow, Ordering::AcqRel);
         self.cancelled.store(true, Ordering::Release);
+        self.wake();
     }
 
     fn is_cancelled(&self) -> bool {
@@ -172,6 +176,41 @@ impl Told {
     fn seek(&self, track: u64) {
         self.asked_first.seek(track);
         self.sung_first.seek(track);
+        self.wake();
+    }
+
+    fn wake(&self) {
+        let mut waking = self.waking.lock();
+        *waking = waking.wrapping_add(1);
+        self.woken.notify_all();
+    }
+
+    fn wait_after(&self, observed: u64) {
+        let mut waking = self.waking.lock();
+        while *waking == observed && !self.is_cancelled() {
+            self.woken.wait(&mut waking);
+        }
+    }
+}
+
+struct WakeWhenDone<'a>(&'a Told);
+
+impl Drop for WakeWhenDone<'_> {
+    fn drop(&mut self) {
+        self.0.finished_workers.fetch_add(1, Ordering::Release);
+        self.0.wake();
+    }
+}
+
+struct PictureWorkerFinished<'a> {
+    told: &'a Told,
+    pending: &'a AtomicU32,
+}
+
+impl Drop for PictureWorkerFinished<'_> {
+    fn drop(&mut self) {
+        self.pending.store(0, Ordering::Release);
+        self.told.wake();
     }
 }
 
@@ -235,7 +274,14 @@ impl MobilePlayer {
         if !self.services.online.client().is_reaching() {
             return false;
         }
-        let yielding = Arc::new(self.services.online.client().yielding());
+        let told = Arc::new(Told::default());
+        let yielding = Arc::new(
+            self.services
+                .online
+                .client()
+                .yielding()
+                .cancellable(Arc::clone(&told.cancelled)),
+        );
         let key = options.acoustid_key.trim().to_owned();
         let asking = Asking::over(Arc::clone(&yielding));
         let asking = if key.is_empty() {
@@ -243,7 +289,7 @@ impl MobilePlayer {
         } else {
             asking.hearing_through(Arc::new(AcoustId::new(yielding, key)))
         };
-        self.start_enriching(asking, options)
+        self.start_enriching_as_told(asking, options, told)
     }
 
     pub fn stop_enrichment(&self) {
@@ -278,7 +324,17 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    #[cfg(test)]
     fn start_enriching(&self, asking: Asking, options: EnrichmentOptions) -> bool {
+        self.start_enriching_as_told(asking, options, Arc::new(Told::default()))
+    }
+
+    fn start_enriching_as_told(
+        &self,
+        asking: Asking,
+        options: EnrichmentOptions,
+        told: Arc<Told>,
+    ) -> bool {
         if !asking.is_reaching() {
             return false;
         }
@@ -295,7 +351,6 @@ impl MobilePlayer {
             tracing::warn!("the last enrichment pass ended in a panic");
         }
 
-        let told = Arc::new(Told::default());
         let tally = Arc::clone(&self.enriching.tally);
         let catalog = Arc::clone(&self.catalog);
         let sources = Arc::clone(&self.sources);
@@ -401,6 +456,7 @@ fn run(
     };
     let at_most = options.at_most.map(|at_most| at_most as usize);
 
+    let workers_before = told.finished_workers.load(Ordering::Acquire);
     let lyrics = thread::Builder::new()
         .name("resonate-enrich-lyrics".into())
         .spawn({
@@ -408,7 +464,10 @@ fn run(
             let asking = asking.clone();
             let told = Arc::clone(told);
             let tally = Arc::clone(tally);
-            move || sing_the_due(&catalog, &asking, &told, &tally, due, at_most)
+            move || {
+                let _wake = WakeWhenDone(&told);
+                sing_the_due(&catalog, &asking, &told, &tally, due, at_most);
+            }
         });
     let hearing = thread::Builder::new().name("resonate-study".into()).spawn({
         let catalog = Arc::clone(catalog);
@@ -416,11 +475,34 @@ fn run(
         let asking = asking.clone();
         let told = Arc::clone(told);
         let tally = Arc::clone(tally);
-        move || hear_the_due(&catalog, &sources, &asking, &told, &tally, due, at_most)
+        move || {
+            let _wake = WakeWhenDone(&told);
+            hear_the_due(&catalog, &sources, &asking, &told, &tally, due, at_most);
+        }
     });
     let pictures = Pictures::start(catalog, asking, told, tally);
 
-    let ended = Pass::new(catalog, asking, told, tally, &pictures).run(due, at_most);
+    let pass = Pass::new(catalog, asking, told, tally, &pictures);
+    let ended = pass.run(due, at_most).and_then(|()| {
+        let mut queue = VecDeque::new();
+        let mut spent = BTreeSet::new();
+        loop {
+            let observed = *told.waking.lock();
+            pass.walk(&mut queue, &mut spent, due)?;
+            let workers = u32::from(hearing.is_ok()) + u32::from(lyrics.is_ok());
+            let workers_done =
+                told.finished_workers.load(Ordering::Acquire) >= workers_before + workers;
+            if workers_done && pictures.pending.load(Ordering::Acquire) == 0 {
+                return Ok(());
+            }
+            told.wait_after(observed);
+        }
+    });
+    let cancelled_by_caller = told.is_cancelled();
+    if ended.is_err() {
+        told.cancel(Leaving::ForNow);
+    }
+    drop(pass);
     pictures.rest();
     match hearing {
         Ok(hearing) => {
@@ -439,6 +521,11 @@ fn run(
         Err(error) => tracing::warn!(%error, "the lyric reader could not start"),
     }
 
+    let ended = if cancelled_by_caller {
+        Err(Ended::Cancelled)
+    } else {
+        ended
+    };
     let stop = match ended {
         Ok(()) => EnrichmentStop::Finished,
         Err(Ended::Cancelled) => EnrichmentStop::Cancelled,
@@ -501,6 +588,7 @@ enum Picture {
 }
 
 struct Pictures {
+    pending: Arc<AtomicU32>,
     wanted: Option<Sender<Picture>>,
     reader: Option<JoinHandle<()>>,
 }
@@ -508,6 +596,7 @@ struct Pictures {
 impl Pictures {
     fn inline() -> Self {
         Self {
+            pending: Arc::default(),
             wanted: None,
             reader: None,
         }
@@ -520,6 +609,8 @@ impl Pictures {
         tally: &Arc<Tally>,
     ) -> Self {
         let (wanted, asked) = bounded::<Picture>(PICTURES_WAITING_AT_MOST);
+        let pending = Arc::new(AtomicU32::new(0));
+        let pending_by_reader = Arc::clone(&pending);
         let catalog = Arc::clone(catalog);
         let asking = asking.clone();
         let told = Arc::clone(told);
@@ -527,15 +618,21 @@ impl Pictures {
         let reader = thread::Builder::new()
             .name("resonate-enrich-pictures".into())
             .spawn(move || {
+                let _finished = PictureWorkerFinished {
+                    told: &told,
+                    pending: &pending_by_reader,
+                };
                 for picture in asked {
-                    if told.is_cancelled() || !asking.is_reaching() {
-                        continue;
+                    if !told.is_cancelled() && asking.is_reaching() {
+                        fetch(&catalog, &asking, &tally, picture);
                     }
-                    fetch(&catalog, &asking, &tally, picture);
+                    pending_by_reader.fetch_sub(1, Ordering::AcqRel);
+                    told.wake();
                 }
             });
         match reader {
             Ok(reader) => Self {
+                pending,
                 wanted: Some(wanted),
                 reader: Some(reader),
             },
@@ -548,7 +645,13 @@ impl Pictures {
 
     fn want(&self, catalog: &Catalog, asking: &Asking, tally: &Tally, picture: Picture) {
         let unsent = match &self.wanted {
-            Some(wanted) => wanted.send(picture).err().map(|unsent| unsent.0),
+            Some(wanted) => {
+                self.pending.fetch_add(1, Ordering::AcqRel);
+                wanted.send(picture).err().map(|unsent| {
+                    self.pending.fetch_sub(1, Ordering::AcqRel);
+                    unsent.0
+                })
+            }
             None => Some(picture),
         };
         if let Some(picture) = unsent {
@@ -734,12 +837,12 @@ impl<'a> Pass<'a> {
             }
             self.pictured_at_once
                 .set(self.first.borrow_mut().remove(&ask));
+            Tally::count(&self.tally.asked, 1);
             match &ask {
                 Ask::Album(key) => self.album(key)?,
                 Ask::Track(id) => self.track(*id)?,
                 Ask::Artist(mbid) => self.artist(mbid)?,
             }
-            Tally::count(&self.tally.asked, 1);
         }
     }
 
@@ -1278,10 +1381,10 @@ fn hear_the_due(
     due: Due,
     at_most: Option<usize>,
 ) {
-    measure_the_unmeasured(catalog, sources, told, at_most, due.refresh);
     let Some(printer) = asking.printer.as_deref() else {
         return;
     };
+    measure_the_unmeasured(catalog, sources, told, at_most, due.refresh);
     let mut tracks = match catalog.tracks_to_hear(due.refresh) {
         Ok(tracks) => tracks,
         Err(error) => {
@@ -2486,13 +2589,21 @@ mod tests {
         calls: AtomicUsize,
         covers: AtomicUsize,
         each_takes: Duration,
+        unreachable: bool,
         asked: Mutex<Vec<String>>,
+        lyrics_gate: Mutex<Option<(Sender<()>, crossbeam_channel::Receiver<()>)>>,
     }
 
     impl Fake {
         fn answered<T>(&self, answer: T) -> resonate_library::Result<T> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             thread::sleep(self.each_takes);
+            if self.unreachable {
+                return Err(resonate_library::Error::Unreachable {
+                    op: LookupOp::FindRelease,
+                    source: std::io::Error::from(std::io::ErrorKind::TimedOut),
+                });
+            }
             Ok(answer)
         }
 
@@ -2656,6 +2767,10 @@ mod tests {
         }
 
         fn lyrics(&self, asked: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
+            if let Some((began, release)) = self.lyrics_gate.lock().take() {
+                let _ = began.send(());
+                let _ = release.recv_timeout(Duration::from_secs(10));
+            }
             self.noted(format!("words {}", asked.title));
             self.answered(None)
         }
@@ -2916,6 +3031,82 @@ mod tests {
         assert_eq!(status.stopped, Some(EnrichmentStop::Finished));
         assert_eq!(fake.first_asked("album ").as_deref(), Some("Sought"));
         assert_eq!(fake.first_asked("words ").as_deref(), Some("Sought song"));
+    }
+
+    #[test]
+    fn a_failed_metadata_lookup_stops_other_workers_and_keeps_its_resume_mark() {
+        let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+        let fake = Arc::new(Fake {
+            unreachable: true,
+            ..Fake::default()
+        });
+        let told = Arc::new(Told::default());
+        songs(&catalog, "Unknown", 1);
+        let status = passed_as_told(&catalog, &fake, &told);
+
+        assert_eq!(status.stopped, Some(EnrichmentStop::Unreachable));
+        assert!(!status.running);
+        assert!(told.is_cancelled());
+        assert_eq!(marks(&catalog), 1);
+    }
+
+    #[test]
+    fn the_first_album_counts_as_started_while_its_answer_is_pending() {
+        let player = player();
+        let fake = Arc::new(Fake {
+            each_takes: Duration::from_millis(100),
+            ..Fake::default()
+        });
+        songs(&player.catalog, "Unknown", 1);
+        assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+        let until = Instant::now();
+        while player.enrichment_status().asked == 0 && until.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let status = player.enrichment_status();
+        player.stop_enrichment();
+        assert!(status.running);
+        assert!(status.due > 0);
+        assert!(status.asked > 0);
+    }
+
+    #[test]
+    fn a_download_landing_while_lyrics_finish_gets_its_cover_in_the_running_pass() {
+        let player = player();
+        let (began, waiting) = bounded(1);
+        let (release, held) = bounded(1);
+        let fake = Arc::new(Fake {
+            lyrics_gate: Mutex::new(Some((began, held))),
+            ..Fake::default()
+        });
+        songs(&player.catalog, "Unknown", 1);
+        assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+        waiting
+            .recv_timeout(Duration::from_secs(5))
+            .expect("lyrics waiting");
+        let until = Instant::now();
+        while player.enrichment_status().asked < 2 && until.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let track = songs(&player.catalog, "Album", 10)[0];
+        player
+            .catalog
+            .note_downloaded(track)
+            .expect("download noted");
+        player.seek_enrichment(track);
+        let until = Instant::now();
+        while fake.covers.load(Ordering::SeqCst) == 0 && until.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let covered_before_lyrics_finished = fake.covers.load(Ordering::SeqCst) > 0;
+        release.send(()).expect("lyrics released");
+        player.stop_enrichment();
+
+        assert!(covered_before_lyrics_finished);
+        assert_eq!(
+            player.catalog.pictured(track).expect("cover read"),
+            Some(COVER.to_vec())
+        );
     }
 
     #[test]
@@ -3485,22 +3676,33 @@ mod tests {
                 .expect("a study")
         }
 
-        fn passing_with_no_key(harness: &Harness, told: &Arc<Told>) {
-            let fake = Arc::new(Fake::default());
-            passed_by(harness, &asking(&fake), told, EnrichmentOptions::default());
+        fn measuring_bands(harness: &Harness, told: &Arc<Told>) {
+            measure_the_unmeasured(
+                &harness.player.catalog,
+                &harness.player.sources,
+                told,
+                None,
+                false,
+            );
         }
 
         #[test]
-        fn a_study_kept_without_its_bands_is_measured_by_a_pass_with_no_key_and_keeps_all_else() {
+        fn a_pass_without_a_recognition_key_leaves_unmeasured_audio_alone() {
             let harness = sounding_library();
             studied_before_the_bands(&harness, "ab");
 
-            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            let fake = Arc::new(Fake::default());
+            passed_by(
+                &harness,
+                &asking(&fake),
+                &Arc::new(Told::default()),
+                EnrichmentOptions::default(),
+            );
 
-            assert_eq!(bands_of(&harness, 'a').map(|bands| bands.len()), Some(29));
-            assert_eq!(bands_of(&harness, 'b').map(|bands| bands.len()), Some(29));
+            assert_eq!(bands_of(&harness, 'a'), None);
+            assert_eq!(bands_of(&harness, 'b'), None);
             assert_eq!(studies(&harness), 2);
-            assert_eq!(measured(&harness), 2);
+            assert_eq!(measured(&harness), 0);
             let figures: (String, f64) = harness
                 .player
                 .catalog
@@ -3516,7 +3718,7 @@ mod tests {
         }
 
         #[test]
-        fn a_song_measured_by_the_pass_is_no_longer_owed_a_decode_when_the_preamp_is_fitted() {
+        fn a_song_measured_for_its_bands_is_no_longer_owed_a_decode_when_the_preamp_is_fitted() {
             let harness = sounding_library();
             studied_before_the_bands(&harness, "a");
             let cuts = vec![resonate_analysis::Cut {
@@ -3525,7 +3727,7 @@ mod tests {
             }];
 
             let before = harness.player.catalog.unmeasured(&cuts).expect("a read");
-            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            measuring_bands(&harness, &Arc::new(Told::default()));
             let after = harness.player.catalog.unmeasured(&cuts).expect("a read");
 
             assert_eq!(before.len(), 1);
@@ -3550,7 +3752,7 @@ mod tests {
                 )
                 .expect("kept bands");
 
-            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            measuring_bands(&harness, &Arc::new(Told::default()));
 
             assert_eq!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
             assert_eq!(
@@ -3572,7 +3774,7 @@ mod tests {
                 .execute("UPDATE studies SET band_levels = ?1", [vec![7_u8; 29]])
                 .expect("kept levels");
 
-            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            measuring_bands(&harness, &Arc::new(Told::default()));
 
             assert_eq!(
                 peaks_of(&harness, 'a').map(|peaks| peaks.len()),
@@ -3589,7 +3791,7 @@ mod tests {
             let path = harness.folder.join("a.wav");
             let original = fs::read(&path).expect("the original audio");
             fs::write(&path, b"damaged").expect("a damaged copy");
-            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            measuring_bands(&harness, &Arc::new(Told::default()));
             let catalog = &harness.player.catalog;
             assert!(
                 catalog
@@ -3622,16 +3824,16 @@ mod tests {
         }
 
         #[test]
-        fn a_pass_told_to_stop_measures_nothing_and_a_file_that_will_not_open_stays_owed() {
+        fn a_stopped_band_measurement_decodes_nothing_and_a_file_that_will_not_open_stays_owed() {
             let harness = sounding_library();
             studied_before_the_bands(&harness, "ab");
             let told = Arc::new(Told::default());
             told.cancel(Leaving::Listener);
 
-            passing_with_no_key(&harness, &told);
+            measuring_bands(&harness, &told);
             let stopped = measured(&harness);
             fs::remove_file(harness.folder.join("a.wav")).expect("a file gone");
-            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            measuring_bands(&harness, &Arc::new(Told::default()));
 
             assert_eq!(stopped, 0);
             assert_eq!(bands_of(&harness, 'a'), None);

@@ -123,6 +123,8 @@ impl Posted {
 }
 const CONNECT_WITHIN: Duration = Duration::from_secs(10);
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
+const PACING_WITHIN: Duration = Duration::from_secs(30);
+const CANCELLATION_CHECK_EVERY: Duration = Duration::from_millis(250);
 const MUSICBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
 const OTHERS_INTERVAL: Duration = Duration::from_millis(250);
 const COVER_ARCHIVE_INTERVAL: Duration = Duration::from_millis(100);
@@ -402,10 +404,20 @@ impl Pacing {
         }
     }
 
-    fn yielded(&self, host: Host, clock: &dyn Clock) -> Option<Instant> {
+    fn yielded(
+        &self,
+        host: Host,
+        clock: &dyn Clock,
+        may_wait: impl Fn() -> bool,
+    ) -> Option<Instant> {
         let mut turns = self.0.turns.lock();
         while turns.is_listened_to(host) {
-            self.0.answered.wait(&mut turns);
+            if !may_wait() {
+                return Some(clock.now());
+            }
+            self.0
+                .answered
+                .wait_for(&mut turns, CANCELLATION_CHECK_EVERY);
         }
         let now = clock.now();
         let free = turns.free_for_one_yielding(host, now);
@@ -416,7 +428,7 @@ impl Pacing {
         None
     }
 
-    fn reserve(&self, host: Host, now: Instant) -> Instant {
+    fn reserve(&self, host: Host, now: Instant, until: Instant) -> Option<Instant> {
         let mut turns = self.0.turns.lock();
         let slot = turns
             .next
@@ -426,8 +438,11 @@ impl Pacing {
             .cooling
             .get(&host)
             .map_or(slot, |until| slot.max(*until));
+        if slot > until {
+            return None;
+        }
         turns.next.insert(host, slot);
-        slot
+        Some(slot)
     }
 
     fn retries_owed(&self, host: Host) -> u32 {
@@ -479,6 +494,7 @@ pub struct Client {
     reaching: Arc<AtomicBool>,
     metered: Gate,
     standing: Standing,
+    cancelled: Option<Arc<AtomicBool>>,
 }
 
 impl Client {
@@ -526,6 +542,7 @@ impl Client {
             reaching: Arc::new(AtomicBool::new(true)),
             metered: Gate::open(),
             standing: Standing::Listener,
+            cancelled: None,
         }
     }
 
@@ -538,7 +555,13 @@ impl Client {
             reaching: Arc::clone(&self.reaching),
             metered: self.metered.clone(),
             standing: Standing::Yielding,
+            cancelled: self.cancelled.clone(),
         }
+    }
+
+    pub fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
+        self.cancelled = Some(cancelled);
+        self
     }
 
     pub fn user_agent(&self) -> String {
@@ -564,6 +587,10 @@ impl Client {
 
     pub fn is_reaching(&self) -> bool {
         self.reaching.load(Ordering::Relaxed)
+            && !self
+                .cancelled
+                .as_ref()
+                .is_some_and(|cancelled| cancelled.load(Ordering::Acquire))
     }
 
     pub(crate) fn json<T: DeserializeOwned>(
@@ -687,7 +714,9 @@ impl Client {
         let mut body = std::io::Cursor::new(prefix.into_bytes())
             .chain(file.take(size))
             .chain(std::io::Cursor::new(suffix.into_bytes()));
-        self.pace(host);
+        if !self.pace(host) {
+            return Err(self.wait_ended(host, op));
+        }
         self.reachable(host, op)?;
         let response = self
             .agent
@@ -786,7 +815,9 @@ impl Client {
         let mut retried = 0;
         loop {
             self.reachable(host, op)?;
-            self.pace(host);
+            if !self.pace(host) {
+                return Err(self.wait_ended(host, op));
+            }
             self.reachable(host, op)?;
             let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
@@ -835,7 +866,9 @@ impl Client {
                 retried,
                 "the service is unavailable; trying again"
             );
-            self.clock.sleep(wait);
+            if wait > PACING_WITHIN || !self.wait(wait) {
+                return Err(self.wait_ended(host, op));
+            }
         }
     }
 
@@ -880,21 +913,55 @@ impl Client {
         Err(ureq::Error::TooManyRedirects)
     }
 
-    fn pace(&self, host: Host) {
-        match self.standing {
-            Standing::Listener => {
-                let now = self.clock.now();
-                let slot = self.pacing.reserve(host, now);
-
-                if slot > now {
-                    self.clock.sleep(slot - now);
-                }
+    fn wait_ended(&self, host: Host, op: LookupOp) -> Error {
+        if !self.is_reaching() {
+            Error::Offline { host, op }
+        } else {
+            Error::Unreachable {
+                host,
+                op,
+                source: std::io::Error::from(std::io::ErrorKind::TimedOut),
             }
+        }
+    }
+
+    fn wait(&self, duration: Duration) -> bool {
+        let until = self.clock.now() + duration;
+        while self.clock.now() < until {
+            if !self.is_reaching() {
+                return false;
+            }
+            let remaining = until.saturating_duration_since(self.clock.now());
+            self.clock.sleep(if self.cancelled.is_some() {
+                remaining.min(CANCELLATION_CHECK_EVERY)
+            } else {
+                remaining
+            });
+        }
+        self.is_reaching()
+    }
+
+    fn pace(&self, host: Host) -> bool {
+        let now = self.clock.now();
+        let until = now + PACING_WITHIN;
+        match self.standing {
+            Standing::Listener => self
+                .pacing
+                .reserve(host, now, until)
+                .is_some_and(|slot| self.wait(slot.saturating_duration_since(now))),
             Standing::Yielding => {
-                while let Some(free) = self.pacing.yielded(host, self.clock.as_ref()) {
-                    self.clock
-                        .sleep(free.saturating_duration_since(self.clock.now()));
+                let may_wait = || self.is_reaching() && self.clock.now() < until;
+                while may_wait() {
+                    let Some(free) = self.pacing.yielded(host, self.clock.as_ref(), may_wait)
+                    else {
+                        return true;
+                    };
+                    if free > until || !self.wait(free.saturating_duration_since(self.clock.now()))
+                    {
+                        return false;
+                    }
                 }
+                false
             }
         }
     }
@@ -1688,6 +1755,56 @@ mod tests {
         );
         let yielding = listener.yielding();
         (listener, yielding)
+    }
+
+    #[test]
+    fn a_long_cooldown_ends_the_call_instead_of_sleeping_past_its_deadline() {
+        let clock = Faked::new();
+        let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+        listener.pacing.backed_off(
+            Host::MusicBrainz,
+            Some(Duration::from_secs(3600)),
+            clock.now(),
+        );
+
+        assert!(!listener.pace(Host::MusicBrainz));
+        assert!(!yielding.pace(Host::MusicBrainz));
+        assert!(clock.slept().is_empty());
+        assert!(
+            !listener
+                .pacing
+                .0
+                .turns
+                .lock()
+                .next
+                .contains_key(&Host::MusicBrainz)
+        );
+    }
+
+    #[test]
+    fn a_cancel_ends_a_yielding_wait_without_switching_off_the_listener() {
+        let clock = Faked::new();
+        let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let yielding = yielding.cancellable(Arc::clone(&cancelled));
+        let asking = listener
+            .pacing
+            .listening(Host::MusicBrainz, listener.clock.as_ref());
+        let (sent, received) = std::sync::mpsc::channel();
+        let waiting = thread::spawn(move || {
+            sent.send(yielding.pace(Host::MusicBrainz))
+                .expect("wait ended");
+        });
+        assert!(received.recv_timeout(Duration::from_millis(50)).is_err());
+        cancelled.store(true, Ordering::Release);
+        assert!(
+            !received
+                .recv_timeout(Duration::from_secs(2))
+                .expect("cancel heard")
+        );
+        assert!(listener.is_reaching());
+        drop(asking);
+        waiting.join().expect("waiter finished");
     }
 
     #[test]

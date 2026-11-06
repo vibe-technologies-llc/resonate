@@ -358,33 +358,54 @@ struct OnlinePlaceholder: View {
 
 struct OnlineSongRow: View {
     @Environment(Library.self) private var library
+    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 44
     let song: SearchSong
+    @State private var heldTrack: Track?
+    @State private var heldSong: String?
 
     var body: some View {
         let features = library.features
         let downloads = features.downloads
-        let standing = downloads.standing(of: song)
-        Button {
-            guard standing.startsOnTap else { return }
-            Keyboard.stow()
-            downloads.enqueue([song])
-        } label: {
-            HStack(spacing: 12) {
-                OnlinePlaceholder(symbol: "music.note")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title).font(.body.weight(.medium)).titleLines()
-                    Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .titleLines()
-                    OnlineSongCaption(song: song, standing: standing)
+        let track = (heldSong == song.id ? heldTrack : nil) ?? downloads.finishedTrack(for: song)
+        let standing: DownloadStanding = track == nil ? downloads.standing(of: song) : .held
+        HStack(spacing: 12) {
+            Button {
+                Keyboard.stow()
+                if let track {
+                    library.play([track], at: 0)
+                } else if standing.startsOnTap {
+                    downloads.enqueue([song])
                 }
-                Spacer(minLength: 0)
-                DownloadBadge(standing: standing) { downloads.cancel(song) }
+            } label: {
+                HStack(spacing: 12) {
+                    if let track {
+                        ArtworkView(track: track, corner: 8).frame(width: artworkEdge, height: artworkEdge)
+                    } else {
+                        OnlinePlaceholder(symbol: "music.note")
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(song.title).font(.body.weight(.medium)).titleLines()
+                        Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .titleLines()
+                        OnlineSongCaption(song: song, standing: standing)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
             }
-            .contentShape(.rect)
+            .buttonStyle(.plain)
+            .accessibilityHint(track != nil ? "Plays the song" : standing.startsOnTap ? "Downloads the song" : "")
+            DownloadBadge(standing: standing) { downloads.cancel(song) }
         }
-        .buttonStyle(.plain)
+        .task(id: "\(song.id):\(library.catalogEpoch)") {
+            guard let native = try? await library.player() else { return }
+            let matched = (try? await Work.onScreen { try native.matchLocalSong(song: song) }) ?? nil
+            guard !Task.isCancelled else { return }
+            heldTrack = matched
+            heldSong = song.id
+        }
         .swipeActions(edge: .trailing) {
             Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
                 .tint(.indigo)
@@ -394,8 +415,7 @@ struct OnlineSongRow: View {
                 .disabled(!standing.startsOnTap)
             Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(standing.startsOnTap ? "Downloads the song" : "")
+        .accessibilityElement(children: .contain)
         .accessibilityActions {
             if standing.cancellable {
                 Button("Cancel download") { downloads.cancel(song) }
@@ -456,14 +476,21 @@ struct DownloadBadge: View {
             .accessibilityLabel("Cancel download")
         case .running(let fraction):
             Button(action: stop) {
-                ZStack {
+                Group {
                     if let fraction {
-                        ProgressView(value: fraction).progressViewStyle(.circular).accessibilityHidden(true)
+                        Circle()
+                            .stroke(.secondary.opacity(0.2), lineWidth: 2)
+                            .overlay {
+                                Circle()
+                                    .trim(from: 0, to: fraction)
+                                    .stroke(.tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                    .rotationEffect(.degrees(-90))
+                            }
                     } else {
                         ProgressView().accessibilityHidden(true)
                     }
-                    Image(systemName: "stop.fill").font(.caption2).imageScale(.small).foregroundStyle(.secondary)
                 }
+                .frame(width: 24, height: 24)
                 .touchTarget()
                 .buttonShape()
             }
