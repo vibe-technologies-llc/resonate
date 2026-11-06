@@ -143,7 +143,7 @@ impl Entry {
     }
 }
 
-fn playlist_id(id: &str) -> Option<Id> {
+pub fn playlist_id(id: &str) -> Option<Id> {
     let fits = id.len() <= LONGEST_PLAYLIST_ID
         && id
             .bytes()

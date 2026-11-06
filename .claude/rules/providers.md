@@ -838,7 +838,8 @@ service offers it.
   link and asks that source's provider alone (`Providers::only`), one song at a time, filing through
   `filed` with the same length check, so no other service can answer with a same-named file. It lands
   in the delivery folder and is refused without one (`NoDeliveryFolder`); a vault is not a keep's
-  destination. A blank title is refused at the press.
+  destination. A blank title is refused at the press (`KeptWithNoTitle`, a toast on a song; a list
+  leaves such a row out and says how many).
 - **A song already held is not fetched.** `store::held_named_alike` (`Identity::named_alike`'s rule:
   the bare title, the lead artist, a length within 2 s, a clean title standing for no other; a copy
   standing or on an absent volume) answers `AlreadyHeld`, and a list puts the
@@ -864,7 +865,10 @@ service offers it.
   song up; a press during a poll waits for the poll, and a pass another process refused is tried again
   `OWED_ASKED_AGAIN_AFTER` later. A poll asked for meanwhile is owed and goes first, a
   pass that gave way following it. A pass runs at open only where `keeps_pending` is above zero and
-  `youtube-music` is on. *Stop* in the *Downloads* panel cancels it, the rest queued for the next open
+  `youtube-music` is on. *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,
+  and so does turning `youtube-music` or `online` off, heard within a second
+  (`keep_only_while_turned_on`); neither is undone by a yield or a refusal. What a pass that gave way
+  did is added to `keep_tally` and told in one toast when a pass ends without yielding
   (`a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass`,
   `a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_it`,
   `what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on`).

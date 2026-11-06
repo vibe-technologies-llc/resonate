@@ -1377,7 +1377,8 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = crate::driven::Folder::new();
-        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: true })], an_account());
+        let mut driven =
+            Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: true })], an_account());
         let music = folder.path().to_path_buf();
         driven.cx.update(|_, cx| {
             gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
@@ -1402,7 +1403,8 @@ mod tests {
     fn a_mix_of_a_service_that_plays_no_song_opens_and_offers_nothing_to_play_or_queue(
         cx: &mut TestAppContext,
     ) {
-        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: false })], an_account());
+        let mut driven =
+            Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: false })], an_account());
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),

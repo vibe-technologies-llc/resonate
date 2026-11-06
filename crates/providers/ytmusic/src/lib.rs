@@ -22,7 +22,7 @@ use ureq::Agent;
 use crate::search::Row;
 pub use crate::{
     connection::Connection,
-    playlists::Playlist,
+    playlists::{Playlist, playlist_id},
     tool::{Cookies, Formats, Tier, Tool, VideoId, stop_the_tools},
 };
 

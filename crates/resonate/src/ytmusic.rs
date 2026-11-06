@@ -7,9 +7,9 @@ use std::{
 };
 
 use resonate_core::{Service, SourceId};
-use resonate_library::{KeepSummary, KeptSong, Library, PlaylistToKeep, SongToKeep};
+use resonate_library::{KeepSummary, KeptList, KeptSong, Library, PlaylistToKeep, SongToKeep};
 use resonate_providers::{Id, PlaysInPlace as _, Providers, Song};
-use resonate_ytmusic::{Connection, VideoId, YtMusic};
+use resonate_ytmusic::{Connection, VideoId, YtMusic, playlist_id};
 
 use crate::{Error, Result, cli::YtmusicArgs, config::Config, counted, providers, signals};
 
@@ -55,8 +55,14 @@ pub fn keep_of(link: &str) -> Keeping {
     let (host, path) = address.split_once('/').unwrap_or((address, ""));
     let path = path.trim_end_matches('/');
 
-    if host.eq_ignore_ascii_case(SHORT_LINKS_ARE_ON) && !path.is_empty() {
-        return Keeping::Song(path.to_owned());
+    if host.eq_ignore_ascii_case(SHORT_LINKS_ARE_ON) {
+        let names_a_video =
+            VideoId::read(path).is_some() && ![A_SONGS_PATH, A_PLAYLISTS_PATH].contains(&path);
+        return if names_a_video {
+            Keeping::Song(path.to_owned())
+        } else {
+            Keeping::Elsewhere
+        };
     }
     match path {
         A_SONGS_PATH => named_in(query, A_SONG_IS_NAMED_BY)
@@ -75,7 +81,7 @@ fn asked_of(link: &str) -> Result<Asked> {
     };
     match keep_of(link) {
         Keeping::Song(video) => VideoId::read(&video).map(Asked::Song).ok_or_else(refused),
-        Keeping::Playlist(list) => Id::new(&list).map(Asked::Playlist).ok_or_else(refused),
+        Keeping::Playlist(list) => playlist_id(&list).map(Asked::Playlist).ok_or_else(refused),
         Keeping::Elsewhere => Err(refused()),
     }
 }
@@ -113,26 +119,37 @@ fn queue_the_song(music: &YtMusic, video: &VideoId, library: &Library) -> Result
 fn queue_the_playlist(music: &YtMusic, list: &Id, ordered: bool, library: &Library) -> Result<()> {
     let listed = music.mix(list)?;
     let name = listed.mix.name;
-    let songs = listed
+    let (songs, untitled): (Vec<_>, Vec<_>) = listed
         .songs
         .into_iter()
-        .filter(|song| !song.title.trim().is_empty())
         .map(|song| to_keep(music.scheme(), song))
-        .collect();
+        .partition(|song| !song.title.trim().is_empty());
     let kept = library.keep_playlist(PlaylistToKeep {
         name: name.clone(),
         ordered,
         songs,
     })?;
-    said!(
+    said!("{}", list_kept(&name, kept, untitled.len()));
+    Ok(())
+}
+
+fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
+    let held = format!(
         "{name}: {} queued, {} already held",
         counted(kept.queued as u64, "song", "songs"),
         counted(kept.held as u64, "song", "songs"),
     );
-    Ok(())
+    match left_out {
+        0 => held,
+        left_out => format!(
+            "{held}, {} left out with no title",
+            counted(left_out as u64, "song", "songs")
+        ),
+    }
 }
 
 fn queue(asked: &Asked, music: &YtMusic, ordered: bool, library: &Library) -> Result<()> {
+    library.has_a_folder_to_keep_into()?;
     let _leaving = signals::leave_when_told();
     match asked {
         Asked::Song(video) => queue_the_song(music, video, library),
@@ -315,6 +332,46 @@ mod tests {
     }
 
     #[test]
+    fn a_link_naming_what_no_playlist_is_called_is_refused_before_the_catalog_opens() {
+        assert!(matches!(
+            keep(
+                &turned_on(),
+                None,
+                "https://music.youtube.com/playlist?list=a%20b",
+                never_opened
+            ),
+            Err(Error::NotAYoutubeMusicLink { .. })
+        ));
+    }
+
+    #[test]
+    fn a_short_link_is_a_song_only_where_its_path_reads_as_a_video() {
+        for link in [
+            "https://youtu.be/playlist?list=PLx",
+            "https://youtu.be/watch?v=abc123",
+            "https://youtu.be/a%20b",
+            "https://youtu.be/a/b",
+            "https://youtu.be/",
+        ] {
+            assert_eq!(keep_of(link), Keeping::Elsewhere, "{link}");
+        }
+    }
+
+    #[test]
+    fn a_list_says_how_many_of_its_songs_were_left_out_for_want_of_a_title() {
+        let kept = KeptList { queued: 2, held: 1 };
+
+        assert_eq!(
+            list_kept("Road trip", kept, 0),
+            "Road trip: 2 songs queued, 1 song already held"
+        );
+        assert_eq!(
+            list_kept("Road trip", kept, 1),
+            "Road trip: 2 songs queued, 1 song already held, 1 song left out with no title"
+        );
+    }
+
+    #[test]
     fn every_standing_of_the_account_is_said_in_words_of_its_own() {
         let said = [
             Connection::Premium,
@@ -452,6 +509,7 @@ mod tests {
                 queue(&asked, &folder.music(), true, &library),
                 Err(Error::Library(resonate_library::Error::NoDeliveryFolder))
             ));
+            assert!(folder.asked().is_empty(), "yt-dlp ran with nowhere to file");
         }
 
         #[test]

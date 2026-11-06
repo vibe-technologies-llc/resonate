@@ -364,6 +364,10 @@ impl Library {
         Ok(())
     }
 
+    pub fn has_a_folder_to_keep_into(&self) -> Result<()> {
+        self.a_folder_to_keep_into().map(drop)
+    }
+
     fn a_folder_to_keep_into(&self) -> Result<DeliveryFolder> {
         self.delivering_into().ok_or(Error::NoDeliveryFolder)
     }

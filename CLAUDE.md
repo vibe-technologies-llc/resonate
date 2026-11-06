@@ -252,7 +252,7 @@ stack's test harness:
 - **Output:** `sinks` (`--renderers` searches the network too), `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
-- **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
+- **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).

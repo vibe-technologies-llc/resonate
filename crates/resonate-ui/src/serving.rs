@@ -116,7 +116,7 @@ pub(crate) fn song_to_keep(song: &ServedSong) -> Option<SongToKeep> {
     let Some(Named::Song(video)) = Named::read(&song.location, &source) else {
         return None;
     };
-    (!song.title.trim().is_empty()).then(|| SongToKeep {
+    Some(SongToKeep {
         source,
         video: video.to_string(),
         title: song.title.clone(),

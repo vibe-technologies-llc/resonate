@@ -53,9 +53,10 @@ paths:
   one would mirror what the public page holds (`online.md`'s *A Spotify account*).
 - **`ytmusic keep URL` and `ytmusic check` are the terminal's YouTube Music** (`ytmusic.rs`, online
   alone; a build without it is `NoServed`). `keep_of` reads a song link (`watch?v=`, a `youtu.be`
-  address; a `watch` link naming a list too is the song) or a `playlist?list=` on `music.youtube.com` or
+  address whose path reads as a video; a `watch` link naming a list too is the song) or a `playlist?list=` on `music.youtube.com` or
   `youtube.com`, anything else `NotAYoutubeMusicLink` before the catalog opens; `online = false` is
-  `OnlineOff`, `youtube-music` off `YoutubeMusicOff`, asking nothing. A song is named by one `yt-dlp -J`
+  `OnlineOff`, `youtube-music` off `YoutubeMusicOff`, asking nothing, as no music folder is
+  `NoDeliveryFolder` before any `yt-dlp` runs. A song is named by one `yt-dlp -J`
   (`YtMusic::song`: `track`, `artist`, `album`, falling to `title` and `channel`; `NoSuchVideo` where
   gone), a list by its flat listing's `title` (`PlaysInPlace::mix`), queued (`providers.md`'s *Keeping
   a song from a service*) and walked at once, printing landed, gone and unkept. Reading names leaves on
