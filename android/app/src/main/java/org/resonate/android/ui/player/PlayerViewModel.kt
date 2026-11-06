@@ -33,7 +33,6 @@ data class Playing(
     val shuffle: Boolean,
     val repeat: Repeat,
     val sleep: SleepTimer?,
-    val waiting: String?,
     val queueIndex: Int,
 ) {
     val active: Boolean
@@ -67,7 +66,6 @@ private fun Snapshot.playing() =
                 else -> Repeat.OFF
             },
         sleep = sleep,
-        waiting = waiting,
         queueIndex = queueIndex.toInt(),
     )
 
@@ -153,7 +151,8 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun removeAll(tracks: List<Track>) {
         val rows = tracks.mapNotNull { it.queueId }
-        if (rows.isNotEmpty()) library.request { native -> rows.forEach { native.removeFromQueue(it) } }
+        if (rows.isNotEmpty())
+            library.request { native -> rows.forEach { native.removeFromQueue(it) } }
     }
 
     fun clear() {

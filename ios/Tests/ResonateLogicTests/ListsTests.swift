@@ -263,11 +263,11 @@ import Testing
 
 @Suite struct FilterChipTests {
     @Test func theDefaultFilterHasNoChips() {
-        #expect(FilterChip.of(defaultTrackFilter()).isEmpty)
+        #expect(FilterChip.of(SongBrowsing.defaultFilter).isEmpty)
     }
 
     @Test func eachPartOfAFilterGetsItsChipInOrder() {
-        var filter = defaultTrackFilter()
+        var filter = SongBrowsing.defaultFilter
         filter.favourites = true
         filter.unplayed = true
         filter.played = true
@@ -287,18 +287,20 @@ import Testing
         )
     }
 
-    @Test func aTitleOrderAscendingIsNoChipButDescendingOrAnotherOrderIs() {
-        var filter = defaultTrackFilter()
-        filter.descending = true
-        #expect(FilterChip.of(filter).map(\.label) == ["Sorted by title, descending"])
-
+    @Test func anOrderOrDirectionUnlikeNewestAddedGetsAChip() {
+        var filter = SongBrowsing.defaultFilter
         filter.descending = false
+        #expect(FilterChip.of(filter).map(\.label) == ["Sorted by added"])
+
+        filter.order = .title
+        #expect(FilterChip.of(filter).map(\.label) == ["Sorted by title"])
+
         filter.order = .played
         #expect(FilterChip.of(filter).map(\.label) == ["Sorted by last played"])
     }
 
     @Test func clearingAChipUndoesJustItsPartOfTheFilter() {
-        var filter = defaultTrackFilter()
+        var filter = SongBrowsing.defaultFilter
         filter.favourites = true
         filter.genre = "Rock"
         filter.minimumRate = 96_000
@@ -310,13 +312,13 @@ import Testing
         #expect(cleared.favourites && cleared.minimumRate == 96_000)
 
         let reordered = FilterChip.order(.artist, descending: true).cleared(from: filter)
-        #expect(reordered.order == .title)
-        #expect(!reordered.descending)
+        #expect(reordered.order == .added)
+        #expect(reordered.descending)
         #expect(reordered.genre == "Rock")
     }
 
     @Test func clearingEveryChipOfAFilterLeavesTheDefault() {
-        var filter = defaultTrackFilter()
+        var filter = SongBrowsing.defaultFilter
         filter.favourites = true
         filter.unplayed = true
         filter.played = true
@@ -329,7 +331,7 @@ import Testing
 
         let cleared = FilterChip.of(filter).reduce(filter) { $1.cleared(from: $0) }
 
-        #expect(cleared == defaultTrackFilter())
+        #expect(cleared == SongBrowsing.defaultFilter)
     }
 
     @Test func everyOrderHasAName() {

@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -52,8 +53,8 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speaker
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalToggleButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -62,7 +63,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.FilledTonalToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,21 +77,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -100,9 +98,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import org.resonate.android.marksFavouritesOf
 import org.resonate.android.nativecore.Track
 import org.resonate.android.rowKey
-import org.resonate.android.marksFavouritesOf
 import org.resonate.android.served
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Repeat
@@ -113,9 +111,9 @@ import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.favourite
 import org.resonate.android.ui.components.openAlbumOf
 import org.resonate.android.ui.components.openArtistOf
+import org.resonate.android.ui.components.rememberCover
 import org.resonate.android.ui.components.rememberLargeText
 import org.resonate.android.ui.components.rememberTitleMaxLines
-import org.resonate.android.ui.components.rememberCover
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.quality
 import org.resonate.android.ui.shownArtist
@@ -216,7 +214,8 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                             state = dragState,
                             onDragStarted = { dragged = 0f },
                             onDragStopped = { velocity ->
-                                if (dragged > height * 0.18f || velocity > 1200f) expansion.collapse()
+                                if (dragged > height * 0.18f || velocity > 1200f)
+                                    expansion.collapse()
                                 else expansion.expand()
                             },
                         )
@@ -257,7 +256,12 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
                             Column(Modifier.weight(1f).fillMaxSize()) {
                                 header()
-                                artwork(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp).then(drag))
+                                artwork(
+                                    Modifier.weight(1f)
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp)
+                                        .then(drag)
+                                )
                             }
                             Spacer(Modifier.width(32.dp))
                             Column(
@@ -376,7 +380,8 @@ private fun ColumnScope.Controls(
                     overflow = TextOverflow.Ellipsis,
                     modifier =
                         Modifier.clickable(
-                                enabled = shown != null && !shown.served && shown.album.isNotBlank(),
+                                enabled =
+                                    shown != null && !shown.served && shown.album.isNotBlank(),
                                 role = Role.Button,
                                 onClickLabel = "Go to album",
                             ) {
@@ -417,8 +422,11 @@ private fun ColumnScope.Controls(
         ) {
             Icon(
                 if (favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                contentDescription = if (favourite) "Remove from favourites" else "Add to favourites",
-                tint = if (favourite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                contentDescription =
+                    if (favourite) "Remove from favourites" else "Add to favourites",
+                tint =
+                    if (favourite) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -429,7 +437,7 @@ private fun ColumnScope.Controls(
     Spacer(Modifier.height(16.dp))
     Volume(model, playing)
     Spacer(Modifier.height(8.dp))
-    PlayerActions(model, pane, playing, onLyrics, onQueue, onZones)
+    PlayerActions(model, pane == Pane.LYRICS, playing, onLyrics, onQueue, onZones)
     Spacer(Modifier.height(8.dp))
 }
 
@@ -456,9 +464,13 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
     }
     val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
     Row(verticalAlignment = Alignment.Top) {
-        Text(clock(shown.toLong()), style = times, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            clock(shown.toLong()),
+            style = times,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
-            val line = playing?.waiting ?: playing?.track?.quality.orEmpty()
+            val line = playing?.track?.quality.orEmpty()
             if (line.isNotEmpty()) {
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
@@ -469,7 +481,7 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            if (playing?.waiting != null) Icons.AutoMirrored.Rounded.VolumeOff else Icons.Rounded.GraphicEq,
+                            Icons.Rounded.GraphicEq,
                             null,
                             modifier = Modifier.size(14.dp),
                         )
@@ -504,12 +516,19 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
         IconToggleButton(
             checked = playing?.shuffle == true,
             onCheckedChange = model::shuffle,
-            colors = IconButtonDefaults.iconToggleButtonColors(checkedContentColor = MaterialTheme.colorScheme.primary),
+            colors =
+                IconButtonDefaults.iconToggleButtonColors(
+                    checkedContentColor = MaterialTheme.colorScheme.primary
+                ),
         ) {
             Icon(Icons.Rounded.Shuffle, contentDescription = "Shuffle")
         }
         IconButton(onClick = model::previous, modifier = Modifier.size(56.dp)) {
-            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(32.dp))
+            Icon(
+                Icons.Rounded.SkipPrevious,
+                contentDescription = "Previous",
+                modifier = Modifier.size(32.dp),
+            )
         }
         FilledIconButton(
             onClick = model::toggle,
@@ -523,7 +542,11 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
             )
         }
         IconButton(onClick = model::next, modifier = Modifier.size(56.dp)) {
-            Icon(Icons.Rounded.SkipNext, contentDescription = "Next", modifier = Modifier.size(32.dp))
+            Icon(
+                Icons.Rounded.SkipNext,
+                contentDescription = "Next",
+                modifier = Modifier.size(32.dp),
+            )
         }
         val repeat = playing?.repeat ?: Repeat.OFF
         IconToggleButton(
@@ -537,7 +560,10 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
                     }
                 )
             },
-            colors = IconButtonDefaults.iconToggleButtonColors(checkedContentColor = MaterialTheme.colorScheme.primary),
+            colors =
+                IconButtonDefaults.iconToggleButtonColors(
+                    checkedContentColor = MaterialTheme.colorScheme.primary
+                ),
         ) {
             Icon(
                 if (repeat == Repeat.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -564,7 +590,10 @@ private fun Volume(model: PlayerViewModel, playing: Playing?) {
         CommitSlider(
             value = playing?.volume ?: 1f,
             onCommit = model::volume,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = "Volume" },
+            modifier =
+                Modifier.weight(1f).padding(horizontal = 8.dp).semantics {
+                    contentDescription = "Volume"
+                },
             trackHeight = 4.dp,
             stateText = { "${(it * 100).roundToInt()} percent" },
         )
@@ -579,9 +608,9 @@ private fun Volume(model: PlayerViewModel, playing: Playing?) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PlayerActions(
+internal fun PlayerActions(
     model: PlayerViewModel,
-    pane: Pane,
+    lyricsShown: Boolean,
     playing: Playing?,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
@@ -592,10 +621,6 @@ private fun PlayerActions(
     val zones by LocalResonate.current.features.zones.listed.collectAsStateWithLifecycle()
     val zoneShown = zones.firstOrNull { it.shown }?.name?.takeIf { zones.size > 1 }
     val large = rememberLargeText()
-    val style = actionLabelStyle()
-    val measurer = rememberTextMeasurer()
-    val aroundLabel =
-        with(LocalDensity.current) { (ACTION_SIDE_PADDING * 2 + ACTION_ICON + ACTION_ICON_GAP).toPx() }
     val zonesLabel = zoneShown ?: "Zones"
     val sleepLabel = remaining?.let { clock(it) } ?: "Sleep"
     FlowRow(
@@ -604,23 +629,19 @@ private fun PlayerActions(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         maxItemsInEachRow = if (large) 2 else Int.MAX_VALUE,
     ) {
-        fun sharedByWidth(label: String) =
-            Modifier.weight(measurer.measure(label, style, maxLines = 1).size.width + aroundLabel)
         ActionToggle(
             Icons.Rounded.Lyrics,
             "Lyrics",
-            pane == Pane.LYRICS,
+            lyricsShown,
             onLyrics,
-            sharedByWidth("Lyrics"),
             enabled = playing?.track?.served != true,
         )
-        ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue, sharedByWidth("Queue"))
+        ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue)
         ActionToggle(
             Icons.Rounded.Speaker,
             zonesLabel,
             false,
             onZones,
-            sharedByWidth(zonesLabel),
             description = zoneShown?.let { "Zones, $it shown" } ?: "Zones",
         )
         if (playing?.sleep != null) {
@@ -629,7 +650,6 @@ private fun PlayerActions(
                 sleepLabel,
                 true,
                 { sheets.sleeping = true },
-                sharedByWidth(sleepLabel),
                 description = "Sleep timer",
             )
         }
@@ -637,7 +657,8 @@ private fun PlayerActions(
 }
 
 @Composable
-private fun actionLabelStyle() = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
+private fun actionLabelStyle() =
+    MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")
 
 @Composable
 private fun ActionToggle(

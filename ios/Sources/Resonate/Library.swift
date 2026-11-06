@@ -88,23 +88,18 @@ struct CatalogShown: Sendable {
 }
 
 struct CatalogChanges: Sendable {
-    let rows: [Track]
     let catalog: CatalogShown?
-    let listedRuns: [LetterRun]?
+    let listed: [Track]?
 
-    init(_ read: [Track], writes: [UInt64: Bool], shown: [Track], listed: [Track]?, titled: Bool) {
+    init(_ read: [Track], writes: [UInt64: Bool], shown: [Track], listed: [Track]?) {
         let rows = writes.isEmpty ? read : read.map { row in
             guard let value = writes[row.id], value != row.favourite else { return row }
             var row = row
             row.favourite = value
             return row
         }
-        self.rows = rows
         catalog = rows == shown ? nil : CatalogShown(rows)
-        listedRuns = listed.flatMap { listed in
-            guard listed != rows else { return nil }
-            return titled ? LetterRun.runs(of: rows, named: \.shownTitle) : []
-        }
+        self.listed = listed.flatMap { $0 != rows ? rows : nil }
     }
 }
 
@@ -116,12 +111,10 @@ enum PollPart: Hashable {
 
 struct SongsListed: Sendable {
     let rows: [Track]
-    let runs: [LetterRun]
 
-    init?(_ rows: [Track], shown: [Track], titled: Bool) {
+    init?(_ rows: [Track], shown: [Track]) {
         guard rows != shown else { return nil }
         self.rows = rows
-        runs = titled ? LetterRun.runs(of: rows, named: \.shownTitle) : []
     }
 }
 
@@ -163,13 +156,7 @@ final class Library {
     let folders: Folders
     let clock = PlayClock()
     private(set) var allTracks: [Track] = []
-    var tracks: [Track] = [] {
-        didSet {
-            guard !marking else { return }
-            trackRuns = filter.order == .title ? LetterRun.runs(of: tracks, named: \.shownTitle) : []
-        }
-    }
-    private(set) var trackRuns: [LetterRun] = []
+    var tracks: [Track] = []
     private(set) var tracksRead = false
     private(set) var catalogRead = false
     private(set) var catalogEpoch = 0
@@ -212,7 +199,7 @@ final class Library {
     var route: OutputRoute?
     var routeReading = RouteReading.unread
     var boundRoutes: [OutputRoute] = []
-    nonisolated static let everything = defaultTrackFilter()
+    nonisolated static let everything = SongBrowsing.defaultFilter
     var filter: TrackFilter = Library.everything
     var folderList: [MusicFolder] = [] {
         didSet {
@@ -272,7 +259,6 @@ final class Library {
     @ObservationIgnored private var collectionRequest = 0
     @ObservationIgnored private let preferencesStore = PlaybackPreferencesStore()
     @ObservationIgnored private var catalogIndex: [UInt64: Int] = [:]
-    @ObservationIgnored private var marking = false
     @ObservationIgnored private var shownFailure: String?
     @ObservationIgnored private(set) var songChangeSeen = true
     @ObservationIgnored private var hidingFailure: String?
@@ -1321,12 +1307,7 @@ final class Library {
         guard !filtering else { return }
 
         queryRequest += 1
-        if let runs = changes.listedRuns {
-            marking = true
-            tracks = changes.rows
-            marking = false
-            trackRuns = runs
-        }
+        if let listed = changes.listed { tracks = listed }
         tracksRead = true
     }
 
@@ -1335,8 +1316,7 @@ final class Library {
         let writes = favouriteWrites.mapValues(\.value)
         let shown = allTracks
         let listed = filtering ? nil : tracks
-        let titled = filter.order == .title
-        return { CatalogChanges(read, writes: writes, shown: shown, listed: listed, titled: titled) }
+        return { CatalogChanges(read, writes: writes, shown: shown, listed: listed) }
     }
 
     func reload(fresh: Bool = false) {
@@ -1348,14 +1328,13 @@ final class Library {
         queryRequest += 1
         let request = queryRequest
         let query = filter
-        let titled = query.order == .title
         Task {
             guard let native = try? await player() else { return }
             do {
                 let shown = tracks
                 let (first, firstListed) = try await Work.onScreen {
                     let first = try native.filteredTracks(filter: query, offset: 0, limit: Library.page)
-                    return (first, SongsListed(first, shown: shown, titled: titled))
+                    return (first, SongsListed(first, shown: shown))
                 }
                 guard request == queryRequest else { return }
                 if fresh || !tracksRead || first.count < Library.page {
@@ -1366,7 +1345,7 @@ final class Library {
 
                 let listedBefore = tracks
                 let whole = try await Work.onScreen {
-                    SongsListed(first + (try Library.pages(native, query, from: Library.page)), shown: listedBefore, titled: titled)
+                    SongsListed(first + (try Library.pages(native, query, from: Library.page)), shown: listedBefore)
                 }
                 guard request == queryRequest else { return }
                 if let whole { list(whole) }
@@ -1377,10 +1356,7 @@ final class Library {
     }
 
     private func list(_ listed: SongsListed) {
-        marking = true
         tracks = listed.rows
-        marking = false
-        trackRuns = listed.runs
     }
 
     func reloadCollections() {

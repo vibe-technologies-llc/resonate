@@ -104,6 +104,11 @@ struct LibraryView: View {
                     }
                 }
             }
+            if page == .home, folded.isEmpty {
+                NavigationLink(value: Destination.wanted) {
+                    ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
+                }
+            }
             if page == .home, folded.isEmpty || !playlists.isEmpty {
                 Section {
                     if playlists.isEmpty {

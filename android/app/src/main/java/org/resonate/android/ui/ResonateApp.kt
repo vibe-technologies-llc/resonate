@@ -66,6 +66,7 @@ import org.resonate.android.ui.components.LocalPageBottomPadding
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.SheetHost
 import org.resonate.android.ui.components.Sheets
+import org.resonate.android.ui.components.StatusNotice
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.navigation.ScreenContent
@@ -121,13 +122,14 @@ fun ResonateApp(resonate: Resonate) {
                     NavigationSuiteType.NavigationRail
                 else fitted
             Box(
-                Modifier.fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .semantics { testTagsAsResourceId = true }
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).semantics {
+                    testTagsAsResourceId = true
+                }
             ) {
                 NavigationSuiteScaffold(
                     modifier =
-                        if (expansion.shown) Modifier.clearAndSetSemantics { hideFromAccessibility() }
+                        if (expansion.shown)
+                            Modifier.clearAndSetSemantics { hideFromAccessibility() }
                         else Modifier,
                     navigationSuiteType = suite,
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -169,12 +171,13 @@ fun ResonateApp(resonate: Resonate) {
                                 entries = navigator.entries { ScreenContent(it) },
                                 onBack = navigator::back,
                                 transitionSpec = {
-                                    (slideInHorizontally(tween(300)) { it / 6 } + fadeIn(tween(300))) togetherWith
-                                        fadeOut(tween(150))
+                                    (slideInHorizontally(tween(300)) { it / 6 } +
+                                        fadeIn(tween(300))) togetherWith fadeOut(tween(150))
                                 },
                                 popTransitionSpec = {
                                     fadeIn(tween(300)) togetherWith
-                                        (slideOutHorizontally(tween(300)) { it / 6 } + fadeOut(tween(200)))
+                                        (slideOutHorizontally(tween(300)) { it / 6 } +
+                                            fadeOut(tween(200)))
                                 },
                                 predictivePopTransitionSpec = {
                                     slideInHorizontally(tween(300)) { -it / 6 } togetherWith
@@ -190,7 +193,7 @@ fun ResonateApp(resonate: Resonate) {
                                 SnackbarHost(snackbar, modifier = Modifier.padding(bottom = 8.dp))
                             }
                             Column(Modifier.onSizeChanged { footerHeight = it.height }) {
-                                Banners()
+                                Banners(showNotice = !expansion.shown)
                                 MiniPlayer(player, expansion)
                             }
                         }
@@ -198,13 +201,15 @@ fun ResonateApp(resonate: Resonate) {
                 }
                 if (expansion.shown) {
                     NowPlaying(player, expansion)
-                    SnackbarHost(
-                        snackbar,
+                    Column(
                         modifier =
                             Modifier.align(Alignment.BottomCenter)
                                 .safeDrawingPadding()
-                                .padding(bottom = 8.dp),
-                    )
+                                .padding(bottom = 8.dp)
+                    ) {
+                        SnackbarHost(snackbar)
+                        StatusNotice()
+                    }
                 }
                 SheetHost()
                 PairingOffer()

@@ -143,6 +143,15 @@ public struct NextPlacement: Sendable {
     }
 }
 
+public enum SongBrowsing {
+    public static var defaultFilter: TrackFilter {
+        var filter = defaultTrackFilter()
+        filter.order = .added
+        filter.descending = true
+        return filter
+    }
+}
+
 public enum FilterChip: Identifiable, Sendable {
     case favourites
     case unplayed
@@ -168,7 +177,7 @@ public enum FilterChip: Identifiable, Sendable {
         if !filter.genre.isEmpty { chips.append(.genre(filter.genre)) }
         if !filter.artist.isEmpty { chips.append(.artist(filter.artist)) }
         if !filter.album.isEmpty { chips.append(.album(filter.album)) }
-        if filter.order != .title || filter.descending { chips.append(.order(filter.order, descending: filter.descending)) }
+        if filter.order != .added || !filter.descending { chips.append(.order(filter.order, descending: filter.descending)) }
         return chips
     }
 
@@ -201,8 +210,8 @@ public enum FilterChip: Identifiable, Sendable {
         case .artist: cleared.artist = ""
         case .album: cleared.album = ""
         case .order:
-            cleared.order = .title
-            cleared.descending = false
+            cleared.order = .added
+            cleared.descending = true
         }
         return cleared
     }

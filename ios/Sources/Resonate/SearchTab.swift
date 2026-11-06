@@ -122,10 +122,20 @@ struct OnlineOffRow: View {
 }
 
 struct SearchStart: View {
+    @Environment(Navigation.self) private var navigation
     let search: SearchModel
     let choose: (String) -> Void
 
     var body: some View {
+        Section("Discover") {
+            Button { navigation.listening = true } label: {
+                ToolRow(title: "Recognise a song", detail: "Name the music playing around you", symbol: "ear")
+            }
+            .buttonStyle(.plain)
+            NavigationLink(value: Destination.wanted) {
+                ToolRow(title: "Saved for later", detail: "Find and download the songs you saved", symbol: "bookmark")
+            }
+        }
         if !search.recents.isEmpty {
             Section {
                 ForEach(search.recents, id: \.self) { recent in

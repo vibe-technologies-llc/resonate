@@ -45,6 +45,12 @@ struct HomeView: View {
                     }
                 }
             }
+            HomeDevices()
+            Section("Listen together") {
+                NavigationLink(value: Destination.party) {
+                    ToolRow(title: "Listening party", detail: "Start or join a party with other people", symbol: "person.2.wave.2")
+                }
+            }
             Section {
                 if playlists.isEmpty {
                     Button {
@@ -109,6 +115,26 @@ struct HomeView: View {
         }) else { return }
         recent = albums
         listenedTo = artists
+    }
+}
+
+private struct HomeDevices: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let features = library.features
+        let devices = features.syncStatus?.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) } ?? []
+        Section("Your devices") {
+            ForEach(devices, id: \.id) { device in
+                KnownDeviceEntry(known: device)
+            }
+            NavigationLink(value: Destination.sync) {
+                ToolRow(title: "Remote control", detail: "Pair devices and control their playback", symbol: "appletvremote")
+            }
+            if !features.syncHandoffs.isEmpty {
+                HandoffRows()
+            }
+        }
     }
 }
 

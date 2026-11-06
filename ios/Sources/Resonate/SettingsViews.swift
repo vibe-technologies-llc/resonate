@@ -213,7 +213,7 @@ struct SettingsView: View {
             title: "Device sync",
             detail: syncDetail(features),
             symbol: "arrow.triangle.2.circlepath",
-            keywords: "connected services devices pairing code phone computer playlists favourites listening history handoff",
+            keywords: "connected services devices pairing code phone computer playlists favourites listening history handoff remote control playback play pause skip volume",
             opening: .page(.sync)
         )
     }

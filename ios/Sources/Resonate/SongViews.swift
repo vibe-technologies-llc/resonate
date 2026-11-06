@@ -74,7 +74,7 @@ struct SongsView: View {
             BrowsedMusic(grouping: grouping).themedRows()
         }
         .listStyle(.plain)
-        .listSectionIndexVisibility(.visible)
+        .listSectionIndexVisibility(grouping == .songs ? .hidden : .visible)
     }
 }
 
@@ -115,17 +115,8 @@ struct BrowsedSongs: View {
                     .buttonStyle(.glass)
             }
             .listRowSeparator(.hidden)
-        } else if library.trackRuns.isEmpty {
-            ForEach(tracks, id: \.id) { row($0, among: tracks) }
         } else {
-            ForEach(library.trackRuns) { run in
-                Section {
-                    ForEach(tracks[tracks.clamped(run.rows)], id: \.id) { row($0, among: tracks) }
-                } header: {
-                    Text(run.letter)
-                }
-                .sectionIndexLabel(run.indexed ? run.letter : nil)
-            }
+            ForEach(tracks, id: \.id) { row($0, among: tracks) }
         }
     }
 

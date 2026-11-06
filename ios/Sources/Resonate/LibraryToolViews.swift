@@ -479,7 +479,7 @@ struct SuggestedMixCard: View {
 struct FilterSheet: View {
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
-    @State private var filter = defaultTrackFilter()
+    @State private var filter = SongBrowsing.defaultFilter
     @State private var genres: [String] = []
     @State private var artists: [String] = []
     @State private var albums: [String] = []
@@ -504,8 +504,8 @@ struct FilterSheet: View {
                 }
                 Toggle("Descending", isOn: $filter.descending)
                 Section {
-                    Button("Reset", role: .destructive) { filter = defaultTrackFilter() }
-                        .disabled(filter == defaultTrackFilter())
+                    Button("Reset", role: .destructive) { filter = SongBrowsing.defaultFilter }
+                        .disabled(filter == SongBrowsing.defaultFilter)
                 }
             }
             .navigationTitle("Filter and sort")

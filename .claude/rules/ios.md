@@ -165,9 +165,9 @@ sync seals its records and talks QUIC (TLS) of its own.
   `Work.onScreen` (user-initiated); `Work.aside` (utility) is for passes nobody watches. A refresh
   asked while one runs is owed and run once after it (`Library.refreshing`, `refreshOwed`), so a
   run of downloads, landings or enrichment settles reads the catalog twice, not once per ask; the
-  catalog's pages are joined, its favourite writes laid over and its letter runs worked out off the
-  main actor, as are the filtered songs list's (`SongsListed`) and the albums' and artists'
-  (`CollectionsListed`).
+  catalog's pages are joined and its favourite writes laid over off the main actor, as are
+  comparisons against the filtered songs list (`SongsListed`) and the albums' and artists' letter
+  runs (`CollectionsListed`).
   State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
   only when it changed, so an unchanged answer redraws nothing.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
@@ -780,10 +780,13 @@ every route change (a pair of headphones at the same rate included), not from th
   shuffled), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
   *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
   `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
-  *Recently added* (`albums(order: .added)`) and *Artists* (`artists(order: .plays)`), twelve each read on
-  `Work.onScreen` keyed by `collectionGeneration` and `catalogEpoch`, *Your playlists* (a *New playlist*
-  button where there are none) and *Your listening* (below). An empty
-  catalog shows one invitation to add a folder and the playlists. Home's pages push onto its own stack.
+  *Recently added* (`albums(order: .added)`), then *Your devices* (reachable paired devices opening
+  their remote controls directly, a *Remote control* link for pairing and sync, and available
+  handoffs), *Listen together* with *Listening party*, *Your playlists* (a *New playlist* button
+  where there are none), *Artists* (`artists(order: .plays)`) and *Your listening* (below). The album
+  and artist shelves read twelve each on `Work.onScreen`, keyed by `collectionGeneration` and
+  `catalogEpoch`. An empty catalog shows the invitation to add a folder, devices, parties and
+  playlists. Home's pages push onto its own stack.
 - **Home's *Your listening* is a glance at the last seven days** (`HomeListeningSections`, `ListeningGlanceViews.swift`; its words and sums in `ResonateLogic`'s `ListeningGlance`, held by `HomeTests`), under a *See all* header, and the whole card opens `Destination.statistics` (a `NavigationLink` in a horizontal `ScrollView` with scrolling disabled, as the shortcut cards are, so the list draws it no chevron). The card reads from one figure down: *Last 7 days*, the time listened in large title, its pace a day (over the days since the first play, seven at most) and how it moved against the seven days before (`ListeningTrend`: steady within 5 %, the percentage, *more than double* past 100 %, nothing with no week before), then a Swift Charts bar chart (`ListeningWeekChart`) of the seven days ending today, today's bar in the accent and bold in the weekday letters, the others the accent faded (more strongly drawn under Increase Contrast), an empty day a stub so its place still shows, and the average a dashed rule whose *avg* sits in the trailing axis, outside the bars; then up to four facts in an adaptive grid: the run of days ending today or yesterday (from two), the weekday heard most (from seven days heard), the time and plays in all and the songs heard of the library's. Beneath it a section *Most listened* holds the all-time first song (`TrackRow`, playing the ranked songs from it) and first album (`CollectionRow`); the first artist is left out because the *Artists* shelf above already leads with it. With nothing heard these seven days the card leads with the all-time figure and says when a song was last heard, with no chart. With no counted play at all it says *No plays yet* and how a play counts, over the chart's seven stubs and no facts. It draws one column on a phone and at accessibility text sizes and the words beside the chart where the width is regular (`ListeningGlanceArrangement`), and the chart's own letters stop growing at the first accessibility size. To VoiceOver the card is one element speaking every figure as sentences (`ListeningGlance.spoken`), since the bars need no second reading there; the Statistics page steps through them. `Features.homeListening` is worked out on `Work.aside` from a `loadStatistics` of all time alone, so a period picked on the Statistics page never reads as all time on Home, and it keeps showing while such a read lands; until the first has, the card is redacted and says it is reading. Home asks on appearing and on coming forward from `.background` where it is the page showing (`Navigation.tab`, an empty stack), since the seven days end today and a read asked beneath the Statistics page would reset its period; a day ending with the app open in the foreground is seen at the next ask.
 - **Home's and the Library tab's shortcuts are a pair of cards** (`ShortcutCards`, `ShortcutCard`):
   one list row with no side insets and a clear background, so the two cards run edge to edge with the
@@ -801,7 +804,7 @@ every route change (a pair of headphones at the same rate included), not from th
   nothing. `ShelfTile` (a white symbol on the same gradient) stays the Favourites page's cover.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
   section of shortcuts (Favourites and All songs, the second hidden while searching; Suggestions and
-  Statistics are Home's), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
+  Statistics are Home's), *Saved for later* while not searching, then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
   own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
   every one as rows with its own search. **Creating and importing a playlist live on the Playlists
@@ -823,7 +826,7 @@ every route change (a pair of headphones at the same rate included), not from th
   shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
   `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
   reload, and `catalogEpoch`, which steps whenever a catalog read lands that differs from the one shown (the
-  comparison, the index, the favourites and the letter runs are worked out on `Work.aside`, `CatalogChanges`,
+  comparison, the index and the favourites are worked out on `Work.aside`, `CatalogChanges`,
   so an unchanged refresh after a download, landing or enrichment pass redraws nothing), keeping the last answer
   meanwhile. The key or name is state: when an album or artist reads empty, the page looks up where
   a song it showed went (`album_key` of that song's fresh row; the artist page asks `artist_tracks`
@@ -1047,7 +1050,9 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   Top, below), each under a heading row of its own (`SearchHeading`). With online features off
   nothing reaches the network (`Features.askOnline` asks nothing then) and *Online* is one row
   that opens Settings (`OnlineOffRow`); a link (`OnlineAsked.isLink`) shows *Online* alone. The tab
-  has no `.searchSuggestions`. With no text the page lists the recent searches and a hint. Library
+  has no `.searchSuggestions`. With no text the page leads with Discover: a labelled *Recognise a
+  song* button and *Saved for later*, then the recent searches and a hint. The ear in the toolbar
+  remains a shortcut while searching. Library
   tools' *Search* opens this tab (`Navigation.openSearch`); there is no destination of its own.
 - **Search's rows sit close**: a completion is a glass capsule 8 pt taller than its line, its row
   inset 6 pt above and 2 pt below and scrolled within 16 pt content margins
@@ -1067,8 +1072,11 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. The ordered
   match of a filter is kept for the pages that follow it (`Ordered`: one filter, one index, 30 s),
   so paging 100 000 songs filters and sorts once; the index is built outside the catalog's lock
-  and by one caller at a time (`Searching::index`). A list of 40
-  rows or more ordered by name gets a section per letter run and the section index. `EmptyLibrary`
+  and by one caller at a time (`Searching::index`). Albums and artists with 40
+  rows or more ordered by name get a section per letter run and the section index. All songs is
+  always a flat list with no letter headings or alphabet index, ordered by Added descending by
+  default (`SongBrowsing.defaultFilter`). Resetting filters or clearing an order chip returns to
+  newest added first; that default draws no filter chip. Other sort orders remain in Filter and sort. `EmptyLibrary`
   shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.
   The Library tab's search uses the same model for albums and artists and folds playlist names
   (`searchFolded`, which is core's `folded_letters` through `folded_text`, so *Lodz* finds *Łódź* as library search does), as the Favourites and Add-songs searches fold
@@ -1526,7 +1534,8 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 - **Listen names the song playing around the iPhone** (`Listening.swift`, `ListenViews.swift`), the
   desktop's Listen sheet (`ui.md`) on the microphone: a sheet (`Navigation.listening`, medium and
-  large) opened from the Search tab's ear and Library tools' *Listen*, recording at once; closing it
+  large) opened from the Search tab's labelled *Recognise a song* row, its ear, or Library tools'
+  *Listen*, recording at once; closing it
   or the scene going to the background stops a recording and drops the ask about it.
   `Listening.stage` walks `ListenStage` (recording, asking, then found, unknown, silent, unreached,
   offline, denied, failed); `ListenNext.after` is the desktop's `then`: a miss or a silent clip is

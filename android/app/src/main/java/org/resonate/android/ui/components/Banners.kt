@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -41,9 +41,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.resonate.android.ui.LocalResonate
@@ -55,9 +54,8 @@ private const val NOTICE_SHOWN_FOR_MS = 6_000L
 private const val PERCENT_STEP = 10
 
 @Composable
-fun Banners(modifier: Modifier = Modifier) {
+fun Banners(modifier: Modifier = Modifier, showNotice: Boolean = true) {
     val resonate = LocalResonate.current
-    val status by resonate.library.status.collectAsState()
     val scanning by resonate.library.scanning.collectAsState()
     val sync by resonate.features.syncStatus.collectAsState()
     val asked by resonate.syncAskedAt.collectAsState()
@@ -68,16 +66,8 @@ fun Banners(modifier: Modifier = Modifier) {
             delay(1_000)
         }
     }
-    val failed by resonate.library.statusIsFailure.collectAsState(false)
-    val context = LocalContext.current
-    LaunchedEffect(status, failed) {
-        val shown = status?.takeUnless { failed } ?: return@LaunchedEffect
-        delay(recommendedTimeoutMs(context, NOTICE_SHOWN_FOR_MS, withAction = true))
-        resonate.library.dismissStatus(shown)
-    }
     val activity = syncActivity(sync, asked, now)
     val leavingActivity = heldWhileLeaving(activity)
-    val leavingStatus = heldWhileLeaving(status)
     Column(modifier.fillMaxWidth()) {
         AnimatedVisibility(
             scanning,
@@ -102,13 +92,29 @@ fun Banners(modifier: Modifier = Modifier) {
                 else -> ProgressBanner(Icons.Rounded.Sync, "Syncing with your devices", null)
             }
         }
-        AnimatedVisibility(
-            status != null,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-        ) {
-            NoticeBanner(leavingStatus.orEmpty(), onDismiss = { resonate.library.dismissStatus() })
-        }
+        if (showNotice) StatusNotice()
+    }
+}
+
+@Composable
+fun StatusNotice(modifier: Modifier = Modifier) {
+    val library = LocalResonate.current.library
+    val status by library.status.collectAsState()
+    val failed by library.statusIsFailure.collectAsState(false)
+    val context = LocalContext.current
+    LaunchedEffect(status, failed) {
+        val shown = status?.takeUnless { failed } ?: return@LaunchedEffect
+        delay(recommendedTimeoutMs(context, NOTICE_SHOWN_FOR_MS, withAction = true))
+        library.dismissStatus(shown)
+    }
+    val leavingStatus = heldWhileLeaving(status)
+    AnimatedVisibility(
+        status != null,
+        modifier = modifier,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
+        NoticeBanner(leavingStatus.orEmpty(), onDismiss = { library.dismissStatus() })
     }
 }
 
@@ -124,9 +130,17 @@ private fun <T : Any> heldWhileLeaving(value: T?): T? {
 }
 
 @Composable
-private fun ProgressBanner(icon: ImageVector, label: String, fraction: Float?, detail: String? = null) {
+private fun ProgressBanner(
+    icon: ImageVector,
+    label: String,
+    fraction: Float?,
+    detail: String? = null,
+) {
     val spoken =
-        listOfNotNull(detail, fraction?.let { "${(it * 100).toInt() / PERCENT_STEP * PERCENT_STEP} percent" })
+        listOfNotNull(
+                detail,
+                fraction?.let { "${(it * 100).toInt() / PERCENT_STEP * PERCENT_STEP} percent" },
+            )
             .joinToString(", ")
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -198,8 +212,6 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
             Text(
                 message,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(vertical = 10.dp),
             )
             IconButton(onClick = onDismiss) {
