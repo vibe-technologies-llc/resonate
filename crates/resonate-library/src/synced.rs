@@ -1601,6 +1601,16 @@ pub(crate) fn vaulted_already(inner: &Inner, kept: &Kept) -> Result<Option<PathB
     })
 }
 
+pub(crate) fn scanned_if_free(library: &Library, root: PathBuf) -> bool {
+    match library.scan(scanning(root)).and_then(PassHandle::join) {
+        Ok(_) => true,
+        Err(error) => {
+            tracing::debug!(%error, "the folder a song was filed in is read later");
+            false
+        }
+    }
+}
+
 pub(crate) fn scanned_once_free(library: &Library, root: PathBuf) {
     let mut tries = 1;
     loop {

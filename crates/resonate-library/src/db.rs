@@ -694,6 +694,8 @@ pub(crate) struct Inner {
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
     offering: AtomicBool,
+    keeping: AtomicBool,
+    a_poll_waits_on_a_keep: AtomicBool,
     delivering_into: Mutex<Option<DeliveryFolder>>,
     stalling: Mutex<Gate>,
     trash_home: Mutex<Option<PathBuf>>,
@@ -1590,6 +1592,8 @@ impl Library {
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
                 offering: AtomicBool::new(false),
+                keeping: AtomicBool::new(false),
+                a_poll_waits_on_a_keep: AtomicBool::new(false),
                 delivering_into: Mutex::new(None),
                 stalling: Mutex::new(Gate::open()),
                 trash_home: Mutex::new(None),
@@ -2900,6 +2904,29 @@ impl Library {
             }
         }
         true
+    }
+
+    pub(crate) fn begins_keeping(&self) {
+        self.inner
+            .a_poll_waits_on_a_keep
+            .store(false, Ordering::Release);
+        self.inner.keeping.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn ends_keeping(&self) {
+        self.inner.keeping.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn poll_refused(&self) {
+        if self.inner.keeping.load(Ordering::Acquire) {
+            self.inner
+                .a_poll_waits_on_a_keep
+                .store(true, Ordering::Release);
+        }
+    }
+
+    pub(crate) fn a_poll_waits_on_a_keep(&self) -> bool {
+        self.inner.a_poll_waits_on_a_keep.load(Ordering::Acquire)
     }
 
     pub(crate) fn asking_alone(&self, pass: PassKind) -> Result<Asking> {

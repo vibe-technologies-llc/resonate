@@ -20,7 +20,10 @@ pub use crate::{
         Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Mix, MixSongs, Named, PlaysInPlace,
         SeekingBytes, Song, Streamed, found_exactly, not_offered,
     },
-    listing::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken},
+    listing::{
+        A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken, led_by,
+        spelt_as,
+    },
     pacing::Pacing,
     provider::{
         Answer, Asking, Away, Provider, Providers, TURNED_TO_APART, Unprovided,

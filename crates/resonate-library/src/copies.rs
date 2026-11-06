@@ -104,6 +104,10 @@ pub(crate) fn handed_over(transaction: &Transaction<'_>, copy: &NumberedCopy) ->
         )?;
     }
     changed(
+        "UPDATE kept_songs SET landed = ?1 WHERE landed = ?2",
+        params![kept_path, copy_path],
+    )?;
+    changed(
         "UPDATE resume_rows SET uri = ?1 WHERE uri = ?2",
         params![
             MediaLocation::local(&copy.kept).to_uri(),

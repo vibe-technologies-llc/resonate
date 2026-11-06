@@ -28153,6 +28153,8 @@ const A_KILLED_KEEP_IS_STAGED_WITHIN: Duration = Duration::from_secs(60);
 
 const STAGED_DELIVERY: &str = ".resonate-delivery";
 
+const A_REFUSED_WALK_HOLDS_NO_SONG_UP_FOR: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Copy)]
 enum TubeAnswer {
     Lasting(usize),
@@ -28165,10 +28167,13 @@ enum TubeAnswer {
     Hanging,
 }
 
+type WhenAsked = Box<dyn FnOnce() + Send>;
+
 struct Tube {
     source: SourceId,
     answers: Mutex<BTreeMap<String, VecDeque<TubeAnswer>>>,
     asked: Mutex<Vec<Identity>>,
+    when_asked: Mutex<BTreeMap<String, WhenAsked>>,
 }
 
 impl Tube {
@@ -28177,11 +28182,18 @@ impl Tube {
             source: source(name),
             answers: Mutex::new(BTreeMap::new()),
             asked: Mutex::new(Vec::new()),
+            when_asked: Mutex::new(BTreeMap::new()),
         })
     }
 
     fn new() -> Arc<Self> {
         Self::named(KEPT_BY)
+    }
+
+    fn when_asked_for(&self, video: &str, then: impl FnOnce() + Send + 'static) {
+        self.when_asked
+            .lock()
+            .insert(video.to_owned(), Box::new(then));
     }
 
     fn answering(&self, video: &str, answers: &[TubeAnswer]) {
@@ -28215,6 +28227,9 @@ impl Provider for Tube {
     fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
         self.asked.lock().push(identity.clone());
         let video = video_of(identity);
+        if let Some(then) = self.when_asked.lock().remove(&video) {
+            then();
+        }
         let answer = self
             .answers
             .lock()
@@ -28409,7 +28424,11 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
     assert_eq!(album.title, "Kept Songs");
     assert_eq!(
         track.location.as_path(),
-        Some(tree.path().join("Kept Songs/San Tropez.wav").as_path())
+        Some(
+            tree.path()
+                .join("The Orbiters/Kept Songs/San Tropez.wav")
+                .as_path()
+        )
     );
     let tags = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Whether)
@@ -29148,5 +29167,516 @@ fn a_kept_list_named_as_a_saved_query_stands_beside_it_as_one_list() -> Result<(
         library.playlist_named("Mix")?.map(|list| list.id),
         Some(query)
     );
+    Ok(())
+}
+
+#[test]
+fn a_song_with_no_album_is_filed_under_its_artist_and_one_with_neither_at_the_top() -> Result<()> {
+    let (tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    library.keep_song(SongToKeep {
+        album: None,
+        ..song_to_keep("artist", "Artist Alone")
+    })?;
+    library.keep_song(SongToKeep {
+        artist: None,
+        length: None,
+        album: None,
+        ..song_to_keep("neither", "Neither")
+    })?;
+
+    pass(&library, &tube)?;
+
+    assert_eq!(
+        songs_under(&tree),
+        [
+            tree.path().join("Neither.wav"),
+            tree.path().join("The Orbiters/Artist Alone.wav"),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_blank_title_is_refused_at_the_press_and_nothing_is_queued() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+
+    assert!(matches!(
+        library.keep_song(song_to_keep("abc123", "  ")),
+        Err(Error::KeptWithNoTitle)
+    ));
+    assert!(matches!(
+        library.keep_playlist(list_to_keep("Mix", true, &[("one", "One"), ("blank", "")])),
+        Err(Error::KeptWithNoTitle)
+    ));
+    assert_eq!(library.keeps_pending()?, 0);
+    assert_eq!(library.playlist_named("Mix")?.map(|list| list.id), None);
+    Ok(())
+}
+
+fn answered_with_held(held_title: &str, pressed_title: &str) -> Result<KeptSong> {
+    let (tree, library) = a_music_folder()?;
+    held_as(&tree, "held.wav", held_title, A_SECOND_OF_FRAMES);
+    scan(&library, &options(&tree))?;
+
+    library.keep_song(song_to_keep("pressed", pressed_title))
+}
+
+#[test]
+fn a_held_copy_differing_only_in_a_version_a_guest_or_a_spelling_is_held_either_way_round()
+-> Result<()> {
+    for (held, pressed) in [
+        ("Song (Remastered)", "Song"),
+        ("Song", "Song (Remastered)"),
+        ("Song (feat. Someone)", "Song"),
+        ("Song", "Song (feat. Someone)"),
+        ("Song - 2011 Remaster", "Song"),
+        ("Song", "Song - 2011 Remaster"),
+        ("Song (feat. Someone)", "Song - 2011 Remaster"),
+        ("Dont Stop", "Don't Stop"),
+        ("Don't Stop", "Dont Stop"),
+        ("Dont", "Don\u{2019}t"),
+        ("Don't", "Dont"),
+        ("Don't Stop (Remastered)", "Dont Stop"),
+    ] {
+        assert!(
+            matches!(answered_with_held(held, pressed)?, KeptSong::AlreadyHeld(_)),
+            "{held:?} did not stand for {pressed:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_live_remix_acoustic_or_instrumental_take_is_another_song() -> Result<()> {
+    for take in [
+        "Song (Live)",
+        "Song (Remix)",
+        "Song (Acoustic)",
+        "Song (Instrumental)",
+        "Song - Live",
+    ] {
+        assert_eq!(
+            answered_with_held(take, "Song")?,
+            KeptSong::Queued,
+            "{take:?} stood for the song"
+        );
+        assert_eq!(
+            answered_with_held("Song", take)?,
+            KeptSong::Queued,
+            "the song stood for {take:?}"
+        );
+    }
+    assert_eq!(
+        answered_with_held("Song And More", "Song")?,
+        KeptSong::Queued
+    );
+    Ok(())
+}
+
+#[test]
+fn a_held_clean_take_stands_only_for_a_clean_one() -> Result<()> {
+    assert_eq!(
+        answered_with_held("Song (Clean)", "Song (Explicit)")?,
+        KeptSong::Queued
+    );
+    assert_eq!(
+        answered_with_held("Song (Clean)", "Song")?,
+        KeptSong::Queued
+    );
+    assert!(matches!(
+        answered_with_held("Song (Clean)", "Song (Clean)")?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    assert!(matches!(
+        answered_with_held("Song (Explicit)", "Song (Clean)")?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    assert!(matches!(
+        answered_with_held("Song (Explicit)", "Song")?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    Ok(())
+}
+
+fn on_disc(tree: &Tree) -> Result<(PathBuf, Library)> {
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    delivering_into(&library, tree);
+    Ok((database, library))
+}
+
+fn walk_held_by_another_process(database: &Path) -> fs::File {
+    let mut named = database.as_os_str().to_owned();
+    named.push(".walk");
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(PathBuf::from(named))
+        .expect("the walk's lock opens");
+    lock.try_lock().expect("the walk's lock is free");
+    lock
+}
+
+#[test]
+fn a_landing_the_walk_refused_is_read_before_the_pass_ends() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.keep_playlist(list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]))?;
+    let held = walk_held_by_another_process(&database);
+    tube.when_asked_for("two", move || drop(held));
+
+    let began = Instant::now();
+    let summary = pass(&library, &tube)?;
+
+    assert!(
+        began.elapsed() < A_REFUSED_WALK_HOLDS_NO_SONG_UP_FOR,
+        "the next song waited out the walk"
+    );
+    assert_eq!(summary.landed, 2);
+    assert_eq!(titles_in(&library, "Mix")?, ["One", "Two"]);
+    Ok(())
+}
+
+#[test]
+fn a_file_landed_that_no_scan_reached_is_read_at_the_head_of_the_next_pass() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    let by_link = SongToKeep {
+        artist: None,
+        length: None,
+        ..song_to_keep("abc123", "San Tropez")
+    };
+    library.keep_playlist(PlaylistToKeep {
+        name: "Mix".to_owned(),
+        ordered: true,
+        songs: vec![by_link.clone()],
+    })?;
+    pass(&library, &tube)?;
+    beside(&database)
+        .execute("DELETE FROM tracks", [])
+        .expect("the row a scan never wrote");
+    assert_eq!(titles_in(&library, "Mix")?, [""]);
+
+    assert_eq!(library.keeps_pending()?, 1, "the read owed was not counted");
+    assert_eq!(library.keep_song(by_link.clone())?, KeptSong::Queued);
+    assert_eq!(library.keeps_pending()?, 2, "the press queued nothing");
+
+    let summary = pass(&library, &tube)?;
+
+    assert_eq!(summary.landed, 1);
+    assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
+    assert_eq!(
+        tube.videos_asked(),
+        ["abc123"],
+        "the song was fetched again"
+    );
+    assert_eq!(songs_under(&tree).len(), 1);
+    assert_eq!(library.keeps_pending()?, 0);
+    assert!(matches!(
+        library.keep_song(by_link)?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    Ok(())
+}
+
+#[test]
+fn an_empty_queue_still_reads_a_landed_file_no_scan_reached() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    pass(&library, &tube)?;
+    beside(&database)
+        .execute("DELETE FROM tracks", [])
+        .expect("the row a scan never wrote");
+
+    let summary = pass(&library, &tube)?;
+
+    assert_eq!(summary, KeepSummary::default());
+    assert_eq!(track_titled(&library, "San Tropez")?.title, "San Tropez");
+    assert_eq!(library.keeps_pending()?, 0);
+    Ok(())
+}
+
+fn refused_a_poll(library: &Library) -> bool {
+    matches!(
+        library.poll(Arc::new(Providers::none()), PollOptions::default()),
+        Err(Error::AlreadyAsking { .. })
+    )
+}
+
+#[test]
+fn a_poll_refused_by_a_keep_ends_the_pass_at_the_next_song_and_never_mid_download() -> Result<()> {
+    let tree = Tree::new();
+    let (_database, library) = on_disc(&tree)?;
+    let library = Arc::new(library);
+    let tube = Tube::new();
+    library.keep_playlist(list_to_keep(
+        "Mix",
+        true,
+        &[("one", "One"), ("two", "Two"), ("three", "Three")],
+    ))?;
+    let refused = Arc::new(AtomicBool::new(false));
+    let asking = Arc::clone(&library);
+    let told = Arc::clone(&refused);
+    tube.when_asked_for("one", move || {
+        told.store(refused_a_poll(&asking), Ordering::SeqCst);
+    });
+
+    let summary = pass(&library, &tube)?;
+
+    assert!(refused.load(Ordering::SeqCst), "the poll was not refused");
+    assert_eq!(
+        summary,
+        KeepSummary {
+            landed: 1,
+            yielded: true,
+            ..KeepSummary::default()
+        }
+    );
+    assert_eq!(tube.videos_asked(), ["one"]);
+    assert_eq!(library.keeps_pending()?, 2);
+
+    library
+        .poll(Arc::new(Providers::none()), PollOptions::default())?
+        .join()?;
+    let again = pass(&library, &tube)?;
+
+    assert_eq!(again.landed, 2);
+    assert!(!again.yielded);
+    assert_eq!(titles_in(&library, "Mix")?, ["One", "Two", "Three"]);
+    Ok(())
+}
+
+#[test]
+fn a_poll_refused_in_another_process_leaves_a_keep_to_go_on() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let elsewhere = Library::open(&database)?;
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("one", "One"))?;
+    library.keep_song(song_to_keep("two", "Two"))?;
+    let refused = Arc::new(AtomicBool::new(false));
+    let told = Arc::clone(&refused);
+    tube.when_asked_for("one", move || {
+        told.store(refused_a_poll(&elsewhere), Ordering::SeqCst);
+    });
+
+    let summary = pass(&library, &tube)?;
+
+    assert!(refused.load(Ordering::SeqCst), "the poll was not refused");
+    assert_eq!(summary.landed, 2);
+    assert!(!summary.yielded);
+    Ok(())
+}
+
+#[test]
+fn a_poll_refused_while_a_keep_waits_on_the_meter_ends_the_wait() -> Result<()> {
+    let tree = Tree::new();
+    let (_database, library) = on_disc(&tree)?;
+    let metering = Metering::new();
+    metering.report(Meter::Metered);
+    library.stall_downloads_by(MeteredGate::new(metering, true));
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+
+    let summary = thread::scope(|scope| {
+        let keeping = scope.spawn(|| pass(&library, &tube));
+        thread::sleep(THE_POLL_HAS_WAITED);
+        assert!(refused_a_poll(&library), "the poll was not refused");
+        keeping.join().expect("the pass ends")
+    })?;
+
+    assert!(summary.yielded);
+    assert!(tube.videos_asked().is_empty());
+    assert_eq!(library.keeps_pending()?, 1);
+    Ok(())
+}
+
+#[test]
+fn a_kept_list_deleted_is_made_again_by_a_second_press() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    let list = list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]);
+    library.keep_playlist(list.clone())?;
+    pass(&library, &tube)?;
+    let made = library.playlist_named("Mix")?.expect("the list");
+    assert!(library.remove_playlist(made.id)?);
+
+    let kept = library.keep_playlist(list)?;
+
+    assert_eq!(kept, KeptList { queued: 0, held: 2 });
+    assert_eq!(titles_in(&library, "Mix")?, ["One", "Two"]);
+    assert_eq!(tube.videos_asked(), ["one", "two"]);
+    Ok(())
+}
+
+#[test]
+fn a_kept_list_deleted_with_a_file_of_its_gone_asks_for_that_song_again() -> Result<()> {
+    let (tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    let list = PlaylistToKeep {
+        name: "Mix".to_owned(),
+        ordered: true,
+        songs: vec![
+            song_to_keep("one", "One"),
+            SongToKeep {
+                artist: None,
+                length: None,
+                album: None,
+                ..song_to_keep("two", "Two")
+            },
+        ],
+    };
+    library.keep_playlist(list.clone())?;
+    pass(&library, &tube)?;
+    let made = library.playlist_named("Mix")?.expect("the list");
+    assert!(library.remove_playlist(made.id)?);
+    fs::remove_file(tree.path().join("Two.wav")).expect("the file goes");
+
+    let kept = library.keep_playlist(list)?;
+
+    assert_eq!(kept, KeptList { queued: 1, held: 1 });
+    pass(&library, &tube)?;
+    assert_eq!(titles_in(&library, "Mix")?, ["One", "Two"]);
+    Ok(())
+}
+
+#[test]
+fn a_press_seats_the_rows_it_added_and_leaves_the_order_the_listener_gave_the_rest() -> Result<()> {
+    let (tree, library) = a_music_folder()?;
+    let one = held_as(&tree, "one.wav", "One", A_SECOND_OF_FRAMES);
+    let two = held_as(&tree, "two.wav", "Two", A_SECOND_OF_FRAMES);
+    held_as(&tree, "three.wav", "Three", A_SECOND_OF_FRAMES);
+    scan(&library, &options(&tree))?;
+    let theirs = library.create_playlist("Mix")?;
+    library.add_to_playlist(
+        theirs,
+        &[
+            Cut::whole(MediaLocation::local(&two)),
+            Cut::whole(MediaLocation::local(&one)),
+        ],
+    )?;
+
+    let kept = library.keep_playlist(list_to_keep(
+        "Mix",
+        true,
+        &[("one", "One"), ("two", "Two"), ("three", "Three")],
+    ))?;
+
+    assert_eq!(kept, KeptList { queued: 0, held: 3 });
+    assert_eq!(titles_in(&library, "Mix")?, ["Two", "One", "Three"]);
+    Ok(())
+}
+
+#[test]
+fn a_song_that_could_not_be_placed_stays_queued_and_is_placed_once_it_can_be() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let tube = Tube::new();
+    library.create_playlist("Mix")?;
+    beside(&database)
+        .execute(
+            "INSERT INTO playlist_shares (playlist_id, created, editable)
+             SELECT id, created, 0 FROM playlists",
+            [],
+        )
+        .expect("the list is followed");
+    library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
+
+    assert!(matches!(
+        pass(&library, &tube),
+        Err(Error::PlaylistReadOnly(_))
+    ));
+    assert_eq!(library.keeps_pending()?, 1, "the song reads as removed");
+
+    beside(&database)
+        .execute("DELETE FROM playlist_shares", [])
+        .expect("the list is the listener's again");
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+
+    assert_eq!(titles_in(&library, "Mix")?, ["One"]);
+    assert_eq!(tube.videos_asked(), ["one"]);
+    assert_eq!(songs_under(&tree).len(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_kept_song_folded_into_its_twin_is_still_known_by_its_video() -> Result<()> {
+    let tree = Tree::new();
+    let trash = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    library.trash_into(Some(trash.path().to_path_buf()));
+    let tube = Tube::new();
+    let by_link = SongToKeep {
+        artist: None,
+        length: None,
+        album: None,
+        ..song_to_keep("abc123", "San Tropez")
+    };
+    library.keep_song(by_link.clone())?;
+    pass(&library, &tube)?;
+    let twin = tree.path().join("San Tropez.wav");
+    let copy = tree.path().join("San Tropez (1).wav");
+    fs::copy(&twin, &copy).expect("a copy");
+    scan(&library, &options(&tree))?;
+    beside(&database)
+        .execute(
+            "UPDATE kept_songs SET landed = ?1",
+            [copy.to_str().expect("the fixture path is UTF-8")],
+        )
+        .expect("the song landed as the copy");
+
+    let found = library.numbered_copies()?;
+    assert_eq!(found.numbered.len(), 1);
+    library.fold_copies(&found.numbered)?;
+
+    assert!(matches!(
+        library.keep_song(by_link)?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    assert_eq!(library.keeps_pending()?, 0);
+    Ok(())
+}
+
+#[test]
+fn a_song_kept_by_its_link_on_a_drive_unplugged_is_not_fetched_again() -> Result<()> {
+    let tree = Tree::new();
+    let (database, library) = on_disc(&tree)?;
+    let drive = tree
+        .path()
+        .canonicalize()
+        .expect("the fixture tree has a canonical path")
+        .join("drive");
+    fs::create_dir(&drive).expect("the fixture drive");
+    library.deliver_into(Some(DeliveryFolder {
+        path: drive.clone(),
+        layout: Layout::default(),
+    }));
+    let tube = Tube::new();
+    let by_link = SongToKeep {
+        artist: None,
+        length: None,
+        ..song_to_keep("abc123", "San Tropez")
+    };
+    library.keep_song(by_link.clone())?;
+    pass(&library, &tube)?;
+    beside(&database)
+        .execute(
+            "INSERT OR IGNORE INTO volumes (path) VALUES (?1)",
+            [drive.to_str().expect("the fixture path is UTF-8")],
+        )
+        .expect("the catalog takes a volume");
+    fs::remove_dir_all(&drive).expect("the drive is unplugged");
+
+    assert!(matches!(
+        library.keep_song(by_link)?,
+        KeptSong::AlreadyHeld(_)
+    ));
+    assert_eq!(library.keeps_pending()?, 0);
     Ok(())
 }

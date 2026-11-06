@@ -14,10 +14,12 @@ use resonate_codec::{
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
-    StreamSpec, TrackId, path_text, title_words, words_of_a_name,
+    StreamSpec, TrackId, path_text, title_words,
+    titles::{Rating, bare, rating_in_the_title},
+    words_of_a_name,
 };
 pub use resonate_core::{folded_letters, is_lettered};
-use resonate_providers::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Identity};
+use resonate_providers::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, led_by, spelt_as};
 use resonate_vault::{Form, VaultKey};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
@@ -2660,22 +2662,90 @@ pub(crate) struct HeldAlike {
     pub(crate) held: HeldRow,
 }
 
-fn spelt_as(name: &str) -> String {
-    words_of_a_name(name).concat()
+pub(crate) const HELD_BY_THEIR_FIRST_WORDS: &str =
+    "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path, t.title,
+            t.artist, a.key, t.duration, t.sample_rate,
+            t.hidden, t.alternative_of IS NOT NULL
+       FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
+      WHERE t.title_words >= ?1 AND t.title_words < ?1 || '!'";
+
+struct Candidate {
+    shown_last: bool,
+    a_lesser_copy: bool,
+    alike: HeldAlike,
 }
 
-fn led_by(credit: &str) -> Option<String> {
-    let credited = Identity {
-        artist: Some(credit.to_owned()),
-        ..Identity::default()
-    };
-    credited.lead_artist().map(spelt_as)
+struct NamedAlike<'a> {
+    bare: String,
+    lead: String,
+    length: Duration,
+    rating: Rating,
+    title: &'a str,
 }
 
-fn lasts_alike(frames: i64, rate: i64, length: Duration) -> bool {
-    u32::try_from(rate).is_ok_and(|rate| rate > 0)
-        && Duration::try_from_secs_f64(frames as f64 / rate as f64)
-            .is_ok_and(|heard| heard.abs_diff(length) <= A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY)
+impl NamedAlike<'_> {
+    fn stood_for_by(&self, title: &str, credit: Option<&str>, key: Option<&str>) -> bool {
+        let spelt = spelt_as(bare(title));
+        let held_rating = rating_in_the_title(title);
+        let cleaned = held_rating == Rating::Clean && self.rating != Rating::Clean;
+
+        spelt == self.bare
+            && !cleaned
+            && (key.map(spelt_as).as_ref() == Some(&self.lead)
+                || credit.map(|credit| spelt_as(led_by(credit))).as_ref() == Some(&self.lead))
+    }
+
+    fn lasts_as_long_as(&self, frames: Option<i64>, rate: i64) -> bool {
+        frames.is_some_and(|frames| {
+            rate > 0
+                && Duration::try_from_secs_f64(frames as f64 / rate as f64).is_ok_and(|heard| {
+                    heard.abs_diff(self.length) <= A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY
+                })
+        })
+    }
+
+    fn first_words(&self) -> Vec<String> {
+        let title = bare(self.title);
+        let joined = words_of_a_name(title);
+        let mut asked = vec![title_words(title), joined.join(" ")];
+        for (at, word) in joined.iter().enumerate() {
+            for (cut, _) in word.char_indices().skip(1) {
+                let mut parted = joined.clone();
+                parted[at] = format!("{} {}", &word[..cut], &word[cut..]);
+                asked.push(parted.join(" "));
+            }
+        }
+        asked.sort();
+        asked.dedup();
+        asked
+    }
+}
+
+fn candidate_at(
+    row: &rusqlite::Row<'_>,
+    song: &NamedAlike<'_>,
+) -> rusqlite::Result<Option<Candidate>> {
+    let title: String = row.get(5)?;
+    let credit: Option<String> = row.get(6)?;
+    let key: Option<String> = row.get(7)?;
+    if !song.stood_for_by(&title, credit.as_deref(), key.as_deref())
+        || !song.lasts_as_long_as(row.get(8)?, row.get(9)?)
+    {
+        return Ok(None);
+    }
+    Ok(Some(Candidate {
+        shown_last: row.get(10)?,
+        a_lesser_copy: row.get(11)?,
+        alike: HeldAlike {
+            track: TrackId::new(row.get::<_, i64>(0)?.cast_unsigned())
+                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, 0))?,
+            span: span(row.get(2)?, row.get(3)?),
+            held: HeldRow {
+                path: path_of(&row.get::<_, String>(1)?),
+                within_the_vault: row.get::<_, Option<String>>(4)?.as_deref().map(path_of),
+            },
+        },
+    }))
 }
 
 pub(crate) fn held_named_alike(
@@ -2684,46 +2754,33 @@ pub(crate) fn held_named_alike(
     lead: &str,
     length: Duration,
 ) -> Result<Vec<HeldAlike>> {
-    let words = title_words(title);
-    let lead = spelt_as(lead);
-    if words.is_empty() || lead.is_empty() {
+    let song = NamedAlike {
+        bare: spelt_as(bare(title)),
+        lead: spelt_as(lead),
+        length,
+        rating: rating_in_the_title(title),
+        title,
+    };
+    if song.bare.is_empty() || song.lead.is_empty() {
         return Ok(Vec::new());
     }
     let mut statement = connection
-        .prepare_cached(
-            "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path,
-                    t.artist, a.key, t.duration, t.sample_rate
-               FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
-              WHERE t.title_words = ?1
-              ORDER BY t.hidden, t.alternative_of IS NOT NULL, t.id",
-        )
+        .prepare_cached(HELD_BY_THEIR_FIRST_WORDS)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-    let rows = statement
-        .query_map(params![words], |row| {
-            let lasts: Option<i64> = row.get(7)?;
-            let credit: Option<String> = row.get(5)?;
-            let key: Option<String> = row.get(6)?;
-            let alike = lasts.is_some_and(|frames| {
-                row.get::<_, i64>(8)
-                    .is_ok_and(|rate| lasts_alike(frames, rate, length))
-            }) && (key.as_deref().map(spelt_as).as_ref() == Some(&lead)
-                || credit.as_deref().and_then(led_by).as_ref() == Some(&lead));
-            if !alike {
-                return Ok(None);
-            }
-            Ok(Some(HeldAlike {
-                track: TrackId::new(row.get::<_, i64>(0)?.cast_unsigned())
-                    .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, 0))?,
-                span: span(row.get(2)?, row.get(3)?),
-                held: HeldRow {
-                    path: path_of(&row.get::<_, String>(1)?),
-                    within_the_vault: row.get::<_, Option<String>>(4)?.as_deref().map(path_of),
-                },
-            }))
-        })
-        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
-    Ok(rows.into_iter().flatten().collect())
+    let mut found: AHashMap<TrackId, Candidate> = AHashMap::new();
+    for words in song.first_words() {
+        let candidates = statement
+            .query_map(params![words], |row| candidate_at(row, &song))
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        for candidate in candidates.into_iter().flatten() {
+            found.insert(candidate.alike.track, candidate);
+        }
+    }
+
+    let mut held: Vec<Candidate> = found.into_values().collect();
+    held.sort_by_key(|held| (held.shown_last, held.a_lesser_copy, held.alike.track));
+    Ok(held.into_iter().map(|held| held.alike).collect())
 }
 
 #[cfg(test)]
@@ -2764,6 +2821,27 @@ mod tests {
             packets: None,
             walked: None,
         }
+    }
+
+    #[test]
+    fn a_held_copy_is_looked_for_along_the_index_of_title_words() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
+        crate::schema::lay_out(&connection).expect("the schema applies");
+
+        let plan: Vec<String> = connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {HELD_BY_THEIR_FIRST_WORDS}"))
+            .and_then(|mut plan| {
+                plan.query_map(params!["song"], |row| row.get::<_, String>(3))?
+                    .collect()
+            })
+            .expect("a plan");
+
+        assert!(
+            plan.iter()
+                .any(|step| step.contains("tracks_by_title_words")),
+            "{plan:?}"
+        );
     }
 
     #[test]

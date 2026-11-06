@@ -1,11 +1,12 @@
 use std::{
+    path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, SystemTime},
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_core::{Link, MediaLocation, SourceId, TrackId};
+use resonate_core::{Gate, Link, MediaLocation, SourceId, TrackId};
 use resonate_providers::{
     Answer, Asking, Away, Identity, Providers, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
 };
@@ -65,6 +66,7 @@ pub struct KeepSummary {
     pub gone: usize,
     pub unkept: usize,
     pub stopped_by: Option<SourceId>,
+    pub yielded: bool,
 }
 
 impl SongToKeep {
@@ -82,10 +84,17 @@ impl SongToKeep {
     }
 
     fn album(&self) -> Option<AlbumToFile> {
-        let title = self.album.as_deref()?.trim();
-        (!title.is_empty()).then(|| AlbumToFile {
-            title: title.to_owned(),
-            owner: None,
+        let named = |value: &Option<String>| {
+            value
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        };
+        let (title, owner) = (named(&self.album), named(&self.artist));
+        (title.is_some() || owner.is_some()).then(|| AlbumToFile {
+            title: title.unwrap_or_default(),
+            owner,
             year: None,
             discs: 1,
         })
@@ -139,10 +148,17 @@ enum Standing {
     GivenUp,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WhatLanded {
+    Stays,
+    IsForgotten,
+}
+
 struct Pressed<'a> {
     song: &'a SongToKeep,
     place: Option<i64>,
     landed: Option<String>,
+    what_landed: WhatLanded,
 }
 
 enum Turn {
@@ -150,27 +166,64 @@ enum Turn {
     Gone,
     Unkept,
     Stopped,
+    Yielded,
     Over,
+}
+
+struct Walking<'a> {
+    into: &'a DeliveryFolder,
+    providers: &'a Providers,
+    progress: &'a PollProgress,
+    away: Away,
+    unread: Vec<PathBuf>,
+}
+
+struct Heeded<'a>(&'a AtomicBool);
+
+impl Drop for Heeded<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+struct KeepUnderWay<'a>(&'a Library);
+
+impl<'a> KeepUnderWay<'a> {
+    fn of(library: &'a Library) -> Self {
+        library.begins_keeping();
+        Self(library)
+    }
+}
+
+impl Drop for KeepUnderWay<'_> {
+    fn drop(&mut self) {
+        self.0.ends_keeping();
+    }
 }
 
 impl Library {
     pub fn keep_song(&self, song: SongToKeep) -> Result<Kept> {
         self.a_folder_to_keep_into()?;
-        match self.copy_of(&song)? {
-            Some(HeldCopy {
-                track: Some(track), ..
-            }) => Ok(Kept::AlreadyHeld(track)),
-            Some(_) => Ok(Kept::Queued),
-            None => {
-                self.inner()
-                    .write(|transaction| queued_alone(transaction, &song))?;
-                Ok(Kept::Queued)
-            }
+        refused_untitled(&song)?;
+        let copy = self.copy_of(&song)?;
+        if let Some(HeldCopy {
+            track: Some(track), ..
+        }) = copy
+        {
+            return Ok(Kept::AlreadyHeld(track));
         }
+        let what_landed = match copy {
+            Some(_) => WhatLanded::Stays,
+            None => WhatLanded::IsForgotten,
+        };
+        self.inner()
+            .write(|transaction| queued_alone(transaction, &song, what_landed))?;
+        Ok(Kept::Queued)
     }
 
     pub fn keep_playlist(&self, list: PlaylistToKeep) -> Result<KeptList> {
         self.a_folder_to_keep_into()?;
+        list.songs.iter().try_for_each(refused_untitled)?;
         let name = self
             .inner()
             .read(|connection| playlist::name_a_list_may_hold(connection, &list.name))?;
@@ -178,6 +231,7 @@ impl Library {
         let standing = self
             .inner()
             .read(|connection| standing_in(connection, name))?;
+        let the_list_stands = self.playlist_named(name)?.is_some();
 
         let mut seen = AHashSet::new();
         let mut kept = KeptList::default();
@@ -192,16 +246,22 @@ impl Library {
                 .get(&(song.source.as_str().to_owned(), song.video.clone()))
                 .copied();
             let copy = match stands {
-                Some(Standing::Landed | Standing::Queued) => None,
-                Some(Standing::GivenUp) | None => self.copy_of(song)?,
+                Some(Standing::Queued) => None,
+                Some(Standing::Landed) if the_list_stands => None,
+                Some(Standing::Landed | Standing::GivenUp) | None => self.copy_of(song)?,
             };
             let mut landed = None;
+            let mut what_landed = WhatLanded::Stays;
             match (stands, copy) {
-                (Some(Standing::Landed), _) => kept.held += 1,
+                (Some(Standing::Landed), None) if the_list_stands => kept.held += 1,
                 (_, Some(copy)) => {
                     kept.held += 1;
                     landed = Some(playlist::local_path(&copy.cut.location)?.into_owned());
                     to_place.push((copy.cut, place));
+                }
+                (Some(Standing::Landed), None) => {
+                    kept.queued += 1;
+                    what_landed = WhatLanded::IsForgotten;
                 }
                 (_, None) => kept.queued += 1,
             }
@@ -209,6 +269,7 @@ impl Library {
                 song,
                 place,
                 landed,
+                what_landed,
             });
         }
 
@@ -224,16 +285,19 @@ impl Library {
     }
 
     pub fn keeps_pending(&self) -> Result<u64> {
-        self.inner().read(|connection| {
-            connection
+        let (queued, unread) = self.inner().read(|connection| {
+            let queued = connection
                 .query_row(
                     "SELECT count(*) FROM kept_songs WHERE landed IS NULL AND gone = 0",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
                 .map(i64::cast_unsigned)
-                .map_err(|source| Error::store(StoreOp::Query, source))
-        })
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            Ok((queued, landed_unread(connection)?))
+        })?;
+
+        Ok(queued + unread.iter().filter(|path| path.exists()).count() as u64)
     }
 
     pub fn keep_pending(
@@ -242,7 +306,9 @@ impl Library {
         cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<KeepSummary> {
         let _asking = self.asking_alone(PassKind::Poll)?;
+        let _under_way = KeepUnderWay::of(self);
         organise::sweep_what_a_dead_writer_staged(self);
+        self.read_what_landed_unread()?;
 
         let queued = self.keeps_of(providers)?;
         if queued.is_empty() {
@@ -260,10 +326,42 @@ impl Library {
                 .name("resonate-keep-heeding".to_owned())
                 .spawn_scoped(scope, || heeding(cancelled, &progress, &over))
                 .map_err(|source| Error::ThreadSpawn { source })?;
-            let walked = self.walked(queued, &into, providers, &progress);
-            over.store(true, Ordering::Relaxed);
+            let _heeded = Heeded(&over);
+            let mut walking = Walking {
+                into: &into,
+                providers,
+                progress: &progress,
+                away: Away::default(),
+                unread: Vec::new(),
+            };
+            let walked = self.walked(queued, &mut walking);
+            walking.unread.sort();
+            walking.unread.dedup();
+            for root in walking.unread {
+                synced::scanned_once_free(self, root);
+            }
             walked
         })
+    }
+
+    fn read_what_landed_unread(&self) -> Result<()> {
+        let unread = self.inner().read(landed_unread)?;
+        let folder = self
+            .delivering_into()
+            .and_then(|into| into.path.canonicalize().ok());
+        let mut roots = Vec::new();
+        for path in unread.iter().filter(|path| path.exists()) {
+            let root = self
+                .root_reaching(path)?
+                .or_else(|| folder.clone().filter(|folder| path.starts_with(folder)));
+            roots.extend(root);
+        }
+        roots.sort();
+        roots.dedup();
+        for root in roots {
+            synced::scanned_once_free(self, root);
+        }
+        Ok(())
     }
 
     fn a_folder_to_keep_into(&self) -> Result<DeliveryFolder> {
@@ -278,27 +376,29 @@ impl Library {
             .collect())
     }
 
-    fn walked(
-        &self,
-        queued: Vec<Queued>,
-        into: &DeliveryFolder,
-        providers: &Providers,
-        progress: &PollProgress,
-    ) -> Result<KeepSummary> {
+    fn walked(&self, queued: Vec<Queued>, walking: &mut Walking<'_>) -> Result<KeepSummary> {
         let gate = self.download_gate();
-        let mut away = Away::default();
+        let progress = walking.progress;
         let mut summary = KeepSummary::default();
         for row in queued {
-            progress.waits_out_the_meter(&gate);
+            let yields = self.waited_on_the_meter(&gate, progress);
             if progress.is_cancelled() {
                 break;
             }
-            match self.turn(&row, into, providers, progress, &mut away)? {
+            if yields {
+                summary.yielded = true;
+                break;
+            }
+            match self.turn(&row, walking)? {
                 Turn::Landed => summary.landed += 1,
                 Turn::Gone => summary.gone += 1,
                 Turn::Unkept => summary.unkept += 1,
                 Turn::Stopped => {
                     summary.stopped_by = Some(row.song.source);
+                    break;
+                }
+                Turn::Yielded => {
+                    summary.yielded = true;
                     break;
                 }
                 Turn::Over => break,
@@ -310,31 +410,38 @@ impl Library {
         Ok(summary)
     }
 
-    fn turn(
-        &self,
-        row: &Queued,
-        into: &DeliveryFolder,
-        providers: &Providers,
-        progress: &PollProgress,
-        away: &mut Away,
-    ) -> Result<Turn> {
+    fn waited_on_the_meter(&self, gate: &Gate, progress: &PollProgress) -> bool {
+        while gate.is_shut() && !progress.is_cancelled() && !self.a_poll_waits_on_a_keep() {
+            progress.waits_on_the_meter(true);
+            gate.wait_while_shut(HEEDED_EVERY);
+        }
+        progress.waits_on_the_meter(false);
+        self.a_poll_waits_on_a_keep()
+    }
+
+    fn turn(&self, row: &Queued, walking: &mut Walking<'_>) -> Result<Turn> {
         if let Some(copy) = self.copy_of(&row.song)? {
             self.settled_by(row, &copy.cut)?;
             return Ok(Turn::Landed);
         }
 
-        let answer = asked(&row.song, providers, progress, away);
+        let progress = walking.progress;
+        let answer = asked(&row.song, walking.providers, progress, &mut walking.away);
         if answer.cancelled {
             return Ok(Turn::Over);
         }
         let Some(delivered) = answer.delivered else {
-            return self.unanswered(row, &answer, away);
+            return self.unanswered(row, &answer, &walking.away);
         };
 
         let gate = self.download_gate();
-        progress.waits_out_the_meter(&gate);
+        let held_by_the_meter = gate.is_shut();
+        let yields = self.waited_on_the_meter(&gate, progress);
         if progress.is_cancelled() {
             return Ok(Turn::Over);
+        }
+        if yields && held_by_the_meter {
+            return Ok(Turn::Yielded);
         }
         let album = row.song.album();
         let song = row.song.to_file(album.as_ref());
@@ -346,7 +453,7 @@ impl Library {
                 options: PollOptions::default(),
                 gate,
             },
-            |reader, extension| filed::filed(self, into, &song, reader, extension),
+            |reader, extension| filed::filed(self, walking.into, &song, reader, extension),
         )?;
 
         let video = &row.song.video;
@@ -354,7 +461,9 @@ impl Library {
             Drawn::Read(Ok(filed)) => {
                 let cut = Cut::whole(MediaLocation::local(&filed.path));
                 let settled = self.settled_by(row, &cut);
-                synced::scanned_once_free(self, filed.root);
+                if !synced::scanned_if_free(self, filed.root.clone()) {
+                    walking.unread.push(filed.root);
+                }
                 settled.map(|()| Turn::Landed)
             }
             Drawn::Read(Err(_)) if progress.is_cancelled() => Ok(Turn::Over),
@@ -381,7 +490,7 @@ impl Library {
             Drawn::Unopened(Unopened::Refused(error)) => {
                 tracing::warn!(%error, cause = ?error.cause(), video, "a kept song could not be opened");
                 if error.is_the_provider_away() {
-                    away.note(&row.song.source);
+                    walking.away.note(&row.song.source);
                     return Ok(Turn::Stopped);
                 }
                 Ok(Turn::Unkept)
@@ -421,31 +530,22 @@ impl Library {
         let copies = self
             .inner()
             .read(|connection| store::held_named_alike(connection, &song.title, lead, length))?;
-        if copies.is_empty() {
-            return Ok(None);
-        }
-        let vault = self.vault().map(AsRef::as_ref);
-        let away = self.inner().read(volumes::absent)?;
+        let copy = self.first_there(copies, |copy| &copy.held)?;
 
-        Ok(copies
-            .into_iter()
-            .find(|copy| {
-                copy.held.stands(vault) || volumes::is_on_an_absent_one(&copy.held.path, &away)
-            })
-            .map(|copy| HeldCopy {
-                track: Some(copy.track),
-                cut: Cut {
-                    location: MediaLocation::local(copy.held.path),
-                    span: copy.span,
-                },
-            }))
+        Ok(copy.map(|copy| HeldCopy {
+            track: Some(copy.track),
+            cut: Cut {
+                location: MediaLocation::local(copy.held.path),
+                span: copy.span,
+            },
+        }))
     }
 
     fn landed_before(&self, song: &SongToKeep) -> Result<Option<HeldCopy>> {
         let landed = self
             .inner()
             .read(|connection| landed_as(connection, song))?;
-        let Some(held) = landed.into_iter().find(|held| held.stands(None)) else {
+        let Some(held) = self.first_there(landed, |held| held)? else {
             return Ok(None);
         };
 
@@ -455,15 +555,27 @@ impl Library {
         }))
     }
 
+    fn first_there<T>(&self, copies: Vec<T>, held: impl Fn(&T) -> &HeldRow) -> Result<Option<T>> {
+        if copies.is_empty() {
+            return Ok(None);
+        }
+        let vault = self.vault().map(AsRef::as_ref);
+        let away = self.inner().read(volumes::absent)?;
+
+        Ok(copies.into_iter().find(|copy| {
+            let row = held(copy);
+            row.stands(vault) || volumes::is_on_an_absent_one(&row.path, &away)
+        }))
+    }
+
     fn settled_by(&self, row: &Queued, cut: &Cut) -> Result<()> {
         let path = playlist::local_path(&cut.location)?.into_owned();
-        let placed = match &row.playlist {
-            Some(list) => self
+        if let Some(list) = &row.playlist {
+            let place = self
                 .inner()
-                .read(|connection| place_of(connection, row.id))
-                .and_then(|place| self.placed(list, &[(cut.clone(), place)])),
-            None => Ok(()),
-        };
+                .read(|connection| place_of(connection, row.id))?;
+            self.placed(list, &[(cut.clone(), place)])?;
+        }
         self.inner().write(|transaction| {
             transaction
                 .execute(
@@ -472,8 +584,7 @@ impl Library {
                 )
                 .map(drop)
                 .map_err(|source| Error::store(StoreOp::Update, source))
-        })?;
-        placed
+        })
     }
 
     fn given_up(&self, row: &Queued) -> Result<()> {
@@ -489,13 +600,20 @@ impl Library {
     }
 
     fn placed(&self, list: &str, cuts: &[(Cut, Option<i64>)]) -> Result<()> {
+        let already: AHashSet<playlist::Row> = match self.playlist_named(list)? {
+            Some(standing) => self
+                .inner()
+                .read(|connection| playlist::rows(connection, standing.id))?
+                .into_iter()
+                .collect(),
+            None => AHashSet::new(),
+        };
         let plain: Vec<Cut> = cuts.iter().map(|(cut, _)| cut.clone()).collect();
         let filled = playlist::fill(self.inner(), list, &plain)?;
-        if filled.added == 0 {
-            return Ok(());
-        }
         for (cut, place) in cuts {
-            if let Some(place) = place {
+            if let Some(place) = place
+                && !already.contains(&playlist::Row::of(cut)?)
+            {
                 self.seated(filled.playlist, list, cut, *place)?;
             }
         }
@@ -531,6 +649,13 @@ impl Library {
         }
         Ok(())
     }
+}
+
+fn refused_untitled(song: &SongToKeep) -> Result<()> {
+    if song.title.trim().is_empty() {
+        return Err(Error::KeptWithNoTitle);
+    }
+    Ok(())
 }
 
 fn heeding(cancelled: &(dyn Fn() -> bool + Sync), progress: &PollProgress, over: &AtomicBool) {
@@ -571,13 +696,17 @@ fn length_column(song: &SongToKeep) -> Option<i64> {
         .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX))
 }
 
-fn queued_alone(transaction: &Transaction<'_>, song: &SongToKeep) -> Result<()> {
+fn queued_alone(
+    transaction: &Transaction<'_>,
+    song: &SongToKeep,
+    what_landed: WhatLanded,
+) -> Result<()> {
     transaction
         .execute(
             "INSERT INTO kept_songs (source, video, title, artist, album, length, asked)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (source, video) WHERE playlist IS NULL
-             DO UPDATE SET gone = 0, landed = NULL",
+             DO UPDATE SET gone = 0, landed = CASE WHEN ?8 THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
                 song.video,
@@ -586,6 +715,7 @@ fn queued_alone(transaction: &Transaction<'_>, song: &SongToKeep) -> Result<()> 
                 song.album,
                 length_column(song),
                 store::to_nanos(SystemTime::now()),
+                what_landed == WhatLanded::IsForgotten,
             ],
         )
         .map(drop)
@@ -601,7 +731,8 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT (source, video, playlist)
              DO UPDATE SET place = excluded.place, gone = 0,
-                           landed = coalesce(excluded.landed, landed)",
+                           landed = CASE WHEN ?11 THEN NULL
+                                         ELSE coalesce(excluded.landed, landed) END",
             params![
                 song.source.as_str(),
                 song.video,
@@ -613,6 +744,7 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
                 pressed.place,
                 store::to_nanos(SystemTime::now()),
                 pressed.landed,
+                pressed.what_landed == WhatLanded::IsForgotten,
             ],
         )
         .map(drop)
@@ -691,6 +823,20 @@ fn landed_as(connection: &Connection, song: &SongToKeep) -> Result<Vec<HeldRow>>
                 within_the_vault: None,
             })
         })
+        .and_then(|rows| rows.collect::<rusqlite::Result<_>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn landed_unread(connection: &Connection) -> Result<Vec<PathBuf>> {
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT DISTINCT k.landed FROM kept_songs k
+              WHERE k.landed IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM tracks t WHERE t.path = k.landed)",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    statement
+        .query_map([], |row| Ok(store::path_of(&row.get::<_, String>(0)?)))
         .and_then(|rows| rows.collect::<rusqlite::Result<_>>())
         .map_err(|source| Error::store(StoreOp::Query, source))
 }

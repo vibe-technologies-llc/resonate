@@ -201,6 +201,9 @@ pub enum Error {
     #[error("a kept song lands in the music folder, and none is set")]
     NoDeliveryFolder,
 
+    #[error("a song is kept under its title, and this one has none")]
+    KeptWithNoTitle,
+
     #[error("reading tags from {path} failed", path = path.display())]
     Tags {
         path: PathBuf,

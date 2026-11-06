@@ -330,7 +330,7 @@ impl PollProgress {
         self.waiting_on_the_meter.load(Ordering::Relaxed)
     }
 
-    fn waits_on_the_meter(&self, waiting: bool) {
+    pub(crate) fn waits_on_the_meter(&self, waiting: bool) {
         let before = self.waiting_on_the_meter.swap(waiting, Ordering::Relaxed);
         if waiting && !before {
             tracing::info!("downloads wait while the connection is metered");
@@ -679,7 +679,13 @@ pub(crate) fn start(
 ) -> Result<PollHandle> {
     let progress = Arc::new(PollProgress::default());
     let owned = Arc::clone(&progress);
-    let asking = library.asking_alone(PassKind::Poll)?;
+    let asking = library
+        .asking_alone(PassKind::Poll)
+        .inspect_err(|refused| {
+            if matches!(refused, Error::AlreadyAsking { .. }) {
+                library.poll_refused();
+            }
+        })?;
 
     let thread = thread::Builder::new()
         .name("resonate-poll".to_owned())
