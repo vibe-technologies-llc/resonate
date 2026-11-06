@@ -4,7 +4,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use resonate_providers::{Error, Id, Named, PlaysInPlace, ProviderOp, Rating};
@@ -18,6 +18,7 @@ use support::Fake;
 
 const CLIENT_DATA: &str = "[\"1.20261104.00.00\"]";
 const SONGS: &str = include_str!("fixtures/songs.json");
+const GIVEN_UP_WELL_BEFORE: Duration = Duration::from_secs(4);
 const THE_FEED: &str = "https://www.youtube.com/feed/playlists";
 const LAPSED: &str =
     "echo 'WARNING: [youtube] The provided YouTube account cookies are no longer valid.' >&2";
@@ -270,34 +271,39 @@ fn a_playlist_lists_its_songs_in_youtubes_order() {
 }
 
 #[test]
-fn a_song_short_of_a_field_is_asked_for_alone_and_a_song_that_says_nothing_stays_as_listed() {
-    let flat = json!({ "entries": [
+fn a_song_short_of_a_field_shows_what_it_has_and_costs_no_call_of_its_own() {
+    let fake = answering(&json!({ "entries": [
         { "id": "short", "title": "Short", "duration": null },
         { "id": "gone", "title": "[Deleted video]", "channel": "Ada" },
-    ] });
-    let whole = json!({ "id": "short", "title": "Short", "duration": 200,
-                        "channel": "Ada - Topic", "album": "One" });
-    let fake = Fake::answering(&format!(
-        "case \"$*\" in *v=short*) echo '{whole}' ;; *v=gone*) echo 'ERROR: Video unavailable' >&2; exit 1 ;; *) echo '{flat}' ;; esac"
-    ));
+    ] }));
 
     let songs = fake
         .tool(cookies())
         .playlist(&an_id("PLa"))
         .expect("an answer");
 
-    assert_eq!(songs[0].artist.as_deref(), Some("Ada"));
-    assert_eq!(songs[0].album.as_deref(), Some("One"));
-    assert_eq!(songs[0].length, Some(Duration::from_secs(200)));
-    assert_eq!(songs[1].title, "[Deleted video]");
+    assert_eq!(songs[0].title, "Short");
+    assert_eq!(songs[0].artist, None);
+    assert_eq!(songs[0].length, None);
+    assert_eq!(songs[1].artist.as_deref(), Some("Ada"));
     assert_eq!(songs[1].length, None);
-    let calls = fake.calls();
-    assert_eq!(calls.len(), 3);
-    assert!(calls[1].iter().any(|argument| argument == "--no-playlist"));
-    assert_eq!(
-        calls[1].last().map(String::as_str),
-        Some("https://music.youtube.com/watch?v=short")
-    );
+    assert_eq!(fake.calls().len(), 1);
+}
+
+#[test]
+fn a_listing_that_hangs_is_given_up_at_its_deadline() {
+    let fake = Fake::answering("exec sleep 30");
+    let tool = fake
+        .tool(cookies())
+        .waiting_at_most(Duration::from_millis(100));
+    let began = Instant::now();
+
+    let playlist = tool.playlist(&an_id("PLa"));
+    let playlists = tool.playlists();
+
+    assert!(began.elapsed() < GIVEN_UP_WELL_BEFORE);
+    assert!(matches!(playlist, Err(Error::Io { .. })));
+    assert!(matches!(playlists, Err(Error::Io { .. })));
 }
 
 #[test]

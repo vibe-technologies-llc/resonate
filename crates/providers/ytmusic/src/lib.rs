@@ -22,7 +22,7 @@ use ureq::Agent;
 use crate::search::Row;
 pub use crate::{
     connection::Connection,
-    tool::{Cookies, Formats, Tier, Tool, VideoId},
+    tool::{Cookies, Formats, Tier, Tool, VideoId, stop_the_tools},
 };
 
 const YTMUSIC: &str = "ytmusic";

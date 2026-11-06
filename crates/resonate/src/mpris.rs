@@ -59,6 +59,13 @@ fn entry_named(sandboxed_as: Option<&str>) -> String {
         .to_owned()
 }
 
+fn offered_on_the_bus(sources: Vec<SourceId>) -> Vec<SourceId> {
+    sources
+        .into_iter()
+        .filter(crate::served::is_played_in_place)
+        .collect()
+}
+
 struct Attention {
     changes: Receiver<bool>,
     held: AtomicBool,
@@ -206,7 +213,7 @@ impl Host for Desktop {
     }
 
     fn sources(&self) -> Vec<SourceId> {
-        self.serving.sources.names()
+        offered_on_the_bus(self.serving.sources.names())
     }
 
     fn mime_types(&self) -> Vec<String> {
@@ -572,6 +579,17 @@ fn identity_of(zones: usize, named: Option<&ZoneName>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn the_bus_is_offered_no_scheme_nothing_can_be_played_from() {
+        let scheme = |name: &str| SourceId::new(name).expect("a scheme");
+
+        let offered =
+            offered_on_the_bus(vec![SourceId::local(), scheme("tidal"), scheme("ytmusic")]);
+
+        assert_eq!(offered, [SourceId::local(), scheme("tidal")]);
+    }
 
     fn entry_mime_types() -> Vec<&'static str> {
         let entry = include_str!("../../../packaging/resonate.desktop");

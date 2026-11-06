@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use resonate_providers::{Id, Mix, Pacing, ProviderOp, Rating, Result, Song};
+use resonate_providers::{Id, Mix, ProviderOp, Rating, Result, Song};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-use crate::{ASKED_APART, Tool, VideoId};
+use crate::{Tool, VideoId};
 
 pub(crate) const LIKED_SONGS_ID: &str = "LM";
 pub(crate) const LIKED_SONGS: &str = "Liked songs";
@@ -13,7 +13,6 @@ const A_PLAYLIST_IS_AT: &str = "https://music.youtube.com/playlist?list=";
 const NOT_A_PLAYLIST_OF_SONGS: [&str; 3] = [LIKED_SONGS_ID, "LL", "WL"];
 const A_TOPIC_CHANNEL_ENDS: &str = " - Topic";
 const LONGEST_PLAYLIST_ID: usize = 128;
-const ASKED_ALONE_AT_MOST: usize = 25;
 
 fn entries_readable<'de, D: Deserializer<'de>>(
     deserializer: D,
@@ -48,8 +47,6 @@ struct Entry {
     #[serde(default)]
     uploader: Option<String>,
     #[serde(default)]
-    album: Option<String>,
-    #[serde(default)]
     thumbnails: Option<Value>,
 }
 
@@ -76,15 +73,10 @@ impl Entry {
         Id::new(largest.get("url")?.as_str()?)
     }
 
-    fn is_short_of_a_field(&self) -> bool {
-        self.length().is_none() || self.artist().is_none()
-    }
-
     fn song(&self) -> Option<Song> {
         Some(Song {
             title: self.title.clone(),
             artist: self.artist(),
-            album: named(self.album.as_deref()).map(str::to_owned),
             length: self.length(),
             cover: self.thumbnail(),
             rating: Rating::of(None, &self.title, None),
@@ -98,26 +90,6 @@ impl Entry {
             name: named(Some(&self.title))?.to_owned(),
             subtitle: None,
         })
-    }
-
-    fn filled_from(self, whole: Self) -> Self {
-        let duration = if self.length().is_some() {
-            self.duration
-        } else {
-            whole.duration
-        };
-        Self {
-            duration,
-            channel: named(self.channel.as_deref())
-                .map(str::to_owned)
-                .or(whole.channel),
-            uploader: named(self.uploader.as_deref())
-                .map(str::to_owned)
-                .or(whole.uploader),
-            album: self.album.or(whole.album),
-            thumbnails: self.thumbnails.or(whole.thumbnails),
-            ..self
-        }
     }
 }
 
@@ -153,39 +125,6 @@ impl Tool {
             self.unreadable(op)
         })?;
 
-        let pacing = Pacing::new(ASKED_APART);
-        let mut asked_alone = 0;
-        Ok(flat
-            .entries
-            .into_iter()
-            .map(|entry| {
-                if !entry.is_short_of_a_field() || asked_alone == ASKED_ALONE_AT_MOST {
-                    return entry;
-                }
-                asked_alone += 1;
-                self.filled(entry, &pacing)
-            })
-            .filter_map(|entry| entry.song())
-            .collect())
-    }
-
-    fn filled(&self, entry: Entry, pacing: &Pacing) -> Entry {
-        let Some(video) = VideoId::read(&entry.id) else {
-            return entry;
-        };
-        pacing.paced();
-        let whole = self.listed_song(&video).and_then(|listing| {
-            serde_json::from_slice::<Entry>(&listing).map_err(|error| {
-                tracing::debug!(%error, "a song's listing was not the document expected");
-                self.unreadable(ProviderOp::Browse)
-            })
-        });
-        match whole {
-            Ok(whole) => entry.filled_from(whole),
-            Err(error) => {
-                tracing::debug!(%error, video = video.as_str(), "a song's own listing was not read");
-                entry
-            }
-        }
+        Ok(flat.entries.iter().filter_map(Entry::song).collect())
     }
 }

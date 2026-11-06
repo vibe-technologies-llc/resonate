@@ -239,6 +239,7 @@ const fn exit_code_after(signal: i32) -> i32 {
 }
 
 fn leave(signal: i32) -> ! {
+    crate::providers::stop_the_tools();
     crate::input::restore_the_terminal();
     process::exit(exit_code_after(signal))
 }

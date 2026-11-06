@@ -17,5 +17,8 @@ serde_json.workspace = true
 tracing.workspace = true
 ureq.workspace = true
 
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
 [lints]
 workspace = true

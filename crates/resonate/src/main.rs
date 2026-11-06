@@ -156,7 +156,9 @@ const RATING: &str = "rating";
 
 fn main() -> ExitCode {
     gaming::watch();
-    match run() {
+    let ran = run();
+    providers::stop_the_tools();
+    match ran {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             report(&error);
@@ -3247,6 +3249,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             followed,
         },
     );
+    providers::stop_the_tools();
     drop(presenter);
     syncing.leave();
     #[cfg(feature = "sync")]

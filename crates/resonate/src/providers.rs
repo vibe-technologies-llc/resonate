@@ -203,6 +203,14 @@ pub fn checks_youtube_music(_settings: Option<PathBuf>) -> Option<resonate_ui::C
     None
 }
 
+#[cfg(feature = "online")]
+pub fn stop_the_tools() {
+    resonate_ytmusic::stop_the_tools();
+}
+
+#[cfg(not(feature = "online"))]
+pub const fn stop_the_tools() {}
+
 #[cfg(feature = "ui")]
 fn sourced_over(made: Arc<Made>) -> (resonate_ui::Registering, resonate_ui::Unkept) {
     let keeping = made.keeping();

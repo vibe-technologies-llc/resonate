@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
     sync::{
-        Arc,
+        Arc, Weak,
         mpsc::{self, Receiver, RecvTimeoutError},
     },
     thread,
@@ -31,11 +31,16 @@ const BROWSER_NAME_ENDS_AT: [char; 2] = [':', '+'];
 const FOUND_BY_ITSELF: &str = "deno";
 const RUNTIMES_NAMED: [&str; 2] = ["node", "bun"];
 const ASKED_WITHIN: Duration = Duration::from_secs(60);
-const A_WHOLE_PLAYLIST_TAKES_AT_MOST: u32 = 5;
+const A_WHOLE_LISTING_TAKES_AT_MOST: u32 = 2;
 const LEFT_SILENT_FOR: Duration = Duration::from_secs(120);
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(10);
 const STDERR_ENDS_WITHIN: Duration = Duration::from_secs(1);
 const STDERR_KEPT: usize = 16 * 1024;
+const WITHHELD: &str = "<withheld>";
+const A_LINE_ENDS_AT: [u8; 2] = [b'\n', b'\r'];
+const A_BROWSERS_PROFILE_FOLLOWS: char = ':';
+const A_BROWSERS_CONTAINER_FOLLOWS: &str = "::";
+const THE_HOME_FOLDER: char = '~';
 const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNKS_AHEAD: usize = 4;
 const LARGEST_LISTING: usize = 32 * 1024 * 1024;
@@ -70,6 +75,32 @@ impl Cookies {
         } else {
             Self::File(value.into())
         }
+    }
+
+    fn withheld(&self) -> Vec<String> {
+        let mut said = match self {
+            Self::None => Vec::new(),
+            Self::Browser(browser) => {
+                let profile = browser
+                    .split_once(A_BROWSERS_PROFILE_FOLLOWS)
+                    .map(|(_, rest)| rest)
+                    .and_then(|rest| rest.split(A_BROWSERS_CONTAINER_FOLLOWS).next());
+                std::iter::once(browser.as_str())
+                    .chain(profile)
+                    .map(str::to_owned)
+                    .collect()
+            }
+            Self::File(file) => vec![file.display().to_string()],
+        };
+        let under_home: Vec<String> = said
+            .iter()
+            .filter_map(|text| text.strip_prefix(THE_HOME_FOLDER))
+            .map(str::to_owned)
+            .collect();
+        said.extend(under_home);
+        said.retain(|text| !text.is_empty());
+        said.sort_by_key(|text| std::cmp::Reverse(text.len()));
+        said
     }
 
     fn arguments(&self) -> Vec<OsString> {
@@ -237,17 +268,54 @@ impl Lapse {
     }
 }
 
-struct Reaped(Child);
+struct Living {
+    stopped: bool,
+    children: Vec<Weak<Mutex<Child>>>,
+}
+
+static LIVING: Mutex<Living> = Mutex::new(Living {
+    stopped: false,
+    children: Vec::new(),
+});
+
+pub fn stop_the_tools() {
+    let mut living = LIVING.lock();
+    living.stopped = true;
+    for child in living
+        .children
+        .drain(..)
+        .filter_map(|child| child.upgrade())
+    {
+        let _ = child.lock().kill();
+    }
+}
+
+struct Reaped(Arc<Mutex<Child>>);
 
 impl Reaped {
+    fn spawned(command: &mut Command) -> io::Result<Self> {
+        let mut living = LIVING.lock();
+        if living.stopped {
+            return Err(ErrorKind::Interrupted.into());
+        }
+        let child = Arc::new(Mutex::new(command.spawn()?));
+        living.children.retain(|held| held.strong_count() > 0);
+        living.children.push(Arc::downgrade(&child));
+        Ok(Self(child))
+    }
+
+    fn kill(&self) -> io::Result<()> {
+        self.0.lock().kill()
+    }
+
     fn exited_within(&mut self, within: Duration) -> io::Result<Option<ExitStatus>> {
         let began = Instant::now();
         loop {
-            if let Some(status) = self.0.try_wait()? {
+            if let Some(status) = self.0.lock().try_wait()? {
                 return Ok(Some(status));
             }
             if began.elapsed() >= within {
-                self.0.kill()?;
+                self.kill()?;
                 return Ok(None);
             }
             thread::sleep(LOOKED_AT_EVERY);
@@ -257,8 +325,52 @@ impl Reaped {
 
 impl Drop for Reaped {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let mut child = self.0.lock();
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+struct Telling {
+    withheld: Vec<String>,
+    line: Vec<u8>,
+}
+
+impl Telling {
+    fn heard(&mut self, said: &[u8]) {
+        self.line.extend_from_slice(said);
+        while let Some(end) = self
+            .line
+            .iter()
+            .position(|byte| A_LINE_ENDS_AT.contains(byte))
+        {
+            let line: Vec<u8> = self.line.drain(..=end).collect();
+            self.told(&line);
+        }
+        if self.line.len() > STDERR_KEPT {
+            let line = std::mem::take(&mut self.line);
+            self.told(&line);
+        }
+    }
+
+    fn told(&self, line: &[u8]) {
+        let said = self
+            .withheld
+            .iter()
+            .fold(String::from_utf8_lossy(line).into_owned(), |said, value| {
+                said.replace(value.as_str(), WITHHELD)
+            });
+        let said = said.trim_end();
+        if !said.is_empty() {
+            tracing::debug!(said, "yt-dlp said");
+        }
+    }
+}
+
+impl Drop for Telling {
+    fn drop(&mut self) {
+        let line = std::mem::take(&mut self.line);
+        self.told(&line);
     }
 }
 
@@ -268,7 +380,7 @@ struct Complaints {
 }
 
 impl Complaints {
-    fn drained_from(mut stderr: ChildStderr) -> io::Result<Self> {
+    fn drained_from(mut stderr: ChildStderr, withheld: Vec<String>) -> io::Result<Self> {
         let kept = Arc::new(Mutex::new(Vec::new()));
         let (ending, ended) = mpsc::channel();
         let tail = Arc::clone(&kept);
@@ -276,16 +388,17 @@ impl Complaints {
             .name("resonate-ytmusic-stderr".to_owned())
             .spawn(move || {
                 let _ending = ending;
+                let mut telling = Telling {
+                    withheld,
+                    line: Vec::new(),
+                };
                 let mut chunk = vec![0; CHUNK_BYTES];
                 loop {
                     match stderr.read(&mut chunk) {
                         Ok(0) => return,
                         Ok(read) => {
                             let said = &chunk[..read];
-                            tracing::debug!(
-                                said = %String::from_utf8_lossy(said),
-                                "yt-dlp said"
-                            );
+                            telling.heard(said);
                             kept_at_its_end(&mut tail.lock(), said);
                         }
                         Err(error) if error.kind() == ErrorKind::Interrupted => {}
@@ -343,19 +456,22 @@ struct Running {
 }
 
 impl Running {
-    fn of(program: &Path, arguments: &[OsString]) -> io::Result<Self> {
-        let mut child = Reaped(
+    fn of(program: &Path, arguments: &[OsString], withheld: Vec<String>) -> io::Result<Self> {
+        let child = Reaped::spawned(
             Command::new(program)
                 .args(arguments)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()?,
-        );
-        let stdout = child.0.stdout.take().ok_or(ErrorKind::BrokenPipe)?;
-        let stderr = child.0.stderr.take().ok_or(ErrorKind::BrokenPipe)?;
+                .stderr(Stdio::piped()),
+        )?;
+        let (stdout, stderr) = {
+            let mut held = child.0.lock();
+            (held.stdout.take(), held.stderr.take())
+        };
+        let stdout = stdout.ok_or(ErrorKind::BrokenPipe)?;
+        let stderr = stderr.ok_or(ErrorKind::BrokenPipe)?;
         Ok(Self {
-            complaints: Complaints::drained_from(stderr)?,
+            complaints: Complaints::drained_from(stderr, withheld)?,
             chunks: pumped_from(stdout)?,
             child,
         })
@@ -407,7 +523,7 @@ impl Reading {
                 self.ended = Some(Ended::Failed(None));
             }
             Err(RecvTimeoutError::Timeout) => {
-                let _ = self.running.child.0.kill();
+                let _ = self.running.child.kill();
                 self.ended = Some(Ended::Silent);
             }
             Err(RecvTimeoutError::Disconnected) => self.ended = Some(self.ending()),
@@ -499,7 +615,8 @@ impl Tool {
     }
 
     fn running(&self, op: ProviderOp, arguments: &[OsString]) -> Result<Running> {
-        Running::of(&self.program, arguments).map_err(|source| self.failed_io(op, source))
+        Running::of(&self.program, arguments, self.cookies.withheld())
+            .map_err(|source| self.failed_io(op, source))
     }
 
     fn failed_io(&self, op: ProviderOp, source: io::Error) -> Error {
@@ -599,10 +716,16 @@ impl Tool {
         Err(self.failed(op, status.code()))
     }
 
-    fn answered_to(&self, arguments: &[OsString], within: Duration) -> Result<Vec<u8>> {
+    pub(crate) fn listed_at(&self, address: &str) -> Result<Vec<u8>> {
         let op = ProviderOp::Browse;
-        let by = Instant::now() + within;
-        let mut running = self.running(op, arguments)?;
+        let by = Instant::now() + self.asked_within * A_WHOLE_LISTING_TAKES_AT_MOST;
+        let mut arguments: Vec<OsString> = vec!["--ignore-config".into()];
+        if let Some(runtime) = self.runtime {
+            arguments.extend(["--js-runtimes".into(), runtime.into()]);
+        }
+        arguments.extend(self.cookies.arguments());
+        arguments.extend(["-J".into(), "--flat-playlist".into(), address.into()]);
+        let mut running = self.running(op, &arguments)?;
         let listing = self.listed_within(&running, op, by)?;
         let status = running
             .child
@@ -617,24 +740,6 @@ impl Tool {
             return Ok(listing);
         }
         Err(self.failed(op, status.code()))
-    }
-
-    pub(crate) fn listed_at(&self, address: &str) -> Result<Vec<u8>> {
-        let mut arguments: Vec<OsString> = vec!["--ignore-config".into()];
-        if let Some(runtime) = self.runtime {
-            arguments.extend(["--js-runtimes".into(), runtime.into()]);
-        }
-        arguments.extend(self.cookies.arguments());
-        arguments.extend(["-J".into(), "--flat-playlist".into(), address.into()]);
-        self.answered_to(
-            &arguments,
-            self.asked_within * A_WHOLE_PLAYLIST_TAKES_AT_MOST,
-        )
-    }
-
-    pub(crate) fn listed_song(&self, video: &VideoId) -> Result<Vec<u8>> {
-        let arguments = self.arguments(&["-J", "--skip-download"], video);
-        self.answered_to(&arguments, self.asked_within)
     }
 
     pub fn download(&self, video: &VideoId, format: Tier) -> Result<Opened> {
@@ -748,6 +853,28 @@ mod tests {
 
         *lapse.0.lock() = Instant::now().checked_sub(A_POLL_LASTS);
         assert!(!lapse.stands());
+    }
+
+    #[test]
+    fn a_whole_listing_is_given_two_minutes() {
+        assert_eq!(
+            ASKED_WITHIN * A_WHOLE_LISTING_TAKES_AT_MOST,
+            Duration::from_secs(120)
+        );
+    }
+
+    #[test]
+    fn a_cookie_value_is_withheld_whole_and_by_its_profile_longest_first() {
+        assert_eq!(
+            Cookies::read("firefox:~/zen::work").withheld(),
+            ["firefox:~/zen::work", "~/zen", "/zen"]
+        );
+        assert_eq!(Cookies::read("firefox").withheld(), ["firefox"]);
+        assert_eq!(
+            Cookies::read("/home/a/cookies.txt").withheld(),
+            ["/home/a/cookies.txt"]
+        );
+        assert!(Cookies::None.withheld().is_empty());
     }
 
     #[test]
