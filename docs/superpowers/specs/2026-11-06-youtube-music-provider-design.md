@@ -137,8 +137,9 @@ of `node`, `bun` found on `PATH`.
 
 ### Answering a want (`Provider::find`)
 
-1. Ask `Identity::may_be_listed` first.
-2. If the identity carries a YouTube link (`Identity::track_on`), use that video and skip the search.
+1. If the identity carries a YouTube link (`Identity::track_on`), use that video and skip the search.
+   A keep is pinned to its video, and may have no length or artist.
+2. With no link, ask `Identity::may_be_listed`, since it guards a search by name.
 3. Otherwise for each of `Identity::wordings`, search YouTube Music's Songs filter over InnerTube,
    signed out, at most 25 listings, and hand each to `Choosing` as a `Listed`. The seam decides.
    YouTube gives no ISRC, so this is always the named-alike rule: lengths within 2 s, titles and lead
