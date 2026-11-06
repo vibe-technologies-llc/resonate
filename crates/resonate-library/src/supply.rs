@@ -536,6 +536,23 @@ impl<'a> Pumped<'a> {
         })
     }
 
+    fn noting_a_refusal(&mut self, error: io::Error) -> io::Error {
+        let carried = error
+            .get_ref()
+            .is_some_and(|carried| carried.is::<resonate_providers::Error>());
+        if !carried {
+            return error;
+        }
+        let kind = error.kind();
+        if let Some(Ok(refused)) = error
+            .into_inner()
+            .map(|carried| carried.downcast::<resonate_providers::Error>())
+        {
+            self.unopened = Some(Unopened::Refused(*refused));
+        }
+        io::Error::from(kind)
+    }
+
     fn next_chunk(&mut self) -> Chunk {
         let began = Instant::now();
         let stalls_after = if self.heard {
@@ -547,7 +564,7 @@ impl<'a> Pumped<'a> {
             match self.chunks.recv_timeout(HEEDED_EVERY) {
                 Ok(Pumping::Read(chunk)) => {
                     self.heard = true;
-                    return chunk;
+                    return chunk.map_err(|error| self.noting_a_refusal(error));
                 }
                 Ok(Pumping::Unopened(unopened)) => {
                     self.unopened = Some(unopened);

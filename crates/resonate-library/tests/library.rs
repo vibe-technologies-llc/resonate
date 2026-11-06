@@ -37,14 +37,15 @@ use resonate_library::{
     LookupOp, Love, Loved, LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid,
     Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer,
     Picturing, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PollHandle, PollOptions,
-    PollProgress, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS, Rated, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal, Result, RetagOptions,
-    RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble,
-    Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongsAsked,
-    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
-    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
-    Unwritten, Upkeep, Vault, Waits, Window, Wording, Written,
+    PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS,
+    Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
+    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal,
+    Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions,
+    ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar,
+    SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
+    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Waits, Window, Wording,
+    Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -11088,6 +11089,7 @@ enum Delivering {
     },
     Endless,
     Stalling,
+    DyingPartWay,
     Unopenable,
     GoneWhenOpened,
     GoneUntilTold {
@@ -11112,6 +11114,27 @@ impl io::Read for Stall {
         loop {
             thread::park();
         }
+    }
+}
+
+struct DiesPartWay {
+    provider: SourceId,
+    began: bool,
+}
+
+impl io::Read for DiesPartWay {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        if !self.began {
+            self.began = true;
+            let given = into.len().min(64);
+            into[..given].fill(0);
+            return Ok(given);
+        }
+        Err(io::Error::other(ProvidedError::ToolFailed {
+            provider: self.provider.clone(),
+            op: ProviderOp::Download,
+            code: Some(1),
+        }))
     }
 }
 
@@ -11200,6 +11223,14 @@ impl Provider for Offering {
                 key: "stalling".into(),
                 extension: Extension::new("wav")?,
                 opening: Opening::ready(Stall { began: false }),
+            }),
+            Delivering::DyingPartWay => Obtained::Found(Delivery::Stream {
+                key: "dying".into(),
+                extension: Extension::new("wav")?,
+                opening: self.counted(Opening::ready(DiesPartWay {
+                    provider: self.source.clone(),
+                    began: false,
+                })),
             }),
             Delivering::Unopenable => {
                 let provider = self.source.clone();
@@ -23295,6 +23326,59 @@ fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_left_due() -> Re
     assert_eq!(wants[0].misses, 0);
     assert_eq!(wants[0].offered, None);
     Ok(())
+}
+
+fn the_want_is_left_due_after_its_download_died(
+    library: &Library,
+    summary: &PollSummary,
+) -> Result<()> {
+    assert_eq!(summary.stats.offered, 1);
+    assert_eq!(summary.stats.refused, 1);
+    assert_eq!(summary.stats.unkept, 0);
+    assert_eq!(summary.stats.kept, 0);
+    let wants = library.wants()?;
+    assert!(
+        wants[0].tried.is_none(),
+        "a provider's failure part way is no verdict on the song"
+    );
+    assert_eq!(wants[0].misses, 0);
+    Ok(())
+}
+
+#[test]
+fn a_download_its_provider_failed_part_way_into_the_vault_is_refused_and_no_miss() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let shop = Arc::new(Offering::new("shop", Delivering::DyingPartWay));
+
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(shop.opened(), 1);
+    the_want_is_left_due_after_its_download_died(&library, &summary)
+}
+
+#[test]
+fn a_download_its_provider_failed_part_way_into_the_music_folder_is_refused_and_no_miss()
+-> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    wanted_san_tropez(&library)?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.path().to_path_buf(),
+        layout: Layout::default(),
+    }));
+    let shop = Arc::new(Offering::new("shop", Delivering::DyingPartWay));
+
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(shop.opened(), 1);
+    the_want_is_left_due_after_its_download_died(&library, &summary)
 }
 
 #[test]
