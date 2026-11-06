@@ -17,6 +17,8 @@ use resonate_providers::Providers;
 use resonate_subsonic::{Server, Subsonic};
 #[cfg(feature = "online")]
 use resonate_tidal::{Account, HifiApi, Tidal};
+#[cfg(feature = "online")]
+use resonate_ytmusic::{Cookies, Tool, YtMusic};
 
 #[cfg(feature = "online")]
 use crate::{config, error::ConfigKey, signals};
@@ -168,6 +170,36 @@ fn monochrome_of(made: &Made, monochrome: &Hosting) -> Arc<Monochrome> {
         })
 }
 
+#[cfg(feature = "online")]
+fn ytmusic_of(made: &Made, account: &YtMusicAccount) -> Arc<YtMusic> {
+    made.ytmusic.made_for(account, |account| {
+        YtMusic::new(Tool::new(account.program.clone(), account.cookies.clone()))
+    })
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::ChecksYoutubeMusic> {
+    use resonate_ytmusic::Connection;
+
+    let made = made_once(settings);
+    Some(Arc::new(move |online: &resonate_ui::Online| {
+        let account = Accounts::given(online).ytmusic?;
+        Some(match ytmusic_of(&made, &account).check() {
+            Connection::Premium => resonate_ui::YoutubeMusicConnection::Premium,
+            Connection::SignedInWithoutPremium => {
+                resonate_ui::YoutubeMusicConnection::SignedInWithoutPremium
+            }
+            Connection::NotSignedIn => resonate_ui::YoutubeMusicConnection::NotSignedIn,
+            Connection::ToolMissing => resonate_ui::YoutubeMusicConnection::ToolMissing,
+        })
+    }))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+pub fn checks_youtube_music(_settings: Option<PathBuf>) -> Option<resonate_ui::ChecksYoutubeMusic> {
+    None
+}
+
 #[cfg(feature = "ui")]
 fn sourced_over(made: Arc<Made>) -> (resonate_ui::Registering, resonate_ui::Unkept) {
     let keeping = made.keeping();
@@ -195,6 +227,7 @@ struct Accounts {
     resonate: Option<Secret>,
     hifi: Option<Hosting>,
     monochrome: Option<Hosting>,
+    ytmusic: Option<YtMusicAccount>,
 }
 
 #[cfg(not(feature = "online"))]
@@ -229,6 +262,11 @@ impl Accounts {
                 config.monochrome.as_deref(),
                 config.hosted_services_allowed(),
             ),
+            ytmusic: ytmusic(
+                config.turns_youtube_music_on(),
+                config.youtube_music_cookies.as_deref(),
+                config.yt_dlp.as_deref(),
+            ),
         }
     }
 
@@ -256,6 +294,11 @@ impl Accounts {
             resonate: secret(Some(&online.hifi_secret)),
             hifi: hosting(Some(&online.hifi_api), online.hosted_services),
             monochrome: hosting(Some(&online.monochrome), online.hosted_services),
+            ytmusic: ytmusic(
+                online.youtube_music,
+                Some(&online.youtube_music_cookies),
+                Some(&online.yt_dlp),
+            ),
         }
     }
 }
@@ -337,6 +380,21 @@ fn tidal(
 
 #[cfg(feature = "online")]
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct YtMusicAccount {
+    program: Option<PathBuf>,
+    cookies: Cookies,
+}
+
+#[cfg(feature = "online")]
+fn ytmusic(on: bool, cookies: Option<&str>, program: Option<&str>) -> Option<YtMusicAccount> {
+    on.then(|| YtMusicAccount {
+        program: program.and_then(config::a_path),
+        cookies: Cookies::read(cookies.unwrap_or_default()),
+    })
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Hosting {
     Hosted,
     Custom(String),
@@ -374,6 +432,7 @@ struct Made {
     resonate: Kept<Secret, HifiApi>,
     hifi: Kept<Hosting, HifiApi>,
     monochrome: Kept<Hosting, Monochrome>,
+    ytmusic: Kept<YtMusicAccount, YtMusic>,
     renewed: Arc<Renewed>,
 }
 
@@ -401,6 +460,7 @@ impl Made {
             resonate: Kept::default(),
             hifi: Kept::default(),
             monochrome: Kept::default(),
+            ytmusic: Kept::default(),
             renewed: Arc::new(Renewed {
                 settings,
                 rotated: parking_lot::Mutex::new(None),
@@ -517,6 +577,9 @@ fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers
     if let Some(monochrome) = &accounts.monochrome {
         providers = providers.and(monochrome_of(made, monochrome));
     }
+    if let Some(account) = &accounts.ytmusic {
+        providers = providers.and(ytmusic_of(made, account));
+    }
     providers
 }
 
@@ -596,6 +659,9 @@ fn with_inbox(inbox: Option<&Path>) -> Providers {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    #[cfg(feature = "online")]
+    use resonate_core::SourceId;
 
     use super::*;
 
@@ -878,6 +944,96 @@ mod tests {
 
     #[cfg(feature = "online")]
     #[test]
+    fn youtube_music_is_registered_only_where_it_is_turned_on_and_online_is_on() {
+        let unasked = Config::default();
+        assert!(!named(&unasked).contains(&"ytmusic".to_owned()));
+        assert_eq!(Accounts::of(&unasked).ytmusic, None);
+
+        let turned_off = Config {
+            youtube_music: Some(false),
+            youtube_music_cookies: Some("firefox".to_owned()),
+            ..Config::default()
+        };
+        assert!(!named(&turned_off).contains(&"ytmusic".to_owned()));
+
+        let turned_on = Config {
+            youtube_music: Some(true),
+            ..Config::default()
+        };
+        assert!(named(&turned_on).contains(&"ytmusic".to_owned()));
+
+        let offline = Config {
+            online: Some(false),
+            ..turned_on
+        };
+        assert!(!named(&offline).contains(&"ytmusic".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn youtube_music_is_registered_last() {
+        let config = Config {
+            youtube_music: Some(true),
+            subsonic: Some("http://music.local:4533".to_owned()),
+            subsonic_user: Some("listener".to_owned()),
+            subsonic_password: Some("sesame".to_owned()),
+            hosted_services: Some(true),
+            ..Config::default()
+        };
+
+        let providers = registered(&config, None);
+
+        assert_eq!(
+            providers.names().last().map(SourceId::as_str),
+            Some("ytmusic")
+        );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_youtube_music_account_is_named_by_its_cookies_and_program_and_prints_neither_cookie() {
+        let config = Config {
+            youtube_music: Some(true),
+            youtube_music_cookies: Some(" firefox:/home/a/zen ".to_owned()),
+            yt_dlp: Some(" /opt/yt-dlp ".to_owned()),
+            ..Config::default()
+        };
+
+        let account = Accounts::of(&config).ytmusic.expect("an account");
+
+        assert_eq!(
+            account,
+            YtMusicAccount {
+                program: Some(PathBuf::from("/opt/yt-dlp")),
+                cookies: Cookies::Browser("firefox:/home/a/zen".to_owned()),
+            }
+        );
+        assert!(!format!("{:?}", Accounts::of(&config)).contains("/home/a/zen"));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_youtube_music_account_with_nothing_given_asks_the_path_and_no_cookies() {
+        let account = Accounts::of(&Config {
+            youtube_music: Some(true),
+            youtube_music_cookies: Some("  ".to_owned()),
+            yt_dlp: Some("  ".to_owned()),
+            ..Config::default()
+        })
+        .ytmusic
+        .expect("an account");
+
+        assert_eq!(
+            account,
+            YtMusicAccount {
+                program: None,
+                cookies: Cookies::None,
+            }
+        );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
     fn a_rotated_token_that_could_not_be_written_is_told_to_the_listener_once() {
         let rotate = |made: &Made| {
             made.renewed.note(
@@ -909,6 +1065,58 @@ mod tests {
             matches!(failed, Some(Error::TidalTokenNotKept { path, .. }) if path == beneath_a_file)
         );
         assert!(succeeded.is_none());
+    }
+
+    #[cfg(all(feature = "online", feature = "ui"))]
+    #[test]
+    fn the_window_registers_youtube_music_only_while_its_switch_and_online_are_on() {
+        let on = resonate_ui::Online {
+            enabled: true,
+            youtube_music: true,
+            youtube_music_cookies: "firefox".to_owned(),
+            yt_dlp: "/opt/yt-dlp".to_owned(),
+            ..resonate_ui::Online::default()
+        };
+        let off = resonate_ui::Online {
+            youtube_music: false,
+            ..on.clone()
+        };
+        let offline = resonate_ui::Online {
+            enabled: false,
+            ..on.clone()
+        };
+
+        assert_eq!(
+            Accounts::given(&on).ytmusic,
+            Some(YtMusicAccount {
+                program: Some(PathBuf::from("/opt/yt-dlp")),
+                cookies: Cookies::Browser("firefox".to_owned()),
+            })
+        );
+        assert_eq!(Accounts::given(&off).ytmusic, None);
+        assert_eq!(Accounts::given(&offline).ytmusic, None);
+    }
+
+    #[cfg(all(feature = "online", feature = "ui"))]
+    #[test]
+    fn a_check_is_answered_only_where_the_settings_turn_youtube_music_on() {
+        let checks = checks_youtube_music(None).expect("a build that can check");
+        let missing = resonate_ui::Online {
+            enabled: true,
+            youtube_music: true,
+            yt_dlp: "/nowhere/at/all/yt-dlp".to_owned(),
+            ..resonate_ui::Online::default()
+        };
+        let off = resonate_ui::Online {
+            youtube_music: false,
+            ..missing.clone()
+        };
+
+        assert_eq!(
+            checks(&missing),
+            Some(resonate_ui::YoutubeMusicConnection::ToolMissing)
+        );
+        assert_eq!(checks(&off), None);
     }
 
     #[cfg(all(feature = "online", feature = "ui"))]

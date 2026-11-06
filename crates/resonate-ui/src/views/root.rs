@@ -79,9 +79,10 @@ use crate::{
         search::{self, SearchShows, TopEntry, TopRun},
         served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
-            Account, Category, FILTER_PLACEHOLDER, Fitting, HeldBand, LastfmAccount, LastfmSigning,
-            Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
-            SYNC_SERVER_PLACEHOLDER, Service, SigningIn, SpotifyState, TidalAccount, spotify,
+            Account, Category, CheckingYoutubeMusic, FILTER_PLACEHOLDER, Fitting, HeldBand,
+            LastfmAccount, LastfmSigning, Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER,
+            SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER, Service, SigningIn, SpotifyState,
+            TidalAccount, YoutubeMusicField, spotify,
         },
         sharing,
         sheets::{self, MAGNIFIER_PANEL},
@@ -654,6 +655,8 @@ pub struct RootView {
     pub(crate) lastfm: [Entity<Field>; 4],
     pub(crate) spotify_client: Entity<Field>,
     pub(crate) spotify_state: SpotifyState,
+    pub(crate) youtube_music: [Entity<Field>; 2],
+    pub(crate) youtube_music_check: CheckingYoutubeMusic,
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) sync_server: Entity<Field>,
@@ -1048,6 +1051,7 @@ impl RootView {
         let tidal = TidalAccount::fields(&online, window, cx);
         let lastfm = LastfmAccount::fields(&online, window, cx);
         let spotify_client = spotify::field(&online, window, cx);
+        let youtube_music = YoutubeMusicField::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
@@ -1317,6 +1321,8 @@ impl RootView {
             lastfm,
             spotify_client,
             spotify_state: SpotifyState::default(),
+            youtube_music,
+            youtube_music_check: CheckingYoutubeMusic::default(),
             discord_app,
             discord_icon,
             sync_server,
@@ -4434,6 +4440,7 @@ impl RootView {
         .chain(&self.jellyfin)
         .chain(&self.tidal)
         .chain(&self.lastfm)
+        .chain(&self.youtube_music)
     }
 
     fn editing(&self, window: &Window, cx: &App) -> bool {

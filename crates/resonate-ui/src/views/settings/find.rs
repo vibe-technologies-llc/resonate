@@ -114,6 +114,7 @@ pub(crate) enum Group {
     Organising,
     Vault,
     Inbox,
+    YoutubeMusic,
     ResonateKey,
     Subsonic,
     Jellyfin,
@@ -159,7 +160,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 70] = [
+    pub(crate) const ALL: [Self; 71] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -188,6 +189,7 @@ impl Group {
         Self::Organising,
         Self::Vault,
         Self::Inbox,
+        Self::YoutubeMusic,
         Self::ResonateKey,
         Self::Subsonic,
         Self::Jellyfin,
@@ -264,6 +266,7 @@ impl Group {
             | Self::Organising
             | Self::Vault
             | Self::Inbox
+            | Self::YoutubeMusic
             | Self::Resuming
             | Self::History
             | Self::Repeating
@@ -336,6 +339,7 @@ impl Group {
             Self::Organising => "Organising",
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
+            Self::YoutubeMusic => "YouTube Music",
             Self::Subsonic => "A Subsonic server",
             Self::Jellyfin => "A Jellyfin or Emby server",
             Self::ResonateKey => "Resonate server key",
@@ -415,6 +419,7 @@ impl Group {
             Self::Organising => ORGANISING_HINT,
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
+            Self::YoutubeMusic => YOUTUBE_MUSIC_HINT,
             Self::Subsonic => SUBSONIC_HINT,
             Self::Jellyfin => JELLYFIN_HINT,
             Self::ResonateKey => RESONATE_KEY_HINT,
@@ -547,6 +552,11 @@ impl Group {
                               managed store deduplicate validate folder location choose"
             }
             Self::Inbox => "provider poll wants missing download drop folder fill obtain supply",
+            Self::YoutubeMusic => {
+                "youtube music ytmusic yt-dlp ytdlp cookies premium google account browser firefox \
+                 zen opus provider download wants missing fill obtain terms check connection \
+                 playlist order"
+            }
             Self::Subsonic => {
                 "navidrome airsonic gonic server provider download wants missing stream fill \
                  obtain account password"
@@ -711,6 +721,12 @@ impl Group {
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
+            Self::YoutubeMusic => &[
+                SettingKey::YoutubeMusic,
+                SettingKey::YoutubeMusicCookies,
+                SettingKey::YtDlp,
+                SettingKey::YoutubeMusicKeepOrder,
+            ],
             Self::MusicExtensions => &[SettingKey::MusicExtensions],
             Self::MinimumLength => &[SettingKey::MinimumLength],
             Self::RoomCorrection => &[
@@ -1098,6 +1114,11 @@ pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked w
 
 pub(crate) const JELLYFIN_HINT: &str = "A Jellyfin or Emby server of your own, browsed and played \
                                         where it is in the server pane.";
+
+pub(crate) const YOUTUBE_MUSIC_HINT: &str = "YouTube Music through the yt-dlp program, on your \
+                                             account's cookies: searched and browsed in the \
+                                             server pane, and asked for a song marked wanted \
+                                             only once nothing better has it.";
 
 pub(crate) const SERVED_HINT: &str = "Opens the pane that browses and plays what a service of \
                                        yours holds, in place and with nothing downloaded.";

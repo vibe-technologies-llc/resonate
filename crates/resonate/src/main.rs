@@ -3134,6 +3134,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             scrobblers: online::scrobblers(&config),
             signs_in: providers::signs_in(),
             spotify: online::signs_in_to_spotify(&config),
+            checks_youtube_music: providers::checks_youtube_music(settings_path(&cli).ok()),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             measurers: equaliser::measured_by(&config),
@@ -3167,6 +3168,10 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 hifi_secret: config.hifi_secret.clone().unwrap_or_default(),
                 monochrome: config.monochrome.clone().unwrap_or_default(),
                 hosted_services: config.hosted_services_allowed(),
+                youtube_music: config.turns_youtube_music_on(),
+                youtube_music_cookies: config.youtube_music_cookies.clone().unwrap_or_default(),
+                yt_dlp: config.yt_dlp.clone().unwrap_or_default(),
+                youtube_music_keep_order: config.keeps_youtubes_order(),
             },
             serving: served.serving(),
             sourcing: {

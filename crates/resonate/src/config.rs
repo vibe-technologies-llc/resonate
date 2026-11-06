@@ -242,6 +242,10 @@ pub struct Config {
     pub hifi_secret: Option<String>,
     pub monochrome: Option<String>,
     pub hosted_services: Option<bool>,
+    pub youtube_music: Option<bool>,
+    pub youtube_music_cookies: Option<String>,
+    pub yt_dlp: Option<String>,
+    pub youtube_music_keep_order: Option<bool>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
     pub discord_shows: Option<Shown>,
@@ -380,6 +384,10 @@ impl fmt::Debug for Config {
             hifi_secret,
             monochrome,
             hosted_services,
+            youtube_music,
+            youtube_music_cookies,
+            yt_dlp,
+            youtube_music_keep_order,
             discord,
             discord_app,
             discord_shows,
@@ -513,6 +521,13 @@ impl fmt::Debug for Config {
             .field("hifi_secret", &withheld(hifi_secret.as_ref()))
             .field("monochrome", monochrome)
             .field("hosted_services", hosted_services)
+            .field("youtube_music", youtube_music)
+            .field(
+                "youtube_music_cookies",
+                &withheld(youtube_music_cookies.as_ref()),
+            )
+            .field("yt_dlp", yt_dlp)
+            .field("youtube_music_keep_order", youtube_music_keep_order)
             .field("discord", discord)
             .field("discord_app", discord_app)
             .field("discord_shows", discord_shows)
@@ -605,6 +620,16 @@ impl Config {
     #[cfg(any(feature = "online", feature = "ui"))]
     pub fn hosted_services_allowed(&self) -> bool {
         self.hosted_services.unwrap_or(true)
+    }
+
+    #[cfg(any(feature = "online", feature = "ui", test))]
+    pub fn turns_youtube_music_on(&self) -> bool {
+        self.youtube_music.unwrap_or(false)
+    }
+
+    #[cfg(any(feature = "ui", test))]
+    pub fn keeps_youtubes_order(&self) -> bool {
+        self.youtube_music_keep_order.unwrap_or(true)
     }
 
     #[cfg(any(feature = "sync", test))]
@@ -1173,6 +1198,14 @@ impl Config {
             ConfigKey::HifiSecret => config.hifi_secret = given(at.string(value)?),
             ConfigKey::Monochrome => config.monochrome = given(at.string(value)?),
             ConfigKey::HostedServices => config.hosted_services = Some(at.boolean(value)?),
+            ConfigKey::YoutubeMusic => config.youtube_music = Some(at.boolean(value)?),
+            ConfigKey::YoutubeMusicCookies => {
+                config.youtube_music_cookies = given(at.string(value)?);
+            }
+            ConfigKey::YtDlp => config.yt_dlp = given(at.string(value)?),
+            ConfigKey::YoutubeMusicKeepOrder => {
+                config.youtube_music_keep_order = Some(at.boolean(value)?);
+            }
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
@@ -1736,7 +1769,7 @@ fn given(text: &str) -> Option<String> {
 
 const HOME: &str = "~";
 
-fn a_path(text: &str) -> Option<PathBuf> {
+pub fn a_path(text: &str) -> Option<PathBuf> {
     let text = given(text)?;
     let under_home = match text.strip_prefix(HOME) {
         Some("") => Some(""),
@@ -2049,6 +2082,52 @@ mod tests {
                 "{category} is not in the man page"
             );
         }
+    }
+
+    #[test]
+    fn a_cookie_setting_is_withheld_from_the_configs_debug() {
+        let config =
+            read("youtube-music-cookies = \"firefox:/home/a/zen\"\nyt-dlp = \"/opt/yt-dlp\"\n")
+                .expect("a well formed document");
+
+        let printed = format!("{config:?}");
+
+        assert!(printed.contains("<withheld>"));
+        assert!(printed.contains("/opt/yt-dlp"));
+        assert!(!printed.contains("/home/a/zen"));
+    }
+
+    #[test]
+    fn a_setting_read_from_the_file_is_the_setting_the_pane_writes() {
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-youtube-music-settings-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&folder).expect("a folder");
+        let file = folder.join("config.toml");
+        store(&file, ConfigKey::YoutubeMusic, true).expect("the switch stored");
+        store(&file, ConfigKey::YoutubeMusicCookies, "firefox").expect("the cookies stored");
+        store(&file, ConfigKey::YtDlp, "/opt/yt-dlp").expect("the program stored");
+        store(&file, ConfigKey::YoutubeMusicKeepOrder, false).expect("the order stored");
+
+        let text = fs::read_to_string(&file).expect("the file written");
+        fs::remove_dir_all(&folder).expect("the folder removed");
+        let config = read(&text).expect("a well formed document");
+
+        assert!(text.contains("youtube-music = true"), "{text}");
+        assert!(text.contains("youtube-music-keep-order = false"), "{text}");
+        assert_eq!(config.youtube_music, Some(true));
+        assert_eq!(config.youtube_music_cookies.as_deref(), Some("firefox"));
+        assert_eq!(config.yt_dlp.as_deref(), Some("/opt/yt-dlp"));
+        assert_eq!(config.youtube_music_keep_order, Some(false));
+    }
+
+    #[test]
+    fn youtube_music_is_off_and_keeps_youtubes_order_unless_the_file_says_otherwise() {
+        let config = Config::default();
+
+        assert!(!config.turns_youtube_music_on());
+        assert!(config.keeps_youtubes_order());
     }
 
     #[test]

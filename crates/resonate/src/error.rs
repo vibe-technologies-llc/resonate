@@ -106,6 +106,10 @@ pub enum ConfigKey {
     HifiSecret,
     Monochrome,
     HostedServices,
+    YoutubeMusic,
+    YoutubeMusicCookies,
+    YtDlp,
+    YoutubeMusicKeepOrder,
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
@@ -185,7 +189,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 121] = [
+    pub const ALL: [Self; 125] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -282,6 +286,10 @@ impl ConfigKey {
         Self::HifiSecret,
         Self::Monochrome,
         Self::HostedServices,
+        Self::YoutubeMusic,
+        Self::YoutubeMusicCookies,
+        Self::YtDlp,
+        Self::YoutubeMusicKeepOrder,
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
@@ -407,6 +415,10 @@ impl ConfigKey {
             Self::HifiSecret => "hifi-secret",
             Self::Monochrome => "monochrome",
             Self::HostedServices => "hosted-services",
+            Self::YoutubeMusic => "youtube-music",
+            Self::YoutubeMusicCookies => "youtube-music-cookies",
+            Self::YtDlp => "yt-dlp",
+            Self::YoutubeMusicKeepOrder => "youtube-music-keep-order",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
             Self::ListenbrainzToken => "listenbrainz-token",

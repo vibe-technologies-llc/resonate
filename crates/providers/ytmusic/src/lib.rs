@@ -1,3 +1,4 @@
+mod connection;
 mod search;
 mod tool;
 
@@ -17,7 +18,10 @@ use resonate_providers::{
 use ureq::Agent;
 
 use crate::search::Row;
-pub use crate::tool::{Cookies, Formats, Tier, Tool, VideoId};
+pub use crate::{
+    connection::Connection,
+    tool::{Cookies, Formats, Tier, Tool, VideoId},
+};
 
 const YTMUSIC: &str = "ytmusic";
 const THE_SERVICE: &str = "https://music.youtube.com";

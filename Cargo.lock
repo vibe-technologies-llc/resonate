@@ -6137,6 +6137,7 @@ dependencies = [
  "resonate-upnp",
  "resonate-vault",
  "resonate-win32",
+ "resonate-ytmusic",
  "rustix",
  "signal-hook 0.4.6",
  "thiserror 2.0.21",
