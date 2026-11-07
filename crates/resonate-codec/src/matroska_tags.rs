@@ -2,8 +2,8 @@ use std::io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 use crate::{
     matroska::{
-        CLUSTER, EBML_HEADER, Element, Length, MAX_LENGTH_BYTES, SEEK_HEAD, SEGMENT, TAGS, VOID,
-        element,
+        ATTACHMENTS, CLUSTER, EBML_HEADER, Element, Length, MAX_LENGTH_BYTES, SEEK_HEAD, SEGMENT,
+        TAGS, VOID, element,
     },
     tags::is_vorbis_comment_only,
     writing::TagField,
@@ -25,6 +25,12 @@ const SIMPLE_TAG: u32 = 0x67C8;
 const TAG_NAME: u32 = 0x45A3;
 const TAG_STRING: u32 = 0x4487;
 const SORT_WITH: &[u8] = b"SORT_WITH";
+const ATTACHED_FILE: u32 = 0x61A7;
+const FILE_NAME: u32 = 0x466E;
+const FILE_MEDIA_TYPE: u32 = 0x4660;
+const FILE_DATA: u32 = 0x465C;
+const FILE_UID: u32 = 0x46AE;
+const THE_PICTURE_UID: u64 = 1;
 
 const DOC_TYPES: [&[u8]; 2] = [b"matroska", b"webm"];
 const SEGMENT_ID_BYTES: u64 = 4;
@@ -62,6 +68,7 @@ pub(crate) enum Refused {
     TagsTooLarge,
     Unindexed,
     SecondSeekHead,
+    AttachmentsStand,
     NoRoomInTheSeekHead,
     SegmentSizeTooNarrow,
 }
@@ -840,12 +847,17 @@ fn laid_seek_head(entries: &[Entry]) -> Vec<u8> {
     body
 }
 
-fn entries_with_tags_at(entries: &[Entry], position: Option<u64>, indexed: bool) -> Vec<Entry> {
-    let tags_id = id_bytes(TAGS);
+fn entries_with_the_element_at(
+    entries: &[Entry],
+    id: u32,
+    position: Option<u64>,
+    indexed: bool,
+) -> Vec<Entry> {
+    let element_id = id_bytes(id);
     let mut placed = false;
     let mut wanted = Vec::new();
     for entry in entries {
-        if entry.id != tags_id {
+        if entry.id != element_id {
             wanted.push(entry.clone());
             continue;
         }
@@ -859,7 +871,7 @@ fn entries_with_tags_at(entries: &[Entry], position: Option<u64>, indexed: bool)
     }
     if let (false, true, Some(position)) = (placed, indexed, position) {
         wanted.push(Entry {
-            id: tags_id,
+            id: element_id,
             position,
         });
     }
@@ -896,7 +908,7 @@ impl Rewrite {
         let unconfirmed = || io::Error::from(io::ErrorKind::InvalidData);
         let layout = laid_out(&mut BufReader::new(file)).map_err(|_| unconfirmed())?;
         let moved = !layout.clusters().eq(self.clusters.iter());
-        if moved || layout.all(TAGS).len() > 1 {
+        if moved || layout.all(TAGS).len() > 1 || layout.all(ATTACHMENTS).len() > 1 {
             return Err(unconfirmed());
         }
         Ok(())
@@ -942,7 +954,14 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
         }
     }
 
-    laid.extend(indexed(source, &layout, &olds, placing.at, placing.home)?);
+    laid.extend(indexed(
+        source,
+        &layout,
+        TAGS,
+        &olds,
+        placing.at,
+        placing.home,
+    )?);
     if placing.end > layout.end {
         let size = placing.end - layout.body;
         laid.push(Laid {
@@ -950,6 +969,44 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
             bytes: size_bytes(size, layout.size_width).ok_or(Refused::SegmentSizeTooNarrow)?,
         });
     }
+
+    Ok(Rewrite { laid, clusters })
+}
+
+pub(crate) struct Attached<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) media_type: &'a str,
+    pub(crate) bytes: &'a [u8],
+}
+
+fn attachments_of(file: &Attached<'_>) -> Vec<u8> {
+    let mut body = sized(FILE_NAME, file.name.as_bytes());
+    body.extend_from_slice(&sized(FILE_MEDIA_TYPE, file.media_type.as_bytes()));
+    body.extend_from_slice(&sized(FILE_DATA, file.bytes));
+    body.extend_from_slice(&sized(FILE_UID, &number_bytes(THE_PICTURE_UID)));
+    sized(ATTACHMENTS, &sized(ATTACHED_FILE, &body))
+}
+
+pub(crate) fn attached<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    file: &Attached<'_>,
+) -> Refusable<Rewrite> {
+    let layout = laid_out(source)?;
+    let clusters: Vec<Child> = layout.clusters().copied().collect();
+    if !layout.all(ATTACHMENTS).is_empty() {
+        return Err(Refused::AttachmentsStand);
+    }
+
+    let at = layout.end;
+    let element = attachments_of(file);
+    let end = at + element.len() as u64;
+    let mut laid = vec![Laid { at, bytes: element }];
+    laid.extend(indexed(source, &layout, ATTACHMENTS, &[], Some(at), None)?);
+    laid.push(Laid {
+        at: layout.size_at,
+        bytes: size_bytes(end - layout.body, layout.size_width)
+            .ok_or(Refused::SegmentSizeTooNarrow)?,
+    });
 
     Ok(Rewrite { laid, clusters })
 }
@@ -1006,6 +1063,7 @@ fn placed(layout: &Layout, olds: &[usize], body: &[u8]) -> Placing {
 fn indexed<S: Read + Seek + ?Sized>(
     source: &mut S,
     layout: &Layout,
+    id: u32,
     olds: &[usize],
     at: Option<u64>,
     home: Option<usize>,
@@ -1033,12 +1091,31 @@ fn indexed<S: Read + Seek + ?Sized>(
 
     let entries = entries_in(&held_body(source, &head)?)?;
     let position = at.map(|at| at - layout.body);
-    let wanted = entries_with_tags_at(&entries, position, past_the_clusters);
+    let wanted = entries_with_the_element_at(&entries, id, position, past_the_clusters);
     if wanted == entries {
         return Ok(None);
     }
     let room = layout.room_of(index) - head.at;
-    let bytes =
-        filling(SEEK_HEAD, &laid_seek_head(&wanted), room).ok_or(Refused::NoRoomInTheSeekHead)?;
+    let bytes = laid_in_the_room(wanted, layout, id, room).ok_or(Refused::NoRoomInTheSeekHead)?;
     Ok(Some(Laid { at: head.at, bytes }))
+}
+
+fn laid_in_the_room(
+    mut wanted: Vec<Entry>,
+    layout: &Layout,
+    id: u32,
+    room: u64,
+) -> Option<Vec<u8>> {
+    let added = id_bytes(id);
+    let first_cluster = layout.clusters().next().map(|cluster| cluster.at);
+    loop {
+        if let Some(bytes) = filling(SEEK_HEAD, &laid_seek_head(&wanted), room) {
+            return Some(bytes);
+        }
+        let read_in_order_anyway = wanted.iter().position(|entry| {
+            entry.id != added
+                && first_cluster.is_some_and(|first| layout.body + entry.position < first)
+        })?;
+        wanted.remove(read_in_order_anyway);
+    }
 }

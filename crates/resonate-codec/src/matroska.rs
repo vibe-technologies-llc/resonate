@@ -39,7 +39,7 @@ pub(crate) const SEEK_HEAD: u32 = 0x114D_9B74;
 const CUES: u32 = 0x1C53_BB6B;
 pub(crate) const TAGS: u32 = 0x1254_C367;
 const CHAPTERS: u32 = 0x1043_A770;
-const ATTACHMENTS: u32 = 0x1941_A469;
+pub(crate) const ATTACHMENTS: u32 = 0x1941_A469;
 const SEGMENT_CHILDREN: [u32; 8] = [
     SEEK_HEAD,
     INFO,

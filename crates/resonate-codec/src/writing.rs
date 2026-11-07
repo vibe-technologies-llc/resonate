@@ -37,7 +37,7 @@ use crate::{
         Torn, Unsettled, WholeCopy, mend_what_a_dead_writer_left, mend_what_was_left_in,
         staged_elsewhere_name,
     },
-    matroska_tags::{self, Rewrite},
+    matroska_tags::{self, Attached, Rewrite},
     ogg,
     overlay::{Landing, MOST_BYTES_WRITTEN_IN_PLACE, Overlay},
     padded::{Head, Rebuilt, Room},
@@ -93,6 +93,7 @@ pub enum TagField {
 
 const COMPILED: &str = "1";
 const MATROSKA_AUDIO_EXTENSION: &str = "mka";
+const COVER_FILE_STEM: &str = "cover";
 const MUSICIAN_CREDITS: &str = "TMCL";
 const LISTED_APART: &str = "; ";
 const APE_BEATS: &str = "BPM";
@@ -632,7 +633,7 @@ fn written_into_a_matroska(
     let unwritable = || Error::Unwritable {
         location: location.clone(),
     };
-    if writing.picture.is_some() || writing.unpictured {
+    if writing.unpictured {
         return Err(unwritable());
     }
 
@@ -650,9 +651,39 @@ fn written_into_a_matroska(
             tracing::debug!(?refused, path = %path.display(), "a Matroska file its tags could not be placed in is left as it stood");
             unwritable()
         })?;
-    if rewrite.is_empty() {
-        return Ok(());
+    if !rewrite.is_empty() {
+        landed(path, location, &Rewriting { rewrite, taken })?;
     }
+
+    match writing.picture {
+        Some(picture) => attached_to_a_matroska(path, location, picture),
+        None => Ok(()),
+    }
+}
+
+fn attached_to_a_matroska(path: &Path, location: &MediaLocation, picture: &CoverArt) -> Result<()> {
+    let name = format!("{COVER_FILE_STEM}.{}", picture.format.extension());
+    let attached = Attached {
+        name: &name,
+        media_type: picture.format.media_type(),
+        bytes: &picture.bytes,
+    };
+    let taken = Taken::of(path).map_err(|source| Error::Io {
+        location: location.clone(),
+        source,
+    })?;
+    let file = File::open(path).map_err(|source| Error::Io {
+        location: location.clone(),
+        source,
+    })?;
+    let rewrite = matroska_tags::attached(&mut BufReader::new(file), &attached).map_err(
+        |refused| {
+            tracing::debug!(?refused, path = %path.display(), "a Matroska file a picture could not be attached to is left as it stood");
+            Error::Unwritable {
+                location: location.clone(),
+            }
+        },
+    )?;
 
     landed(path, location, &Rewriting { rewrite, taken })
 }

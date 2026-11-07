@@ -1129,9 +1129,22 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   rather than carry a stale one. **Refused with the file untouched** (`Error::Unwritable`): a
   `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
   `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it, a
-  `SeekHead` with no room, a second `SeekHead` where `Tags` move, a picture (no attachment is
-  written). `TagSink::rated` answers `Rated::Unrateable` and `TagSink::holds_pictures` false, so a
-  retag offers such a file no sleeve and its names still land.
+  `SeekHead` with no room, a second `SeekHead` where `Tags` move, a picture where the file already
+  holds an `Attachments` element or `unpictured` is asked (nothing is taken out).
+  `TagSink::rated` answers `Rated::Unrateable` and `TagSink::holds_pictures` false, so a retag
+  offers such a file no sleeve and its names still land.
+- **A picture is attached to a Matroska file once, after the clusters, and indexed like `Tags`.**
+  `matroska_tags::attached` appends one `Attachments` element (`AttachedFile` named `cover.<ext>`,
+  the media type, the bytes, a fixed `FileUID`) at the segment's end, the picture's one home,
+  since symphonia finds it only through the `SeekHead` and `probe`'s `attached_cover` takes a file
+  whose name begins `cover`; a file whose album or sleeve reads it back needs nothing else. The
+  `SeekHead` entry for it takes the room `Tags` left; where the fifth entry does not fit (YouTube's
+  head holds four), `laid_in_the_room` lets go of entries that point before the first `Cluster`,
+  earliest first, since a reader takes those in order and no index is lost
+  (`a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_the_index_whole`).
+  `written_into_a_matroska` lands the tags first and the picture as a second landing
+  (`Taken::of` read afresh); a keep that cannot take its picture is retried without it
+  (`filed::tagged`), so the song is tagged whatever the picture does.
 - **A Matroska name is spelled so it reads alike under both `tags::Naming`s.** `TITLE` and `ARTIST`
   go in a `Tag` at level 30, since at 50 the container's naming reads them as the album and album
   artist and a Vorbis-only key beside them turns that around; the rest go at level 50 under the

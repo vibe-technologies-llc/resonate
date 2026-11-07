@@ -5081,6 +5081,102 @@ fn a_matroska_seek_head_still_finds_every_element_after_a_write() {
     }
 }
 
+const EBML_ATTACHMENTS: u32 = 0x1941_A469;
+
+#[test]
+fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_the_index_whole() {
+    let picture = CoverArt {
+        format: ImageFormat::Png,
+        bytes: ONE_PIXEL_PNG.to_vec(),
+    };
+    let tree = Tree::new();
+    for (name, path) in [
+        ("packed.mka", opus_as_youtube_sends_it(&tree, "packed.mka")),
+        ("ffmpeg.mka", opus_in_webm(&tree, "ffmpeg.mka")),
+    ] {
+        let Some(path) = path else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        let tags = FileTags::over(Sources::local());
+        let before = packets_of(&path);
+        let samples = decode(&path).samples;
+        let edits = title_and_artist("Creep", "Radiohead");
+
+        tags.write(
+            &location,
+            Writing {
+                picture: Some(&picture),
+                ..only_edits(&edits)
+            },
+        )
+        .expect("a written Matroska file");
+
+        let read = tags
+            .read(&location, Picturing::Copied)
+            .expect("a readable file");
+        assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
+        assert_eq!(read.tags.title.as_deref(), Some("Creep"), "{name}");
+        assert_eq!(packets_of(&path), before, "{name} had its packets moved");
+        assert_eq!(decode(&path).samples, samples, "{name} had its audio moved");
+
+        let bytes = fs::read(&path).expect("a written file");
+        let segment = ebml_segment(&bytes);
+        let entries = seek_entries(&bytes);
+        assert!(
+            entries.iter().any(|(id, _)| *id == EBML_ATTACHMENTS),
+            "{name} does not index its picture"
+        );
+        for (id, position) in entries {
+            assert_eq!(
+                ebml_element(&bytes, segment.body + position).id,
+                id,
+                "{name}'s seek head points at something else"
+            );
+        }
+        assert!(
+            read_by_ffmpeg_without_a_complaint(&path),
+            "{name} was read with complaints after its picture was attached"
+        );
+
+        let again = title_and_artist("Karma Police", "Radiohead");
+        tags.write(&location, only_edits(&again))
+            .expect("a second write over a file holding a picture");
+        let kept = tags
+            .read(&location, Picturing::Copied)
+            .expect("a readable file");
+        assert_eq!(kept.picture.into_copied(), Some(picture.clone()), "{name}");
+        assert_eq!(kept.tags.title.as_deref(), Some("Karma Police"), "{name}");
+    }
+}
+
+#[test]
+fn a_second_picture_is_refused_by_a_matroska_file_that_holds_one() {
+    let tree = Tree::new();
+    let Some(path) = opus_as_youtube_sends_it(&tree, "song.mka") else {
+        return;
+    };
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::over(Sources::local());
+    let picture = CoverArt {
+        format: ImageFormat::Png,
+        bytes: ONE_PIXEL_PNG.to_vec(),
+    };
+    let writing = Writing {
+        picture: Some(&picture),
+        ..only_edits(&[])
+    };
+
+    tags.write(&location, writing).expect("a first picture");
+    let held = fs::read(&path).expect("a written file");
+
+    assert!(matches!(
+        tags.write(&location, writing),
+        Err(Error::Unwritable { .. })
+    ));
+    assert_eq!(fs::read(&path).expect("the file"), held);
+}
+
 #[test]
 fn a_matroska_cue_still_points_at_its_cluster_after_a_write() {
     let tree = Tree::new();
