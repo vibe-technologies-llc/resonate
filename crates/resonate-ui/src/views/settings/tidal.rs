@@ -78,6 +78,7 @@ fn turned_away(error: &Error) -> &'static str {
         | Error::NotTheService { .. }
         | Error::NotOffered { .. }
         | Error::ToolFailed { .. }
+        | Error::ToolNotRun { .. }
         | Error::NotAnExtension => "TIDAL answered something this build cannot read",
     }
 }

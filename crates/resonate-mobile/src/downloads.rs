@@ -343,7 +343,8 @@ pub(crate) fn failure_of(provider: MusicProvider, error: &resonate_providers::Er
         Refusal::StillQueued { .. }
         | Refusal::StillArriving { .. }
         | Refusal::Busy { .. }
-        | Refusal::ToolFailed { .. } => Error::ProviderAway { provider },
+        | Refusal::ToolFailed { .. }
+        | Refusal::ToolNotRun { .. } => Error::ProviderAway { provider },
         Refusal::Unreadable { .. }
         | Refusal::OffItsHosts { .. }
         | Refusal::NotOffered { .. }

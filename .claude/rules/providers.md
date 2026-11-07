@@ -69,7 +69,9 @@ stream offer carries an `Opening` the poll opens only for the offer it takes, so
 costs nothing more (`a_search_is_answered_without_the_download_being_asked_for`,
 `an_offer_the_race_did_not_take_is_never_opened`). `Error::is_the_provider_away` marks provider
 errors: `Io`, `Unwelcome`, `StillQueued`, `Untrusted`, `ToolFailed` (a program the provider runs
-exited badly, `code` its exit code), `NotTheService` (a page where the API's
+exited badly, `code` its exit code), `ToolNotRun` (the program could not be started, raised where it
+is spawned and the only error `Error::why_away` reads as `WhyAway::ToolMissing`: an `Io` of kind
+`NotFound` from a folder or a server says nothing of a missing tool), `NotTheService` (a page where the API's
 document was asked: `resonate_providers::is_a_page`), `Refused` 401, 403, 429 (exhausted retry) and
 500+; `TurnedAway`, 404 and `Busy` (a server still busy with another download after its `Retry-After`
 waits) are the want's, the want left unstamped. **A file still arriving is neither miss nor provider

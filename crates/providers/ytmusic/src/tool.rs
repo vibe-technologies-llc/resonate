@@ -339,15 +339,26 @@ pub fn stop_the_tools() {
     }
 }
 
+enum Starting {
+    NotRun(io::Error),
+    Io(io::Error),
+}
+
+impl From<io::Error> for Starting {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
 struct Reaped(Arc<Mutex<Child>>);
 
 impl Reaped {
-    fn spawned(command: &mut Command) -> io::Result<Self> {
+    fn spawned(command: &mut Command) -> std::result::Result<Self, Starting> {
         let mut living = LIVING.lock();
         if living.stopped {
-            return Err(ErrorKind::Interrupted.into());
+            return Err(Starting::Io(ErrorKind::Interrupted.into()));
         }
-        let child = Arc::new(Mutex::new(command.spawn()?));
+        let child = Arc::new(Mutex::new(command.spawn().map_err(Starting::NotRun)?));
         living.children.retain(|held| held.strong_count() > 0);
         living.children.push(Arc::downgrade(&child));
         Ok(Self(child))
@@ -505,7 +516,11 @@ struct Running {
 }
 
 impl Running {
-    fn of(program: &Path, arguments: &[OsString], withheld: Vec<String>) -> io::Result<Self> {
+    fn of(
+        program: &Path,
+        arguments: &[OsString],
+        withheld: Vec<String>,
+    ) -> std::result::Result<Self, Starting> {
         let child = Reaped::spawned(
             Command::new(program)
                 .args(arguments)
@@ -517,8 +532,8 @@ impl Running {
             let mut held = child.0.lock();
             (held.stdout.take(), held.stderr.take())
         };
-        let stdout = stdout.ok_or(ErrorKind::BrokenPipe)?;
-        let stderr = stderr.ok_or(ErrorKind::BrokenPipe)?;
+        let stdout = stdout.ok_or(Starting::Io(ErrorKind::BrokenPipe.into()))?;
+        let stderr = stderr.ok_or(Starting::Io(ErrorKind::BrokenPipe.into()))?;
         Ok(Self {
             complaints: Complaints::drained_from(stderr, withheld)?,
             chunks: pumped_from(stdout)?,
@@ -664,8 +679,16 @@ impl Tool {
     }
 
     fn running(&self, op: ProviderOp, arguments: &[OsString]) -> Result<Running> {
-        Running::of(&self.program, arguments, self.cookies.withheld())
-            .map_err(|source| self.failed_io(op, source))
+        Running::of(&self.program, arguments, self.cookies.withheld()).map_err(|starting| {
+            match starting {
+                Starting::NotRun(source) => Error::ToolNotRun {
+                    provider: self.provider.clone(),
+                    op,
+                    source,
+                },
+                Starting::Io(source) => self.failed_io(op, source),
+            }
+        })
     }
 
     fn failed_io(&self, op: ProviderOp, source: io::Error) -> Error {

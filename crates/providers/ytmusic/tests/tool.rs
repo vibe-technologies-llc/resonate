@@ -119,22 +119,33 @@ fn a_tool_not_there_is_the_provider_away() {
         Err(error) => error,
     };
 
+    let playlists = missing.playlists().expect_err("no tool to run");
+
     assert!(matches!(
         listing,
-        Error::Io {
+        Error::ToolNotRun {
             op: ProviderOp::Search,
             ..
         }
     ));
     assert!(matches!(
         download,
-        Error::Io {
+        Error::ToolNotRun {
             op: ProviderOp::Download,
             ..
         }
     ));
-    assert!(listing.is_the_provider_away());
-    assert!(download.is_the_provider_away());
+    assert!(matches!(
+        playlists,
+        Error::ToolNotRun {
+            op: ProviderOp::Browse,
+            ..
+        }
+    ));
+    for error in [listing, download, playlists] {
+        assert!(error.is_the_provider_away());
+        assert_eq!(error.why_away(), resonate_providers::WhyAway::ToolMissing);
+    }
 }
 
 #[cfg(unix)]

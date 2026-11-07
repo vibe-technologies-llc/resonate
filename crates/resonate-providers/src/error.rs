@@ -1,8 +1,4 @@
-use std::{
-    io::{self, ErrorKind},
-    path::PathBuf,
-    result,
-};
+use std::{io, path::PathBuf, result};
 
 use resonate_core::SourceId;
 use thiserror::Error;
@@ -99,6 +95,14 @@ pub enum Error {
         code: Option<i32>,
     },
 
+    #[error("{op:?} could not run the {provider} provider's tool")]
+    ToolNotRun {
+        provider: SourceId,
+        op: ProviderOp,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
@@ -142,15 +146,24 @@ impl Error {
                 code: THE_SUBSCRIPTION_LAPSED,
                 ..
             } => WhyAway::SubscriptionLapsed,
-            Self::Io { source, .. }
-                if matches!(
-                    source.kind(),
-                    ErrorKind::NotFound | ErrorKind::PermissionDenied
-                ) =>
-            {
-                WhyAway::ToolMissing
-            }
-            _ => WhyAway::NotAnswering,
+            Self::ToolNotRun { .. } => WhyAway::ToolMissing,
+            Self::Io { .. }
+            | Self::Refused { .. }
+            | Self::Unreadable { .. }
+            | Self::TurnedAway { .. }
+            | Self::Unwelcome { .. }
+            | Self::OffItsHosts { .. }
+            | Self::StillQueued { .. }
+            | Self::Untrusted { .. }
+            | Self::Unaddressable { .. }
+            | Self::NotTheService { .. }
+            | Self::Busy { .. }
+            | Self::NotOffered { .. }
+            | Self::StillArriving { .. }
+            | Self::AuthorizationLapsed { .. }
+            | Self::AuthorizationDenied { .. }
+            | Self::ToolFailed { .. }
+            | Self::NotAnExtension => WhyAway::NotAnswering,
         }
     }
 
@@ -162,7 +175,8 @@ impl Error {
             | Self::Untrusted { .. }
             | Self::Unaddressable { .. }
             | Self::NotTheService { .. }
-            | Self::ToolFailed { .. } => true,
+            | Self::ToolFailed { .. }
+            | Self::ToolNotRun { .. } => true,
             Self::Refused { status, .. } => {
                 *status >= SERVER_TROUBLE || TURNED_AWAY_WHOEVER_ASKS.contains(status)
             }
@@ -183,6 +197,8 @@ pub type Result<T> = result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
+    use std::io::ErrorKind;
+
     use super::*;
 
     #[test]
@@ -276,7 +292,12 @@ mod tests {
             op: ProviderOp::Search,
             code,
         };
-        let run = |kind: ErrorKind| Error::Io {
+        let run = |kind: ErrorKind| Error::ToolNotRun {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            source: kind.into(),
+        };
+        let io = |kind: ErrorKind| Error::Io {
             provider: provider.clone(),
             op: ProviderOp::Search,
             source: kind.into(),
@@ -295,7 +316,13 @@ mod tests {
             run(ErrorKind::PermissionDenied).why_away(),
             WhyAway::ToolMissing
         );
-        assert_eq!(run(ErrorKind::TimedOut).why_away(), WhyAway::NotAnswering);
+        assert_eq!(run(ErrorKind::TimedOut).why_away(), WhyAway::ToolMissing);
+        assert!(run(ErrorKind::NotFound).is_the_provider_away());
+        assert_eq!(io(ErrorKind::NotFound).why_away(), WhyAway::NotAnswering);
+        assert_eq!(
+            io(ErrorKind::PermissionDenied).why_away(),
+            WhyAway::NotAnswering
+        );
         assert!(!WhyAway::NotAnswering.says_nothing_of_the_song());
         assert!(WhyAway::SignInLapsed.says_nothing_of_the_song());
     }
