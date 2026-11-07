@@ -18,10 +18,12 @@ const LANES_PER_VECTOR: usize = if cfg!(target_feature = "avx512f") {
 } else {
     2
 };
+const WIDEST_LANES_PER_VECTOR: usize = 8;
 const VECTOR_BYTES: usize = LANES_PER_VECTOR * size_of::<f64>();
 const ACCUMULATORS: usize = 8;
 const _: () =
     assert!(ACCUMULATORS.is_power_of_two() && ACCUMULATORS.is_multiple_of(LANES_PER_VECTOR));
+const _: () = assert!(LANES_PER_VECTOR <= WIDEST_LANES_PER_VECTOR);
 const TABULATED_WEIGHT_BYTES_AT_MOST: usize = 16 << 20;
 const KEPT_TABLE_BYTES_AT_MOST: usize = 4 << 20;
 const LAGRANGE_NODES: usize = 4;
@@ -483,7 +485,7 @@ impl Tabulated {
     }
 
     fn fits(phases: u32, reach: Reach) -> bool {
-        padded_row(reach)
+        padded_row_in_lanes_of(reach, WIDEST_LANES_PER_VECTOR)
             .checked_mul(phases as usize)
             .and_then(|entries| entries.checked_mul(size_of::<f64>()))
             .is_some_and(|bytes| bytes <= TABULATED_WEIGHT_BYTES_AT_MOST)
@@ -576,7 +578,11 @@ impl Tabulated {
 }
 
 const fn padded_row(reach: Reach) -> usize {
-    (LANES_PER_VECTOR + reach.span() + ACCUMULATORS).next_multiple_of(LANES_PER_VECTOR)
+    padded_row_in_lanes_of(reach, LANES_PER_VECTOR)
+}
+
+const fn padded_row_in_lanes_of(reach: Reach, lanes: usize) -> usize {
+    (lanes + reach.span() + ACCUMULATORS).next_multiple_of(lanes)
 }
 
 struct Aligned {

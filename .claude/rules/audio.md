@@ -1028,7 +1028,11 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   an f64 accumulator smeared those 160 into over a thousand). `Tabulated` builds all phases once in
   `Resampler::new`, each divided by its own sum (every phase passes DC at unity);
   `TABULATED_WEIGHT_BYTES_AT_MOST` is sized so every pair of common rates within 32:1 tabulates at
-  every level, a rate no device offers uses `Kernel` (four-point Lagrange stencil). History is one f64
+  every level, a rate no device offers uses `Kernel` (four-point Lagrange stencil). **Whether a table
+  fits is weighed on the row the widest vector pads to** (`WIDEST_LANES_PER_VECTOR`, AVX-512's eight),
+  never this build's, so a rate pair takes the same route on the baseline, `x86-64-v3` and a native
+  build: weighed on its own row, the baseline tabulated Balanced at 44.1 onto 47.993 kHz while
+  AVX-512 interpolated it. History is one f64
   plane per channel, `ACCUMULATORS` independent lanes, aligned to `VECTOR_BYTES` and zero-padded (no
   scalar tail); lanes pass through `lanes` before summing (LLVM's SLP vectoriser paired the two
   channels instead of packing each one's lanes). More accumulators win nothing: the loop is bound by
