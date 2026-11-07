@@ -86,6 +86,57 @@ impl AccountChecked {
     }
 }
 
+#[derive(Default)]
+struct Looked {
+    checked: Option<AccountChecked>,
+    looking: bool,
+}
+
+#[derive(Default)]
+struct Account {
+    looked: Mutex<Looked>,
+    done: Condvar,
+}
+
+enum Standing {
+    Known(bool),
+    Ours(Looking),
+}
+
+struct Looking(Arc<Account>);
+
+impl Account {
+    fn standing(self: &Arc<Self>) -> Standing {
+        let mut looked = self.looked.lock();
+        loop {
+            if let Some(checked) = looked.checked.filter(|checked| checked.still_stands()) {
+                return Standing::Known(checked.premium);
+            }
+            if !looked.looking {
+                looked.looking = true;
+                return Standing::Ours(Looking(Arc::clone(self)));
+            }
+            self.done.wait(&mut looked);
+        }
+    }
+}
+
+impl Looking {
+    fn concluded(self, premium: bool) {
+        self.0.looked.lock().checked = Some(AccountChecked {
+            at: Instant::now(),
+            premium,
+        });
+    }
+}
+
+impl Drop for Looking {
+    fn drop(&mut self) {
+        self.0.looked.lock().looking = false;
+        self.0.done.notify_all();
+    }
+}
+
 fn video_named_by(link: &str) -> Option<VideoId> {
     let (_, query) = link.split_once('?')?;
     query
@@ -103,7 +154,7 @@ pub struct YtMusic {
     asking: Agent,
     pacing: Arc<Pacing>,
     client_version: Arc<Mutex<Option<String>>>,
-    account: Arc<Mutex<Option<AccountChecked>>>,
+    account: Arc<Account>,
     downloads: Arc<OneAtATime>,
     turn_within: Duration,
 }
@@ -206,10 +257,10 @@ impl YtMusic {
     }
 
     fn account_still_premium(&self) -> Result<bool> {
-        let mut account = self.account.lock();
-        if let Some(checked) = account.filter(|checked| checked.still_stands()) {
-            return Ok(checked.premium);
-        }
+        let looking = match self.account.standing() {
+            Standing::Known(premium) => return Ok(premium),
+            Standing::Ours(looking) => looking,
+        };
         let video = VideoId::read(CHECKED_WITH).ok_or(Error::Unreadable {
             provider: self.source.clone(),
             op: ProviderOp::Search,
@@ -218,10 +269,7 @@ impl YtMusic {
             .tool
             .formats_standing(&video)?
             .is_none_or(|formats| formats.best.is_some_and(Tier::is_premium));
-        *account = Some(AccountChecked {
-            at: Instant::now(),
-            premium,
-        });
+        looking.concluded(premium);
         Ok(premium)
     }
 
@@ -312,6 +360,8 @@ impl Provider for YtMusic {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+
     use super::*;
 
     #[test]
@@ -325,6 +375,41 @@ mod tests {
 
         assert!(checked_ago(Duration::ZERO).still_stands());
         assert!(!checked_ago(A_POLL_LASTS).still_stands());
+    }
+
+    #[test]
+    fn a_lane_waits_on_the_look_in_hand_and_takes_its_answer_without_looking_again() {
+        let account = Arc::new(Account::default());
+        let Standing::Ours(looking) = account.standing() else {
+            panic!("the first lane looks");
+        };
+
+        let known = thread::scope(|scope| {
+            let waiting =
+                scope.spawn(|| matches!(account.standing(), Standing::Known(premium) if premium));
+            thread::sleep(Duration::from_millis(100));
+            looking.concluded(true);
+            waiting.join().expect("the waiting lane")
+        });
+
+        assert!(known);
+    }
+
+    #[test]
+    fn a_lane_waiting_on_a_look_that_failed_looks_itself() {
+        let account = Arc::new(Account::default());
+        let Standing::Ours(looking) = account.standing() else {
+            panic!("the first lane looks");
+        };
+
+        let looks_itself = thread::scope(|scope| {
+            let waiting = scope.spawn(|| matches!(account.standing(), Standing::Ours(_)));
+            thread::sleep(Duration::from_millis(100));
+            drop(looking);
+            waiting.join().expect("the waiting lane")
+        });
+
+        assert!(looks_itself);
     }
 
     #[test]
