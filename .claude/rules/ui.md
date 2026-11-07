@@ -965,11 +965,10 @@ is never named.
     measures, no gpui. Status cluster measured into `RootView::status_room` a frame behind;
     `status_kept` drops volume reading, sleep control, repeat, shuffle, then volume rail, until the
     rest fits; never the queue button or the speaker. `signal_kept` likewise against `playing_room`
-    (`kit::width_of`): mode's name first, then depth and rate, then the mode's dot; codec badge stays.
+    (`kit::width_of`): depth and rate give way; the codec badge stays.
   - **Now-playing panel**: cover (`theme::now_playing_cover()`), title, artist, album, signal path:
-    decoding-format badge with depth and rate, then the output's mode dot and name in the mode's colour
-    (*bit-perfect*, *converted*), nothing after (the inspector spells out what a converted stream
-    became). A press opens the inspector. **The path is as wide as what it says**: `self_start`
+    the decoding-format badge with depth and rate, and nothing of the output: the bar names no mode
+    (*bit-perfect*, *converted*), which the inspector's OUTPUT stage spells out. A press opens the inspector. **The path is as wide as what it says**: `self_start`
     under `max_w_full`, else the column stretched it and its hover wash ran to the panel's edge
     (`the_signal_path_is_as_wide_as_what_it_says_rather_than_the_panel`).
   - **A skip never blanks the panel.** While the next row opens the engine publishes no current track

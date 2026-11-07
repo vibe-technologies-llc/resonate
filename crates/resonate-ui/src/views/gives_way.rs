@@ -115,63 +115,28 @@ pub(crate) fn status_kept(room: f32, widths: StatusWidths) -> StatusKept {
 pub(crate) struct SignalWidths {
     pub(crate) lead: f32,
     pub(crate) quality: Option<f32>,
-    pub(crate) dot: f32,
-    pub(crate) label: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SignalKept {
     pub(crate) quality: bool,
-    pub(crate) dot: bool,
-    pub(crate) label: bool,
 }
 
 impl SignalKept {
-    pub(crate) const EVERYTHING: Self = Self {
-        quality: true,
-        dot: true,
-        label: true,
-    };
+    pub(crate) const EVERYTHING: Self = Self { quality: true };
 
     fn width(self, widths: SignalWidths) -> f32 {
-        let after = |kept: bool, width: Option<f32>| match (kept, width) {
-            (true, Some(width)) => PATH_GAP + width,
-            _ => 0.0,
-        };
-        let output = widths.label.map(|_| widths.dot);
-
-        widths.lead
-            + after(self.quality, widths.quality)
-            + after(self.dot, output)
-            + after(self.label, widths.label)
+        match (self.quality, widths.quality) {
+            (true, Some(width)) => widths.lead + PATH_GAP + width,
+            _ => widths.lead,
+        }
     }
 }
 
 pub(crate) fn signal_kept(room: f32, widths: SignalWidths) -> SignalKept {
-    if room <= 0.0 {
-        return SignalKept::EVERYTHING;
+    SignalKept {
+        quality: room <= 0.0 || SignalKept::EVERYTHING.width(widths) <= room,
     }
-    let steps = [
-        SignalKept {
-            label: false,
-            ..SignalKept::EVERYTHING
-        },
-        SignalKept {
-            quality: false,
-            dot: true,
-            label: false,
-        },
-        SignalKept {
-            quality: false,
-            dot: false,
-            label: false,
-        },
-    ];
-
-    std::iter::once(SignalKept::EVERYTHING)
-        .chain(steps)
-        .find(|kept| kept.width(widths) <= room)
-        .unwrap_or(steps[steps.len() - 1])
 }
 
 #[cfg(test)]
@@ -189,8 +154,6 @@ mod tests {
     const SIGNAL: SignalWidths = SignalWidths {
         lead: 40.0,
         quality: Some(110.0),
-        dot: 7.0,
-        label: Some(70.0),
     };
 
     #[test]
@@ -251,32 +214,14 @@ mod tests {
     }
 
     #[test]
-    fn the_signal_path_drops_the_mode_name_then_the_quality_then_the_dot_and_keeps_the_codec() {
+    fn the_signal_path_drops_the_quality_and_keeps_the_codec() {
         let whole = SignalKept::EVERYTHING.width(SIGNAL);
 
         assert_eq!(signal_kept(whole, SIGNAL), SignalKept::EVERYTHING);
+        assert_eq!(signal_kept(0.0, SIGNAL), SignalKept::EVERYTHING);
         assert_eq!(
             signal_kept(whole - 1.0, SIGNAL),
-            SignalKept {
-                label: false,
-                ..SignalKept::EVERYTHING
-            }
-        );
-        assert_eq!(
-            signal_kept(SIGNAL.lead + 20.0, SIGNAL),
-            SignalKept {
-                quality: false,
-                dot: true,
-                label: false,
-            }
-        );
-        assert_eq!(
-            signal_kept(SIGNAL.lead, SIGNAL),
-            SignalKept {
-                quality: false,
-                dot: false,
-                label: false,
-            }
+            SignalKept { quality: false }
         );
     }
 }

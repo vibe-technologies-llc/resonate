@@ -13,8 +13,8 @@ use resonate_core::{
     AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
 };
 use resonate_engine::{
-    Asleep, Command, OutputStatus, Placement, PlaybackState, PlayerState, QueueItem, RepeatMode,
-    StreamDigest, Until,
+    Asleep, Command, Placement, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest,
+    Until,
 };
 use resonate_library::{Codec, Favoured};
 
@@ -83,8 +83,6 @@ const SIDE_AT_LEAST: f32 = 180.0;
 const CENTRE_AT_LEAST: f32 = 260.0;
 
 const BADGE_PADDING: f32 = 12.0;
-
-const MODE_DOT: f32 = 7.0;
 
 const BY_LINE_SEPARATOR: &str = "·";
 
@@ -199,7 +197,6 @@ fn between_songs(state: &PlayerState) -> bool {
 #[derive(Clone, Copy)]
 pub(crate) struct Signal {
     source: Option<StreamSpec>,
-    output: Option<OutputStatus>,
 }
 
 #[derive(PartialEq)]
@@ -652,7 +649,6 @@ impl RootView {
             Some(track) => {
                 handovers.signal = Some(Signal {
                     source: Some(track.source),
-                    output: state.output,
                 });
             }
             None if between_songs(state) => {}
@@ -852,7 +848,6 @@ impl RootView {
             .names(hint);
 
         let quality = source.map(format::quality);
-        let output = signal.output.map(|output| format::mode(output.mode));
         let size = px(theme::text_xs());
         let measured = |text: &str, weight: FontWeight| {
             f32::from(kit::width_of(text, &theme::mono(weight), size, cx))
@@ -870,8 +865,6 @@ impl RootView {
             SignalWidths {
                 lead,
                 quality: quality_width,
-                dot: MODE_DOT,
-                label: output.map(|(label, _)| measured(label, FontWeight::NORMAL)),
             },
         );
 
@@ -886,14 +879,7 @@ impl RootView {
             (None, None) => {}
         }
 
-        let Some((label, colour)) = output else {
-            return path;
-        };
-
-        path.when(kept.dot, |path| path.child(kit::mode_dot(colour)))
-            .when(kept.label, |path| {
-                path.child(kit::figure(label).text_color(rgb(colour)))
-            })
+        path
     }
 
     pub(crate) fn art_of_what_plays(&self, side: f32, cx: &mut Context<Self>) -> Option<Div> {
