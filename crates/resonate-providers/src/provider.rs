@@ -7,7 +7,7 @@ use std::{
 
 use resonate_core::SourceId;
 
-use crate::{Delivered, Identity, Obtained, Result};
+use crate::{Delivered, Identity, Obtained, Result, WhyAway};
 
 const UNPROVIDED: &str = "unprovided";
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
@@ -15,6 +15,8 @@ const LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
 pub const TURNED_TO_APART: Duration = Duration::from_millis(1_500);
 
 pub const WAITED_ON_AFTER_AN_OFFER: Duration = Duration::from_secs(3);
+
+pub const ANSWERED_ALONE_WITHIN: Duration = Duration::from_secs(120);
 
 pub trait Provider: Send + Sync {
     fn source(&self) -> &SourceId;
@@ -99,26 +101,35 @@ impl Answer {
 
 #[derive(Clone, Debug, Default)]
 pub struct Away {
-    providers: Vec<SourceId>,
+    providers: Vec<(SourceId, WhyAway)>,
 }
 
 impl Away {
     pub fn note(&mut self, provider: &SourceId) {
+        self.note_why(provider, WhyAway::default());
+    }
+
+    pub fn note_why(&mut self, provider: &SourceId, why: WhyAway) {
         if !self.holds(provider) {
-            tracing::warn!(%provider, "a provider is away and is not asked again this poll");
-            self.providers.push(provider.clone());
+            tracing::warn!(%provider, ?why, "a provider is away and is not asked again this poll");
+            self.providers.push((provider.clone(), why));
         }
     }
 
     pub fn holds(&self, provider: &SourceId) -> bool {
-        self.providers.contains(provider)
+        self.why(provider).is_some()
+    }
+
+    pub fn why(&self, provider: &SourceId) -> Option<WhyAway> {
+        self.providers
+            .iter()
+            .find(|(held, _)| held == provider)
+            .map(|(_, why)| *why)
     }
 
     pub fn join(&mut self, other: &Self) {
-        for provider in &other.providers {
-            if !self.holds(provider) {
-                self.providers.push(provider.clone());
-            }
+        for (provider, why) in &other.providers {
+            self.note_why(provider, *why);
         }
     }
 }
@@ -176,6 +187,12 @@ impl Providers {
                 .collect(),
             narrowed: self.narrowed,
         }
+    }
+
+    pub fn is_a_last_resort(&self, source: &SourceId) -> bool {
+        self.providers
+            .iter()
+            .any(|provider| provider.source() == source && provider.last_resort())
     }
 
     pub fn names(&self) -> Vec<SourceId> {
@@ -320,7 +337,7 @@ impl Providers {
                     tracing::warn!(%error, cause = ?error.cause(), provider = %provider.source(), title = %identity.title, "a provider refused");
                     answer.refused += 1;
                     if error.is_the_provider_away() {
-                        away.note(provider.source());
+                        away.note_why(provider.source(), error.why_away());
                     }
                 }
             }
@@ -413,6 +430,29 @@ mod tests {
 
     fn nothing() -> Result<Obtained> {
         Ok(Obtained::Nothing)
+    }
+
+    #[test]
+    fn a_provider_turned_away_is_held_away_with_the_reason_its_error_gave() {
+        let lapsed = || {
+            Err(Error::Unwelcome {
+                provider: SourceId::new("lapsed").expect("a nameable source"),
+                op: ProviderOp::Search,
+                code: crate::THE_SIGN_IN_LAPSED,
+            })
+        };
+        let source = SourceId::new("lapsed").expect("a nameable source");
+        let providers = Providers::none().and(Fixed::registered("lapsed", lapsed));
+        let mut away = Away::default();
+
+        providers.first(&Identity::named("Echoes"), &patient(), &mut away);
+
+        assert_eq!(away.why(&source), Some(WhyAway::SignInLapsed));
+        away.note(&source);
+        assert_eq!(away.why(&source), Some(WhyAway::SignInLapsed));
+        let mut joined = Away::default();
+        joined.join(&away);
+        assert_eq!(joined.why(&source), Some(WhyAway::SignInLapsed));
     }
 
     #[test]

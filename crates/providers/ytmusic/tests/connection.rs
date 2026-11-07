@@ -83,5 +83,45 @@ fn a_tool_that_will_not_run_is_told_apart_from_one_that_failed() {
     let failing = Fake::answering("exit 1");
 
     assert_eq!(missing.check(), Connection::ToolMissing);
-    assert_eq!(told(&failing, cookies()), Connection::NotSignedIn);
+    assert_eq!(told(&failing, cookies()), Connection::CouldNotCheck);
+}
+
+#[test]
+fn a_check_that_could_not_be_made_is_told_apart_from_not_being_signed_in() {
+    let network = Fake::answering(
+        "echo 'ERROR: [youtube] 9RfVp-GhKfs: Unable to download API page: HTTP Error 503' >&2\nexit 1",
+    );
+    let bot_check = Fake::answering(
+        "echo \"ERROR: [youtube] 9RfVp-GhKfs: Sign in to confirm you're not a bot\" >&2\nexit 1",
+    );
+    let nonsense = Fake::answering("echo 'not a listing'");
+
+    assert_eq!(told(&network, cookies()), Connection::CouldNotCheck);
+    assert_eq!(told(&bot_check, cookies()), Connection::CouldNotCheck);
+    assert_eq!(told(&nonsense, cookies()), Connection::CouldNotCheck);
+}
+
+#[test]
+fn the_check_song_taken_down_is_told_as_that_with_cookies_or_without() {
+    let gone = Fake::answering("echo 'ERROR: [youtube] 9RfVp-GhKfs: Video unavailable' >&2\nexit 1");
+
+    assert_eq!(told(&gone, cookies()), Connection::CheckSongGone);
+    assert_eq!(told(&gone, Cookies::None), Connection::CheckSongGone);
+}
+
+#[test]
+fn the_check_song_gone_leaves_a_lapse_standing() {
+    let fake = Fake::answering(&format!(
+        "if [ -e \"$here/taken-down\" ]; then echo 'ERROR: [youtube] 9RfVp-GhKfs: Video unavailable' >&2; exit 1; else {LAPSED}; fi"
+    ));
+    let tool = fake.tool(cookies());
+    let music = YtMusic::new(tool.clone());
+    let song = VideoId::read("abc").expect("a video id");
+    assert!(matches!(tool.formats(&song), Err(Error::Unwelcome { .. })));
+
+    fs::write(fake.folder().join("taken-down"), b"").expect("the check song taken down");
+    assert_eq!(music.check(), Connection::CheckSongGone);
+
+    assert!(matches!(tool.formats(&song), Err(Error::Unwelcome { .. })));
+    assert_eq!(fake.calls().len(), 2, "the lapse still spares the tool");
 }

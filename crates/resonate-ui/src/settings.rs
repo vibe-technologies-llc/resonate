@@ -855,6 +855,8 @@ pub enum YoutubeMusicConnection {
     SignedInWithoutPremium,
     NotSignedIn,
     ToolMissing,
+    CheckSongGone,
+    CouldNotCheck,
 }
 
 pub type ChecksYoutubeMusic = Arc<dyn Fn(&Online) -> Option<YoutubeMusicConnection> + Send + Sync>;

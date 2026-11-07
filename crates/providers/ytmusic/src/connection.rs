@@ -1,6 +1,4 @@
-use std::io::ErrorKind;
-
-use resonate_providers::Error;
+use resonate_providers::{Error, WhyAway};
 
 use crate::{CHECKED_WITH, Tier, VideoId, YtMusic};
 
@@ -10,26 +8,32 @@ pub enum Connection {
     SignedInWithoutPremium,
     NotSignedIn,
     ToolMissing,
-}
-
-fn the_tool_did_not_run(error: &Error) -> bool {
-    matches!(error, Error::Io { source, .. } if source.kind() != ErrorKind::TimedOut)
+    CheckSongGone,
+    CouldNotCheck,
 }
 
 impl YtMusic {
     pub fn check(&self) -> Connection {
         let Some(video) = VideoId::read(CHECKED_WITH) else {
-            return Connection::NotSignedIn;
+            return Connection::CouldNotCheck;
         };
         let best = match self.tool.formats_checked(&video) {
-            Ok(formats) => formats.best,
-            Err(error) if the_tool_did_not_run(&error) => {
+            Ok(Some(formats)) => formats.best,
+            Ok(None) => {
+                tracing::warn!(video = CHECKED_WITH, "the song a check uses is gone");
+                return Connection::CheckSongGone;
+            }
+            Err(error) if error.why_away() == WhyAway::ToolMissing => {
                 tracing::warn!(%error, "yt-dlp could not be run");
                 return Connection::ToolMissing;
             }
+            Err(error @ Error::Unwelcome { .. }) => {
+                tracing::warn!(%error, "the account was turned away");
+                return Connection::NotSignedIn;
+            }
             Err(error) => {
                 tracing::warn!(%error, "the account could not be checked");
-                return Connection::NotSignedIn;
+                return Connection::CouldNotCheck;
             }
         };
         if !self.tool.holds_cookies() {

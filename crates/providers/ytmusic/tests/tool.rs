@@ -42,6 +42,24 @@ fn a_browser_alone_is_a_browser_and_a_path_that_merely_holds_a_colon_is_a_file()
 }
 
 #[test]
+fn a_bare_word_goes_to_the_tool_as_a_browser_and_only_a_separator_names_a_file() {
+    assert_eq!(Cookies::read("zen"), Cookies::Browser("zen".into()));
+    assert_eq!(Cookies::read("firefx"), Cookies::Browser("firefx".into()));
+    assert_eq!(
+        Cookies::read("cookies.txt"),
+        Cookies::Browser("cookies.txt".into())
+    );
+    assert_eq!(
+        Cookies::read("exported/cookies.txt"),
+        Cookies::File("exported/cookies.txt".into())
+    );
+    assert_eq!(
+        Cookies::read(r"exported\cookies.txt"),
+        Cookies::File(r"exported\cookies.txt".into())
+    );
+}
+
+#[test]
 fn a_cookie_value_is_withheld_from_debug() {
     let browser = Cookies::read("firefox:/home/a/zen");
     let file = Cookies::read("/home/a/cookies.txt");
@@ -485,6 +503,72 @@ mod faked {
             assert_eq!(
                 tool.formats(&song()).expect("no formats"),
                 Formats::default()
+            );
+        }
+    }
+
+    #[test]
+    fn a_video_refused_for_its_own_reason_opens_as_gone_and_lists_no_tier() {
+        for reason in [
+            "Sign in to confirm your age. This video may be inappropriate for some users.",
+            "This video has been removed by the uploader",
+            "The uploader has not made this video available in your country",
+            "This video is DRM protected",
+            "Requested format is not available. Use --list-formats for a list of available formats",
+        ] {
+            let fake = Fake::answering(&format!(
+                "echo \"ERROR: [youtube] {SONG}: {reason}\" >&2\nexit 1"
+            ));
+            let tool = fake.tool(Cookies::None);
+
+            assert!(
+                matches!(tool.download(&song(), Tier::Opus774), Ok(Opened::Gone)),
+                "{reason}"
+            );
+            assert_eq!(
+                tool.formats(&song()).expect("no formats"),
+                Formats::default(),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn trouble_of_the_account_or_the_network_is_no_verdict_on_the_video() {
+        for reason in [
+            "Sign in to confirm you're not a bot. Use --cookies-from-browser",
+            "Unable to download API page: HTTP Error 503: Service Unavailable",
+            "Unable to download webpage: <urlopen error [Errno -3] name resolution>",
+            "Video unavailable. This content isn't available, try again later. The current session has been rate-limited by YouTube for up to an hour",
+            "Failed to extract any player response; please report this issue on https://github.com/yt-dlp/yt-dlp/issues",
+        ] {
+            let fake = Fake::answering(&format!(
+                "cat >&2 <<'SAID'\nERROR: [youtube] {SONG}: {reason}\nSAID\nexit 1"
+            ));
+            let tool = fake.tool(Cookies::None);
+
+            let listing = tool.formats(&song()).expect_err("no verdict");
+            let download = tool.download(&song(), Tier::Opus774);
+
+            assert!(listing.is_the_provider_away(), "{reason}");
+            assert!(matches!(listing, Error::ToolFailed { .. }), "{reason}");
+            assert!(matches!(download, Err(Error::ToolFailed { .. })), "{reason}");
+        }
+    }
+
+    #[test]
+    fn a_tool_that_never_reached_the_video_is_the_tool_failed() {
+        for said in [
+            "yt-dlp: error: unsupported browser specified for cookies: \"zen\"",
+            "Traceback (most recent call last):",
+            "ERROR: [youtube] another-id: Video withdrawn",
+        ] {
+            let fake = Fake::answering(&format!("cat >&2 <<'SAID'\n{said}\nSAID\nexit 2"));
+            let tool = fake.tool(Cookies::None);
+
+            assert!(
+                matches!(tool.formats(&song()), Err(Error::ToolFailed { .. })),
+                "{said}"
             );
         }
     }

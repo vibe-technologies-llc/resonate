@@ -200,6 +200,8 @@ pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::Ch
             }
             Connection::NotSignedIn => resonate_ui::YoutubeMusicConnection::NotSignedIn,
             Connection::ToolMissing => resonate_ui::YoutubeMusicConnection::ToolMissing,
+            Connection::CheckSongGone => resonate_ui::YoutubeMusicConnection::CheckSongGone,
+            Connection::CouldNotCheck => resonate_ui::YoutubeMusicConnection::CouldNotCheck,
         })
     }))
 }

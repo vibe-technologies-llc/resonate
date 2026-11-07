@@ -707,6 +707,49 @@ fn a_song_short_of_premium_is_refused_where_the_account_has_lost_it() {
 }
 
 #[test]
+fn a_check_song_taken_down_is_no_lost_premium_and_the_song_is_taken_at_its_tier() {
+    let fake = Fake::answering(&format!(
+        "case \"$*\" in *v={CHECKED_WITH}*) echo 'ERROR: [youtube] {CHECKED_WITH}: Video unavailable' >&2; exit 1 ;; *) echo '{}' ;; esac",
+        listed(&[("251", 1)])
+    ));
+    let music = no_server();
+
+    let (_, extension, _) = offered(
+        music
+            .provider(&fake, Cookies::read("firefox"))
+            .find(&song_at(ANOTHER))
+            .expect("an answer"),
+    );
+
+    assert_eq!(extension.as_str(), "mka");
+}
+
+#[test]
+fn lanes_asking_at_once_wait_on_one_look_at_the_account() {
+    let fake = Fake::answering(&format!(
+        "case \"$*\" in *v={CHECKED_WITH}*) sleep 0.2; echo '{}' ;; *) echo '{}' ;; esac",
+        listed(&[("774", 1)]),
+        listed(&[("251", 1)]),
+    ));
+    let music = no_server();
+    let provider = music.provider(&fake, Cookies::read("firefox"));
+
+    thread::scope(|scope| {
+        for video in ["first", "second", "third"] {
+            let provider = &provider;
+            scope.spawn(move || provider.find(&song_at(video)).expect("an answer"));
+        }
+    });
+
+    let asked_about_the_account = fake
+        .calls()
+        .iter()
+        .filter(|call| call.iter().any(|argument| argument.ends_with(CHECKED_WITH)))
+        .count();
+    assert_eq!(asked_about_the_account, 1);
+}
+
+#[test]
 fn a_song_short_of_premium_is_taken_with_no_question_where_no_account_was_given() {
     let fake = checked_as(&[("251", 1)], &[("251", 1)]);
     let music = no_server();

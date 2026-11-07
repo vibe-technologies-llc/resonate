@@ -21,8 +21,8 @@ const TERMS_NOTE: &str = "Saving songs this way breaks YouTube's terms, even on 
 const YOUTUBE_MUSIC_NOTE: &str = "Nothing is asked of YouTube until this is on, and only while \
                                   Online is on. yt-dlp is a program of its own, installed apart. \
                                   The cookies name a browser as yt-dlp does, as firefox or \
-                                  firefox:/path/to/profile for a fork such as Zen, or a cookies \
-                                  file. With none, songs come at the free tier.";
+                                  firefox:/path/to/profile for a fork such as Zen, or the path \
+                                  of a cookies file. With none, songs come at the free tier.";
 
 const CHECK_LABEL: &str = "Check connection";
 
@@ -36,6 +36,12 @@ const NOT_SIGNED_IN: &str = "Not signed in to YouTube";
 
 const TOOL_MISSING: &str = "yt-dlp is missing";
 
+const CHECK_SONG_GONE: &str = "The song this check asks about has left YouTube, so nothing could \
+                               be told about the account";
+
+const COULD_NOT_CHECK: &str = "YouTube could not be asked just now, so nothing is known of the \
+                               account. Try again in a while";
+
 const NO_ANSWER: &str = "YouTube Music is checked only while it and Online are on";
 
 const fn told(connection: YoutubeMusicConnection) -> &'static str {
@@ -44,6 +50,8 @@ const fn told(connection: YoutubeMusicConnection) -> &'static str {
         YoutubeMusicConnection::SignedInWithoutPremium => WITHOUT_PREMIUM,
         YoutubeMusicConnection::NotSignedIn => NOT_SIGNED_IN,
         YoutubeMusicConnection::ToolMissing => TOOL_MISSING,
+        YoutubeMusicConnection::CheckSongGone => CHECK_SONG_GONE,
+        YoutubeMusicConnection::CouldNotCheck => COULD_NOT_CHECK,
     }
 }
 
@@ -56,9 +64,11 @@ fn notice_of(answered: Option<YoutubeMusicConnection>) -> Notice {
             connection @ (YoutubeMusicConnection::SignedInWithoutPremium
             | YoutubeMusicConnection::NotSignedIn),
         ) => Notice::Noted(told(connection).to_owned()),
-        Some(connection @ YoutubeMusicConnection::ToolMissing) => {
-            Notice::Trouble(told(connection).to_owned())
-        }
+        Some(
+            connection @ (YoutubeMusicConnection::ToolMissing
+            | YoutubeMusicConnection::CheckSongGone
+            | YoutubeMusicConnection::CouldNotCheck),
+        ) => Notice::Trouble(told(connection).to_owned()),
         None => Notice::Trouble(NO_ANSWER.to_owned()),
     }
 }
@@ -350,6 +360,8 @@ mod tests {
             YoutubeMusicConnection::SignedInWithoutPremium,
             YoutubeMusicConnection::NotSignedIn,
             YoutubeMusicConnection::ToolMissing,
+            YoutubeMusicConnection::CheckSongGone,
+            YoutubeMusicConnection::CouldNotCheck,
         ];
 
         let mut said = connections.map(told);
@@ -362,6 +374,14 @@ mod tests {
         ));
         assert!(matches!(
             notice_of(Some(YoutubeMusicConnection::ToolMissing)),
+            Notice::Trouble(_)
+        ));
+        assert!(matches!(
+            notice_of(Some(YoutubeMusicConnection::CheckSongGone)),
+            Notice::Trouble(_)
+        ));
+        assert!(matches!(
+            notice_of(Some(YoutubeMusicConnection::CouldNotCheck)),
             Notice::Trouble(_)
         ));
     }

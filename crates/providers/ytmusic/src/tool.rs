@@ -15,7 +15,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::SourceId;
-use resonate_providers::{Error, Opened, ProviderOp, Result};
+use resonate_providers::{Error, Opened, ProviderOp, Result, THE_SIGN_IN_LAPSED};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
@@ -28,6 +28,7 @@ const BROWSERS: [&str; 9] = [
     "brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale",
 ];
 const BROWSER_NAME_ENDS_AT: [char; 2] = [':', '+'];
+const A_PATH_SEPARATOR: [char; 2] = ['/', '\\'];
 const FOUND_BY_ITSELF: &str = "deno";
 const RUNTIMES_NAMED: [&str; 2] = ["node", "bun"];
 const ASKED_WITHIN: Duration = Duration::from_secs(60);
@@ -37,7 +38,7 @@ const LOOKED_AT_EVERY: Duration = Duration::from_millis(10);
 const STDERR_ENDS_WITHIN: Duration = Duration::from_secs(1);
 const STDERR_KEPT: usize = 16 * 1024;
 const WITHHELD: &str = "<withheld>";
-const A_LINE_ENDS_AT: [u8; 2] = [b'\n', b'\r'];
+const A_LINE_ENDS_AT: [u8; 2] = *b"\n\r";
 const A_BROWSERS_PROFILE_FOLLOWS: char = ':';
 const A_BROWSERS_CONTAINER_FOLLOWS: &str = "::";
 const THE_HOME_FOLDER: char = '~';
@@ -45,11 +46,21 @@ const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNKS_AHEAD: usize = 4;
 const LARGEST_LISTING: usize = 32 * 1024 * 1024;
 const COOKIES_LAPSED: &str = "The provided YouTube account cookies are no longer valid";
-const COOKIES_TURNED_DOWN: u16 = 401;
 const THE_VIDEO_IS_GONE: [&str; 3] = [
     "Private video",
     "Video unavailable",
     "This video is not available",
+];
+const A_VERDICT_BEGINS: &str = "ERROR: [youtube] ";
+const NO_VERDICT_ON_THE_VIDEO: [&str; 8] = [
+    "not a bot",
+    "captcha",
+    "rate-limited",
+    "try again later",
+    "Unable to download",
+    "HTTP Error",
+    "urlopen error",
+    "please report this issue",
 ];
 
 #[derive(Clone, PartialEq, Eq)]
@@ -70,7 +81,7 @@ impl Cookies {
             .next()
             .unwrap_or_default()
             .to_ascii_lowercase();
-        if BROWSERS.contains(&named.as_str()) {
+        if BROWSERS.contains(&named.as_str()) || !value.contains(A_PATH_SEPARATOR) {
             Self::Browser(value.to_owned())
         } else {
             Self::File(value.into())
@@ -245,7 +256,27 @@ fn runtime_named_on(path: Option<&OsStr>) -> Option<&'static str> {
         .find(|runtime| holds_a_program(&folders, runtime))
 }
 
-fn says_the_video_is_gone(said: &str) -> bool {
+fn said_of_the_video<'a>(line: &'a str, video: &VideoId) -> Option<&'a str> {
+    line.trim_start()
+        .strip_prefix(A_VERDICT_BEGINS)?
+        .strip_prefix(video.as_str())?
+        .strip_prefix(':')
+}
+
+fn is_no_verdict(reason: &str) -> bool {
+    NO_VERDICT_ON_THE_VIDEO
+        .iter()
+        .any(|words| reason.contains(words))
+}
+
+fn the_video_refused(said: &str, video: &VideoId) -> bool {
+    let mut reasons = said
+        .lines()
+        .filter_map(|line| said_of_the_video(line, video))
+        .peekable();
+    if reasons.peek().is_some() {
+        return !reasons.any(is_no_verdict);
+    }
     THE_VIDEO_IS_GONE.iter().any(|words| said.contains(words))
 }
 
@@ -643,7 +674,7 @@ impl Tool {
         Error::Unwelcome {
             provider: self.provider.clone(),
             op,
-            code: COOKIES_TURNED_DOWN,
+            code: THE_SIGN_IN_LAPSED,
         }
     }
 
@@ -680,22 +711,28 @@ impl Tool {
     }
 
     pub fn formats(&self, video: &VideoId) -> Result<Formats> {
+        Ok(self.formats_standing(video)?.unwrap_or_default())
+    }
+
+    pub(crate) fn formats_standing(&self, video: &VideoId) -> Result<Option<Formats>> {
         self.refused_while_lapsed()?;
         self.formats_asked(video)
     }
 
-    pub(crate) fn formats_checked(&self, video: &VideoId) -> Result<Formats> {
+    pub(crate) fn formats_checked(&self, video: &VideoId) -> Result<Option<Formats>> {
         let formats = self.formats_asked(video)?;
-        self.lapse.forgotten();
+        if formats.is_some() {
+            self.lapse.forgotten();
+        }
         Ok(formats)
     }
 
-    fn formats_asked(&self, video: &VideoId) -> Result<Formats> {
+    fn formats_asked(&self, video: &VideoId) -> Result<Option<Formats>> {
         let Some(listing) = self.video_listed(video)? else {
-            return Ok(Formats::default());
+            return Ok(None);
         };
         serde_json::from_slice::<Listing>(&listing)
-            .map(|listing| listing.formats())
+            .map(|listing| Some(listing.formats()))
             .map_err(|error| {
                 tracing::debug!(%error, "yt-dlp's listing was not the document expected");
                 self.unreadable(ProviderOp::Search)
@@ -722,7 +759,7 @@ impl Tool {
         if status.success() {
             return Ok(Some(listing));
         }
-        if says_the_video_is_gone(&said) {
+        if the_video_refused(&said, video) {
             return Ok(None);
         }
         Err(self.failed(op, status.code()))
@@ -763,7 +800,7 @@ impl Tool {
             Ok(Err(source)) => return Err(self.failed_io(op, source)),
             Err(RecvTimeoutError::Timeout) => return Err(self.hung(op)),
             Err(RecvTimeoutError::Disconnected) => {
-                return self.answered_nothing(&mut running);
+                return self.answered_nothing(&mut running, video);
             }
         };
 
@@ -781,7 +818,7 @@ impl Tool {
         })
     }
 
-    fn answered_nothing(&self, running: &mut Running) -> Result<Opened> {
+    fn answered_nothing(&self, running: &mut Running, video: &VideoId) -> Result<Opened> {
         let op = ProviderOp::Download;
         let status = running
             .child
@@ -793,7 +830,7 @@ impl Tool {
             self.lapse.heard();
             return Err(self.cookies_lapsed(op));
         }
-        if says_the_video_is_gone(&said) {
+        if the_video_refused(&said, video) {
             return Ok(Opened::Gone);
         }
         Err(self.failed(op, status.code()))
@@ -873,6 +910,11 @@ mod tests {
             ASKED_WITHIN * A_WHOLE_LISTING_TAKES_AT_MOST,
             Duration::from_secs(120)
         );
+    }
+
+    #[test]
+    fn a_keep_may_outlast_two_runs_of_the_tool() {
+        assert!(ASKED_WITHIN * 2 <= resonate_providers::ANSWERED_ALONE_WITHIN);
     }
 
     #[test]

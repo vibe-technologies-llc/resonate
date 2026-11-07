@@ -1,4 +1,8 @@
-use std::{io, path::PathBuf, result};
+use std::{
+    io::{self, ErrorKind},
+    path::PathBuf,
+    result,
+};
 
 use resonate_core::SourceId;
 use thiserror::Error;
@@ -99,6 +103,23 @@ pub enum Error {
     NotAnExtension,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WhyAway {
+    #[default]
+    NotAnswering,
+    SignInLapsed,
+    SubscriptionLapsed,
+    ToolMissing,
+}
+
+impl WhyAway {
+    pub const fn says_nothing_of_the_song(self) -> bool {
+        !matches!(self, Self::NotAnswering)
+    }
+}
+
+pub const THE_SIGN_IN_LAPSED: u16 = 401;
+pub const THE_SUBSCRIPTION_LAPSED: u16 = 402;
 const SERVER_TROUBLE: u16 = 500;
 const TURNED_AWAY_WHOEVER_ASKS: [u16; 3] = [401, 403, 429];
 
@@ -109,6 +130,28 @@ pub fn is_a_page(bytes: &[u8]) -> bool {
 impl Error {
     pub fn cause(&self) -> Option<String> {
         std::error::Error::source(self).map(ToString::to_string)
+    }
+
+    pub fn why_away(&self) -> WhyAway {
+        match self {
+            Self::Unwelcome {
+                code: THE_SIGN_IN_LAPSED,
+                ..
+            } => WhyAway::SignInLapsed,
+            Self::Unwelcome {
+                code: THE_SUBSCRIPTION_LAPSED,
+                ..
+            } => WhyAway::SubscriptionLapsed,
+            Self::Io { source, .. }
+                if matches!(
+                    source.kind(),
+                    ErrorKind::NotFound | ErrorKind::PermissionDenied
+                ) =>
+            {
+                WhyAway::ToolMissing
+            }
+            _ => WhyAway::NotAnswering,
+        }
     }
 
     pub fn is_the_provider_away(&self) -> bool {
@@ -223,6 +266,38 @@ mod tests {
 
         assert!(crashed.is_the_provider_away());
         assert!(killed.is_the_provider_away());
+    }
+
+    #[test]
+    fn an_error_says_why_its_provider_is_away_where_the_listener_can_mend_it() {
+        let provider = SourceId::new("ytmusic").expect("a nameable source");
+        let unwelcome = |code| Error::Unwelcome {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            code,
+        };
+        let run = |kind: ErrorKind| Error::Io {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            source: kind.into(),
+        };
+
+        assert_eq!(
+            unwelcome(THE_SIGN_IN_LAPSED).why_away(),
+            WhyAway::SignInLapsed
+        );
+        assert_eq!(
+            unwelcome(THE_SUBSCRIPTION_LAPSED).why_away(),
+            WhyAway::SubscriptionLapsed
+        );
+        assert_eq!(run(ErrorKind::NotFound).why_away(), WhyAway::ToolMissing);
+        assert_eq!(
+            run(ErrorKind::PermissionDenied).why_away(),
+            WhyAway::ToolMissing
+        );
+        assert_eq!(run(ErrorKind::TimedOut).why_away(), WhyAway::NotAnswering);
+        assert!(!WhyAway::NotAnswering.says_nothing_of_the_song());
+        assert!(WhyAway::SignInLapsed.says_nothing_of_the_song());
     }
 
     #[test]

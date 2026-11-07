@@ -15,7 +15,7 @@ use resonate_core::{MediaLocation, Service, SourceId};
 use resonate_fetch::{Patience, Trusted, asking_agent};
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider,
-    ProviderOp, Result, Song,
+    ProviderOp, Result, Song, THE_SUBSCRIPTION_LAPSED,
 };
 use ureq::Agent;
 
@@ -32,7 +32,6 @@ const ASKED_APART: Duration = Duration::from_secs(2);
 const CHECKED_WITH: &str = "9RfVp-GhKfs";
 pub(crate) const A_POLL_LASTS: Duration = Duration::from_secs(10 * 60);
 const A_TURN_IS_WAITED_ON_FOR: Duration = Duration::from_secs(45);
-const PREMIUM_LOST: u16 = 402;
 const A_VIDEO_IS_NAMED_BY: &str = "v=";
 
 #[derive(Default)]
@@ -217,9 +216,8 @@ impl YtMusic {
         })?;
         let premium = self
             .tool
-            .formats(&video)?
-            .best
-            .is_some_and(Tier::is_premium);
+            .formats_standing(&video)?
+            .is_none_or(|formats| formats.best.is_some_and(Tier::is_premium));
         *account = Some(AccountChecked {
             at: Instant::now(),
             premium,
@@ -235,7 +233,7 @@ impl YtMusic {
             return Err(Error::Unwelcome {
                 provider: self.source.clone(),
                 op: ProviderOp::Search,
-                code: PREMIUM_LOST,
+                code: THE_SUBSCRIPTION_LAPSED,
             });
         }
         tracing::warn!(

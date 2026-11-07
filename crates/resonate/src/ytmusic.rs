@@ -210,6 +210,10 @@ const fn connection_said(connection: Connection) -> &'static str {
         Connection::SignedInWithoutPremium => "signed in, but this account has no Premium formats",
         Connection::NotSignedIn => "not signed in",
         Connection::ToolMissing => "yt-dlp could not be run; it is a separate install",
+        Connection::CheckSongGone => {
+            "the song this check asks about has left YouTube, so nothing could be told"
+        }
+        Connection::CouldNotCheck => "YouTube could not be asked just now; try again in a while",
     }
 }
 
@@ -378,6 +382,8 @@ mod tests {
             Connection::SignedInWithoutPremium,
             Connection::NotSignedIn,
             Connection::ToolMissing,
+            Connection::CheckSongGone,
+            Connection::CouldNotCheck,
         ]
         .map(connection_said);
 
