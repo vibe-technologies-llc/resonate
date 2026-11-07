@@ -1,6 +1,6 @@
 use gpui::{
-    BoxShadow, Context, Div, FontWeight, SharedString, Window, div, point, prelude::*, px,
-    relative, rgb, rgba,
+    BoxShadow, Context, Div, MouseButton, MouseDownEvent, Pixels, Point, SharedString, anchored,
+    deferred, div, point, prelude::*, px, relative, rgb,
 };
 use resonate_core::PlaylistId;
 use resonate_library::{AlbumOrder, ArtistOrder, Direction, PlaylistOrder, RowOrder, SortOrder};
@@ -9,7 +9,7 @@ use crate::{
     icons::{self, Icon},
     motion, theme,
     views::{
-        kit::{self, Tone},
+        kit,
         listing::{Sortable, Sorted},
         root::RootView,
         sheets,
@@ -17,10 +17,7 @@ use crate::{
     },
 };
 
-const CLOSE_HINT: &str = "Close";
-const DONE_HINT: &str = "Close, keeping this order";
-const ORDER_BY: &str = "Order by";
-const DIRECTION: &str = "Direction";
+const BELOW_ITS_CONTROL: f32 = 4.0;
 
 pub(crate) trait Ordering: Copy + PartialEq + 'static {
     const EVERY: &'static [Self];
@@ -68,11 +65,11 @@ impl RootView {
     pub(crate) fn order_a_listing(
         &mut self,
         ordered: Ordered,
-        window: &Window,
+        at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        self.remember_the_opener(window, cx);
         self.ordering = Some(ordered);
+        self.ordering_at = at + point(px(0.0), px(BELOW_ITS_CONTROL));
         cx.notify();
     }
 
@@ -94,70 +91,63 @@ impl RootView {
         let title = ordered.title();
 
         let heading = div()
+            .id("order-heading")
+            .headed(2, title)
             .flex()
             .flex_none()
             .items_center()
-            .gap_2()
-            .child(icons::icon(Icon::Sort, 18.0, theme::accent()))
-            .child(
-                div()
-                    .id("order-heading")
-                    .headed(2, title)
-                    .flex_1()
-                    .text_size(px(theme::text_lg()))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(theme::text()))
-                    .child(title),
-            )
-            .child(self.in_the_pane_ring(
-                kit::icon_button("order-close", Icon::Close, CLOSE_HINT),
-                |this, _, cx| this.close_the_order(cx),
-                cx,
-            ));
-        let foot = div()
-            .flex()
-            .flex_none()
-            .justify_end()
-            .child(self.in_the_pane_ring(
-                kit::button("order-done", None, "Done", DONE_HINT, Tone::Primary),
-                |this, _, cx| this.close_the_order(cx),
-                cx,
-            ));
+            .gap_1p5()
+            .px_1()
+            .child(icons::icon(Icon::Sort, 14.0, theme::accent()))
+            .child(kit::eyebrow(title));
         let card = div()
             .id("order-sheet")
+            .debug_selector(|| "order-sheet".into())
             .dialog(title)
             .track_focus(&self.sheet_panels.holding(sheets::ORDER_PANEL, cx))
             .flex()
             .flex_col()
-            .gap_4()
-            .w(px(theme::order_width()))
+            .gap_2()
+            .w(theme::width(theme::order_width()))
             .max_h(relative(MOST_OF_THE_WINDOW))
-            .p_5()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
+            .p_2()
+            .rounded_lg()
+            .bg(rgb(theme::raised()))
             .border_1()
-            .border_color(rgb(theme::border()))
+            .border_color(rgb(theme::soft_edge()))
             .shadow(vec![BoxShadow {
                 color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
+                offset: point(px(0.0), px(6.0)),
+                blur_radius: px(24.0),
                 spread_radius: px(0.0),
                 inset: false,
             }])
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_the_order(cx)))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
             .child(heading)
-            .child(choices)
-            .child(foot);
+            .child(choices);
 
         div()
             .absolute()
             .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
             .occlude()
-            .child(motion::lifted_in(card, "order-sheet-arrives"))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _, cx| this.close_the_order(cx)),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _: &MouseDownEvent, _, cx| this.close_the_order(cx)),
+            )
+            .child(
+                deferred(
+                    anchored()
+                        .position(self.ordering_at)
+                        .snap_to_window_with_margin(px(8.0))
+                        .child(motion::lifted_in(card, "order-sheet-arrives")),
+                )
+                .with_priority(1),
+            )
     }
 
     pub(crate) fn order_choices<O: Ordering>(
@@ -208,18 +198,11 @@ impl RootView {
         div()
             .flex()
             .flex_col()
-            .gap_4()
+            .gap_2()
             .min_h(px(0.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .min_h(px(0.0))
-                    .child(kit::field_name(ORDER_BY))
-                    .child(orders),
-            )
-            .child(kit::field(DIRECTION, readings).flex_none())
+            .child(readings.flex_none())
+            .child(div().h(px(1.0)).mx_1().flex_none().bg(rgb(theme::border())))
+            .child(orders)
     }
 }
 

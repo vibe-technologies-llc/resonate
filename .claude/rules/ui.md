@@ -248,7 +248,7 @@ is never named.
   (`close_what_stands_over_the_pane`) first and lets the control go only where nothing stands there:
   a sheet's focus lands on its safe control, and escape there still closes the sheet. Order, over-the-pane before
   beside-it: delete sheet (`keep_the_track`), Listen sheet, magnified cover, playlist picker
-  (`stop_naming`), shown record, Wrapped, sharing, Sort dialogue, open menu, downloads panel, standing toast (`toast::dismiss`), live
+  (`stop_naming`), shown record, Wrapped, sharing, Sort pop-up, open menu, downloads panel, standing toast (`toast::dismiss`), live
   type-ahead (`stop_typing`), then `dismiss_search`: close the naming row, clear the query, or (query
   empty) `RootView::step_back`. A scoped search takes two presses, words then scope: typing is not a
   gesture on the scope (`LibraryModel::set_query` leaves `selection` alone); callers meaning the whole
@@ -259,7 +259,7 @@ is never named.
     needs its own `dismiss_search` arm (the AutoEq search's `leave_looking`;
     `escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was`).
 - **What stands over the pane holds the pane's keys back.** A menu, playlist picker, magnified cover,
-  record card, Listen sheet, Sort dialogue or delete sheet is `something_stands_over_the_pane`; meanwhile reach,
+  record card, Listen sheet, Sort pop-up or delete sheet is `something_stands_over_the_pane`; meanwhile reach,
   page, widen, move, `enter`, `delete`, undo, redo and typed letters answer nothing. The check sits in
   each gesture, not the bindings; `reach_row` and `play_reached_rows` step and press the menu first.
   Escape is the one key still heard (`views/root.rs`'s driven tests hold each sheet).
@@ -400,7 +400,7 @@ is never named.
   chevron, its press opening a `Menu` of `Menu::chooses` entries, a check on the held one and room kept
   on the rest (*Fit toward*, *Preferred measurer*, *Heard through*; `pick` on a band's kind opens the
   segments under its row). Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
-  sheet's microphones, the Sort dialogue's orders). Several held at once: `kit::checkbox`es in a
+  sheet's microphones, the Sort pop-up's orders). **The Sort pop-up is small and anchored, not a sheet over a scrim**: every sort mark opens through `in_the_pane_ring_at`, `order_a_listing` keeps its corner in `RootView::ordering_at`, and `order_sheet` stands a `theme::order_width()` panel (direction segments over the orders, no close or *Done*) there in an `anchored` layer whose occluding ground closes it on any press outside (`the_sort_mark_opens_a_pop_up_under_itself_that_orders_the_tracks_and_leaves_by_every_way_out`). Several held at once: `kit::checkbox`es in a
   fixed-width grid (Filters). A value moved by a step: `kit::stepper` holding two `kit::step`s and a
   `kit::stepper_reading` (the speaker's degrees; `stepper_reading_put_back` where a press restores it,
   the lyric timing).

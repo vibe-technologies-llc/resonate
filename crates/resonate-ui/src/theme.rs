@@ -988,7 +988,7 @@ const ROW_CONTROL: Control = Control::of(26.0, 14.0);
 const PICKER_WIDTH: f32 = 400.0;
 const LISTEN_WIDTH: f32 = 460.0;
 
-const ORDER_WIDTH: f32 = 420.0;
+const ORDER_WIDTH: f32 = 264.0;
 
 const WRAPPED_WIDTH: f32 = 620.0;
 const LISTEN_COVER: f32 = 112.0;

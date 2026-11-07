@@ -979,7 +979,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn the_sort_mark_opens_a_dialogue_that_orders_the_tracks_and_leaves_by_every_way_out(
+    fn the_sort_mark_opens_a_pop_up_under_itself_that_orders_the_tracks_and_leaves_by_every_way_out(
         cx: &mut TestAppContext,
     ) {
         use resonate_library::{Direction, SortOrder};
@@ -1006,11 +1006,15 @@ mod tests {
         assert_eq!(sorting.tracks_read, Direction::Descending);
         assert_eq!(ordering(&mut driven), Some(Ordered::Tracks));
 
-        driven.click("order-done");
-        assert_eq!(ordering(&mut driven), None);
+        let mark = driven.bounds_of("order-tracks");
+        let popped = driven.bounds_of("order-sheet");
+        assert!(
+            popped.top() >= mark.bottom() && popped.top() <= mark.bottom() + px(16.0),
+            "the sort pop-up stands under the mark that opened it"
+        );
+        assert!(popped.size.width < px(320.0), "the sort pop-up is small");
 
-        driven.click("order-tracks");
-        driven.click("order-close");
+        driven.click_at(gpui::point(px(12.0), px(300.0)));
         assert_eq!(ordering(&mut driven), None);
 
         driven.click("order-tracks");

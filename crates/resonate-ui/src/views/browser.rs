@@ -3049,9 +3049,9 @@ impl RootView {
         ordered: Ordered,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        self.in_the_pane_ring(
+        self.in_the_pane_ring_at(
             kit::icon_button(named, Icon::Sort, ORDER_HINT),
-            move |this, window, cx| this.order_a_listing(ordered, window, cx),
+            move |this, at, cx| this.order_a_listing(ordered, at, cx),
             cx,
         )
     }

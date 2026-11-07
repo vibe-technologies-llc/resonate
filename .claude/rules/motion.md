@@ -23,7 +23,7 @@ scrollbar thumb).
 
 ## What arrives
 
-Lift in: menus, release and genre card, magnified cover, listen, sort and delete sheets, playlist picker,
+Lift in: menus, the sort pop-up, release and genre card, magnified cover, listen and delete sheets, playlist picker,
 drop overlay, type-ahead and copying pills, downloads panel. A sheet's scrim fades separately, its
 card lifts inside. Keys are fixed names: gpui keeps an animation's start under the element id and
 drops state no frame reads, so a surface closed for a frame and reopened replays, one redrawn while

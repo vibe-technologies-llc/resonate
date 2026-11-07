@@ -685,9 +685,9 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_2()
-            .child(sorting::shape("Order").child(self.in_the_pane_ring(
+            .child(sorting::shape("Order").child(self.in_the_pane_ring_at(
                 kit::pick("search-order", ordered_as, SEARCH_ORDER_HINT),
-                |this, window, cx| this.order_a_listing(Ordered::SavedSearch, window, cx),
+                |this, at, cx| this.order_a_listing(Ordered::SavedSearch, at, cx),
                 cx,
             )))
             .child(sorting::shape("Rows").child(caps))
@@ -1013,9 +1013,9 @@ impl RootView {
                     },
                     cx,
                 ))
-                .child(self.in_the_pane_ring(
+                .child(self.in_the_pane_ring_at(
                     kit::icon_button("sort-playlist", Icon::Sort, SORT_HINT),
-                    move |this, window, cx| this.sort_a_playlist(opened, window, cx),
+                    move |this, at, cx| this.sort_a_playlist(opened, at, cx),
                     cx,
                 ))
             })

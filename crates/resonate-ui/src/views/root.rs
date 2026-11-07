@@ -644,6 +644,7 @@ pub struct RootView {
     pub(crate) bitrate_graph: bool,
     pub(crate) naming: Option<Naming>,
     pub(crate) ordering: Option<Ordered>,
+    pub(crate) ordering_at: Point<Pixels>,
     pub(crate) queue_order: RowOrder,
     pub(crate) queue_reading: Direction,
     pub(crate) row_order: RowOrder,
@@ -1314,6 +1315,7 @@ impl RootView {
             bitrate_graph: false,
             naming: None,
             ordering: None,
+            ordering_at: Point::default(),
             queue_order: RowOrder::default(),
             queue_reading: Direction::default(),
             row_order: RowOrder::default(),
@@ -1935,14 +1937,14 @@ impl RootView {
     pub(crate) fn sort_a_playlist(
         &mut self,
         playlist: PlaylistId,
-        window: &Window,
+        at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
         self.naming = None;
         self.adding = None;
 
         self.read_the_kept_order(Some(playlist), cx);
-        self.order_a_listing(Ordered::Rows(playlist), window, cx);
+        self.order_a_listing(Ordered::Rows(playlist), at, cx);
     }
 
     fn read_the_kept_order(&mut self, playlist: Option<PlaylistId>, cx: &App) {
@@ -6314,11 +6316,7 @@ impl Render for RootView {
                 ))
             })
             .when_some(self.ordering, |app, ordered| {
-                app.child(motion::faded_in(
-                    self.order_sheet(ordered, cx),
-                    "order-scrim",
-                    motion::ARRIVES_OVER,
-                ))
+                app.child(self.order_sheet(ordered, cx))
             })
             .when(self.party_offered.is_some(), |app| {
                 app.child(motion::faded_in(
