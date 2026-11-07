@@ -30142,9 +30142,10 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
         .stderr(Stdio::null())
         .spawn()
         .expect("the test binary runs");
-    root_left_by_a_keep_under_way(&library)?;
+    let root_left = root_left_by_a_keep_under_way(&library);
     killed.kill().expect("the keep is killed");
     killed.wait().expect("the keep is gone");
+    root_left?;
     drop(walk);
 
     assert_eq!(titles_in(&library, "Mix")?, [""]);
