@@ -2326,7 +2326,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "resonate-analysis"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "parking_lot 0.13.0",
@@ -2343,7 +2343,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-audio"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "crossbeam-channel",
  "resonate-core",
@@ -2353,7 +2353,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-codec"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ape-decoder",
  "fs4",
@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bytemuck",
  "chardetng",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-dsp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "parking_lot 0.13.0",
  "realfft",
@@ -2399,7 +2399,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-engine"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2420,7 +2420,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-eq"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "resonate-core",
  "thiserror",
@@ -2429,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-fetch"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "resonate-core",
  "resonate-providers",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-library"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2481,7 +2481,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-listen"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "crossbeam-channel",
  "resonate-audio",
@@ -2494,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-lyrics"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mcp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "resonate-core",
@@ -2523,7 +2523,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mpris"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2541,7 +2541,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-online"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "flate2",
@@ -2566,7 +2566,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-pipewire"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "crossbeam-channel",
  "libspa",
@@ -2583,7 +2583,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-providers"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -2593,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-sync"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash",
  "flate2",
@@ -2621,7 +2621,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-tidal"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "parking_lot 0.13.0",
@@ -2637,7 +2637,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-vault"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "flacenc",
  "image",
@@ -2656,7 +2656,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-wasapi"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "crossbeam-channel",
  "parking_lot 0.13.0",
@@ -2670,7 +2670,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-win32"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "thiserror",
  "windows",
@@ -3009,9 +3009,9 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+checksum = "9c187e0a369471c550af028cba56d4f4fa2a489ad28151ae95a4d340a2a8b782"
 dependencies = [
  "serde_core",
 ]
@@ -3070,9 +3070,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.4"
+version = "1.16.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
+checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "socket-pktinfo"
@@ -3515,9 +3515,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.2.0+spec-1.1.0"
+version = "1.2.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5ffcdf8f50436dbbfd675c1fe1b8e0854f42b7defea8584bdebe1aee900e561"
+checksum = "d5755c51863cdac711f1956baf8eb9588e060755f7d3c4c979e70ea1e1f32cd7"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -3530,9 +3530,9 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "1.1.2+spec-1.1.0"
+version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
+checksum = "173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49"
 dependencies = [
  "serde_core",
 ]
@@ -3691,9 +3691,9 @@ checksum = "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e"
 
 [[package]]
 name = "uuid"
-version = "1.29.0"
+version = "1.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
+checksum = "4a06f08a856b009bc7bbaf7d3e79808595d032dd19074c0c2ef26e49e03e6bdc"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
