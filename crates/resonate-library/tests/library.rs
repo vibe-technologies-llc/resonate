@@ -33,20 +33,19 @@ use resonate_library::{
     Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped, KeepSummary, Kept, KeptList,
-    KeptSong, Layout,
-    Learning, Library, LifeSpan, Link, LinkNames, Linked, LinkedPlaylist, LinkedProfile,
-    ListedSong, Listen, ListeningService, LookupOp, Love, Loved, LovedNames, LovesTold, LyricText,
-    LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack, NamesMoved,
-    OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat, PlaylistLink,
-    PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions, PollProgress, PollSummary, Popularity,
-    ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked,
-    RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal, Result, RetagOptions, RetagSummary,
-    RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
-    Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked,
-    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
-    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
-    Unwritten, Upkeep, Vault, Waits, Window, Wording, Written,
+    KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames, Linked, LinkedPlaylist,
+    LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love, Loved, LovedNames,
+    LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack,
+    NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat,
+    PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions, PollProgress,
+    PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS, Rated, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal, Result, RetagOptions,
+    RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble,
+    Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep,
+    SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP,
+    TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery,
+    Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -29077,7 +29076,11 @@ fn a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_
     for _ in 0..4 {
         assert_eq!(pass(&library, &tube)?.unkept, 1);
     }
-    assert_eq!(library.keeps_pending()?, 1, "a press gave it five tries more");
+    assert_eq!(
+        library.keeps_pending()?,
+        1,
+        "a press gave it five tries more"
+    );
     assert_eq!(pass(&library, &tube)?.landed, 1);
     Ok(())
 }
@@ -29214,7 +29217,10 @@ fn a_video_a_want_filed_in_the_music_folder_is_not_fetched_again_for_a_keep() ->
 
     assert!(matches!(kept, KeptSong::AlreadyHeld(_)), "{kept:?}");
     assert_eq!(summary, KeepSummary::default());
-    assert!(tube.videos_asked().is_empty(), "the video was fetched twice");
+    assert!(
+        tube.videos_asked().is_empty(),
+        "the video was fetched twice"
+    );
     Ok(())
 }
 
@@ -29240,7 +29246,10 @@ fn a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep() -> Result<
     pass(&library, &tube)?;
 
     assert!(matches!(kept, KeptSong::AlreadyHeld(_)), "{kept:?}");
-    assert!(tube.videos_asked().is_empty(), "the video was fetched twice");
+    assert!(
+        tube.videos_asked().is_empty(),
+        "the video was fetched twice"
+    );
     Ok(())
 }
 
@@ -29330,7 +29339,10 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
     assert_eq!(read.tags.album.as_deref(), Some("Kept Songs"));
 
     scan(&library, &options(&tree))?;
-    assert_eq!(track_titled(&library, "San Tropez")?.location, MediaLocation::local(&path));
+    assert_eq!(
+        track_titled(&library, "San Tropez")?.location,
+        MediaLocation::local(&path)
+    );
 
     let afresh = Library::open_in_memory()?;
     scan(&afresh, &options(&tree))?;

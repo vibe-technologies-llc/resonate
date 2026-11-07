@@ -103,7 +103,8 @@ fn a_check_that_could_not_be_made_is_told_apart_from_not_being_signed_in() {
 
 #[test]
 fn the_check_song_taken_down_is_told_as_that_with_cookies_or_without() {
-    let gone = Fake::answering("echo 'ERROR: [youtube] 9RfVp-GhKfs: Video unavailable' >&2\nexit 1");
+    let gone =
+        Fake::answering("echo 'ERROR: [youtube] 9RfVp-GhKfs: Video unavailable' >&2\nexit 1");
 
     assert_eq!(told(&gone, cookies()), Connection::CheckSongGone);
     assert_eq!(told(&gone, Cookies::None), Connection::CheckSongGone);

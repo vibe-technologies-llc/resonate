@@ -30,17 +30,16 @@ use resonate_library::{
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
     GroupRelease, Habits, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress,
     ImportStats, ImportSummary, Imported, Issued, KeepStopped, KeepSummary, Kept, KeptList,
-    KeptSong, Layout,
-    Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
-    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Performer,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PlaylistToKeep, PollOptions, PollProgress,
-    PollStats, PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference,
-    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
-    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
-    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
-    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Upkeep, Window, Wording,
-    albums_still_answering, artists_still_answering, folded_letters, songs_asked, still_answering,
-    weighed_for,
+    KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing,
+    MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
+    OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder, PlaylistToKeep,
+    PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording, RecordingMatch,
+    RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions,
+    RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle,
+    ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder,
+    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
+    Upkeep, Window, Wording, albums_still_answering, artists_still_answering, folded_letters,
+    songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::{Providers, WhyAway};
 
@@ -7843,8 +7842,7 @@ mod tests {
         Reaching, Shared, Wanted, albums_kept_before_the_rest, arranged, beyond_the_listing,
         delivery_folder, elsewhere_standing, headed_by_disc, held_at, held_in, kept,
         kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
-        stopped_told,
-        retried_after, sharing_told, unheld_release_rows,
+        retried_after, sharing_told, stopped_told, unheld_release_rows,
     };
     use crate::{
         ResonateApp,

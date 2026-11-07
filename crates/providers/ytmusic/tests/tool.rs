@@ -552,7 +552,10 @@ mod faked {
 
             assert!(listing.is_the_provider_away(), "{reason}");
             assert!(matches!(listing, Error::ToolFailed { .. }), "{reason}");
-            assert!(matches!(download, Err(Error::ToolFailed { .. })), "{reason}");
+            assert!(
+                matches!(download, Err(Error::ToolFailed { .. })),
+                "{reason}"
+            );
         }
     }
 
