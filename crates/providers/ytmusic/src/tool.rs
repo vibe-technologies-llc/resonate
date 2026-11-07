@@ -52,7 +52,7 @@ const THE_VIDEO_IS_GONE: [&str; 3] = [
     "This video is not available",
 ];
 const A_VERDICT_BEGINS: &str = "ERROR: [youtube] ";
-const NO_VERDICT_ON_THE_VIDEO: [&str; 8] = [
+const NO_VERDICT_ON_THE_VIDEO: [&str; 9] = [
     "not a bot",
     "captcha",
     "rate-limited",
@@ -61,7 +61,9 @@ const NO_VERDICT_ON_THE_VIDEO: [&str; 8] = [
     "HTTP Error",
     "urlopen error",
     "please report this issue",
+    "Your IP is likely being blocked",
 ];
+const NO_VERDICT_WHEREVER_SAID: [&str; 2] = ["solving failed", "Only images are available"];
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Cookies {
@@ -270,6 +272,12 @@ fn is_no_verdict(reason: &str) -> bool {
 }
 
 fn the_video_refused(said: &str, video: &VideoId) -> bool {
+    if NO_VERDICT_WHEREVER_SAID
+        .iter()
+        .any(|words| said.contains(words))
+    {
+        return false;
+    }
     let mut reasons = said
         .lines()
         .filter_map(|line| said_of_the_video(line, video))

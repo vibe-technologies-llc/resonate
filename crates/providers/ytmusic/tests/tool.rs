@@ -541,6 +541,7 @@ mod faked {
             "Unable to download webpage: <urlopen error [Errno -3] name resolution>",
             "Video unavailable. This content isn't available, try again later. The current session has been rate-limited by YouTube for up to an hour",
             "Failed to extract any player response; please report this issue on https://github.com/yt-dlp/yt-dlp/issues",
+            "All player responses are invalid. Your IP is likely being blocked by Youtube",
         ] {
             let fake = Fake::answering(&format!(
                 "cat >&2 <<'SAID'\nERROR: [youtube] {SONG}: {reason}\nSAID\nexit 1"
@@ -555,6 +556,29 @@ mod faked {
             assert!(
                 matches!(download, Err(Error::ToolFailed { .. })),
                 "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_listing_cut_short_by_a_failed_challenge_or_storyboards_alone_is_no_verdict_on_the_video() {
+        for warned in [
+            "WARNING: [youtube] {SONG}: n challenge solving failed: Some formats may be missing",
+            "WARNING: [youtube] {SONG}: Signature solving failed: Some formats may be missing",
+            "WARNING: Only images are available for download. use --list-formats to see them",
+        ] {
+            let fake = Fake::answering(&format!(
+                "cat >&2 <<'SAID'\n{warned}\nERROR: [youtube] {SONG}: Requested format is not available. Use --list-formats for a list of available formats\nSAID\nexit 1"
+            ));
+            let tool = fake.tool(Cookies::None);
+
+            let listing = tool.formats(&song()).expect_err("no verdict");
+            let download = tool.download(&song(), Tier::Opus774);
+
+            assert!(listing.is_the_provider_away(), "{warned}");
+            assert!(
+                matches!(download, Err(Error::ToolFailed { .. })),
+                "{warned}"
             );
         }
     }

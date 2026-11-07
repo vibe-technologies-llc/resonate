@@ -29129,6 +29129,34 @@ fn a_lapsed_account_moves_a_keep_back_and_costs_it_no_try() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn a_music_folder_that_cannot_be_written_moves_a_keep_back_and_costs_it_no_try() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let (tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("one", "One"))?;
+    fs::set_permissions(tree.path(), fs::Permissions::from_mode(0o555))
+        .expect("the music folder takes a mode");
+    if fs::write(tree.path().join("probe"), b"").is_ok() {
+        fs::set_permissions(tree.path(), fs::Permissions::from_mode(0o755))
+            .expect("the music folder takes a mode");
+        eprintln!("skipping: this user writes a folder whatever its mode");
+        return Ok(());
+    }
+
+    for _ in 0..7 {
+        pass(&library, &tube)?;
+    }
+    fs::set_permissions(tree.path(), fs::Permissions::from_mode(0o755))
+        .expect("the music folder takes a mode");
+
+    assert_eq!(library.keeps_pending()?, 1, "the folder gave the song up");
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+    Ok(())
+}
+
 struct OffersVideo {
     source: SourceId,
     video: &'static str,

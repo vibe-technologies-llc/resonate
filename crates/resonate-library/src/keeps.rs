@@ -197,6 +197,7 @@ enum Turn {
     Gone,
     Unkept,
     Failed,
+    Mend,
     Stopped,
     Yielded,
     Over,
@@ -471,6 +472,10 @@ impl Library {
                     self.tried_in_vain(&row)?;
                     summary.unkept += 1;
                 }
+                Turn::Mend => {
+                    self.moved_back(&row)?;
+                    summary.unkept += 1;
+                }
                 Turn::Stopped => {
                     let why = walking.away.why(&row.song.source).unwrap_or_default();
                     if why.says_nothing_of_the_song() {
@@ -574,6 +579,14 @@ impl Library {
                 self.given_up(row)?;
                 Ok(Turn::Unkept)
             }
+            Drawn::Read(Err(unfiled @ Unfiled::Io(_))) => {
+                tracing::warn!(
+                    video,
+                    ?unfiled,
+                    "a kept song could not be written to the folder"
+                );
+                Ok(Turn::Mend)
+            }
             Drawn::Read(Err(unfiled)) => {
                 tracing::warn!(video, ?unfiled, "a kept song could not be filed");
                 Ok(Turn::Failed)
@@ -583,6 +596,7 @@ impl Library {
                 self.given_up(row)?;
                 Ok(Turn::Gone)
             }
+            Drawn::Unopened(Unopened::Refused(_)) if progress.is_cancelled() => Ok(Turn::Over),
             Drawn::Unopened(Unopened::Refused(error)) => {
                 tracing::warn!(%error, cause = ?error.cause(), video, "a kept song could not be opened");
                 if error.is_the_provider_away() {

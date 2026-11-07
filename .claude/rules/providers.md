@@ -814,9 +814,12 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   `formats` lists no tier, `download` opens `Opened::Gone`, whatever the reason's words, so one
   video can never stop a poll. **Unless the line is the account's or the network's**
   (`NO_VERDICT_ON_THE_VIDEO`: a bot check, a captcha, a rate limit, a failed request,
-  `please report this issue`): that says nothing of the video, and a verdict there would give every
-  queued song up in one outage, so it stays `ToolFailed`, provider-away. So does a tool that never
-  reached the extractor (a usage error, a missing runtime, a traceback). A lapse is weighed first
+  `please report this issue`, `Your IP is likely being blocked`): that says nothing of the video, and a verdict there would give every
+  queued song up in one outage, so it stays `ToolFailed`, provider-away. **So is a failed challenge
+  (`solving failed`) or a video left with storyboards alone (`Only images are available`) anywhere in
+  what was said**, whichever line, since either drops formats and ends in `Requested format is not
+  available` (`a_listing_cut_short_by_a_failed_challenge_or_storyboards_alone_is_no_verdict_on_the_video`).
+  So does a tool that never reached the extractor (a usage error, a missing runtime, a traceback). A lapse is weighed first
   (`a_video_refused_for_its_own_reason_opens_as_gone_and_lists_no_tier`,
   `trouble_of_the_account_or_the_network_is_no_verdict_on_the_video`,
   `a_tool_that_never_reached_the_video_is_the_tool_failed`).
@@ -905,12 +908,14 @@ service offers it.
   `Busy`, a stalled stream and a filing that failed go on to the next row. Each stamps `tried`, moving
   the row to the back, and counts in `tries`; at `KEEP_TRIES_AT_MOST` (5) the row is given up, counted
   `unkept`. **What the listener must mend costs no try** (`WhyAway::says_nothing_of_the_song`): a lapse,
-  a lost subscription and a missing tool move the row back and count nothing, since the song was never
+  a lost subscription and a missing tool, and a music folder that cannot be written (`Unfiled::Io`, `Turn::Mend`) move the row back and count nothing, since the song was never
   weighed and would otherwise be given up by waiting
   (`a_video_yt_dlp_refuses_for_its_own_reason_gives_the_keep_up_and_the_pass_goes_on`,
   `a_song_that_stopped_a_pass_goes_to_the_back_and_the_next_pass_begins_elsewhere`,
   `a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_back`,
-  `a_lapsed_account_moves_a_keep_back_and_costs_it_no_try`).
+  `a_lapsed_account_moves_a_keep_back_and_costs_it_no_try`,
+  `a_music_folder_that_cannot_be_written_moves_a_keep_back_and_costs_it_no_try`). **A cancel costs no
+  try**: an open refused after the cancel is `Turn::Over`, not a failure.
 - **A pass that stopped says why and where.** `Error::why_away` reads a provider-away error as a
   `WhyAway` (`SignInLapsed`, `SubscriptionLapsed`, `ToolMissing`, `NotAnswering`), `Away` keeps it, and
   `KeepSummary::stopped` carries it beside `stopped_by` with the song's title; the window's toast and
