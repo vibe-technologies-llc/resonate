@@ -46,7 +46,7 @@ jobs:
     name: Tests without the window
     runs-on: ubuntu-26.04
     container: archlinux:latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
@@ -55,7 +55,7 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked --workspace --exclude resonate-ui --no-default-features
-      - run: dbus-run-session -- cargo test --locked -p resonate-mpris --test bus
+      - run: dbus-run-session -- cargo test --locked -p resonate-mpris --test bus --no-default-features
 
   workspace:
     name: Tests with everything

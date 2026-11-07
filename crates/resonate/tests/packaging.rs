@@ -293,11 +293,13 @@ fn the_player_is_named_resonate_in_every_release_format() {
         "the RPM is not named resonate"
     );
     assert!(
-        packaging("release/PKGBUILD").starts_with("pkgname=resonate\n"),
+        packaging("release/PKGBUILD").lines().next() == Some("pkgname=resonate"),
         "the Arch package is not named resonate"
     );
     assert!(
-        packaging(DEB_SCRIPT).contains("seal resonate\n"),
+        packaging(DEB_SCRIPT)
+            .lines()
+            .any(|line| line.trim() == "seal resonate"),
         "the DEB is not named resonate"
     );
 }

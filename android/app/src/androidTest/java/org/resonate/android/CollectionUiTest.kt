@@ -145,12 +145,17 @@ class CollectionUiTest {
             val clearTo = bounds.top + bounds.height() * CLEAR_TO_TWENTIETHS / 20
             val clear = clearFrom..clearTo
             val at = target()?.visibleCenter?.y
-            if (at != null && at in clear) return
+            if (at != null && at in clear) {
+                device.waitForIdle()
+                Thread.sleep(PAGE_SETTLES_MS)
+                return
+            }
             val across = bounds.centerX()
             if (at != null && at < clear.first)
                 device.swipe(across, clear.first, across, clear.last, SWIPE_STEPS)
             else device.swipe(across, clear.last, across, clear.first, SWIPE_STEPS)
             device.waitForIdle()
+            Thread.sleep(PAGE_SETTLES_MS)
         }
     }
 
