@@ -329,6 +329,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_mount_point_the_filesystem_table_lists_and_nothing_is_mounted_at_is_out_of_reach() {
         let listed = "# /etc/fstab\n\
                       UUID=1 / btrfs subvol=@ 0 0\n\

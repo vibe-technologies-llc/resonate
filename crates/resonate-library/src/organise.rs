@@ -3175,7 +3175,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::reach::LEGACY_UNITS_AT_MOST;
+    use crate::{left_alone::left_long_ago, reach::LEGACY_UNITS_AT_MOST};
 
     #[test]
     fn a_run_is_noted_batch_by_batch_as_its_moves_land_and_a_new_run_starts_the_note_afresh() {
@@ -3235,9 +3235,15 @@ mod tests {
         layout
             .render(named, Naming::Anything)
             .expect("this layout names a destination for this track")
-            .to_str()
-            .expect("a rendered path is the text it was rendered from")
-            .to_owned()
+            .components()
+            .map(|component| {
+                component
+                    .as_os_str()
+                    .to_str()
+                    .expect("a rendered path is the text it was rendered from")
+            })
+            .collect::<Vec<_>>()
+            .join("/")
     }
 
     #[test]
@@ -4193,7 +4199,7 @@ mod tests {
     #[test]
     fn a_folder_spelling_a_disc_names_the_disc_where_no_tag_does() {
         let mut first = row(1, &format!("{NOWHERE}/The Wall/CD1/a.wav"));
-        first.title = "In the Flesh?".to_owned();
+        first.title = "In the Flesh".to_owned();
         let mut second = row(2, &format!("{NOWHERE}/The Wall/CD2/b.wav"));
         second.title = "Hey You".to_owned();
 
@@ -4205,9 +4211,7 @@ mod tests {
                 .map(|planned| planned.to.clone())
                 .collect::<Vec<_>>(),
             vec![
-                PathBuf::from(format!(
-                    "{NOWHERE}/Pink Floyd/Meddle/1-01 In the Flesh?.wav"
-                )),
+                PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/1-01 In the Flesh.wav")),
                 PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/2-01 Hey You.wav")),
             ]
         );
@@ -4439,6 +4443,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_destination_that_is_the_track_itself_under_another_case_is_never_a_collision() {
         let folder = a_folder_of_its_own();
         fs::create_dir_all(folder.join("meddle")).expect("a writable temporary directory");
@@ -4575,6 +4580,8 @@ mod tests {
             fs::write(left, bytes).expect("a writable folder");
             library.staging(left).expect("it is noted");
         }
+        left_long_ago(&killed);
+        left_long_ago(&not_ours);
         let held = Held::made(&sandboxed).expect("a copy another namespace holds");
         library.staging(&sandboxed).expect("it is noted");
 
@@ -4615,6 +4622,7 @@ mod tests {
             .collect();
         assert_eq!(noted, vec![still_writing, sandboxed]);
         drop(held);
+        drop((aside, library));
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
@@ -4638,6 +4646,7 @@ mod tests {
                 params![store::path_text(&killed), u32::MAX],
             )
             .expect("the pid a poll wrote under");
+        left_long_ago(&killed);
 
         sweep_what_a_dead_writer_staged(&library);
 
@@ -4646,6 +4655,7 @@ mod tests {
             this_process.exists(),
             "a delivery this process is still writing lost its staging file"
         );
+        drop(library);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
@@ -4664,6 +4674,7 @@ mod tests {
             b"FILE \"new.wav\" WAVE\n"
         );
         assert!(library.staged_writes().expect("it reads").is_empty());
+        drop(library);
         assert_eq!(
             fs::read_dir(&folder)
                 .expect("the folder")

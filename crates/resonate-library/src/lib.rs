@@ -17,6 +17,8 @@ mod history;
 mod import;
 mod keeps;
 mod learning;
+#[cfg(test)]
+mod left_alone;
 mod likeness;
 mod linked;
 mod loose;

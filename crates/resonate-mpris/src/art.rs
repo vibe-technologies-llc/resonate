@@ -457,6 +457,8 @@ mod tests {
         assert!(!laid(&oldest).exists(), "a cover outlived the ones kept");
         let held = fs::read_dir(&pictures.folder.0)
             .expect("the folder")
+            .flatten()
+            .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
             .count();
         assert_eq!(held, COVERS_KEPT);
         pictures.forget();

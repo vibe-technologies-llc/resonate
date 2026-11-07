@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -52,9 +52,11 @@ struct Hosted {
 
 fn scratch(name: &str) -> PathBuf {
     let folder = env::temp_dir().join(format!(
-        "resonate-sync-{name}-{}-{:?}",
+        "resonate-sync-{name}-{}-{}",
         std::process::id(),
-        Instant::now()
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos())
     ));
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder

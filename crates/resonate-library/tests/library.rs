@@ -23,7 +23,7 @@ use resonate_core::{
     AlbumId, ChannelLayout, FrameSpan, Frames, Gate as MeteredGate, KeptZone, MediaLocation, Meter,
     Metering, PlaylistId, QueueStamp, ReleaseTrackId, Reordered, Resumable, Resumption,
     SampleFormat, SampleRate, SourceId, Span, StreamSpec, TrackId, Volume, WantId, ZoneId,
-    ZoneName,
+    ZoneName, path_text, writer,
 };
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
@@ -783,6 +783,7 @@ fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> R
 }
 
 #[test]
+#[cfg(unix)]
 fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result<()> {
     let tree = Tree::new();
     let doomed = tree.write(
@@ -830,6 +831,7 @@ fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result
 }
 
 #[test]
+#[cfg(unix)]
 fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_folder_it_emptied_and_keeps_the_listens()
 -> Result<()> {
     const SHEET: &str =
@@ -893,6 +895,7 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
 }
 
 #[test]
+#[cfg(unix)]
 fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_none_of_them_again()
 -> Result<()> {
     const ORIGIN: [u8; 16] = [9; 16];
@@ -960,6 +963,7 @@ fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_non
 }
 
 #[test]
+#[cfg(unix)]
 fn deleting_two_files_of_one_name_keeps_both_in_the_trash() -> Result<()> {
     let tree = Tree::new();
     let data = Tree::new();
@@ -3990,10 +3994,11 @@ fn a_sheet_another_player_wrote_names_itself_and_counts_what_it_could_not_take()
              # a line no tag defines\n\
              #EXTINF:213,Pink Floyd - Echoes\n\
              a.wav\n\
-             file://{root}/b.wav\n\
+             {root}/b.wav\n\
              http://stream.example/live.ogg\n\
-             {root}/c.wav\n",
-            root = tree.path().display()
+             {plain}/c.wav\n",
+            root = uri_of(tree.path()),
+            plain = path_text::plain(tree.path()).display()
         ),
     )
     .expect("a writable temporary file");
@@ -4281,6 +4286,7 @@ fn a_sheet_written_on_windows_resolves_its_backslashed_rows() -> Result<()> {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing_folders_name()
 -> Result<()> {
     let tree = Tree::new();
@@ -4431,6 +4437,7 @@ fn a_sheet_that_names_one_file_twice_keeps_both_rows() -> Result<()> {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_row_a_sheet_cannot_name_plainly_is_written_as_a_uri() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
@@ -4528,8 +4535,8 @@ fn a_row_holding_an_escaped_nul_names_no_file() -> Result<()> {
     fs::write(
         &sheet,
         format!(
-            "#EXTM3U\nfile://{root}/a%00b.wav\nfile://{root}/c.wav\n",
-            root = tree.path().display()
+            "#EXTM3U\n{root}/a%00b.wav\n{root}/c.wav\n",
+            root = uri_of(tree.path())
         ),
     )
     .expect("a writable temporary file");
@@ -4594,6 +4601,19 @@ fn a_playlist_file_neither_side_can_read_is_refused_by_name() -> Result<()> {
         Err(Error::UnknownPlaylist(_))
     ));
     Ok(())
+}
+
+fn left_long_ago(path: &Path) {
+    let long_ago = SystemTime::now() - writer::UNHELD_AND_UNTOUCHED_FOR * 2;
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.set_modified(long_ago))
+        .expect("a file left long ago");
+}
+
+fn uri_of(folder: &Path) -> String {
+    MediaLocation::local(folder).to_uri()
 }
 
 fn stems(cuts: &[Cut]) -> Vec<String> {
@@ -4688,7 +4708,7 @@ fn an_xspf_sheet_another_player_wrote_is_read_past_its_markup() -> Result<()> {
              <xspf:title>  Someone else&apos;s evening  </xspf:title>\n\
              <xspf:trackList>\n\
              <xspf:track>\
-             <xspf:location>file://{root}/a.wav</xspf:location>\
+             <xspf:location>{root}/a.wav</xspf:location>\
              <xspf:title>Echoes</xspf:title>\
              </xspf:track>\n\
              <xspf:track><xspf:location>b%2Ewav</xspf:location></xspf:track>\n\
@@ -4696,7 +4716,7 @@ fn an_xspf_sheet_another_player_wrote_is_read_past_its_markup() -> Result<()> {
              <xspf:track><xspf:title>a row naming nothing</xspf:title></xspf:track>\n\
              </xspf:trackList>\n\
              </xspf:playlist>\n",
-            root = tree.path().display()
+            root = uri_of(tree.path())
         ),
     )
     .expect("a writable temporary file");
@@ -4774,7 +4794,7 @@ fn an_xspf_base_naming_the_file_scheme_in_capitals_still_resolves_the_rows_under
              xml:base=\"FILE://LOCALHOST{root}/discs/\">\n\
              <trackList><track><location>a.wav</location></track></trackList>\n\
              </playlist>\n",
-            root = tree.path().display()
+            root = uri_of(tree.path()).trim_start_matches("file://")
         ),
     )
     .expect("a writable temporary file");
@@ -4787,6 +4807,7 @@ fn an_xspf_base_naming_the_file_scheme_in_capitals_still_resolves_the_rows_under
 }
 
 #[test]
+#[cfg(unix)]
 fn an_xspf_sheet_a_windows_player_wrote_resolves_with_its_separators_turned() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
@@ -16622,7 +16643,7 @@ fn a_set_filed_as_disc_folders_is_planned_into_one_album_folder_with_the_disc_in
     tree.write(
         "The Wall/CD1/a.wav",
         &Wav::new()
-            .text(TITLE, "In the Flesh?")
+            .text(TITLE, "In the Flesh")
             .text(ARTIST, "Pink Floyd")
             .text(ALBUM_ARTIST, "Pink Floyd")
             .text(ALBUM, "The Wall")
@@ -16650,7 +16671,7 @@ fn a_set_filed_as_disc_folders_is_planned_into_one_album_folder_with_the_disc_in
         vec![
             (
                 root.join("The Wall/CD1/a.wav"),
-                root.join("Pink Floyd/The Wall/1-01 In the Flesh?.wav")
+                root.join("Pink Floyd/The Wall/1-01 In the Flesh.wav")
             ),
             (
                 root.join("The Wall/CD2/b.wav"),
@@ -17415,7 +17436,7 @@ fn a_set_filed_as_disc_folders_lands_in_one_album_folder_with_the_disc_written_i
     tree.write(
         "The Wall/CD1/a.wav",
         &Wav::new()
-            .text(TITLE, "In the Flesh?")
+            .text(TITLE, "In the Flesh")
             .text(ARTIST, "Pink Floyd")
             .text(ALBUM_ARTIST, "Pink Floyd")
             .text(ALBUM, "The Wall")
@@ -17438,7 +17459,7 @@ fn a_set_filed_as_disc_folders_lands_in_one_album_folder_with_the_disc_written_i
 
     let summary = applied(&library)?;
     let root = filed_under(&tree);
-    let flesh = root.join("Pink Floyd/The Wall/1-01 In the Flesh?.wav");
+    let flesh = root.join("Pink Floyd/The Wall/1-01 In the Flesh.wav");
     let you = root.join("Pink Floyd/The Wall/2-01 Hey You.wav");
 
     assert_eq!(summary.stats.moved, 2);
@@ -23042,8 +23063,10 @@ fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()
     assert_eq!(landed.len(), 1);
     assert_eq!(objects.len(), 1);
 
-    let data = Tree::new();
-    library.trash_into(Some(data.path().to_path_buf()));
+    library.trash_through(Some(Arc::new(TrashedByTheDesktop {
+        asked: Mutex::new(Vec::new()),
+        answer: Removal::Removed,
+    })));
     let deleted = library.delete_tracks(&landed)?;
 
     assert_eq!(deleted.tracks, 1);
@@ -29055,6 +29078,7 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
     );
     assert_eq!(library.keeps_pending()?, 1);
     assert!(songs_under(&tree).is_empty());
+    left_long_ago(&staged);
 
     let tube = Tube::new();
     let summary = pass(&library, &tube)?;

@@ -979,6 +979,7 @@ mod tests {
     use std::{env, slice};
 
     use super::*;
+    use crate::left_alone::left_long_ago;
 
     const NEVER_A_PROCESS: u32 = 999_999_999;
 
@@ -1015,6 +1016,7 @@ mod tests {
             name.to_string_lossy()
         ));
         fs::write(&journal, encoded(name, stood, lands, 0, changes)).expect("a journal");
+        left_long_ago(&journal);
         journal
     }
 
@@ -1033,6 +1035,7 @@ mod tests {
         ));
         fs::write(&track, [9_u8; 40]).expect("a torn track");
         fs::write(&whole, [4_u8; 24]).expect("the whole copy");
+        left_long_ago(&whole);
 
         assert!(names_a_cut_short_write(&whole));
         assert_eq!(
@@ -1052,6 +1055,7 @@ mod tests {
 
         fs::write(&track, [9_u8; 40]).expect("a torn track");
         fs::write(&whole, [4_u8; 24]).expect("the whole copy");
+        left_long_ago(&whole);
 
         assert!(names_a_cut_short_write(&whole));
         assert_eq!(
@@ -1108,9 +1112,7 @@ mod tests {
         let held = staged_holding(&staged, &[2_u8; 8]);
 
         let kept = WholeCopy::kept_elsewhere(&staged, &held, &track).expect("a whole copy");
-        let copy = File::open(&kept.copy).expect("the copy");
-
-        let (_, Bound::Away(bound)) = bound_of(&copy).expect("a bound") else {
+        let (_, Bound::Away(bound)) = bound_of(&kept.handle).expect("a bound") else {
             panic!("the copy names no track");
         };
         assert_eq!(bound, fs::canonicalize(&track).expect("the track"));
@@ -1261,6 +1263,8 @@ mod tests {
             ".Eclipse.flac.{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{WHOLE_SUFFIX}"
         ));
         fs::rename(&kept.copy, &dead).expect("a copy a dead writer left");
+        drop((kept, held));
+        left_long_ago(&dead);
         (spool, track, dead)
     }
 
@@ -1328,6 +1332,7 @@ mod tests {
         for left in [&dead, &living, &beside, &foreign] {
             fs::write(left, b"left").expect("a file left in the spool");
         }
+        left_long_ago(&dead);
 
         mend_what_was_left_in(slice::from_ref(&folder.0));
 
@@ -1577,6 +1582,7 @@ mod tests {
             .0
             .join(format!(".Eclipse.flac.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}"));
         fs::write(&another, b"another").expect("another track's journal");
+        left_long_ago(&another);
         let left = left_by_a_dead_writer(
             &track,
             8,

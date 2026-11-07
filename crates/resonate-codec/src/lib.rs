@@ -15,6 +15,8 @@ mod framed;
 mod fuzzing;
 mod insert;
 mod journal;
+#[cfg(test)]
+mod left_alone;
 mod matroska;
 mod matroska_tags;
 mod mpa;

@@ -8,7 +8,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
@@ -246,9 +246,11 @@ struct Hosted {
 
 fn hosted(name: &str) -> Hosted {
     let folder = env::temp_dir().join(format!(
-        "resonate-shared-{name}-{}-{:?}",
+        "resonate-shared-{name}-{}-{}",
         process::id(),
-        Instant::now()
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos())
     ));
     fs::create_dir_all(&folder).expect("a scratch folder");
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -577,9 +579,11 @@ fn a_list_left_or_deleted_here_leaves_the_others_their_copy() {
 #[test]
 fn a_list_shared_with_no_server_reachable_waits_and_arrives_once_one_is() {
     let folder = env::temp_dir().join(format!(
-        "resonate-shared-offline-{}-{:?}",
+        "resonate-shared-offline-{}-{}",
         process::id(),
-        Instant::now()
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos())
     ));
     fs::create_dir_all(&folder).expect("a scratch folder");
     let shelf = Arc::new(Shelf::default());

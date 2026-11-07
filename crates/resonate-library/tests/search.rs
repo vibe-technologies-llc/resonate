@@ -39,7 +39,9 @@ impl Tree {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).expect("a writable temporary directory");
-        Self { root }
+        Self {
+            root: root.canonicalize().expect("a canonical path"),
+        }
     }
 
     fn write(&self, relative: &str, wav: &Wav) {

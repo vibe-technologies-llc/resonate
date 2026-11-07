@@ -823,6 +823,7 @@ fn read_full(file: &mut File, into: &mut [u8]) -> io::Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::left_alone::left_long_ago;
 
     struct Scratch(PathBuf);
 
@@ -878,6 +879,7 @@ mod tests {
             &format!(".old.flac.{NEVER_A_PROCESS}.{STAGED_SUFFIX}"),
             b"half",
         );
+        left_long_ago(&dead);
         let living = written(&into, &format!(".new.flac.7.{STAGED_SUFFIX}"), b"half");
         let held = Held::taken_over(&living).expect("a living writer holds its file");
 

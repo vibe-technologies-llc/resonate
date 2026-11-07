@@ -1856,6 +1856,7 @@ mod tests {
     use crate::{
         ImageFormat, Pictured,
         insert::{Copying, Refusing},
+        left_alone::left_long_ago,
     };
 
     const RATE: u32 = 44_100;
@@ -1917,6 +1918,7 @@ mod tests {
         for path in [&track, &left, &ours, &another, &hidden] {
             fs::write(path, b"fLaC").expect("a writable temporary file");
         }
+        left_long_ago(&left);
         let sandboxed = folder
             .root
             .join(format!(".Echoes.{NEVER_A_PROCESS}-4.flac"));

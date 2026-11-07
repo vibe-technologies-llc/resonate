@@ -184,7 +184,10 @@ mod tests {
     use std::{env, fs, path::PathBuf, process};
 
     use super::*;
-    use crate::journal::{Mended, mend_what_a_dead_writer_left};
+    use crate::{
+        journal::{Mended, mend_what_a_dead_writer_left},
+        left_alone::left_long_ago,
+    };
 
     struct Scratch(PathBuf);
 
@@ -326,6 +329,7 @@ mod tests {
             .folder()
             .join(format!(".{named}.999999999-0.resonate-undo"));
         fs::rename(&journals[0], &dead).expect("a journal of a dead writer");
+        left_long_ago(&dead);
         (track, grown)
     }
 

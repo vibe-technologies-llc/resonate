@@ -1235,6 +1235,16 @@ mod tests {
 
         let dead = scratch.store.folder().join(".shared.txt.999999999-0.new");
         fs::write(&dead, "half").expect("a writable folder");
+        std::fs::File::options()
+            .write(true)
+            .open(&dead)
+            .and_then(|file| {
+                file.set_modified(
+                    std::time::SystemTime::now()
+                        - resonate_core::writer::UNHELD_AND_UNTOUCHED_FOR * 2,
+                )
+            })
+            .expect("a file left long ago");
         let living = scratch
             .store
             .folder()

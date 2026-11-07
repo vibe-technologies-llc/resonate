@@ -523,6 +523,7 @@ mod tests {
         assert_eq!(read, format!("{opened}&A"));
     }
 
+    #[cfg(unix)]
     fn read_at(location: &str) -> Vec<PathBuf> {
         let text = format!(
             "<playlist><trackList><track><location>{location}</location></track></trackList></playlist>"
@@ -542,6 +543,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_location_is_read_up_to_its_query_or_fragment_whether_it_is_a_uri_or_relative() {
         let echoes = vec![PathBuf::from("/music/Echoes.flac")];
 

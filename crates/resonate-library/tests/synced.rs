@@ -16,8 +16,8 @@ use resonate_core::{Answer, Answered, Chromaprint, Link, Mbid, MediaLocation, Re
 use resonate_library::{
     Agreement, Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeardAs,
     HeldTags, ImageFormat, ImportOptions, Layout, Library, LyricText, Medium, Release,
-    ReleaseTrack, Result, SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, Sources,
-    SyncedQueryBody, TrackQuery, Vault, WAITS,
+    ReleaseTrack, Removal, Result, SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder,
+    Sources, SyncedQueryBody, TrackQuery, Trashes, Vault, WAITS,
 };
 
 const RATE: u32 = 44_100;
@@ -1164,7 +1164,6 @@ fn a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_f
 #[test]
 fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left() -> Result<()> {
     let tree = Tree::new();
-    let trash = Tree::new();
     let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
     let copy = tree.root.join("Echoes (1).wav");
     fs::copy(&original, &copy).expect("a copy");
@@ -1176,7 +1175,7 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
         "Meddle (Live)",
     );
     let library = Library::open_in_memory()?;
-    library.trash_into(Some(trash.root.clone()));
+    library.trash_through(Some(Arc::new(TakenByTheDesktop)));
     scan(&library, &tree.root)?;
     let copied = library
         .track_at(&copy, None)?
@@ -1218,16 +1217,24 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
     Ok(())
 }
 
+struct TakenByTheDesktop;
+
+impl Trashes for TakenByTheDesktop {
+    fn trash(&self, file: &Path) -> Removal {
+        fs::remove_file(file).expect("the desktop takes the file");
+        Removal::Removed
+    }
+}
+
 #[test]
 fn a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not() -> Result<()> {
     let tree = Tree::new();
-    let trash = Tree::new();
     let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
     let copy = tree.root.join("Echoes (1).wav");
     fs::copy(&original, &copy).expect("a copy");
     let gone = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
     let library = Library::open_in_memory()?;
-    library.trash_into(Some(trash.root.clone()));
+    library.trash_through(Some(Arc::new(TakenByTheDesktop)));
     scan(&library, &tree.root)?;
     let echoes = song("Echoes", "Pink Floyd", "Meddle");
     let fearless = song("Fearless", "Pink Floyd", "Meddle");

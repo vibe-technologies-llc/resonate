@@ -335,7 +335,19 @@ pub fn local_file(line: &str) -> Option<PathBuf> {
     if !encoded.starts_with('/') {
         return None;
     }
-    unescaped(&encoded)
+    path_of_the_uri(&encoded)
+}
+
+#[cfg(unix)]
+fn path_of_the_uri(encoded: &str) -> Option<PathBuf> {
+    unescaped(encoded)
+}
+
+#[cfg(windows)]
+fn path_of_the_uri(encoded: &str) -> Option<PathBuf> {
+    MediaLocation::from_uri(&format!("{FILE_SCHEME_NAME}://{encoded}"))?
+        .as_path()
+        .map(Path::to_path_buf)
 }
 
 pub fn path_of_reference(reference: &str) -> &str {
@@ -688,6 +700,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_whose_name_holds_a_backslash_is_written_as_a_row_that_reads_back_as_it() {
         let beside = Path::new("/music");
         let file = Path::new("/music/AC\\DC.wav");
@@ -718,11 +731,13 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     fn read_at(row: &str) -> Option<PathBuf> {
         located(row, Path::new("/music")).and_then(|held| held.as_path().map(Path::to_path_buf))
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_uri_is_read_whatever_the_case_of_its_scheme_and_host_and_with_one_slash() {
         let echoes = Some(PathBuf::from("/tmp/a.wav"));
 
@@ -740,6 +755,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_uri_a_windows_player_wrote_reads_with_its_separators_turned_and_an_escaped_one_kept()
     {
         assert_eq!(
@@ -753,6 +769,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_uri_is_read_up_to_its_query_or_fragment_and_an_escaped_mark_stays_in_the_name() {
         let echoes = Some(PathBuf::from("/music/Echoes.flac"));
 
@@ -768,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_row_that_is_not_a_uri_keeps_a_mark_in_the_middle_of_its_name() {
         assert_eq!(
             read_at("/music/Take #5?.flac"),
@@ -780,6 +798,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_row_a_windows_player_wrote_still_reads_with_its_separators_turned() {
         let beside = Path::new("/music");
 

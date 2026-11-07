@@ -288,6 +288,8 @@ impl Drop for Fill {
 mod tests {
     use std::{env, io::Read};
 
+    use resonate_core::writer;
+
     use super::*;
 
     const NEVER_A_PROCESS: u32 = 999_999_999;
@@ -413,6 +415,13 @@ mod tests {
         }
         let stale = scratch.0.join(format!("9.{NEVER_A_PROCESS}.part"));
         fs::write(&stale, b"left").expect("a stale fill");
+        File::options()
+            .write(true)
+            .open(&stale)
+            .and_then(|file| {
+                file.set_modified(SystemTime::now() - writer::UNHELD_AND_UNTOUCHED_FOR * 2)
+            })
+            .expect("a fill left long ago");
         fs::write(scratch.0.join("notes.txt"), b"not ours").expect("another file");
 
         let cache = Cache::open(&scratch.0, LIMIT).expect("a cache");

@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
@@ -27,9 +27,11 @@ const NO_SERVER_HERE: &str = "127.0.0.1:9";
 
 fn scratch(name: &str) -> PathBuf {
     let folder = env::temp_dir().join(format!(
-        "resonate-nearby-{name}-{}-{:?}",
+        "resonate-nearby-{name}-{}-{}",
         std::process::id(),
-        Instant::now()
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos())
     ));
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder

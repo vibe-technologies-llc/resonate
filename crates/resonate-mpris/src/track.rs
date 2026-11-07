@@ -805,6 +805,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_time_further_ahead_than_a_year_has_digits_for_is_answered_rather_than_overflowing() {
         let furthest = UNIX_EPOCH
             .checked_add(Duration::from_secs(i64::MAX.unsigned_abs()))

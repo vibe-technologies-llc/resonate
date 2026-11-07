@@ -342,6 +342,8 @@ fn cut_named_below(sheet: CueSheet, above: &Path, folder: &Path, named: &str) ->
     Some(cut.swap_remove(at))
 }
 
+const THE_FILESYSTEM_FOLDS_NAMES: bool = cfg!(windows);
+
 pub fn folder_named(beside: &Path, named: &str) -> PathBuf {
     the_folders_below(named)
         .and_then(|folders| {
@@ -371,7 +373,8 @@ fn the_folders_below(named: &str) -> Option<Vec<&str>> {
 
 fn a_folder_in(folder: &Path, named: &str) -> Option<PathBuf> {
     let exactly = folder.join(named);
-    if fs::symlink_metadata(&exactly).is_ok_and(|held| held.is_dir()) {
+    if !THE_FILESYSTEM_FOLDS_NAMES && fs::symlink_metadata(&exactly).is_ok_and(|held| held.is_dir())
+    {
         return Some(exactly);
     }
 

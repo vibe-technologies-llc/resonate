@@ -293,6 +293,8 @@ fn unnamed_file_in(folder: &Path) -> io::Result<File> {
         NAMED.fetch_add(1, Ordering::Relaxed)
     ));
     OpenOptions::new()
+        .read(true)
+        .write(true)
         .access_mode(DELETE_ACCESS | GENERIC_READ | GENERIC_WRITE)
         .create_new(true)
         .custom_flags(DELETE_ON_CLOSE)
@@ -391,9 +393,15 @@ impl MediaStream for Unspooled {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::Cursor, time::Duration};
+    use std::{
+        fs,
+        io::Cursor,
+        time::{Duration, Instant},
+    };
 
     use super::*;
+
+    const A_SPOOL_IS_LET_GO_OF_WITHIN: Duration = Duration::from_secs(5);
 
     struct Piped(Cursor<Vec<u8>>);
 
@@ -417,17 +425,14 @@ mod tests {
         let taking = env::temp_dir().join(format!("resonate-spool-folder-{}", process::id()));
         fs::create_dir_all(&taking).expect("a folder to spool into");
 
-        let spooled = unnamed_file_under(&[missing.clone(), taking.clone()]);
+        let spooled = unnamed_file_under(&[missing.clone(), taking.clone()]).is_ok();
         let refused = unnamed_file_under(std::slice::from_ref(&missing));
         let left = fs::read_dir(&taking)
             .map(Iterator::count)
             .unwrap_or(usize::MAX);
         let _ = fs::remove_dir(&taking);
 
-        assert!(
-            spooled.is_ok(),
-            "a folder that takes a file was passed over"
-        );
+        assert!(spooled, "a folder that takes a file was passed over");
         assert!(refused.is_err(), "a folder that is not there took a file");
         assert_eq!(left, 0, "the spool left its name behind");
     }
@@ -460,6 +465,14 @@ mod tests {
         whole
             .read_to_end(&mut bytes)
             .expect("readable spooled bytes");
+        drop((whole, spool));
+        let let_go_of = Instant::now();
+        while fs::read_dir(&taking).expect("the selected folder").count() > 0
+            && let_go_of.elapsed() < A_SPOOL_IS_LET_GO_OF_WITHIN
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+
         assert_eq!(bytes, [1, 2, 3]);
         assert_eq!(
             fs::read_dir(&taking).expect("the selected folder").count(),

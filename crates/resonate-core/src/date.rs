@@ -122,7 +122,7 @@ mod tests {
             }
         );
         assert_eq!(
-            CivilDate::at(UNIX_EPOCH - Duration::from_nanos(1)),
+            CivilDate::at(UNIX_EPOCH - Duration::from_micros(1)),
             CivilDate {
                 year: 1969,
                 month: 12,

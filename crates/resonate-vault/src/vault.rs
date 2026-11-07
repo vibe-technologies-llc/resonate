@@ -2019,6 +2019,16 @@ mod tests {
         for path in [&crashed, &living, &unnamed] {
             fs::write(path, b"half an object").expect("a staged write");
         }
+        std::fs::File::options()
+            .write(true)
+            .open(&crashed)
+            .and_then(|file| {
+                file.set_modified(
+                    std::time::SystemTime::now()
+                        - resonate_core::writer::UNHELD_AND_UNTOUCHED_FOR * 2,
+                )
+            })
+            .expect("a file left long ago");
         let sandboxed = staging.join(format!("{PAST_EVERY_PID}-8.flac"));
         let held = Held::made(&sandboxed).expect("a staged write another namespace holds");
 
@@ -2256,6 +2266,7 @@ mod tests {
     fn a_failure_on_the_vaults_own_disc_is_told_from_one_of_the_source() {
         let root = std::env::temp_dir().join(format!("resonate-vault-failed-{}", process::id()));
         let vault = Vault::make(&root).expect("a vault");
+        let root = root.canonicalize().expect("a canonical vault");
         let failed = |path: PathBuf, kind: io::ErrorKind| Error::Io {
             op: VaultOp::Write,
             path,
@@ -2286,6 +2297,7 @@ mod tests {
     fn a_path_climbing_out_of_the_vault_is_not_held_by_it() {
         let root = std::env::temp_dir().join(format!("resonate-vault-climbing-{}", process::id()));
         let vault = Vault::make(&root).expect("a vault");
+        let root = root.canonicalize().expect("a canonical vault");
 
         let climbing = root.join("..").join("elsewhere.flac");
         let deeper = root.join("audio").join("..").join("..").join("etc");

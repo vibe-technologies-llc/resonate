@@ -811,8 +811,8 @@ mod tests {
     fn ageing_the_history_freezes_the_years_over_first_so_forgetting_listens_does_not_shrink_them()
     {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
-        heard(&library, &a_song("Early", 0, 60));
-        heard(&library, &a_song("Early", 1, 60));
+        heard(&library, &a_song("Early", 100, 60));
+        heard(&library, &a_song("Early", 101, 60));
         let a_year = HistoryKept::for_days(365).expect("a span is a span");
 
         let aged = library.age_the_history(a_year).expect("the history ages");

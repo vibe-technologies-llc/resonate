@@ -254,9 +254,7 @@ impl Provider for Inbox {
 #[cfg(test)]
 mod tests {
     use std::{
-        env,
-        fs::File,
-        process,
+        env, process,
         sync::atomic::{AtomicU64, Ordering},
         thread,
     };
@@ -264,6 +262,8 @@ mod tests {
     use resonate_core::{Isrc, Mbid};
 
     use super::*;
+
+    const A_TICK_OF_THE_FILE_CLOCK: Duration = Duration::from_millis(20);
 
     const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
     const ECHOES_TRACK: &str = "0a0bb0f4-3e3d-4e71-9b0a-6c3b1b1c7a11";
@@ -298,6 +298,18 @@ mod tests {
     impl Drop for Folder {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn a_tick_of_the_file_clock_after_the_folder_was_written(folder: &Path) {
+        let written = fs::metadata(folder)
+            .and_then(|metadata| metadata.modified())
+            .expect("a folder's modification time");
+        while SystemTime::now()
+            .duration_since(written)
+            .map_or(true, |since| since <= A_TICK_OF_THE_FILE_CLOCK)
+        {
+            thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -446,6 +458,7 @@ mod tests {
         let inbox = settled_at(&folder);
 
         let before = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+        a_tick_of_the_file_clock_after_the_folder_was_written(&folder.0);
         fs::write(folder.0.join(format!("{ECHOES}.flac")), b"audio").expect("a scratch file");
         let after = delivered(inbox.find(&echoes()).expect("a readable inbox"));
 
@@ -497,9 +510,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_copy_that_kept_its_old_modification_time_is_still_arriving_by_its_change_time() {
         let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
-        File::options()
+        fs::File::options()
             .write(true)
             .open(folder.0.join(format!("{ECHOES}.flac")))
             .and_then(|file| file.set_modified(SystemTime::now() - AN_HOUR * 24))

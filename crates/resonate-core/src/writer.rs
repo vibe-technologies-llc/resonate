@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, OpenOptions, TryLockError},
+    fs::{File, OpenOptions},
     io,
     path::Path,
     process,
@@ -24,31 +24,24 @@ impl Held {
     }
 
     pub fn taken_over(path: &Path) -> io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?;
-        match file.try_lock() {
-            Ok(()) | Err(TryLockError::Error(_)) => {}
-            Err(TryLockError::WouldBlock) => return Err(io::ErrorKind::WouldBlock.into()),
-        }
+        let file = holding::claimed(
+            path,
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false),
+        )?;
         file.set_len(0)?;
         Ok(Self(file))
     }
 
     pub fn resumed(path: &Path) -> io::Result<Self> {
-        let file = OpenOptions::new().read(true).write(true).open(path)?;
-        match file.try_lock() {
-            Ok(()) | Err(TryLockError::Error(_)) => {}
-            Err(TryLockError::WouldBlock) => return Err(io::ErrorKind::WouldBlock.into()),
-        }
-        Ok(Self(file))
+        holding::claimed(path, OpenOptions::new().read(true).write(true)).map(Self)
     }
 
     pub fn over(file: File) -> Self {
-        let _ = file.lock();
+        holding::hold(&file);
         Self(file)
     }
 
@@ -58,19 +51,95 @@ impl Held {
 }
 
 pub fn writer_of(path: &Path, stamped: u32) -> Writer {
-    let opened = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .or_else(|_| File::open(path));
-    let Ok(file) = opened else {
-        return by_its_stamp(stamped);
+    match holding::looked_at(path) {
+        Looked::Held => Writer::Living,
+        Looked::Unheld(file) if unheld_long_enough(&file) => Writer::Gone,
+        Looked::Unheld(_) | Looked::Unknowable => by_its_stamp(stamped),
+    }
+}
+
+enum Looked {
+    Held,
+    Unheld(File),
+    Unknowable,
+}
+
+#[cfg(unix)]
+mod holding {
+    use std::{
+        fs::{File, OpenOptions, TryLockError},
+        io,
+        path::Path,
     };
-    match file.try_lock() {
-        Err(TryLockError::WouldBlock) => Writer::Living,
-        Err(TryLockError::Error(_)) => by_its_stamp(stamped),
-        Ok(()) if unheld_long_enough(&file) => Writer::Gone,
-        Ok(()) => by_its_stamp(stamped),
+
+    use super::Looked;
+
+    pub(super) fn claimed(path: &Path, options: &OpenOptions) -> io::Result<File> {
+        let file = options.open(path)?;
+        match file.try_lock() {
+            Ok(()) | Err(TryLockError::Error(_)) => Ok(file),
+            Err(TryLockError::WouldBlock) => Err(io::ErrorKind::WouldBlock.into()),
+        }
+    }
+
+    pub(super) fn hold(file: &File) {
+        let _ = file.lock();
+    }
+
+    pub(super) fn looked_at(path: &Path) -> Looked {
+        let opened = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .or_else(|_| File::open(path));
+        let Ok(file) = opened else {
+            return Looked::Unknowable;
+        };
+        match file.try_lock() {
+            Err(TryLockError::WouldBlock) => Looked::Held,
+            Err(TryLockError::Error(_)) => Looked::Unknowable,
+            Ok(()) => Looked::Unheld(file),
+        }
+    }
+}
+
+#[cfg(windows)]
+mod holding {
+    use std::{
+        fs::{File, OpenOptions},
+        io,
+        os::windows::fs::OpenOptionsExt as _,
+        path::Path,
+    };
+
+    use super::Looked;
+
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+
+    pub(super) fn claimed(path: &Path, options: &OpenOptions) -> io::Result<File> {
+        match looked_at(path) {
+            Looked::Held => Err(io::ErrorKind::WouldBlock.into()),
+            Looked::Unheld(probe) => {
+                drop(probe);
+                options.open(path)
+            }
+            Looked::Unknowable => options.open(path),
+        }
+    }
+
+    pub(super) const fn hold(_: &File) {}
+
+    pub(super) fn looked_at(path: &Path) -> Looked {
+        match OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_DELETE)
+            .open(path)
+        {
+            Ok(file) => Looked::Unheld(file),
+            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => Looked::Held,
+            Err(_) => Looked::Unknowable,
+        }
     }
 }
 

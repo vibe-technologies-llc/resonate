@@ -7,7 +7,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
@@ -494,9 +494,11 @@ async fn a_page_is_answered_beside_the_socket_and_holds_nothing_of_the_invitatio
 #[test]
 fn a_store_of_before_shared_spaces_is_carried_forward_with_its_records() {
     let folder: PathBuf = env::temp_dir().join(format!(
-        "resonate-together-{}-{:?}",
+        "resonate-together-{}-{}",
         process::id(),
-        Instant::now()
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos())
     ));
     fs::create_dir_all(&folder).expect("a scratch folder");
     let path = folder.join("store.sqlite");

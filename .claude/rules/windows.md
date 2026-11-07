@@ -187,9 +187,12 @@ exists (*The Win32 exception*, below).
 - **A `file://` URI is `file:///C:/Music/a.flac`, a share `file://host/share/a.flac`**
   (`windows_uri`, tested on every host); `\\?\` prefixes are dropped; `from_uri` takes the rest of
   the URI back to a `\` path **written verbatim** (`windows_uri::verbatim`: `\\?\C:\…`,
-  `\\?\UNC\host\share\…`), the spelling `fs::canonicalize` gives and so the one the scan stores,
+  `\\?\UNC\host\share\…`; a `.` or `..` segment is refused, since Windows never normalises a
+  verbatim path), the spelling `fs::canonicalize` gives and so the one the scan stores,
   so a song kept as a URI (the resumed queue, a delivery's offer, a playlist, `OpenUri`) finds its
   catalog row again; the binary's `from_here` writes a path that does not exist yet the same way.
+  A playlist sheet's `file://` row is read through the same `from_uri` (`sheet::local_file`), so an M3U
+  or XSPF naming `file:///C:/…` finds its file.
   `path_text::verbatim` and `path_text::plain` are the two directions (identity off Windows),
   `path_text::shown` is what a window or notice draws, and a call into the Windows Runtime
   (`StorageFile` for the media controls' cover) is handed the plain spelling. On Unix a URI still has to start at the root.
@@ -219,8 +222,8 @@ exists (*The Win32 exception*, below).
 - **What the tag writer carries to its copy on Windows is the alternate streams, the security and
   the read-only attribute** (`carries_what_the_file_did`'s Windows arm): every named `:name:$DATA`
   stream `FindFirstStreamW`/`FindNextStreamW` list (the file's own `::$DATA` passed over) is copied
-  into the same name on the staged copy through `std` (a stream is its own file object, so the
-  mandatory lock on the staged copy's data is not crossed); the DACL is read with
+  into the same name on the staged copy through `std` (a stream is its own file object); the DACL
+  is read with
   `GetNamedSecurityInfoW` and laid on the copy with `SetNamedSecurityInfoW`, protected where the
   file's was (`SE_DACL_PROTECTED`) and otherwise inheriting from the folder as the file did, the
   owner set only where it differs from the copy's (setting another's needs a privilege); the
@@ -229,23 +232,21 @@ exists (*The Win32 exception*, below).
   keeps every stream and the descriptor because the file stays the file. The hard-link count and
   extended attributes stay `cfg(unix)`. `std::fs::copy` (`CopyFileExW`) carries streams but not the
   security descriptor and cannot replace the writer's own staged copy.
-- **A held file's lock is mandatory on Windows** (`LockFileEx`): `writer_of` still asks the lock
-  first and a dead writer's is released by the system; with no `/proc` the pid stamp reads as
-  living where the lock cannot be asked. **So nothing reads or writes a file its own run holds by
-  reopening its path**: a read or write of a held file goes through the `Held`'s handle or a
-  `try_clone` of it (the same file object, so the lock's owner), which is correct on Windows by
-  construction and costs nothing on Unix. The tag writer's `Staged::handle` is that clone
-  (rewound to the head) and every stage of a staged copy uses it: the tags read off a rechunked
-  copy, the tags written into it, and `WholeCopy`, which appends its record of the track, binds a
-  copy kept outside the track's folder and lays itself over the track through the handle it was
-  made with, never `File::open` of its name (`a_staged_copy_is_read_and_written_through_its_held_handle_whatever_its_name_now_names`,
-  `a_whole_copy_is_written_back_through_the_handle_it_was_made_from_not_by_reopening_its_path`,
-  both of which take the name away or put a decoy under it, which Unix lets stand while a reopen
-  would find the wrong file). A rename, a sync by name (`FlushFileBuffers` moves no byte range) and
-  a removal work under the lock. The only reads by path are of what no living run holds: mending
-  a dead writer's journal or whole copy, where `writer_of` has said `Gone` first (the system
-  released its lock with its process), and a `.torn` copy, which its own run no longer holds once
-  its `Staged` is dropped.
+- **A held file is held by its open handle on Windows, not by a lock** (`writer::holding`): a
+  `LockFileEx` lock is mandatory, so it refused every reopening of the file by path that a
+  writer's own run makes (the vault's staging, the library's import and take-in, a copy read back),
+  each failing with `ERROR_LOCK_VIOLATION` (33). So no lock is taken there; `writer_of` opens the
+  file sharing nothing but deletion, and a sharing violation (32) means a handle is open, a living
+  writer; a crashed writer's handles are closed by the system, so its file opens and is gone once
+  untouched for `UNHELD_AND_UNTOUCHED_FOR`. With no `/proc` the pid stamp reads as living, so that
+  age alone decides a dead writer's file there. `Held::taken_over` and `resumed` look the same way
+  before opening (`WouldBlock` where a handle is open); a look racing a writer's own open by path
+  can make that open fail with a sharing violation for the moment the look holds the file, which is
+  the cost of the design and never a lost write (the writer's own handle is untouched). The tag
+  writer still reads and writes a staged copy through `Staged::handle`, a `try_clone` of the held
+  one (`a_staged_copy_is_read_and_written_through_its_held_handle_whatever_its_name_now_names`,
+  `a_whole_copy_is_written_back_through_the_handle_it_was_made_from_not_by_reopening_its_path`),
+  since a name may have been taken away or a decoy put under it.
 - **A file or directory is synced through `file_facts`**: `sync_file` opens a Windows file for
   writing (`FlushFileBuffers` refuses a read-only handle) and `sync_directory` is a no-op there (a
   directory cannot be opened as a file), so no writer calls `File::open(folder)` or syncs a
@@ -421,8 +422,8 @@ through the same `Running` calls as on Linux, and `Session::open` is `Ok` withou
   `.zone<N>`, `.instance<pid>`), so `numbered`, `answers_to`, `PlayerName` and `--player zone2` are
   unchanged. The name is claimed in `%TEMP%\resonate-players\<name>` by `Held::taken_over`
   (`registry.rs`): the file is the **lock file for discovery**, held for the player's life, so a
-  client lists the folder and `writer_of` says which entries live (a held lock; on Windows the lock
-  is mandatory, so the file's content is never read, its name says everything). A dead player's
+  client lists the folder and `writer_of` says which entries live (a held lock, on Windows an open
+  handle; the file's content is never read, its name says everything). A dead player's
   entry is swept by the next listing once it has aged `UNHELD_AND_UNTOUCHED_FOR`; a client that
   cannot connect to a living-looking entry skips it. A taken name falls through to the instance
   names, up to `INSTANCES`, as on the bus.

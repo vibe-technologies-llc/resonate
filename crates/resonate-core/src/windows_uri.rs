@@ -9,6 +9,7 @@ const VERBATIM_UNC: &[u8] = br"\\?\UNC\";
 const VERBATIM: &[u8] = br"\\?\";
 const NETWORK: &[u8] = br"\\";
 const NOT_A_SHARE: &[u8] = b"?.";
+const DOT_SEGMENTS: [&[u8]; 2] = [b".", b".."];
 
 pub fn uri_rest_of(path: &[u8]) -> String {
     if let Some(network) = path.strip_prefix(VERBATIM_UNC) {
@@ -27,6 +28,12 @@ pub fn uri_rest_of(path: &[u8]) -> String {
 }
 
 pub fn path_of_uri_rest(decoded: &[u8]) -> Option<Vec<u8>> {
+    if decoded
+        .split(|byte| *byte == SLASH || *byte == BACKSLASH)
+        .any(|segment| DOT_SEGMENTS.contains(&segment))
+    {
+        return None;
+    }
     let (&first, rooted) = decoded.split_first()?;
     if first != SLASH {
         let mut network = NETWORK.to_vec();
@@ -157,5 +164,13 @@ mod tests {
     #[test]
     fn nothing_is_no_path() {
         assert_eq!(path_of_uri_rest(b""), None);
+    }
+
+    #[test]
+    fn a_dot_segment_names_no_path() {
+        assert_eq!(path_of_uri_rest(b"relative/../a.mp3"), None);
+        assert_eq!(path_of_uri_rest(b"/C:/Music/./a.flac"), None);
+        assert_eq!(path_of_uri_rest(b"/C:/Music/..\\a.flac"), None);
+        assert!(path_of_uri_rest(b"/C:/Music/a..flac").is_some());
     }
 }
