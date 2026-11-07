@@ -241,11 +241,14 @@ impl RootView {
             cx.update_global::<ResonateApp, _>(|global, _| {
                 named.hold(&mut global.online, String::new());
             });
+            self.store(&named.setting(String::new()), cx);
         }
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.online.youtube_music = false;
             global.online.youtube_music_keep_order = true;
         });
+        self.store(&Setting::YoutubeMusic(false), cx);
+        self.store(&Setting::YoutubeMusicKeepOrder(true), cx);
         self.the_sources_moved(cx);
     }
 
