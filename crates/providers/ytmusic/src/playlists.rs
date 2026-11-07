@@ -153,11 +153,13 @@ pub fn playlist_id(id: &str) -> Option<Id> {
 
 impl Tool {
     pub fn playlists(&self) -> Result<Vec<Mix>> {
+        let op = ProviderOp::Browse;
+        self.refused_while_lapsed(op)?;
         let listing = self.listed_at(THE_ACCOUNTS_PLAYLISTS_ARE_AT)?;
-        let flat: Flat = serde_json::from_slice(&listing).unwrap_or_else(|error| {
+        let flat: Flat = serde_json::from_slice(&listing).map_err(|error| {
             tracing::debug!(%error, "the account's playlists were not the document expected");
-            Flat::default()
-        });
+            self.unreadable(op)
+        })?;
         Ok(flat
             .entries
             .into_iter()
@@ -168,7 +170,7 @@ impl Tool {
 
     pub fn song(&self, video: &VideoId) -> Result<Option<Song>> {
         let op = ProviderOp::Search;
-        self.refused_while_lapsed()?;
+        self.refused_while_lapsed(op)?;
         let Some(listing) = self.video_listed(video)? else {
             return Ok(None);
         };
@@ -184,6 +186,7 @@ impl Tool {
     pub fn playlist(&self, id: &Id) -> Result<Playlist> {
         let op = ProviderOp::Browse;
         let id = playlist_id(id.as_str()).ok_or_else(|| self.unreadable(op))?;
+        self.refused_while_lapsed(op)?;
         let listing = self.listed_at(&format!("{A_PLAYLIST_IS_AT}{id}"))?;
         let flat: Flat = serde_json::from_slice(&listing).map_err(|error| {
             tracing::debug!(%error, "a playlist was not the document expected");

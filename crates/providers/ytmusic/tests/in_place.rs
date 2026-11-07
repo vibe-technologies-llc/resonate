@@ -186,13 +186,58 @@ fn with_no_cookies_the_first_page_is_empty() {
 
 #[test]
 fn an_answer_that_holds_no_entries_is_liked_songs_alone() {
-    for document in ["echo '{\"id\":\"x\"}'", "echo '{\"entries\":null}'", "true"] {
+    for document in ["echo '{\"id\":\"x\"}'", "echo '{\"entries\":null}'"] {
         let fake = Fake::answering(document);
 
         let found = music(&fake, cookies()).first_page().expect("an answer");
 
         assert_eq!(found.mixes.len(), 1, "{document}");
     }
+}
+
+#[test]
+fn an_answer_that_is_no_document_is_unreadable_and_not_an_empty_list() {
+    for document in ["true", "echo 'not json'"] {
+        let fake = Fake::answering(document);
+        let tool = fake.tool(cookies());
+
+        assert!(
+            matches!(
+                tool.playlists(),
+                Err(Error::Unreadable {
+                    op: ProviderOp::Browse,
+                    ..
+                })
+            ),
+            "{document}"
+        );
+        assert!(
+            matches!(
+                tool.playlist(&an_id("PLa")),
+                Err(Error::Unreadable {
+                    op: ProviderOp::Browse,
+                    ..
+                })
+            ),
+            "{document}"
+        );
+    }
+}
+
+#[test]
+fn a_lapse_standing_stops_both_lists_before_the_tool_is_run() {
+    let fake = Fake::answering(LAPSED);
+    let tool = fake.tool(cookies());
+
+    tool.playlists().expect_err("lapsed");
+    let asked = fake.calls().len();
+
+    assert!(matches!(tool.playlists(), Err(Error::Unwelcome { .. })));
+    assert!(matches!(
+        tool.playlist(&an_id("PLa")),
+        Err(Error::Unwelcome { .. })
+    ));
+    assert_eq!(fake.calls().len(), asked);
 }
 
 #[test]

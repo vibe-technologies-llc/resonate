@@ -810,11 +810,12 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   Premium**: `holds_up` takes the song at its tier
   (`a_check_song_taken_down_is_no_lost_premium_and_the_song_is_taken_at_its_tier`).
 - **`ERROR: [youtube] <id>:` is the video's verdict.** `yt-dlp` having reached the extractor and refused
-  this video (age gate, removed, region, DRM, `Requested format is not available`) reads as gone:
+  this video (removed, private, DRM, `Requested format is not available`) reads as gone:
   `formats` lists no tier, `download` opens `Opened::Gone`, whatever the reason's words, so one
   video can never stop a poll. **Unless the line is the account's or the network's**
   (`NO_VERDICT_ON_THE_VIDEO`: a bot check, a captcha, a rate limit, a failed request,
-  `please report this issue`, `Your IP is likely being blocked`): that says nothing of the video, and a verdict there would give every
+  `please report this issue`, `Your IP is likely being blocked`, and what depends on the account or
+  the place: an age gate, Premium or members-only content, a country or location): that says nothing of the video, and a verdict there would give every
   queued song up in one outage, so it stays `ToolFailed`, provider-away. **So is a failed challenge
   (`solving failed`) or a video left with storyboards alone (`Only images are available`) anywhere in
   what was said**, whichever line, since either drops formats and ends in `Requested format is not
@@ -847,9 +848,11 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   each live child in a process-wide list and `stop_the_tools` kills them and refuses new ones; `main`,
   `signals::leave` and the window's end call it. A SIGKILLed parent still orphans a child until its pipe
   closes.
-- **A cookie value names a file only where it holds a path separator.** A bare word goes to `yt-dlp`
-  as a browser, which refuses an unknown name loudly; as `--cookies` it would write a jar in the working
-  directory (`a_bare_word_goes_to_the_tool_as_a_browser_and_only_a_separator_names_a_file`).
+- **A cookie value names a file where it holds a path separator or an extension.** A browser's name
+  (`firefox`, `chromium+gnomekeyring:Default`) goes to `yt-dlp` as a browser; a bare word with no dot
+  (`zen`, a typo) goes to it as a browser too, which refuses an unknown name loudly, since as
+  `--cookies` it would write a jar in the working directory; `cookies.txt` is a file
+  (`a_bare_word_goes_to_the_tool_as_a_browser_and_a_separator_or_an_extension_names_a_file`).
 - **A cookie value is withheld from the logs too.** `Cookies`' `Debug` prints neither browser nor path,
   and `Telling` replaces `Cookies::withheld` (the whole value, the profile, each short of a `~`) in
   every line of stderr before it reaches `tracing`.

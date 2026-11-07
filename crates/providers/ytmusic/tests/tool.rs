@@ -42,12 +42,16 @@ fn a_browser_alone_is_a_browser_and_a_path_that_merely_holds_a_colon_is_a_file()
 }
 
 #[test]
-fn a_bare_word_goes_to_the_tool_as_a_browser_and_only_a_separator_names_a_file() {
+fn a_bare_word_goes_to_the_tool_as_a_browser_and_a_separator_or_an_extension_names_a_file() {
     assert_eq!(Cookies::read("zen"), Cookies::Browser("zen".into()));
     assert_eq!(Cookies::read("firefx"), Cookies::Browser("firefx".into()));
     assert_eq!(
         Cookies::read("cookies.txt"),
-        Cookies::Browser("cookies.txt".into())
+        Cookies::File("cookies.txt".into())
+    );
+    assert_eq!(
+        Cookies::read("youtube.cookies"),
+        Cookies::File("youtube.cookies".into())
     );
     assert_eq!(
         Cookies::read("exported/cookies.txt"),
@@ -510,9 +514,7 @@ mod faked {
     #[test]
     fn a_video_refused_for_its_own_reason_opens_as_gone_and_lists_no_tier() {
         for reason in [
-            "Sign in to confirm your age. This video may be inappropriate for some users.",
             "This video has been removed by the uploader",
-            "The uploader has not made this video available in your country",
             "This video is DRM protected",
             "Requested format is not available. Use --list-formats for a list of available formats",
         ] {
@@ -542,6 +544,11 @@ mod faked {
             "Video unavailable. This content isn't available, try again later. The current session has been rate-limited by YouTube for up to an hour",
             "Failed to extract any player response; please report this issue on https://github.com/yt-dlp/yt-dlp/issues",
             "All player responses are invalid. Your IP is likely being blocked by Youtube",
+            "Sign in to confirm your age. This video may be inappropriate for some users.",
+            "This video is only available to Music Premium members",
+            "Join this channel to get access to members-only content like this video",
+            "The uploader has not made this video available in your country",
+            "This video is not available in your location",
         ] {
             let fake = Fake::answering(&format!(
                 "cat >&2 <<'SAID'\nERROR: [youtube] {SONG}: {reason}\nSAID\nexit 1"

@@ -29,6 +29,7 @@ const BROWSERS: [&str; 9] = [
 ];
 const BROWSER_NAME_ENDS_AT: [char; 2] = [':', '+'];
 const A_PATH_SEPARATOR: [char; 2] = ['/', '\\'];
+const AN_EXTENSION_BEGINS: char = '.';
 const FOUND_BY_ITSELF: &str = "deno";
 const RUNTIMES_NAMED: [&str; 2] = ["node", "bun"];
 const ASKED_WITHIN: Duration = Duration::from_secs(60);
@@ -52,7 +53,7 @@ const THE_VIDEO_IS_GONE: [&str; 3] = [
     "This video is not available",
 ];
 const A_VERDICT_BEGINS: &str = "ERROR: [youtube] ";
-const NO_VERDICT_ON_THE_VIDEO: [&str; 9] = [
+const NO_VERDICT_ON_THE_VIDEO: [&str; 16] = [
     "not a bot",
     "captcha",
     "rate-limited",
@@ -62,6 +63,13 @@ const NO_VERDICT_ON_THE_VIDEO: [&str; 9] = [
     "urlopen error",
     "please report this issue",
     "Your IP is likely being blocked",
+    "confirm your age",
+    "age-restricted",
+    "Premium",
+    "members-only",
+    "members of",
+    "in your country",
+    "in your location",
 ];
 const NO_VERDICT_WHEREVER_SAID: [&str; 2] = ["solving failed", "Only images are available"];
 
@@ -83,7 +91,9 @@ impl Cookies {
             .next()
             .unwrap_or_default()
             .to_ascii_lowercase();
-        if BROWSERS.contains(&named.as_str()) || !value.contains(A_PATH_SEPARATOR) {
+        let is_a_file_name =
+            value.contains(A_PATH_SEPARATOR) || value.contains(AN_EXTENSION_BEGINS);
+        if BROWSERS.contains(&named.as_str()) || !is_a_file_name {
             Self::Browser(value.to_owned())
         } else {
             Self::File(value.into())
@@ -711,9 +721,9 @@ impl Tool {
         }
     }
 
-    pub(crate) fn refused_while_lapsed(&self) -> Result<()> {
+    pub(crate) fn refused_while_lapsed(&self, op: ProviderOp) -> Result<()> {
         if self.lapse.stands() {
-            return Err(self.cookies_lapsed(ProviderOp::Search));
+            return Err(self.cookies_lapsed(op));
         }
         Ok(())
     }
@@ -723,7 +733,7 @@ impl Tool {
     }
 
     pub(crate) fn formats_standing(&self, video: &VideoId) -> Result<Option<Formats>> {
-        self.refused_while_lapsed()?;
+        self.refused_while_lapsed(ProviderOp::Search)?;
         self.formats_asked(video)
     }
 
