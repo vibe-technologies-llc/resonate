@@ -112,6 +112,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
+- [S · 0.7.0] A track's ISRC cannot be set by hand: its menu should take one typed (checked by
+  `Isrc`'s parser), write it to `tracks.isrc` (kept across rescans of an unchanged file, as the
+  upsert's `isrc` arm already keeps it where the tags name none) and clear `asked`, so the next
+  lookup asks about the track by its code and *Place on a release…* can find its recording
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
   (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an
   earlier one): no Apple or FhG AAC, no FhG or other MP3 encoder and no aoTuV Vorbis; fdk AAC at 320

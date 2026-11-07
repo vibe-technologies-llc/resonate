@@ -14,6 +14,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
+## Identification
+- [M · 0.6.1] *Place on a release…* answers *nothing places it* for every track without a recording
+  id: `Library::recording_of` reads `tracks.mbid` alone, and a track wanting placement rarely has
+  one. Fall back to `Reference::recordings_of_isrc` on `tracks.isrc`, then `find_recording` on its
+  title, artist and length (strict matches only), and offer each release beside the recording it is
+  on, since `place_on` lands that recording on the track
+
 ## Providers and network
 - [S · 0.6.1] A YouTube Music song kept before keeps carried their picture has none: its file holds a
   title, artist and album and no cover, and its `kept_songs` row holds no address to ask for one
