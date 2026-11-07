@@ -7,7 +7,7 @@ use std::{
 
 use resonate_core::SourceId;
 
-use crate::{Delivered, Identity, Obtained, Result, WhyAway};
+use crate::{Delivered, Identity, Obtained, ProviderOp, Result, WhyAway, in_place::not_offered};
 
 const UNPROVIDED: &str = "unprovided";
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
@@ -29,6 +29,10 @@ pub trait Provider: Send + Sync {
 
     fn last_resort(&self) -> bool {
         false
+    }
+
+    fn picture(&self, _address: &str) -> Result<Vec<u8>> {
+        Err(not_offered(self.source(), ProviderOp::Cover))
     }
 }
 
@@ -193,6 +197,16 @@ impl Providers {
         self.providers
             .iter()
             .any(|provider| provider.source() == source && provider.last_resort())
+    }
+
+    pub fn picture_from(&self, source: &SourceId, address: &str) -> Result<Vec<u8>> {
+        self.providers
+            .iter()
+            .find(|provider| provider.source() == source)
+            .map_or_else(
+                || Err(not_offered(source, ProviderOp::Cover)),
+                |provider| provider.picture(address),
+            )
     }
 
     pub fn names(&self) -> Vec<SourceId> {

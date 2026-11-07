@@ -103,6 +103,7 @@ fn to_keep(source: &SourceId, song: Song) -> SongToKeep {
         artist: song.artist,
         album: song.album,
         length: song.length,
+        cover: song.cover.map(|cover| cover.as_str().to_owned()),
     }
 }
 
@@ -627,6 +628,7 @@ mod tests {
                     artist: None,
                     album: None,
                     length: None,
+                    cover: None,
                 })
                 .expect("the song queued");
             let stopping = Arc::new(AtomicBool::new(false));
@@ -672,6 +674,7 @@ esac"#,
                     artist: Some("Someone".to_owned()),
                     album: None,
                     length: None,
+                    cover: None,
                 };
                 library.keep_song(song).expect("queued");
             }

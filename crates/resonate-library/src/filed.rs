@@ -9,7 +9,7 @@ use std::{
 };
 
 use resonate_codec::{
-    DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
+    CoverArt, DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
 };
 use resonate_core::{
     AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, WholeFile, naming, writer::Held,
@@ -73,6 +73,7 @@ pub(crate) struct ToFile<'a> {
     pub(crate) position: Option<u32>,
     pub(crate) length: Option<Duration>,
     pub(crate) tags: Vec<TagEdit>,
+    pub(crate) picture: Option<&'a CoverArt>,
 }
 
 impl<'a> ToFile<'a> {
@@ -85,6 +86,7 @@ impl<'a> ToFile<'a> {
             position: Some(want.position),
             length: want.length,
             tags: edits(want, album),
+            picture: None,
         }
     }
 }
@@ -170,7 +172,7 @@ pub(crate) fn filed(
         let _ = fs::remove_file(&path);
         return Err(unfiled);
     }
-    tagged(&path, &song.tags);
+    tagged(&path, &song.tags, song.picture);
 
     Ok(Filed { path, root })
 }
@@ -370,22 +372,36 @@ fn edits(want: &Want, album: &AlbumToFile) -> Vec<TagEdit> {
     .collect()
 }
 
-fn tagged(path: &Path, edits: &[TagEdit]) {
+fn tagged(path: &Path, edits: &[TagEdit], picture: Option<&CoverArt>) {
     let tags = FileTags::over(Sources::local());
     let location = MediaLocation::local(path);
     if !tags.writes(&location) {
         tracing::debug!(path = %path.display(), "a filed delivery is in a format this build writes no tags into");
         return;
     }
-    let writing = Writing {
-        edits,
-        taken: &[],
-        picture: None,
-        unpictured: false,
-        popularity: None,
+    let written = |picture| {
+        tags.write(
+            &location,
+            Writing {
+                edits,
+                taken: &[],
+                picture,
+                unpictured: false,
+                popularity: None,
+            },
+        )
     };
-    if let Err(error) = tags.write(&location, writing) {
-        tracing::warn!(%error, path = %path.display(), "a filed delivery could not be tagged");
+    match (written(picture), picture) {
+        (Ok(()), _) => {}
+        (Err(error), Some(_)) => {
+            tracing::warn!(%error, path = %path.display(), "a filed delivery could not take its picture");
+            if let Err(error) = written(None) {
+                tracing::warn!(%error, path = %path.display(), "a filed delivery could not be tagged");
+            }
+        }
+        (Err(error), None) => {
+            tracing::warn!(%error, path = %path.display(), "a filed delivery could not be tagged");
+        }
     }
 }
 

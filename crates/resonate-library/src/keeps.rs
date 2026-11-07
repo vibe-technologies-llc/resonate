@@ -6,6 +6,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use resonate_codec::{CoverArt, ImageFormat};
 use resonate_core::{Gate, Link, Locator, MediaLocation, SourceId, TrackId};
 use resonate_providers::{
     ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Delivered, Delivery, Identity, Providers,
@@ -34,7 +35,7 @@ const A_SONG_IS_KEYED: &str = "track/";
 
 const KEEP_TRIES_AT_MOST: i64 = 5;
 
-const KEEPS_QUEUED: &str = "SELECT id, source, video, title, artist, album, length, playlist
+const KEEPS_QUEUED: &str = "SELECT id, source, video, title, artist, album, length, playlist, cover
        FROM kept_songs WHERE landed IS NULL AND gone = 0 ORDER BY tried, asked, id";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,6 +46,7 @@ pub struct SongToKeep {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub length: Option<Duration>,
+    pub cover: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,7 +139,11 @@ impl SongToKeep {
         .collect()
     }
 
-    fn to_file<'a>(&'a self, album: Option<&'a AlbumToFile>) -> ToFile<'a> {
+    fn to_file<'a>(
+        &'a self,
+        album: Option<&'a AlbumToFile>,
+        picture: Option<&'a CoverArt>,
+    ) -> ToFile<'a> {
         ToFile {
             title: &self.title,
             artist: self.artist.as_deref(),
@@ -146,6 +152,7 @@ impl SongToKeep {
             position: None,
             length: self.length,
             tags: self.tags(),
+            picture,
         }
     }
 }
@@ -546,7 +553,8 @@ impl Library {
             return Ok(Turn::Yielded);
         }
         let album = row.song.album();
-        let song = row.song.to_file(album.as_ref());
+        let picture = pictured(&row.song, walking.providers);
+        let song = row.song.to_file(album.as_ref(), picture.as_ref());
         let drawn = supply::drawn(
             delivered.delivery,
             &Drawing {
@@ -919,6 +927,25 @@ fn asked(
     )
 }
 
+fn pictured(song: &SongToKeep, providers: &Providers) -> Option<CoverArt> {
+    let address = song.cover.as_deref()?;
+    let bytes = match providers.picture_from(&song.source, address) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(%error, video = song.video, "a kept song's picture could not be fetched");
+            return None;
+        }
+    };
+    let Some(format) = ImageFormat::sniff(&bytes) else {
+        tracing::warn!(
+            video = song.video,
+            "a kept song's picture is in no format this build reads"
+        );
+        return None;
+    };
+    Some(CoverArt { format, bytes })
+}
+
 fn length_column(length: Option<Duration>) -> Option<i64> {
     length.map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX))
 }
@@ -930,10 +957,11 @@ fn queued_alone(
 ) -> Result<()> {
     transaction
         .execute(
-            "INSERT INTO kept_songs (source, video, title, artist, album, length, asked)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO kept_songs (source, video, title, artist, album, length, asked, cover)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9)
              ON CONFLICT (source, video) WHERE playlist IS NULL
              DO UPDATE SET gone = 0, tried = NULL, tries = 0,
+                           cover = coalesce(excluded.cover, cover),
                            landed = CASE WHEN ?8 THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
@@ -944,6 +972,7 @@ fn queued_alone(
                 length_column(song.length),
                 store::to_nanos(SystemTime::now()),
                 what_landed == WhatLanded::IsForgotten,
+                song.cover,
             ],
         )
         .map(drop)
@@ -955,10 +984,11 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
     transaction
         .execute(
             "INSERT INTO kept_songs
-                 (source, video, title, artist, album, length, playlist, place, asked)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 (source, video, title, artist, album, length, playlist, place, asked, cover)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?11)
              ON CONFLICT (source, video, playlist)
              DO UPDATE SET place = excluded.place, gone = 0, tried = NULL, tries = 0,
+                           cover = coalesce(excluded.cover, cover),
                            landed = CASE WHEN ?10 THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
@@ -971,6 +1001,7 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
                 pressed.place,
                 store::to_nanos(SystemTime::now()),
                 pressed.what_landed == WhatLanded::IsForgotten,
+                song.cover,
             ],
         )
         .map(drop)
@@ -1051,6 +1082,7 @@ fn queued_at(row: &SqlRow<'_>) -> rusqlite::Result<Option<Queued>> {
             length: row
                 .get::<_, Option<i64>>(6)?
                 .map(|length| Duration::from_millis(length.cast_unsigned())),
+            cover: row.get(8)?,
         },
         playlist: row.get(7)?,
     }))

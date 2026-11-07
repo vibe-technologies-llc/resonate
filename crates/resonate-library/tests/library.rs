@@ -28179,7 +28179,10 @@ struct Tube {
     answers: Mutex<BTreeMap<String, VecDeque<TubeAnswer>>>,
     asked: Mutex<Vec<Identity>>,
     when_asked: Mutex<BTreeMap<String, WhenAsked>>,
+    pictures_asked: Mutex<Vec<String>>,
 }
+
+const A_PICTURE_THE_TUBE_REFUSES: &str = "https://i.ytimg.com/gone";
 
 impl Tube {
     fn named(name: &str) -> Arc<Self> {
@@ -28188,6 +28191,7 @@ impl Tube {
             answers: Mutex::new(BTreeMap::new()),
             asked: Mutex::new(Vec::new()),
             when_asked: Mutex::new(BTreeMap::new()),
+            pictures_asked: Mutex::new(Vec::new()),
         })
     }
 
@@ -28227,6 +28231,18 @@ impl Tube {
 impl Provider for Tube {
     fn source(&self) -> &SourceId {
         &self.source
+    }
+
+    fn picture(&self, address: &str) -> ProvidedResult<Vec<u8>> {
+        self.pictures_asked.lock().push(address.to_owned());
+        if address == A_PICTURE_THE_TUBE_REFUSES {
+            return Err(ProvidedError::Refused {
+                provider: self.source.clone(),
+                op: ProviderOp::Cover,
+                status: 404,
+            });
+        }
+        Ok(png(64))
     }
 
     fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
@@ -28308,6 +28324,7 @@ fn song_to_keep(video: &str, title: &str) -> SongToKeep {
         artist: Some("The Orbiters".to_owned()),
         album: Some("Kept Songs".to_owned()),
         length: Some(Duration::from_secs(1)),
+        cover: None,
     }
 }
 
@@ -28448,6 +28465,73 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
     assert_eq!(tags.tags.album.as_deref(), Some("Kept Songs"));
     assert_eq!(tags.tags.album_artist, None);
     assert!(library.wants()?.is_empty(), "a keep wrote a want");
+    Ok(())
+}
+
+#[test]
+fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    let address = "https://lh3.googleusercontent.com/cover";
+    library.keep_song(SongToKeep {
+        cover: Some(address.to_owned()),
+        ..song_to_keep("abc123", "San Tropez")
+    })?;
+
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+
+    assert_eq!(*tube.pictures_asked.lock(), [address]);
+    let track = track_titled(&library, "San Tropez")?;
+    let carried = FileTags::over(Sources::local())
+        .read(&track.location, Picturing::Copied)
+        .expect("the file reads")
+        .picture
+        .into_copied()
+        .expect("the file carries the picture");
+    assert_eq!(carried.bytes, png(64));
+    let album = track.album_id.expect("the song names its album");
+    assert_eq!(
+        library.cover_art(album)?.map(|art| art.bytes),
+        Some(png(64)),
+        "the library draws no cover for a kept song"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_song_whose_picture_cannot_be_fetched_is_kept_all_the_same() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    library.keep_song(SongToKeep {
+        cover: Some(A_PICTURE_THE_TUBE_REFUSES.to_owned()),
+        ..song_to_keep("abc123", "San Tropez")
+    })?;
+
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+
+    let track = track_titled(&library, "San Tropez")?;
+    let tags = FileTags::over(Sources::local())
+        .read(&track.location, Picturing::Copied)
+        .expect("the file reads");
+    assert_eq!(tags.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(tags.picture.into_copied(), None);
+    Ok(())
+}
+
+#[test]
+fn a_song_pressed_again_keeps_the_picture_it_was_first_pressed_with() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    let address = "https://i.ytimg.com/first";
+    library.keep_song(SongToKeep {
+        cover: Some(address.to_owned()),
+        ..song_to_keep("abc123", "San Tropez")
+    })?;
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+
+    assert_eq!(*tube.pictures_asked.lock(), [address]);
     Ok(())
 }
 

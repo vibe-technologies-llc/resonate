@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use resonate_providers::{Error, Id, Named, PlaysInPlace, ProviderOp, Rating};
+use resonate_providers::{Error, Id, Named, PlaysInPlace, Provider, ProviderOp, Rating};
 use resonate_ytmusic::{Cookies, Tool, VideoId, YtMusic};
 use serde_json::{Value, json};
 
@@ -527,6 +527,31 @@ fn a_cover_is_the_rows_own_thumbnail_and_comes_only_from_youtubes_image_hosts() 
     assert!(matches!(
         music.cover_of(&Named::Song(an_id("a"))),
         Err(Error::NotOffered {
+            op: ProviderOp::Cover,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_keep_is_given_a_picture_only_from_youtubes_image_hosts() {
+    let music = searching(SONGS.to_owned());
+
+    for refused in [
+        "https://elsewhere.example/a.jpg",
+        "http://i.ytimg.com/a.jpg",
+    ] {
+        assert!(matches!(
+            music.picture(refused),
+            Err(Error::OffItsHosts {
+                op: ProviderOp::Cover,
+                ..
+            })
+        ));
+    }
+    assert!(matches!(
+        music.picture("  "),
+        Err(Error::Unreadable {
             op: ProviderOp::Cover,
             ..
         })

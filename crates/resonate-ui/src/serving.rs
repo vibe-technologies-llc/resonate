@@ -123,6 +123,7 @@ pub(crate) fn song_to_keep(song: &ServedSong) -> Option<SongToKeep> {
         artist: song.artist.clone(),
         album: song.album.clone(),
         length: song.length,
+        cover: song.cover.as_ref().map(|cover| cover.0.clone()),
     })
 }
 

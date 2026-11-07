@@ -875,6 +875,20 @@ service offers it.
   leaves such a row out and says how many). **A keep is given `ANSWERED_ALONE_WITHIN` (120 s)**, not the
   poll's `ANSWERS_WITHIN`: asked alone, its `find` may run the tool twice, and late is away. The tool's
   `ASKED_WITHIN` twice over stays within it (`a_keep_may_outlast_two_runs_of_the_tool`).
+- **A keep carries the picture its service showed for it.** `SongToKeep::cover` is the address the
+  browse row gave (`ServedCover`, `Song::cover`), kept as `kept_songs.cover` (a pressed-again song
+  keeps the first's: `coalesce`), because a kept YouTube Music song is the stream as served, tagged
+  with a title, artist and album and no picture, and the library list draws a track's own picture
+  (`ui.md`: an album's, else the file's) where the server pane draws the service's. Before the
+  download `keeps::pictured` asks `Providers::picture_from` (the provider's `Provider::picture`,
+  `NotOffered` by default; YouTube Music's is its `cover`, so only `lh3.googleusercontent.com`,
+  `yt3.googleusercontent.com` and `i.ytimg.com`) and `filed::tagged` writes it with the tags, a
+  Matroska file taking it as an attachment (`library.md`); a picture that cannot be fetched or
+  written costs the song nothing but its picture. A song kept before this was written has none
+  (`ROADMAP.md`).
+  (`a_song_kept_lands_with_the_picture_its_service_showed_for_it`,
+  `a_song_whose_picture_cannot_be_fetched_is_kept_all_the_same`,
+  `a_song_pressed_again_keeps_the_picture_it_was_first_pressed_with`)
 - **A song already held is not fetched.** `store::held_named_alike` (`Identity::named_alike`'s rule:
   the bare title, the lead artist, a length within 2 s, a clean title standing for no other; a copy
   standing or on an absent volume) answers `AlreadyHeld`, and a list puts the

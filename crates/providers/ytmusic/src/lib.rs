@@ -14,8 +14,8 @@ use parking_lot::{Condvar, Mutex};
 use resonate_core::{MediaLocation, Service, SourceId};
 use resonate_fetch::{Patience, Trusted, asking_agent};
 use resonate_providers::{
-    Choosing, Delivery, Error, Extension, Identity, Obtained, Opened, Opening, Pacing, Provider,
-    ProviderOp, Result, Song, THE_SUBSCRIPTION_LAPSED,
+    Choosing, Delivery, Error, Extension, Id, Identity, Obtained, Opened, Opening, Pacing,
+    PlaysInPlace, Provider, ProviderOp, Result, Song, THE_SUBSCRIPTION_LAPSED,
 };
 use ureq::Agent;
 
@@ -323,6 +323,14 @@ impl Provider for YtMusic {
 
     fn last_resort(&self) -> bool {
         true
+    }
+
+    fn picture(&self, address: &str) -> Result<Vec<u8>> {
+        let cover = Id::new(address).ok_or_else(|| Error::Unreadable {
+            provider: self.source.clone(),
+            op: ProviderOp::Cover,
+        })?;
+        PlaysInPlace::cover(self, &cover, 0)
     }
 
     fn find(&self, identity: &Identity) -> Result<Obtained> {
