@@ -16,6 +16,13 @@ import org.junit.runner.RunWith
 class UiSmokeTest {
     private companion object {
         const val PAGE_SETTLES_MS = 600L
+        const val SCROLLED_LIST = "settings-list"
+        const val SCROLLS_AT_MOST = 12
+        const val SWIPE_NEAR_TWENTIETHS = 9
+        const val SWIPE_FAR_TWENTIETHS = 17
+        const val SWIPE_STEPS = 100
+        const val CLEAR_FROM_TWENTIETHS = 6
+        const val CLEAR_TO_TWENTIETHS = 17
     }
 
     @Test
@@ -57,30 +64,45 @@ class UiSmokeTest {
 
     private fun scrollTo(device: UiDevice, selector: BySelector): UiObject2 {
         for (direction in listOf(Direction.DOWN, Direction.UP)) {
-            repeat(8) {
+            repeat(SCROLLS_AT_MOST) {
                 InstrumentationRegistry.getInstrumentation().uiAutomation.forgetTheCachedTree()
-                device.findObject(selector)?.let {
-                    val at = it.visibleCenter.y
-                    if (at in device.displayHeight / 5..device.displayHeight * 3 / 4) {
-                        Thread.sleep(PAGE_SETTLES_MS)
-                        return device.findObject(selector) ?: it
-                    }
-                    val middle = device.displayWidth / 2
-                    val from = if (at > device.displayHeight / 2) device.displayHeight * 2 / 3 else device.displayHeight / 3
-                    val to = if (at > device.displayHeight / 2) device.displayHeight / 3 else device.displayHeight * 2 / 3
-                    device.swipe(middle, from, middle, to, 20)
+                val found = device.findObject(selector)
+                val list = device.findObject(By.res(SCROLLED_LIST))
+                val bounds = list?.visibleBounds
+                val clear = bounds?.let { clearBand(it) }
+                val at = found?.visibleCenter?.y
+                if (found != null && (clear == null || at in clear)) {
                     device.waitForIdle()
-                    return@repeat
+                    Thread.sleep(PAGE_SETTLES_MS)
+                    return await(device, selector)
                 }
-                val middle = device.displayWidth / 2
-                val high = device.displayHeight / 3
-                val low = device.displayHeight * 2 / 3
-                if (direction == Direction.DOWN) device.swipe(middle, low, middle, high, 20)
-                else device.swipe(middle, high, middle, low, 20)
+                if (list == null || clear == null) return await(device, selector)
+                val towards =
+                    when {
+                        at == null -> direction
+                        at < clear.first -> Direction.UP
+                        else -> Direction.DOWN
+                    }
+                swiped(device, list, towards)
                 device.waitForIdle()
             }
         }
         return await(device, selector)
+    }
+
+    private fun clearBand(bounds: android.graphics.Rect): IntRange {
+        val from = bounds.top + bounds.height() * CLEAR_FROM_TWENTIETHS / 20
+        val to = bounds.top + bounds.height() * CLEAR_TO_TWENTIETHS / 20
+        return from..to
+    }
+
+    private fun swiped(device: UiDevice, list: UiObject2, direction: Direction) {
+        val bounds = list.visibleBounds
+        val across = bounds.centerX()
+        val near = bounds.top + bounds.height() * SWIPE_NEAR_TWENTIETHS / 20
+        val far = bounds.top + bounds.height() * SWIPE_FAR_TWENTIETHS / 20
+        if (direction == Direction.DOWN) device.swipe(across, far, across, near, SWIPE_STEPS)
+        else device.swipe(across, near, across, far, SWIPE_STEPS)
     }
 
     private fun await(device: UiDevice, selector: BySelector): UiObject2 {

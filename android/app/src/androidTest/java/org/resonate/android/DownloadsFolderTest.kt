@@ -102,7 +102,12 @@ class DownloadsFolderTest {
                 context.packageName,
                 Manifest.permission.READ_MEDIA_AUDIO,
             )
-            val songs = MusicDocuments.downloadedAudio(context)
+            val deadline = System.nanoTime() + PUBLISHED_WITHIN_NS
+            var songs = MusicDocuments.downloadedAudio(context)
+            while (songs.none { it.uri == canonical } && System.nanoTime() < deadline) {
+                Thread.sleep(100)
+                songs = MusicDocuments.downloadedAudio(context)
+            }
             assertTrue("Expected $canonical in $songs", songs.any { it.uri == canonical })
             val found = songs.first { it.uri == canonical }
             assertEquals(name, found.name)
@@ -123,4 +128,8 @@ class DownloadsFolderTest {
             )
             .bufferedReader()
             .use { it.readText() }
+
+    private companion object {
+        const val PUBLISHED_WITHIN_NS = 15_000_000_000L
+    }
 }

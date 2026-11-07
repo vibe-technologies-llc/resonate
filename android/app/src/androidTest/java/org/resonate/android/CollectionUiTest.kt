@@ -32,6 +32,10 @@ import org.resonate.android.nativecore.Transport
 class CollectionUiTest {
     private companion object {
         const val PAGE_SETTLES_MS = 600L
+        const val SCROLLS_AT_MOST = 12
+        const val CLEAR_FROM_TWENTIETHS = 6
+        const val CLEAR_TO_TWENTIETHS = 13
+        const val SWIPE_STEPS = 100
     }
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -41,12 +45,12 @@ class CollectionUiTest {
     fun favouritesSurviveActivityRecreation() =
         withLibrary { library, controller, scenario, tracks ->
             play(controller, tracks, 0)
-            pressed(By.res("mini-player"))
+            openThePlayer()
             pressed(By.desc("Add to favourites"))
             eventually { library.allTracks.value.any { it.id == tracks[0].id && it.favourite } }
             await(By.desc("Remove from favourites"))
             scenario.recreate()
-            if (!shown(By.desc("Remove from favourites"))) pressed(By.res("mini-player"))
+            if (!shown(By.desc("Remove from favourites"))) openThePlayer()
             await(By.desc("Remove from favourites"))
             assertTrue(library.allTracks.value.first { it.id == tracks[0].id }.favourite)
         }
@@ -65,9 +69,11 @@ class CollectionUiTest {
             try {
                 pressed(By.res("tab-library"))
                 pressed(By.text("Playlists"))
+                scrolledTo(By.res("playlists"), By.text("Compose test mix"))
                 pressed(By.text("Compose test mix"))
                 await(By.res("playlist"))
                 val repeated = By.text(tracks[0].title)
+                scrolledUntil(By.res("playlist")) { device.findObjects(repeated).getOrNull(1) }
                 eventually { device.findObjects(repeated).size >= 2 }
                 device.findObjects(repeated)[1].click()
                 eventually {
@@ -118,6 +124,34 @@ class CollectionUiTest {
             }
         }
         await(selector).click()
+    }
+
+    private fun openThePlayer() {
+        val bounds = await(By.res("mini-player")).visibleBounds
+        device.click(bounds.left + bounds.height() / 2, bounds.centerY())
+        device.waitForIdle()
+        Thread.sleep(PAGE_SETTLES_MS)
+    }
+
+    private fun scrolledTo(list: BySelector, selector: BySelector) =
+        scrolledUntil(list) { device.findObject(selector) }
+
+    private fun scrolledUntil(list: BySelector, target: () -> UiObject2?) {
+        repeat(SCROLLS_AT_MOST) {
+            instrumentation.uiAutomation.forgetTheCachedTree()
+            val scrolled = await(list)
+            val bounds = scrolled.visibleBounds
+            val clearFrom = bounds.top + bounds.height() * CLEAR_FROM_TWENTIETHS / 20
+            val clearTo = bounds.top + bounds.height() * CLEAR_TO_TWENTIETHS / 20
+            val clear = clearFrom..clearTo
+            val at = target()?.visibleCenter?.y
+            if (at != null && at in clear) return
+            val across = bounds.centerX()
+            if (at != null && at < clear.first)
+                device.swipe(across, clear.first, across, clear.last, SWIPE_STEPS)
+            else device.swipe(across, clear.last, across, clear.first, SWIPE_STEPS)
+            device.waitForIdle()
+        }
     }
 
     private fun shown(selector: BySelector): Boolean {
