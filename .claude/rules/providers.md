@@ -937,8 +937,8 @@ service offers it.
   one**: the pass read its queue at its start, so `keep_owed` is set and the pass after it takes the
   song up; a press during a poll waits for the poll, and a pass another process refused is tried again
   `OWED_ASKED_AGAIN_AFTER` later. A poll asked for meanwhile is owed and goes first, a
-  pass that gave way following it. A pass runs at open only where `keeps_pending` is above zero and
-  `youtube-music` is on. **A service that keeps songs reads its first page only once the server pane is
+  pass that gave way following it. A pass runs at open only where `keeps_pending` (rows queued and landed files a root owes a read) is above zero and
+  `youtube-music` is on; the window's once-a-second look at a running pass counts `keeps_queued` alone (one query), since the pass reads what landed at its head. **A service that keeps songs reads its first page only once the server pane is
   shown** (`ServerModel::shown`), since that page is `yt-dlp` on the account's cookies and a Chromium-family
   browser may raise a keyring prompt, and a window opening touches nothing unasked
   (`a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown`). *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,

@@ -327,8 +327,8 @@ impl Library {
         Ok(kept)
     }
 
-    pub fn keeps_pending(&self) -> Result<u64> {
-        let queued = self.inner().read(|connection| {
+    pub fn keeps_queued(&self) -> Result<u64> {
+        self.inner().read(|connection| {
             connection
                 .query_row(
                     "SELECT count(*) FROM kept_songs WHERE landed IS NULL AND gone = 0",
@@ -337,9 +337,11 @@ impl Library {
                 )
                 .map(i64::cast_unsigned)
                 .map_err(|source| Error::store(StoreOp::Query, source))
-        })?;
+        })
+    }
 
-        Ok(queued + self.roots_owed_a_read()?.len() as u64)
+    pub fn keeps_pending(&self) -> Result<u64> {
+        Ok(self.keeps_queued()? + self.roots_owed_a_read()?.len() as u64)
     }
 
     pub fn keep_pending(

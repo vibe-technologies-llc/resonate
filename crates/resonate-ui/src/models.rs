@@ -5933,7 +5933,7 @@ impl LibraryModel {
                 let reading = Arc::clone(&library);
                 let left = cx
                     .background_executor()
-                    .spawn(async move { reading.keeps_pending() })
+                    .spawn(async move { reading.keeps_queued() })
                     .await;
                 let ticked = this.update(cx, |this, cx| {
                     this.keep_only_while_turned_on(cx);

@@ -30150,6 +30150,7 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
 
     assert_eq!(titles_in(&library, "Mix")?, [""]);
     assert_eq!(library.keeps_pending()?, 1, "the read owed was not counted");
+    assert_eq!(library.keeps_queued()?, 0, "a landed song is not queued");
 
     let tube = Tube::new();
     assert_eq!(pass(&library, &tube)?, KeepSummary::default());
