@@ -42,6 +42,7 @@ pub(crate) enum Sortable {
     Marked,
     Title,
     Artist,
+    Format,
     Heard,
     Length,
 }
@@ -530,6 +531,14 @@ pub(crate) fn columns(
         controls,
         cx,
     );
+    let format = heads(
+        Sortable::Format,
+        "FORMAT",
+        div().w(px(theme::row_format())).flex_none(),
+        sorted,
+        controls,
+        cx,
+    );
     let heard = heads(
         Sortable::Heard,
         "HEARD",
@@ -556,9 +565,7 @@ pub(crate) fn columns(
         })
         .child(title)
         .child(artist)
-        .when(shown.format, |header| {
-            header.child(div().w(px(theme::row_format())).flex_none().child("FORMAT"))
-        })
+        .when(shown.format, |header| header.child(format))
         .when(shown.heard, |header| header.child(heard))
         .child(length)
         .child(
@@ -639,6 +646,7 @@ const fn key_of(column: Sortable) -> &'static str {
         Sortable::Marked => "sort-by-marked",
         Sortable::Title => "sort-by-title",
         Sortable::Artist => "sort-by-artist",
+        Sortable::Format => "sort-by-format",
         Sortable::Heard => "sort-by-heard",
         Sortable::Length => "sort-by-length",
     }
@@ -650,6 +658,7 @@ const fn sorts_by(column: Sortable) -> &'static str {
         Sortable::Marked => "Sort by when it was marked a favourite",
         Sortable::Title => "Sort by title",
         Sortable::Artist => "Sort by artist",
+        Sortable::Format => "Sort by format, lossless and high resolution first",
         Sortable::Heard => "Sort by how often it is heard",
         Sortable::Length => "Sort by length",
     }

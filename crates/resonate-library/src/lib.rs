@@ -183,7 +183,7 @@ pub use crate::{
     },
     spelling::{Spellings, spelt_alike},
     statistics::{Day, Habits, Listened, MostListened, Statistics, Window},
-    store::{A_THUMBNAIL_BELOW, betters, folded_letters},
+    store::{A_THUMBNAIL_BELOW, betters, codec_code, folded_letters},
     studies::{
         Agreement, HEARD_AT_LEAST, Heard, HeardAs, KeptPrint, Studied, StudiedTrack, StudyFilter,
         weighed_again,

@@ -204,10 +204,15 @@ rows read via `Player::media` like any unscanned row.
   recording; failing that, nothing to copy.
 - **Every pane order is read off an index; planner knowledge is written after a scan.**
   `tracks_by_album` carries the trailing `title_filed COLLATE NOCASE`; `tracks_by_title`,
-  `_artist_name`, `_added`, `_duration`, `_plays`, `_played`, `_favourite` serve the other
+  `_artist_name`, `_added`, `_duration`, `_format`, `_plays`, `_played`, `_favourite` serve the other
   `SortOrder`s (`SortOrder::HELD_BY_AN_INDEX`; `Relevance` needs none), each declared as its `ORDER
   BY` reads, collation and `DESC` included (SQLite walks an index backwards only where the whole
-  order runs one way). `SortOrder::PlaysThisMonth` is outside the list (correlated `count(*)` over
+  order runs one way). **`SortOrder::Format`** (`sort` code 10, best first by default) reads
+  lossless before lossy (`lossless_codecs!`, the codes `Codec::is_lossless` names, held by
+  `the_codecs_a_format_order_puts_first_are_the_lossless_ones`), then codec, sample format, rate and
+  album order, off `tracks_by_format` (an expression index, migration
+  `TRACKS_ARE_READ_IN_FORMAT_ORDER_OFF_AN_INDEX`); the phones' `SearchOrder::Format` compares the
+  same tuple in memory (`in_format_order`). `SortOrder::PlaysThisMonth` is outside the list (correlated `count(*)` over
   `listens`, `heard_this_month!`). **A reversed order needs no index**: `order_by` is a `Reading` of
   the natural spelling and its mirror (every term flipped);
   `db::tests::every_order_the_panes_offer_is_read_off_an_index_either_way_round` plans

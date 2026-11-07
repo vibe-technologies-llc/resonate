@@ -7450,6 +7450,12 @@ macro_rules! artist_ids_falling {
     };
 }
 
+macro_rules! lossless_codecs {
+    () => {
+        "tracks.codec IN (1, 2, 5, 10, 11, 12)"
+    };
+}
+
 const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static str {
     let order = match sort {
         SortOrder::Relevance if ranked => Reading {
@@ -7494,6 +7500,20 @@ const fn order_by(sort: SortOrder, reading: Direction, ranked: bool) -> &'static
         SortOrder::Duration => Reading {
             up: concat!("tracks.duration", track_ids_rising!()),
             down: concat!("tracks.duration DESC", track_ids_falling!()),
+        },
+        SortOrder::Format => Reading {
+            up: concat!(
+                lossless_codecs!(),
+                ", tracks.codec, tracks.sample_format, tracks.sample_rate, tracks.album_id, \
+                 tracks.disc_number, tracks.track_number",
+                track_ids_rising!()
+            ),
+            down: concat!(
+                lossless_codecs!(),
+                " DESC, tracks.codec DESC, tracks.sample_format DESC, tracks.sample_rate DESC, \
+                 tracks.album_id DESC, tracks.disc_number DESC, tracks.track_number DESC",
+                track_ids_falling!()
+            ),
         },
         SortOrder::Plays => Reading {
             up: concat!(
@@ -8757,6 +8777,83 @@ mod tests {
                 Ok(())
             })
             .expect("the catalog takes a track");
+    }
+
+    #[test]
+    fn the_codecs_a_format_order_puts_first_are_the_lossless_ones() {
+        let mut lossless: Vec<i64> = Codec::ALL
+            .into_iter()
+            .filter(|codec| codec.is_lossless())
+            .map(store::codec_code)
+            .collect();
+        lossless.sort_unstable();
+        let listed = lossless
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        assert_eq!(lossless_codecs!(), format!("tracks.codec IN ({listed})"));
+    }
+
+    #[test]
+    fn a_format_order_puts_lossless_and_deeper_files_first_and_turns_round() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        for title in ["Lossy", "Sixteen", "TwentyFour", "HighRate"] {
+            titled(&library, title);
+        }
+        library.inner.write(|transaction| {
+            transaction
+                .execute(
+                    "UPDATE tracks SET codec = ?1 WHERE title = 'Lossy'",
+                    params![store::codec_code(Codec::Mp3)],
+                )
+                .and_then(|_| {
+                    transaction.execute(
+                        "UPDATE tracks SET codec = ?1 WHERE title != 'Lossy'",
+                        params![store::codec_code(Codec::Flac)],
+                    )
+                })
+                .and_then(|_| {
+                    transaction.execute(
+                        "UPDATE tracks SET sample_format = ?1 WHERE title IN ('TwentyFour', 'HighRate')",
+                        params![store::format_code(SampleFormat::S24)],
+                    )
+                })
+                .and_then(|_| {
+                    transaction.execute(
+                        "UPDATE tracks SET sample_rate = 96000 WHERE title = 'HighRate'",
+                        [],
+                    )
+                })
+                .map_err(|source| Error::store(StoreOp::Update, source))?;
+            Ok(())
+        })?;
+        let titles = |reading| -> Result<Vec<String>> {
+            Ok(library
+                .tracks(&TrackQuery {
+                    sort: SortOrder::Format,
+                    reading,
+                    ..TrackQuery::default()
+                })?
+                .into_iter()
+                .map(|track| track.title)
+                .collect())
+        };
+
+        assert_eq!(
+            titles(Direction::Descending)?,
+            ["HighRate", "TwentyFour", "Sixteen", "Lossy"]
+        );
+        assert_eq!(
+            titles(Direction::Ascending)?,
+            ["Lossy", "Sixteen", "TwentyFour", "HighRate"]
+        );
+        assert_eq!(
+            SortOrder::coded(SortOrder::Format.code()),
+            Some(SortOrder::Format)
+        );
+        Ok(())
     }
 
     #[test]

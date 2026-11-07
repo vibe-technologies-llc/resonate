@@ -15,28 +15,31 @@ pub enum SortOrder {
     Played,
     Favourited,
     PlaysThisMonth,
+    Format,
 }
 
 impl SortOrder {
-    pub const HELD_BY_AN_INDEX: [Self; 9] = [
+    pub const HELD_BY_AN_INDEX: [Self; 10] = [
         Self::Relevance,
         Self::AlbumThenTrack,
         Self::Title,
         Self::Artist,
         Self::DateAdded,
         Self::Duration,
+        Self::Format,
         Self::Plays,
         Self::Played,
         Self::Favourited,
     ];
 
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Relevance,
         Self::AlbumThenTrack,
         Self::Title,
         Self::Artist,
         Self::DateAdded,
         Self::Duration,
+        Self::Format,
         Self::Plays,
         Self::Played,
         Self::Favourited,
@@ -55,6 +58,7 @@ impl SortOrder {
             Self::Played => 7,
             Self::Favourited => 8,
             Self::PlaysThisMonth => 9,
+            Self::Format => 10,
         }
     }
 
@@ -70,6 +74,7 @@ impl SortOrder {
             7 => Self::Played,
             8 => Self::Favourited,
             9 => Self::PlaysThisMonth,
+            10 => Self::Format,
             _ => return None,
         })
     }
@@ -85,7 +90,8 @@ impl SortOrder {
             | Self::Plays
             | Self::Played
             | Self::Favourited
-            | Self::PlaysThisMonth => Direction::Descending,
+            | Self::PlaysThisMonth
+            | Self::Format => Direction::Descending,
         }
     }
 }

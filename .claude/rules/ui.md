@@ -491,6 +491,9 @@ is never named.
   caret and vanished the moment a field did (the search box, the playlist picker's name field), which
   read as a bug (found on a hosted KWin, the `drive-a-drag` skill's compositor). The star
   (`favour_mark_under`) alone still waits for the hover.
+  - **FORMAT is a sort column** on the tracks pane and Favourites (`Sortable::Format` →
+    `SortOrder::Format`); the queue and an opened playlist keep it a plain header, `RowOrder` having
+    no format order.
   - **A listing narrower than its columns gives up HEARD, then FORMAT, before the names.**
     `listing::Shown::within` weighs the width the header measured into `RootView::columns_fit` (a
     `listing::Fitting`) against the fixed cells, `NAMES_AT_LEAST` and the controls; `columns`

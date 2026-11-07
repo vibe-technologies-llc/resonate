@@ -49,7 +49,15 @@ const MIGRATIONS: &[&str] = &[
     RECEIVED_SONGS_KEEP_THEIR_SPELLING,
     SONGS_KEPT_FROM_A_SERVICE,
     KEPT_SONGS_KEEP_THEIR_PICTURE,
+    TRACKS_ARE_READ_IN_FORMAT_ORDER_OFF_AN_INDEX,
 ];
+
+const TRACKS_ARE_READ_IN_FORMAT_ORDER_OFF_AN_INDEX: &str = "
+CREATE INDEX tracks_by_format ON tracks(
+    codec IN (1, 2, 5, 10, 11, 12), codec, sample_format, sample_rate, album_id, disc_number,
+    track_number
+);
+";
 
 const KEPT_SONGS_KEEP_THEIR_PICTURE: &str = "
 ALTER TABLE kept_songs ADD COLUMN cover TEXT;

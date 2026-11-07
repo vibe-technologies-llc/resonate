@@ -61,6 +61,7 @@ val SearchOrder.label: String
             SearchOrder.PLAYED -> "Last played"
             SearchOrder.FAVOURITES -> "Favourites"
             SearchOrder.PLAYS_THIS_MONTH -> "Plays this month"
+            SearchOrder.FORMAT -> "Format"
         }
 
 fun SavedSearch.reading(): String {

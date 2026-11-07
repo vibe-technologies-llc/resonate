@@ -16,6 +16,7 @@ pub enum SearchOrder {
     Played,
     Favourites,
     PlaysThisMonth,
+    Format,
 }
 
 impl From<SearchOrder> for SortOrder {
@@ -31,6 +32,7 @@ impl From<SearchOrder> for SortOrder {
             SearchOrder::Played => Self::Played,
             SearchOrder::Favourites => Self::Favourited,
             SearchOrder::PlaysThisMonth => Self::PlaysThisMonth,
+            SearchOrder::Format => Self::Format,
         }
     }
 }
@@ -48,6 +50,7 @@ impl From<SortOrder> for SearchOrder {
             SortOrder::Played => Self::Played,
             SortOrder::Favourited => Self::Favourites,
             SortOrder::PlaysThisMonth => Self::PlaysThisMonth,
+            SortOrder::Format => Self::Format,
         }
     }
 }

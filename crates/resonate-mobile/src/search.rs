@@ -1857,6 +1857,10 @@ fn in_saved_order(sort: SortOrder, one: &Row, other: &Row, now: i64) -> Ordering
             .favourite
             .cmp(&other.track.favourite)
             .then_with(titles_falling),
+        SortOrder::Format => in_format_order(one)
+            .cmp(&in_format_order(other))
+            .then_with(|| placed(one).cmp(&placed(other)))
+            .then(one.track.id.cmp(&other.track.id)),
         SortOrder::PlaysThisMonth => {
             let since = now.saturating_sub(seconds_of(A_MONTH_OF_PLAYS));
             let lately = |row: &Row| row.heard.iter().filter(|at| **at >= since).count();
@@ -1866,6 +1870,15 @@ fn in_saved_order(sort: SortOrder, one: &Row, other: &Row, now: i64) -> Ordering
                 .then_with(titles_falling)
         }
     }
+}
+
+fn in_format_order(row: &Row) -> (bool, i64, u32, u32) {
+    (
+        row.codec.is_lossless(),
+        resonate_library::codec_code(row.codec),
+        row.track.bits.unwrap_or(0),
+        row.track.rate,
+    )
 }
 
 fn placed(row: &Row) -> (u32, u32) {

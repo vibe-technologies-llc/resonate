@@ -73,7 +73,7 @@ public struct SavedSearchDraft: Equatable, Sendable {
 
 extension SearchOrder {
     public static let offered: [SearchOrder] = [
-        .relevance, .album, .title, .artist, .added, .duration, .plays, .played, .favourites, .playsThisMonth,
+        .relevance, .album, .title, .artist, .added, .duration, .plays, .played, .favourites, .playsThisMonth, .format,
     ]
 
     public var label: String {
@@ -88,6 +88,7 @@ extension SearchOrder {
         case .played: "Last played"
         case .favourites: "Favourites"
         case .playsThisMonth: "Plays this month"
+        case .format: "Format"
         }
     }
 }

@@ -274,6 +274,7 @@ impl Ordering for SortOrder {
             Self::Artist => "Artist",
             Self::DateAdded => "Added",
             Self::Duration => "Length",
+            Self::Format => "Format",
             Self::Plays => "Most played",
             Self::Played => "Last played",
             Self::Favourited => "Favourited",
@@ -295,6 +296,8 @@ impl Ordering for SortOrder {
             (Self::DateAdded, Direction::Ascending) => "Oldest first",
             (Self::Duration, Direction::Ascending) => "Shortest first",
             (Self::Duration, Direction::Descending) => "Longest first",
+            (Self::Format, Direction::Descending) => "Best quality first",
+            (Self::Format, Direction::Ascending) => "Lossy first",
             (Self::Plays, Direction::Descending) => "Most played first",
             (Self::Plays, Direction::Ascending) => "Least played first",
             (Self::Played, Direction::Descending) => "Most recent first",
@@ -369,6 +372,7 @@ const TRACK_COLUMNS: &[Sortable] = &[
     Sortable::Number,
     Sortable::Title,
     Sortable::Artist,
+    Sortable::Format,
     Sortable::Heard,
     Sortable::Length,
 ];
@@ -377,6 +381,7 @@ const FAVOURITE_COLUMNS: &[Sortable] = &[
     Sortable::Marked,
     Sortable::Title,
     Sortable::Artist,
+    Sortable::Format,
     Sortable::Heard,
     Sortable::Length,
 ];
@@ -396,6 +401,7 @@ const fn track_order(column: Sortable) -> SortOrder {
         Sortable::Marked => SortOrder::Favourited,
         Sortable::Title => SortOrder::Title,
         Sortable::Artist => SortOrder::Artist,
+        Sortable::Format => SortOrder::Format,
         Sortable::Heard => SortOrder::Plays,
         Sortable::Length => SortOrder::Duration,
     }
@@ -403,7 +409,7 @@ const fn track_order(column: Sortable) -> SortOrder {
 
 const fn row_order(column: Sortable) -> RowOrder {
     match column {
-        Sortable::Number | Sortable::Marked | Sortable::Heard => RowOrder::Album,
+        Sortable::Number | Sortable::Marked | Sortable::Format | Sortable::Heard => RowOrder::Album,
         Sortable::Title => RowOrder::Title,
         Sortable::Artist => RowOrder::Artist,
         Sortable::Length => RowOrder::Length,
@@ -422,6 +428,7 @@ const fn track_column(sort: SortOrder) -> Option<Sortable> {
         SortOrder::Artist => Some(Sortable::Artist),
         SortOrder::Plays => Some(Sortable::Heard),
         SortOrder::Duration => Some(Sortable::Length),
+        SortOrder::Format => Some(Sortable::Format),
     }
 }
 
@@ -432,6 +439,7 @@ const fn favourite_column(sort: SortOrder) -> Option<Sortable> {
         SortOrder::Artist => Some(Sortable::Artist),
         SortOrder::Plays => Some(Sortable::Heard),
         SortOrder::Duration => Some(Sortable::Length),
+        SortOrder::Format => Some(Sortable::Format),
         SortOrder::Relevance
         | SortOrder::AlbumThenTrack
         | SortOrder::DateAdded
