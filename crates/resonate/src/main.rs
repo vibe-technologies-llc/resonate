@@ -68,6 +68,8 @@ mod vault;
 mod vocabulary;
 mod wanting;
 mod wrapped;
+#[cfg(feature = "online")]
+mod ytmusic;
 #[cfg(feature = "ui")]
 mod zoning;
 
@@ -156,7 +158,9 @@ const RATING: &str = "rating";
 
 fn main() -> ExitCode {
     gaming::watch();
-    match run() {
+    let ran = run();
+    providers::stop_the_tools();
+    match ran {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             report(&error);
@@ -368,6 +372,14 @@ fn run() -> Result<()> {
                 }
             })
         }
+        #[cfg(feature = "online")]
+        Some(Sub::Ytmusic(wanted)) => {
+            ytmusic::run(&config, settings_path(&cli).ok(), wanted, || {
+                open_library(&cli, &config)
+            })
+        }
+        #[cfg(not(feature = "online"))]
+        Some(Sub::Ytmusic(_)) => Err(Error::NoServed),
         Some(Sub::Lastfm { user, forget }) => {
             let settings = settings_path(&cli)?;
             reloading::delivering(&settings, Some(Reloadable::Submission), || {
@@ -3134,6 +3146,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             scrobblers: online::scrobblers(&config),
             signs_in: providers::signs_in(),
             spotify: online::signs_in_to_spotify(&config),
+            checks_youtube_music: providers::checks_youtube_music(settings_path(&cli).ok()),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             measurers: equaliser::measured_by(&config),
@@ -3167,6 +3180,10 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 hifi_secret: config.hifi_secret.clone().unwrap_or_default(),
                 monochrome: config.monochrome.clone().unwrap_or_default(),
                 hosted_services: config.hosted_services_allowed(),
+                youtube_music: config.turns_youtube_music_on(),
+                youtube_music_cookies: config.youtube_music_cookies.clone().unwrap_or_default(),
+                yt_dlp: config.yt_dlp.clone().unwrap_or_default(),
+                youtube_music_keep_order: config.keeps_youtubes_order(),
             },
             serving: served.serving(),
             sourcing: {
@@ -3242,6 +3259,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             followed,
         },
     );
+    providers::stop_the_tools();
     drop(presenter);
     syncing.leave();
     #[cfg(feature = "sync")]

@@ -29,14 +29,28 @@ use crate::{
 };
 
 #[cfg(feature = "online")]
-const PLAYED_IN_PLACE: [&str; 6] = [
+const NO_SONG_IS_PLAYED_FROM: [&str; 1] = ["ytmusic"];
+
+#[cfg(feature = "online")]
+const PLAYED_IN_PLACE: [&str; 7] = [
     "subsonic",
     "jellyfin",
     "tidal",
     "resonate",
     "hifi-api",
     "monochrome",
+    "ytmusic",
 ];
+
+#[cfg(feature = "online")]
+pub fn is_played_in_place(scheme: &SourceId) -> bool {
+    !NO_SONG_IS_PLAYED_FROM.contains(&scheme.as_str())
+}
+
+#[cfg(not(feature = "online"))]
+pub const fn is_played_in_place(_scheme: &resonate_core::SourceId) -> bool {
+    true
+}
 
 #[derive(Clone, Default)]
 pub struct Served {
@@ -124,6 +138,10 @@ impl Served {
 
     #[cfg(feature = "online")]
     pub fn songs_at(&self, location: &MediaLocation) -> Option<Vec<MediaLocation>> {
+        if !is_played_in_place(location.source()) {
+            tracing::warn!(%location, "this service's songs are not played from here");
+            return Some(Vec::new());
+        }
         let service = serving(&self.slot.read(), location)?;
         let named = service.named_by(location)?;
         if let Named::Song(_) = named {
@@ -394,6 +412,14 @@ impl resonate_ui::Serves for ServedBy {
 
     fn keeps_favourites(&self) -> bool {
         self.0.keeps_favourites()
+    }
+
+    fn plays_songs(&self) -> bool {
+        self.0.plays_songs()
+    }
+
+    fn keeps_songs(&self) -> bool {
+        self.0.keeps_songs()
     }
 
     fn favour(&self, song: &MediaLocation, favoured: bool) -> resonate_providers::Result<()> {
@@ -1190,6 +1216,58 @@ mod tests {
         let queued = crate::queue_items_served(std::slice::from_ref(&named), &serving());
 
         assert!(queued[0].location.is_local());
+    }
+
+    fn kept_only(program: Option<std::path::PathBuf>) -> Served {
+        let tool = resonate_ytmusic::Tool::new(program, resonate_ytmusic::Cookies::None);
+        Served::over(vec![Arc::new(resonate_ytmusic::YtMusic::new(tool))], false)
+    }
+
+    #[test]
+    fn a_song_of_a_service_that_plays_no_song_is_queued_as_nothing() {
+        let served = kept_only(None);
+        let location = MediaLocation::from_uri("ytmusic:track/abc").expect("a uri");
+        let named = OsString::from("ytmusic:track/abc");
+
+        assert_eq!(served.songs_at(&location), Some(Vec::new()));
+        assert!(crate::queue_items_served(std::slice::from_ref(&named), &served).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_mix_of_a_service_that_plays_no_song_is_not_listed_to_be_queued() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let folder =
+            std::env::temp_dir().join(format!("resonate-served-mix-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a folder");
+        let program = folder.join("yt-dlp");
+        let ran = folder.join("ran");
+        std::fs::write(&program, format!("#!/bin/sh\ntouch {}\n", ran.display()))
+            .expect("the fake tool");
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+            .expect("the fake tool made executable");
+        let location = MediaLocation::from_uri("ytmusic:mix/LM").expect("a uri");
+
+        let songs = kept_only(Some(program)).songs_at(&location);
+        let asked = ran.exists();
+        std::fs::remove_dir_all(&folder).expect("the folder removed");
+
+        assert_eq!(songs, Some(Vec::new()));
+        assert!(!asked, "a mix was listed in argument expansion");
+    }
+
+    #[test]
+    fn the_scheme_said_to_play_no_song_is_the_one_whose_service_says_so() {
+        let tool = resonate_ytmusic::Tool::new(None, resonate_ytmusic::Cookies::None);
+        let service = resonate_ytmusic::YtMusic::new(tool);
+
+        assert!(!service.plays_songs());
+        assert!(!is_played_in_place(service.scheme()));
+        assert!(is_played_in_place(
+            &SourceId::new("tidal").expect("a scheme")
+        ));
+        assert!(is_played_in_place(&SourceId::local()));
     }
 
     #[cfg(feature = "ui")]

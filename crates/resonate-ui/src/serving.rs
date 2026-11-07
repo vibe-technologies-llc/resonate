@@ -7,8 +7,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use gpui::{Context, Task};
 use resonate_core::{MediaLocation, SourceId};
-use resonate_library::{CoverArt, ImageFormat};
-use resonate_providers::Error as ProviderError;
+use resonate_library::{CoverArt, ImageFormat, SongToKeep};
+use resonate_providers::{Error as ProviderError, Named};
 
 use crate::{
     ResonateApp,
@@ -57,7 +57,7 @@ impl Place {
 
     pub(crate) const fn eyebrow(&self) -> &'static str {
         match self {
-            Self::Artists => "SERVER",
+            Self::Artists => "SERVICES",
             Self::Artist { .. } => "ARTIST ON THE SERVER",
             Self::Album { .. } => "ALBUM ON THE SERVER",
             Self::Mix { .. } => "MIX ON THE SERVER",
@@ -109,6 +109,22 @@ impl Row {
             Self::Heading(_) | Self::Artist(_) | Self::Album(_) | Self::Mix(_) => None,
         }
     }
+}
+
+pub(crate) fn song_to_keep(song: &ServedSong) -> Option<SongToKeep> {
+    let source = song.location.source().clone();
+    let Some(Named::Song(video)) = Named::read(&song.location, &source) else {
+        return None;
+    };
+    Some(SongToKeep {
+        source,
+        video: video.to_string(),
+        title: song.title.clone(),
+        artist: song.artist.clone(),
+        album: song.album.clone(),
+        length: song.length,
+        cover: song.cover.as_ref().map(|cover| cover.0.clone()),
+    })
 }
 
 pub(crate) fn first_rows(first: ServedFound) -> Vec<Row> {
@@ -226,6 +242,8 @@ pub(crate) struct ServerModel {
     unfetched: AHashMap<CoverKey, Instant>,
     favoured: AHashMap<MediaLocation, bool>,
     scale: Scale,
+    shown: bool,
+    owes_a_first_page: bool,
 }
 
 impl ServerModel {
@@ -242,6 +260,8 @@ impl ServerModel {
             unfetched: AHashMap::new(),
             favoured: AHashMap::new(),
             scale: Scale::ONE,
+            shown: false,
+            owes_a_first_page: false,
         };
         model.refresh(cx);
         model
@@ -249,6 +269,17 @@ impl ServerModel {
 
     pub(crate) fn is_open(&self) -> bool {
         !self.services.is_empty()
+    }
+
+    pub(crate) fn shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        self.shown = shown;
+        if shown && self.owes_a_first_page {
+            self.read(cx);
+        }
+    }
+
+    fn waits_to_be_shown(&self, serves: &dyn Serves) -> bool {
+        !self.shown && serves.keeps_songs() && *self.place() == Place::Artists
     }
 
     pub(crate) fn serves(&self) -> Option<Arc<dyn Serves>> {
@@ -285,6 +316,16 @@ impl ServerModel {
     pub(crate) fn keeps_favourites(&self, location: &MediaLocation) -> bool {
         self.serving(location)
             .is_some_and(|serves| serves.keeps_favourites())
+    }
+
+    pub(crate) fn plays_songs(&self, location: &MediaLocation) -> bool {
+        self.serving(location)
+            .is_none_or(|serves| serves.plays_songs())
+    }
+
+    pub(crate) fn keeps_songs(&self, location: &MediaLocation) -> bool {
+        self.serving(location)
+            .is_some_and(|serves| serves.keeps_songs())
     }
 
     pub(crate) fn is_favoured(&self, song: &ServedSong) -> bool {
@@ -378,7 +419,12 @@ impl ServerModel {
             return;
         };
         self.page = Page::Reading;
+        self.owes_a_first_page = self.waits_to_be_shown(serves.as_ref());
         cx.notify();
+        if self.owes_a_first_page {
+            self._read = None;
+            return;
+        }
 
         let place = self.place().clone();
         let read = cx

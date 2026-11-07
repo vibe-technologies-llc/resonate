@@ -20,6 +20,10 @@ list; `resonate-config.toml.5`, the settings file's manual, is written by hand a
 `binary.md` for what holds its keys in step). Desktop
 entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 
+- **`yt-dlp` is suggested, never depended on**: `optdepends` in both Arch recipes (and `.SRCINFO`),
+  `Suggests` in the spec and the player's DEB control. Only YouTube Music runs it (browsing the
+  account, the poll's last-resort answer and *Keep*), a Flatpak holds none and shows the provider as
+  unavailable, and no package ships it (`providers.md`).
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment
   `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
   build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the

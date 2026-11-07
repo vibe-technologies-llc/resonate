@@ -36,6 +36,12 @@ const OPEN_HINT: &str = "See what the server holds under this";
 
 const PLAY_THIS_HINT: &str = "Play this, and what follows it here";
 
+const NOT_PLAYED_HERE_HINT: &str = "This service's songs are not played from here";
+
+const KEEP_HINT: &str = "Keep this song in the music folder";
+
+const KEEP_ALL_HINT: &str = "Keep every song here in the music folder, as a playlist";
+
 const ASK_AGAIN_HINT: &str = "Ask the server again";
 
 pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter";
@@ -116,7 +122,10 @@ impl RootView {
             (Place::Artists, Page::Read(rows)) if favourites_in(rows) => FAVOURITES.to_owned(),
             _ => place.title(),
         };
-        let playable = place.location().cloned();
+        let playable = place
+            .location()
+            .filter(|whole| self.server.read(cx).plays_songs(whole))
+            .cloned();
 
         let mut actions = kit::actions();
         if let Some(whole) = playable {
@@ -141,6 +150,31 @@ impl RootView {
                     },
                     cx,
                 ));
+        }
+        let keepable = match (place, page) {
+            (Place::Mix { location, name }, Page::Read(rows))
+                if !rows.is_empty() && self.server.read(cx).keeps_songs(location) =>
+            {
+                Some((name.clone(), Arc::clone(rows)))
+            }
+            _ => None,
+        };
+        if let Some((name, rows)) = keepable {
+            actions = actions.child(self.in_the_pane_ring(
+                kit::button(
+                    "server-keep",
+                    Some(Icon::Download),
+                    "Keep",
+                    KEEP_ALL_HINT,
+                    Tone::Primary,
+                ),
+                move |this, _, cx| {
+                    this.library.update(cx, |library, cx| {
+                        library.keep_mix(name.clone(), &rows, cx);
+                    });
+                },
+                cx,
+            ));
         }
         actions = actions.child(self.server_search_field(cx));
 
@@ -294,6 +328,8 @@ impl RootView {
 
         let from = songs_here.then(|| songs_from(rows, index)).flatten();
         let pressed = row.clone();
+        let plays = self.server.read(cx).plays_songs(&location);
+        let press_does_nothing = row.song().is_some() && !plays;
         let song_number = row
             .song()
             .and_then(|song| song.track)
@@ -308,9 +344,10 @@ impl RootView {
             .h_full()
             .items_center()
             .gap(px(listing::COLUMN_GAP))
-            .cursor_pointer()
+            .when(!press_does_nothing, |open| open.cursor_pointer())
             .listed_as(move || said.clone())
             .names(match row {
+                Row::Song(_) if !plays => NOT_PLAYED_HERE_HINT,
                 Row::Song(_) => PLAY_THIS_HINT,
                 Row::Heading(_) | Row::Artist(_) | Row::Album(_) | Row::Mix(_) => OPEN_HINT,
             })
@@ -361,7 +398,9 @@ impl RootView {
             )
             .when_some(figure, |open, figure| open.child(kit::figure(figure)))
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.press_a_row_of_the_server(pressed.clone(), from.clone(), cx);
+                if !press_does_nothing {
+                    this.press_a_row_of_the_server(pressed.clone(), from.clone(), cx);
+                }
             }));
 
         let favourite = row.song().cloned();
@@ -385,6 +424,20 @@ impl RootView {
         favourite: Option<ServedSong>,
         cx: &mut Context<Self>,
     ) -> Div {
+        let keepable = favourite
+            .clone()
+            .filter(|song| self.server.read(cx).keeps_songs(&song.location));
+        let keep = keepable.map(|song| {
+            let row = Row::Song(song);
+            self.in_the_pane_ring(
+                kit::icon_button(("server-row-keep", index), Icon::Download, KEEP_HINT),
+                move |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.keep(&row, cx));
+                },
+                cx,
+            )
+        });
         let starred =
             favourite.filter(|song| self.server.read(cx).keeps_favourites(&song.location));
         let star = starred.map(|song| {
@@ -397,10 +450,14 @@ impl RootView {
                 cx,
             )
         });
+        let plays = self.server.read(cx).plays_songs(&location);
         let playing = location.clone();
         let next = location.clone();
         let queued = location;
-        let controls = self.row_controls(("server-controls", index), cx);
+        let controls = self
+            .row_controls(("server-controls", index), cx)
+            .children(star)
+            .children(keep);
 
         div()
             .flex()
@@ -408,9 +465,8 @@ impl RootView {
             .items_center()
             .justify_end()
             .w(px(controls_width(SERVER_CONTROLS)))
-            .child(
+            .child(controls.when(plays, |controls| {
                 controls
-                    .children(star)
                     .child(self.in_the_pane_ring(
                         kit::icon_button(("server-row-play", index), Icon::Play, PLAY_HINT),
                         move |this, _, cx| this.play_what_the_server_holds(playing.clone(), cx),
@@ -429,8 +485,8 @@ impl RootView {
                             this.queue_what_the_server_holds(queued.clone(), Placement::Queued, cx);
                         },
                         cx,
-                    )),
-            )
+                    ))
+            }))
     }
 
     fn served_cover(
@@ -746,11 +802,14 @@ mod tests {
 
     use super::*;
     use crate::{
-        Online, Pane,
+        Online, Pane, ResonateApp,
         driven::Driven,
         served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, Serves},
         serving::{Failure, rows_of_found},
+        views::remote,
     };
+
+    const SCROLLED_PAST_EVERY_CATEGORY: f32 = 2_000.0;
 
     fn at(key: &str) -> MediaLocation {
         MediaLocation::from_uri(&format!("subsonic:{key}")).expect("a subsonic location")
@@ -1089,11 +1148,7 @@ mod tests {
     }
 
     fn open_the_server(driven: &mut Driven) {
-        driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
-        driven.cx.simulate_input("server pane browse");
-        driven.settle();
-        driven.click("open-server");
+        driven.click("tab-server");
     }
 
     #[gpui::test]
@@ -1108,6 +1163,138 @@ mod tests {
         assert!(driven.read(|root, cx| root.server.read(cx).is_open()));
 
         open_the_server(&mut driven);
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+    }
+
+    #[gpui::test]
+    fn the_services_row_stands_last_in_the_collection_only_while_a_service_is_set(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
+        assert!(driven.cx.debug_bounds("tab-server").is_none());
+
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        let row = driven.bounds_of("tab-server");
+
+        assert!(driven.bounds_of("tab-party").bottom() <= row.top());
+        assert!(row.bottom() <= driven.bounds_of("tab-lyrics").top());
+    }
+
+    #[gpui::test]
+    fn a_service_let_go_takes_its_row_with_it_and_leaves_the_pane_for_the_first_tab(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        open_the_server(&mut driven);
+
+        let online_set_to = |driven: &mut Driven, enabled| {
+            driven.cx.update(|_, cx| {
+                cx.update_global::<ResonateApp, _>(|app, _| app.online.enabled = enabled);
+            });
+            driven.settle();
+        };
+
+        online_set_to(&mut driven, false);
+        assert!(driven.cx.debug_bounds("tab-server").is_none());
+        assert_eq!(driven.read(|root, _| root.pane), Pane::default());
+
+        online_set_to(&mut driven, true);
+        assert!(driven.cx.debug_bounds("tab-server").is_some());
+        assert_eq!(driven.read(|root, _| root.pane), Pane::default());
+    }
+
+    #[gpui::test]
+    fn the_pane_keys_stop_at_the_services_row_and_read_its_first_page_only_then(
+        cx: &mut TestAppContext,
+    ) {
+        let service = Arc::new(NotPlayed {
+            keeps: true,
+            ..NotPlayed::default()
+        });
+        let read = Arc::clone(&service.first_pages_read);
+        let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
+        let mut driven = Driven::serving(cx, vec![service], an_account());
+        driven.click("tab-party");
+        assert_eq!(times_read(), 0, "the account was touched before the row");
+
+        driven.cx.simulate_keystrokes("ctrl-tab");
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+        assert_eq!(times_read(), 1);
+
+        driven.cx.simulate_keystrokes("ctrl-tab");
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Lyrics);
+    }
+
+    #[gpui::test]
+    fn with_no_service_set_the_pane_keys_pass_from_the_collection_to_what_is_playing(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
+        driven.click("tab-party");
+
+        driven.cx.simulate_keystrokes("ctrl-tab");
+        driven.settle();
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Lyrics);
+    }
+
+    #[gpui::test]
+    fn the_smallest_window_scrolls_the_categories_to_the_services_row_and_keeps_settings_standing(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        let shortest = px(theme::WINDOW_MIN_HEIGHT);
+        driven
+            .cx
+            .simulate_resize(gpui::size(px(theme::WINDOW_MIN_WIDTH), shortest));
+        driven.settle();
+        assert!(driven.read(|root, _| root.sidebar_scroll.max_offset().y) > px(0.0));
+
+        let categories = driven.centre_of("tab-albums");
+        driven.scroll_at(categories, SCROLLED_PAST_EVERY_CATEGORY);
+        driven.click("tab-server");
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+        assert!(driven.bounds_of("tab-settings").bottom() <= shortest);
+    }
+
+    #[gpui::test]
+    fn other_devices_make_way_for_the_services_row_as_for_every_category(cx: &mut TestAppContext) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.remote_songs = vec![remote::tests::song()];
+            cx.notify();
+        });
+        driven.settle();
+        let room_with_the_cards = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        driven.click("toggle-other-devices");
+        let room = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        driven.click("toggle-other-devices");
+        let categories = driven.read(|root, _| {
+            root.sidebar_scroll
+                .bounds_for_item(0)
+                .expect("the categories")
+                .size
+                .height
+        });
+        let spare = f32::from(room_with_the_cards - categories);
+        let cards = f32::from(room - room_with_the_cards);
+        let too_short_for_the_cards = crate::driven::TALL - spare - cards / 2.0;
+
+        driven.cx.simulate_resize(gpui::size(
+            px(crate::driven::WIDE),
+            px(too_short_for_the_cards),
+        ));
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.remote_collapsed));
+        assert_eq!(
+            driven.read(|root, _| root.sidebar_scroll.max_offset().y),
+            px(0.0)
+        );
+        driven.click("tab-server");
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
     }
 
@@ -1233,6 +1420,203 @@ mod tests {
             ]
         );
         assert_eq!(stars, [false, true]);
+    }
+
+    #[derive(Default)]
+    struct NotPlayed {
+        keeps: bool,
+        first_pages_read: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Serves for NotPlayed {
+        fn scheme(&self) -> &SourceId {
+            Searched.scheme()
+        }
+
+        fn title(&self) -> &str {
+            "YouTube Music"
+        }
+
+        fn names(&self, location: &MediaLocation) -> bool {
+            location.source() == self.scheme()
+        }
+
+        fn artists(&self) -> Result<Vec<ServedArtist>> {
+            Ok(Vec::new())
+        }
+
+        fn first_page(&self) -> Result<ServedFound> {
+            self.first_pages_read
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(ServedFound {
+                mixes: vec![ServedAlbum {
+                    location: MediaLocation::from_uri("tidal:mix/LM").expect("a location"),
+                    name: "Liked songs".to_owned(),
+                    artist: None,
+                    year: None,
+                    songs: None,
+                    cover: None,
+                }],
+                ..ServedFound::default()
+            })
+        }
+
+        fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(Vec::new())
+        }
+
+        fn songs_of(&self, _: &MediaLocation) -> Result<Vec<ServedSong>> {
+            Ok(vec![ServedSong {
+                location: MediaLocation::from_uri("tidal:track/13").expect("a location"),
+                ..song("so-3", "Summer '68", 1)
+            }])
+        }
+
+        fn search(&self, _: &str) -> Result<ServedFound> {
+            Ok(ServedFound::default())
+        }
+
+        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+            Ok(vec![named.clone()])
+        }
+
+        fn plays_songs(&self) -> bool {
+            false
+        }
+
+        fn keeps_songs(&self) -> bool {
+            self.keeps
+        }
+
+        fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
+            Searched.cover(&at("track/so-1"), None, 0)
+        }
+    }
+
+    fn the_mix_opened(driven: &mut Driven) {
+        open_the_server(driven);
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
+        );
+        driven.settle();
+        driven.click("server-row-1");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Mix { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+        driven.settle();
+    }
+
+    #[gpui::test]
+    fn a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let service = Arc::new(NotPlayed {
+            keeps: true,
+            ..NotPlayed::default()
+        });
+        let read = Arc::clone(&service.first_pages_read);
+        let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
+        let mut driven = Driven::serving(cx, vec![service], an_account());
+        driven.settle();
+        assert_eq!(times_read(), 0, "the account was touched at launch");
+
+        open_the_server(&mut driven);
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+        assert_eq!(times_read(), 1);
+
+        driven.click("tab-albums");
+        driven.settle();
+        driven.click("tab-server");
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+        assert_eq!(times_read(), 1, "a page read is not read again");
+
+        driven.click("tab-server");
+        driven.settle();
+        assert_eq!(times_read(), 1, "a press on the row in front reads nothing");
+    }
+
+    #[gpui::test]
+    fn a_service_that_keeps_no_songs_reads_its_first_page_at_once(cx: &mut TestAppContext) {
+        let service = Arc::new(NotPlayed::default());
+        let read = Arc::clone(&service.first_pages_read);
+        let mut driven = Driven::serving(cx, vec![service], an_account());
+
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[gpui::test]
+    fn a_service_that_keeps_songs_offers_a_keep_on_a_song_and_a_mix_and_a_press_queues_them(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = crate::driven::Folder::new();
+        let mut driven = Driven::serving(
+            cx,
+            vec![Arc::new(NotPlayed {
+                keeps: true,
+                ..NotPlayed::default()
+            })],
+            an_account(),
+        );
+        let music = folder.path().to_path_buf();
+        driven.cx.update(|_, cx| {
+            gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
+                global.music_folder = Some(music);
+            });
+        });
+        the_mix_opened(&mut driven);
+
+        assert!(driven.cx.debug_bounds("server-row-keep-0").is_some());
+        driven.click("server-keep");
+        let library = driven.read(|_, cx| Arc::clone(&cx.global::<crate::ResonateApp>().library));
+        driven.until(|_, _| library.keeps_pending().is_ok_and(|queued| queued == 1));
+        driven.until(|root, cx| root.library.read(cx).keeps_left().is_none());
+
+        driven.click("server-row-keep-0");
+        driven.settle();
+        driven.until(|root, cx| root.library.read(cx).keeps_left().is_none());
+        assert_eq!(library.keeps_pending().expect("a count"), 2);
+    }
+
+    #[gpui::test]
+    fn a_mix_of_a_service_that_plays_no_song_opens_and_offers_nothing_to_play_or_queue(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed::default())], an_account());
+        open_the_server(&mut driven);
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
+        );
+        driven.settle();
+        assert!(driven.cx.debug_bounds("server-row-1").is_some());
+        assert!(driven.cx.debug_bounds("server-row-play-1").is_none());
+
+        driven.click("server-row-1");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Mix { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+        driven.settle();
+
+        assert!(driven.cx.debug_bounds("server-row-0").is_some());
+        for offered in [
+            "server-play",
+            "server-queue",
+            "server-row-play-0",
+            "server-row-next-0",
+            "server-row-queue-0",
+            "server-keep",
+            "server-row-keep-0",
+        ] {
+            assert!(driven.cx.debug_bounds(offered).is_none(), "{offered}");
+        }
+
+        driven.click("server-row-0");
+        driven.settle();
+        assert!(driven.read(|root, cx| root.player.read(cx).queue().is_empty()));
     }
 
     #[gpui::test]

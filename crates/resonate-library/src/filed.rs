@@ -9,7 +9,7 @@ use std::{
 };
 
 use resonate_codec::{
-    DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
+    CoverArt, DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
 };
 use resonate_core::{
     AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, WholeFile, naming, writer::Held,
@@ -18,7 +18,7 @@ use resonate_core::{
 use crate::{
     Error, Library, Want,
     organise::{self, Layout, Named, Refusal, Volume},
-    scan, store, take_in, unreplacing,
+    scan, store, supply, take_in, unreplacing,
 };
 
 pub(crate) const STAGED_SUFFIX: &str = "resonate-delivery";
@@ -64,10 +64,65 @@ pub(crate) struct Filed {
     pub(crate) root: PathBuf,
 }
 
-pub(crate) fn filed(
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ToFile<'a> {
+    pub(crate) title: &'a str,
+    pub(crate) artist: Option<&'a str>,
+    pub(crate) album: Option<&'a AlbumToFile>,
+    pub(crate) disc: Option<NonZeroU32>,
+    pub(crate) position: Option<u32>,
+    pub(crate) length: Option<Duration>,
+    pub(crate) tags: Vec<TagEdit>,
+    pub(crate) picture: Option<&'a CoverArt>,
+}
+
+impl<'a> ToFile<'a> {
+    fn wanted(want: &'a Want, album: &'a AlbumToFile) -> Self {
+        Self {
+            title: &want.title,
+            artist: want.artist.as_deref(),
+            album: Some(album),
+            disc: NonZeroU32::new(want.disc),
+            position: Some(want.position),
+            length: want.length,
+            tags: edits(want, album),
+            picture: None,
+        }
+    }
+}
+
+pub(crate) fn filed_for(
     library: &Library,
     into: &DeliveryFolder,
     want: &Want,
+    reader: &mut dyn Read,
+    extension: &str,
+) -> std::result::Result<Filed, Unfiled> {
+    let album = library
+        .album_to_file(want.album)
+        .map_err(Unfiled::Catalog)?;
+    let filed = filed(
+        library,
+        into,
+        &ToFile::wanted(want, &album),
+        reader,
+        extension,
+    )?;
+
+    if let Err(error) = library.claim_album_keys(
+        want.album,
+        &keys_for(&filed.path, &filed.root, &album, want),
+    ) {
+        let _ = fs::remove_file(&filed.path);
+        return Err(Unfiled::Catalog(error));
+    }
+    Ok(filed)
+}
+
+pub(crate) fn filed(
+    library: &Library,
+    into: &DeliveryFolder,
+    song: &ToFile<'_>,
     reader: &mut dyn Read,
     extension: &str,
 ) -> std::result::Result<Filed, Unfiled> {
@@ -77,23 +132,20 @@ pub(crate) fn filed(
         .ok()
         .filter(|folder| folder.is_dir())
         .ok_or(Unfiled::NoFolder)?;
-    let album = library
-        .album_to_file(want.album)
-        .map_err(Unfiled::Catalog)?;
     let root = library
         .root_reaching(&folder)
         .map_err(Unfiled::Catalog)?
         .unwrap_or_else(|| folder.clone());
 
     let named = Named {
-        album_artist: album.owner.as_deref(),
-        artist: want.artist.as_deref(),
-        album: Some(&album.title),
-        title: &want.title,
-        year: album.year,
-        disc: NonZeroU32::new(want.disc),
-        discs: album.discs,
-        track: Some(want.position),
+        album_artist: song.album.and_then(|album| album.owner.as_deref()),
+        artist: song.artist,
+        album: song.album.map(|album| album.title.as_str()),
+        title: song.title,
+        year: song.album.and_then(|album| album.year),
+        disc: song.disc,
+        discs: song.album.map_or(1, |album| album.discs),
+        track: song.position,
         extension: Some(extension),
     };
     let volume = Volume::of(&folder);
@@ -116,17 +168,12 @@ pub(crate) fn filed(
     staged_away(library, &staged);
     let path = landed.map(|(path, _)| path)?;
 
-    if let Err(unfiled) = weighed(&path, want) {
+    if let Err(unfiled) = weighed(&path, song.length) {
         let _ = fs::remove_file(&path);
         return Err(unfiled);
     }
-    tagged(&path, want, &album);
+    tagged(&path, &song.tags, song.picture);
 
-    if let Err(error) = library.claim_album_keys(want.album, &keys_for(&path, &root, &album, want))
-    {
-        let _ = fs::remove_file(&path);
-        return Err(Unfiled::Catalog(error));
-    }
     Ok(Filed { path, root })
 }
 
@@ -172,16 +219,16 @@ pub(crate) fn landed_beside(
     }
 }
 
-fn weighed(path: &Path, want: &Want) -> std::result::Result<(), Unfiled> {
+fn weighed(path: &Path, listed: Option<Duration>) -> std::result::Result<(), Unfiled> {
     let location = MediaLocation::local(path);
-    if want.length.is_none() {
+    if listed.is_none() {
         return resonate_codec::probe(&Sources::local(), &location)
             .map(drop)
             .map_err(|_| Unfiled::Undecodable);
     }
 
     let (heard, rate) = heard_whole(&location).ok_or(Unfiled::Undecodable)?;
-    if want.lasts_as_long_as(heard, rate) {
+    if supply::lasts_as_long_as(listed, heard, rate) {
         Ok(())
     } else {
         Err(Unfiled::NotAsLongAsWanted {
@@ -325,23 +372,36 @@ fn edits(want: &Want, album: &AlbumToFile) -> Vec<TagEdit> {
     .collect()
 }
 
-fn tagged(path: &Path, want: &Want, album: &AlbumToFile) {
+fn tagged(path: &Path, edits: &[TagEdit], picture: Option<&CoverArt>) {
     let tags = FileTags::over(Sources::local());
     let location = MediaLocation::local(path);
     if !tags.writes(&location) {
         tracing::debug!(path = %path.display(), "a filed delivery is in a format this build writes no tags into");
         return;
     }
-    let edits = edits(want, album);
-    let writing = Writing {
-        edits: &edits,
-        taken: &[],
-        picture: None,
-        unpictured: false,
-        popularity: None,
+    let written = |picture| {
+        tags.write(
+            &location,
+            Writing {
+                edits,
+                taken: &[],
+                picture,
+                unpictured: false,
+                popularity: None,
+            },
+        )
     };
-    if let Err(error) = tags.write(&location, writing) {
-        tracing::warn!(%error, path = %path.display(), "a filed delivery could not be tagged");
+    match (written(picture), picture) {
+        (Ok(()), _) => {}
+        (Err(error), Some(_)) => {
+            tracing::warn!(%error, path = %path.display(), "a filed delivery could not take its picture");
+            if let Err(error) = written(None) {
+                tracing::warn!(%error, path = %path.display(), "a filed delivery could not be tagged");
+            }
+        }
+        (Err(error), None) => {
+            tracing::warn!(%error, path = %path.display(), "a filed delivery could not be tagged");
+        }
     }
 }
 

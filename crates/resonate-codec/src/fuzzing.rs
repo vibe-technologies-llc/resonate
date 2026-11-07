@@ -11,7 +11,7 @@ use lofty::{
 };
 
 use crate::{
-    journal,
+    TagField, journal, matroska_tags,
     overlay::{Landing, Overlay},
     padded::{Head, Room},
 };
@@ -36,7 +36,11 @@ pub fn read_a_padded_head(bytes: &[u8]) {
     let Some(([kind, room], rest)) = bytes.split_first_chunk::<2>() else {
         return;
     };
-    let kind = FILE_TYPES[usize::from(*kind) % FILE_TYPES.len()];
+    let kind = usize::from(*kind) % (FILE_TYPES.len() + 1);
+    let Some(kind) = FILE_TYPES.get(kind).copied() else {
+        rewrite_a_matroska(rest);
+        return;
+    };
     let room = ROOMS[usize::from(*room) % ROOMS.len()];
     let (head, written) = rest.split_at(rest.len() / 2);
 
@@ -45,6 +49,21 @@ pub fn read_a_padded_head(bytes: &[u8]) {
     };
     let _ = head.tail_read(head.length.saturating_add(written.len() as u64));
     let _ = head.rebuilt(written, room);
+}
+
+fn rewrite_a_matroska(bytes: &[u8]) {
+    let edits = [
+        (TagField::Title, "Echoes".to_owned()),
+        (TagField::Album, "Meddle".to_owned()),
+    ];
+    let Ok(rewrite) =
+        matroska_tags::rewritten(&mut Cursor::new(bytes), &edits, &[TagField::Artist])
+    else {
+        return;
+    };
+    rewrite
+        .laid_on(&mut Cursor::new(bytes.to_vec()))
+        .expect("a rewrite lands on the file it was read from");
 }
 
 pub fn read_an_undo_journal(bytes: &[u8]) {

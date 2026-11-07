@@ -106,6 +106,10 @@ pub enum ConfigKey {
     HifiSecret,
     Monochrome,
     HostedServices,
+    YoutubeMusic,
+    YoutubeMusicCookies,
+    YtDlp,
+    YoutubeMusicKeepOrder,
     AcoustidKey,
     AuddToken,
     ListenbrainzToken,
@@ -185,7 +189,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 121] = [
+    pub const ALL: [Self; 125] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -282,6 +286,10 @@ impl ConfigKey {
         Self::HifiSecret,
         Self::Monochrome,
         Self::HostedServices,
+        Self::YoutubeMusic,
+        Self::YoutubeMusicCookies,
+        Self::YtDlp,
+        Self::YoutubeMusicKeepOrder,
         Self::AcoustidKey,
         Self::AuddToken,
         Self::ListenbrainzToken,
@@ -407,6 +415,10 @@ impl ConfigKey {
             Self::HifiSecret => "hifi-secret",
             Self::Monochrome => "monochrome",
             Self::HostedServices => "hosted-services",
+            Self::YoutubeMusic => "youtube-music",
+            Self::YoutubeMusicCookies => "youtube-music-cookies",
+            Self::YtDlp => "yt-dlp",
+            Self::YoutubeMusicKeepOrder => "youtube-music-keep-order",
             Self::AcoustidKey => "acoustid-key",
             Self::AuddToken => "audd-token",
             Self::ListenbrainzToken => "listenbrainz-token",
@@ -740,7 +752,7 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error(
         "no service is set in the settings to play in place (subsonic, jellyfin, tidal-refresh-token, \
-         hifi-secret, hifi-api, monochrome or hosted-services)"
+         hifi-secret, hifi-api, monochrome, hosted-services or youtube-music)"
     )]
     NoServedService,
 
@@ -754,6 +766,55 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error("an id was asked for but none was given")]
     BlankServerId,
+
+    #[cfg(feature = "online")]
+    #[error("youtube-music is off in the settings, so nothing was asked of YouTube Music")]
+    YoutubeMusicOff,
+
+    #[cfg(feature = "online")]
+    #[error("{link} is not a link to a song or a playlist on YouTube Music")]
+    NotAYoutubeMusicLink { link: String },
+
+    #[cfg(feature = "online")]
+    #[error("YouTube Music shows no video {video}; it may be private or gone")]
+    NoSuchVideo { video: String },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "another pass is asking the providers, so nothing was fetched now; what was asked for \
+         stays queued for the next keep, here or when the window next opens"
+    )]
+    KeepWaitsItsTurn,
+
+    #[cfg(feature = "online")]
+    #[error("the keep was cancelled; what landed stays and the rest stays queued")]
+    KeepCancelled,
+
+    #[cfg(feature = "online")]
+    #[error("{provider} stopped answering at {song:?}, so {left} kept songs stay queued")]
+    KeepStopped {
+        provider: resonate_core::SourceId,
+        song: String,
+        left: u64,
+    },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "the cookies lapsed at {song:?}: sign in to YouTube again and run this once more; \
+         {left} kept songs stay queued"
+    )]
+    KeepSignInLapsed { song: String, left: u64 },
+
+    #[cfg(feature = "online")]
+    #[error("this account has lost Premium at {song:?}, so {left} kept songs stay queued")]
+    KeepPremiumLost { song: String, left: u64 },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "yt-dlp could not be run at {song:?}: install it, or name it in the yt-dlp setting; \
+         {left} kept songs stay queued"
+    )]
+    KeepToolMissing { song: String, left: u64 },
 
     #[cfg(feature = "online")]
     #[error(

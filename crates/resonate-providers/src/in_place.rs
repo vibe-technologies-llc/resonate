@@ -324,6 +324,14 @@ pub trait PlaysInPlace: Send + Sync {
         false
     }
 
+    fn plays_songs(&self) -> bool {
+        true
+    }
+
+    fn keeps_songs(&self) -> bool {
+        false
+    }
+
     fn favour(&self, _song: &Id, _favoured: bool) -> Result<()> {
         Err(not_offered(self.scheme(), ProviderOp::Favourite))
     }
@@ -382,7 +390,8 @@ pub fn found_exactly(
     let title = folded_letters(&recording.title);
     let artist = folded_letters(&recording.artist);
 
-    services.iter().find_map(|service| {
+    let mut played = services.iter().filter(|service| service.plays_songs());
+    played.find_map(|service| {
         let found = service.search(&words).ok()?;
         let offered = found
             .songs
@@ -567,6 +576,7 @@ mod tests {
     struct OneSearch {
         scheme: SourceId,
         songs: Vec<Song>,
+        plays: bool,
     }
 
     impl PlaysInPlace for OneSearch {
@@ -590,7 +600,15 @@ mod tests {
             Err(not_offered(&self.scheme, ProviderOp::Browse))
         }
 
+        fn plays_songs(&self) -> bool {
+            self.plays
+        }
+
         fn search(&self, _words: &str) -> Result<Found> {
+            assert!(
+                self.plays,
+                "a service nothing can be played from was searched"
+            );
             Ok(Found {
                 artists: Vec::new(),
                 albums: Vec::new(),
@@ -642,6 +660,7 @@ mod tests {
                 offered("no-length", "Cafe Song", "The Band", None),
                 offered("this-one", "CAFE SONG", "the band", Some(202)),
             ],
+            plays: true,
         });
 
         let found = found_exactly(&[service], &wanted()).expect("the song is offered");
@@ -650,12 +669,44 @@ mod tests {
     }
 
     #[test]
+    fn a_service_plays_songs_unless_it_says_it_does_not() {
+        let service = OneSearch {
+            scheme: SourceId::new("subsonic").expect("a scheme"),
+            songs: Vec::new(),
+            plays: true,
+        };
+
+        assert!(service.plays_songs());
+        assert!(!service.keeps_songs());
+    }
+
+    #[test]
     fn a_service_holding_nothing_exact_finds_nothing() {
         let service: Arc<dyn PlaysInPlace> = Arc::new(OneSearch {
             scheme: SourceId::new("subsonic").expect("a scheme"),
             songs: vec![offered("near", "Cafe Song", "The Band", Some(260))],
+            plays: true,
         });
 
         assert_eq!(found_exactly(&[service], &wanted()), None);
+    }
+
+    #[test]
+    fn a_service_that_plays_no_song_is_never_searched_for_a_partys_song() {
+        let scheme = |name: &str| SourceId::new(name).expect("a scheme");
+        let kept_only: Arc<dyn PlaysInPlace> = Arc::new(OneSearch {
+            scheme: scheme("ytmusic"),
+            songs: vec![offered("kept", "Cafe Song", "The Band", Some(200))],
+            plays: false,
+        });
+        let played: Arc<dyn PlaysInPlace> = Arc::new(OneSearch {
+            scheme: scheme("subsonic"),
+            songs: vec![offered("played", "Cafe Song", "The Band", Some(200))],
+            plays: true,
+        });
+
+        let found = found_exactly(&[kept_only, played], &wanted()).expect("the song is offered");
+
+        assert_eq!(found.to_uri(), "subsonic:track/played");
     }
 }

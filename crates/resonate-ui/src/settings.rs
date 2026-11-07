@@ -260,6 +260,10 @@ pub enum SettingKey {
     HifiSecret,
     Monochrome,
     HostedServices,
+    YoutubeMusic,
+    YoutubeMusicCookies,
+    YtDlp,
+    YoutubeMusicKeepOrder,
     Discord,
     DiscordApp,
     DiscordShows,
@@ -278,7 +282,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 116] = [
+    pub const ALL: [Self; 120] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -380,6 +384,10 @@ impl SettingKey {
         Self::HifiSecret,
         Self::Monochrome,
         Self::HostedServices,
+        Self::YoutubeMusic,
+        Self::YoutubeMusicCookies,
+        Self::YtDlp,
+        Self::YoutubeMusicKeepOrder,
         Self::Discord,
         Self::DiscordApp,
         Self::DiscordShows,
@@ -507,6 +515,10 @@ pub enum Setting {
     HifiSecret(String),
     Monochrome(String),
     HostedServices(bool),
+    YoutubeMusic(bool),
+    YoutubeMusicCookies(String),
+    YtDlp(String),
+    YoutubeMusicKeepOrder(bool),
     Discord(bool),
     DiscordApp(Option<AppId>),
     DiscordShows(Shown),
@@ -634,6 +646,10 @@ impl Setting {
             Self::HifiSecret(_) => SettingKey::HifiSecret,
             Self::Monochrome(_) => SettingKey::Monochrome,
             Self::HostedServices(_) => SettingKey::HostedServices,
+            Self::YoutubeMusic(_) => SettingKey::YoutubeMusic,
+            Self::YoutubeMusicCookies(_) => SettingKey::YoutubeMusicCookies,
+            Self::YtDlp(_) => SettingKey::YtDlp,
+            Self::YoutubeMusicKeepOrder(_) => SettingKey::YoutubeMusicKeepOrder,
             Self::Discord(_) => SettingKey::Discord,
             Self::DiscordApp(_) => SettingKey::DiscordApp,
             Self::DiscordShows(_) => SettingKey::DiscordShows,
@@ -683,6 +699,10 @@ pub struct Online {
     pub hifi_secret: String,
     pub monochrome: String,
     pub hosted_services: bool,
+    pub youtube_music: bool,
+    pub youtube_music_cookies: String,
+    pub yt_dlp: String,
+    pub youtube_music_keep_order: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -768,6 +788,10 @@ impl fmt::Debug for Online {
             hifi_secret,
             monochrome,
             hosted_services,
+            youtube_music,
+            youtube_music_cookies,
+            yt_dlp,
+            youtube_music_keep_order,
         } = self;
 
         f.debug_struct("Online")
@@ -799,6 +823,10 @@ impl fmt::Debug for Online {
             .field("hifi_secret", &withheld(hifi_secret))
             .field("monochrome", monochrome)
             .field("hosted_services", hosted_services)
+            .field("youtube_music", youtube_music)
+            .field("youtube_music_cookies", &withheld(youtube_music_cookies))
+            .field("yt_dlp", yt_dlp)
+            .field("youtube_music_keep_order", youtube_music_keep_order)
             .finish()
     }
 }
@@ -820,6 +848,18 @@ pub enum Asking {
 pub type Registering = Arc<dyn Fn(&Supplying<'_>) -> Providers + Send + Sync>;
 
 pub type Unkept = Arc<dyn Fn() -> bool + Send + Sync>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum YoutubeMusicConnection {
+    Premium,
+    SignedInWithoutPremium,
+    NotSignedIn,
+    ToolMissing,
+    CheckSongGone,
+    CouldNotCheck,
+}
+
+pub type ChecksYoutubeMusic = Arc<dyn Fn(&Online) -> Option<YoutubeMusicConnection> + Send + Sync>;
 
 const TOKEN_NOT_KEPT: &str = "TIDAL's new sign-in couldn't be saved — sign in to TIDAL again once the settings file can be written";
 

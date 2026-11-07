@@ -72,6 +72,9 @@ impl RootView {
         if library.is_enriching() {
             return Some(SharedString::new_static("Looking up details online"));
         }
+        if let Some(left) = library.keeps_left() {
+            return Some(downloads::keeping_said(left));
+        }
         let fetching: Vec<_> = library
             .downloads()
             .iter()

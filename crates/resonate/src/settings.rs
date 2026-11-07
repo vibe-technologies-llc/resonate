@@ -398,6 +398,14 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::HifiSecret(given) => given_or_cleared(ConfigKey::HifiSecret, given),
         Setting::Monochrome(given) => given_or_cleared(ConfigKey::Monochrome, given),
         Setting::HostedServices(allowed) => (ConfigKey::HostedServices, Some((*allowed).into())),
+        Setting::YoutubeMusic(on) => (ConfigKey::YoutubeMusic, Some((*on).into())),
+        Setting::YoutubeMusicCookies(given) => {
+            given_or_cleared(ConfigKey::YoutubeMusicCookies, given)
+        }
+        Setting::YtDlp(given) => given_or_cleared(ConfigKey::YtDlp, given),
+        Setting::YoutubeMusicKeepOrder(on) => {
+            (ConfigKey::YoutubeMusicKeepOrder, Some((*on).into()))
+        }
     };
 
     written(editing, key, value);
@@ -544,6 +552,10 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::HifiSecret => ConfigKey::HifiSecret,
         SettingKey::Monochrome => ConfigKey::Monochrome,
         SettingKey::HostedServices => ConfigKey::HostedServices,
+        SettingKey::YoutubeMusic => ConfigKey::YoutubeMusic,
+        SettingKey::YoutubeMusicCookies => ConfigKey::YoutubeMusicCookies,
+        SettingKey::YtDlp => ConfigKey::YtDlp,
+        SettingKey::YoutubeMusicKeepOrder => ConfigKey::YoutubeMusicKeepOrder,
         SettingKey::Discord => ConfigKey::Discord,
         SettingKey::DiscordApp => ConfigKey::DiscordApp,
         SettingKey::DiscordShows => ConfigKey::DiscordShows,
@@ -672,6 +684,36 @@ mod tests {
             );
         }
         let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn every_youtube_music_setting_the_pane_writes_reads_back_as_itself() {
+        let folder = env::temp_dir().join(format!("resonate-settings-ytmusic-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+
+        file.apply(&[
+            SettingChange::Store(Setting::YoutubeMusic(true)),
+            SettingChange::Store(Setting::YoutubeMusicCookies("firefox".to_owned())),
+            SettingChange::Store(Setting::YtDlp("/opt/yt-dlp".to_owned())),
+            SettingChange::Store(Setting::YoutubeMusicKeepOrder(false)),
+        ])
+        .expect("a writable temporary directory");
+        let written = config::load(Some(&path)).expect("the file reads back");
+        file.apply(&[
+            SettingChange::Store(Setting::YoutubeMusicCookies(String::new())),
+            SettingChange::Store(Setting::YtDlp(String::new())),
+        ])
+        .expect("a writable temporary directory");
+        let cleared = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(written.youtube_music, Some(true));
+        assert_eq!(written.youtube_music_cookies.as_deref(), Some("firefox"));
+        assert_eq!(written.yt_dlp.as_deref(), Some("/opt/yt-dlp"));
+        assert_eq!(written.youtube_music_keep_order, Some(false));
+        assert_eq!(cleared.youtube_music_cookies, None);
+        assert_eq!(cleared.yt_dlp, None);
     }
 
     #[test]

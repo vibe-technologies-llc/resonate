@@ -88,10 +88,42 @@ pub enum Error {
     #[error("the sign-in to the {provider} provider was turned down")]
     AuthorizationDenied { provider: SourceId },
 
+    #[error("{op:?} ran the {provider} provider's tool, which failed with {code:?}")]
+    ToolFailed {
+        provider: SourceId,
+        op: ProviderOp,
+        code: Option<i32>,
+    },
+
+    #[error("{op:?} could not run the {provider} provider's tool")]
+    ToolNotRun {
+        provider: SourceId,
+        op: ProviderOp,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("a delivery's extension is one to eight ASCII letters and digits")]
     NotAnExtension,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WhyAway {
+    #[default]
+    NotAnswering,
+    SignInLapsed,
+    SubscriptionLapsed,
+    ToolMissing,
+}
+
+impl WhyAway {
+    pub const fn says_nothing_of_the_song(self) -> bool {
+        !matches!(self, Self::NotAnswering)
+    }
+}
+
+pub const THE_SIGN_IN_LAPSED: u16 = 401;
+pub const THE_SUBSCRIPTION_LAPSED: u16 = 402;
 const SERVER_TROUBLE: u16 = 500;
 const TURNED_AWAY_WHOEVER_ASKS: [u16; 3] = [401, 403, 429];
 
@@ -104,6 +136,37 @@ impl Error {
         std::error::Error::source(self).map(ToString::to_string)
     }
 
+    pub fn why_away(&self) -> WhyAway {
+        match self {
+            Self::Unwelcome {
+                code: THE_SIGN_IN_LAPSED,
+                ..
+            } => WhyAway::SignInLapsed,
+            Self::Unwelcome {
+                code: THE_SUBSCRIPTION_LAPSED,
+                ..
+            } => WhyAway::SubscriptionLapsed,
+            Self::ToolNotRun { .. } => WhyAway::ToolMissing,
+            Self::Io { .. }
+            | Self::Refused { .. }
+            | Self::Unreadable { .. }
+            | Self::TurnedAway { .. }
+            | Self::Unwelcome { .. }
+            | Self::OffItsHosts { .. }
+            | Self::StillQueued { .. }
+            | Self::Untrusted { .. }
+            | Self::Unaddressable { .. }
+            | Self::NotTheService { .. }
+            | Self::Busy { .. }
+            | Self::NotOffered { .. }
+            | Self::StillArriving { .. }
+            | Self::AuthorizationLapsed { .. }
+            | Self::AuthorizationDenied { .. }
+            | Self::ToolFailed { .. }
+            | Self::NotAnExtension => WhyAway::NotAnswering,
+        }
+    }
+
     pub fn is_the_provider_away(&self) -> bool {
         match self {
             Self::Io { .. }
@@ -111,7 +174,9 @@ impl Error {
             | Self::StillQueued { .. }
             | Self::Untrusted { .. }
             | Self::Unaddressable { .. }
-            | Self::NotTheService { .. } => true,
+            | Self::NotTheService { .. }
+            | Self::ToolFailed { .. }
+            | Self::ToolNotRun { .. } => true,
             Self::Refused { status, .. } => {
                 *status >= SERVER_TROUBLE || TURNED_AWAY_WHOEVER_ASKS.contains(status)
             }
@@ -132,6 +197,8 @@ pub type Result<T> = result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
+    use std::io::ErrorKind;
+
     use super::*;
 
     #[test]
@@ -197,6 +264,67 @@ mod tests {
         assert!(a_page.is_the_provider_away());
         assert!(is_a_page(b"\n  <!DOCTYPE html><html>"));
         assert!(!is_a_page(br#"{"subsonic-response":{}}"#));
+    }
+
+    #[test]
+    fn a_tool_that_failed_is_the_provider_away_whether_or_not_it_left_a_code() {
+        let provider = SourceId::new("youtube-music").expect("a nameable source");
+        let crashed = Error::ToolFailed {
+            provider: provider.clone(),
+            op: ProviderOp::Download,
+            code: Some(1),
+        };
+        let killed = Error::ToolFailed {
+            provider,
+            op: ProviderOp::Download,
+            code: None,
+        };
+
+        assert!(crashed.is_the_provider_away());
+        assert!(killed.is_the_provider_away());
+    }
+
+    #[test]
+    fn an_error_says_why_its_provider_is_away_where_the_listener_can_mend_it() {
+        let provider = SourceId::new("ytmusic").expect("a nameable source");
+        let unwelcome = |code| Error::Unwelcome {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            code,
+        };
+        let run = |kind: ErrorKind| Error::ToolNotRun {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            source: kind.into(),
+        };
+        let io = |kind: ErrorKind| Error::Io {
+            provider: provider.clone(),
+            op: ProviderOp::Search,
+            source: kind.into(),
+        };
+
+        assert_eq!(
+            unwelcome(THE_SIGN_IN_LAPSED).why_away(),
+            WhyAway::SignInLapsed
+        );
+        assert_eq!(
+            unwelcome(THE_SUBSCRIPTION_LAPSED).why_away(),
+            WhyAway::SubscriptionLapsed
+        );
+        assert_eq!(run(ErrorKind::NotFound).why_away(), WhyAway::ToolMissing);
+        assert_eq!(
+            run(ErrorKind::PermissionDenied).why_away(),
+            WhyAway::ToolMissing
+        );
+        assert_eq!(run(ErrorKind::TimedOut).why_away(), WhyAway::ToolMissing);
+        assert!(run(ErrorKind::NotFound).is_the_provider_away());
+        assert_eq!(io(ErrorKind::NotFound).why_away(), WhyAway::NotAnswering);
+        assert_eq!(
+            io(ErrorKind::PermissionDenied).why_away(),
+            WhyAway::NotAnswering
+        );
+        assert!(!WhyAway::NotAnswering.says_nothing_of_the_song());
+        assert!(WhyAway::SignInLapsed.says_nothing_of_the_song());
     }
 
     #[test]

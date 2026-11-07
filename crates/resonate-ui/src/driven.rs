@@ -424,6 +424,7 @@ impl Driven {
                 scrobblers: None,
                 signs_in: None,
                 spotify: None,
+                checks_youtube_music: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),
@@ -4795,6 +4796,50 @@ mod tests {
         fn artist_at(&self, _: &str) -> resonate_library::Result<Option<resonate_library::Mbid>> {
             Ok(None)
         }
+    }
+
+    #[gpui::test]
+    fn youtube_music_is_checked_only_once_it_is_on_and_with_the_cookies_given(
+        cx: &mut TestAppContext,
+    ) {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        let asked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let hearing = Arc::clone(&asked);
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(move |global, _| {
+                global.online.enabled = true;
+                global.checks_youtube_music = Some(Arc::new(move |online: &crate::Online| {
+                    hearing.lock().push(online.youtube_music_cookies.clone());
+                    Some(crate::YoutubeMusicConnection::Premium)
+                }));
+            });
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("youtube music");
+        driven.settle();
+
+        driven.click("youtube-music-check");
+        driven.settle();
+        assert!(asked.lock().is_empty(), "while off nothing is asked");
+
+        driven.click("youtube-music-track");
+        driven.settle();
+        driven.focus(|root| &root.youtube_music[0]);
+        driven.cx.simulate_input("firefox");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        driven.click("youtube-music-check");
+        let heard = Arc::clone(&asked);
+        driven.until(move |_, _| !heard.lock().is_empty());
+
+        assert_eq!(*asked.lock(), ["firefox"]);
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert!(online.youtube_music);
+            assert_eq!(online.youtube_music_cookies, "firefox");
+        });
     }
 
     #[gpui::test]

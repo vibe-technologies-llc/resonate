@@ -509,14 +509,14 @@ fn clock(at: Duration) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::{
         RemoteRowShown,
         driven::{Driven, Folder},
     };
 
-    fn song() -> RemoteSong {
+    pub(crate) fn song() -> RemoteSong {
         RemoteSong::new(
             SyncedDevice {
                 id: "phone".to_owned(),

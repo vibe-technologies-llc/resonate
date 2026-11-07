@@ -114,12 +114,12 @@ pub(crate) enum Group {
     Organising,
     Vault,
     Inbox,
+    YoutubeMusic,
     ResonateKey,
     Subsonic,
     Jellyfin,
     Tidal,
     Spotify,
-    Served,
     Resuming,
     History,
     Repeating,
@@ -192,8 +192,8 @@ impl Group {
         Self::Subsonic,
         Self::Jellyfin,
         Self::Tidal,
+        Self::YoutubeMusic,
         Self::Spotify,
-        Self::Served,
         Self::Resuming,
         Self::History,
         Self::Repeating,
@@ -273,8 +273,8 @@ impl Group {
             | Self::Subsonic
             | Self::Jellyfin
             | Self::Tidal
+            | Self::YoutubeMusic
             | Self::Spotify
-            | Self::Served
             | Self::Lastfm => Category::Accounts,
             Self::Lookups | Self::AfterScan | Self::Metered | Self::Lyrics | Self::Contact => {
                 Category::Online
@@ -336,12 +336,12 @@ impl Group {
             Self::Organising => "Organising",
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
+            Self::YoutubeMusic => "YouTube Music",
             Self::Subsonic => "A Subsonic server",
             Self::Jellyfin => "A Jellyfin or Emby server",
             Self::ResonateKey => "Resonate server key",
             Self::Tidal => "A TIDAL account",
             Self::Spotify => "A Spotify account",
-            Self::Served => "Browsing a service",
             Self::Resuming => "Resuming",
             Self::History => "Listening history",
             Self::Repeating => "Repeating a track",
@@ -415,12 +415,12 @@ impl Group {
             Self::Organising => ORGANISING_HINT,
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
+            Self::YoutubeMusic => YOUTUBE_MUSIC_HINT,
             Self::Subsonic => SUBSONIC_HINT,
             Self::Jellyfin => JELLYFIN_HINT,
             Self::ResonateKey => RESONATE_KEY_HINT,
             Self::Tidal => TIDAL_HINT,
             Self::Spotify => SPOTIFY_HINT,
-            Self::Served => SERVED_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::History => HISTORY_HINT,
             Self::Repeating => REPEATING_HINT,
@@ -547,6 +547,11 @@ impl Group {
                               managed store deduplicate validate folder location choose"
             }
             Self::Inbox => "provider poll wants missing download drop folder fill obtain supply",
+            Self::YoutubeMusic => {
+                "youtube music ytmusic yt-dlp ytdlp cookies premium google account browser firefox \
+                 zen opus provider download wants missing fill obtain terms check connection \
+                 playlist order"
+            }
             Self::Subsonic => {
                 "navidrome airsonic gonic server provider download wants missing stream fill \
                  obtain account password"
@@ -557,10 +562,6 @@ impl Group {
             Self::ResonateKey => {
                 "resonate server key secret hifi-api hifi token password download wants missing \
                  fill obtain account bearer tecnio gateway"
-            }
-            Self::Served => {
-                "server pane browse play in place stream subsonic navidrome jellyfin emby tidal monochrome \
-                 hifi-api resonate service artists albums search open"
             }
             Self::Spotify => {
                 "spotify account sign in playlists liked songs import move follow keep in step \
@@ -711,6 +712,12 @@ impl Group {
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],
+            Self::YoutubeMusic => &[
+                SettingKey::YoutubeMusic,
+                SettingKey::YoutubeMusicCookies,
+                SettingKey::YtDlp,
+                SettingKey::YoutubeMusicKeepOrder,
+            ],
             Self::MusicExtensions => &[SettingKey::MusicExtensions],
             Self::MinimumLength => &[SettingKey::MinimumLength],
             Self::RoomCorrection => &[
@@ -731,7 +738,6 @@ impl Group {
                 SettingKey::JellyfinPassword,
             ],
             Self::ResonateKey => &[SettingKey::HifiSecret],
-            Self::Served => &[],
             Self::Spotify => &[SettingKey::SpotifyClientId, SettingKey::SpotifyRefreshToken],
             Self::Tidal => &[
                 SettingKey::TidalClientId,
@@ -1097,10 +1103,12 @@ pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked w
                                         MusicBrainz id or its ISRC.";
 
 pub(crate) const JELLYFIN_HINT: &str = "A Jellyfin or Emby server of your own, browsed and played \
-                                        where it is in the server pane.";
+                                        where it is in the Services pane.";
 
-pub(crate) const SERVED_HINT: &str = "Opens the pane that browses and plays what a service of \
-                                       yours holds, in place and with nothing downloaded.";
+pub(crate) const YOUTUBE_MUSIC_HINT: &str = "YouTube Music through the yt-dlp program, on your \
+                                             account's cookies: searched and browsed in the \
+                                             Services pane, and asked for a song marked wanted \
+                                             only once nothing better has it.";
 
 pub(crate) const RESONATE_KEY_HINT: &str = "The key your Resonate server lists. With it the \
                                             tracks marked wanted are also asked of that server, \

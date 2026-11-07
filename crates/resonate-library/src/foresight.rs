@@ -20,10 +20,18 @@ pub const FORESEEN_FOR: Duration = Duration::from_secs(120);
 
 const SEARCHES_FORESEEN_AT_ONCE: usize = WANTS_ASKED_AT_ONCE.get();
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Unheard {
+    pub(crate) refused: u64,
+    pub(crate) late: u64,
+    pub(crate) passed_over: u64,
+}
+
 #[derive(Debug)]
 pub(crate) struct Foreseen {
     pub(crate) heard: Vec<SourceId>,
     pub(crate) offers: Vec<Delivered>,
+    pub(crate) unheard: Unheard,
     at: Instant,
 }
 
@@ -56,7 +64,13 @@ impl Foresight {
         Some(Searching(&self.searching))
     }
 
-    fn keep(&self, recording: Mbid, heard: Vec<SourceId>, offers: Vec<Delivered>) {
+    fn keep(
+        &self,
+        recording: Mbid,
+        heard: Vec<SourceId>,
+        offers: Vec<Delivered>,
+        unheard: Unheard,
+    ) {
         let mut held = self.held.lock();
         held.retain(|_, foreseen| foreseen.is_fresh());
         held.insert(
@@ -64,6 +78,7 @@ impl Foresight {
             Foreseen {
                 heard,
                 offers,
+                unheard,
                 at: Instant::now(),
             },
         );
@@ -102,7 +117,7 @@ impl Library {
             return false;
         };
 
-        let answer = providers.first(
+        let answer = providers.without_last_resorts().first(
             &found.identity(),
             &Asking {
                 within: ANSWERS_WITHIN,
@@ -112,6 +127,7 @@ impl Library {
                 passing: &[],
                 apart: TURNED_TO_APART,
                 grace: WAITED_ON_AFTER_AN_OFFER,
+                earlier_rounds_said_no: true,
             },
             &mut Away::default(),
         );
@@ -119,7 +135,12 @@ impl Library {
             return false;
         };
         let offers = iter::once(delivered).chain(answer.held_back).collect();
-        foresight.keep(found.recording.clone(), answer.heard, offers);
+        let unheard = Unheard {
+            refused: answer.refused,
+            late: answer.late,
+            passed_over: answer.passed_over,
+        };
+        foresight.keep(found.recording.clone(), answer.heard, offers, unheard);
         true
     }
 

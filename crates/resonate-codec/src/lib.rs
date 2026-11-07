@@ -16,6 +16,7 @@ mod fuzzing;
 mod insert;
 mod journal;
 mod matroska;
+mod matroska_tags;
 mod mpa;
 mod netcdf;
 mod ogg;

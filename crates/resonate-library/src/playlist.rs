@@ -22,7 +22,7 @@ use crate::{
     Sources, StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, Narrowed, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
-    sourced, store,
+    sourced, store, synced,
     undo::{self, Change, Edit, Reach},
     volumes,
 };
@@ -500,6 +500,37 @@ pub(crate) fn a_free_name_for(inner: &Inner, wanted: &str) -> Result<String> {
     inner
         .read(|connection| a_free_name(connection, wanted.as_str()))
         .map(|name| name.as_str().to_owned())
+}
+
+fn held_as(connection: &Connection, wanted: &PlaylistName) -> Result<Option<PlaylistId>> {
+    connection
+        .query_row(
+            "SELECT id FROM playlists WHERE folded = ?1 ORDER BY id LIMIT 1",
+            params![folded(wanted.as_str())],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+        .map(|held| PlaylistId::new(held as u64).map_err(Error::from))
+        .transpose()
+}
+
+pub(crate) fn is_followed(connection: &Connection, name: &str) -> Result<bool> {
+    match held_as(connection, &wanted_name(name)?)? {
+        Some(held) => synced::is_read_only(connection, held),
+        None => Ok(false),
+    }
+}
+
+pub(crate) fn name_a_list_may_hold(connection: &Connection, name: &str) -> Result<PlaylistName> {
+    let wanted = wanted_name(name)?;
+    let Some(held) = held_as(connection, &wanted)? else {
+        return Ok(wanted);
+    };
+    if asked_in(connection, held)?.is_some() || synced::is_read_only(connection, held)? {
+        return a_free_name(connection, wanted.as_str());
+    }
+    Ok(wanted)
 }
 
 fn a_free_name(connection: &Connection, name: &str) -> Result<PlaylistName> {
@@ -1750,8 +1781,8 @@ fn refuse_a_kept_order(transaction: &Transaction<'_>, id: PlaylistId) -> Result<
     }
 }
 
-pub(crate) fn kept_in(transaction: &Transaction<'_>, id: PlaylistId) -> Result<Option<Kept>> {
-    let held = transaction
+pub(crate) fn kept_in(connection: &Connection, id: PlaylistId) -> Result<Option<Kept>> {
+    let held = connection
         .query_row(
             "SELECT kept_order, kept_reading FROM playlists WHERE id = ?1",
             params![id.get() as i64],

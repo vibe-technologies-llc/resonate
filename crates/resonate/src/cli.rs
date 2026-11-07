@@ -255,6 +255,24 @@ pub enum PartyWanted {
     },
 }
 
+#[derive(Debug, Subcommand)]
+pub enum YtmusicArgs {
+    #[command(
+        about = "Keep a song or a playlist from a YouTube Music link: queue it and fetch what is \
+                 queued into the music folder, one song at a time. A song already held is not \
+                 fetched again. Needs youtube-music on, and yt-dlp"
+    )]
+    Keep {
+        #[arg(value_name = "URL")]
+        url: String,
+    },
+    #[command(
+        about = "Say whether the account reaches Premium formats, by asking yt-dlp about one \
+                 album song"
+    )]
+    Check,
+}
+
 #[derive(Debug, Args)]
 pub struct SharedArgs {
     #[arg(
@@ -1265,7 +1283,7 @@ pub struct ServedArgs {
     #[arg(
         long,
         value_name = "NAME",
-        help = "The service to browse: subsonic, jellyfin, tidal, resonate, hifi-api or monochrome; \
+        help = "The service to browse: subsonic, jellyfin, tidal, resonate, hifi-api, monochrome or ytmusic; \
                 without it, the first the settings set"
     )]
     pub service: Option<String>,
@@ -1426,6 +1444,12 @@ pub enum Sub {
                  http://127.0.0.1:43879/spotify as a redirect URI"
     )]
     Spotify(SpotifyArgs),
+
+    #[command(
+        about = "Keep songs from YouTube Music, or check the account yt-dlp reaches it through",
+        subcommand
+    )]
+    Ytmusic(YtmusicArgs),
 
     #[command(
         about = "Sign in to Last.fm so what is heard is scrobbled there: read the account's \

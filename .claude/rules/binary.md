@@ -51,6 +51,19 @@ paths:
   `SpotifySignInLapsed`. `--forget` clears the token and `Library::let_go_of_the_profile`: each
   playlist kept from the account keeps its rows and forgets its link, or the next refresh of a public
   one would mirror what the public page holds (`online.md`'s *A Spotify account*).
+- **`ytmusic keep URL` and `ytmusic check` are the terminal's YouTube Music** (`ytmusic.rs`, online
+  alone; a build without it is `NoServed`). `keep_of` reads a song link (`watch?v=`, a `youtu.be`
+  address whose path reads as a video; a `watch` link naming a list too is the song) or a `playlist?list=` on `music.youtube.com` or
+  `youtube.com`, anything else `NotAYoutubeMusicLink` before the catalog opens; `online = false` is
+  `OnlineOff`, `youtube-music` off `YoutubeMusicOff`, asking nothing, as no music folder is
+  `NoDeliveryFolder` before any `yt-dlp` runs. A song is named by one `yt-dlp -J`
+  (`YtMusic::song`: `track`, `artist`, `album`, falling to `title` and `channel`; `NoSuchVideo` where
+  gone), a list by its flat listing's `title` (`PlaysInPlace::mix`), queued (`providers.md`'s *Keeping
+  a song from a service*) and walked at once, printing landed, gone and unkept. Reading names leaves on
+  the first interrupt (`signals::leave_when_told`); the walk runs under `cancel_when_told`, the first
+  interrupt `KeepCancelled` through `main`, which calls `stop_the_tools`. A window or poll holding the
+  lock is `KeepWaitsItsTurn`, what was queued staying queued; a service stopping the pass is
+  `KeepStopped`. `check` prints `YtMusic::check`.
 - **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
   <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
   on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows
@@ -112,7 +125,7 @@ that name. Every file argument goes through it.
   (`01:intro.flac` is a file here). Scheme and `localhost` are case-insensitive.
 - **A URI of a service played in place is the service's only where the settings set it**
   (`served.rs`, `providers.md`: `subsonic:`, `jellyfin:`, `tidal:`, `hifi-api:`, `resonate:`, `monochrome:`, each
-  a song, album or artist; Monochrome's a song alone): `queue_items_served` reads arguments
+  a song, album or artist; Monochrome's a song alone; `ytmusic:` is browsed and never queued): `queue_items_served` reads arguments
   through `Served::sources`, and an album or artist URI is queued as the songs the service lists
   for it. `resonate served [--service NAME]` browses a service (`cli::ServedArgs`: the name is a
   scheme, case folded; without it the first the settings set, in the registry's order): bare, its
@@ -373,6 +386,12 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a
   window holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the
   latter).
+- `youtube-music` (off), `youtube-music-cookies`, `yt-dlp`, `youtube-music-keep-order` (on): nothing is
+  registered while the first is off (`providers.md`'s *A YouTube Music account*). The cookies are a
+  browser as `yt-dlp` spells it (`firefox`, `firefox:/path/to/profile`, how a fork such as Zen is
+  named), else the path of a Netscape cookies file, which holds a path separator, so a bare word
+  is a browser for `yt-dlp` to refuse; `Cookies::read` decides, and `Config`'s `Debug` withholds the
+  value. `yt-dlp` is a path, blank meaning `PATH`. The last feeds `PlaylistToKeep::ordered`.
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
   on. `hosted-services` (default true) lets blank/absent fall back to the hosted services
   (`tracks.monochrome.st`); with it off nothing hosted is registered (`providers.md`).

@@ -242,6 +242,21 @@ String, secret. A contact address sent with requests to services that ask for on
 Boolean. Let a blank or absent hifi-api and monochrome fall back to the hosted services. Default:
 true.
 .TP
+.B youtube-music
+Boolean. Ask YouTube Music, through yt-dlp, for what nothing else has. Nothing is asked while it is
+off. Default: false.
+.TP
+.B youtube-music-cookies
+String, secret. The account's cookies: a browser as yt-dlp names one (firefox, or
+firefox:/path/to/profile) or the path of a Netscape cookies file. Default: none, the free tier.
+.TP
+.B yt-dlp
+String. Where the yt-dlp program is. Default: none, the path is searched.
+.TP
+.B youtube-music-keep-order
+Boolean. Keep a kept playlist in YouTube's order; off, its songs stand in the order they land.
+Default: true.
+.TP
 .B acoustid-key
 String, secret. An AcoustID application key. Default: none.
 .TP

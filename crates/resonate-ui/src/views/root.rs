@@ -79,9 +79,10 @@ use crate::{
         search::{self, SearchShows, TopEntry, TopRun},
         served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
-            Account, Category, FILTER_PLACEHOLDER, Fitting, HeldBand, LastfmAccount, LastfmSigning,
-            Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
-            SYNC_SERVER_PLACEHOLDER, Service, SigningIn, SpotifyState, TidalAccount, spotify,
+            Account, Category, CheckingYoutubeMusic, FILTER_PLACEHOLDER, Fitting, HeldBand,
+            LastfmAccount, LastfmSigning, Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER,
+            SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER, Service, SigningIn, SpotifyState,
+            TidalAccount, YoutubeMusicField, spotify,
         },
         sharing,
         sheets::{self, MAGNIFIER_PANEL},
@@ -200,6 +201,10 @@ const CLEAR_DOWNLOADS_HINT: &str = "Take every finished song off the list";
 const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
 
 const CANCEL_DOWNLOAD_HINT: &str = "Stop downloading this song";
+
+const KEEPING_SONGS: &str = "Keeping songs";
+
+const STOP_KEEPING_HINT: &str = "Stop keeping songs; the rest stays queued for the next time";
 
 const PLAY_DOWNLOAD_HINT: &str = "Play this song";
 
@@ -402,7 +407,7 @@ impl Section {
 }
 
 impl Pane {
-    pub const BROWSE: [Self; 13] = [
+    pub const BROWSE: [Self; 14] = [
         Self::Albums,
         Self::Artists,
         Self::Tracks,
@@ -412,6 +417,7 @@ impl Pane {
         Self::Suggestions,
         Self::Party,
         Self::Missing,
+        Self::Server,
         Self::Lyrics,
         Self::Inspector,
         Self::Visualiser,
@@ -439,6 +445,10 @@ impl Pane {
         }
     }
 
+    pub(crate) const fn is_there(self, tabs: Tabs, serving: bool) -> bool {
+        self.is_shown(tabs) && (serving || !matches!(self, Self::Server))
+    }
+
     pub(crate) const fn follows_the_clock(self) -> bool {
         matches!(self, Self::Inspector | Self::Analysis)
     }
@@ -459,7 +469,7 @@ impl Pane {
             Self::Favourites => "Favourites",
             Self::Suggestions => "Suggestions",
             Self::Missing => "Missing",
-            Self::Server => "Server",
+            Self::Server => "Services",
             Self::Lyrics => "Lyrics",
             Self::Inspector => "Inspector",
             Self::Visualiser => "Visualiser",
@@ -526,9 +536,7 @@ impl Pane {
                 "What the releases are short of, and what the artists have put out \
                               that the library does not hold"
             }
-            Self::Server => {
-                "What your Subsonic, Jellyfin or other servers hold, to browse and play where it is"
-            }
+            Self::Server => "What the services you have set up hold, to browse and to play or keep",
             Self::Lyrics => "The words to the playing track, where a source has them",
             Self::Inspector => "What the playing file is, and what reaches the sink",
             Self::Visualiser => "The spectrum and the waveform of what is being heard",
@@ -654,6 +662,8 @@ pub struct RootView {
     pub(crate) lastfm: [Entity<Field>; 4],
     pub(crate) spotify_client: Entity<Field>,
     pub(crate) spotify_state: SpotifyState,
+    pub(crate) youtube_music: [Entity<Field>; 2],
+    pub(crate) youtube_music_check: CheckingYoutubeMusic,
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) sync_server: Entity<Field>,
@@ -1052,6 +1062,7 @@ impl RootView {
         let tidal = TidalAccount::fields(&online, window, cx);
         let lastfm = LastfmAccount::fields(&online, window, cx);
         let spotify_client = spotify::field(&online, window, cx);
+        let youtube_music = YoutubeMusicField::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
             let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
@@ -1321,6 +1332,8 @@ impl RootView {
             lastfm,
             spotify_client,
             spotify_state: SpotifyState::default(),
+            youtube_music,
+            youtube_music_check: CheckingYoutubeMusic::default(),
             discord_app,
             discord_icon,
             sync_server,
@@ -2414,9 +2427,8 @@ impl RootView {
     }
 
     pub(crate) fn set_pane(&mut self, pane: Pane, cx: &mut Context<Self>) {
-        let pane = if pane.is_shown(cx.global::<ResonateApp>().tabs)
-            && (pane != Pane::Server || self.server.read(cx).is_open())
-        {
+        let serving = self.server.read(cx).is_open();
+        let pane = if pane.is_there(cx.global::<ResonateApp>().tabs, serving) {
             pane
         } else {
             Pane::default()
@@ -2435,6 +2447,8 @@ impl RootView {
             }
         }
         self.pane = pane;
+        self.server
+            .update(cx, |server, cx| server.shown(pane == Pane::Server, cx));
         if opens_the_queue {
             self.following = Following::default();
             let player = self.player.clone();
@@ -3674,7 +3688,8 @@ impl RootView {
 
     fn step_pane(&mut self, step: Step, cx: &mut Context<Self>) {
         let tabs = cx.global::<ResonateApp>().tabs;
-        let stepped = stepped_pane(self.in_front(cx), step, tabs);
+        let serving = self.server.read(cx).is_open();
+        let stepped = stepped_pane(self.in_front(cx), step, tabs, serving);
         self.choose_pane(stepped, cx);
     }
 
@@ -4442,6 +4457,7 @@ impl RootView {
         .chain(&self.jellyfin)
         .chain(&self.tidal)
         .chain(&self.lastfm)
+        .chain(&self.youtube_music)
     }
 
     fn editing(&self, window: &Window, cx: &App) -> bool {
@@ -5021,8 +5037,9 @@ impl RootView {
         let offered = library.suggestions().len();
         let plays = library.statistics().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
+        let serving = self.server.read(cx).is_open();
         let enriching = library.is_enriching();
-        let downloads = !library.downloads().is_empty();
+        let downloads = !library.downloads().is_empty() || library.keeps_left().is_some();
         let mut browse = div().flex().flex_col().gap_4();
         for section in Section::ALL {
             let mut listed = div()
@@ -5032,7 +5049,7 @@ impl RootView {
                 .child(kit::eyebrow(section.label()).px_3().pb_1p5());
             for pane in Pane::BROWSE
                 .into_iter()
-                .filter(|pane| pane.section() == section && pane.is_shown(tabs))
+                .filter(|pane| pane.section() == section && pane.is_there(tabs, serving))
             {
                 let count = match pane {
                     Pane::Albums => Some(albums),
@@ -5191,13 +5208,17 @@ impl RootView {
             .iter()
             .map(|download| library.fetching(download))
             .collect();
-        let underway = fetching.iter().copied().any(Fetching::is_underway);
+        let keeping = library.keeps_left();
+        let underway = keeping.is_some() || fetching.iter().copied().any(Fetching::is_underway);
         let arriving = library.downloads().iter().any(|download| {
             library
                 .fetched(download)
                 .is_some_and(|fetched| fetched.is_arriving())
         });
-        let said = downloads::summed_up(&fetching, arriving);
+        let said = keeping.map_or_else(
+            || downloads::summed_up(&fetching, arriving),
+            downloads::keeping_said,
+        );
         let open = self.downloads_open;
         let hint = if open {
             HIDE_DOWNLOADS_HINT
@@ -5268,7 +5289,8 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Option<AnimationElement<Stateful<Div>>> {
         let library = self.library.read(cx);
-        if !self.downloads_open || library.downloads().is_empty() {
+        let keeping = library.keeps_left();
+        if !self.downloads_open || (library.downloads().is_empty() && keeping.is_none()) {
             return None;
         }
         let rows: Vec<(Download, Fetching)> = library
@@ -5284,7 +5306,8 @@ impl RootView {
             .flex_col()
             .gap_0p5()
             .max_h(px(theme::downloads_height()))
-            .overflow_y_scroll();
+            .overflow_y_scroll()
+            .when_some(keeping, |list, left| list.child(self.keep_row(left, cx)));
         for (at, (download, fetching)) in rows.into_iter().enumerate() {
             list = list.child(self.download_row(at, &download, fetching, cx));
         }
@@ -5371,6 +5394,48 @@ impl RootView {
     fn close_the_downloads(&mut self, cx: &mut Context<Self>) {
         self.downloads_open = false;
         cx.notify();
+    }
+
+    fn keep_row(&self, left: u64, cx: &mut Context<Self>) -> Div {
+        let said = downloads::keeping_said(left);
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .py_1()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .text_size(px(theme::text_sm()))
+                            .text_color(rgb(theme::text()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(KEEPING_SONGS),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::accent()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(said),
+                    ),
+            )
+            .child(self.in_the_pane_ring(
+                kit::icon_button("stop-keeping", Icon::Stop, STOP_KEEPING_HINT),
+                |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.stop_keeping(cx));
+                },
+                cx,
+            ))
     }
 
     fn download_row(
@@ -6418,10 +6483,10 @@ fn landing(pressed: Pane, in_front: Pane, selection: Selection, opened: bool) ->
     }
 }
 
-fn stepped_pane(from: Pane, step: Step, tabs: Tabs) -> Pane {
+fn stepped_pane(from: Pane, step: Step, tabs: Tabs, serving: bool) -> Pane {
     let listed: Vec<Pane> = Pane::BROWSE
         .into_iter()
-        .filter(|pane| pane.is_shown(tabs))
+        .filter(|pane| pane.is_there(tabs, serving))
         .collect();
     let at = listed
         .iter()
@@ -6495,6 +6560,9 @@ mod tests {
         in_front_of, landing, stepped_pane, unsaved,
     };
     use crate::{Selection, Tabs, models::Notice};
+
+    const A_SERVICE: bool = true;
+    const NO_SERVICE: bool = false;
 
     const EVERY_TAB: Tabs = Tabs {
         suggestions: true,
@@ -6721,21 +6789,24 @@ mod tests {
         let listed = Pane::BROWSE;
         let (first, last) = (listed[0], listed[listed.len() - 1]);
 
-        assert_eq!(stepped_pane(first, Step::Below, EVERY_TAB), listed[1]);
         assert_eq!(
-            stepped_pane(last, Step::Below, EVERY_TAB),
+            stepped_pane(first, Step::Below, EVERY_TAB, A_SERVICE),
+            listed[1]
+        );
+        assert_eq!(
+            stepped_pane(last, Step::Below, EVERY_TAB, A_SERVICE),
             first,
             "the end did not wrap"
         );
         assert_eq!(
-            stepped_pane(first, Step::Above, EVERY_TAB),
+            stepped_pane(first, Step::Above, EVERY_TAB, A_SERVICE),
             last,
             "the start did not wrap"
         );
 
-        let walked = listed
-            .iter()
-            .fold(first, |pane, _| stepped_pane(pane, Step::Below, EVERY_TAB));
+        let walked = listed.iter().fold(first, |pane, _| {
+            stepped_pane(pane, Step::Below, EVERY_TAB, A_SERVICE)
+        });
         assert_eq!(
             walked, first,
             "walking the whole sidebar did not come back to where it started"
@@ -6745,26 +6816,48 @@ mod tests {
     #[test]
     fn a_pane_the_sidebar_does_not_list_steps_onto_the_first_one_it_does() {
         assert_eq!(
-            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB, A_SERVICE),
             Pane::BROWSE[1]
         );
         assert_eq!(
-            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB, A_SERVICE),
             Pane::BROWSE[1]
         );
     }
 
     #[test]
-    fn the_pane_keys_never_land_on_the_server() {
-        assert!(!Pane::BROWSE.contains(&Pane::Server));
+    fn the_pane_keys_step_onto_the_services_row_last_in_the_collection() {
         assert_eq!(
-            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB, A_SERVICE),
+            Pane::Server
+        );
+        assert_eq!(
+            stepped_pane(Pane::Server, Step::Below, EVERY_TAB, A_SERVICE),
             Pane::Lyrics
         );
         assert_eq!(
-            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB),
+            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB, A_SERVICE),
+            Pane::Server
+        );
+    }
+
+    #[test]
+    fn the_pane_keys_pass_over_the_services_row_where_no_service_is_set() {
+        assert_eq!(
+            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB, NO_SERVICE),
+            Pane::Lyrics
+        );
+        assert_eq!(
+            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB, NO_SERVICE),
             Pane::Missing
         );
+    }
+
+    #[test]
+    fn the_services_pane_is_named_for_the_listener_and_stored_under_the_key_it_always_was() {
+        assert_eq!(Pane::Server.label(), "Services");
+        assert_eq!(Pane::Server.as_str(), "server");
+        assert_eq!(Pane::parse("server"), Some(Pane::Server));
     }
 
     #[test]
@@ -6776,13 +6869,19 @@ mod tests {
         };
 
         assert_eq!(
-            stepped_pane(Pane::Playlists, Step::Below, hidden),
+            stepped_pane(Pane::Playlists, Step::Below, hidden, NO_SERVICE),
             Pane::Party
         );
-        assert_eq!(stepped_pane(Pane::Party, Step::Below, hidden), Pane::Lyrics);
-        assert_eq!(stepped_pane(Pane::Lyrics, Step::Above, hidden), Pane::Party);
         assert_eq!(
-            stepped_pane(Pane::Playlists, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Party, Step::Below, hidden, NO_SERVICE),
+            Pane::Lyrics
+        );
+        assert_eq!(
+            stepped_pane(Pane::Lyrics, Step::Above, hidden, NO_SERVICE),
+            Pane::Party
+        );
+        assert_eq!(
+            stepped_pane(Pane::Playlists, Step::Below, EVERY_TAB, NO_SERVICE),
             Pane::Suggestions
         );
     }

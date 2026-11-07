@@ -76,6 +76,14 @@ pub trait Serves: Send + Sync {
         false
     }
 
+    fn plays_songs(&self) -> bool {
+        true
+    }
+
+    fn keeps_songs(&self) -> bool {
+        false
+    }
+
     fn favour(&self, _song: &MediaLocation, _favoured: bool) -> Result<()> {
         Err(not_offered(self.scheme(), ProviderOp::Favourite))
     }

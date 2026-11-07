@@ -90,8 +90,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
-- [M · blocked: lofty] `.caf`, `.mka` and the DSD containers have no writer (lofty 0.25.4 has no
-  such file type); `.oga` alone could be mapped to Vorbis by hand
+- [M · blocked: lofty] `.caf` and the DSD containers have no writer (lofty 0.25.4 has no such file
+  type); `.oga` alone could be mapped to Vorbis by hand; `.mka` is written by hand (`library.md`) and
+  has no way to take a picture back out
 
 ## Providers and network
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and

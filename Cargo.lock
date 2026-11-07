@@ -6137,6 +6137,7 @@ dependencies = [
  "resonate-upnp",
  "resonate-vault",
  "resonate-win32",
+ "resonate-ytmusic",
  "rustix",
  "signal-hook 0.4.6",
  "thiserror 2.0.21",
@@ -6711,6 +6712,21 @@ dependencies = [
  "thiserror 2.0.21",
  "windows 0.62.2",
  "windows-core 0.62.2",
+]
+
+[[package]]
+name = "resonate-ytmusic"
+version = "0.6.0"
+dependencies = [
+ "parking_lot 0.13.0",
+ "resonate-core",
+ "resonate-fetch",
+ "resonate-providers",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
 ]
 
 [[package]]

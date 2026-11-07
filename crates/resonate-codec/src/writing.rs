@@ -37,6 +37,7 @@ use crate::{
         Torn, Unsettled, WholeCopy, mend_what_a_dead_writer_left, mend_what_was_left_in,
         staged_elsewhere_name,
     },
+    matroska_tags::{self, Attached, Rewrite},
     ogg,
     overlay::{Landing, MOST_BYTES_WRITTEN_IN_PLACE, Overlay},
     padded::{Head, Rebuilt, Room},
@@ -91,6 +92,8 @@ pub enum TagField {
 }
 
 const COMPILED: &str = "1";
+const MATROSKA_AUDIO_EXTENSION: &str = "mka";
+const COVER_FILE_STEM: &str = "cover";
 const MUSICIAN_CREDITS: &str = "TMCL";
 const LISTED_APART: &str = "; ";
 const APE_BEATS: &str = "BPM";
@@ -409,6 +412,10 @@ pub trait TagSink: TagSource {
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()>;
     fn rated(&self, location: &MediaLocation) -> Result<Rated>;
 
+    fn holds_pictures(&self, _: &MediaLocation) -> bool {
+        true
+    }
+
     fn standing(&self, location: &MediaLocation, picturing: Picturing) -> Result<Standing> {
         Ok(Standing {
             tagged: self.read(location, picturing)?,
@@ -462,10 +469,9 @@ impl TagSource for FileTags {
 
 impl TagSink for FileTags {
     fn writes(&self, location: &MediaLocation) -> bool {
-        location
-            .as_path()
-            .and_then(FileType::from_path)
-            .is_some_and(read_back_here)
+        location.as_path().is_some_and(|path| {
+            names_a_matroska(path) || FileType::from_path(path).is_some_and(read_back_here)
+        })
     }
 
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()> {
@@ -483,6 +489,9 @@ impl TagSink for FileTags {
             location: location.clone(),
             source,
         })?;
+        if names_a_matroska(named) {
+            return written_into_a_matroska(path, location, writing, taken);
+        }
         let rechunked = match tag_in_front_of_a_riff(path) {
             Ok(Some(riff_at)) => {
                 let staged = Staged::beside(path).map_err(|source| Error::Io {
@@ -517,6 +526,10 @@ impl TagSink for FileTags {
 
     fn rated(&self, location: &MediaLocation) -> Result<Rated> {
         self.rating_of(location)
+    }
+
+    fn holds_pictures(&self, location: &MediaLocation) -> bool {
+        !location.as_path().is_some_and(names_a_matroska)
     }
 
     fn standing(&self, location: &MediaLocation, picturing: Picturing) -> Result<Standing> {
@@ -606,6 +619,75 @@ fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
         .sync_all()
 }
 
+fn names_a_matroska(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(MATROSKA_AUDIO_EXTENSION))
+}
+
+fn written_into_a_matroska(
+    path: &Path,
+    location: &MediaLocation,
+    writing: Writing<'_>,
+    taken: Taken,
+) -> Result<()> {
+    let unwritable = || Error::Unwritable {
+        location: location.clone(),
+    };
+    if writing.unpictured {
+        return Err(unwritable());
+    }
+
+    let edits: Vec<(TagField, String)> = writing
+        .edits
+        .iter()
+        .map(|edit| (edit.field, edit.value.clone()))
+        .collect();
+    let file = File::open(path).map_err(|source| Error::Io {
+        location: location.clone(),
+        source,
+    })?;
+    let rewrite = matroska_tags::rewritten(&mut BufReader::new(file), &edits, writing.taken)
+        .map_err(|refused| {
+            tracing::debug!(?refused, path = %path.display(), "a Matroska file its tags could not be placed in is left as it stood");
+            unwritable()
+        })?;
+    if !rewrite.is_empty() {
+        landed(path, location, &Rewriting { rewrite, taken })?;
+    }
+
+    match writing.picture {
+        Some(picture) => attached_to_a_matroska(path, location, picture),
+        None => Ok(()),
+    }
+}
+
+fn attached_to_a_matroska(path: &Path, location: &MediaLocation, picture: &CoverArt) -> Result<()> {
+    let name = format!("{COVER_FILE_STEM}.{}", picture.format.extension());
+    let attached = Attached {
+        name: &name,
+        media_type: picture.format.media_type(),
+        bytes: &picture.bytes,
+    };
+    let taken = Taken::of(path).map_err(|source| Error::Io {
+        location: location.clone(),
+        source,
+    })?;
+    let file = File::open(path).map_err(|source| Error::Io {
+        location: location.clone(),
+        source,
+    })?;
+    let rewrite = matroska_tags::attached(&mut BufReader::new(file), &attached).map_err(
+        |refused| {
+            tracing::debug!(?refused, path = %path.display(), "a Matroska file a picture could not be attached to is left as it stood");
+            Error::Unwritable {
+                location: location.clone(),
+            }
+        },
+    )?;
+
+    landed(path, location, &Rewriting { rewrite, taken })
+}
+
 impl FileTags {
     fn written(
         &self,
@@ -686,6 +768,9 @@ impl FileTags {
 }
 
 fn rating_in(mut file: File, location: &MediaLocation) -> Result<Rated> {
+    if location.as_path().is_some_and(names_a_matroska) {
+        return Ok(Rated::Unrateable);
+    }
     let unread = |source| Error::TagsUnread {
         location: location.clone(),
         source,
@@ -912,6 +997,13 @@ fn rate(tag: &mut Tag, popularity: Popularity) {
 
 const MOVED_AT_ONCE_BYTES: usize = 1 << 20;
 
+trait Lands {
+    fn taken(&self) -> Taken;
+    fn staged_into(&self, file: &mut File) -> std::result::Result<(), FileEncodingError>;
+    fn outgrown_head(&self, path: &Path) -> Option<(Head, Rebuilt)>;
+    fn in_place(&self, path: &Path, location: &MediaLocation) -> Result<bool>;
+}
+
 struct Saving<'a> {
     kind: FileType,
     tag: &'a Tag,
@@ -920,6 +1012,73 @@ struct Saving<'a> {
     others: &'a [Tag],
     taken: Taken,
     options: WriteOptions,
+}
+
+impl Lands for Saving<'_> {
+    fn taken(&self) -> Taken {
+        self.taken
+    }
+
+    fn staged_into(&self, file: &mut File) -> std::result::Result<(), FileEncodingError> {
+        Saving::staged_into(self, file)
+    }
+
+    fn outgrown_head(&self, path: &Path) -> Option<(Head, Rebuilt)> {
+        outgrown_head(path, self)
+    }
+
+    fn in_place(&self, path: &Path, location: &MediaLocation) -> Result<bool> {
+        landed_in_place(path, location, self, &Fallocate)
+    }
+}
+
+struct Rewriting {
+    rewrite: Rewrite,
+    taken: Taken,
+}
+
+impl Lands for Rewriting {
+    fn taken(&self) -> Taken {
+        self.taken
+    }
+
+    fn staged_into(&self, file: &mut File) -> std::result::Result<(), FileEncodingError> {
+        self.rewrite.laid_on(file).map_err(FileEncodingError::from)
+    }
+
+    fn outgrown_head(&self, _: &Path) -> Option<(Head, Rebuilt)> {
+        None
+    }
+
+    fn in_place(&self, path: &Path, location: &MediaLocation) -> Result<bool> {
+        let Ok(file) = OpenOptions::new().read(true).write(true).open(path) else {
+            return Ok(false);
+        };
+        let unread = |source| Error::Io {
+            location: location.clone(),
+            source,
+        };
+        let mut overlay = Overlay::over(&file).map_err(unread)?;
+        match self.rewrite.laid_on(&mut overlay) {
+            Ok(()) => {}
+            Err(_) if overlay.outgrown() => return Ok(false),
+            Err(source) => {
+                return Err(Error::TagsUnwritten {
+                    location: location.clone(),
+                    source: source.into(),
+                });
+            }
+        }
+        if !self.taken.still_stands(path) {
+            return Err(Error::ChangedWhileWritten {
+                location: location.clone(),
+            });
+        }
+        Ok(match overlay.land(path).map_err(unread)? {
+            Landing::InPlace | Landing::Unchanged => true,
+            Landing::TooWide => false,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1118,7 +1277,7 @@ fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
     file.set_len(length - (from - to))
 }
 
-fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
+fn landed<L: Lands>(path: &Path, location: &MediaLocation, saving: &L) -> Result<()> {
     let unread = |source| Error::Io {
         location: location.clone(),
         source,
@@ -1132,7 +1291,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {}
         Err(source) => return Err(unread(source)),
     }
-    if landed_in_place(path, location, saving, &Fallocate)? {
+    if saving.in_place(path, location)? {
         return Ok(());
     }
 
@@ -1145,7 +1304,11 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
     }
 }
 
-fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
+fn landed_from_elsewhere<L: Lands>(
+    path: &Path,
+    location: &MediaLocation,
+    saving: &L,
+) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
     for folder in crate::spool::spooled_under() {
         match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged, saving))
@@ -1179,7 +1342,7 @@ fn cloned_beside(_: &Path) -> io::Result<Option<Staged>> {
     Ok(None)
 }
 
-fn copied_beside(path: &Path, folder: &Path, saving: &Saving<'_>) -> io::Result<Staged> {
+fn copied_beside<L: Lands>(path: &Path, folder: &Path, saving: &L) -> io::Result<Staged> {
     copied_into(path, Staged::within(folder, path)?, saving)
 }
 
@@ -1212,8 +1375,8 @@ fn copied_with_head(
     io::copy(from, into).map(drop)
 }
 
-fn copied_into(path: &Path, staged: Staged, saving: &Saving<'_>) -> io::Result<Staged> {
-    let outgrown = outgrown_head(path, saving);
+fn copied_into<L: Lands>(path: &Path, staged: Staged, saving: &L) -> io::Result<Staged> {
+    let outgrown = saving.outgrown_head(path);
     let copied = File::open(path).and_then(|mut from| {
         let permissions = from.metadata()?.permissions();
         let mut into = staged.held.file();
@@ -1300,20 +1463,20 @@ fn landed_in_place(
     })
 }
 
-fn landed_through(
+fn landed_through<L: Lands>(
     staged: &Staged,
     path: &Path,
     location: &MediaLocation,
-    saving: &Saving<'_>,
+    saving: &L,
 ) -> Result<()> {
     landed_by(staged, path, location, saving, settled_over)
 }
 
-fn landed_by(
+fn landed_by<L: Lands>(
     staged: &Staged,
     path: &Path,
     location: &MediaLocation,
-    saving: &Saving<'_>,
+    saving: &L,
     settle: fn(&Staged, &Path) -> std::result::Result<(), Unsettled>,
 ) -> Result<()> {
     let written = staged
@@ -1331,7 +1494,7 @@ fn landed_by(
                 })
         })
         .and_then(|()| {
-            if saving.taken.still_stands(path) {
+            if saving.taken().still_stands(path) {
                 return Ok(());
             }
             Err(Error::ChangedWhileWritten {

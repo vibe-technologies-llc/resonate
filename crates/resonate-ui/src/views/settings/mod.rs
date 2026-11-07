@@ -16,6 +16,7 @@ pub(crate) mod spotify;
 mod subsonic;
 pub(crate) mod sync;
 mod tidal;
+mod youtube_music;
 
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
 
@@ -40,6 +41,7 @@ pub(crate) use crate::views::settings::{
         SYNC_SERVER_PLACEHOLDER,
     },
     tidal::{SigningIn, TidalAccount},
+    youtube_music::{CheckingYoutubeMusic, YoutubeMusicField},
 };
 use crate::{
     AppIcon, Followed, Measurers, ResonateApp, Setting, Synchronised,
@@ -455,12 +457,12 @@ impl RootView {
             Group::Organising => self.organising_group(cx),
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
+            Group::YoutubeMusic => self.youtube_music_group(cx),
             Group::Subsonic => self.account_group(Service::Subsonic, cx),
             Group::Jellyfin => self.account_group(Service::Jellyfin, cx),
             Group::ResonateKey => self.resonate_key_group(cx),
             Group::Tidal => self.tidal_group(cx),
             Group::Spotify => self.spotify_group(cx),
-            Group::Served => self.served_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
             Group::Repeating => self.repeating_group(cx),
@@ -647,6 +649,7 @@ impl RootView {
             Group::ResonateKey => self.forget_the_resonate_key(cx),
             Group::Tidal => self.forget_the_tidal_account(cx),
             Group::Spotify => self.forget_the_spotify_account(cx),
+            Group::YoutubeMusic => self.forget_youtube_music(cx),
             Group::RoomCorrection => {
                 self.set_the_speaker_angle(SpeakerAngle::STANDARD, cx);
                 self.set_the_speaker_elevation(SpeakerElevation::LEVEL, cx);
@@ -762,6 +765,15 @@ impl RootView {
                 .spotify_refresh_token
                 .trim()
                 .is_empty();
+        let youtube_music_given = {
+            let online = &cx.global::<ResonateApp>().online;
+            online.youtube_music
+                || !online.youtube_music_keep_order
+                || self
+                    .youtube_music
+                    .iter()
+                    .any(|field| !field.read(cx).text().trim().is_empty())
+        };
 
         Standing {
             output: self.player.read(cx).output_settings().clone(),
@@ -811,6 +823,7 @@ impl RootView {
             tidal_given,
             spotify_given,
             resonate_key_given,
+            youtube_music_given,
             convolving,
         }
     }

@@ -161,6 +161,7 @@ jobs:
           refuse resonate-subsonic gpui
           refuse resonate-tidal gpui
           refuse resonate-monochrome gpui
+          refuse resonate-ytmusic gpui
           only resonate-providers resonate-core
           only resonate-fetch resonate-core resonate-providers
           only resonate-inbox resonate-core resonate-providers
@@ -168,6 +169,7 @@ jobs:
           only resonate-subsonic resonate-core resonate-providers resonate-fetch
           only resonate-tidal resonate-core resonate-providers resonate-fetch
           only resonate-monochrome resonate-core resonate-providers resonate-fetch
+          only resonate-ytmusic resonate-core resonate-providers resonate-fetch
           only resonate-audio resonate-core
           refuse resonate-audio pipewire libspa resonate-codec resonate-dsp gpui
           only resonate-upnp resonate-core resonate-audio

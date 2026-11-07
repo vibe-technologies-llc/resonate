@@ -91,6 +91,7 @@ pub(crate) struct Standing {
     pub(crate) tidal_given: bool,
     pub(crate) spotify_given: bool,
     pub(crate) resonate_key_given: bool,
+    pub(crate) youtube_music_given: bool,
     pub(crate) convolving: bool,
 }
 
@@ -144,6 +145,7 @@ impl Standing {
             tidal_given: false,
             spotify_given: false,
             resonate_key_given: false,
+            youtube_music_given: false,
             convolving: false,
         }
     }
@@ -232,6 +234,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Jellyfin => standing.jellyfin_given,
         Group::Tidal => standing.tidal_given,
         Group::Spotify => standing.spotify_given,
+        Group::YoutubeMusic => standing.youtube_music_given,
         Group::Colour => {
             standing.appearance.theme != Appearance::DEFAULT.theme
                 || standing.appearance.accent != Appearance::DEFAULT.accent
@@ -255,7 +258,6 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Bands
         | Group::Abx
-        | Group::Served
         | Group::Pairing
         | Group::SyncDevices
         | Group::Updating
@@ -328,6 +330,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Organising
         | Group::Vault
         | Group::Inbox
+        | Group::YoutubeMusic
         | Group::MusicExtensions
         | Group::MinimumLength
         | Group::ResonateKey
@@ -335,7 +338,6 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Jellyfin
         | Group::Tidal
         | Group::Spotify
-        | Group::Served
         | Group::RoomCorrection
         | Group::Abx
         | Group::Resuming

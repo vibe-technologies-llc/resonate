@@ -32,6 +32,7 @@ members = [
     "crates/providers/monochrome",
     "crates/providers/subsonic",
     "crates/providers/tidal",
+    "crates/providers/ytmusic",
     "crates/resonate-ui",
     "crates/resonate-upnp",
     "crates/resonate-vault"
@@ -285,6 +286,7 @@ resonate-jellyfin = { version = "0.6.0", path = "crates/providers/jellyfin" }
 resonate-monochrome = { version = "0.6.0", path = "crates/providers/monochrome" }
 resonate-subsonic = { version = "0.6.0", path = "crates/providers/subsonic" }
 resonate-tidal = { version = "0.6.0", path = "crates/providers/tidal" }
+resonate-ytmusic = { version = "0.6.0", path = "crates/providers/ytmusic" }
 resonate-ui = { version = "0.6.0", path = "crates/resonate-ui" }
 resonate-upnp = { version = "0.6.0", path = "crates/resonate-upnp" }
 resonate-vault = { version = "0.6.0", path = "crates/resonate-vault" }

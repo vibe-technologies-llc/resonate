@@ -1394,12 +1394,15 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
 - **The server pane browses whichever services play in place and is there only while one is set.**
-  `Pane::Server` (`Icon::Server`, key `server`) is in no sidebar row and not in `Pane::BROWSE`, so
-  the pane keys pass it over; it is reached from Settings' Library category, the *Browsing a
-  service* group (`Group::Served`, no key, `served_group`), whose *Open the server* button calls
-  `choose_pane(Pane::Server)` while `ServerModel::is_open` and otherwise says no service is set up.
-  `set_pane` lands on it only while `ServerModel::is_open` (a service the live `Online` sets, online
-  on); the remembered tab never lands on it at start. The window reaches the services through the
+  `Pane::Server` (`Icon::Server`, key `server`, labelled *Services* since YouTube Music is no server)
+  is the last row of the Collection section, in `Pane::BROWSE` after `Missing`, and `Pane::is_there`
+  is what the sidebar, `stepped_pane` and `set_pane` ask: it weighs `ServerModel::is_open` (a service
+  the live `Online` sets, online on) beside `Tabs`, so with no service there is no row, the pane keys
+  pass from the collection to what is playing and `set_pane` lands on the first tab, and a service let
+  go takes the row and the pane with it. A press is `choose_pane(Pane::Server)`. `Tabs` does not hide
+  the row: that would be a stored setting of its own. The remembered tab never lands on it at start,
+  because a first page reads the listener's account and `ServerModel::shown` reads it only once the
+  pane is shown. The window reaches the services through the
   `Serving` seam on `Lookups` (`ResonateApp::serving`): a `Fn(&Online) -> Vec<Arc<dyn Serves>>` the
   binary fills (`providers.md`), each `Serves` naming its `scheme` and `title`; `Serves` is gpui-free vocabulary
   (`served.rs`: `ServedArtist`, `ServedAlbum`, `ServedSong`, `ServedFound`, `ServedCover`, every
@@ -1448,6 +1451,18 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `COVERS_FETCHED_AT_ONCE` (4) at a time, decoded on the `Drawer` at the drawn side, held in a
   `Recent` of `COVERS_HELD` (256) keyed by name and side, a failed one asked again after a minute.
   The magnifier opens `Magnified::Served` at the now-playing size.
+- **YouTube Music is a group in the Accounts category, and what it holds is kept, not played.**
+  `Group::YoutubeMusic` (`views/settings/youtube_music.rs`): the switch, the cookies and `yt-dlp`
+  fields, the keep-order switch, the terms in one plain sentence beside them and *Check connection*,
+  which asks the `ChecksYoutubeMusic` seam (`Lookups::checks_youtube_music`) on the background executor
+  and toasts what it heard. In the server pane a service that `Serves::keeps_songs` draws a *Keep* mark
+  on a song row (`server-row-keep-<n>`) and *Keep* on a mix's heading (`server-keep`, once its rows are
+  read, the name on the row it was opened from carried in `Place::Mix`), and no *Play* where
+  `Serves::plays_songs` says no. A press is `LibraryModel::keep` or `keep_mix`, its pass followed through
+  the sidebar's *Downloading… · N left* (`downloads::keeping_said`, `keeps_left` read each second) and a
+  *Keeping songs* row with *Stop* at the head of the *Downloads* panel, a toast telling what came of it;
+  no music folder is a toast saying to choose one (`providers.md`'s *Keeping a song from a service*;
+  `a_service_that_keeps_songs_offers_a_keep_on_a_song_and_a_mix_and_a_press_queues_them`).
 - **Missing pane = what the catalog knows it is short of, headed by run, one half at a time.**
   `Pane::Missing` under `Section::Collection`; sidebar count `Missing::tracks`, hidden at zero. Two
   tabs, `missing_tabs` (*Tracks*/*Releases*, counts), `RootView::missing_shows` (`MissingShows`, kept

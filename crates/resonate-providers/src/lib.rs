@@ -14,17 +14,22 @@ pub use crate::{
         Delivered, Delivery, Extension, Held, Obtained, Opened, Opening, Reopened, Resumed,
         Validator,
     },
-    error::{Error, ProviderOp, Result, is_a_page},
+    error::{
+        Error, ProviderOp, Result, THE_SIGN_IN_LAPSED, THE_SUBSCRIPTION_LAPSED, WhyAway, is_a_page,
+    },
     identity::Identity,
     in_place::{
         Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Mix, MixSongs, Named, PlaysInPlace,
         SeekingBytes, Song, Streamed, found_exactly, not_offered,
     },
-    listing::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken},
+    listing::{
+        A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken, led_by,
+        spelt_as,
+    },
     pacing::Pacing,
     provider::{
-        Answer, Asking, Away, Provider, Providers, TURNED_TO_APART, Unprovided,
-        WAITED_ON_AFTER_AN_OFFER,
+        ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Provider, Providers, TURNED_TO_APART,
+        Unprovided, WAITED_ON_AFTER_AN_OFFER,
     },
     sign_in::{Authorizing, Client, RefreshToken, SignsIn},
 };

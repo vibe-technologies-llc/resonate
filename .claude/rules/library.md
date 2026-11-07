@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard, the latest: *Resonate Wrapped* below). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `by_origin` indexes on `vault_objects` and `object_deliveries` that find a delivery by its `taken_from`, the latest: `providers.md`'s *Keeping a song from a service*). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1047,9 +1047,9 @@ Write-back is a seam; this build writes only what it reads back. `resonate-codec
 writable field), `TagEdit`, `Writing` (edits, `taken` fields, optional front cover, `unpictured`,
 `popularity`: one call), `TagSink` (seam over `TagSource`), `FileTags` (lofty writes, symphonia
 reads, so a write is weighed against what the rest of the build sees). `FileTags::writes` refuses
-formats this build would not read back: it answers for AAC, AIFF, Monkey's Audio, FLAC, MP3, MP4,
-Ogg Vorbis, Opus, WAV, WavPack (WAV: `riff.rs` reads the `id3 ` chunk lofty writes); `.caf`, `.mka`,
-`.oga` and the DSD containers are passed over. `Library::retag` is the pass behind `resonate tag`
+formats this build would not read back: it answers for AAC, AIFF, Monkey's Audio, FLAC, Matroska
+audio (`.mka`), MP3, MP4, Ogg Vorbis, Opus, WAV, WavPack (WAV: `riff.rs` reads the `id3 ` chunk lofty
+writes); `.caf`, `.oga` and the DSD containers are passed over. `Library::retag` is the pass behind `resonate tag`
 (preview until `--apply`, like `organise`); the settings pane's *Rescan, refresh and retag* group has the same
 preview-then-arm shape as *Organising*.
 
@@ -1114,6 +1114,49 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Rated::differs_from` weighs the favourite always, plays wherever the tag keeps a count (RIFF
   `INFO` keeps none). Undo keeps both in one integer: favourite's plays as is, an unfavoured row's
   negated less one. `RetagStats::ratings` counts them.
+- **A Matroska write moves no cluster, so no `CueClusterPosition` goes stale.** lofty has no
+  Matroska; `matroska_tags::rewritten` walks the Segment's children (clusters are skipped by size,
+  never parsed) and answers a `Rewrite`, a list of bytes at offsets `landed` lays on the staged copy
+  or an `Overlay` behind `Lands`, confirming the walk and every cluster's place before anything
+  settles. Symphonia reads the top level up to the first `Cluster` and follows the first `SeekHead`
+  past it, so there are three homes for the one `Tags` element: where the old one sat, with the
+  `Void`s after it, where it fits; grown past the file's end where the old one was last; else
+  appended after everything with a `Void` of `PADDING_LEFT_FOR_THE_NEXT_EDIT`, the old one (every
+  old one, where a file held several) turned to a zeroed `Void`. Only the `Segment` size, the
+  `SeekHead` and that tail change. The `SeekHead` is laid again with its positions at their
+  narrowest, in its own bytes and the `Void`s after it, which is how YouTube's 63 bytes of
+  eight-byte positions take a fourth entry; a rewritten `SeekHead` or `Tags` drops its `CRC-32`
+  rather than carry a stale one. **Refused with the file untouched** (`Error::Unwritable`): a
+  `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
+  `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it, a
+  `SeekHead` with no room, a second `SeekHead` where `Tags` move, a picture where the file already
+  holds an `Attachments` element or `unpictured` is asked (nothing is taken out).
+  `TagSink::rated` answers `Rated::Unrateable` and `TagSink::holds_pictures` false, so a retag
+  offers such a file no sleeve and its names still land.
+- **A picture is attached to a Matroska file once, after the clusters, and indexed like `Tags`.**
+  `matroska_tags::attached` appends one `Attachments` element (`AttachedFile` named `cover.<ext>`,
+  the media type, the bytes, a fixed `FileUID`) at the segment's end, the picture's one home,
+  since symphonia finds it only through the `SeekHead` and `probe`'s `attached_cover` takes a file
+  whose name begins `cover`; a file whose album or sleeve reads it back needs nothing else. The
+  `SeekHead` entry for it takes the room `Tags` left; where the fifth entry does not fit (YouTube's
+  head holds four), `laid_in_the_room` lets go of entries that point before the first `Cluster`,
+  earliest first, since a reader takes those in order and no index is lost
+  (`a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_the_index_whole`).
+  `written_into_a_matroska` lands the tags first and the picture as a second landing
+  (`Taken::of` read afresh); a keep that cannot take its picture is retried without it
+  (`filed::tagged`), so the song is tagged whatever the picture does.
+- **A Matroska name is spelled so it reads alike under both `tags::Naming`s.** `TITLE` and `ARTIST`
+  go in a `Tag` at level 30, since at 50 the container's naming reads them as the album and album
+  artist and a Vorbis-only key beside them turns that around; the rest go at level 50 under the
+  names `spelling` gives, each either mapped by symphonia or itself in `VORBIS_COMMENT_ONLY`. What
+  the old `Tags` held is kept byte for byte unless a field asked for reads from it, as
+  `Reading::field_of` works out from its name, level and the naming that revision was read under;
+  a `TITLE` or `ARTIST` left at level 50 is moved to the name it read as, so no later edit turns its
+  meaning. A nested `SORT_WITH` is read as its sort field: it goes where that field is asked for,
+  and where its parent goes it is carried as that field's own name. Each old `Tags` was a revision
+  of its own, so a field a later one says, blank aside, leaves the earlier ones before they join
+  (`Date` by the rank `tags.rs` weighs, a better date in an earlier one standing). `Tag`s aimed at
+  an edition, chapter or attachment are left alone.
 - **A field cleared is cleared from every tag the file holds.** lofty edits only the primary tag
   while the reader takes a name from whichever tag still says it: `writing::cleared_elsewhere`
   copies every other tag holding a field in `Writing::taken`, removes it and saves each into the
@@ -1451,7 +1494,8 @@ guard and re-keys a sleeve-keyed album after moves land.
   taken away once the catalog committed. Sidecars are weighed apart: gone since: dropped;
   destination now taken: stays; the track moves without. `Library::files_moved`, one transaction,
   rewrites `tracks.path`, `playlist_entries.path` (touching those playlists' `modified`),
-  `lyrics_kept.path`, `lyrics_ahead.path`, `lyrics_refused.path`, `resume_rows.uri`, after first
+  `lyrics_kept.path`, `lyrics_ahead.path`, `lyrics_refused.path`, `kept_songs.landed` (so a song
+  organised after it landed still seats what lands after it), `resume_rows.uri`, after first
   deleting any `tracks`, lyric or `songs_received` row at the destination (path-keyed). The open queue follows: the
   window sends `Command::Relocate`, `resonate organise --apply` reaches every bus player via
   `org.resonate.Player1`'s `Relocate` (`mpris.md`); `Queue::relocate` follows each row through the

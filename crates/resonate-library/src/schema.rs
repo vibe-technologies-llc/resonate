@@ -47,12 +47,42 @@ const MIGRATIONS: &[&str] = &[
     A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD,
     TRACKS_KEEP_THEIR_CONTENT_ADVISORY,
     RECEIVED_SONGS_KEEP_THEIR_SPELLING,
+    SONGS_KEPT_FROM_A_SERVICE,
+    KEPT_SONGS_KEEP_THEIR_PICTURE,
 ];
+
+const KEPT_SONGS_KEEP_THEIR_PICTURE: &str = "
+ALTER TABLE kept_songs ADD COLUMN cover TEXT;
+";
 
 const RECEIVED_SONGS_KEEP_THEIR_SPELLING: &str = "
 ALTER TABLE songs_received ADD COLUMN title TEXT;
 ALTER TABLE songs_received ADD COLUMN artist TEXT;
 ALTER TABLE songs_received ADD COLUMN album TEXT;
+";
+
+const SONGS_KEPT_FROM_A_SERVICE: &str = "
+CREATE TABLE kept_songs (
+    id       INTEGER PRIMARY KEY,
+    source   TEXT NOT NULL,
+    video    TEXT NOT NULL,
+    title    TEXT NOT NULL,
+    artist   TEXT,
+    album    TEXT,
+    length   INTEGER,
+    playlist TEXT,
+    place    INTEGER,
+    asked    INTEGER NOT NULL,
+    landed   TEXT,
+    gone     INTEGER NOT NULL DEFAULT 0,
+    tried    INTEGER,
+    tries    INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (source, video, playlist)
+) STRICT;
+CREATE UNIQUE INDEX kept_songs_alone ON kept_songs (source, video) WHERE playlist IS NULL;
+CREATE INDEX kept_songs_by_path ON kept_songs (landed) WHERE landed IS NOT NULL;
+CREATE INDEX vault_objects_by_origin ON vault_objects (taken_from);
+CREATE INDEX object_deliveries_by_origin ON object_deliveries (taken_from);
 ";
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -1319,6 +1349,8 @@ const fn never_unstamped(hashed: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::params;
+
     use super::*;
 
     fn opened() -> Connection {
@@ -1340,6 +1372,10 @@ mod tests {
             (
                 "UPDATE resume_rows SET uri = 'b' WHERE uri = 'a'",
                 "resume_rows_by_uri",
+            ),
+            (
+                "UPDATE kept_songs SET landed = 'b' WHERE landed = 'a'",
+                "kept_songs_by_path",
             ),
             (
                 "UPDATE playlists SET modified = 1 WHERE id IN
@@ -1590,6 +1626,50 @@ mod tests {
         };
         assert_eq!(count("roots"), 1);
         assert_eq!(count("wrapped_years"), 0);
+        assert_eq!(
+            stamped(&connection).expect("the stamp reads back"),
+            Some(SCHEMA_FINGERPRINT)
+        );
+    }
+
+    #[test]
+    fn a_catalog_from_before_keeps_is_carried_forward() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == SONGS_KEPT_FROM_A_SERVICE)
+            .expect("the step that keeps a song");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root held before");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let kept = |playlist: Option<&str>| {
+            connection.execute(
+                "INSERT INTO kept_songs (source, video, title, playlist, asked)
+                 VALUES ('tube', 'abc123', 'San Tropez', ?1, 1)",
+                params![playlist],
+            )
+        };
+        kept(None).expect("a song kept alone");
+        kept(Some("Mix")).expect("the same song in a list");
+        kept(Some("Other Mix")).expect("the same song in another list");
+        assert!(kept(None).is_err(), "a song was kept alone twice");
+        assert!(kept(Some("Mix")).is_err(), "a list kept a song twice");
+        let held: i64 = connection
+            .query_row("SELECT count(*) FROM roots", [], |row| row.get(0))
+            .expect("the table");
+        assert_eq!(held, 1);
         assert_eq!(
             stamped(&connection).expect("the stamp reads back"),
             Some(SCHEMA_FINGERPRINT)

@@ -158,7 +158,7 @@ impl<T: PartialEq> Choosing<T> {
     }
 }
 
-fn led_by(credit: &str) -> &str {
+pub fn led_by(credit: &str) -> &str {
     let lowered = credit.to_lowercase();
     let cut = JOIN_PHRASES
         .iter()
@@ -171,7 +171,7 @@ fn led_by(credit: &str) -> &str {
     }
 }
 
-fn spelt_as(name: &str) -> String {
+pub fn spelt_as(name: &str) -> String {
     words_of_a_name(name).concat()
 }
 

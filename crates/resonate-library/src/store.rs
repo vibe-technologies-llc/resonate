@@ -14,9 +14,12 @@ use resonate_codec::{
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
-    StreamSpec, TrackId, path_text,
+    StreamSpec, TrackId, path_text, title_words,
+    titles::{Rating, bare, rating_in_the_title},
+    words_of_a_name,
 };
 pub use resonate_core::{folded_letters, is_lettered};
+use resonate_providers::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, led_by, spelt_as};
 use resonate_vault::{Form, VaultKey};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
@@ -27,6 +30,7 @@ use unicode_normalization::UnicodeNormalization as _;
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
     REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
+    synced::HeldRow,
 };
 
 const UNIT_SEPARATOR: char = '\u{1f}';
@@ -1144,6 +1148,16 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
     take_in(tx, id, &taken_in)?;
 
     Ok(id)
+}
+
+pub(crate) fn register_root_beside_a_walk(tx: &Transaction<'_>, canonical: &Path) -> Result<()> {
+    let widens = roots_held(tx)?
+        .iter()
+        .any(|(_, held)| canonical != held && held.starts_with(canonical));
+    if widens {
+        return Ok(());
+    }
+    register_root(tx, canonical).map(drop)
 }
 
 fn roots_held(tx: &Transaction<'_>) -> Result<Vec<(i64, PathBuf)>> {
@@ -2652,6 +2666,174 @@ pub fn replay_gain(
     }
 }
 
+pub(crate) struct HeldAlike {
+    pub(crate) track: TrackId,
+    pub(crate) span: Option<FrameSpan>,
+    pub(crate) held: HeldRow,
+}
+
+macro_rules! a_held_copy {
+    ($narrowed:literal) => {
+        concat!(
+            "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path, t.title,
+                    t.artist, a.key, t.duration, t.sample_rate,
+                    t.hidden, t.alternative_of IS NOT NULL
+               FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
+              WHERE ",
+            $narrowed,
+            " AND t.duration IS NOT NULL AND t.sample_rate > 0
+              AND abs(t.duration * 1.0 / t.sample_rate - ?2) <= ?3"
+        )
+    };
+}
+
+const LENGTH_PREFILTER_SLACK_SECS: f64 = 0.001;
+
+pub(crate) const HELD_BY_THEIR_FIRST_WORDS: &str =
+    a_held_copy!("t.title_words >= ?1 AND t.title_words < ?1 || '!'");
+
+pub(crate) const HELD_BY_THEIR_ARTIST: &str =
+    a_held_copy!("t.artist_id = (SELECT id FROM artists WHERE key = ?1)");
+
+const HELD_FROM_A_DELIVERY: &str = "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path
+       FROM tracks t
+      WHERE t.vault_key IN (SELECT key FROM vault_objects WHERE taken_from = ?1
+                            UNION
+                            SELECT key FROM object_deliveries WHERE taken_from = ?1)";
+
+struct Candidate {
+    shown_last: bool,
+    a_lesser_copy: bool,
+    alike: HeldAlike,
+}
+
+struct NamedAlike<'a> {
+    bare: String,
+    lead: String,
+    length: Duration,
+    rating: Rating,
+    title: &'a str,
+}
+
+impl NamedAlike<'_> {
+    fn stood_for_by(&self, title: &str, credit: Option<&str>, key: Option<&str>) -> bool {
+        let spelt = spelt_as(bare(title));
+        let held_rating = rating_in_the_title(title);
+        let cleaned = held_rating == Rating::Clean && self.rating != Rating::Clean;
+
+        spelt == self.bare
+            && !cleaned
+            && (key.map(spelt_as).as_ref() == Some(&self.lead)
+                || credit.map(|credit| spelt_as(led_by(credit))).as_ref() == Some(&self.lead))
+    }
+
+    fn lasts_as_long_as(&self, frames: Option<i64>, rate: i64) -> bool {
+        frames.is_some_and(|frames| {
+            rate > 0
+                && Duration::try_from_secs_f64(frames as f64 / rate as f64).is_ok_and(|heard| {
+                    heard.abs_diff(self.length) <= A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY
+                })
+        })
+    }
+
+    fn first_words(&self) -> Vec<String> {
+        let title = bare(self.title);
+        let mut asked = vec![title_words(title), words_of_a_name(title).join(" ")];
+        asked.dedup();
+        asked
+    }
+}
+
+fn held_alike_at(row: &rusqlite::Row<'_>) -> rusqlite::Result<HeldAlike> {
+    Ok(HeldAlike {
+        track: TrackId::new(row.get::<_, i64>(0)?.cast_unsigned())
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, 0))?,
+        span: span(row.get(2)?, row.get(3)?),
+        held: HeldRow {
+            path: path_of(&row.get::<_, String>(1)?),
+            within_the_vault: row.get::<_, Option<String>>(4)?.as_deref().map(path_of),
+        },
+    })
+}
+
+fn candidate_at(
+    row: &rusqlite::Row<'_>,
+    song: &NamedAlike<'_>,
+) -> rusqlite::Result<Option<Candidate>> {
+    let title: String = row.get(5)?;
+    let credit: Option<String> = row.get(6)?;
+    let key: Option<String> = row.get(7)?;
+    if !song.stood_for_by(&title, credit.as_deref(), key.as_deref())
+        || !song.lasts_as_long_as(row.get(8)?, row.get(9)?)
+    {
+        return Ok(None);
+    }
+    Ok(Some(Candidate {
+        shown_last: row.get(10)?,
+        a_lesser_copy: row.get(11)?,
+        alike: held_alike_at(row)?,
+    }))
+}
+
+pub(crate) fn held_from_a_delivery(
+    connection: &Connection,
+    taken_from: &str,
+) -> Result<Vec<HeldAlike>> {
+    let mut statement = connection
+        .prepare_cached(HELD_FROM_A_DELIVERY)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    statement
+        .query_map(params![taken_from], held_alike_at)
+        .and_then(|rows| rows.collect::<rusqlite::Result<_>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn held_named_alike(
+    connection: &Connection,
+    title: &str,
+    lead: &str,
+    length: Duration,
+) -> Result<Vec<HeldAlike>> {
+    let song = NamedAlike {
+        bare: spelt_as(bare(title)),
+        lead: spelt_as(lead),
+        length,
+        rating: rating_in_the_title(title),
+        title,
+    };
+    if song.bare.is_empty() || song.lead.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut found: AHashMap<TrackId, Candidate> = AHashMap::new();
+    let lead_key = folded_letters(lead.trim());
+    let first_words = song.first_words();
+    let length_secs = song.length.as_secs_f64();
+    let slack_secs =
+        A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY.as_secs_f64() + LENGTH_PREFILTER_SLACK_SECS;
+    let asked = first_words
+        .iter()
+        .map(|words| (HELD_BY_THEIR_FIRST_WORDS, words))
+        .chain([(HELD_BY_THEIR_ARTIST, &lead_key)]);
+    for (sql, value) in asked {
+        let mut statement = connection
+            .prepare_cached(sql)
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let candidates = statement
+            .query_map(params![value, length_secs, slack_secs], |row| {
+                candidate_at(row, &song)
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        for candidate in candidates.into_iter().flatten() {
+            found.insert(candidate.alike.track, candidate);
+        }
+    }
+
+    let mut held: Vec<Candidate> = found.into_values().collect();
+    held.sort_by_key(|held| (held.shown_last, held.a_lesser_copy, held.alike.track));
+    Ok(held.into_iter().map(|held| held.alike).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use resonate_core::{ChannelLayout, SampleRate};
@@ -2689,6 +2871,28 @@ mod tests {
             numbered_by_its_stem: false,
             packets: None,
             walked: None,
+        }
+    }
+
+    #[test]
+    fn a_held_copy_is_looked_for_along_the_indexes_of_its_words_and_its_artist() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
+        crate::schema::lay_out(&connection).expect("the schema applies");
+
+        for (sql, index) in [
+            (HELD_BY_THEIR_FIRST_WORDS, "tracks_by_title_words"),
+            (HELD_BY_THEIR_ARTIST, "tracks_by_artist "),
+        ] {
+            let plan: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .and_then(|mut plan| {
+                    plan.query_map(params!["song", 180.0, 2.0], |row| row.get::<_, String>(3))?
+                        .collect()
+                })
+                .expect("a plan");
+
+            assert!(plan.iter().any(|step| step.contains(index)), "{plan:?}");
         }
     }
 

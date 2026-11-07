@@ -16,8 +16,8 @@ use crate::{
     wavpack::{self, Coding},
 };
 
-const EBML_HEADER: u32 = 0x1A45_DFA3;
-const SEGMENT: u32 = 0x1853_8067;
+pub(crate) const EBML_HEADER: u32 = 0x1A45_DFA3;
+pub(crate) const SEGMENT: u32 = 0x1853_8067;
 const INFO: u32 = 0x1549_A966;
 const TITLE: u32 = 0x7BA9;
 const SEGMENT_DURATION: u32 = 0x4489;
@@ -29,17 +29,17 @@ const CODEC_ID: u32 = 0x0086;
 const CODEC_PRIVATE: u32 = 0x63A2;
 const TRACK_AUDIO: u32 = 0x00E1;
 const BIT_DEPTH: u32 = 0x6264;
-const CLUSTER: u32 = 0x1F43_B675;
+pub(crate) const CLUSTER: u32 = 0x1F43_B675;
 const CLUSTER_TIMESTAMP: u32 = 0x00E7;
 const SIMPLE_BLOCK: u32 = 0x00A3;
 const BLOCK_GROUP: u32 = 0x00A0;
 const BLOCK: u32 = 0x00A1;
 const DISCARD_PADDING: u32 = 0x75A2;
-const SEEK_HEAD: u32 = 0x114D_9B74;
+pub(crate) const SEEK_HEAD: u32 = 0x114D_9B74;
 const CUES: u32 = 0x1C53_BB6B;
-const TAGS: u32 = 0x1254_C367;
+pub(crate) const TAGS: u32 = 0x1254_C367;
 const CHAPTERS: u32 = 0x1043_A770;
-const ATTACHMENTS: u32 = 0x1941_A469;
+pub(crate) const ATTACHMENTS: u32 = 0x1941_A469;
 const SEGMENT_CHILDREN: [u32; 8] = [
     SEEK_HEAD,
     INFO,
@@ -56,14 +56,14 @@ const CHAPTER_ATOM: u32 = 0x00B6;
 const CHAPTER_TIME_START: u32 = 0x0091;
 const CHAPTER_DISPLAY: u32 = 0x0080;
 const CHAPTER_STRING: u32 = 0x0085;
-const VOID: u8 = 0xEC;
+pub(crate) const VOID: u8 = 0xEC;
 const VOID_ID_BYTES: u64 = 1;
 const NANOS_A_SECOND: std::num::NonZeroU32 =
     std::num::NonZeroU32::new(1_000_000_000).expect("a second is not zero");
 
 const DEFAULT_TIMESTAMP_SCALE: u64 = 1_000_000;
 const MAX_ID_BYTES: u32 = 4;
-const MAX_LENGTH_BYTES: u32 = 8;
+pub(crate) const MAX_LENGTH_BYTES: u32 = 8;
 const MAX_ELEMENTS: usize = 4_096;
 const MAX_TITLE_BYTES: u64 = 4_096;
 const MAX_BIT_DEPTH: u64 = 64;
@@ -1096,21 +1096,21 @@ fn positive(value: Option<u64>) -> Option<u64> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Length {
+pub(crate) enum Length {
     Known(u64),
     Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Element {
-    at: u64,
-    id: u32,
-    length: Length,
-    body: u64,
+pub(crate) struct Element {
+    pub(crate) at: u64,
+    pub(crate) id: u32,
+    pub(crate) length: Length,
+    pub(crate) body: u64,
 }
 
 impl Element {
-    fn end(self) -> Option<u64> {
+    pub(crate) fn end(self) -> Option<u64> {
         match self.length {
             Length::Known(bytes) => self.body.checked_add(bytes),
             Length::Unknown => None,
@@ -1138,7 +1138,7 @@ fn skip<S: Seek + ?Sized>(source: &mut S, element: &Element) -> Option<u64> {
     source.seek(SeekFrom::Start(end)).ok()
 }
 
-fn element<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Element> {
+pub(crate) fn element<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Element> {
     let at = source.stream_position().ok()?;
     let id = id(source)?;
     let length = length(source)?;

@@ -21,6 +21,7 @@ pkgbase = resonate-player-git
 	depends = fontconfig
 	depends = freetype2
 	depends = vulkan-icd-loader
+	optdepends = yt-dlp: keeping songs from YouTube Music
 	provides = resonate
 	conflicts = resonate
 	conflicts = resonate-git
