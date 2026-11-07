@@ -57,7 +57,7 @@ impl Place {
 
     pub(crate) const fn eyebrow(&self) -> &'static str {
         match self {
-            Self::Artists => "SERVER",
+            Self::Artists => "SERVICES",
             Self::Artist { .. } => "ARTIST ON THE SERVER",
             Self::Album { .. } => "ALBUM ON THE SERVER",
             Self::Mix { .. } => "MIX ON THE SERVER",

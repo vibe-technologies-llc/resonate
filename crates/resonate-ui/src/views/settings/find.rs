@@ -120,7 +120,6 @@ pub(crate) enum Group {
     Jellyfin,
     Tidal,
     Spotify,
-    Served,
     Resuming,
     History,
     Repeating,
@@ -160,7 +159,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 71] = [
+    pub(crate) const ALL: [Self; 70] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -195,7 +194,6 @@ impl Group {
         Self::Tidal,
         Self::YoutubeMusic,
         Self::Spotify,
-        Self::Served,
         Self::Resuming,
         Self::History,
         Self::Repeating,
@@ -277,7 +275,6 @@ impl Group {
             | Self::Tidal
             | Self::YoutubeMusic
             | Self::Spotify
-            | Self::Served
             | Self::Lastfm => Category::Accounts,
             Self::Lookups | Self::AfterScan | Self::Metered | Self::Lyrics | Self::Contact => {
                 Category::Online
@@ -345,7 +342,6 @@ impl Group {
             Self::ResonateKey => "Resonate server key",
             Self::Tidal => "A TIDAL account",
             Self::Spotify => "A Spotify account",
-            Self::Served => "Browsing a service",
             Self::Resuming => "Resuming",
             Self::History => "Listening history",
             Self::Repeating => "Repeating a track",
@@ -425,7 +421,6 @@ impl Group {
             Self::ResonateKey => RESONATE_KEY_HINT,
             Self::Tidal => TIDAL_HINT,
             Self::Spotify => SPOTIFY_HINT,
-            Self::Served => SERVED_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::History => HISTORY_HINT,
             Self::Repeating => REPEATING_HINT,
@@ -567,10 +562,6 @@ impl Group {
             Self::ResonateKey => {
                 "resonate server key secret hifi-api hifi token password download wants missing \
                  fill obtain account bearer tecnio gateway"
-            }
-            Self::Served => {
-                "server pane browse play in place stream subsonic navidrome jellyfin emby tidal monochrome \
-                 hifi-api resonate service artists albums search open"
             }
             Self::Spotify => {
                 "spotify account sign in playlists liked songs import move follow keep in step \
@@ -747,7 +738,6 @@ impl Group {
                 SettingKey::JellyfinPassword,
             ],
             Self::ResonateKey => &[SettingKey::HifiSecret],
-            Self::Served => &[],
             Self::Spotify => &[SettingKey::SpotifyClientId, SettingKey::SpotifyRefreshToken],
             Self::Tidal => &[
                 SettingKey::TidalClientId,
@@ -1113,15 +1103,12 @@ pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked w
                                         MusicBrainz id or its ISRC.";
 
 pub(crate) const JELLYFIN_HINT: &str = "A Jellyfin or Emby server of your own, browsed and played \
-                                        where it is in the server pane.";
+                                        where it is in the Services pane.";
 
 pub(crate) const YOUTUBE_MUSIC_HINT: &str = "YouTube Music through the yt-dlp program, on your \
                                              account's cookies: searched and browsed in the \
-                                             server pane, and asked for a song marked wanted \
+                                             Services pane, and asked for a song marked wanted \
                                              only once nothing better has it.";
-
-pub(crate) const SERVED_HINT: &str = "Opens the pane that browses and plays what a service of \
-                                       yours holds, in place and with nothing downloaded.";
 
 pub(crate) const RESONATE_KEY_HINT: &str = "The key your Resonate server lists. With it the \
                                             tracks marked wanted are also asked of that server, \

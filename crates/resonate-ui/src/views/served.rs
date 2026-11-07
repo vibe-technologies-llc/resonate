@@ -802,11 +802,14 @@ mod tests {
 
     use super::*;
     use crate::{
-        Online, Pane,
+        Online, Pane, ResonateApp,
         driven::Driven,
         served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, Serves},
         serving::{Failure, rows_of_found},
+        views::remote,
     };
+
+    const SCROLLED_PAST_EVERY_CATEGORY: f32 = 2_000.0;
 
     fn at(key: &str) -> MediaLocation {
         MediaLocation::from_uri(&format!("subsonic:{key}")).expect("a subsonic location")
@@ -1145,11 +1148,7 @@ mod tests {
     }
 
     fn open_the_server(driven: &mut Driven) {
-        driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
-        driven.cx.simulate_input("server pane browse");
-        driven.settle();
-        driven.click("open-server");
+        driven.click("tab-server");
     }
 
     #[gpui::test]
@@ -1164,6 +1163,138 @@ mod tests {
         assert!(driven.read(|root, cx| root.server.read(cx).is_open()));
 
         open_the_server(&mut driven);
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+    }
+
+    #[gpui::test]
+    fn the_services_row_stands_last_in_the_collection_only_while_a_service_is_set(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
+        assert!(driven.cx.debug_bounds("tab-server").is_none());
+
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        let row = driven.bounds_of("tab-server");
+
+        assert!(driven.bounds_of("tab-party").bottom() <= row.top());
+        assert!(row.bottom() <= driven.bounds_of("tab-lyrics").top());
+    }
+
+    #[gpui::test]
+    fn a_service_let_go_takes_its_row_with_it_and_leaves_the_pane_for_the_first_tab(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        open_the_server(&mut driven);
+
+        let online_set_to = |driven: &mut Driven, enabled| {
+            driven.cx.update(|_, cx| {
+                cx.update_global::<ResonateApp, _>(|app, _| app.online.enabled = enabled);
+            });
+            driven.settle();
+        };
+
+        online_set_to(&mut driven, false);
+        assert!(driven.cx.debug_bounds("tab-server").is_none());
+        assert_eq!(driven.read(|root, _| root.pane), Pane::default());
+
+        online_set_to(&mut driven, true);
+        assert!(driven.cx.debug_bounds("tab-server").is_some());
+        assert_eq!(driven.read(|root, _| root.pane), Pane::default());
+    }
+
+    #[gpui::test]
+    fn the_pane_keys_stop_at_the_services_row_and_read_its_first_page_only_then(
+        cx: &mut TestAppContext,
+    ) {
+        let service = Arc::new(NotPlayed {
+            keeps: true,
+            ..NotPlayed::default()
+        });
+        let read = Arc::clone(&service.first_pages_read);
+        let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
+        let mut driven = Driven::serving(cx, vec![service], an_account());
+        driven.click("tab-party");
+        assert_eq!(times_read(), 0, "the account was touched before the row");
+
+        driven.cx.simulate_keystrokes("ctrl-tab");
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+        assert_eq!(times_read(), 1);
+
+        driven.cx.simulate_keystrokes("ctrl-tab");
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Lyrics);
+    }
+
+    #[gpui::test]
+    fn with_no_service_set_the_pane_keys_pass_from_the_collection_to_what_is_playing(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
+        driven.click("tab-party");
+
+        driven.cx.simulate_keystrokes("ctrl-tab");
+        driven.settle();
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Lyrics);
+    }
+
+    #[gpui::test]
+    fn the_smallest_window_scrolls_the_categories_to_the_services_row_and_keeps_settings_standing(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        let shortest = px(theme::WINDOW_MIN_HEIGHT);
+        driven
+            .cx
+            .simulate_resize(gpui::size(px(theme::WINDOW_MIN_WIDTH), shortest));
+        driven.settle();
+        assert!(driven.read(|root, _| root.sidebar_scroll.max_offset().y) > px(0.0));
+
+        let categories = driven.centre_of("tab-albums");
+        driven.scroll_at(categories, SCROLLED_PAST_EVERY_CATEGORY);
+        driven.click("tab-server");
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+        assert!(driven.bounds_of("tab-settings").bottom() <= shortest);
+    }
+
+    #[gpui::test]
+    fn other_devices_make_way_for_the_services_row_as_for_every_category(cx: &mut TestAppContext) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.remote_songs = vec![remote::tests::song()];
+            cx.notify();
+        });
+        driven.settle();
+        let room_with_the_cards = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        driven.click("toggle-other-devices");
+        let room = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        driven.click("toggle-other-devices");
+        let categories = driven.read(|root, _| {
+            root.sidebar_scroll
+                .bounds_for_item(0)
+                .expect("the categories")
+                .size
+                .height
+        });
+        let spare = f32::from(room_with_the_cards - categories);
+        let cards = f32::from(room - room_with_the_cards);
+        let too_short_for_the_cards = crate::driven::TALL - spare - cards / 2.0;
+
+        driven.cx.simulate_resize(gpui::size(
+            px(crate::driven::WIDE),
+            px(too_short_for_the_cards),
+        ));
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.remote_collapsed));
+        assert_eq!(
+            driven.read(|root, _| root.sidebar_scroll.max_offset().y),
+            px(0.0)
+        );
+        driven.click("tab-server");
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
     }
 
@@ -1394,12 +1525,16 @@ mod tests {
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
         assert_eq!(times_read(), 1);
 
-        driven.click("tab-settings");
+        driven.click("tab-albums");
         driven.settle();
-        driven.click("open-server");
+        driven.click("tab-server");
         driven.settle();
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
         assert_eq!(times_read(), 1, "a page read is not read again");
+
+        driven.click("tab-server");
+        driven.settle();
+        assert_eq!(times_read(), 1, "a press on the row in front reads nothing");
     }
 
     #[gpui::test]

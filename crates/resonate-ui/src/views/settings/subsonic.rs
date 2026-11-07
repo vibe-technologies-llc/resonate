@@ -4,23 +4,14 @@ use gpui::{
 
 use crate::{
     Notice, ResonateApp, Setting,
-    icons::Icon,
     settings::Online,
     views::{
         field::{Field, Submitted},
         kit,
-        root::{Pane, RootView},
-        settings::{action, note},
+        root::RootView,
+        settings::note,
     },
 };
-
-const SERVED_NOTE: &str = "Opens the pane that browses what a service plays in place, and plays \
-                           it from there. It is there while a service of yours is set up and \
-                           Online is on.";
-
-const NO_SERVICE_SERVED: &str = "No service that plays in place is set up. Give a Subsonic or \
-                                 Jellyfin server, or a TIDAL, Monochrome or hifi-api account, \
-                                 and turn Online on.";
 
 const SUBSONIC_NOTE: &str = "A Subsonic server of your own — Navidrome, Airsonic, Gonic — is \
                              asked for every track marked wanted, by the recording's \
@@ -30,7 +21,7 @@ const SUBSONIC_NOTE: &str = "A Subsonic server of your own — Navidrome, Airson
                              never as it was typed.";
 
 const JELLYFIN_NOTE: &str = "A Jellyfin or Emby server of your own is browsed and played where \
-                             it is, in the server pane, with nothing downloaded. Asked as soon \
+                             it is, in the Services pane, with nothing downloaded. Asked as soon \
                              as all three are given, and only while Online is on; the password \
                              is sent to sign in and the token it answers with is what every \
                              later request carries.";
@@ -321,25 +312,5 @@ impl RootView {
             ));
         }
         body.child(note(service.note()))
-    }
-
-    pub(super) fn served_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let serving = self.server.read(cx).is_open();
-        let body = kit::section_body();
-
-        if !serving {
-            return body.child(note(NO_SERVICE_SERVED));
-        }
-
-        body.child(action(
-            "open-server",
-            "Open the server",
-            Icon::Server,
-            false,
-            |this, _, cx| this.choose_pane(Pane::Server, cx),
-            self,
-            cx,
-        ))
-        .child(note(SERVED_NOTE))
     }
 }

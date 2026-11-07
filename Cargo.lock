@@ -6716,7 +6716,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-ytmusic"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",

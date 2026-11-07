@@ -1394,12 +1394,15 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
 - **The server pane browses whichever services play in place and is there only while one is set.**
-  `Pane::Server` (`Icon::Server`, key `server`) is in no sidebar row and not in `Pane::BROWSE`, so
-  the pane keys pass it over; it is reached from Settings' Accounts category, the *Browsing a
-  service* group (`Group::Served`, no key, `served_group`), whose *Open the server* button calls
-  `choose_pane(Pane::Server)` while `ServerModel::is_open` and otherwise says no service is set up.
-  `set_pane` lands on it only while `ServerModel::is_open` (a service the live `Online` sets, online
-  on); the remembered tab never lands on it at start. The window reaches the services through the
+  `Pane::Server` (`Icon::Server`, key `server`, labelled *Services* since YouTube Music is no server)
+  is the last row of the Collection section, in `Pane::BROWSE` after `Missing`, and `Pane::is_there`
+  is what the sidebar, `stepped_pane` and `set_pane` ask: it weighs `ServerModel::is_open` (a service
+  the live `Online` sets, online on) beside `Tabs`, so with no service there is no row, the pane keys
+  pass from the collection to what is playing and `set_pane` lands on the first tab, and a service let
+  go takes the row and the pane with it. A press is `choose_pane(Pane::Server)`. `Tabs` does not hide
+  the row: that would be a stored setting of its own. The remembered tab never lands on it at start,
+  because a first page reads the listener's account and `ServerModel::shown` reads it only once the
+  pane is shown. The window reaches the services through the
   `Serving` seam on `Lookups` (`ResonateApp::serving`): a `Fn(&Online) -> Vec<Arc<dyn Serves>>` the
   binary fills (`providers.md`), each `Serves` naming its `scheme` and `title`; `Serves` is gpui-free vocabulary
   (`served.rs`: `ServedArtist`, `ServedAlbum`, `ServedSong`, `ServedFound`, `ServedCover`, every

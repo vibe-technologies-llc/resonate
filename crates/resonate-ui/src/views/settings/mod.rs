@@ -463,7 +463,6 @@ impl RootView {
             Group::ResonateKey => self.resonate_key_group(cx),
             Group::Tidal => self.tidal_group(cx),
             Group::Spotify => self.spotify_group(cx),
-            Group::Served => self.served_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
             Group::Repeating => self.repeating_group(cx),

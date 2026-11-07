@@ -407,7 +407,7 @@ impl Section {
 }
 
 impl Pane {
-    pub const BROWSE: [Self; 13] = [
+    pub const BROWSE: [Self; 14] = [
         Self::Albums,
         Self::Artists,
         Self::Tracks,
@@ -417,6 +417,7 @@ impl Pane {
         Self::Suggestions,
         Self::Party,
         Self::Missing,
+        Self::Server,
         Self::Lyrics,
         Self::Inspector,
         Self::Visualiser,
@@ -444,6 +445,10 @@ impl Pane {
         }
     }
 
+    pub(crate) const fn is_there(self, tabs: Tabs, serving: bool) -> bool {
+        self.is_shown(tabs) && (serving || !matches!(self, Self::Server))
+    }
+
     pub(crate) const fn follows_the_clock(self) -> bool {
         matches!(self, Self::Inspector | Self::Analysis)
     }
@@ -464,7 +469,7 @@ impl Pane {
             Self::Favourites => "Favourites",
             Self::Suggestions => "Suggestions",
             Self::Missing => "Missing",
-            Self::Server => "Server",
+            Self::Server => "Services",
             Self::Lyrics => "Lyrics",
             Self::Inspector => "Inspector",
             Self::Visualiser => "Visualiser",
@@ -531,9 +536,7 @@ impl Pane {
                 "What the releases are short of, and what the artists have put out \
                               that the library does not hold"
             }
-            Self::Server => {
-                "What your Subsonic, Jellyfin or other servers hold, to browse and play where it is"
-            }
+            Self::Server => "What the services you have set up hold, to browse and to play or keep",
             Self::Lyrics => "The words to the playing track, where a source has them",
             Self::Inspector => "What the playing file is, and what reaches the sink",
             Self::Visualiser => "The spectrum and the waveform of what is being heard",
@@ -2424,9 +2427,8 @@ impl RootView {
     }
 
     pub(crate) fn set_pane(&mut self, pane: Pane, cx: &mut Context<Self>) {
-        let pane = if pane.is_shown(cx.global::<ResonateApp>().tabs)
-            && (pane != Pane::Server || self.server.read(cx).is_open())
-        {
+        let serving = self.server.read(cx).is_open();
+        let pane = if pane.is_there(cx.global::<ResonateApp>().tabs, serving) {
             pane
         } else {
             Pane::default()
@@ -3686,7 +3688,8 @@ impl RootView {
 
     fn step_pane(&mut self, step: Step, cx: &mut Context<Self>) {
         let tabs = cx.global::<ResonateApp>().tabs;
-        let stepped = stepped_pane(self.in_front(cx), step, tabs);
+        let serving = self.server.read(cx).is_open();
+        let stepped = stepped_pane(self.in_front(cx), step, tabs, serving);
         self.choose_pane(stepped, cx);
     }
 
@@ -5034,6 +5037,7 @@ impl RootView {
         let offered = library.suggestions().len();
         let plays = library.statistics().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
+        let serving = self.server.read(cx).is_open();
         let enriching = library.is_enriching();
         let downloads = !library.downloads().is_empty() || library.keeps_left().is_some();
         let mut browse = div().flex().flex_col().gap_4();
@@ -5045,7 +5049,7 @@ impl RootView {
                 .child(kit::eyebrow(section.label()).px_3().pb_1p5());
             for pane in Pane::BROWSE
                 .into_iter()
-                .filter(|pane| pane.section() == section && pane.is_shown(tabs))
+                .filter(|pane| pane.section() == section && pane.is_there(tabs, serving))
             {
                 let count = match pane {
                     Pane::Albums => Some(albums),
@@ -6479,10 +6483,10 @@ fn landing(pressed: Pane, in_front: Pane, selection: Selection, opened: bool) ->
     }
 }
 
-fn stepped_pane(from: Pane, step: Step, tabs: Tabs) -> Pane {
+fn stepped_pane(from: Pane, step: Step, tabs: Tabs, serving: bool) -> Pane {
     let listed: Vec<Pane> = Pane::BROWSE
         .into_iter()
-        .filter(|pane| pane.is_shown(tabs))
+        .filter(|pane| pane.is_there(tabs, serving))
         .collect();
     let at = listed
         .iter()
@@ -6556,6 +6560,9 @@ mod tests {
         in_front_of, landing, stepped_pane, unsaved,
     };
     use crate::{Selection, Tabs, models::Notice};
+
+    const A_SERVICE: bool = true;
+    const NO_SERVICE: bool = false;
 
     const EVERY_TAB: Tabs = Tabs {
         suggestions: true,
@@ -6782,21 +6789,24 @@ mod tests {
         let listed = Pane::BROWSE;
         let (first, last) = (listed[0], listed[listed.len() - 1]);
 
-        assert_eq!(stepped_pane(first, Step::Below, EVERY_TAB), listed[1]);
         assert_eq!(
-            stepped_pane(last, Step::Below, EVERY_TAB),
+            stepped_pane(first, Step::Below, EVERY_TAB, A_SERVICE),
+            listed[1]
+        );
+        assert_eq!(
+            stepped_pane(last, Step::Below, EVERY_TAB, A_SERVICE),
             first,
             "the end did not wrap"
         );
         assert_eq!(
-            stepped_pane(first, Step::Above, EVERY_TAB),
+            stepped_pane(first, Step::Above, EVERY_TAB, A_SERVICE),
             last,
             "the start did not wrap"
         );
 
-        let walked = listed
-            .iter()
-            .fold(first, |pane, _| stepped_pane(pane, Step::Below, EVERY_TAB));
+        let walked = listed.iter().fold(first, |pane, _| {
+            stepped_pane(pane, Step::Below, EVERY_TAB, A_SERVICE)
+        });
         assert_eq!(
             walked, first,
             "walking the whole sidebar did not come back to where it started"
@@ -6806,26 +6816,48 @@ mod tests {
     #[test]
     fn a_pane_the_sidebar_does_not_list_steps_onto_the_first_one_it_does() {
         assert_eq!(
-            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB, A_SERVICE),
             Pane::BROWSE[1]
         );
         assert_eq!(
-            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB, A_SERVICE),
             Pane::BROWSE[1]
         );
     }
 
     #[test]
-    fn the_pane_keys_never_land_on_the_server() {
-        assert!(!Pane::BROWSE.contains(&Pane::Server));
+    fn the_pane_keys_step_onto_the_services_row_last_in_the_collection() {
         assert_eq!(
-            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB, A_SERVICE),
+            Pane::Server
+        );
+        assert_eq!(
+            stepped_pane(Pane::Server, Step::Below, EVERY_TAB, A_SERVICE),
             Pane::Lyrics
         );
         assert_eq!(
-            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB),
+            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB, A_SERVICE),
+            Pane::Server
+        );
+    }
+
+    #[test]
+    fn the_pane_keys_pass_over_the_services_row_where_no_service_is_set() {
+        assert_eq!(
+            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB, NO_SERVICE),
+            Pane::Lyrics
+        );
+        assert_eq!(
+            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB, NO_SERVICE),
             Pane::Missing
         );
+    }
+
+    #[test]
+    fn the_services_pane_is_named_for_the_listener_and_stored_under_the_key_it_always_was() {
+        assert_eq!(Pane::Server.label(), "Services");
+        assert_eq!(Pane::Server.as_str(), "server");
+        assert_eq!(Pane::parse("server"), Some(Pane::Server));
     }
 
     #[test]
@@ -6837,13 +6869,19 @@ mod tests {
         };
 
         assert_eq!(
-            stepped_pane(Pane::Playlists, Step::Below, hidden),
+            stepped_pane(Pane::Playlists, Step::Below, hidden, NO_SERVICE),
             Pane::Party
         );
-        assert_eq!(stepped_pane(Pane::Party, Step::Below, hidden), Pane::Lyrics);
-        assert_eq!(stepped_pane(Pane::Lyrics, Step::Above, hidden), Pane::Party);
         assert_eq!(
-            stepped_pane(Pane::Playlists, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Party, Step::Below, hidden, NO_SERVICE),
+            Pane::Lyrics
+        );
+        assert_eq!(
+            stepped_pane(Pane::Lyrics, Step::Above, hidden, NO_SERVICE),
+            Pane::Party
+        );
+        assert_eq!(
+            stepped_pane(Pane::Playlists, Step::Below, EVERY_TAB, NO_SERVICE),
             Pane::Suggestions
         );
     }
