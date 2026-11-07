@@ -764,6 +764,12 @@ mod tests {
         let dead = dir.join(format!("{NEVER_A_PROCESS}-0.{STAGED_AS}"));
         let living = dir.join(format!("{}-999.{STAGED_AS}", process::id()));
         fs::write(&dead, b"half").expect("a file");
+        let aged = SystemTime::now() - writer::UNHELD_AND_UNTOUCHED_FOR * 2;
+        File::options()
+            .write(true)
+            .open(&dead)
+            .and_then(|file| file.set_modified(aged))
+            .expect("an aged file");
         fs::write(&living, [0; 64]).expect("a file");
         let kept = KeptAnalyses::at(dir).holding_at_most(64);
         let file = folder.0.join("track.wav");

@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import org.junit.Assert.assertEquals
@@ -43,6 +44,8 @@ class UiSmokeTest {
             scenario.recreate()
             await(device, By.res("true-peak"))
             device.pressBack()
+            device.waitForIdle()
+            Thread.sleep(PAGE_SETTLES_MS)
             scrollTo(device, By.res("setting-online"))
             assertEquals(online, library.features.online.value)
         }
@@ -54,7 +57,7 @@ class UiSmokeTest {
                 scrollTo(device, selector).click()
                 Thread.sleep(PAGE_SETTLES_MS)
                 return
-            } catch (stale: androidx.test.uiautomator.StaleObjectException) {
+            } catch (stale: StaleObjectException) {
                 device.waitForIdle()
             }
         }
@@ -65,26 +68,31 @@ class UiSmokeTest {
     private fun scrollTo(device: UiDevice, selector: BySelector): UiObject2 {
         for (direction in listOf(Direction.DOWN, Direction.UP)) {
             repeat(SCROLLS_AT_MOST) {
-                InstrumentationRegistry.getInstrumentation().uiAutomation.forgetTheCachedTree()
-                val found = device.findObject(selector)
-                val list = device.findObject(By.res(SCROLLED_LIST))
-                val bounds = list?.visibleBounds
-                val clear = bounds?.let { clearBand(it) }
-                val at = found?.visibleCenter?.y
-                if (found != null && (clear == null || at in clear)) {
+                try {
+                    InstrumentationRegistry.getInstrumentation().uiAutomation.forgetTheCachedTree()
+                    val found = device.findObject(selector)
+                    val list = device.findObject(By.res(SCROLLED_LIST))
+                    val bounds = list?.visibleBounds
+                    val clear = bounds?.let { clearBand(it) }
+                    val at = found?.visibleCenter?.y
+                    if (found != null && (clear == null || at in clear)) {
+                        device.waitForIdle()
+                        Thread.sleep(PAGE_SETTLES_MS)
+                        return await(device, selector)
+                    }
+                    if (list == null || clear == null) return await(device, selector)
+                    val towards =
+                        when {
+                            at == null -> direction
+                            at < clear.first -> Direction.UP
+                            else -> Direction.DOWN
+                        }
+                    swiped(device, list, towards)
                     device.waitForIdle()
                     Thread.sleep(PAGE_SETTLES_MS)
-                    return await(device, selector)
+                } catch (stale: StaleObjectException) {
+                    device.waitForIdle()
                 }
-                if (list == null || clear == null) return await(device, selector)
-                val towards =
-                    when {
-                        at == null -> direction
-                        at < clear.first -> Direction.UP
-                        else -> Direction.DOWN
-                    }
-                swiped(device, list, towards)
-                device.waitForIdle()
             }
         }
         return await(device, selector)
@@ -122,7 +130,7 @@ class UiSmokeTest {
             .forEach {
                 try {
                     ids.append(it.resourceName).append(' ')
-                } catch (stale: androidx.test.uiautomator.StaleObjectException) {
+                } catch (stale: StaleObjectException) {
                     ids.append("? ")
                 }
             }

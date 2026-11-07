@@ -155,6 +155,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn a_fresh_unheld_file_is_gone_only_where_its_stamp_names_no_running_process() {
         let scratch = Scratch::new("fresh");
 
