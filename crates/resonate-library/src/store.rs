@@ -2680,10 +2680,14 @@ macro_rules! a_held_copy {
                     t.hidden, t.alternative_of IS NOT NULL
                FROM tracks t LEFT JOIN artists a ON a.id = t.artist_id
               WHERE ",
-            $narrowed
+            $narrowed,
+            " AND t.duration IS NOT NULL AND t.sample_rate > 0
+              AND abs(t.duration * 1.0 / t.sample_rate - ?2) <= ?3"
         )
     };
 }
+
+const LENGTH_PREFILTER_SLACK_SECS: f64 = 0.001;
 
 pub(crate) const HELD_BY_THEIR_FIRST_WORDS: &str =
     a_held_copy!("t.title_words >= ?1 AND t.title_words < ?1 || '!'");
@@ -2803,6 +2807,9 @@ pub(crate) fn held_named_alike(
     let mut found: AHashMap<TrackId, Candidate> = AHashMap::new();
     let lead_key = folded_letters(lead.trim());
     let first_words = song.first_words();
+    let length_secs = song.length.as_secs_f64();
+    let slack_secs =
+        A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY.as_secs_f64() + LENGTH_PREFILTER_SLACK_SECS;
     let asked = first_words
         .iter()
         .map(|words| (HELD_BY_THEIR_FIRST_WORDS, words))
@@ -2812,7 +2819,9 @@ pub(crate) fn held_named_alike(
             .prepare_cached(sql)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         let candidates = statement
-            .query_map(params![value], |row| candidate_at(row, &song))
+            .query_map(params![value, length_secs, slack_secs], |row| {
+                candidate_at(row, &song)
+            })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         for candidate in candidates.into_iter().flatten() {
@@ -2878,7 +2887,7 @@ mod tests {
             let plan: Vec<String> = connection
                 .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
                 .and_then(|mut plan| {
-                    plan.query_map(params!["song"], |row| row.get::<_, String>(3))?
+                    plan.query_map(params!["song", 180.0, 2.0], |row| row.get::<_, String>(3))?
                         .collect()
                 })
                 .expect("a plan");
