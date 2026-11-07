@@ -1291,8 +1291,10 @@ mod tests {
         assert_eq!(stars, [false, true]);
     }
 
+    #[derive(Default)]
     struct NotPlayed {
         keeps: bool,
+        first_pages_read: Arc<std::sync::atomic::AtomicUsize>,
     }
 
     impl Serves for NotPlayed {
@@ -1313,6 +1315,8 @@ mod tests {
         }
 
         fn first_page(&self) -> Result<ServedFound> {
+            self.first_pages_read
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(ServedFound {
                 mixes: vec![ServedAlbum {
                     location: MediaLocation::from_uri("tidal:mix/LM").expect("a location"),
@@ -1373,12 +1377,52 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let service = Arc::new(NotPlayed {
+            keeps: true,
+            ..NotPlayed::default()
+        });
+        let read = Arc::clone(&service.first_pages_read);
+        let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
+        let mut driven = Driven::serving(cx, vec![service], an_account());
+        driven.settle();
+        assert_eq!(times_read(), 0, "the account was touched at launch");
+
+        open_the_server(&mut driven);
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+        assert_eq!(times_read(), 1);
+
+        driven.click("tab-settings");
+        driven.settle();
+        driven.click("open-server");
+        driven.settle();
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
+        assert_eq!(times_read(), 1, "a page read is not read again");
+    }
+
+    #[gpui::test]
+    fn a_service_that_keeps_no_songs_reads_its_first_page_at_once(cx: &mut TestAppContext) {
+        let service = Arc::new(NotPlayed::default());
+        let read = Arc::clone(&service.first_pages_read);
+        let mut driven = Driven::serving(cx, vec![service], an_account());
+
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[gpui::test]
     fn a_service_that_keeps_songs_offers_a_keep_on_a_song_and_a_mix_and_a_press_queues_them(
         cx: &mut TestAppContext,
     ) {
         let folder = crate::driven::Folder::new();
         let mut driven =
-            Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: true })], an_account());
+            Driven::serving(cx, vec![Arc::new(NotPlayed {
+                keeps: true,
+                ..NotPlayed::default()
+            })], an_account());
         let music = folder.path().to_path_buf();
         driven.cx.update(|_, cx| {
             gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
@@ -1404,7 +1448,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven =
-            Driven::serving(cx, vec![Arc::new(NotPlayed { keeps: false })], an_account());
+            Driven::serving(cx, vec![Arc::new(NotPlayed::default())], an_account());
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),

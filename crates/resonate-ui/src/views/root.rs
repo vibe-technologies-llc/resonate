@@ -2437,6 +2437,8 @@ impl RootView {
             }
         }
         self.pane = pane;
+        self.server
+            .update(cx, |server, cx| server.shown(pane == Pane::Server, cx));
         if opens_the_queue {
             self.following = Following::default();
             let player = self.player.clone();

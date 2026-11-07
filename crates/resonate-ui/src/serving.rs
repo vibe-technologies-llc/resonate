@@ -241,6 +241,8 @@ pub(crate) struct ServerModel {
     unfetched: AHashMap<CoverKey, Instant>,
     favoured: AHashMap<MediaLocation, bool>,
     scale: Scale,
+    shown: bool,
+    owes_a_first_page: bool,
 }
 
 impl ServerModel {
@@ -257,6 +259,8 @@ impl ServerModel {
             unfetched: AHashMap::new(),
             favoured: AHashMap::new(),
             scale: Scale::ONE,
+            shown: false,
+            owes_a_first_page: false,
         };
         model.refresh(cx);
         model
@@ -264,6 +268,17 @@ impl ServerModel {
 
     pub(crate) fn is_open(&self) -> bool {
         !self.services.is_empty()
+    }
+
+    pub(crate) fn shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        self.shown = shown;
+        if shown && self.owes_a_first_page {
+            self.read(cx);
+        }
+    }
+
+    fn waits_to_be_shown(&self, serves: &dyn Serves) -> bool {
+        !self.shown && serves.keeps_songs() && *self.place() == Place::Artists
     }
 
     pub(crate) fn serves(&self) -> Option<Arc<dyn Serves>> {
@@ -403,7 +418,12 @@ impl ServerModel {
             return;
         };
         self.page = Page::Reading;
+        self.owes_a_first_page = self.waits_to_be_shown(serves.as_ref());
         cx.notify();
+        if self.owes_a_first_page {
+            self._read = None;
+            return;
+        }
 
         let place = self.place().clone();
         let read = cx
