@@ -189,11 +189,11 @@ impl Group {
         Self::Organising,
         Self::Vault,
         Self::Inbox,
-        Self::YoutubeMusic,
         Self::ResonateKey,
         Self::Subsonic,
         Self::Jellyfin,
         Self::Tidal,
+        Self::YoutubeMusic,
         Self::Spotify,
         Self::Served,
         Self::Resuming,
@@ -266,7 +266,6 @@ impl Group {
             | Self::Organising
             | Self::Vault
             | Self::Inbox
-            | Self::YoutubeMusic
             | Self::Resuming
             | Self::History
             | Self::Repeating
@@ -276,6 +275,7 @@ impl Group {
             | Self::Subsonic
             | Self::Jellyfin
             | Self::Tidal
+            | Self::YoutubeMusic
             | Self::Spotify
             | Self::Served
             | Self::Lastfm => Category::Accounts,

@@ -125,7 +125,7 @@ binary's path, the cookie source and the JS runtime. Tests point it at a fake ex
 | `youtube-music-cookies` | A browser name (`firefox`, `chromium`, ...), a browser and profile folder as `yt-dlp` spells them (`firefox:/path/to/profile`, which is how a fork such as Zen is named), or a path to a Netscape cookies file. A value starting with a browser name and a colon is a browser; any other value holding a path separator is a file; a bare word goes to `yt-dlp` as a browser, which refuses an unknown name loudly. |
 | `yt-dlp` | Optional path to the program. Blank means `PATH`. |
 
-A settings group `Group::YoutubeMusic` in the Library category holds these, the terms sentence, and
+A settings group `Group::YoutubeMusic` in the Accounts category holds these, the terms sentence, and
 a *Check connection* button. The check runs a format listing on one fixed song and says one of:
 Premium formats available; signed in but no Premium formats; not signed in; `yt-dlp` missing; the song it asks about is gone; the check could not be made. The cookie value is withheld from every `Debug`, as other secrets are.
 

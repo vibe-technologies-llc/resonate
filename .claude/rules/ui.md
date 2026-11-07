@@ -1395,7 +1395,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
 - **The server pane browses whichever services play in place and is there only while one is set.**
   `Pane::Server` (`Icon::Server`, key `server`) is in no sidebar row and not in `Pane::BROWSE`, so
-  the pane keys pass it over; it is reached from Settings' Library category, the *Browsing a
+  the pane keys pass it over; it is reached from Settings' Accounts category, the *Browsing a
   service* group (`Group::Served`, no key, `served_group`), whose *Open the server* button calls
   `choose_pane(Pane::Server)` while `ServerModel::is_open` and otherwise says no service is set up.
   `set_pane` lands on it only while `ServerModel::is_open` (a service the live `Online` sets, online
@@ -1448,7 +1448,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `COVERS_FETCHED_AT_ONCE` (4) at a time, decoded on the `Drawer` at the drawn side, held in a
   `Recent` of `COVERS_HELD` (256) keyed by name and side, a failed one asked again after a minute.
   The magnifier opens `Magnified::Served` at the now-playing size.
-- **YouTube Music is a group in the Library category, and what it holds is kept, not played.**
+- **YouTube Music is a group in the Accounts category, and what it holds is kept, not played.**
   `Group::YoutubeMusic` (`views/settings/youtube_music.rs`): the switch, the cookies and `yt-dlp`
   fields, the keep-order switch, the terms in one plain sentence beside them and *Check connection*,
   which asks the `ChecksYoutubeMusic` seam (`Lookups::checks_youtube_music`) on the background executor
