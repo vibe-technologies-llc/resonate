@@ -653,7 +653,7 @@ mod tests {
         fn a_video_yt_dlp_refuses_for_its_own_reason_gives_the_keep_up_and_the_pass_goes_on() {
             let folder = Folder::holding_a_tool(
                 r#"case "$*" in
-    *v=refused*) echo 'ERROR: [youtube] refused: Sign in to confirm your age' >&2; exit 1 ;;
+    *v=refused*) echo 'ERROR: [youtube] refused: This video has been removed by the uploader' >&2; exit 1 ;;
     *-J*) echo '{"formats":[{"format_id":"251"}]}' ;;
     *) cat "$(dirname "$0")/song" ;;
 esac"#,
