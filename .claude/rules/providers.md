@@ -799,11 +799,33 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   is Matroska. A non-zero exit is an `Err` from `read`, never an end of file. AAC has not been measured
   on a real download; a fragmented `m4a` the tag writer refuses would land untagged.
 - **Lapsed cookies stop the poll, never fall to the free tier.** `yt-dlp` saying `COOKIES_LAPSED`
-  answers `Unwelcome`, and `Lapse` holds it for `A_POLL_LASTS` (10 minutes), so the rest of the poll
-  asks nothing; *Check connection* looks afresh (`formats_checked`). **A signed-in song with no Premium
-  format** re-checks `CHECKED_WITH` (`9RfVp-GhKfs`, an album song, since a music video has no Premium
-  format on any account), held as long: gone there too, the account lost them (`Unwelcome`,
-  `PREMIUM_LOST`); still there, this one song is taken at its tier, warned of.
+  answers `Unwelcome` under `THE_SIGN_IN_LAPSED`, and `Lapse` holds it for `A_POLL_LASTS` (10 minutes),
+  so the rest of the poll asks nothing; *Check connection* looks afresh (`formats_checked`). **A
+  signed-in song with no Premium format** re-checks `CHECKED_WITH` (`9RfVp-GhKfs`, an album song, since
+  a music video has no Premium format on any account), held as long: gone there too, the account lost
+  them (`Unwelcome`, `THE_SUBSCRIPTION_LAPSED`); still there, this one song is taken at its tier, warned
+  of. Lanes wanting that look wait on one mutex for one run, bounded by `ASKED_WITHIN`, since each would
+  otherwise touch the account itself and all need the one answer
+  (`lanes_asking_at_once_wait_on_one_look_at_the_account`). **The check song taken down is no lost
+  Premium**: `holds_up` takes the song at its tier
+  (`a_check_song_taken_down_is_no_lost_premium_and_the_song_is_taken_at_its_tier`).
+- **`ERROR: [youtube] <id>:` is the video's verdict.** `yt-dlp` having reached the extractor and refused
+  this video (age gate, removed, region, DRM, `Requested format is not available`) reads as gone:
+  `formats` lists no tier, `download` opens `Opened::Gone`, whatever the reason's words, so one
+  video can never stop a poll. **Unless the line is the account's or the network's**
+  (`NO_VERDICT_ON_THE_VIDEO`: a bot check, a captcha, a rate limit, a failed request,
+  `please report this issue`): that says nothing of the video, and a verdict there would give every
+  queued song up in one outage, so it stays `ToolFailed`, provider-away. So does a tool that never
+  reached the extractor (a usage error, a missing runtime, a traceback). A lapse is weighed first
+  (`a_video_refused_for_its_own_reason_opens_as_gone_and_lists_no_tier`,
+  `trouble_of_the_account_or_the_network_is_no_verdict_on_the_video`,
+  `a_tool_that_never_reached_the_video_is_the_tool_failed`).
+- ***Check connection* has six answers** (`Connection`, `resonate ytmusic check`, the pane's notice):
+  `Premium`, `SignedInWithoutPremium`, `NotSignedIn` (no cookies, or turned away), `ToolMissing`,
+  `CheckSongGone` (the song it asks about has left YouTube, which forgets no lapse) and `CouldNotCheck`
+  (a bot check, a network failure, an answer that does not read: nothing is known of the account)
+  (`the_check_song_gone_leaves_a_lapse_standing`,
+  `a_check_that_could_not_be_made_is_told_apart_from_not_being_signed_in`).
 - **One download at a time, without narrowing the poll.** It says no `downloads_at_once`, which is the
   narrowest across the registry; `OneAtATime` holds a `Turn` inside the crate for as long as the reader
   lives, and an opening waits `A_TURN_IS_WAITED_ON_FOR` (45 s) for it, then answers `Busy`, the want's.
@@ -822,6 +844,9 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   each live child in a process-wide list and `stop_the_tools` kills them and refuses new ones; `main`,
   `signals::leave` and the window's end call it. A SIGKILLed parent still orphans a child until its pipe
   closes.
+- **A cookie value names a file only where it holds a path separator.** A bare word goes to `yt-dlp`
+  as a browser, which refuses an unknown name loudly; as `--cookies` it would write a jar in the working
+  directory (`a_bare_word_goes_to_the_tool_as_a_browser_and_only_a_separator_names_a_file`).
 - **A cookie value is withheld from the logs too.** `Cookies`' `Debug` prints neither browser nor path,
   and `Telling` replaces `Cookies::withheld` (the whole value, the profile, each short of a `~`) in
   every line of stderr before it reaches `tracing`.
@@ -839,21 +864,59 @@ service offers it.
   `filed` with the same length check, so no other service can answer with a same-named file. It lands
   in the delivery folder and is refused without one (`NoDeliveryFolder`); a vault is not a keep's
   destination. A blank title is refused at the press (`KeptWithNoTitle`, a toast on a song; a list
-  leaves such a row out and says how many).
+  leaves such a row out and says how many). **A keep is given `ANSWERED_ALONE_WITHIN` (120 s)**, not the
+  poll's `ANSWERS_WITHIN`: asked alone, its `find` may run the tool twice, and late is away. The tool's
+  `ASKED_WITHIN` twice over stays within it (`a_keep_may_outlast_two_runs_of_the_tool`).
 - **A song already held is not fetched.** `store::held_named_alike` (`Identity::named_alike`'s rule:
   the bare title, the lead artist, a length within 2 s, a clean title standing for no other; a copy
   standing or on an absent volume) answers `AlreadyHeld`, and a list puts the
   held file in its place. A landed row of the same video under another list is that file too, so a song
-  in two lists is downloaded once.
+  in two lists is downloaded once. **A want and a keep of one video land one copy.** `copy_of` also
+  takes a standing file whose vault object came from `<source>:track/<video>` (`vault_objects.taken_from`,
+  `object_deliveries`; `wants.offered` holds the landed file's URI, so it says nothing of the video). A
+  want a last resort answered notes a landed row of its own, which is what remembers the video of a file
+  filed in the music folder. The poll declines a stream whose `track/<video>` a landed row names while
+  that file stands (`Library::a_keep_holds_the_offer`), and a file gone declines nothing. A want of any
+  other provider writes no row, so one song wanted on two albums still lands twice
+  (`a_video_a_want_filed_in_the_music_folder_is_not_fetched_again_for_a_keep`,
+  `a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep`,
+  `a_video_a_keep_landed_is_declined_by_the_poll_while_its_file_stands`).
+- **A list a keep cannot enter holds nothing up.** A list named as a followed or saved-query one stands
+  beside it under the first free name (`playlist::name_a_list_may_hold`), and a row whose list was
+  followed since the press is left queued before anything is asked, the rows behind it going on
+  (`a_kept_list_named_as_a_followed_list_stands_beside_it`,
+  `a_list_followed_since_the_press_asks_for_nothing_and_holds_nothing_up`).
+- **A landing registers its root before asking for the scan**, so a walk that refused the scan leaves a
+  root the next pass can read under, in any process. The head of a pass reads a landed file no track
+  names only through a root that reaches it (`roots_owed_a_read`), never by adding one, so a folder the
+  listener forgot stays forgotten unless a new keep lands there
+  (`a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_landing`,
+  `a_folder_forgotten_stays_forgotten_whatever_landed_in_it`).
 - **Order is remembered, since songs land over hours.** With `youtube-music-keep-order` on, each row
   keeps its `place` and a landing is seated among those there; off, it appends. The list appears with
   its first song, and a song given up leaves a gap. Pressing a list again adds what is new in its
   places and leaves rows the listener removed removed.
 - **What gives a row up** (`gone` set, the video being pinned, so a retry would fetch the same refused
   bytes every open): `Nothing`, a length or decode refused (`NotAsLongAsWanted`, `Undecodable`,
-  `TooLarge`), counted `unkept`; `Opened::Gone`, counted `gone`. Away, at `find` or carried in a read,
-  ends the pass with `stopped_by` and the row queued. `Busy` and a stalled stream leave it queued and
-  go on. A press again brings a given-up row back.
+  `TooLarge`), counted `unkept`; `Opened::Gone`, counted `gone`. A press again brings a given-up row
+  back, with its tries spent forgotten.
+- **A failure never heads two passes running.** The queue reads `ORDER BY tried, asked, id`, songs never
+  tried first. Away, at `find` or carried in a read, ends the pass with `stopped_by` and the row queued;
+  `Busy`, a stalled stream and a filing that failed go on to the next row. Each stamps `tried`, moving
+  the row to the back, and counts in `tries`; at `KEEP_TRIES_AT_MOST` (5) the row is given up, counted
+  `unkept`. **What the listener must mend costs no try** (`WhyAway::says_nothing_of_the_song`): a lapse,
+  a lost subscription and a missing tool move the row back and count nothing, since the song was never
+  weighed and would otherwise be given up by waiting
+  (`a_video_yt_dlp_refuses_for_its_own_reason_gives_the_keep_up_and_the_pass_goes_on`,
+  `a_song_that_stopped_a_pass_goes_to_the_back_and_the_next_pass_begins_elsewhere`,
+  `a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_back`,
+  `a_lapsed_account_moves_a_keep_back_and_costs_it_no_try`).
+- **A pass that stopped says why and where.** `Error::why_away` reads a provider-away error as a
+  `WhyAway` (`SignInLapsed`, `SubscriptionLapsed`, `ToolMissing`, `NotAnswering`), `Away` keeps it, and
+  `KeepSummary::stopped` carries it beside `stopped_by` with the song's title; the window's toast and
+  `KeepSignInLapsed`, `KeepPremiumLost`, `KeepToolMissing`, `KeepStopped` on the command line name the
+  song and say what to do (`a_pass_stopped_says_why_and_at_which_song`,
+  `a_pass_stopped_names_the_song_and_says_what_to_do`).
 - **`keep_pending` holds the poll's lock for its whole walk**, so a second pass or a poll is refused.
   A poll refused by a pass in this process asks it to give way: it ends at its next row with
   `KeepSummary::yielded`, and the window begins it again after the poll. A pass in another process
@@ -865,7 +928,10 @@ service offers it.
   song up; a press during a poll waits for the poll, and a pass another process refused is tried again
   `OWED_ASKED_AGAIN_AFTER` later. A poll asked for meanwhile is owed and goes first, a
   pass that gave way following it. A pass runs at open only where `keeps_pending` is above zero and
-  `youtube-music` is on. *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,
+  `youtube-music` is on. **A service that keeps songs reads its first page only once the server pane is
+  shown** (`ServerModel::shown`), since that page is `yt-dlp` on the account's cookies and a Chromium-family
+  browser may raise a keyring prompt, and a window opening touches nothing unasked
+  (`a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown`). *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,
   and so does turning `youtube-music` or `online` off, heard within a second
   (`keep_only_while_turned_on`); neither is undone by a yield or a refusal. What a pass that gave way
   did is added to `keep_tally` and told in one toast when a pass ends without yielding

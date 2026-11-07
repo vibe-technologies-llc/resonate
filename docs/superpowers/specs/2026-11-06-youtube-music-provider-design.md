@@ -122,12 +122,12 @@ binary's path, the cookie source and the JS runtime. Tests point it at a fake ex
 | Key | Meaning |
 |---|---|
 | `youtube-music` | Bool, default false. Nothing is registered while off. |
-| `youtube-music-cookies` | A browser name (`firefox`, `chromium`, ...), a browser and profile folder as `yt-dlp` spells them (`firefox:/path/to/profile`, which is how a fork such as Zen is named), or a path to a Netscape cookies file. A value starting with a browser name and a colon is a browser; any other value holding a path separator is a file. |
+| `youtube-music-cookies` | A browser name (`firefox`, `chromium`, ...), a browser and profile folder as `yt-dlp` spells them (`firefox:/path/to/profile`, which is how a fork such as Zen is named), or a path to a Netscape cookies file. A value starting with a browser name and a colon is a browser; any other value holding a path separator is a file; a bare word goes to `yt-dlp` as a browser, which refuses an unknown name loudly. |
 | `yt-dlp` | Optional path to the program. Blank means `PATH`. |
 
 A settings group `Group::YoutubeMusic` in the Library category holds these, the terms sentence, and
 a *Check connection* button. The check runs a format listing on one fixed song and says one of:
-Premium formats available; signed in but no Premium formats; not signed in; `yt-dlp` missing. The cookie value is withheld from every `Debug`, as other secrets are.
+Premium formats available; signed in but no Premium formats; not signed in; `yt-dlp` missing; the song it asks about is gone; the check could not be made. The cookie value is withheld from every `Debug`, as other secrets are.
 
 The provider works with no cookies at all, at the free tier, once `youtube-music` is on.
 
@@ -204,8 +204,9 @@ Existing checks still apply after delivery: the decoder must probe it and
   tier it has, logged at warn. (**Builder's call.**)
 - `yt-dlp` missing: `Error::Io`, already provider-away.
 - **Builder's call:** a new seam variant `Error::ToolFailed { provider, op, code: Option<i32> }`,
-  provider-away, for a non-zero exit that is neither of the below. A deleted, private or
-  region-blocked video answers `Opened::Gone`.
+  provider-away, for a non-zero exit that is neither of the below. An `ERROR: [youtube] <id>:` line
+  is the video's own verdict and answers `Opened::Gone`, unless it is a bot check, a rate limit or a
+  failed request, which say nothing of the video.
 - Every `yt-dlp` call has a time limit and is killed past it, since a hung child must not hold a
   poll lane.
 
@@ -313,7 +314,8 @@ call:** accepted in this version; the account's own playlists go through keep an
 - A short real Opus-in-WebM fixture delivered as `.mka` decodes through `resonate-codec`, is tagged,
   reads its tags back, and its audio packets hash the same before and after, skipped without `ffmpeg`
   as the repo's other tests are.
-- A live test behind `RESONATE_YTMUSIC_TESTS`, off in CI, run by hand on the listener's account.
+- The live test behind `RESONATE_YTMUSIC_TESTS` was not built: no agent runs with the listener's
+  cookies, so the listener's acceptance list stands in for it.
 - CI has no `yt-dlp` and needs none. The Windows cross-check still has to compile.
 
 ## Left to the builder

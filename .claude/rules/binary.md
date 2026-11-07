@@ -389,7 +389,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - `youtube-music` (off), `youtube-music-cookies`, `yt-dlp`, `youtube-music-keep-order` (on): nothing is
   registered while the first is off (`providers.md`'s *A YouTube Music account*). The cookies are a
   browser as `yt-dlp` spells it (`firefox`, `firefox:/path/to/profile`, how a fork such as Zen is
-  named), else a Netscape cookies file; `Cookies::read` decides, and `Config`'s `Debug` withholds the
+  named), else the path of a Netscape cookies file, which holds a path separator, so a bare word
+  is a browser for `yt-dlp` to refuse; `Cookies::read` decides, and `Config`'s `Debug` withholds the
   value. `yt-dlp` is a path, blank meaning `PATH`. The last feeds `PlaylistToKeep::ordered`.
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
   on. `hosted-services` (default true) lets blank/absent fall back to the hosted services
