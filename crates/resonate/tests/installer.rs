@@ -52,6 +52,10 @@ fn read(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
+fn holds_the_line(text: &str, wanted: &str) -> bool {
+    text.lines().any(|line| line == wanted)
+}
+
 fn packaging(name: &str) -> String {
     read(&packaging_path(name))
 }
@@ -158,9 +162,9 @@ fn the_installer_registers_every_extension_the_scan_admits_and_no_other() {
 fn the_installer_writes_the_current_users_registry_and_removes_what_it_wrote() {
     let script = packaging(INSTALLER_SCRIPT);
 
-    assert!(script.contains("\nPrivilegesRequired=lowest\n"));
+    assert!(holds_the_line(&script, "PrivilegesRequired=lowest"));
     assert!(!script.contains("PrivilegesRequiredOverridesAllowed"));
-    assert!(script.contains("\nChangesAssociations=yes\n"));
+    assert!(holds_the_line(&script, "ChangesAssociations=yes"));
     for line in registry_lines(&script) {
         let key = field(line, "Subkey").expect("a subkey");
         let beneath_a_key_that_goes = key.starts_with("Software\\Classes\\{#ProgramId}")
@@ -251,7 +255,7 @@ fn the_build_script_compiles_one_installer_per_architecture_beside_its_archive()
         );
     }
     assert!(script.contains("ArchitecturesAllowed={#InstallArchitecture}"));
-    assert!(script.contains("\nAppPublisher=Resonate\n"));
+    assert!(holds_the_line(&script, "AppPublisher=Resonate"));
 }
 
 #[test]
