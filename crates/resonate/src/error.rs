@@ -791,11 +791,30 @@ pub enum Error {
     KeepCancelled,
 
     #[cfg(feature = "online")]
-    #[error("{provider} stopped answering, so {left} kept songs stay queued")]
+    #[error("{provider} stopped answering at {song:?}, so {left} kept songs stay queued")]
     KeepStopped {
         provider: resonate_core::SourceId,
+        song: String,
         left: u64,
     },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "the cookies lapsed at {song:?}: sign in to YouTube again and run this once more; \
+         {left} kept songs stay queued"
+    )]
+    KeepSignInLapsed { song: String, left: u64 },
+
+    #[cfg(feature = "online")]
+    #[error("this account has lost Premium at {song:?}, so {left} kept songs stay queued")]
+    KeepPremiumLost { song: String, left: u64 },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "yt-dlp could not be run at {song:?}: install it, or name it in the yt-dlp setting; \
+         {left} kept songs stay queued"
+    )]
+    KeepToolMissing { song: String, left: u64 },
 
     #[cfg(feature = "online")]
     #[error(

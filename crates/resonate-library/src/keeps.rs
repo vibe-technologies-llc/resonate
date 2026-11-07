@@ -6,19 +6,21 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_core::{Gate, Link, MediaLocation, SourceId, TrackId};
+use resonate_core::{Gate, Link, Locator, MediaLocation, SourceId, TrackId};
 use resonate_providers::{
-    Answer, Asking, Away, Identity, Providers, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
+    ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Delivered, Delivery, Identity, Providers,
+    TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER, WhyAway,
 };
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
 use crate::{
-    ANSWERS_WITHIN, Cut, DeliveryFolder, Error, Library, PollOptions, PollProgress, Result,
-    StoreOp, TagEdit, TagField,
+    Cut, DeliveryFolder, Error, Library, PollOptions, PollProgress, Result, StoreOp, TagEdit,
+    TagField, Want,
     filed::{self, AlbumToFile, ToFile, Unfiled},
     organise,
     pass::PassKind,
-    playlist, store,
+    playlist,
+    store::{self, HeldAlike},
     supply::{self, Drawing, Drawn, HEEDED_EVERY, Unopened},
     synced::{self, HeldRow},
     volumes,
@@ -28,8 +30,12 @@ const WATCHED_AT: &str = "https://music.youtube.com/watch?v=";
 
 const HEARD_THERE: &str = "streaming";
 
+const A_SONG_IS_KEYED: &str = "track/";
+
+const KEEP_TRIES_AT_MOST: i64 = 5;
+
 const KEEPS_QUEUED: &str = "SELECT id, source, video, title, artist, album, length, playlist
-       FROM kept_songs WHERE landed IS NULL AND gone = 0 ORDER BY asked, id";
+       FROM kept_songs WHERE landed IS NULL AND gone = 0 ORDER BY tried, asked, id";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SongToKeep {
@@ -60,16 +66,30 @@ pub struct KeptList {
     pub held: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeepStopped {
+    pub why: WhyAway,
+    pub song: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeepSummary {
     pub landed: usize,
     pub gone: usize,
     pub unkept: usize,
     pub stopped_by: Option<SourceId>,
+    pub stopped: Option<KeepStopped>,
     pub yielded: bool,
 }
 
 impl SongToKeep {
+    fn taken_from(&self) -> MediaLocation {
+        MediaLocation::new(
+            self.source.clone(),
+            format!("{A_SONG_IS_KEYED}{}", self.video),
+        )
+    }
+
     fn identity(&self) -> Identity {
         Identity {
             artist: self.artist.clone(),
@@ -135,6 +155,18 @@ struct HeldCopy {
     cut: Cut,
 }
 
+impl HeldCopy {
+    fn of(copy: HeldAlike) -> Self {
+        Self {
+            track: Some(copy.track),
+            cut: Cut {
+                location: MediaLocation::local(copy.held.path),
+                span: copy.span,
+            },
+        }
+    }
+}
+
 struct Queued {
     id: i64,
     song: SongToKeep,
@@ -164,6 +196,7 @@ enum Turn {
     Landed,
     Gone,
     Unkept,
+    Failed,
     Stopped,
     Yielded,
     Over,
@@ -434,8 +467,22 @@ impl Library {
                 Turn::Landed => summary.landed += 1,
                 Turn::Gone => summary.gone += 1,
                 Turn::Unkept => summary.unkept += 1,
+                Turn::Failed => {
+                    self.tried_in_vain(&row)?;
+                    summary.unkept += 1;
+                }
                 Turn::Stopped => {
+                    let why = walking.away.why(&row.song.source).unwrap_or_default();
+                    if why.says_nothing_of_the_song() {
+                        self.moved_back(&row)?;
+                    } else if self.tried_in_vain(&row)? {
+                        summary.unkept += 1;
+                    }
                     summary.stopped_by = Some(row.song.source);
+                    summary.stopped = Some(KeepStopped {
+                        why,
+                        song: row.song.title,
+                    });
                     break;
                 }
                 Turn::Yielded => {
@@ -529,7 +576,7 @@ impl Library {
             }
             Drawn::Read(Err(unfiled)) => {
                 tracing::warn!(video, ?unfiled, "a kept song could not be filed");
-                Ok(Turn::Unkept)
+                Ok(Turn::Failed)
             }
             Drawn::Unopened(Unopened::Gone) => {
                 tracing::info!(video, "a kept song's video was gone when it was opened");
@@ -539,17 +586,17 @@ impl Library {
             Drawn::Unopened(Unopened::Refused(error)) => {
                 tracing::warn!(%error, cause = ?error.cause(), video, "a kept song could not be opened");
                 if error.is_the_provider_away() {
-                    walking.away.note(&row.song.source);
+                    walking.away.note_why(&row.song.source, error.why_away());
                     return Ok(Turn::Stopped);
                 }
-                Ok(Turn::Unkept)
+                Ok(Turn::Failed)
             }
             Drawn::Stalled => {
                 tracing::warn!(
                     video,
                     "a kept song stopped sending and waits for the next pass"
                 );
-                Ok(Turn::Unkept)
+                Ok(Turn::Failed)
             }
         }
     }
@@ -560,15 +607,29 @@ impl Library {
         }
         if answer.refused + answer.late + answer.passed_over == 0 {
             self.given_up(row)?;
+            return Ok(Turn::Unkept);
         }
-        Ok(Turn::Unkept)
+        Ok(Turn::Failed)
     }
 
     fn copy_of(&self, song: &SongToKeep) -> Result<Option<HeldCopy>> {
-        match self.held_alike(song)? {
-            Some(held) => Ok(Some(held)),
-            None => self.landed_before(song),
+        if let Some(held) = self.held_alike(song)? {
+            return Ok(Some(held));
         }
+        if let Some(held) = self.delivered_from_the_video(song)? {
+            return Ok(Some(held));
+        }
+        self.landed_before(song)
+    }
+
+    fn delivered_from_the_video(&self, song: &SongToKeep) -> Result<Option<HeldCopy>> {
+        let taken_from = song.taken_from().to_uri();
+        let copies = self
+            .inner()
+            .read(|connection| store::held_from_a_delivery(connection, &taken_from))?;
+        let copy = self.first_there(copies, |copy| &copy.held)?;
+
+        Ok(copy.map(HeldCopy::of))
     }
 
     fn held_alike(&self, song: &SongToKeep) -> Result<Option<HeldCopy>> {
@@ -581,19 +642,13 @@ impl Library {
             .read(|connection| store::held_named_alike(connection, &song.title, lead, length))?;
         let copy = self.first_there(copies, |copy| &copy.held)?;
 
-        Ok(copy.map(|copy| HeldCopy {
-            track: Some(copy.track),
-            cut: Cut {
-                location: MediaLocation::local(copy.held.path),
-                span: copy.span,
-            },
-        }))
+        Ok(copy.map(HeldCopy::of))
     }
 
     fn landed_before(&self, song: &SongToKeep) -> Result<Option<HeldCopy>> {
         let landed = self
             .inner()
-            .read(|connection| landed_as(connection, song))?;
+            .read(|connection| landed_as(connection, &song.source, &song.video))?;
         let Some(held) = self.first_there(landed, |held| held)? else {
             return Ok(None);
         };
@@ -650,6 +705,92 @@ impl Library {
                 .map(drop)
                 .map_err(|source| Error::store(StoreOp::Update, source))
         })
+    }
+
+    fn moved_back(&self, row: &Queued) -> Result<()> {
+        self.inner().write(|transaction| {
+            transaction
+                .execute(
+                    "UPDATE kept_songs SET tried = ?2 WHERE id = ?1",
+                    params![row.id, store::to_nanos(SystemTime::now())],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })
+    }
+
+    fn tried_in_vain(&self, row: &Queued) -> Result<bool> {
+        self.inner().write(|transaction| {
+            transaction
+                .query_row(
+                    "UPDATE kept_songs
+                        SET tried = ?2, tries = tries + 1, gone = tries + 1 >= ?3
+                      WHERE id = ?1
+                  RETURNING gone",
+                    params![
+                        row.id,
+                        store::to_nanos(SystemTime::now()),
+                        KEEP_TRIES_AT_MOST
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })
+    }
+
+    pub(crate) fn note_landed_for_a_want(
+        &self,
+        want: &Want,
+        taken_from: &MediaLocation,
+        at: &MediaLocation,
+    ) -> Result<()> {
+        let (Locator::Key(key), Some(path)) = (taken_from.locator(), at.as_path()) else {
+            return Ok(());
+        };
+        let Some(video) = key.strip_prefix(A_SONG_IS_KEYED) else {
+            return Ok(());
+        };
+        self.inner().write(|transaction| {
+            transaction
+                .execute(
+                    "INSERT INTO kept_songs (source, video, title, artist, album, length, asked, landed)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     ON CONFLICT (source, video) WHERE playlist IS NULL
+                     DO UPDATE SET landed = excluded.landed, gone = 0",
+                    params![
+                        taken_from.source().as_str(),
+                        video,
+                        want.title,
+                        want.artist,
+                        want.album_title,
+                        length_column(want.length),
+                        store::to_nanos(SystemTime::now()),
+                        store::path_text(path),
+                    ],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })
+    }
+
+    pub(crate) fn a_keep_holds_the_offer(&self, offer: &Delivered) -> bool {
+        let Delivery::Stream { key, .. } = &offer.delivery else {
+            return false;
+        };
+        let Some(video) = key.strip_prefix(A_SONG_IS_KEYED) else {
+            return false;
+        };
+        let held = self
+            .inner()
+            .read(|connection| landed_as(connection, &offer.provider, video))
+            .and_then(|landed| self.first_there(landed, |held| held));
+        match held {
+            Ok(held) => held.is_some(),
+            Err(error) => {
+                tracing::warn!(%error, "what was kept could not be weighed against an offer");
+                false
+            }
+        }
     }
 
     fn given_up(&self, row: &Queued) -> Result<()> {
@@ -749,7 +890,7 @@ fn asked(
     providers.only(&song.source).first(
         &song.identity(),
         &Asking {
-            within: ANSWERS_WITHIN,
+            within: ANSWERED_ALONE_WITHIN,
             cancelled: &cancelled,
             turning_to: &|_| {},
             declined: &|_| false,
@@ -762,9 +903,8 @@ fn asked(
     )
 }
 
-fn length_column(song: &SongToKeep) -> Option<i64> {
-    song.length
-        .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX))
+fn length_column(length: Option<Duration>) -> Option<i64> {
+    length.map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX))
 }
 
 fn queued_alone(
@@ -777,14 +917,15 @@ fn queued_alone(
             "INSERT INTO kept_songs (source, video, title, artist, album, length, asked)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (source, video) WHERE playlist IS NULL
-             DO UPDATE SET gone = 0, landed = CASE WHEN ?8 THEN NULL ELSE landed END",
+             DO UPDATE SET gone = 0, tried = NULL, tries = 0,
+                           landed = CASE WHEN ?8 THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
                 song.video,
                 song.title,
                 song.artist,
                 song.album,
-                length_column(song),
+                length_column(song.length),
                 store::to_nanos(SystemTime::now()),
                 what_landed == WhatLanded::IsForgotten,
             ],
@@ -801,7 +942,7 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
                  (source, video, title, artist, album, length, playlist, place, asked)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT (source, video, playlist)
-             DO UPDATE SET place = excluded.place, gone = 0,
+             DO UPDATE SET place = excluded.place, gone = 0, tried = NULL, tries = 0,
                            landed = CASE WHEN ?10 THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
@@ -809,7 +950,7 @@ fn queued_in(transaction: &Transaction<'_>, list: &str, pressed: &Pressed<'_>) -
                 song.title,
                 song.artist,
                 song.album,
-                length_column(song),
+                length_column(song.length),
                 list,
                 pressed.place,
                 store::to_nanos(SystemTime::now()),
@@ -899,7 +1040,7 @@ fn queued_at(row: &SqlRow<'_>) -> rusqlite::Result<Option<Queued>> {
     }))
 }
 
-fn landed_as(connection: &Connection, song: &SongToKeep) -> Result<Vec<HeldRow>> {
+fn landed_as(connection: &Connection, source: &SourceId, video: &str) -> Result<Vec<HeldRow>> {
     let mut statement = connection
         .prepare_cached(
             "SELECT DISTINCT landed FROM kept_songs
@@ -907,7 +1048,7 @@ fn landed_as(connection: &Connection, song: &SongToKeep) -> Result<Vec<HeldRow>>
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     statement
-        .query_map(params![song.source.as_str(), song.video], |row| {
+        .query_map(params![source.as_str(), video], |row| {
             Ok(HeldRow {
                 path: store::path_of(&row.get::<_, String>(0)?),
                 within_the_vault: None,

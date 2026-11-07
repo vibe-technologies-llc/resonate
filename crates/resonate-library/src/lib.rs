@@ -116,7 +116,7 @@ pub use crate::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,
     },
-    keeps::{KeepSummary, Kept as KeptSong, KeptList, PlaylistToKeep, SongToKeep},
+    keeps::{KeepStopped, KeepSummary, Kept as KeptSong, KeptList, PlaylistToKeep, SongToKeep},
     learning::Learning,
     linked::{
         AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, FollowedPlaylist, LinkNames,

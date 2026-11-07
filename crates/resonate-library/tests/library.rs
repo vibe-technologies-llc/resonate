@@ -32,7 +32,8 @@ use resonate_library::{
     CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
     Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
-    ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepSummary, Kept, KeptList, KeptSong, Layout,
+    ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped, KeepSummary, Kept, KeptList,
+    KeptSong, Layout,
     Learning, Library, LifeSpan, Link, LinkNames, Linked, LinkedPlaylist, LinkedProfile,
     ListedSong, Listen, ListeningService, LookupOp, Love, Loved, LovedNames, LovesTold, LyricText,
     LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack, NamesMoved,
@@ -49,7 +50,7 @@ use resonate_library::{
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
-    ProviderOp, Providers, Result as ProvidedResult, TURNED_TO_APART,
+    ProviderOp, Providers, Result as ProvidedResult, TURNED_TO_APART, WhyAway,
 };
 
 mod support;
@@ -28166,6 +28167,7 @@ enum TubeAnswer {
     Gone,
     Undecodable,
     Away,
+    Lapsed,
     Busy,
     DyingAway,
     Hanging,
@@ -28216,7 +28218,7 @@ impl Tube {
 
     fn stream(&self, video: &str, opening: Opening) -> ProvidedResult<Obtained> {
         Ok(Obtained::Found(Delivery::Stream {
-            key: format!("video/{video}").into(),
+            key: format!("track/{video}").into(),
             extension: Extension::new("wav")?,
             opening,
         }))
@@ -28253,6 +28255,11 @@ impl Provider for Tube {
                 provider: self.source.clone(),
                 op: ProviderOp::Search,
                 source: io::Error::from(io::ErrorKind::ConnectionRefused),
+            }),
+            TubeAnswer::Lapsed => Err(ProvidedError::Unwelcome {
+                provider: self.source.clone(),
+                op: ProviderOp::Search,
+                code: 401,
             }),
             TubeAnswer::Busy => Err(ProvidedError::Busy {
                 provider: self.source.clone(),
@@ -29013,6 +29020,326 @@ fn a_provider_failing_part_way_through_a_download_stops_the_pass_and_keeps_the_q
     assert_eq!(library.keeps_pending()?, 2);
     assert!(staged_under(tree.path()).is_empty());
     assert!(songs_under(&tree).is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_song_that_stopped_a_pass_goes_to_the_back_and_the_next_pass_begins_elsewhere() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    tube.answering("one", &[TubeAnswer::Away]);
+    library.keep_song(song_to_keep("one", "One"))?;
+    library.keep_song(song_to_keep("two", "Two"))?;
+    library.keep_song(song_to_keep("three", "Three"))?;
+
+    assert!(pass(&library, &tube)?.stopped_by.is_some());
+    let summary = pass(&library, &tube)?;
+
+    assert_eq!(summary.landed, 3);
+    assert_eq!(tube.videos_asked(), ["one", "two", "three", "one"]);
+    Ok(())
+}
+
+#[test]
+fn a_song_the_provider_was_busy_for_goes_behind_a_song_not_yet_tried() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    tube.answering("one", &[TubeAnswer::Busy]);
+    library.keep_song(song_to_keep("one", "One"))?;
+
+    assert_eq!(pass(&library, &tube)?.unkept, 1);
+    library.keep_song(song_to_keep("two", "Two"))?;
+    assert_eq!(pass(&library, &tube)?.landed, 2);
+
+    assert_eq!(tube.videos_asked(), ["one", "two", "one"]);
+    Ok(())
+}
+
+#[test]
+fn a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_back() -> Result<()>
+{
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    tube.answering("one", &[TubeAnswer::DyingAway; 5]);
+    library.keep_song(song_to_keep("one", "One"))?;
+
+    for _ in 0..4 {
+        assert!(pass(&library, &tube)?.stopped_by.is_some());
+        assert_eq!(library.keeps_pending()?, 1);
+    }
+    assert!(pass(&library, &tube)?.stopped_by.is_some());
+    assert_eq!(library.keeps_pending()?, 0, "the fifth try gives it up");
+    assert_eq!(pass(&library, &tube)?, KeepSummary::default());
+    assert_eq!(tube.videos_asked().len(), 5);
+
+    tube.answering("one", &[TubeAnswer::Busy; 4]);
+    library.keep_song(song_to_keep("one", "One"))?;
+    for _ in 0..4 {
+        assert_eq!(pass(&library, &tube)?.unkept, 1);
+    }
+    assert_eq!(library.keeps_pending()?, 1, "a press gave it five tries more");
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+    Ok(())
+}
+
+#[test]
+fn a_pass_stopped_says_why_and_at_which_song() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    tube.answering("one", &[TubeAnswer::Lapsed, TubeAnswer::Away]);
+    tube.answering("two", &[TubeAnswer::Away]);
+    library.keep_song(song_to_keep("one", "One"))?;
+    library.keep_song(song_to_keep("two", "Two"))?;
+
+    assert_eq!(
+        pass(&library, &tube)?.stopped,
+        Some(KeepStopped {
+            why: WhyAway::SignInLapsed,
+            song: "One".to_owned(),
+        })
+    );
+    assert_eq!(
+        pass(&library, &tube)?.stopped,
+        Some(KeepStopped {
+            why: WhyAway::NotAnswering,
+            song: "Two".to_owned(),
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn a_lapsed_account_moves_a_keep_back_and_costs_it_no_try() -> Result<()> {
+    let (_tree, library) = a_music_folder()?;
+    let tube = Tube::new();
+    tube.answering("one", &[TubeAnswer::Lapsed; 7]);
+    tube.answering("two", &[TubeAnswer::Lapsed; 7]);
+    library.keep_song(song_to_keep("one", "One"))?;
+    library.keep_song(song_to_keep("two", "Two"))?;
+
+    for _ in 0..14 {
+        assert!(pass(&library, &tube)?.stopped_by.is_some());
+    }
+
+    assert_eq!(library.keeps_pending()?, 2);
+    assert_eq!(pass(&library, &tube)?.landed, 2);
+    Ok(())
+}
+
+struct OffersVideo {
+    source: SourceId,
+    video: &'static str,
+    opened: AtomicUsize,
+}
+
+impl OffersVideo {
+    fn registered(video: &'static str) -> Arc<Self> {
+        Arc::new(Self {
+            source: source(KEPT_BY),
+            video,
+            opened: AtomicUsize::new(0),
+        })
+    }
+
+    fn polled_by(self: &Arc<Self>, library: &Library) -> Result<PollSummary> {
+        library
+            .poll(
+                Arc::new(Providers::none().and(Arc::clone(self) as Arc<dyn Provider>)),
+                PollOptions {
+                    lanes: NonZeroUsize::MIN,
+                    ..PollOptions::ASKING_EVERY_WANT
+                },
+            )?
+            .join()
+    }
+}
+
+impl Provider for OffersVideo {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        self.opened.fetch_add(1, Ordering::SeqCst);
+        Ok(Obtained::Found(Delivery::Stream {
+            key: format!("track/{}", self.video).into(),
+            extension: Extension::new("wav")?,
+            opening: Opening::ready(std::io::Cursor::new(
+                Wav::new().frames(A_SECOND_OF_FRAMES).build(),
+            )),
+        }))
+    }
+
+    fn last_resort(&self) -> bool {
+        true
+    }
+}
+
+fn one_want_of(library: &Library, title: &str) -> Result<()> {
+    let album = only_album(library)?;
+    let mut rows = orbits_rows();
+    rows.push(release_row(4, title, Vec::new()));
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    for row in library.release_tracks(album.id)? {
+        if row.title == title {
+            library.want(row.id)?;
+        }
+    }
+    Ok(())
+}
+
+fn named_otherwise(video: &str) -> SongToKeep {
+    SongToKeep {
+        artist: Some("Someone Else Entirely".to_owned()),
+        ..song_to_keep(video, "A Name No Want Gave")
+    }
+}
+
+#[test]
+fn a_video_a_want_filed_in_the_music_folder_is_not_fetched_again_for_a_keep() -> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    delivering_into(&library, &tree);
+    one_want_of(&library, "San Tropez")?;
+    assert_eq!(
+        OffersVideo::registered("abc123")
+            .polled_by(&library)?
+            .stats
+            .kept,
+        1
+    );
+    let tube = Tube::new();
+
+    let kept = library.keep_song(named_otherwise("abc123"))?;
+    let summary = pass(&library, &tube)?;
+
+    assert!(matches!(kept, KeptSong::AlreadyHeld(_)), "{kept:?}");
+    assert_eq!(summary, KeepSummary::default());
+    assert!(tube.videos_asked().is_empty(), "the video was fetched twice");
+    Ok(())
+}
+
+#[test]
+fn a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep() -> Result<()> {
+    let tree = orbits_tree();
+    let music = Tree::new();
+    let held = Tree::new();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    delivering_into(&library, &music);
+    one_want_of(&library, "San Tropez")?;
+    assert_eq!(
+        OffersVideo::registered("abc123")
+            .polled_by(&library)?
+            .stats
+            .kept,
+        1
+    );
+    let tube = Tube::new();
+
+    let kept = library.keep_song(named_otherwise("abc123"))?;
+    pass(&library, &tube)?;
+
+    assert!(matches!(kept, KeptSong::AlreadyHeld(_)), "{kept:?}");
+    assert!(tube.videos_asked().is_empty(), "the video was fetched twice");
+    Ok(())
+}
+
+#[test]
+fn a_video_a_keep_landed_is_declined_by_the_poll_while_its_file_stands() -> Result<()> {
+    let (tree, library) = scanned_orbits()?;
+    delivering_into(&library, &tree);
+    one_want_of(&library, "San Tropez")?;
+    let tube = Tube::new();
+    library.keep_song(named_otherwise("abc123"))?;
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+    let kept = track_titled(&library, "A Name No Want Gave")?;
+
+    let offers = OffersVideo::registered("abc123");
+    let declined = offers.polled_by(&library)?;
+    assert_eq!(declined.stats.kept, 0);
+
+    fs::remove_file(kept.location.as_path().expect("a file")).expect("the file removed");
+    let again = offers.polled_by(&library)?;
+    assert_eq!(again.stats.kept, 1, "a file gone declines nothing");
+    Ok(())
+}
+
+fn opus_in_webm() -> Option<Vec<u8>> {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build an Opus WebM");
+        return None;
+    }
+    let held = Tree::new();
+    let source = held.write("tone.wav", &Wav::new().frames(A_SECOND_OF_FRAMES).build());
+    let target = held.path().join("served.webm");
+    let encoded = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .args(["-c:a", "libopus", "-b:a", "96k", "-f", "webm"])
+        .arg(&target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if !encoded.is_ok_and(|status| status.success()) {
+        eprintln!("skipped: ffmpeg would not encode Opus into WebM");
+        return None;
+    }
+    fs::read(target).ok()
+}
+
+struct ServesWebm {
+    source: SourceId,
+    bytes: Vec<u8>,
+}
+
+impl Provider for ServesWebm {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
+        Ok(Obtained::Found(Delivery::Stream {
+            key: "track/abc123".into(),
+            extension: Extension::new("mka")?,
+            opening: Opening::ready(std::io::Cursor::new(self.bytes.clone())),
+        }))
+    }
+}
+
+#[test]
+fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> Result<()> {
+    let Some(bytes) = opus_in_webm() else {
+        return Ok(());
+    };
+    let (tree, library) = a_music_folder()?;
+    let providers = Providers::none().and(Arc::new(ServesWebm {
+        source: source(KEPT_BY),
+        bytes,
+    }) as Arc<dyn Provider>);
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+
+    assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
+
+    let path = tree.path().join("The Orbiters/Kept Songs/San Tropez.mka");
+    assert!(path.is_file(), "{}", path.display());
+    let read = FileTags::over(Sources::local())
+        .read(&MediaLocation::local(&path), Picturing::Whether)
+        .expect("the file reads");
+    assert_eq!(read.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(read.tags.artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(read.tags.album.as_deref(), Some("Kept Songs"));
+
+    scan(&library, &options(&tree))?;
+    assert_eq!(track_titled(&library, "San Tropez")?.location, MediaLocation::local(&path));
+
+    let afresh = Library::open_in_memory()?;
+    scan(&afresh, &options(&tree))?;
+    let read_afresh = track_titled(&afresh, "San Tropez")?;
+    assert_eq!(read_afresh.artist.as_deref(), Some("The Orbiters"));
+    let album = afresh
+        .album(read_afresh.album_id.expect("the song names its album"))?
+        .expect("the album");
+    assert_eq!(album.title, "Kept Songs");
     Ok(())
 }
 

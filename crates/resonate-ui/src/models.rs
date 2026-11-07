@@ -29,7 +29,8 @@ use resonate_library::{
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
     GroupRelease, Habits, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress,
-    ImportStats, ImportSummary, Imported, Issued, KeepSummary, Kept, KeptList, KeptSong, Layout,
+    ImportStats, ImportSummary, Imported, Issued, KeepStopped, KeepSummary, Kept, KeptList,
+    KeptSong, Layout,
     Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
     NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Performer,
     Playing, Playlist, PlaylistEntry, PlaylistOrder, PlaylistToKeep, PollOptions, PollProgress,
@@ -41,7 +42,7 @@ use resonate_library::{
     albums_still_answering, artists_still_answering, folded_letters, songs_asked, still_answering,
     weighed_for,
 };
-use resonate_providers::Providers;
+use resonate_providers::{Providers, WhyAway};
 
 use crate::{
     ResonateApp, clipboard,
@@ -926,6 +927,24 @@ impl Followed {
     }
 }
 
+fn stopped_told(stopped: &KeepStopped) -> String {
+    let song = &stopped.song;
+    match stopped.why {
+        WhyAway::SignInLapsed => format!(
+            "The cookies lapsed at “{song}”. Sign in to YouTube again, and the rest stays queued"
+        ),
+        WhyAway::SubscriptionLapsed => format!(
+            "This account has lost Premium, so “{song}” and the rest stay queued until it is back"
+        ),
+        WhyAway::ToolMissing => {
+            format!("yt-dlp is missing. Install it, and “{song}” and the rest stay queued")
+        }
+        WhyAway::NotAnswering => {
+            format!("The service stopped answering at “{song}”, so the rest stays queued")
+        }
+    }
+}
+
 fn kept(summary: &KeepSummary) -> Option<Notice> {
     let songs = |count: usize| {
         if count == 1 {
@@ -934,10 +953,8 @@ fn kept(summary: &KeepSummary) -> Option<Notice> {
             format!("{count} songs")
         }
     };
-    if summary.stopped_by.is_some() {
-        return Some(Notice::Trouble(
-            "The service stopped answering, so the rest stays queued".to_owned(),
-        ));
+    if let Some(stopped) = &summary.stopped {
+        return Some(Notice::Trouble(stopped_told(stopped)));
     }
     let missed = summary.gone + summary.unkept;
     match (summary.landed, missed) {
@@ -6021,6 +6038,7 @@ impl LibraryModel {
         self.keep_tally.gone += summary.gone;
         self.keep_tally.unkept += summary.unkept;
         self.keep_tally.stopped_by.clone_from(&summary.stopped_by);
+        self.keep_tally.stopped.clone_from(&summary.stopped);
         if summary.yielded {
             self.keep_owed = true;
             self.poll_owed.get_or_insert(PollOptions::default());
@@ -7814,10 +7832,10 @@ mod tests {
     use parking_lot::Mutex;
     use resonate_core::{AlbumId, ArtistId, MediaLocation, SourceId};
     use resonate_library::{
-        AlbumFound, Direction, Found, Isrc, KeepSummary, Library, Mbid, PassKind, PollStats,
-        SortOrder,
+        AlbumFound, Direction, Found, Isrc, KeepStopped, KeepSummary, Library, Mbid, PassKind,
+        PollStats, SortOrder,
     };
-    use resonate_providers::{Identity, Obtained, Provider, Providers};
+    use resonate_providers::{Identity, Obtained, Provider, Providers, WhyAway};
 
     use super::{
         Arranging, Beyond, Change, Favourited, Followed, KeepPass, LibraryModel, ListedRow,
@@ -7825,6 +7843,7 @@ mod tests {
         Reaching, Shared, Wanted, albums_kept_before_the_rest, arranged, beyond_the_listing,
         delivery_folder, elsewhere_standing, headed_by_disc, held_at, held_in, kept,
         kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
+        stopped_told,
         retried_after, sharing_told, unheld_release_rows,
     };
     use crate::{
@@ -8136,10 +8155,35 @@ mod tests {
         assert!(matches!(
             kept(&KeepSummary {
                 stopped_by: SourceId::new(KEPT_FROM).ok(),
+                stopped: Some(KeepStopped {
+                    why: WhyAway::NotAnswering,
+                    song: "Creep".to_owned(),
+                }),
                 ..landed
             }),
             Some(Notice::Trouble(_))
         ));
+    }
+
+    #[test]
+    fn a_pass_stopped_names_the_song_and_says_what_to_do() {
+        let said = [
+            (WhyAway::SignInLapsed, "Sign in"),
+            (WhyAway::SubscriptionLapsed, "Premium"),
+            (WhyAway::ToolMissing, "Install"),
+            (WhyAway::NotAnswering, "stopped answering"),
+        ]
+        .map(|(why, words)| {
+            let told = stopped_told(&KeepStopped {
+                why,
+                song: "Creep".to_owned(),
+            });
+            assert!(told.contains("Creep"), "{told}");
+            assert!(told.contains(words), "{told}");
+            told
+        });
+
+        assert!(said.windows(2).all(|pair| pair[0] != pair[1]));
     }
 
     #[gpui::test]

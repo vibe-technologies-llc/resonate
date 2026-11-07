@@ -1157,6 +1157,7 @@ impl<'a> Lanes<'a> {
             forgotten_for_it
                 .iter()
                 .any(|forgotten| forgotten.declines(delivered))
+                || self.library.a_keep_holds_the_offer(delivered)
         };
         let mut away = self.away.lock().clone();
         let identity = Identity {
@@ -1265,6 +1266,11 @@ impl<'a> Lanes<'a> {
                 filed: &self.filed,
             },
         )?;
+        if let Landed::Kept(at) = &landing
+            && self.providers.is_a_last_resort(&provider)
+        {
+            self.library.note_landed_for_a_want(want, &taken_from, at)?;
+        }
         if progress.is_cancelled() {
             if let Landed::Kept(at) = &landing {
                 tried(self.library, want.id, Some(at))?;

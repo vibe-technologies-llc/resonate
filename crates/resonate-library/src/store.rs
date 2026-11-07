@@ -2691,6 +2691,12 @@ pub(crate) const HELD_BY_THEIR_FIRST_WORDS: &str =
 pub(crate) const HELD_BY_THEIR_ARTIST: &str =
     a_held_copy!("t.artist_id = (SELECT id FROM artists WHERE key = ?1)");
 
+const HELD_FROM_A_DELIVERY: &str = "SELECT t.id, t.path, t.span_start, t.span_frames, t.vault_path
+       FROM tracks t
+      WHERE t.vault_key IN (SELECT key FROM vault_objects WHERE taken_from = ?1
+                            UNION
+                            SELECT key FROM object_deliveries WHERE taken_from = ?1)";
+
 struct Candidate {
     shown_last: bool,
     a_lesser_copy: bool,
@@ -2734,6 +2740,18 @@ impl NamedAlike<'_> {
     }
 }
 
+fn held_alike_at(row: &rusqlite::Row<'_>) -> rusqlite::Result<HeldAlike> {
+    Ok(HeldAlike {
+        track: TrackId::new(row.get::<_, i64>(0)?.cast_unsigned())
+            .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, 0))?,
+        span: span(row.get(2)?, row.get(3)?),
+        held: HeldRow {
+            path: path_of(&row.get::<_, String>(1)?),
+            within_the_vault: row.get::<_, Option<String>>(4)?.as_deref().map(path_of),
+        },
+    })
+}
+
 fn candidate_at(
     row: &rusqlite::Row<'_>,
     song: &NamedAlike<'_>,
@@ -2749,16 +2767,21 @@ fn candidate_at(
     Ok(Some(Candidate {
         shown_last: row.get(10)?,
         a_lesser_copy: row.get(11)?,
-        alike: HeldAlike {
-            track: TrackId::new(row.get::<_, i64>(0)?.cast_unsigned())
-                .map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, 0))?,
-            span: span(row.get(2)?, row.get(3)?),
-            held: HeldRow {
-                path: path_of(&row.get::<_, String>(1)?),
-                within_the_vault: row.get::<_, Option<String>>(4)?.as_deref().map(path_of),
-            },
-        },
+        alike: held_alike_at(row)?,
     }))
+}
+
+pub(crate) fn held_from_a_delivery(
+    connection: &Connection,
+    taken_from: &str,
+) -> Result<Vec<HeldAlike>> {
+    let mut statement = connection
+        .prepare_cached(HELD_FROM_A_DELIVERY)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    statement
+        .query_map(params![taken_from], held_alike_at)
+        .and_then(|rows| rows.collect::<rusqlite::Result<_>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 pub(crate) fn held_named_alike(

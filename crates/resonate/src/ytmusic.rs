@@ -7,8 +7,10 @@ use std::{
 };
 
 use resonate_core::{Service, SourceId};
-use resonate_library::{KeepSummary, KeptList, KeptSong, Library, PlaylistToKeep, SongToKeep};
-use resonate_providers::{Id, PlaysInPlace as _, Providers, Song};
+use resonate_library::{
+    KeepStopped, KeepSummary, KeptList, KeptSong, Library, PlaylistToKeep, SongToKeep,
+};
+use resonate_providers::{Id, PlaysInPlace as _, Providers, Song, WhyAway};
 use resonate_ytmusic::{Connection, VideoId, YtMusic, playlist_id};
 
 use crate::{Error, Result, cli::YtmusicArgs, config::Config, counted, providers, signals};
@@ -182,12 +184,25 @@ fn walked_until_told(library: &Library, music: Arc<YtMusic>) -> Result<()> {
     if stopping.load(Ordering::Relaxed) {
         return Err(Error::KeepCancelled);
     }
-    match summary.stopped_by {
-        Some(provider) => Err(Error::KeepStopped {
+    match (summary.stopped_by, summary.stopped) {
+        (Some(provider), Some(stopped)) => {
+            Err(stopped_for(provider, stopped, library.keeps_pending()?))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn stopped_for(provider: SourceId, stopped: KeepStopped, left: u64) -> Error {
+    let KeepStopped { why, song } = stopped;
+    match why {
+        WhyAway::SignInLapsed => Error::KeepSignInLapsed { song, left },
+        WhyAway::SubscriptionLapsed => Error::KeepPremiumLost { song, left },
+        WhyAway::ToolMissing => Error::KeepToolMissing { song, left },
+        WhyAway::NotAnswering => Error::KeepStopped {
             provider,
-            left: library.keeps_pending()?,
-        }),
-        None => Ok(()),
+            song,
+            left,
+        },
     }
 }
 
@@ -251,6 +266,30 @@ mod tests {
 
     fn never_opened() -> Result<Library> {
         panic!("the catalog was opened for a keep refused before it")
+    }
+
+    #[test]
+    fn a_pass_stopped_tells_the_listener_what_to_do_about_it() {
+        let provider = SourceId::new("ytmusic").expect("a nameable source");
+        let told = |why| {
+            let stopped = KeepStopped {
+                why,
+                song: "Creep".to_owned(),
+            };
+            stopped_for(provider.clone(), stopped, 3).to_string()
+        };
+
+        for (why, words) in [
+            (WhyAway::SignInLapsed, "sign in to YouTube again"),
+            (WhyAway::SubscriptionLapsed, "lost Premium"),
+            (WhyAway::ToolMissing, "install it"),
+            (WhyAway::NotAnswering, "stopped answering"),
+        ] {
+            let said = told(why);
+            assert!(said.contains(words), "{said}");
+            assert!(said.contains("Creep"), "{said}");
+            assert!(said.contains('3'), "{said}");
+        }
     }
 
     #[test]
@@ -396,9 +435,10 @@ mod tests {
     mod with_the_tool {
         use std::{
             env, fs,
+            io::ErrorKind,
             os::unix::fs::PermissionsExt as _,
             path::{Path, PathBuf},
-            process,
+            process::{self, Command},
             sync::atomic::AtomicU32,
             thread,
             time::{Duration, Instant},
@@ -410,11 +450,48 @@ mod tests {
         use super::*;
 
         const EXECUTABLE: u32 = 0o755;
-        const FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN: Duration = Duration::from_millis(20);
+        const FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN: Duration = Duration::from_secs(5);
+        const ASKED_IF_IT_RUNS: &str = "--does-it-run";
+        const SAMPLES_A_SECOND: u32 = 8_000;
         const THE_TOOL_IS_REACHED_WITHIN: Duration = Duration::from_secs(10);
         const LOOKED_AT_EVERY: Duration = Duration::from_millis(10);
 
         static MADE: AtomicU32 = AtomicU32::new(0);
+
+        fn runs_once_no_fork_holds_it_open(program: &Path) {
+            let began = Instant::now();
+            loop {
+                match Command::new(program).arg(ASKED_IF_IT_RUNS).status() {
+                    Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
+                        assert!(began.elapsed() < FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN);
+                        thread::yield_now();
+                    }
+                    answered => {
+                        answered.expect("the fake tool runs");
+                        return;
+                    }
+                }
+            }
+        }
+
+        fn a_second_of_silence() -> Vec<u8> {
+            let data = SAMPLES_A_SECOND * 2;
+            let mut wave = Vec::new();
+            wave.extend_from_slice(b"RIFF");
+            wave.extend_from_slice(&(36 + data).to_le_bytes());
+            wave.extend_from_slice(b"WAVEfmt ");
+            wave.extend_from_slice(&16_u32.to_le_bytes());
+            wave.extend_from_slice(&1_u16.to_le_bytes());
+            wave.extend_from_slice(&1_u16.to_le_bytes());
+            wave.extend_from_slice(&SAMPLES_A_SECOND.to_le_bytes());
+            wave.extend_from_slice(&(SAMPLES_A_SECOND * 2).to_le_bytes());
+            wave.extend_from_slice(&2_u16.to_le_bytes());
+            wave.extend_from_slice(&16_u16.to_le_bytes());
+            wave.extend_from_slice(b"data");
+            wave.extend_from_slice(&data.to_le_bytes());
+            wave.resize(wave.len() + data as usize, 0);
+            wave
+        }
 
         struct Folder(PathBuf);
 
@@ -429,12 +506,14 @@ mod tests {
                 let program = folder.join("yt-dlp");
                 fs::write(
                     &program,
-                    format!("#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/asked\"\n{body}\n"),
+                    format!(
+                        "#!/bin/sh\n[ \"$1\" = {ASKED_IF_IT_RUNS} ] && exit 0\necho \"$@\" >> \"$(dirname \"$0\")/asked\"\n{body}\n"
+                    ),
                 )
                 .expect("the fake tool");
                 fs::set_permissions(&program, fs::Permissions::from_mode(EXECUTABLE))
                     .expect("the fake tool made executable");
-                thread::sleep(FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN);
+                runs_once_no_fork_holds_it_open(&program);
                 Self(folder)
             }
 
@@ -568,6 +647,43 @@ mod tests {
                 first.join().expect("the first pass").expect("its summary");
             });
             assert_eq!(waiting.keeps_pending().expect("a count"), 1);
+        }
+
+        #[test]
+        fn a_video_yt_dlp_refuses_for_its_own_reason_gives_the_keep_up_and_the_pass_goes_on() {
+            let folder = Folder::holding_a_tool(
+                r#"case "$*" in
+    *v=refused*) echo 'ERROR: [youtube] refused: Sign in to confirm your age' >&2; exit 1 ;;
+    *-J*) echo '{"formats":[{"format_id":"251"}]}' ;;
+    *) cat "$(dirname "$0")/song" ;;
+esac"#,
+            );
+            fs::write(folder.path().join("song"), a_second_of_silence()).expect("the song");
+            let library = Library::open_in_memory().expect("a catalog");
+            library.deliver_into(Some(DeliveryFolder {
+                path: folder.path().join("music"),
+                layout: Layout::default(),
+            }));
+            for video in ["refused", "willing"] {
+                let song = SongToKeep {
+                    source: SourceId::new("ytmusic").expect("a nameable source"),
+                    video: video.to_owned(),
+                    title: video.to_owned(),
+                    artist: Some("Someone".to_owned()),
+                    album: None,
+                    length: None,
+                };
+                library.keep_song(song).expect("queued");
+            }
+
+            let summary = library
+                .keep_pending(&Providers::none().and(folder.music()), &|| false)
+                .expect("a pass");
+
+            assert_eq!(summary.stopped_by, None);
+            assert_eq!(summary.landed, 1);
+            assert_eq!(summary.unkept, 1);
+            assert_eq!(library.keeps_pending().expect("a count"), 0);
         }
     }
 }

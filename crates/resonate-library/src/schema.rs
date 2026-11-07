@@ -70,10 +70,14 @@ CREATE TABLE kept_songs (
     asked    INTEGER NOT NULL,
     landed   TEXT,
     gone     INTEGER NOT NULL DEFAULT 0,
+    tried    INTEGER,
+    tries    INTEGER NOT NULL DEFAULT 0,
     UNIQUE (source, video, playlist)
 ) STRICT;
 CREATE UNIQUE INDEX kept_songs_alone ON kept_songs (source, video) WHERE playlist IS NULL;
 CREATE INDEX kept_songs_by_path ON kept_songs (landed) WHERE landed IS NOT NULL;
+CREATE INDEX vault_objects_by_origin ON vault_objects (taken_from);
+CREATE INDEX object_deliveries_by_origin ON object_deliveries (taken_from);
 ";
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
