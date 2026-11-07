@@ -51,7 +51,12 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   one logical core, rather than half the machine. Decode and final reductions are outside this
   budget, so this is a duty limit, not a process CPU guarantee. The inline fallback uses the same
   pacing. Ordinary watches default to foreground, so a direct study or band measurement stays
-  responsive and independent of the desktop Game Mode gate. Each pool starts on first use and
+  responsive and independent of the desktop Game Mode gate. **A lookup can be hurried once**: `EnrichOptions::pace` (`Pace::Background`, `Pace::Hurried`) and
+  `EnrichProgress::hurry` (callable on a running pass) make `is_background` false for that pass alone,
+  so its studies take `AsTheMachineAllows` with no rest, and a pass begun hurried starts
+  `hurried_workers` (a quarter of the cores, at least one) study workers; the next pass is paced again.
+  Game Mode still holds it, and the reference's own request pacing is untouched
+  (`a_hurried_lookup_studies_in_the_foreground_on_more_workers_and_an_unhurried_one_does_not`). Each pool starts on first use and
   sleeps after.
   **Measured before the background duty limit**, 5 minutes of stereo on a Ryzen 7 7700 (8 cores, 16 threads), a release-like build
   (`--profile profiling`), bit for bit the answers of the single thread it replaced on FLAC 16/44.1,

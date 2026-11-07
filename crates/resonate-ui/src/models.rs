@@ -32,14 +32,14 @@ use resonate_library::{
     ImportStats, ImportSummary, Imported, Issued, KeepStopped, KeepSummary, Kept, KeptList,
     KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing,
     MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
-    OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder, PlaylistToKeep,
-    PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording, RecordingMatch,
-    RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions,
-    RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle,
-    ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder,
-    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
-    Upkeep, Window, Wording, albums_still_answering, artists_still_answering, folded_letters,
-    songs_asked, still_answering, weighed_for,
+    OrganiseSummary, Pace, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder,
+    PlaylistToKeep, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
+    RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
+    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
+    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked,
+    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    UnheldRelease, Upkeep, Window, Wording, albums_still_answering, artists_still_answering,
+    folded_letters, songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::{Providers, WhyAway};
 
@@ -5340,8 +5340,35 @@ impl LibraryModel {
             sought: Arc::clone(&self.sought),
             studies: self.studies,
             lyrics: self.lyrics,
+            pace: Pace::Background,
         };
         self.enrich_with(asked, cx);
+    }
+
+    pub fn hurry_the_lookup(&mut self, cx: &mut Context<Self>) {
+        match &self.enriching {
+            Some(progress) => {
+                progress.hurry();
+                cx.notify();
+            }
+            None => {
+                let asked = EnrichOptions {
+                    refresh: false,
+                    at_most: None,
+                    sought: Arc::clone(&self.sought),
+                    studies: self.studies,
+                    lyrics: self.lyrics,
+                    pace: Pace::Hurried,
+                };
+                self.enrich_with(asked, cx);
+            }
+        }
+    }
+
+    pub fn is_hurried(&self) -> bool {
+        self.enriching
+            .as_ref()
+            .is_some_and(|progress| progress.is_hurried())
     }
 
     fn enrich_new_songs(&mut self, cx: &mut Context<Self>) {
@@ -5362,6 +5389,7 @@ impl LibraryModel {
             sought: Arc::clone(&self.sought),
             studies: false,
             lyrics: false,
+            pace: Pace::Background,
         }
     }
 

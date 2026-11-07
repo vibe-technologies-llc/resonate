@@ -27,6 +27,7 @@ use crate::{
 pub const HEARD_AT_LEAST: u8 = 80;
 
 const STUDY_WORKERS_AT_MOST: usize = 1;
+const CORES_A_HURRIED_WORKER: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Agreement {
@@ -731,7 +732,7 @@ impl Claims {
 
 impl Watching for EnrichProgress {
     fn is_background(&self) -> bool {
-        true
+        !self.is_hurried()
     }
 
     fn stopped(&self) -> bool {
@@ -757,7 +758,7 @@ impl Studies {
             .filter(|asked| !asked.print_held || recognising || asked.unmeasured)
             .collect();
         let next = Arc::new(AtomicUsize::new(0));
-        let workers = (0..workers_for(asked.len()))
+        let workers = (0..workers_for(asked.len(), progress.is_hurried()))
             .filter_map(|nth| {
                 let library = library.shared();
                 let fingerprinters = Arc::clone(fingerprinters);
@@ -796,8 +797,17 @@ impl Studies {
     }
 }
 
-fn workers_for(asked: usize) -> usize {
-    asked.min(STUDY_WORKERS_AT_MOST)
+fn workers_for(asked: usize, hurried: bool) -> usize {
+    let at_most = match hurried {
+        true => hurried_workers(),
+        false => STUDY_WORKERS_AT_MOST,
+    };
+    asked.min(at_most)
+}
+
+fn hurried_workers() -> usize {
+    let cores = thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    (cores / CORES_A_HURRIED_WORKER).max(STUDY_WORKERS_AT_MOST)
 }
 
 fn study_one(
@@ -968,6 +978,22 @@ pub(crate) fn sounded(track: &TrackToAsk, print: Chromaprint) -> Sounded {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hurried_lookup_studies_in_the_foreground_on_more_workers_and_an_unhurried_one_does_not() {
+        let progress = EnrichProgress::default();
+
+        assert!(progress.is_background());
+        assert_eq!(workers_for(40, false), STUDY_WORKERS_AT_MOST);
+        assert_eq!(workers_for(0, true), 0);
+
+        progress.hurry();
+
+        assert!(!progress.is_background());
+        assert!(workers_for(40, true) >= STUDY_WORKERS_AT_MOST);
+        assert_eq!(workers_for(1, true), 1);
+        assert_eq!(workers_for(40, true), hurried_workers().min(40));
+    }
 
     #[test]
     fn an_agreement_reads_back_the_name_it_was_written_as() {

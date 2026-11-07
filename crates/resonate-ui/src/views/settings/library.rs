@@ -141,7 +141,10 @@ const LAST_LOOKUP: &str = "THE LAST LOOKUP";
 const DETAILS_NOTE: &str = "Look up asks MusicBrainz about the albums and artists not asked \
                             lately, which a scan does on its own when Online allows it. Refresh \
                             all asks about everything again. Look for missing covers asks the \
-                            archive again for every album with no picture.";
+                            archive again for every album with no picture. Speed up once lets \
+                            this lookup study the songs on every core but one with no rest \
+                            between them, until it ends; MusicBrainz is still asked at its own \
+                            pace.";
 
 const TEMPLATE_LABEL: &str = "Where each track is filed";
 
@@ -520,6 +523,9 @@ impl RootView {
         let held_back = library.is_busy() || library.is_enriching() || !library.can_enrich();
         let enriching = library.is_enriching();
         let stopping = library.is_stopping_enrich();
+        let hurried = library.is_hurried();
+        let unhurriable =
+            hurried || stopping || !library.can_enrich() || (!enriching && library.is_busy());
         let breakdown = library.enrich_stats().map(|stats| lookup_lines(&stats));
         let ending = library
             .looked_up()
@@ -538,6 +544,7 @@ impl RootView {
                     .gap_2()
                     .child(self.look_up(held_back, enriching, cx))
                     .child(self.refresh_all(held_back, cx))
+                    .child(self.hurry_the_lookup(unhurriable, hurried, cx))
                     .child(self.look_for_missing_covers(held_back, cx))
                     .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
             )
@@ -641,6 +648,26 @@ impl RootView {
             |this, _, cx| {
                 this.library
                     .update(cx, |library, cx| library.enrich(false, cx));
+            },
+            self,
+            cx,
+        )
+    }
+
+    fn hurry_the_lookup(
+        &self,
+        held_back: bool,
+        hurried: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        action(
+            "hurry-lookup",
+            if hurried { "Sped up" } else { "Speed up once" },
+            Icon::Next,
+            held_back,
+            |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.hurry_the_lookup(cx));
             },
             self,
             cx,

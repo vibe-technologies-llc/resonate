@@ -93,6 +93,14 @@ pub struct EnrichOptions {
     pub sought: Arc<Sought>,
     pub studies: bool,
     pub lyrics: bool,
+    pub pace: Pace,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Pace {
+    #[default]
+    Background,
+    Hurried,
 }
 
 impl Default for EnrichOptions {
@@ -103,6 +111,7 @@ impl Default for EnrichOptions {
             sought: Arc::default(),
             studies: true,
             lyrics: true,
+            pace: Pace::Background,
         }
     }
 }
@@ -232,6 +241,7 @@ pub struct EnrichProgress {
     portraits_missing: AtomicU64,
     lyrics_missing: AtomicU64,
     cancelled: AtomicBool,
+    hurried: AtomicBool,
 }
 
 impl EnrichProgress {
@@ -275,6 +285,14 @@ impl EnrichProgress {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
+    }
+
+    pub fn hurry(&self) {
+        self.hurried.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_hurried(&self) -> bool {
+        self.hurried.load(Ordering::Relaxed)
     }
 
     fn count(counter: &AtomicU64) {
@@ -355,6 +373,9 @@ fn run(
     progress: &Arc<EnrichProgress>,
 ) -> Result<EnrichSummary> {
     note_began(library, options.refresh);
+    if options.pace == Pace::Hurried {
+        progress.hurry();
+    }
     let pictures = Pictures::start(library, reference, progress);
     let claims = Arc::new(Claims::default());
     let studies = Studies::start(

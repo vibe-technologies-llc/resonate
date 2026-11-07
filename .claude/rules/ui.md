@@ -419,7 +419,7 @@ is never named.
     (`lower_every_armed_press`).
   - **An enrichment is deliberately not a `Work`**: `LibraryModel::enriching` is a slot of its own,
     started with `for_the_pass` (`online.md`). A running lookup greys *Look up*, *Refresh all* and
-    *Look for missing covers* via `held_back`; a scan can still start under one. `RootView::enrichment_status` sits
+    *Look for missing covers* via `held_back`; *Speed up once* (`LibraryModel::hurry_the_lookup`) hurries the running lookup, or starts a hurried one, and reads *Sped up* greyed until it ends (`analysis.md`); a scan can still start under one. `RootView::enrichment_status` sits
     above the sidebar's *Settings* row while `LibraryModel::is_enriching` (a globe in `theme::faint()`
     and *Enriching…*; a press opens `Category::Library`); the toast `looked_up` tells what was found.
     **The Library category's *What online knows* group shows the breakdown** (`library.md`): while a
