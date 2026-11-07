@@ -21,6 +21,7 @@ use crate::{
     icons::{self, Icon},
     motion, theme,
     views::{
+        better,
         kit::{self, EndsInAnEllipsis as _},
         playlists::Held,
         reorder::Shift,
@@ -896,6 +897,7 @@ pub(crate) const OPEN_ARTIST: &str = "Show this artist";
 pub(crate) const FAVOUR: &str = "Add to favourites";
 pub(crate) const UNFAVOUR: &str = "Take out of favourites";
 pub(crate) const SHARE: &str = "Share";
+pub(crate) const FIND_ANOTHER_VERSION: &str = "Find another version";
 
 pub(crate) const SHARE_EACH: &str = "Share each";
 
@@ -973,15 +975,12 @@ impl Menu {
         })
     }
 
-    pub(crate) fn looks_for_versions(self, title: String, artist: String) -> Self {
-        self.nests(Icon::Search, "Find another version", move |mut menu| {
+    pub(crate) fn looks_for_versions(self, track: Track, at: Point<Pixels>) -> Self {
+        self.nests(Icon::Search, FIND_ANOTHER_VERSION, move |mut menu| {
+            let title = resonate_core::titles::without_its_rating(&track.title).to_owned();
+            let artist = track.artist.clone().unwrap_or_default();
             for version in ["Clean", "Explicit"] {
-                let query = format!(
-                    "{} {} {}",
-                    resonate_core::titles::without_its_rating(&title),
-                    artist,
-                    version
-                );
+                let query = format!("{title} {artist} {version}");
                 menu = menu.does(
                     Icon::Search,
                     format!("Look for {version} version"),
@@ -990,7 +989,11 @@ impl Menu {
                     },
                 );
             }
-            menu
+            menu.does(
+                Icon::Search,
+                better::FIND_A_BETTER_VERSION,
+                move |this, _, cx| this.look_for_a_better_version(track.clone(), at, cx),
+            )
         })
     }
 

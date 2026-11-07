@@ -1316,10 +1316,7 @@ impl RootView {
                     .favours(Favoured::Track(track.id), favourite)
                     .offers_the_file(&track.location, names)
                     .shares(track.id)
-                    .looks_for_versions(
-                        track.title.clone(),
-                        track.artist.clone().unwrap_or_default(),
-                    )
+                    .looks_for_versions(track.clone(), at)
                     .when_some(placeable, |menu, track| {
                         menu.does(Icon::Disc, PLACE_ON, move |this, _, cx| {
                             this.offer_releases_to_place_on(track, at, cx);

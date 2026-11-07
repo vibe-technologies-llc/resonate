@@ -54,7 +54,7 @@ is never named.
   hangs a panel off a row with a chevron (`Takes::Opens`, nothing when `fill` offers nothing): a song
   is Play, Play next, Add to queue and Add to playlist, *Go to* (artist, album), favourite, *Show in
   the file manager*, *Copy* (file path, title, artist, album), Share, *Other copies* where there are
-  some and *Remove* (hide, forget a delivery, delete), ten rows for sixteen. A pointer opens the panel
+  some and *Remove* (hide, forget a delivery, delete), ten rows for sixteen. **A higher quality version is looked up from *Find another version*** (beside *Look for Clean/Explicit version*): `views/better.rs`. Held copies (`alternatives_of`) are offered where `Quality` (lossless, significant bits, rate) is no lower on any count and higher on one, best first; for a lossy track every service that plays in place (`Serving::opened`, so nothing is asked with Online off) is searched on the background executor for the bare title and artist, and a song is kept only where its suffix reads as a lossless codec (`resonate_library::codec_named`) and it is the same song (folded bare title, artist, length within `LENGTHS_AGREE_WITHIN`, 3 s). What was found opens as a menu at the press, each entry playing that copy or version; nothing found is a toast (`a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song`). A pointer opens the panel
   by resting on its row and a press too; it stands beside the row on whichever side has room
   (`beside_its_row`, read from the row drawn a frame behind), and resting on another row closes it only
   after `STAYS_OPEN_FOR_THE_POINTER_CROSSING` (250 ms), which reaching the panel calls off, so a

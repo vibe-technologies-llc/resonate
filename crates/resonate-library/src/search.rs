@@ -1029,7 +1029,7 @@ fn narrowed(named: Named, value: &str) -> Option<Vec<Term>> {
         }),
         Named::Rate => bounded(value, hertz, |compare, hertz| Term::Rate { compare, hertz }),
         Named::Depth => bounded(value, bits, |compare, bits| Term::Depth { compare, bits }),
-        Named::Codec => Some(vec![Term::Codec(codec_of(value)?)]),
+        Named::Codec => Some(vec![Term::Codec(codec_named(value)?)]),
         Named::Shape => Some(vec![Term::Shape(Shape::of(value)?)]),
     }
 }
@@ -1172,7 +1172,7 @@ fn year(value: &str) -> Option<i32> {
     value.parse().ok()
 }
 
-fn codec_of(value: &str) -> Option<Codec> {
+pub fn codec_named(value: &str) -> Option<Codec> {
     CODECS
         .into_iter()
         .find(|(name, _)| value.eq_ignore_ascii_case(name))

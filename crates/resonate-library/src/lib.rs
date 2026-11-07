@@ -170,7 +170,7 @@ pub use crate::{
     },
     search::{
         Asked, Clause, ClockUnit, Column, Compare, Condition, Grain, Lit, Reach, Search, Shape,
-        Term, Word,
+        Term, Word, codec_named,
     },
     share::Shared,
     sheet::{
