@@ -197,6 +197,36 @@ fn modified(path: &Path) -> Option<SystemTime> {
 }
 
 #[cfg(feature = "sync")]
+struct Settling {
+    read_at: Option<SystemTime>,
+    moved_to: Option<Option<SystemTime>>,
+}
+
+#[cfg(feature = "sync")]
+impl Settling {
+    fn from(read_at: Option<SystemTime>) -> Self {
+        Self {
+            read_at,
+            moved_to: None,
+        }
+    }
+
+    fn settled_at(&mut self, stamp: Option<SystemTime>) -> bool {
+        if stamp == self.read_at {
+            self.moved_to = None;
+            return false;
+        }
+        if self.moved_to != Some(stamp) {
+            self.moved_to = Some(stamp);
+            return false;
+        }
+        self.read_at = stamp;
+        self.moved_to = None;
+        true
+    }
+}
+
+#[cfg(feature = "sync")]
 fn watching(
     settings: PathBuf,
     seen: Option<SystemTime>,
@@ -208,18 +238,16 @@ fn watching(
     let started = thread::Builder::new()
         .name("resonate-sync-settings".to_owned())
         .spawn(move || {
-            let mut seen = seen;
+            let mut stamps = Settling::from(seen);
             let mut arranged = arranged;
             loop {
                 match stopped.recv_timeout(every) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
-                let stamp = modified(&settings);
-                if stamp == seen {
+                if !stamps.settled_at(modified(&settings)) {
                     continue;
                 }
-                seen = stamp;
                 match config::load(Some(&settings)) {
                     Ok(config) if Arrangement::of(&config) != arranged => {
                         arranged = arrange(&config);
@@ -1760,6 +1788,36 @@ mod tests {
         false
     }
 
+    fn written_whole(settings: &Path, text: &str) {
+        let staged = settings.with_extension("staged");
+        fs::write(&staged, text).expect("a file");
+        fs::rename(&staged, settings).expect("the file put in place");
+    }
+
+    #[test]
+    fn a_settings_file_is_read_only_once_its_stamp_has_held_still_for_a_look() {
+        let first = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let truncated = first + Duration::from_secs(1);
+        let written = truncated + Duration::from_millis(1);
+        let mut stamps = Settling::from(Some(first));
+
+        let unmoved = stamps.settled_at(Some(first));
+        let caught_truncated = stamps.settled_at(Some(truncated));
+        let caught_written = stamps.settled_at(Some(written));
+        let held_still = stamps.settled_at(Some(written));
+        let read_again = stamps.settled_at(Some(written));
+        let removed = stamps.settled_at(None);
+        let still_removed = stamps.settled_at(None);
+
+        assert!(!unmoved);
+        assert!(!caught_truncated);
+        assert!(!caught_written);
+        assert!(held_still);
+        assert!(!read_again);
+        assert!(!removed);
+        assert!(still_removed);
+    }
+
     #[test]
     fn the_settings_are_followed_and_only_a_change_in_how_the_device_syncs_rearranges_it() {
         let folder = crate::fixtures::scratch("sync-watching");
@@ -1783,18 +1841,17 @@ mod tests {
         )
         .expect("a thread follows the settings");
 
-        fs::write(
+        written_whole(
             &settings,
-            format!("sync-key = \"{}\"\nvolume = 0.5\n", held.code()),
-        )
-        .expect("a file");
+            &format!("sync-key = \"{}\"\nvolume = 0.5\n", held.code()),
+        );
         thread::sleep(Duration::from_millis(300));
         let unmoved = rearranged.load(Ordering::Acquire);
 
-        fs::write(&settings, format!("sync-key = \"{}\"\n", joined.code())).expect("a file");
+        written_whole(&settings, &format!("sync-key = \"{}\"\n", joined.code()));
         let moved = wait_for(&rearranged, 1);
 
-        fs::write(&settings, "sync-key = [\n").expect("a file");
+        written_whole(&settings, "sync-key = [\n");
         thread::sleep(Duration::from_millis(300));
         let after_a_bad_file = rearranged.load(Ordering::Acquire);
 

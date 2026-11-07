@@ -737,7 +737,10 @@ through the relay as QUIC), so the server never carries a command or a mirror an
 - **The settings file is the one way to reconfigure.** `sync::start` returns a `Syncing` over a
   `Service` (the running `Running`, swapped under a lock) and a watcher thread
   (`resonate-sync-settings`) that looks at the file's modified time every `SETTINGS_LOOKED_AT_EVERY`
-  (2 s) and, when it moved, reads it again with `config::load`. An `Arrangement` (whether it syncs,
+  (2 s) and, when it moved and then held still for one more look (`Settling`), reads it again with
+  `config::load`: a file written in place is empty between its truncation and its write, and read
+  then it names no pairing key, so the service would be rearranged around a file nobody wrote
+  (`a_settings_file_is_read_only_once_its_stamp_has_held_still_for_a_look`). An `Arrangement` (whether it syncs,
   the code as `SyncKey::code` spells it, the server, certificate, device name and `sync-songs`) is
   compared with the one running; only a difference stops the running service (`released`, waiting
   up to `RELEASED_WITHIN` for a call in flight to let go of `sync.lock`) and starts another. A device
