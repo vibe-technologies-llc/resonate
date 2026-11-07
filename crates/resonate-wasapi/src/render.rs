@@ -93,7 +93,7 @@ impl Playing {
         let Some(window) = self.scratch.get(..bytes) else {
             return Ok(Cycled { heard: 0, played });
         };
-        self.render.write_to_device(filled.frames, window, None)?;
+        self.render.write_to_device(window, None)?;
 
         if filled.heard > 0 {
             self.real = self.written.saturating_add(filled.heard as u64);

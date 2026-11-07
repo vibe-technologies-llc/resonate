@@ -108,11 +108,11 @@ fn surveyed() -> Result<Vec<Microphone>> {
     let _apartment = Apartment::enter();
     let enumerator = DeviceEnumerator::new().map_err(connect)?;
     let default = enumerator
-        .get_default_device(&Direction::Capture)
+        .get_default_device(Direction::Capture)
         .and_then(|device| device.get_id())
         .ok();
     let collection = enumerator
-        .get_device_collection(&Direction::Capture)
+        .get_device_collection(Direction::Capture)
         .map_err(connect)?;
 
     let mut endpoints = Vec::new();

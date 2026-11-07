@@ -22,7 +22,7 @@ rustix.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 interprocess.workspace = true
-wasapi = "0.26.0"
+wasapi = "0.27.0"
 windows = {
     version = "0.62.2",
     default-features = false,

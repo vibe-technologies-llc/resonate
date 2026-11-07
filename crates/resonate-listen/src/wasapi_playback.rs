@@ -127,7 +127,7 @@ fn heard_wave() -> WaveFormat {
     WaveFormat::new(
         FLOAT_BITS,
         FLOAT_BITS,
-        &SampleType::Float,
+        SampleType::Float,
         HEARD_AT.hz() as usize,
         HEARD_IN_CHANNELS,
         Some(FRONT_LEFT_AND_RIGHT),
@@ -140,7 +140,7 @@ fn rendering_for(output: &Output) -> Result<Rendering> {
         .map_err(|e| Error::capture(CaptureOp::Connect, backend_error(Operation::Connect, e)))?;
     let device = match output {
         Output::Default => enumerator
-            .get_default_device(&Direction::Render)
+            .get_default_device(Direction::Render)
             .map_err(|_| Error::NoOutput)?,
         Output::Endpoint { name, id } => enumerator
             .get_device(id)
@@ -154,7 +154,7 @@ fn rendering_for(output: &Output) -> Result<Rendering> {
         buffer_duration_hns: DEFAULT_BUFFER,
     };
     client
-        .initialize_client(&heard_wave(), &Direction::Render, &mode)
+        .initialize_client(&heard_wave(), Direction::Render, mode, None)
         .map_err(|e| Error::capture(CaptureOp::Play, initialize_error(Operation::Format, e)))?;
     let event = client
         .set_get_eventhandle()
@@ -196,5 +196,5 @@ fn filled(
     if frames == 0 {
         return Ok(());
     }
-    render.write_to_device(frames, window, None).map_err(output)
+    render.write_to_device(window, None).map_err(output)
 }

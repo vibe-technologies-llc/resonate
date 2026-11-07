@@ -50,7 +50,7 @@ pub(crate) fn wave_of(format: SampleFormat, rate: SampleRate, layout: ChannelLay
     WaveFormat::new(
         wire.store_bits,
         wire.valid_bits,
-        &sample,
+        sample,
         rate.hz() as usize,
         usize::from(layout.count().get()),
         Some(mask_of(layout)),
@@ -75,11 +75,11 @@ pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
     enter_the_apartment();
     let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Connect, e))?;
     let default = enumerator
-        .get_default_device(&Direction::Render)
+        .get_default_device(Direction::Render)
         .and_then(|device| device.get_id())
         .ok();
     let collection = enumerator
-        .get_device_collection(&Direction::Render)
+        .get_device_collection(Direction::Render)
         .map_err(|e| backend_error(Operation::Connect, e))?;
 
     let mut sinks = Vec::new();
@@ -172,7 +172,7 @@ fn exclusive_sink(
         if held {
             return false;
         }
-        match client.is_supported(&wave_of(format, rate, layout), &ShareMode::Exclusive) {
+        match client.is_supported(&wave_of(format, rate, layout), ShareMode::Exclusive) {
             Ok(None) => true,
             Err(WasapiError::Windows(error)) if error.code().0 == DEVICE_IN_USE => {
                 held = true;
@@ -220,6 +220,6 @@ pub(crate) fn device_for(endpoint: &str) -> SinkResult<Device> {
 pub(crate) fn default_device() -> SinkResult<Device> {
     let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Open, e))?;
     enumerator
-        .get_default_device(&Direction::Render)
+        .get_default_device(Direction::Render)
         .map_err(|e| backend_error(Operation::Open, e))
 }

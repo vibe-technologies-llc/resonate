@@ -259,7 +259,7 @@ fn start(
         }
     };
     client
-        .initialize_client(&wave, &wasapi::Direction::Render, &mode)
+        .initialize_client(&wave, wasapi::Direction::Render, mode, None)
         .map_err(initialize_error)?;
     let event = client
         .set_get_eventhandle()

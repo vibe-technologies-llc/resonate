@@ -133,7 +133,7 @@ fn heard_wave() -> WaveFormat {
     WaveFormat::new(
         FLOAT_BITS,
         FLOAT_BITS,
-        &SampleType::Float,
+        SampleType::Float,
         HEARD_AT.hz() as usize,
         HEARD_IN_CHANNELS,
         Some(FRONT_LEFT_AND_RIGHT),
@@ -143,8 +143,8 @@ fn heard_wave() -> WaveFormat {
 fn opened_for(tap: &Tap) -> Result<Opened> {
     let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Connect, e))?;
     let device = match tap {
-        Tap::Desktop => enumerator.get_default_device(&Direction::Render),
-        Tap::Microphone(None) => enumerator.get_default_device(&Direction::Capture),
+        Tap::Desktop => enumerator.get_default_device(Direction::Render),
+        Tap::Microphone(None) => enumerator.get_default_device(Direction::Capture),
         Tap::Microphone(Some(id)) => enumerator.get_device(id),
     }
     .map_err(|e| backend_error(Operation::Open, e))?;
@@ -156,7 +156,7 @@ fn opened_for(tap: &Tap) -> Result<Opened> {
         buffer_duration_hns: DEFAULT_BUFFER,
     };
     client
-        .initialize_client(&heard_wave(), &Direction::Capture, &mode)
+        .initialize_client(&heard_wave(), Direction::Capture, mode, None)
         .map_err(|e| initialize_error(Operation::Format, e))?;
     let event = client
         .set_get_eventhandle()
