@@ -60,9 +60,10 @@ const WHAT_HAPPENS: [(Icon, &str, &str); 3] = [
     ),
 ];
 
-const NO_SERVICE: &str = "Parties need the sync server.";
+const NO_SERVICE: &str = "Parties need the sync server";
 
-const NO_SERVICE_MORE: &str = "This build has none, or Online is off in the settings.";
+const NO_SERVICE_MORE: &str =
+    "This build has none, or Online is off in the settings. Turn it on to listen together.";
 
 const SUGGESTING: &str = "Add a song to your queue as you always do, and the host is asked to \
                           play it.";
@@ -82,8 +83,6 @@ const YOU: &str = "You";
 const QR_SIDE: f32 = 168.0;
 
 const COVER_SIDE: f32 = 132.0;
-
-const MARK_SIDE: f32 = 72.0;
 
 const MARK_ICON: f32 = 34.0;
 
@@ -318,14 +317,7 @@ impl RootView {
     }
 
     fn nobody_here(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let mark = div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(px(MARK_SIDE))
-            .rounded_full()
-            .bg(theme::tinted(theme::accent(), 0x1c))
-            .child(icons::icon(Icon::Party, MARK_ICON, theme::accent()));
+        let mark = kit::empty_mark(Icon::Party, theme::accent());
         let welcome = div()
             .flex()
             .flex_col()

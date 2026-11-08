@@ -541,8 +541,13 @@ is never named.
   that cell holds something** (the `max(1)` fallback stacks full-width cells); the canvas is
   `absolute` and sized by the container, so it measures the same with the list there or not. A cell's
   cover is `Drawn::InAGrid`.
-- **An empty pane says what is missing and what to do** (`kit::empty`: the pane's icon in a ring, a
-  sentence naming the state, a second naming the gesture that fills it). **A search that matched
+- **An empty pane says what is missing and what to do, in the Listening Party welcome's shape**
+  (`kit::empty`): the pane's icon in the accent on an accent wash (`kit::empty_mark`, the same mark
+  the party's welcome draws, `EMPTY_MARK_SIDE` round), a short headline naming the state (a level-2
+  heading at `text_xl`, no full stop: *No playlists yet*, *Nothing playing*, *No albums match*), and
+  a sentence naming the gesture that fills it (muted, ending in a full stop), every empty state having
+  one. A failure (the library unread, a decode that stopped, a server or MusicBrainz out of reach) is
+  `kit::trouble`/`trouble_offering`: the same shape with the mark in `theme::failure()`. **A search that matched
   nothing offers the spelling the catalog holds, as a press**: `kit::empty_offering` adds a
   `Tone::Outlined` button *Did you mean Billie Eilish?* from `RootView::nothing_matched`, putting the
   text in the search field via `RootView::search_instead` (editable, not run behind the listener's
@@ -1248,9 +1253,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   one chip per clause off `Search::reads` in every pane's heading (counts only beside albums and
   artists). `Matching::grouped` carries the whole grammar into albums, artists and tracks,
   `db::cuts_matching` into an opened playlist's rows, while the playlists index narrows on `words_of`
-  alone. A lone word draws no chip. A pane with nothing left says "No albums match." where a search is
-  in force, "No albums yet." where none is, and "The library couldn't be read." (with a toast)
-  where the last read failed (`LibraryModel::unreadable`, checked before the narrowed wording). A failed read for a query other than the one the lists were read for empties them (`listed_for`, `forget_the_listing`); a failed refresh of the same query keeps its rows.
+  alone. A lone word draws no chip. A pane with nothing left says *No albums match* where a search is
+  in force, *No albums yet* where none is, and *The library couldn't be read* (`kit::trouble`, with a
+  toast) where the last read failed (`LibraryModel::unreadable`, checked before the narrowed wording). A failed read for a query other than the one the lists were read for empties them (`listed_for`, `forget_the_listing`); a failed refresh of the same query keeps its rows.
 - **The window keeps every zone's queue for the next run; the switch stopping it discards what was
   kept.** Each `ZoneShown` holds a `Keeping` and a `Listening` off its own `PlayerModel` observer
   (`RootView::zone_moved`), keeping what `resonate play` keeps (`audio.md`) under its `ZoneId`, and
@@ -1435,7 +1440,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   notes the new state at once, writes it on the background executor
   (`RootView::favour_a_served_song`) and, on a refusal, puts the note back and toasts the
   `Failure` (`a_star_on_a_served_song_favours_it_in_the_service_and_a_favourite_one_is_taken_out`). A service that lists nothing
-  unasked opens on *This service lists nothing until it is asked* and the search
+  unasked opens on *Search to begin* (*This service lists nothing until it is asked*) and the search
   (`two_services_are_chosen_between_in_the_pane_and_a_song_found_on_the_second_plays_from_it`). The pane (`views/served.rs`) is a heading (way back, title, the count, *Play* and
   *Add to queue* on an artist or album, and a search `Field` that asks the server on enter and an
   empty enter leaves the search) over one `uniform_list` of rows; a row is a cover, a title with its
@@ -1489,7 +1494,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   count says so** (`listed_short`: *5000 of 7214 tracks listed; type to narrow to the rest*). **A row
   is dismissed with its ✕** (`dismiss_missing`, `dismiss_release`, via `edit`); heading's *Bring back N
   dismissed* = `bring_back_dismissed`, toasted (`library.md`). Empty: `kit::empty` under
-  `Icon::Missing` (*Nothing missing matches.* while narrowed).
+  `Icon::Missing` (*Nothing missing matches* while narrowed).
 - **A song asked for is followed in the sidebar, never told in a toast.** `downloads.rs`: `Downloads`
   holds a `Download` per found song pressed (the `Found`, `WantId` once landed, when queued, a
   `Fetching`); `LibraryModel::want_found` writes it: `Landing`, then `Queued` (`NoProvider` where

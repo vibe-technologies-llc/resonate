@@ -31,11 +31,11 @@ use crate::{
     },
 };
 
-const NOTHING_PLAYED: &str = "Nothing has been played yet.";
+const NOTHING_PLAYED: &str = "Nothing played yet";
 
 const PLAY_SOMETHING: &str = "Play a track and this fills itself in.";
 
-const NOTHING_IN_THIS_WINDOW: &str = "Nothing was played in this window.";
+const NOTHING_IN_THIS_WINDOW: &str = "Nothing played in this window";
 
 const A_WIDER_WINDOW: &str = "Choose a wider window to reach further back.";
 

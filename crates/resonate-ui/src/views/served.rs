@@ -47,13 +47,14 @@ const ASK_AGAIN_HINT: &str = "Ask the server again";
 
 pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter";
 
-const NOTHING_HERE: &str = "The server holds nothing here.";
+const NOTHING_HERE: &str = "Nothing here";
 
-const NOTHING_LISTED: &str = "This service lists nothing until it is asked.";
+const NOTHING_LISTED: &str = "Search to begin";
 
 const FAVOURITES: &str = "Favourites";
 
-const SEARCH_FIRST: &str = "Search it above for an artist, an album or a song.";
+const SEARCH_FIRST: &str =
+    "This service lists nothing until it is asked. Search above for an artist, an album or a song.";
 
 const CHOOSE_HINT: &str = "Browse this service";
 
@@ -61,9 +62,15 @@ const CHOOSE_AMONG_HINT: &str = "Choose which service to browse";
 
 const SEGMENTS_AT_MOST: usize = 3;
 
-const NOTHING_FOUND: &str = "The server found nothing for that.";
+const NOTHING_FOUND: &str = "Nothing found";
 
 const ASKING: &str = "Asking the server…";
+
+const ASKING_MORE: &str = "What it holds here appears as soon as it answers.";
+
+const NOTHING_FOUND_MORE: &str = "The service has nothing for that search. Try other words.";
+
+const NOTHING_HERE_MORE: &str = "The service holds nothing under this.";
 
 const SERVER_CONTROLS: usize = 4;
 
@@ -78,13 +85,15 @@ impl RootView {
 
         let heading = self.server_heading(&place, &page, way_back, cx);
         let body = match page {
-            Page::Reading => kit::empty(Icon::Server, ASKING, None),
+            Page::Reading => kit::empty(Icon::Server, ASKING, Some(ASKING_MORE)),
             Page::Failed(failure) => self.server_failed(failure, cx),
             Page::Read(rows) if rows.is_empty() => match place {
-                Place::Found { .. } => kit::empty(Icon::Server, NOTHING_FOUND, None),
+                Place::Found { .. } => {
+                    kit::empty(Icon::Server, NOTHING_FOUND, Some(NOTHING_FOUND_MORE))
+                }
                 Place::Artists => kit::empty(Icon::Server, NOTHING_LISTED, Some(SEARCH_FIRST)),
                 Place::Artist { .. } | Place::Album { .. } | Place::Mix { .. } => {
-                    kit::empty(Icon::Server, NOTHING_HERE, None)
+                    kit::empty(Icon::Server, NOTHING_HERE, Some(NOTHING_HERE_MORE))
                 }
             },
             Page::Read(rows) => self.server_rows_listed(rows, place, cx),
@@ -94,7 +103,7 @@ impl RootView {
     }
 
     fn server_failed(&self, failure: Failure, cx: &mut Context<Self>) -> AnyElement {
-        kit::empty_offering(
+        kit::trouble_offering(
             Icon::Server,
             failure.says(),
             Some(failure.advises()),

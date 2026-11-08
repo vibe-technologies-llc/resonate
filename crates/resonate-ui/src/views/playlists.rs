@@ -385,13 +385,15 @@ impl RootView {
             if narrowed {
                 empty(
                     Icon::Playlists,
-                    "No playlist is named that.",
-                    Some("A playlist has only a name to answer with."),
+                    "No playlists match",
+                    Some(
+                        "No playlist is named that. A playlist answers a search by its name alone.",
+                    ),
                 )
             } else {
                 kit::empty_offering(
                     Icon::Playlists,
-                    "No playlists yet.",
+                    "No playlists yet",
                     Some(
                         "Start one here, read one in from another player, or press + on any track or queue row.",
                     ),
@@ -824,13 +826,15 @@ impl RootView {
         match rows {
             Rows::Narrowed => empty(
                 Icon::Playlists,
-                "Nothing in this playlist matches the search.",
-                None,
+                "No songs match",
+                Some("Nothing in this playlist matches the search."),
             ),
             Rows::Matched => kit::empty_offering(
                 Icon::Search,
-                "Nothing in the library matches this search yet.",
-                Some("It fills itself as the library grows, or its search can be changed."),
+                "Nothing matches yet",
+                Some(
+                    "Nothing in the library matches this search. It fills itself as the library grows, or its search can be changed.",
+                ),
                 self.in_the_pane_ring(
                     kit::button(
                         "revise-an-empty-search",
@@ -847,7 +851,7 @@ impl RootView {
             ),
             Rows::InHand | Rows::Kept => kit::empty_offering(
                 Icon::Playlists,
-                "This playlist is empty.",
+                "This playlist is empty",
                 Some("Choose songs from the library, or press + on any track or queue row."),
                 self.in_the_pane_ring(
                     kit::button(

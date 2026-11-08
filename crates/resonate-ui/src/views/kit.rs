@@ -1253,33 +1253,63 @@ pub(crate) fn empty_offering(
         .into_any_element()
 }
 
+pub(crate) fn trouble(icon: Icon, message: &'static str, more: Option<&'static str>) -> AnyElement {
+    stands_empty(icon, theme::failure(), message, more).into_any_element()
+}
+
+pub(crate) fn trouble_offering(
+    icon: Icon,
+    message: &'static str,
+    more: Option<&'static str>,
+    offer: impl IntoElement,
+) -> AnyElement {
+    stands_empty(icon, theme::failure(), message, more)
+        .child(offer)
+        .into_any_element()
+}
+
+pub(crate) const EMPTY_MARK_SIDE: f32 = 72.0;
+
+const EMPTY_WORDS_AT_MOST: f32 = 440.0;
+
+const EMPTY_WASH: u8 = 0x1c;
+
+pub(crate) fn empty_mark(icon: Icon, shade: u32) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(EMPTY_MARK_SIDE))
+        .rounded_full()
+        .bg(theme::tinted(shade, EMPTY_WASH))
+        .child(icons::icon(icon, theme::empty_icon(), shade))
+}
+
 fn nothing_here(icon: Icon, message: &'static str, more: Option<&'static str>) -> Div {
+    stands_empty(icon, theme::accent(), message, more)
+}
+
+fn stands_empty(icon: Icon, shade: u32, message: &'static str, more: Option<&'static str>) -> Div {
     div()
         .flex()
         .flex_1()
         .flex_col()
         .items_center()
         .justify_center()
-        .gap_3()
+        .gap_2()
         .px_8()
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(px(56.0))
-                .rounded_full()
-                .bg(rgb(theme::surface()))
-                .border_1()
-                .border_color(rgb(theme::border()))
-                .child(icons::icon(icon, theme::empty_icon(), theme::faint())),
-        )
+        .py_8()
+        .child(empty_mark(icon, shade))
         .child(
             div()
                 .id(message)
-                .read_plainly(message)
-                .text_size(px(theme::text_base()))
-                .text_color(rgb(theme::muted()))
+                .headed(2, message)
+                .pt_2()
+                .max_w(px(EMPTY_WORDS_AT_MOST))
+                .text_size(px(theme::text_xl()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::text()))
                 .text_center()
                 .child(message),
         )
@@ -1288,8 +1318,10 @@ fn nothing_here(icon: Icon, message: &'static str, more: Option<&'static str>) -
                 div()
                     .id(more)
                     .read_plainly(more)
-                    .text_size(px(theme::text_sm()))
-                    .text_color(rgb(theme::faint()))
+                    .max_w(px(EMPTY_WORDS_AT_MOST))
+                    .pb_2()
+                    .text_size(px(theme::text_base()))
+                    .text_color(rgb(theme::muted()))
                     .text_center()
                     .child(more),
             )
@@ -1443,7 +1475,7 @@ mod tests {
         let card = node_of(&card_title("Signal")).expect("a card title is a node");
         let empty = node_of(&nothing_here(
             Icon::Search,
-            "No albums yet.",
+            "No albums yet",
             Some("Scan a folder."),
         ))
         .map(|node| node.role());

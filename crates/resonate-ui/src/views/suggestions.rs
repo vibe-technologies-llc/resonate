@@ -27,9 +27,9 @@ use crate::{
     },
 };
 
-const NOTHING_OFFERED: &str = "The catalog has nothing to suggest yet.";
+const NOTHING_OFFERED: &str = "Nothing to suggest yet";
 
-const SCAN_MORE: &str = "Scan more music and lists it can fill itself will appear here.";
+const SCAN_MORE: &str = "Scan more music, and the lists it can fill itself appear here.";
 
 const PLAY_HINT: &str = "Play what this list would hold, in order";
 

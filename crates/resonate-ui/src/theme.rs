@@ -1064,7 +1064,7 @@ const NUMBER_ONE_ART: f32 = 72.0;
 const METER_HEIGHT: f32 = 6.0;
 const LEGEND_MARK: f32 = 9.0;
 const SUGGESTION_CARD: f32 = 252.0;
-const EMPTY_ICON: f32 = 28.0;
+const EMPTY_ICON: f32 = 34.0;
 const THEME_SWATCH: f32 = 128.0;
 const THEME_SWATCH_STRIP: f32 = 28.0;
 const THEME_SWATCH_SIDEBAR: f32 = 26.0;
@@ -2027,11 +2027,10 @@ mod tests {
 
     const HEIGHT_CALLS: [&str; 4] = [".h(px(", ".min_h(px(", ".max_h(px(", ".size(px("];
     const HAIRLINES: [f32; 2] = [0.0, 1.0];
-    const FIXED_BY_DESIGN: [(&str, &str); 5] = [
+    const FIXED_BY_DESIGN: [(&str, &str); 4] = [
         ("dropping.rs", ".h(px(4.0))"),
         ("listen.rs", ".h(px(4.0))"),
         ("kit.rs", ".size(px(7.0))"),
-        ("kit.rs", ".size(px(56.0))"),
         ("root.rs", ".size(px(22.0))"),
     ];
 

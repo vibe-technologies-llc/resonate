@@ -23,9 +23,13 @@ use crate::{
     },
 };
 
-const NOTHING_MISSING: &str = "Nothing is missing.";
+const NOTHING_MISSING: &str = "Nothing missing";
 
-const NOTHING_MATCHES: &str = "Nothing missing matches.";
+const NOTHING_MATCHES: &str = "Nothing missing matches";
+
+const NOTHING_SHORT_MATCHES: &str = "No missing track or release matches this search.";
+
+const WHOLE: &str = "Every release the library knows of is whole.";
 
 const LOOK_IT_UP: &str =
     "Look up the library from Settings › Online to learn what its releases are short of.";
@@ -157,12 +161,12 @@ impl RootView {
             .child(heading)
             .when(nothing, |pane| {
                 pane.child(if narrowed {
-                    empty(Icon::Missing, NOTHING_MATCHES, None)
+                    empty(Icon::Missing, NOTHING_MATCHES, Some(NOTHING_SHORT_MATCHES))
                 } else {
                     empty(
                         Icon::Missing,
                         NOTHING_MISSING,
-                        can_enrich.then_some(LOOK_IT_UP),
+                        Some(if can_enrich { LOOK_IT_UP } else { WHOLE }),
                     )
                 })
             })

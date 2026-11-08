@@ -53,7 +53,7 @@ use crate::{
 const COVERS_AHEAD: usize = 48;
 const ADD_A_FOLDER: &str = "Add a music folder from Settings to scan one in.";
 
-const ADD_SONGS: &str = "Add songs to start your library.";
+const ADD_SONGS: &str = "Start your library";
 
 const ADD_SONGS_MORE: &str = "Choose the primary music folder: songs you drag onto the window are \
                               copied into it, and what is already there is scanned.";
@@ -63,7 +63,11 @@ const CHOOSE_PRIMARY_HINT: &str = "Open the folder dialogue and make the folder 
 
 const DROP_SONGS_MORE: &str = "Drag songs onto the window, or put them in the primary music \
                                folder, to fill the library.";
-const LIBRARY_UNREADABLE: &str = "The library couldn't be read.";
+const LIBRARY_UNREADABLE: &str = "The library couldn't be read";
+
+const LIBRARY_UNREADABLE_MORE: &str = "The log says what went wrong reading the catalog.";
+
+const NOTHING_HELD_MATCHES: &str = "Nothing in your library matches this search.";
 const SEVERAL: &str = "Various artists";
 const FORGET_THE_MATCH: &str = "Not this record";
 const OTHER_PRESSINGS: &str = "Other pressings";
@@ -307,11 +311,17 @@ impl RootView {
                     if unreadable {
                         LIBRARY_UNREADABLE
                     } else if narrowed {
-                        "No albums match."
+                        "No albums match"
                     } else {
-                        "No albums yet."
+                        "No albums yet"
                     },
-                    (!narrowed && !unreadable).then_some(ADD_A_FOLDER),
+                    Some(if unreadable {
+                        LIBRARY_UNREADABLE_MORE
+                    } else if narrowed {
+                        NOTHING_HELD_MATCHES
+                    } else {
+                        ADD_A_FOLDER
+                    }),
                     cx,
                 )
             })
@@ -730,11 +740,17 @@ impl RootView {
                     if unreadable {
                         LIBRARY_UNREADABLE
                     } else if narrowed {
-                        "No artists match."
+                        "No artists match"
                     } else {
-                        "No artists yet."
+                        "No artists yet"
                     },
-                    (!narrowed && !unreadable).then_some(ADD_A_FOLDER),
+                    Some(if unreadable {
+                        LIBRARY_UNREADABLE_MORE
+                    } else if narrowed {
+                        NOTHING_HELD_MATCHES
+                    } else {
+                        ADD_A_FOLDER
+                    }),
                     cx,
                 )
             })
@@ -896,11 +912,15 @@ impl RootView {
         let scoped = self.library.read(cx).selection() != Selection::Everything;
         if tracks.is_empty() && !narrowed && !scoped {
             return if self.library.read(cx).unreadable() {
-                empty(Icon::Tracks, LIBRARY_UNREADABLE, None)
+                kit::trouble(
+                    Icon::Tracks,
+                    LIBRARY_UNREADABLE,
+                    Some(LIBRARY_UNREADABLE_MORE),
+                )
             } else if cx.global::<ResonateApp>().music_folder.is_none() {
                 self.add_songs(cx)
             } else {
-                empty(Icon::Tracks, "No tracks yet.", Some(DROP_SONGS_MORE))
+                empty(Icon::Tracks, "No tracks yet", Some(DROP_SONGS_MORE))
             };
         }
         let playing = self.playing_now(cx).track;

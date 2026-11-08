@@ -35,16 +35,24 @@ const COPY_SHEET: &str = "Copy the whole sheet";
 
 const SEEK_TO_IT: &str = "Play from this line";
 
-const NOTHING_PLAYING: &str = "Nothing is playing, so there is nothing to follow.";
+const NOTHING_PLAYING: &str = "Nothing playing";
+
+const PLAY_TO_FOLLOW: &str = "Play a track and its words follow it here.";
 
 const SEARCHING: &str = "Looking for lyrics…";
 
-const UNSOURCED: &str = "No lyric source is configured, so nothing is looked up.";
+const SEARCHING_MORE: &str = "Each lyric source is asked in turn for this track.";
 
-const MISSING: &str = "No source had lyrics for this track.";
+const UNSOURCED: &str = "No lyric source";
 
-const SIDECAR_HINT: &str = "An .lrc or .txt beside the file or in a Lyrics folder next to it, or \
-                            lyrics embedded in its tags, is what the pane reads.";
+const UNSOURCED_MORE: &str =
+    "None is configured, so nothing is looked up. Choose one in the settings.";
+
+const MISSING: &str = "No lyrics found";
+
+const SIDECAR_HINT: &str = "No source had lyrics for this track. The pane also reads an .lrc or \
+                            .txt beside the file or in a Lyrics folder next to it, and lyrics \
+                            embedded in its tags.";
 
 const FOLLOW_HINT: &str = "Follow the track again — a scroll of your own holds the pane where you \
                            left it";
@@ -182,7 +190,7 @@ impl RootView {
         let digest = model.digest();
 
         let Some(current) = state.current else {
-            return kit::empty(Icon::Lyrics, NOTHING_PLAYING, None);
+            return kit::empty(Icon::Lyrics, NOTHING_PLAYING, Some(PLAY_TO_FOLLOW));
         };
         let playing = self.playing(&state, digest.as_deref(), cx);
         let now = Instant::now();
@@ -219,11 +227,13 @@ impl RootView {
 
         let body = match &look {
             Look::Searching if quiet => quietly(moving),
-            Look::Searching => kit::empty(Icon::Lyrics, SEARCHING, None),
+            Look::Searching => kit::empty(Icon::Lyrics, SEARCHING, Some(SEARCHING_MORE)),
             Look::Nothing | Look::Missing if sourced => {
                 kit::empty(Icon::Lyrics, MISSING, Some(SIDECAR_HINT))
             }
-            Look::Nothing | Look::Missing => kit::empty(Icon::Lyrics, UNSOURCED, None),
+            Look::Nothing | Look::Missing => {
+                kit::empty(Icon::Lyrics, UNSOURCED, Some(UNSOURCED_MORE))
+            }
             Look::Refused(notice) => notice_of(notice.clone()),
             Look::Found(_) => {
                 self.lyric_lines(position, now, synced, moving || (synced && sounding), cx)

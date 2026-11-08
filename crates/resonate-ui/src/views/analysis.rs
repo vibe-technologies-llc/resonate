@@ -30,15 +30,15 @@ use crate::{
     },
 };
 
-const NOTHING_PLAYING: &str = "Nothing is playing, so there is nothing to analyse.";
+const NOTHING_PLAYING: &str = "Nothing playing";
 
-const NOTHING_PLAYING_MORE: &str = "The pane decodes the playing track from end to end: its \
+const NOTHING_PLAYING_MORE: &str = "Play a track and the pane decodes it from end to end: its \
                                     waveform, its spectrum, whether its lossless claim holds and \
                                     what its audio is.";
 
-const FAILED: &str = "This track could not be decoded to the end.";
+const FAILED: &str = "This track couldn't be decoded";
 
-const FAILED_MORE: &str = "The file may be truncated or damaged; the log says where the decoder \
+const FAILED_MORE: &str = "The file may be truncated or damaged. The log says where the decoder \
                            stopped.";
 
 const ANALYSING: &str = "Decoding the whole track…";
@@ -154,7 +154,7 @@ impl RootView {
                 .text_color(rgb(theme::muted()))
                 .child(ANALYSING)
                 .into_any_element(),
-            Studying::Failed => kit::empty(Icon::Analysis, FAILED, Some(FAILED_MORE)),
+            Studying::Failed => kit::trouble(Icon::Analysis, FAILED, Some(FAILED_MORE)),
             Studying::Done(drawn) => self.analysed(&drawn, played, &hearing, recognises, cx),
         };
 

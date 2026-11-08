@@ -77,10 +77,8 @@ impl RootView {
         let Some(digest) = model.digest() else {
             return kit::empty(
                 Icon::Inspector,
-                "Nothing is playing.",
-                Some(
-                    "The inspector follows the decoder and the sink, so it fills as soon as a track starts.",
-                ),
+                "Nothing playing",
+                Some("Play a track and the inspector follows it from the decoder to the output."),
             );
         };
         let output = model.state().output;

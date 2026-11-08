@@ -30,13 +30,14 @@ const HOLD_HINT: &str = keyed!("Hold the picture still", key!(hold_the_picture))
 
 const RESUME_HINT: &str = keyed!("Set the picture moving again", key!(hold_the_picture));
 
-const NOTHING_PLAYING: &str = "Nothing is playing, so there is nothing to draw.";
+const NOTHING_PLAYING: &str = "Nothing playing";
 
-const MARKED: &str = "A DSD stream sent as DoP carries markers rather than samples, so there is \
-                      nothing here to draw.";
+const PLAY_TO_DRAW: &str = "Play a track and the visualiser draws what is heard.";
 
-const MARKED_MORE: &str = "With DoP off under Output the stream is decimated to PCM, and the \
-                           pane draws that.";
+const MARKED: &str = "Nothing to draw";
+
+const MARKED_MORE: &str = "A DSD stream sent as DoP carries markers rather than samples. Turn DoP \
+                           off under Output and the pane draws the stream decimated to PCM.";
 
 const READS_HINT_BEFORE_SPECTRUM: &str = "What reaches the device — after the equaliser, the volume and the \
                                           dither — drawn as it is heard rather than as it is decoded. The \
@@ -741,7 +742,7 @@ impl RootView {
         let digest = model.digest();
         let tapped = model.tap();
         if state.current.is_none() {
-            return kit::empty(Icon::Visualiser, NOTHING_PLAYING, None);
+            return kit::empty(Icon::Visualiser, NOTHING_PLAYING, Some(PLAY_TO_DRAW));
         }
 
         let playing = self.playing(&state, digest.as_deref(), cx);

@@ -18,9 +18,11 @@ use crate::{
     },
 };
 
-const NOTHING_FAVOURITE: &str = "Nothing is a favourite yet.";
+const NOTHING_FAVOURITE: &str = "No favourites yet";
 
-const NOTHING_MATCHES: &str = "No favourite matches.";
+const NOTHING_MATCHES: &str = "No favourites match";
+
+const NOTHING_FAVOURED_MATCHES: &str = "Nothing you favoured matches this search.";
 
 const HOW_TO_FAVOUR: &str = "Press the star on a track, an album or an artist to keep it here.";
 
@@ -110,7 +112,11 @@ impl RootView {
             .child(favourites_heading(held, &reads))
             .when(nothing, |pane| {
                 pane.child(if narrowed {
-                    empty(Icon::Favourite, NOTHING_MATCHES, None)
+                    empty(
+                        Icon::Favourite,
+                        NOTHING_MATCHES,
+                        Some(NOTHING_FAVOURED_MATCHES),
+                    )
                 } else {
                     empty(Icon::Favourite, NOTHING_FAVOURITE, Some(HOW_TO_FAVOUR))
                 })

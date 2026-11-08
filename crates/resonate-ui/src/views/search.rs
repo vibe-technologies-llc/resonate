@@ -40,11 +40,18 @@ const ARTISTS_NOT_HELD: &str = "Artists not in your library";
 
 const ALBUMS_NOT_HELD: &str = "Albums not in your library";
 
-const NOTHING_MATCHES: &str = "Nothing in your library matches.";
+const NOTHING_MATCHES: &str = "No matches";
+
+const NOTHING_HELD_MATCHES: &str =
+    "Nothing in your library matches these words. Check the spelling, or try fewer words.";
+
+const LOOKING_BEYOND: &str = "Nothing in your library matches, so MusicBrainz is being asked for songs, albums and artists beyond it.";
+
+const UNREACHED_MORE: &str = "Nothing in your library matches, and nothing could be looked up beyond it. Try again once the connection is back.";
 
 const ASKING: &str = "Asking MusicBrainz…";
 
-const UNREACHED: &str = "MusicBrainz could not be reached";
+const UNREACHED: &str = "MusicBrainz can't be reached";
 
 const AS_TYPED_HINT: &str =
     "The words were read as a title by an artist; search for them just as they were typed";
@@ -998,12 +1005,15 @@ impl RootView {
         {
             let nothing = match matched.elsewhere {
                 Some(Beyond::Asking | Beyond::Refining(_)) => {
-                    kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES))
+                    kit::empty(Icon::Search, ASKING, Some(LOOKING_BEYOND))
                 }
                 Some(Beyond::Unreached(_)) => Self::unreached(),
-                Some(Beyond::Elsewhere(_)) | None => {
-                    self.nothing_matched(Icon::Search, NOTHING_MATCHES, None, cx)
-                }
+                Some(Beyond::Elsewhere(_)) | None => self.nothing_matched(
+                    Icon::Search,
+                    NOTHING_MATCHES,
+                    Some(NOTHING_HELD_MATCHES),
+                    cx,
+                ),
             };
             return pane.child(nothing).into_any_element();
         }
@@ -1322,7 +1332,7 @@ impl RootView {
         self.search_in_front(cx)?;
         match self.library.read(cx).elsewhere()? {
             Beyond::Asking | Beyond::Refining(_) => {
-                Some(kit::empty(Icon::Search, ASKING, Some(NOTHING_MATCHES)))
+                Some(kit::empty(Icon::Search, ASKING, Some(LOOKING_BEYOND)))
             }
             Beyond::Unreached(_) => Some(Self::unreached()),
             Beyond::Elsewhere(_) => None,
@@ -1330,7 +1340,7 @@ impl RootView {
     }
 
     pub(crate) fn unreached() -> AnyElement {
-        kit::empty(Icon::Search, UNREACHED, None)
+        kit::trouble(Icon::Search, UNREACHED, Some(UNREACHED_MORE))
     }
 }
 
