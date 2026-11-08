@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.LruCache
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
 import org.json.JSONException
@@ -24,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -123,6 +126,7 @@ private const val DEVICE_NAME_SETTING = "device_name"
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"
 private const val TELL_FINDINGS_KEY = "tell-findings"
+private const val SYNC_IN_BACKGROUND_KEY = "sync-in-background"
 private const val RECENT_SEARCHES_KEPT = 10
 private const val LINKED_PLAYLISTS_FIRST_LOOK_MS = 60_000L
 private const val LINKED_PLAYLISTS_LOOKED_AT_EVERY_MS = 600_000L
@@ -280,6 +284,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val playlistSync = MutableStateFlow<PlaylistSync?>(null)
     val transferring = MutableStateFlow(false)
     val transferServiceRunning = MutableStateFlow(false)
+    val syncsInBackground = MutableStateFlow(settings.getBoolean(SYNC_IN_BACKGROUND_KEY, true))
+    private val syncPolled = MutableStateFlow<SyncPass?>(null)
+    private val backgroundSyncs = AtomicInteger()
+    private val pollSoon = Channel<Unit>(Channel.CONFLATED)
     private val syncApplied = MutableStateFlow(false)
     val together =
         Together(context, library, settings, scope, online, syncConfig, syncApplied) { loadPlaylists() }
@@ -725,6 +733,63 @@ class LibraryFeatures(private val context: Context, private val library: Library
         recentSearches.value = kept
     }
 
+    fun setSyncInBackground(enabled: Boolean) {
+        syncsInBackground.value = enabled
+        settings.edit().putBoolean(SYNC_IN_BACKGROUND_KEY, enabled).apply()
+        work { syncAccess.withLock { syncConfig.value?.let(::paceInBackground) } }
+    }
+
+    private fun wakesInBackground(config: SyncConfig): Boolean =
+        syncsInBackground.value && config.enabled && (online.value || config.nearbyOnly)
+
+    private fun paceInBackground(config: SyncConfig) {
+        try {
+            BackgroundSync.pace(context, wakesInBackground(config))
+        } catch (failure: Exception) {
+            android.util.Log.w("Resonate", "Device sync in the background could not be paced", failure)
+        }
+    }
+
+    fun carryOnInBackground() {
+        val config = syncConfig.value ?: return
+        val status = syncStatus.value ?: return
+        if (!wakesInBackground(config)) return
+        if (!transferring.value && BackgroundSync.quiet(status)) return
+        try {
+            BackgroundSync.carryOn(context)
+        } catch (failure: Exception) {
+            android.util.Log.w("Resonate", "Device sync could not carry on in the background", failure)
+        }
+    }
+
+    suspend fun syncUntilQuiet(): BackgroundPass {
+        library.native()
+        withTimeoutOrNull(BackgroundSync.RUNS_AT_MOST_MS) { syncApplied.first { it } }
+            ?: return BackgroundPass.OUT_OF_TIME
+        val began = SystemClock.elapsedRealtime()
+        backgroundSyncs.incrementAndGet()
+        pollSoon.trySend(Unit)
+        try {
+            var quietSince: Long? = null
+            while (true) {
+                val now = SystemClock.elapsedRealtime()
+                val pass = syncPolled.value?.takeIf { it.polledAt >= began }
+                if (pass != null) {
+                    quietSince =
+                        if (BackgroundSync.quiet(pass.status)) quietSince ?: pass.polledAt else null
+                    val verdict =
+                        BackgroundSync.verdict(pass.status, now - began, quietSince?.let { now - it })
+                    if (verdict != BackgroundPass.GOING) return verdict
+                } else if (now - began >= BackgroundSync.RUNS_AT_MOST_MS) {
+                    return BackgroundPass.OUT_OF_TIME
+                }
+                delay(BackgroundSync.LOOKED_AT_EVERY_MS)
+            }
+        } finally {
+            backgroundSyncs.decrementAndGet()
+        }
+    }
+
     fun foreground(visible: Boolean) {
         foreground = visible
         enrichment.foreground(visible)
@@ -792,6 +857,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             native.syncNetwork(unmetered)
             hearBeacons(status.standing != SyncStanding.OFF)
             syncStatus.value = status
+            paceInBackground(config)
         } catch (failure: Exception) {
             syncStatus.value = native.syncStatus()
             throw failure
@@ -853,9 +919,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private suspend fun pollSync() {
         var arrivals = 0uL
         while (currentCoroutineContext().isActive) {
-            delay(if (foreground || transferring.value) 2000L else 30000L)
+            val quick = foreground || transferring.value || backgroundSyncs.get() > 0
+            withTimeoutOrNull(if (quick) 2000L else 30000L) { pollSoon.receive() }
             try {
                 val native = library.native()
+                val polledAt = SystemClock.elapsedRealtime()
                 val status = native.syncStatus()
                 syncStatus.value = status
                 val waiting = native.syncReceived()
@@ -873,6 +941,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
                     }
                 }
+                syncPolled.value = SyncPass(status, polledAt)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -883,6 +952,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     private fun holdTransfers() {
         if (transferServiceRunning.value || downloading.value) return
+        if (!foreground && backgroundSyncs.get() > 0) return
         try {
             context.startForegroundService(Intent(context, DownloadService::class.java))
         } catch (failure: Exception) {
@@ -1954,6 +2024,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         connection = ConnectionMeter.UNKNOWN
         downloadsWaitOnTheMeter.value = false
         transferring.value = false
+        syncPolled.value = null
         syncHandoffs.value = emptyList()
         syncApplied.value = false
         together.stopped()

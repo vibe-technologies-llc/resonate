@@ -353,6 +353,7 @@ class MainActivity : ComponentActivity(), Host {
 
     override fun onStop() {
         library.features.foreground(false)
+        library.features.carryOnInBackground()
         library.saveNow()
         super.onStop()
     }

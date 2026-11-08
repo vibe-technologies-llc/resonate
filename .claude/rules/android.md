@@ -1414,6 +1414,32 @@ repository closes), so beacons and Bonjour from devices on the same network are 
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
 `SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait. A landing that kept songs says *Kept N songs from your devices* only when that same switch is on.
+
+**Sync goes on with the app closed** (`BackgroundSync.kt`). The engine lives only while something
+retains `LibraryRepository` (playback, a download, a party), so once the last owner lets go sync
+stops with it. `SyncJobService`, a `JobService`, is that owner in the background: it retains the
+library (starting the process and engine where none runs, and marking the features not in the
+foreground where no Activity is attached), runs `LibraryFeatures.syncUntilQuiet`, then releases it
+and calls `jobFinished`. Two jobs start it. **The wake** (`PERIODIC_JOB`) runs every 15 minutes
+within 5 (`WAKES_EVERY_MS`, `WAKES_WITHIN_MS`) on any network with the battery not low, persisted
+across a reboot (`RECEIVE_BOOT_COMPLETED`); `syncWith` keeps it scheduled while *Sync in the
+background* (`sync-in-background` in the `library-features` preferences, on by default, the sync
+page's switch), sync and online (or *Only this network*) are on, and cancels both jobs otherwise. A
+wake already scheduled with the same period is left alone, since scheduling again would restart its
+clock. **The carry-on** (`CARRY_ON_JOB`, one-off, any network) is scheduled by
+`MainActivity.onStop` through `carryOnInBackground` when sync is not quiet or songs wait to land, so
+leaving the app mid-transfer neither freezes nor ends it; one already pending is never replaced,
+which would stop it running. A pass makes `pollSync` poll every two seconds (and at once, through
+`pollSoon`) and publishes each poll's status after landing what arrived (`SyncPass`, stamped when
+the status was read, so the pass reads no status from before it began). **A pass ends when sync is
+quiet** (`BackgroundSync.quiet`: off, or nothing moving and either `settled` or nobody to meet,
+neither dialling nor connected and no other device online or nearby) for `QUIET_FOR_MS` (6 s), and
+it has listened at least `HEARD_FOR_AT_LEAST_MS` (20 s, long enough for beacons and Bonjour); it
+gives up at `RUNS_AT_MOST_MS` (8 minutes, inside the system's 10), asking to be rescheduled only
+while songs still move. A pass starts no data-sync foreground service, since the job already holds
+the process, and never forces sync, since *force* forgives deletions (`sync.md`'s *The service*)
+(`BackgroundSyncTest`). On the emulator a forced run (`adb shell cmd jobscheduler run -f
+org.resonate.android 7101`) cold-starts the process, dials and finishes alone after 20 s.
 Playlist menus offer fetching their missing songs from each online device and keeping their songs
 here; the queue offers continuing what another device was playing, starting it through the Media3
 controller when that device was playing.

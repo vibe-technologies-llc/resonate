@@ -113,6 +113,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S · blocked: network namespaces] Nearby meeting over IPv6 is proved over the loopback and the
   datagram path alone; the link local multicast group and a peer dialled by a link local address with
   its scope have not crossed a real interface (nor an IPv6-only network)
+- [S · blocked: a phone] Android's background sync is proved by its rules in tests and by forced
+  job runs on the emulator alone: when a real phone's Doze, standby buckets and maker's battery
+  savers let the 15-minute wake run, and a carry-on finishing songs mid-transfer after the app is
+  left, have not been seen
 - [S · blocked: a device] The listening test is proved on the host alone (`resonate abx`'s session and
   keys, the boundary's object, the window's group under the test platform and the phones' wording): the commands it sends are checked at the
   engine's published settings, but no run has been heard on PipeWire with a real song, nor the

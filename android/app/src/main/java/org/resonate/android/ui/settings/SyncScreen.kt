@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CloudSync
@@ -101,6 +102,9 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     val notice = features.syncNotice
     val online = features.online
     val askedAt = resonate.syncAskedAt
+    val inBackground = features.syncsInBackground
+
+    fun syncInBackground(enabled: Boolean) = features.setSyncInBackground(enabled)
 
     fun refreshFolders() = features.refreshFolders()
 
@@ -177,6 +181,7 @@ fun SyncScreen() {
     val notice by model.notice.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     val askedAt by model.askedAt.collectAsStateWithLifecycle()
+    val inBackground by model.inBackground.collectAsStateWithLifecycle()
     val keptNameForOthers by model.nameForOthers.collectAsStateWithLifecycle()
     val offered = remember { syncControlOffered() }
     var showCode by remember { mutableStateOf(false) }
@@ -364,6 +369,15 @@ fun SyncScreen() {
                     supporting = "Without it, songs move only on Wi-Fi",
                     checked = config.meteredAllowed,
                     onCheckedChange = { value -> model.change { it.copy(meteredAllowed = value) } },
+                )
+            }
+            item(key = "background") {
+                SwitchRow(
+                    title = "Sync in the background",
+                    icon = Icons.Rounded.Autorenew,
+                    supporting = BACKGROUND_SYNC_SAYS,
+                    checked = inBackground,
+                    onCheckedChange = model::syncInBackground,
                 )
             }
             item(key = "destination-header") { SectionHeader("Songs from your devices") }

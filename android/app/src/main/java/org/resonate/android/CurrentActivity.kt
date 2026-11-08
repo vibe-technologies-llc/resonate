@@ -10,6 +10,9 @@ class CurrentActivity : Host {
     @Volatile var controller: MediaController? = null
         private set
 
+    val attached: Boolean
+        get() = host != null
+
     fun attach(activity: Host) {
         host = activity
     }

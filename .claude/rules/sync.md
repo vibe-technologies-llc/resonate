@@ -537,6 +537,9 @@ will not open is left out of the holdings.
   frame to it goes through a writer task fed by a channel (`Link::say`), so a server that stops
   reading stalls nothing: neighbours, beacons and looks carry on, and a failed write comes back as
   `Event::Dropped` and unlinks.
+- **An Android phone keeps syncing with the app closed**: a job wakes the engine every 15 minutes
+  and once more when the app is left mid-transfer, until the service is quiet (`android.md`'s
+  *Sync goes on with the app closed*). It never forces, so a background wake forgives no deletion.
 - **Force** (`Sync::force`, *Sync now* on the desktop pane and the iPhone's sync page, `sync_force`
   on the boundary) resets the backoff, drops and redials the server, clears the throttles on
   dialling and on following a device, dials every device heard, tells each neighbour the whole

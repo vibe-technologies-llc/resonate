@@ -9,6 +9,9 @@ import org.resonate.android.nativecore.SyncTransferState
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.ui.counted
 
+const val BACKGROUND_SYNC_SAYS =
+    "Catch up every 15 minutes while a network is up, and finish what is on its way after you leave"
+
 private fun SyncStatus?.others(): List<SyncedDevice> = this?.devices.orEmpty().filter { !it.thisDevice }
 
 fun syncHeadline(status: SyncStatus?, config: SyncConfig, online: Boolean): String {
