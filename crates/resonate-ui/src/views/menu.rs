@@ -878,7 +878,11 @@ pub(crate) const GO_TO_ARTIST: &str = "Artist";
 pub(crate) const GO_TO_ALBUM: &str = "Album";
 pub(crate) const COPY_PATH: &str = "File path";
 
-pub(crate) const COPY_PATHS: &str = "Copy the file paths";
+pub(crate) const COPY_PATHS: &str = "File paths";
+
+pub(crate) const IDENTIFY: &str = "Identify";
+
+pub(crate) const SHOW_THE_ARTIST: &str = "Show the artist";
 
 pub(crate) const HIDE_EACH: &str = "Hide from library";
 
@@ -1047,28 +1051,23 @@ impl Menu {
             .join("\n");
         let shown = one_file_in_each_folder(&paths);
 
-        self.apart()
-            .does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
-                for path in &shown {
-                    cx.reveal_path(path);
-                }
-            })
-            .does(Icon::Rename, COPY_PATHS, move |_, _, cx| {
+        self.nests(Icon::Export, COPY, move |menu| {
+            menu.does(Icon::Rename, COPY_PATHS, move |_, _, cx| {
                 clipboard::copy(written.clone(), cx);
             })
+        })
+        .does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
+            for path in &shown {
+                cx.reveal_path(path);
+            }
+        })
     }
 
     pub(crate) fn offers_the_file(self, location: &MediaLocation, names: Called) -> Self {
-        let menu = self.apart();
         let path = location.locator().as_path().map(Path::to_path_buf);
-        let menu = match path.clone() {
-            Some(shown) => menu.does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
-                cx.reveal_path(&shown);
-            }),
-            None => menu,
-        };
+        let shown = path.clone();
 
-        menu.nests(Icon::Export, COPY, move |menu| {
+        self.nests(Icon::Export, COPY, move |menu| {
             let menu = match path {
                 Some(path) => {
                     let written = path.to_string_lossy().into_owned();
@@ -1094,6 +1093,11 @@ impl Menu {
                 menu.does(Icon::Export, label, move |_, _, cx| {
                     clipboard::copy(name.to_string(), cx);
                 })
+            })
+        })
+        .when_some(shown, |menu, shown| {
+            menu.does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
+                cx.reveal_path(&shown);
             })
         })
     }

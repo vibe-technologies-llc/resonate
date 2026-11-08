@@ -36,6 +36,8 @@ use crate::{
 
 const PICKER_LABEL: &str = "Add to a playlist";
 
+const SHARE_WITH_PEOPLE: &str = "Share with other people…";
+
 const PICK_HINT: &str = "Add to this playlist";
 
 const NEW_HINT: &str = "Start a playlist, and name it";
@@ -1444,13 +1446,15 @@ impl RootView {
                             this.play_playlist(opened, &rows, index, !narrowed, cx);
                         }
                     })
+                    .apart()
                     .holds(move || Held::out_of(opened, Arc::clone(&put)))
-                    .reaches(scanned, album, artist_id)
                     .when_some(scanned, |menu, track| {
                         menu.favours(Favoured::Track(track), favourite)
                     })
-                    .offers_the_file(&location, names)
+                    .reaches(scanned, album, artist_id)
+                    .apart()
                     .when_some(scanned, Menu::shares)
+                    .offers_the_file(&location, names)
                     .apart()
                     .when_some(edited.then_some(taken), |menu, taken| {
                         menu.under(
@@ -2237,21 +2241,20 @@ pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx:
             this.library
                 .update(cx, |library, cx| library.duplicate_playlist(id, cx));
         })
+        .apart()
+        .does(Icon::Share, SHARE_WITH_PEOPLE, move |this, _, cx| {
+            this.open_sharing(id, cx);
+        })
         .does(Icon::Export, menu::EXPORT, move |this, _, cx| {
             this.export_playlist(id, cx);
-        })
-        .does(
-            Icon::Share,
-            "Share with other people…",
-            move |this, _, cx| {
-                this.open_sharing(id, cx);
-            },
-        )
+        });
+
+    synced_entries(menu, id, cx)
+        .apart()
         .does(Icon::Discard, menu::DISCARD, move |this, _, cx| {
             this.library
                 .update(cx, |library, cx| library.drop_playlist(id, cx));
-        });
-    synced_entries(menu, id, cx)
+        })
 }
 
 fn synced_entries(menu: Menu, id: PlaylistId, cx: &App) -> Menu {

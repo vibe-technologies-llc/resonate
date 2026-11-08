@@ -1712,7 +1712,7 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         driven.right_click(named("track", taken.get()));
-        driven.click("menu-entry-3");
+        pressed_in_the_menu(&mut driven, menu::TAKE_OUT);
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         assert_eq!(driven.queue(), vec![kept]);
@@ -1836,7 +1836,7 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
         driven.right_click(named("track", track.get()));
-        driven.click("menu-entry-3");
+        pressed_in_the_menu(&mut driven, menu::ADD_TO_PLAYLIST);
         assert!(
             driven.read(|root, _| root.adding.is_some()),
             "Add to playlist opened no picker"

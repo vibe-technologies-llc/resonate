@@ -1599,11 +1599,13 @@ fn what_plays_menu(
         .does(Icon::Inspector, menu::INSPECT, |this, _, cx| {
             this.set_pane(Pane::Inspector, cx);
         })
-        .reaches(track, album, artist)
+        .apart()
         .when_some(track, |menu, track| {
             menu.favours(Favoured::Track(track), favourite)
-                .shares(track)
         })
+        .reaches(track, album, artist)
+        .apart()
+        .when_some(track, Menu::shares)
         .when_some(file, |menu, (location, names)| {
             menu.offers_the_file(&location, names)
         })

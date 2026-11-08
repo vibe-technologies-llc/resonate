@@ -831,13 +831,15 @@ impl RootView {
                                                         );
                                                     },
                                                 )
+                                                .apart()
                                                 .holds(move || Held::of(Arc::clone(&put)))
-                                                .reaches(scanned, album, artist_id)
                                                 .when_some(scanned, |menu, track| {
                                                     menu.favours(Favoured::Track(track), favourite)
                                                 })
-                                                .offers_the_file(&location, names)
+                                                .reaches(scanned, album, artist_id)
+                                                .apart()
                                                 .when_some(scanned, Menu::shares)
+                                                .offers_the_file(&location, names)
                                                 .apart()
                                                 .under(
                                                     Icon::Discard,

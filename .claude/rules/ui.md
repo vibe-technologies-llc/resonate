@@ -51,10 +51,16 @@ is never named.
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
   vertically scrolls the tabs and leaves the foot above the playback bar.
 - **A long menu nests what a row rarely needs, one level deep.** `Menu::nests(icon, label, fill)`
-  hangs a panel off a row with a chevron (`Takes::Opens`, nothing when `fill` offers nothing): a song
-  is Play, Play next, Add to queue and Add to playlist, *Go to* (artist, album), favourite, *Show in
-  the file manager*, *Copy* (file path, title, artist, album), Share, *Other copies* where there are
-  some and *Remove* (hide, forget a delivery, delete), ten rows for sixteen. **A higher quality version is looked up from *Find another version*** (beside *Look for Clean/Explicit version*): `views/better.rs`. Held copies (`alternatives_of`) are offered where `Quality` (lossless, significant bits, rate) is no lower on any count and higher on one, best first; for a lossy track every service that plays in place (`Serving::opened`, so nothing is asked with Online off) is searched on the background executor for the bare title and artist, and a song is kept only where its suffix reads as a lossless codec (`resonate_library::codec_named`) and it is the same song (folded bare title, artist, length within `LENGTHS_AGREE_WITHIN`, 3 s). What was found opens as a menu at the press, each entry playing that copy or version; nothing found is a toast (`a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song`). A pointer opens the panel
+  hangs a panel off a row with a chevron (`Takes::Opens`, nothing when `fill` offers nothing): every
+  menu is the same groups in the same order, a line between each: what plays (*Play*, *Play
+  next*, *Add to queue*), what keeps (*Add to playlist…*, the favourite), where to go (*Go to* with
+  artist and album, *Other copies*, *Find another version*; an album's or artist's own page, then
+  *Show the artist*), what leaves the window (*Share*, *Copy* with title, artist, album and file
+  path, *Show in the file manager*), *Identify* (nesting *Enrich this song*, the ISRC and *Place on
+  a release…*, wherever the reference is reachable), and last what takes something away (*Take out
+  of the queue*, *Remove* with hide, forget a delivery and delete; a playlist's *Discard*). The
+  shared pieces (`Menu::holds`, `favours`, `reaches`, `shares`, `offers_the_file`,
+  `offers_the_files`) draw no line of their own; the caller puts `apart()` before each group. **A higher quality version is looked up from *Find another version*** (beside *Look for Clean/Explicit version*): `views/better.rs`. Held copies (`alternatives_of`) are offered where `Quality` (lossless, significant bits, rate) is no lower on any count and higher on one, best first; for a lossy track every service that plays in place (`Serving::opened`, so nothing is asked with Online off) is searched on the background executor for the bare title and artist, and a song is kept only where its suffix reads as a lossless codec (`resonate_library::codec_named`) and it is the same song (folded bare title, artist, length within `LENGTHS_AGREE_WITHIN`, 3 s). What was found opens as a menu at the press, each entry playing that copy or version; nothing found is a toast (`a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song`). A pointer opens the panel
   by resting on its row and a press too; it stands beside the row on whichever side has room
   (`beside_its_row`, read from the row drawn a frame behind), and resting on another row closes it only
   after `STAYS_OPEN_FOR_THE_POINTER_CROSSING` (250 ms), which reaching the panel calls off, so a

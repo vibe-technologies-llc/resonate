@@ -635,7 +635,13 @@ impl RootView {
                         return chosen_albums_menu(at, row.shift, albums, this, cx);
                     }
                 }
-                album_menu(at, id, owner).favours(Favoured::Album(id), favourite)
+                album_menu_ending(
+                    album_menu(at, id)
+                        .apart()
+                        .favours(Favoured::Album(id), favourite),
+                    id,
+                    owner,
+                )
             },
             cx,
         )
@@ -1289,9 +1295,9 @@ impl RootView {
                 let track_id = track.id;
                 let hidden = track.hidden;
                 let (icon, hiding) = if hidden {
-                    (Icon::Undo, "Show in library")
+                    (Icon::Undo, menu::SHOW_EACH)
                 } else {
-                    (Icon::Discard, "Hide from library")
+                    (Icon::Discard, menu::HIDE_EACH)
                 };
                 let favourite = this
                     .library
@@ -1327,31 +1333,41 @@ impl RootView {
                             this.play_the_row(plays, &pressed, index, window, cx);
                         },
                     )
+                    .apart()
+                    .holds(move || Held::of(Arc::from([held.clone()])))
+                    .favours(Favoured::Track(track.id), favourite)
+                    .reaches(Some(track.id), track.album_id, track.artist_id)
+                    .when_some(others, Menu::offers_the_other_copies)
+                    .looks_for_versions(track.clone(), at)
+                    .apart()
+                    .shares(track.id)
+                    .offers_the_file(&track.location, names)
+                    .when_some(placeable, |menu, track| {
+                        menu.apart()
+                            .nests(Icon::Globe, menu::IDENTIFY, move |menu| {
+                                menu.does(Icon::Globe, LOOK_IT_UP, move |this, _, cx| {
+                                    this.library.update(cx, |library, cx| {
+                                        library.look_up_a_track(track, cx)
+                                    });
+                                })
+                                .does(Icon::Rename, GIVE_AN_ISRC, move |this, window, cx| {
+                                    this.ask_for_an_isrc(track, window, cx);
+                                })
+                                .does(
+                                    Icon::Disc,
+                                    PLACE_ON,
+                                    move |this, _, cx| {
+                                        this.offer_releases_to_place_on(track, at, cx);
+                                    },
+                                )
+                            })
+                    })
+                    .apart()
                     .when_some(in_the_queue, |menu, (location, span)| {
                         menu.does(Icon::Discard, menu::TAKE_OUT, move |this, _, cx| {
                             this.take_out_of_the_queue(&location, span, cx);
                         })
                     })
-                    .holds(move || Held::of(Arc::from([held.clone()])))
-                    .when_some(others, Menu::offers_the_other_copies)
-                    .reaches(Some(track.id), track.album_id, track.artist_id)
-                    .favours(Favoured::Track(track.id), favourite)
-                    .offers_the_file(&track.location, names)
-                    .shares(track.id)
-                    .looks_for_versions(track.clone(), at)
-                    .when_some(placeable, |menu, track| {
-                        menu.does(Icon::Globe, LOOK_IT_UP, move |this, _, cx| {
-                            this.library
-                                .update(cx, |library, cx| library.look_up_a_track(track, cx));
-                        })
-                        .does(Icon::Rename, GIVE_AN_ISRC, move |this, window, cx| {
-                            this.ask_for_an_isrc(track, window, cx);
-                        })
-                        .does(Icon::Disc, PLACE_ON, move |this, _, cx| {
-                            this.offer_releases_to_place_on(track, at, cx);
-                        })
-                    })
-                    .apart()
                     .nests(Icon::Delete, menu::REMOVE, move |menu| {
                         menu.does(icon, hiding, move |this, _, cx| {
                             this.library.update(cx, |library, cx| {
@@ -2064,7 +2080,7 @@ impl RootView {
                     .album_of(id)
                     .and_then(|album| album.artist_id);
 
-                album_menu(at, id, owner).apart().does(
+                album_menu_ending(album_menu(at, id), id, owner).does(
                     Icon::Albums,
                     menu::MAGNIFY,
                     move |this, _, cx| this.magnify(Magnified::Album(id), cx),
@@ -3006,7 +3022,7 @@ impl RootView {
             reach,
             move |this, at, cx| match chooses {
                 Some(chooses) => artist_menu_among(at, id, favourite, chooses, this, cx),
-                None => artist_menu(at, id).favours(Favoured::Artist(id), favourite),
+                None => artist_menu_favoured(at, id, favourite),
             },
             cx,
         )
@@ -3168,7 +3184,7 @@ enum Caption {
     Beside(ArtistId),
 }
 
-fn album_menu(at: Point<Pixels>, album: AlbumId, owner: Option<ArtistId>) -> Menu {
+fn album_menu(at: Point<Pixels>, album: AlbumId) -> Menu {
     Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, window, cx| {
             this.plays_everything_in(Selection::Album(album), Placement::Queued, true, window, cx);
@@ -3189,12 +3205,15 @@ fn album_menu(at: Point<Pixels>, album: AlbumId, owner: Option<ArtistId>) -> Men
                 );
             },
         )
-        .apart()
+}
+
+fn album_menu_ending(menu: Menu, album: AlbumId, owner: Option<ArtistId>) -> Menu {
+    menu.apart()
         .does(Icon::Albums, menu::OPEN_ALBUM, move |this, _, cx| {
             this.opened(Selection::Album(album), cx);
         })
         .when_some(owner, |menu, owner| {
-            menu.does(Icon::Artists, menu::GO_TO_ARTIST, move |this, _, cx| {
+            menu.does(Icon::Artists, menu::SHOW_THE_ARTIST, move |this, _, cx| {
                 this.opened(Selection::Artist(owner), cx);
             })
         })
@@ -3214,7 +3233,7 @@ fn artist_menu_among(
         return chosen_artists_menu(at, chooses.shift, artists, this, cx);
     }
 
-    artist_menu(at, artist).favours(Favoured::Artist(artist), favourite)
+    artist_menu_favoured(at, artist, favourite)
 }
 
 fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
@@ -3250,10 +3269,22 @@ fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
                 );
             },
         )
-        .apart()
+}
+
+fn artist_menu_ending(menu: Menu, artist: ArtistId) -> Menu {
+    menu.apart()
         .does(Icon::Artists, menu::OPEN_ARTIST, move |this, _, cx| {
             this.opened(Selection::Artist(artist), cx);
         })
+}
+
+fn artist_menu_favoured(at: Point<Pixels>, artist: ArtistId, favourite: bool) -> Menu {
+    artist_menu_ending(
+        artist_menu(at, artist)
+            .apart()
+            .favours(Favoured::Artist(artist), favourite),
+        artist,
+    )
 }
 
 pub(crate) enum Asks {
@@ -4080,8 +4111,8 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
             move || Arc::clone(&queued),
             move |this, _, cx| this.play(&played, 0, cx),
         )
-        .holds(move || Held::of(Arc::clone(&cuts)))
         .apart()
+        .holds(move || Held::of(Arc::clone(&cuts)))
         .does(
             if favoured {
                 Icon::Favourited
@@ -4101,8 +4132,9 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
                 });
             },
         )
-        .offers_the_files(paths)
+        .apart()
         .shares_each(sharing)
+        .offers_the_files(paths)
         .apart()
         .nests(Icon::Delete, menu::REMOVE, move |menu| {
             menu.does(
