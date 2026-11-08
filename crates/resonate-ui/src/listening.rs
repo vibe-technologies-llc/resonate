@@ -159,6 +159,7 @@ pub(crate) struct ListenModel {
     heard: Vec<Found>,
     microphones: Vec<(String, String)>,
     looked_for_microphones: bool,
+    microphones_read: bool,
     keeps_listening: bool,
     following: Following,
     running: Task<()>,
@@ -176,6 +177,7 @@ impl ListenModel {
             heard: Vec::new(),
             microphones: Vec::new(),
             looked_for_microphones: false,
+            microphones_read: false,
             keeps_listening: false,
             following: Following::Off,
             running: Task::ready(()),
@@ -208,6 +210,10 @@ impl ListenModel {
         self.looked_for_microphones
     }
 
+    pub(crate) const fn hears_no_microphone(&self) -> bool {
+        self.microphones_read && self.microphones.is_empty()
+    }
+
     pub(crate) const fn keeps_listening(&self) -> bool {
         self.keeps_listening
     }
@@ -229,6 +235,7 @@ impl ListenModel {
     pub(crate) fn hearing_of(&mut self, microphones: Vec<(String, String)>) {
         self.microphones = microphones;
         self.looked_for_microphones = true;
+        self.microphones_read = true;
         self.listing = Task::ready(());
     }
 
@@ -275,6 +282,7 @@ impl ListenModel {
                     .into_iter()
                     .map(|microphone| (microphone.name.to_string(), microphone.description))
                     .collect();
+                this.microphones_read = true;
                 cx.notify();
             });
         });

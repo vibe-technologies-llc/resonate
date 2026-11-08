@@ -1,10 +1,8 @@
-use gpui::{
-    BoxShadow, Context, Div, FontWeight, SharedString, div, point, prelude::*, px, rgb, rgba,
-};
+use gpui::{Context, Div, SharedString, div, prelude::*, px, rgb};
 
 use crate::{
     Notice, ResonateApp,
-    icons::{self, Icon},
+    icons::Icon,
     motion, theme,
     views::{
         kit,
@@ -94,43 +92,18 @@ impl RootView {
         let asking = takes.asking();
         let saying = takes.saying();
 
-        let card = div()
+        let card = kit::sheet()
             .id("party-offer-sheet")
             .dialog(asking)
             .track_focus(&self.sheet_panels.holding(sheets::PARTY_OFFER_PANEL, cx))
-            .flex()
-            .flex_col()
-            .gap_4()
             .w(px(theme::confirm_width()))
-            .p_5()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.not_joining_the_party(cx)))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(icons::icon(Icon::Party, 18.0, theme::accent()))
-                    .child(
-                        div()
-                            .id("party-offer-asking")
-                            .headed(2, asking)
-                            .text_size(px(theme::text_lg()))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::text()))
-                            .child(asking),
-                    ),
-            )
+            .child(kit::sheet_heading(
+                "party-offer-asking",
+                Icon::Party,
+                theme::accent(),
+                asking,
+            ))
             .child(
                 div()
                     .id("party-offer-saying")
@@ -143,10 +116,7 @@ impl RootView {
                     .child(SharedString::from(saying)),
             )
             .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
+                kit::sheet_actions()
                     .child(self.in_the_pane_ring(
                         kit::button(
                             sheets::NOT_JOINING,
@@ -171,15 +141,7 @@ impl RootView {
                     )),
             );
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "party-offer-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "party-offer-arrives"))
     }
 }
 

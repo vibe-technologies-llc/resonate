@@ -29,6 +29,10 @@ card lifts inside. Keys are fixed names: gpui keeps an animation's start under t
 drops state no frame reads, so a surface closed for a frame and reopened replays, one redrawn while
 open does not. A hint is a new entity per show, so it fades in each time.
 
+- **The Listen sheet's stage fades in**, keyed by the stage (each try and each song named a key of
+  its own), so a recording turning into a name arrives rather than swaps; every stage is the same
+  tile-and-words shape, so only its content changes, the cover landing where the mark stood. The
+  progress rail is data and moves without easing.
 - **Pane body fades in**, keyed by the pane (tracks pane: the scope, plus whether search results
   stand in front); the clock's per-tick redraw keeps the key. Settings column: keyed by category,
   or *found* while narrowed.
@@ -50,7 +54,8 @@ share; `blended` lerps two colours.
 - `kit::segment`, settings rail: ground layer fades in under the label (`shown_while`), a child so
   callers keep building on the control. Sidebar chosen row likewise, accent bar growing from its
   middle. The bar's shuffle, repeat and queue toggles fade their accent dot the same way.
-- `kit::radio` grows its dot. Play/pause, repeat glyph, mute mark `popped` on change.
+- `kit::radio` grows its dot; `kit::checked_row` (the Sort pop-up's orders) fades its check by
+  `shown_while`, so the held order hands the check over as an arrow moves it. Play/pause, repeat glyph, mute mark `popped` on change.
 - `kit::star` (`motion::starred`): a newly favoured star scales past its size and back, keyed by the
   `which` it marks, not the row id (a row redrawn over another track after a sort must not pop).
 
@@ -111,5 +116,5 @@ An animation asks for the next frame of its own view; the window is four cached 
 flipping switch redraws the pane, not the transport. Nothing asks for frames once landed.
 
 **The one motion that never lands is `spinning`**: `Icon::Spinner` turned a whole turn every
-`TURNS_OVER` (900 ms) on a repeating animation, drawn only while a found song is underway, so its
-frames end with the download. Under reduced motion gpui draws its end state, the arc at rest.
+`TURNS_OVER` (900 ms) on a repeating animation, drawn only while a found song is underway or the
+Listen sheet asks who a clip is, so its frames end with the download or the answer. Under reduced motion gpui draws its end state, the arc at rest.

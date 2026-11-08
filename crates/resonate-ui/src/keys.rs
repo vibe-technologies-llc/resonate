@@ -143,6 +143,27 @@ macro_rules! key {
     (rail_down) => {
         "down"
     };
+    (order_above) => {
+        "up"
+    };
+    (order_below) => {
+        "down"
+    };
+    (order_first) => {
+        "home"
+    };
+    (order_last) => {
+        "end"
+    };
+    (read_the_first_way) => {
+        "left"
+    };
+    (read_the_other_way) => {
+        "right"
+    };
+    (take_the_order) => {
+        "enter"
+    };
 }
 
 macro_rules! ways {
@@ -169,7 +190,7 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 43] = [
+    const NAMED: [&str; 50] = [
         key!(play_pause),
         key!(previous),
         key!(next),
@@ -213,6 +234,13 @@ mod tests {
         key!(rail_back),
         key!(rail_up),
         key!(rail_down),
+        key!(order_above),
+        key!(order_below),
+        key!(order_first),
+        key!(order_last),
+        key!(read_the_first_way),
+        key!(read_the_other_way),
+        key!(take_the_order),
     ];
 
     #[test]

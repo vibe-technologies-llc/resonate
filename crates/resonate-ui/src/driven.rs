@@ -1029,6 +1029,63 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_sort_pop_up_is_walked_by_the_arrows_turned_round_by_left_and_right_and_typed_into(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_library::{Direction, SortOrder};
+
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let order = |driven: &mut Driven| driven.read(|root, cx| root.library.read(cx).sorting());
+        let pressed = |driven: &mut Driven, keys: &str| {
+            driven.cx.simulate_keystrokes(keys);
+            driven.settle();
+        };
+
+        driven.click("order-tracks");
+        driven.settle();
+        assert_eq!(order(&mut driven).tracks, SortOrder::DateAdded);
+
+        pressed(&mut driven, "down");
+        assert_eq!(order(&mut driven).tracks, SortOrder::Duration);
+        pressed(&mut driven, "up");
+        pressed(&mut driven, "up");
+        assert_eq!(order(&mut driven).tracks, SortOrder::Artist);
+        pressed(&mut driven, "end");
+        assert_eq!(order(&mut driven).tracks, SortOrder::PlaysThisMonth);
+        pressed(&mut driven, "down");
+        assert_eq!(order(&mut driven).tracks, SortOrder::Relevance);
+        pressed(&mut driven, "end");
+        pressed(&mut driven, "home");
+        assert_eq!(order(&mut driven).tracks, SortOrder::Relevance);
+
+        pressed(&mut driven, "right");
+        assert_eq!(order(&mut driven).tracks_read, Direction::Descending);
+        pressed(&mut driven, "left");
+        assert_eq!(order(&mut driven).tracks_read, Direction::Ascending);
+
+        pressed(&mut driven, "a");
+        assert_eq!(order(&mut driven).tracks, SortOrder::AlbumThenTrack);
+        pressed(&mut driven, "a");
+        assert_eq!(order(&mut driven).tracks, SortOrder::Artist);
+        pressed(&mut driven, "a");
+        assert_eq!(order(&mut driven).tracks, SortOrder::DateAdded);
+        assert!(driven.read(|root, _| root.ordering.is_some()));
+
+        pressed(&mut driven, "enter");
+        assert_eq!(driven.read(|root, _| root.ordering), None);
+
+        driven.click("order-tracks");
+        driven.settle();
+        pressed(&mut driven, "l");
+        pressed(&mut driven, "a");
+        assert_eq!(order(&mut driven).tracks, SortOrder::Played);
+        pressed(&mut driven, "escape");
+        assert_eq!(driven.read(|root, _| root.ordering), None);
+    }
+
+    #[gpui::test]
     fn a_zone_added_is_shown_with_a_queue_of_its_own_and_switching_back_touches_neither(
         cx: &mut TestAppContext,
     ) {

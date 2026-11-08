@@ -1,12 +1,19 @@
+use std::time::Instant;
+
 use gpui::{
-    BoxShadow, Context, Div, MouseButton, MouseDownEvent, Pixels, Point, SharedString, anchored,
-    deferred, div, point, prelude::*, px, relative, rgb,
+    Action, App, Context, Div, ElementId, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, Point,
+    Role, Size, Window, anchored, deferred, div, point, prelude::*, px, rgb,
 };
 use resonate_core::PlaylistId;
-use resonate_library::{AlbumOrder, ArtistOrder, Direction, PlaylistOrder, RowOrder, SortOrder};
+use resonate_library::{
+    AlbumOrder, ArtistOrder, Direction, PlaylistOrder, RowOrder, SortOrder, folded_letters,
+};
 
 use crate::{
-    icons::{self, Icon},
+    app::{
+        ORDER_CONTEXT, OrderAbove, OrderBelow, OrderFirst, OrderLast, ReadTheFirstWay,
+        ReadTheOtherWay, TakeTheOrder,
+    },
     motion, theme,
     views::{
         kit,
@@ -14,10 +21,30 @@ use crate::{
         root::RootView,
         sheets,
         spoken::Spoken,
+        typing::jumped,
     },
 };
 
 const BELOW_ITS_CONTROL: f32 = 4.0;
+
+const KEPT_FROM_THE_WINDOW_EDGE: f32 = 8.0;
+
+const ORDERS_LABEL: &str = "Order";
+
+const ORDERS_HINT: &str = keyed!(
+    "Choose an order",
+    key!(order_above),
+    key!(order_below),
+    "its first letters"
+);
+
+const READINGS_LABEL: &str = "Direction";
+
+const READINGS_HINT: &str = keyed!(
+    "Choose which way round it reads",
+    key!(read_the_first_way),
+    key!(read_the_other_way)
+);
 
 pub(crate) trait Ordering: Copy + PartialEq + 'static {
     const EVERY: &'static [Self];
@@ -61,6 +88,114 @@ impl Ordered {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stepped {
+    Above,
+    Below,
+    First,
+    Last,
+}
+
+const fn stepped_to(held: usize, every: usize, step: Stepped) -> usize {
+    let last = every.saturating_sub(1);
+
+    match step {
+        Stepped::Above if held == 0 => last,
+        Stepped::Above => held - 1,
+        Stepped::Below if held >= last => 0,
+        Stepped::Below => held + 1,
+        Stepped::First => 0,
+        Stepped::Last => last,
+    }
+}
+
+fn typed_onto(named: &[&str], held: usize, typed: &str) -> Option<usize> {
+    let folded: Vec<String> = named.iter().map(|name| folded_letters(name)).collect();
+    let wanted = folded_letters(typed);
+    let mut letters = wanted.chars();
+    let first = letters.next()?;
+
+    match letters.all(|letter| letter == first) {
+        true => jumped(&folded, held + 1, first.encode_utf8(&mut [0; 4])),
+        false => jumped(&folded, held, &wanted),
+    }
+}
+
+fn typed_letter(event: &KeyDownEvent) -> Option<&str> {
+    let modifiers = &event.keystroke.modifiers;
+    if modifiers.control || modifiers.platform || modifiers.alt {
+        return None;
+    }
+
+    event
+        .keystroke
+        .key_char
+        .as_deref()
+        .filter(|key| !key.trim().is_empty() && !key.contains(char::is_control))
+}
+
+fn order_row_id(at: usize) -> ElementId {
+    ("order-choice", at).into()
+}
+
+fn reading_id(at: usize) -> ElementId {
+    ("order-reading", at).into()
+}
+
+fn order_stepped<A: Action, O: Ordering>(
+    step: Stepped,
+    held_at: usize,
+    order_by: impl Fn(&mut RootView, O, &mut Context<RootView>) + 'static,
+    cx: &mut Context<RootView>,
+) -> impl Fn(&A, &mut Window, &mut App) + 'static {
+    cx.listener(move |this, _: &A, window, cx| {
+        let at = stepped_to(held_at, O::EVERY.len(), step);
+        this.hold_the_order_at(at, window, cx);
+        order_by(this, O::EVERY[at], cx);
+    })
+}
+
+fn read_by_key<A: Action>(
+    direction: Direction,
+    read_as: impl Fn(&mut RootView, Direction, &mut Context<RootView>) + 'static,
+    cx: &mut Context<RootView>,
+) -> impl Fn(&A, &mut Window, &mut App) + 'static {
+    cx.listener(move |this, _: &A, window, cx| {
+        this.carry_the_ring_onto(reading_id(usize::from(direction.code())), window, cx);
+        read_as(this, direction, cx);
+    })
+}
+
+fn order_typed<O: Ordering>(
+    held_at: usize,
+    order_by: impl Fn(&mut RootView, O, &mut Context<RootView>) + 'static,
+    cx: &mut Context<RootView>,
+) -> impl Fn(&KeyDownEvent, &mut Window, &mut App) + 'static {
+    cx.listener(move |this, event: &KeyDownEvent, window, cx| {
+        let Some(letter) = typed_letter(event) else {
+            return;
+        };
+        cx.stop_propagation();
+
+        let now = Instant::now();
+        if this.ordering_typed.ran_out_by(now) {
+            this.ordering_typed.cleared();
+        }
+        this.ordering_typed.took(letter, now);
+
+        let named: Vec<&str> = O::EVERY.iter().map(|order| order.named()).collect();
+        let Some(at) = this
+            .ordering_typed
+            .typed()
+            .and_then(|typed| typed_onto(&named, held_at, typed))
+        else {
+            return;
+        };
+        this.hold_the_order_at(at, window, cx);
+        order_by(this, O::EVERY[at], cx);
+    })
+}
+
 impl RootView {
     pub(crate) fn order_a_listing(
         &mut self,
@@ -70,6 +205,7 @@ impl RootView {
     ) {
         self.ordering = Some(ordered);
         self.ordering_at = at + point(px(0.0), px(BELOW_ITS_CONTROL));
+        self.ordering_typed.cleared();
         cx.notify();
     }
 
@@ -78,7 +214,12 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn order_sheet(&self, ordered: Ordered, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn order_sheet(
+        &self,
+        ordered: Ordered,
+        room: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let choices = match ordered {
             Ordered::Tracks => self.tracks_in_order(cx),
             Ordered::Albums => self.albums_in_order(cx),
@@ -93,37 +234,20 @@ impl RootView {
         let heading = div()
             .id("order-heading")
             .headed(2, title)
-            .flex()
             .flex_none()
-            .items_center()
-            .gap_1p5()
-            .px_1()
-            .child(icons::icon(Icon::Sort, 14.0, theme::accent()))
-            .child(kit::eyebrow(title));
-        let card = div()
+            .px_2()
+            .pt_1p5()
+            .pb_1()
+            .text_size(px(theme::text_xs()))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(rgb(theme::faint()))
+            .child(title);
+        let card = kit::floating()
             .id("order-sheet")
             .debug_selector(|| "order-sheet".into())
             .dialog(title)
-            .track_focus(&self.sheet_panels.holding(sheets::ORDER_PANEL, cx))
-            .flex()
-            .flex_col()
-            .gap_2()
             .w(theme::width(theme::order_width()))
-            .max_h(relative(MOST_OF_THE_WINDOW))
-            .p_2()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::soft_edge()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(6.0)),
-                blur_radius: px(24.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .max_h(room.height - px(KEPT_FROM_THE_WINDOW_EDGE * 2.0))
             .child(heading)
             .child(choices);
 
@@ -143,7 +267,7 @@ impl RootView {
                 deferred(
                     anchored()
                         .position(self.ordering_at)
-                        .snap_to_window_with_margin(px(8.0))
+                        .snap_to_window_with_margin(px(KEPT_FROM_THE_WINDOW_EDGE))
                         .child(motion::lifted_in(card, "order-sheet-arrives")),
                 )
                 .with_priority(1),
@@ -158,55 +282,117 @@ impl RootView {
         read_as: impl Fn(&mut RootView, Direction, &mut Context<RootView>) + Clone + 'static,
         cx: &mut Context<RootView>,
     ) -> Div {
-        let mut orders = div()
-            .id("order-choices")
-            .flex()
-            .flex_col()
-            .gap_0p5()
-            .min_h(px(0.0))
-            .overflow_y_scroll();
-        for (index, order) in O::EVERY.iter().copied().enumerate() {
-            let chosen = order_by.clone();
-            orders = orders.child(self.in_the_pane_ring(
-                kit::radio_row(
-                    ("order-choice", index),
-                    SharedString::new_static(order.named()),
-                    order == held,
-                ),
-                move |this, _, cx| chosen(this, order, cx),
-                cx,
-            ));
-        }
+        let held_at = O::EVERY
+            .iter()
+            .position(|order| *order == held)
+            .unwrap_or_default();
 
-        let mut readings = kit::segmented().w_full();
-        for (index, direction) in Direction::ALL.into_iter().enumerate() {
-            let taken = read_as.clone();
-            readings = readings.child(
-                self.in_the_pane_ring(
-                    kit::segment(
-                        ("order-reading", index),
-                        SharedString::new_static(held.read(direction)),
-                        direction == reading,
-                    )
-                    .flex_1(),
-                    move |this, _, cx| taken(this, direction, cx),
+        let orders = O::EVERY.iter().copied().enumerate().fold(
+            div()
+                .id("order-choices")
+                .named_as(Role::RadioGroup, ORDERS_LABEL, ORDERS_HINT)
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .min_h(px(0.0))
+                .overflow_y_scroll()
+                .track_scroll(&self.ordering_scroll),
+            |orders, (at, order)| {
+                let chosen = order_by.clone();
+                orders.child(self.in_the_pane_ring(
+                    kit::checked_row(order_row_id(at), order.named(), order == held),
+                    move |this, _, cx| chosen(this, order, cx),
                     cx,
-                ),
-            );
-        }
+                ))
+            },
+        );
+        let readings = Direction::ALL.into_iter().fold(
+            kit::segmented()
+                .id("order-readings")
+                .named_as(Role::RadioGroup, READINGS_LABEL, READINGS_HINT)
+                .w_full(),
+            |readings, direction| {
+                let taken = read_as.clone();
+                readings.child(
+                    self.in_the_pane_ring(
+                        kit::segment(
+                            reading_id(usize::from(direction.code())),
+                            held.read(direction),
+                            direction == reading,
+                        )
+                        .flex_1(),
+                        move |this, _, cx| taken(this, direction, cx),
+                        cx,
+                    ),
+                )
+            },
+        );
 
         div()
+            .track_focus(&self.sheet_panels.holding(sheets::ORDER_PANEL, cx))
+            .key_context(ORDER_CONTEXT)
+            .on_action(order_stepped::<OrderAbove, O>(
+                Stepped::Above,
+                held_at,
+                order_by.clone(),
+                cx,
+            ))
+            .on_action(order_stepped::<OrderBelow, O>(
+                Stepped::Below,
+                held_at,
+                order_by.clone(),
+                cx,
+            ))
+            .on_action(order_stepped::<OrderFirst, O>(
+                Stepped::First,
+                held_at,
+                order_by.clone(),
+                cx,
+            ))
+            .on_action(order_stepped::<OrderLast, O>(
+                Stepped::Last,
+                held_at,
+                order_by.clone(),
+                cx,
+            ))
+            .on_action(read_by_key::<ReadTheFirstWay>(
+                Direction::Ascending,
+                read_as.clone(),
+                cx,
+            ))
+            .on_action(read_by_key::<ReadTheOtherWay>(
+                Direction::Descending,
+                read_as,
+                cx,
+            ))
+            .on_action(cx.listener(|this, _: &TakeTheOrder, _, cx| this.close_the_order(cx)))
+            .on_key_down(order_typed(held_at, order_by, cx))
             .flex()
             .flex_col()
-            .gap_2()
+            .gap_1()
             .min_h(px(0.0))
-            .child(readings.flex_none())
-            .child(div().h(px(1.0)).mx_1().flex_none().bg(rgb(theme::border())))
             .child(orders)
+            .child(kit::rule().mx_1())
+            .child(div().flex_none().px_1().pb_1().child(readings))
+    }
+
+    fn hold_the_order_at(&self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.ordering_scroll.scroll_to_item(at);
+        self.carry_the_ring_onto(order_row_id(at), window, cx);
+    }
+
+    fn carry_the_ring_onto(&self, onto: ElementId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(panel) = self.sheet_panels.handle(sheets::ORDER_PANEL) else {
+            return;
+        };
+        if panel.is_focused(window) {
+            return;
+        }
+        if let Some(control) = self.controls.handle(&onto.to_string()) {
+            window.focus(&control, cx);
+        }
     }
 }
-
-const MOST_OF_THE_WINDOW: f32 = 0.9;
 
 impl Ordering for PlaylistOrder {
     const EVERY: &'static [Self] = &Self::ALL;
@@ -561,17 +747,13 @@ mod tests {
     use super::*;
 
     fn every_reading_is_named<O: Ordering>(kind: &str) {
-        let mut named: Vec<(&'static str, &'static str)> = Vec::new();
-
         for order in O::EVERY {
             for reading in Direction::ALL {
-                let reads = order.read(reading);
                 assert!(
-                    !reads.is_empty(),
+                    !order.read(reading).is_empty(),
                     "{kind} names {} read {reading:?} nothing",
                     order.named()
                 );
-                named.push((order.named(), reads));
             }
         }
 
@@ -585,6 +767,39 @@ mod tests {
                 order.named()
             );
         }
+    }
+
+    const ORDERS: [&str; 5] = ["Best match", "Title", "Artist", "Added", "Album order"];
+
+    #[test]
+    fn the_arrows_walk_the_orders_round_and_home_and_end_land_on_either_end() {
+        assert_eq!(stepped_to(2, 5, Stepped::Above), 1);
+        assert_eq!(stepped_to(2, 5, Stepped::Below), 3);
+        assert_eq!(stepped_to(0, 5, Stepped::Above), 4);
+        assert_eq!(stepped_to(4, 5, Stepped::Below), 0);
+        assert_eq!(stepped_to(3, 5, Stepped::First), 0);
+        assert_eq!(stepped_to(1, 5, Stepped::Last), 4);
+    }
+
+    #[test]
+    fn a_letter_typed_again_walks_on_through_the_orders_it_begins() {
+        assert_eq!(typed_onto(&ORDERS, 0, "a"), Some(2));
+        assert_eq!(typed_onto(&ORDERS, 2, "aa"), Some(3));
+        assert_eq!(typed_onto(&ORDERS, 3, "aaa"), Some(4));
+        assert_eq!(typed_onto(&ORDERS, 4, "aaaa"), Some(2));
+    }
+
+    #[test]
+    fn letters_typed_together_hold_the_order_they_already_name() {
+        assert_eq!(typed_onto(&ORDERS, 2, "ar"), Some(2));
+        assert_eq!(typed_onto(&ORDERS, 0, "AD"), Some(3));
+        assert_eq!(typed_onto(&ORDERS, 0, "al"), Some(4));
+    }
+
+    #[test]
+    fn letters_no_order_holds_leave_the_order_where_it_is() {
+        assert_eq!(typed_onto(&ORDERS, 1, "zq"), None);
+        assert_eq!(typed_onto(&ORDERS, 1, ""), None);
     }
 
     #[test]

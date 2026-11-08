@@ -1214,7 +1214,13 @@ impl RootView {
             move |this, reading, cx| this.put_in_order(opened, this.row_order, reading, cx),
             cx,
         )
-        .child(kit::field("Keep this order", keeps).flex_none())
+        .child(kit::rule().mx_1())
+        .child(
+            kit::field("Keep this order", keeps)
+                .flex_none()
+                .px_1()
+                .pb_1(),
+        )
     }
 
     pub(crate) fn playing_playlist(&self, cx: &App) -> Option<PlaylistId> {

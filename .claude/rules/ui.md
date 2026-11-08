@@ -397,6 +397,13 @@ is never named.
   start; neither ladder offers a family the other does (test); a machine with none keeps the wanted
   family. Not a setting; the About card reports the two (`fonts::drawn_in`, *Body face* and *Codes*). `theme::text_xs()`
   through `text_title()` and `text_lyric()` are the whole type scale, set via `text_size`.
+- **A sheet and a pop-up are each one surface from the kit.** A sheet's card is `kit::sheet`
+  (`surface`, `border`, `rounded_xl`, the long shadow) over `kit::over_a_scrim`, headed by
+  `kit::sheet_heading` (an 18 px mark in its colour beside a level-2 title at `text_lg`) and ending
+  in `kit::sheet_actions` (right-aligned, the safe gesture first): the Listen, delete and party-offer
+  sheets. A panel that floats at a press (a menu, the Sort pop-up) is `kit::floating` (`raised`,
+  `soft_edge`, the short shadow, presses stopped). `kit::rule` is the soft hairline between a
+  surface's parts. No view builds a `BoxShadow` for either.
 - **A control is a `kit::button` in one of four tones; nothing draws its own.** `Tone::Primary` =
   accent fill, the one gesture a heading leads with (*Play*). `Tone::Outlined` = raised secondary
   (*Play next*/*Add to queue*, one pair one tone). `Tone::Destructive` = failure-edged, only for
@@ -417,7 +424,7 @@ places of the same kind (the services the Services pane browses) is a `kit::tab_
 names at `text_base`, the chosen one in `text` at semibold over a 2 px accent underline
 (`TAB_MARK`, faded by `shown_while`), the rest muted and lit under the pointer, no box around them.
 Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
-  sheet's microphones, the Sort pop-up's orders). **The Sort pop-up is small and anchored, not a sheet over a scrim**: every sort mark opens through `in_the_pane_ring_at`, `order_a_listing` keeps its corner in `RootView::ordering_at`, and `order_sheet` stands a `theme::order_width()` panel (direction segments over the orders, no close or *Done*) there in an `anchored` layer whose occluding ground closes it on any press outside (`the_sort_mark_opens_a_pop_up_under_itself_that_orders_the_tracks_and_leaves_by_every_way_out`). Several held at once: `kit::checkbox`es in a
+  sheet's microphones, *Default microphone* first). **The Sort pop-up is small and anchored, not a sheet over a scrim**: every sort mark opens through `in_the_pane_ring_at`, `order_a_listing` keeps its corner in `RootView::ordering_at`, and `order_sheet` stands a `theme::order_width()` `kit::floating` panel there (at most the window's height less its margins, read off `Window::viewport_size`: a percentage there resolved against less than the window and cut the list short) in an `anchored` layer whose occluding ground closes it on any press outside (`the_sort_mark_opens_a_pop_up_under_itself_that_orders_the_tracks_and_leaves_by_every_way_out`). It reads as the menu it is: a faint heading (*Sort songs*), the orders as `kit::checked_row`s (a menu row's height and face, the held order in `text` at medium weight behind an accent check faded by `shown_while`, the rest muted and lit under the pointer, no wash under the held one), a `kit::rule`, then the direction as two `kit::segment`s worded for the order held (*A to Z*), no close or *Done*. Orders and direction are each a radio group a reader hears named (*Order*, *Direction*) with their keys. **Its keys are its own**: the focus panel carries `ORDER_CONTEXT` and `answering_in_the_order` binds after the window's lists, so at the same depth its keys win, with the panel or one of its controls focused (`the_arrows_in_the_sort_pop_up_are_its_own_before_they_are_the_windows`). Up and down step the held order round, home and end land on either end, left and right take either direction, letters typed jump to the order they begin (`typed_onto` over `typing::jumped`: one letter typed again walks on through the orders it begins, `RootView::ordering_typed` running out after `HELD_FOR`), enter closes; a key applies at once as a press does (a radio group's arrows choose), the list scrolls to the held row (`ordering_scroll`) and a ring standing on an order or segment moves to the one now held (`carry_the_ring_onto`) (`the_sort_pop_up_is_walked_by_the_arrows_turned_round_by_left_and_right_and_typed_into`). Several held at once: `kit::checkbox`es in a
   fixed-width grid (Filters). A value moved by a step: `kit::stepper` holding two `kit::step`s and a
   `kit::stepper_reading` (the speaker's degrees; `stepper_reading_put_back` where a press restores it,
   the lyric timing).
@@ -2323,12 +2330,38 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   they come at the next start (`online_switched_on_in_this_run_is_not_said_to_be_off`). The recording
   note names the source in the stage, not the one chosen; source segments and microphone rows take no
   press while `is_listening` and `listen_from` refuses one
-  (`a_source_pressed_while_recording_is_refused_and_the_recording_names_its_own`). A found song is a
-  card: cover at `theme::listen_cover()`, title, artist, album, year, naming service, *Listen again*,
-  *Open* where the service gave a link, *Find it* (`search_instead` + `choose_pane(Pane::Tracks)`), laid
-  in `sheet_actions` (`kit::actions` is a heading's row pushed right). The last `HEARD_KEPT` (8) songs
-  stay listed for the run. *Desktop*/*Microphone* = a `kit::segmented` over `kit::radio_row`s of the microphones
-  PipeWire offers (listed each time the sheet opens), written back as `listen-from`; Online's *Listening*
+  (`a_source_pressed_while_recording_is_refused_and_the_recording_names_its_own`).
+  **The sheet reads top down from what is happening to what it is set to.** Under the heading (the
+  ear in the accent, *Listen*, the close mark) stands the stage, then its gestures in
+  `kit::sheet_actions`, then under a
+  `soft_edge` rule the settings (*Listen to* with *Desktop*/*Microphone*, the microphones, *Keep
+  listening* saying under it what following is doing), then under another rule *Heard earlier*.
+  **Every stage is one shape** (`staged`): a `theme::listen_cover()` square on `raised`
+  (`stage_tile`) beside its words, centred on it, so the sheet never changes height between stages
+  and a named song's cover lands where the listening mark stood. **Every ending is one `Ending`**
+  (`ending_of`, pure, tested): the tile's mark in its weight's colour (the ear in the accent for
+  *Ready to listen*, `Icon::Info` muted for an aside, `Icon::Alert` in `failure` for trouble), a
+  headline (no full stop), a sentence (ending in one) and
+  what comes next: *Listen* or *Listen again* (`Tone::Primary`), *Open the settings* for *Online is
+  off* (closes the sheet onto the Online category,
+  `online_off_offers_the_online_settings_and_leaves_the_sheet_for_them`), nothing for *Nothing can
+  name songs yet*. A failed recording names the source it was taken from. Recording draws
+  *Listening to the desktop…* (or the microphone's own description), the seconds left as a
+  `kit::figure` (`seconds_left`, rounded up), a rail and the try under it, the ear on its tile;
+  asking spins on its tile over a full rail; both offer *Stop*. A found song's tile is its cover (a
+  disc mark where the service sent none), and beside it *Named by Shazam*
+  (`service_named` spells the service), title at `text_xl`, artist, album and year; then *Open* where
+  the service gave a link, *Listen again* (`Tone::Outlined`), *Find it* (`search_instead` +
+  `choose_pane(Pane::Tracks)`). The stage is a live region keyed by the stage (a status; an alert
+  for trouble), so each stage is heard once. **A microphone nobody connected is said to be missing**:
+  once the list is read and empty (`ListenModel::hears_no_microphone`) the microphone choice says
+  *No microphone is connected.* in the failure mark's colour and *Listen* is greyed
+  (`a_microphone_nobody_connected_is_said_to_be_missing_and_the_default_one_can_be_chosen_again`).
+  The last `HEARD_KEPT` (8) songs stay listed for the run, *Heard earlier* listing every one but the
+  song the stage shows (title, artist muted, a search mark lit under the pointer).
+  *Desktop*/*Microphone* = a `kit::segmented`; with more than one microphone `kit::radio_row`s of
+  *Default microphone* (`Listening::Microphone(None)`) then each PipeWire offers (listed each time the
+  sheet opens), with one its description alone, written back as `listen-from`; Online's *Listening*
   group writes the same key and `listen-for`; *Recognition* has the AudD token beside the AcoustID key
   (read at the next start); *ListenBrainz* is the `listenbrainz-token` field, not read at next start (the
   binary's submitter follows the settings file). With a token typed, *Send earlier plays* is armed by
@@ -2357,14 +2390,15 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   newest first, so newly scanned or synced songs appear at the top. Two writers: a sort icon opening the
   Sort dialogue, and the pressable column header (a press names the order; a second on the one
   in force reverses it; the column in force wears the accent and a chevron). `views/sorting.rs`:
-  `Ordering` is the trait the five order enums implement. **The dialogue is one sheet**
+  `Ordering` is the trait the five order enums implement. **The dialogue is one pop-up**
   (`RootView::ordering`, an `Ordered` naming what it sorts: tracks, albums, artists, playlists, a
   playlist's rows, the queue, a search being saved; `Sheet::Ordering`): `order_sheet` over
-  `order_choices`, the orders as `kit::radio_row`s (scrolling where a short window cuts them) and the
+  `order_choices`, the orders as `kit::checked_row`s (scrolling where a short window cuts them) and the
   direction as two `kit::segment`s worded for the order held (*A to Z*, *Newest first*), a playlist's rows
-  adding *Keep this order*. A press applies at once and leaves it open to take the direction too; *Done*,
-  its mark, a press outside or escape close it, the focus going back to what opened it, the name field
-  while a search is named (`the_sort_mark_opens_a_dialogue_that_orders_the_tracks_and_leaves_by_every_way_out`).
+  adding *Keep this order* under a rule. A press or key applies at once and leaves it open to take the
+  direction too; enter, a press outside or escape close it, the focus going back to what opened it, the
+  name field while a search is named
+  (`the_sort_mark_opens_a_pop_up_under_itself_that_orders_the_tracks_and_leaves_by_every_way_out`).
   `listing::columns` takes a `Sorted` descriptor (columns offered, which is in force, a `fn` pointer for
   the press), so tracks pane, queue and opened playlist draw one header. A right press on a header
   offers every order.

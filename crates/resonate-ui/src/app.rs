@@ -92,6 +92,8 @@ pub(crate) const BAND_CONTEXT: &str = "Band";
 
 pub(crate) const RAIL_CONTEXT: &str = "Rail";
 
+pub(crate) const ORDER_CONTEXT: &str = "Ordering";
+
 actions!(
     resonate,
     [
@@ -153,6 +155,13 @@ actions!(
         BandWider,
         RailOn,
         RailBack,
+        OrderAbove,
+        OrderBelow,
+        OrderFirst,
+        OrderLast,
+        ReadTheFirstWay,
+        ReadTheOtherWay,
+        TakeTheOrder,
     ]
 );
 
@@ -931,6 +940,18 @@ fn answering_on_a_rail(on_a_rail: Option<&str>) -> Vec<KeyBinding> {
     ]
 }
 
+fn answering_in_the_order(in_the_order: Option<&str>) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new(key!(order_above), OrderAbove, in_the_order),
+        KeyBinding::new(key!(order_below), OrderBelow, in_the_order),
+        KeyBinding::new(key!(order_first), OrderFirst, in_the_order),
+        KeyBinding::new(key!(order_last), OrderLast, in_the_order),
+        KeyBinding::new(key!(read_the_first_way), ReadTheFirstWay, in_the_order),
+        KeyBinding::new(key!(read_the_other_way), ReadTheOtherWay, in_the_order),
+        KeyBinding::new(key!(take_the_order), TakeTheOrder, in_the_order),
+    ]
+}
+
 pub(crate) fn bindings() -> Vec<KeyBinding> {
     let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
@@ -939,6 +960,7 @@ pub(crate) fn bindings() -> Vec<KeyBinding> {
     bindings.extend(answering_where_the_caret_is(Some(CONTROL_CONTEXT)));
     bindings.extend(answering_on_a_band(Some(BAND_CONTEXT)));
     bindings.extend(answering_on_a_rail(Some(RAIL_CONTEXT)));
+    bindings.extend(answering_in_the_order(Some(ORDER_CONTEXT)));
     bindings.extend(field::bindings());
     bindings
 }
@@ -1407,6 +1429,44 @@ mod tests {
                 "{keys} answers nowhere at all"
             );
         }
+    }
+
+    #[test]
+    fn the_arrows_in_the_sort_pop_up_are_its_own_before_they_are_the_windows() {
+        let keymap = gpui::Keymap::new(bindings());
+        let window = KeyContext::parse(WINDOW_CONTEXT).expect("the window names itself");
+        let pop_up = KeyContext::parse(ORDER_CONTEXT).expect("the pop-up names itself");
+        let control = KeyContext::parse(CONTROL_CONTEXT).expect("the control names itself");
+        let on_the_pop_up = [window.clone(), pop_up.clone()];
+        let on_one_of_its_orders = [window, pop_up, control];
+
+        for (key, wanted) in [
+            ("up", "OrderAbove"),
+            ("down", "OrderBelow"),
+            ("home", "OrderFirst"),
+            ("end", "OrderLast"),
+            ("left", "ReadTheFirstWay"),
+            ("right", "ReadTheOtherWay"),
+        ] {
+            let typed = [Keystroke::parse(key).expect("a key gpui reads")];
+            for held in [&on_the_pop_up[..], &on_one_of_its_orders[..]] {
+                let (found, _) = keymap.bindings_for_input(&typed, held);
+                let first = found
+                    .first()
+                    .unwrap_or_else(|| panic!("{key} does nothing in the sort pop-up"));
+                assert!(
+                    first.action().name().ends_with(wanted),
+                    "{key} in the sort pop-up is {}",
+                    first.action().name()
+                );
+            }
+        }
+
+        let enter = [Keystroke::parse("enter").expect("a key gpui reads")];
+        let (on_the_panel, _) = keymap.bindings_for_input(&enter, &on_the_pop_up);
+        let (on_an_order, _) = keymap.bindings_for_input(&enter, &on_one_of_its_orders);
+        assert!(on_the_panel[0].action().name().ends_with("TakeTheOrder"));
+        assert!(on_an_order[0].action().name().ends_with("PressControl"));
     }
 
     #[test]

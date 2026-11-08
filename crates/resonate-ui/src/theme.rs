@@ -2029,9 +2029,8 @@ mod tests {
 
     const HEIGHT_CALLS: [&str; 4] = [".h(px(", ".min_h(px(", ".max_h(px(", ".size(px("];
     const HAIRLINES: [f32; 2] = [0.0, 1.0];
-    const FIXED_BY_DESIGN: [(&str, &str); 4] = [
+    const FIXED_BY_DESIGN: [(&str, &str); 3] = [
         ("dropping.rs", ".h(px(4.0))"),
-        ("listen.rs", ".h(px(4.0))"),
         ("kit.rs", ".size(px(7.0))"),
         ("root.rs", ".size(px(22.0))"),
     ];

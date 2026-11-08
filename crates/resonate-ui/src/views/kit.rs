@@ -1,8 +1,9 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, Role, ScrollHandle, SharedString,
-    Stateful, TruncateFrom, canvas, div, point, prelude::*, px, rgb,
+    AnyElement, App, BoxShadow, Div, ElementId, Font, FontWeight, MouseButton, Pixels, Role,
+    ScrollHandle, SharedString, Stateful, TruncateFrom, canvas, div, point, prelude::*, px, rgb,
+    rgba,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -24,7 +25,7 @@ const BUTTON_GROUP: &str = "button";
 
 const WAY_BACK_GROUP: &str = "way-back";
 
-const GREYED: f32 = 0.5;
+pub(crate) const GREYED: f32 = 0.5;
 
 pub(crate) const LIT: f32 = 0.82;
 
@@ -41,6 +42,20 @@ const STEPPER_READING: f32 = 56.0;
 const TAB_MARK: f32 = 2.0;
 
 const DETAIL_SEPARATOR: &str = "·";
+
+const SHEET_MARK: f32 = 18.0;
+
+const SHEET_SHADOW_DROP: f32 = 16.0;
+
+const SHEET_SHADOW_BLUR: f32 = 48.0;
+
+const FLOATING_SHADOW_DROP: f32 = 6.0;
+
+const FLOATING_SHADOW_BLUR: f32 = 24.0;
+
+const SHADOW_STRENGTH: f32 = 0.5;
+
+const RULE: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Tone {
@@ -475,6 +490,55 @@ pub(crate) fn radio_row(
         )
         .child(radio(chosen))
         .child(choice_name(label, chosen))
+}
+
+pub(crate) fn checked_row(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    held: bool,
+) -> Stateful<Div> {
+    let id = id.into();
+    let label = label.into();
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .chosen_among(&label, String::new, held)
+        .focused_while(held)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2p5()
+        .h(px(theme::menu_row()))
+        .px_2()
+        .rounded_md()
+        .cursor_pointer()
+        .text_size(px(theme::text_sm()))
+        .hover(|row| row.bg(rgb(theme::hover())))
+        .when_else(
+            held,
+            |row| {
+                row.text_color(rgb(theme::text()))
+                    .font_weight(FontWeight::MEDIUM)
+            },
+            |row| {
+                row.text_color(rgb(theme::muted()))
+                    .lit_under_the_pointer(id, |row| row.text_color(rgb(theme::text())))
+            },
+        )
+        .child(motion::shown_while(
+            icons::icon(Icon::Check, theme::menu_icon(), theme::accent()),
+            "held",
+            held,
+        ))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(label),
+        )
 }
 
 pub(crate) fn checkbox(
@@ -1051,6 +1115,97 @@ pub(crate) fn card_title(text: impl Into<SharedString>) -> Stateful<Div> {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::text()))
         .child(text)
+}
+
+pub(crate) fn sheet() -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .p_5()
+        .rounded_xl()
+        .bg(rgb(theme::surface()))
+        .border_1()
+        .border_color(rgb(theme::border()))
+        .shadow(cast(SHEET_SHADOW_DROP, SHEET_SHADOW_BLUR))
+}
+
+pub(crate) fn over_a_scrim(card: impl IntoElement) -> Div {
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(rgba(theme::scrim()))
+        .occlude()
+        .child(card)
+}
+
+pub(crate) fn sheet_heading(
+    id: &'static str,
+    mark: Icon,
+    shade: u32,
+    title: impl Into<SharedString>,
+) -> Div {
+    let title = title.into();
+
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(icons::icon(mark, SHEET_MARK, shade))
+        .child(
+            div()
+                .id(id)
+                .headed(2, &title)
+                .flex_1()
+                .min_w(px(0.0))
+                .text_size(px(theme::text_lg()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::text()))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(title),
+        )
+}
+
+pub(crate) fn sheet_actions() -> Div {
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_end()
+        .gap_2()
+}
+
+pub(crate) fn floating() -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .p_1()
+        .gap_0p5()
+        .rounded_lg()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::soft_edge()))
+        .shadow(cast(FLOATING_SHADOW_DROP, FLOATING_SHADOW_BLUR))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+}
+
+pub(crate) fn rule() -> Div {
+    div().flex_none().h(px(RULE)).bg(rgb(theme::soft_edge()))
+}
+
+fn cast(drop: f32, blur: f32) -> Vec<BoxShadow> {
+    vec![BoxShadow {
+        color: theme::shadow(SHADOW_STRENGTH),
+        offset: point(px(0.0), px(drop)),
+        blur_radius: px(blur),
+        spread_radius: px(0.0),
+        inset: false,
+    }]
 }
 
 pub(crate) fn heading() -> Div {

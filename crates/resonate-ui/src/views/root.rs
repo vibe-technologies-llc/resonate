@@ -649,6 +649,8 @@ pub struct RootView {
     pub(crate) naming: Option<Naming>,
     pub(crate) ordering: Option<Ordered>,
     pub(crate) ordering_at: Point<Pixels>,
+    pub(crate) ordering_scroll: ScrollHandle,
+    pub(crate) ordering_typed: TypeAhead,
     pub(crate) queue_order: RowOrder,
     pub(crate) queue_reading: Direction,
     pub(crate) row_order: RowOrder,
@@ -1325,6 +1327,8 @@ impl RootView {
             naming: None,
             ordering: None,
             ordering_at: Point::default(),
+            ordering_scroll: ScrollHandle::new(),
+            ordering_typed: TypeAhead::default(),
             queue_order: RowOrder::default(),
             queue_reading: Direction::default(),
             row_order: RowOrder::default(),
@@ -5654,43 +5658,18 @@ impl RootView {
     }
 
     fn deletion_sheet(&self, deleting: &Deleting, cx: &mut Context<Self>) -> Div {
-        let card = div()
+        let card = kit::sheet()
             .id("delete-sheet")
             .dialog(deleting.asking())
             .track_focus(&self.sheet_panels.holding(sheets::DELETE_PANEL, cx))
-            .flex()
-            .flex_col()
-            .gap_4()
             .w(px(theme::confirm_width()))
-            .p_5()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.keep_the_track(cx)))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(icons::icon(Icon::Delete, 18.0, theme::failure()))
-                    .child(
-                        div()
-                            .id("delete-sheet-asking")
-                            .headed(2, deleting.asking())
-                            .text_size(px(theme::text_lg()))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::text()))
-                            .child(deleting.asking()),
-                    ),
-            )
+            .child(kit::sheet_heading(
+                "delete-sheet-asking",
+                Icon::Delete,
+                theme::failure(),
+                deleting.asking(),
+            ))
             .child(
                 div()
                     .id("delete-sheet-saying")
@@ -5710,10 +5689,7 @@ impl RootView {
                     ),
             )
             .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap_2()
+                kit::sheet_actions()
                     .child(self.in_the_pane_ring(
                         kit::button(
                             "keep-the-track",
@@ -5738,15 +5714,7 @@ impl RootView {
                     )),
             );
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "delete-sheet-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "delete-sheet-arrives"))
     }
 
     fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -6336,7 +6304,7 @@ impl Render for RootView {
                 ))
             })
             .when_some(self.ordering, |app, ordered| {
-                app.child(self.order_sheet(ordered, cx))
+                app.child(self.order_sheet(ordered, window.viewport_size(), cx))
             })
             .when(self.party_offered.is_some(), |app| {
                 app.child(motion::faded_in(

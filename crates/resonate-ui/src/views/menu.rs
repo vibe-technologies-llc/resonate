@@ -8,7 +8,7 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, ElementId, Global, MouseButton,
+    AnyElement, App, Bounds, ClickEvent, Context, Div, ElementId, Global, MouseButton,
     MouseDownEvent, Pixels, Point, Role, SharedString, Size, Stateful, Task, Window, anchored,
     canvas, deferred, div, point, prelude::*, px, rgb,
 };
@@ -771,27 +771,10 @@ fn beside_its_row(row: Bounds<Pixels>, room: Size<Pixels>) -> Point<Pixels> {
 }
 
 fn menu_panel(id: &'static str) -> Stateful<Div> {
-    div()
+    kit::floating()
         .id(id)
         .spoken_as(Role::Menu)
-        .flex()
-        .flex_col()
         .w(theme::width(theme::menu_width()))
-        .p_1()
-        .gap_0p5()
-        .rounded_lg()
-        .bg(rgb(theme::raised()))
-        .border_1()
-        .border_color(rgb(theme::soft_edge()))
-        .shadow(vec![BoxShadow {
-            color: theme::shadow(0.5),
-            offset: point(px(0.0), px(6.0)),
-            blur_radius: px(24.0),
-            spread_radius: px(0.0),
-            inset: false,
-        }])
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
 }
 
 fn apart() -> Div {
