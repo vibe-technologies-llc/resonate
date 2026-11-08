@@ -130,7 +130,6 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::eyebrow("COLLECTION"))
                             .child(kit::title("Missing"))
                             .when(!nothing, |column| column.child(kit::subtitle(summary)))
                             .when_some(cut_short, |column, said| {

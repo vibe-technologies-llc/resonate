@@ -40,7 +40,7 @@ pub(crate) enum CardRefused {
 
 pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
     let family = escaped(&colours.family);
-    let eyebrow = escaped(&format!("{REVIEW_NAME} {}", review.year).to_uppercase());
+    let eyebrow = escaped(&format!("{REVIEW_NAME} {}", review.year));
     let listened = escaped(&spelled_listening(review.listened));
     let across = escaped(&format!(
         "{} songs · {} artists · {} albums",
@@ -152,10 +152,10 @@ fn rows_of(review: &YearReview) -> Vec<(&'static str, String)> {
     };
 
     [
-        ("TOP SONG", named(&review.top_songs)),
-        ("TOP ARTIST", named(&review.top_artists)),
-        ("TOP ALBUM", named(&review.top_albums)),
-        ("TOP GENRE", named(&review.top_genres)),
+        ("Top song", named(&review.top_songs)),
+        ("Top artist", named(&review.top_artists)),
+        ("Top album", named(&review.top_albums)),
+        ("Top genre", named(&review.top_genres)),
     ]
     .into_iter()
     .filter_map(|(label, name)| name.map(|name| (label, name)))

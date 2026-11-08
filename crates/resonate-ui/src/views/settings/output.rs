@@ -64,13 +64,13 @@ const ROUTED: &str = concat!("Whatever ", sound_system!(), " routes to at the ti
 
 const ROUTED_NOW: &str = concat!("Whatever ", sound_system!(), " routes to, which is");
 
-const UNPLUGGED: &str = "UNPLUGGED";
+const UNPLUGGED: &str = "Unplugged";
 
-const DEFAULT: &str = "DEFAULT";
+const DEFAULT: &str = "Default";
 
-const IN_USE: &str = "IN USE";
+const IN_USE: &str = "In use";
 
-const CONVERTS: &str = "CONVERTS";
+const CONVERTS: &str = "Converts";
 
 const FOLLOW: &str = "Follow the system default";
 
@@ -381,7 +381,7 @@ struct Lying {
 }
 
 fn held_by_another(zone: &str) -> String {
-    format!("HELD BIT-PERFECT BY {}", zone.to_uppercase())
+    format!("Held bit-perfect by {zone}")
 }
 
 impl RootView {
@@ -661,7 +661,7 @@ impl RootView {
         let verdict = source.map(|spec| {
             if exact {
                 kit::badge(
-                    format!("TAKES {} AS IS", format::quality(spec)),
+                    format!("Takes {} as is", format::quality(spec)),
                     theme::bit_perfect(),
                 )
             } else {
@@ -669,29 +669,30 @@ impl RootView {
             }
         });
 
+        let states: Vec<Div> = [
+            sink.is_default.then(|| kit::badge(DEFAULT, theme::faint())),
+            unplugged.then(|| kit::badge(UNPLUGGED, theme::faint())),
+            playing.then(|| kit::badge(IN_USE, theme::accent())),
+            held_by
+                .as_ref()
+                .map(|zone| kit::badge(held_by_another(zone), theme::faint())),
+            verdict,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         let named = div()
             .flex()
+            .flex_wrap()
             .items_center()
-            .gap_1p5()
+            .gap_x_2()
             .child(kit::choice_name(sink.description.clone(), !unplugged))
-            .when(sink.is_default, |line| {
-                line.child(kit::badge(DEFAULT, theme::faint()))
-            })
-            .when(unplugged, |line| {
-                line.child(kit::badge(UNPLUGGED, theme::faint()))
-            })
-            .when(playing, |line| {
-                line.child(kit::badge(IN_USE, theme::accent()))
-            })
-            .when_some(held_by.clone(), |line, zone| {
-                line.child(kit::badge(held_by_another(&zone), theme::faint()))
-            })
-            .children(verdict);
+            .when(!states.is_empty(), |line| line.child(kit::details(states)));
 
         let saying = if spoken::listening() {
             let said = sink_spoken(&routed, &formats);
             match held_by.as_ref() {
-                Some(zone) => format!("{said}, {}", held_by_another(zone).to_lowercase()),
+                Some(zone) => format!("{said}, held bit-perfect by {zone}"),
                 None => said,
             }
         } else {

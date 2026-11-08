@@ -44,7 +44,7 @@ const MAKE_PRIMARY_HINT: &str = "Make this the primary folder: the one new songs
 
 const PRIMARY_HINT: &str = "The primary folder, where new songs are kept. Press to choose none.";
 
-const PRIMARY_BADGE: &str = "PRIMARY";
+const PRIMARY_BADGE: &str = "Primary";
 
 const CLEAR_PRIMARY_HINT: &str = "Choose no primary folder. The folder is left alone.";
 
@@ -75,11 +75,11 @@ const FOLDERS_NOTE: &str = "Everything under these folders is read into the libr
                             while the window is open. The files are only read: nothing in them \
                             changes unless Tagging or Organising below is applied.";
 
-const FILES_EYEBROW: &str = "THE FILES";
+const FILES_EYEBROW: &str = "The files";
 
-const DETAILS_EYEBROW: &str = "WHAT ONLINE KNOWS";
+const DETAILS_EYEBROW: &str = "What online knows";
 
-const TAGS_EYEBROW: &str = "THE TAGS IN THE FILES";
+const TAGS_EYEBROW: &str = "The tags in the files";
 
 const FILES_NOTE: &str = "Rescan reads what was added or changed since the last scan. Read every \
                           file again re-reads each file whatever its size and time say: names, \
@@ -134,9 +134,9 @@ fn forgets_listens(now: HistoryKept, asked: HistoryKept) -> bool {
     }
 }
 
-const LOOKUP_UNDER_WAY: &str = "THE LOOKUP SO FAR";
+const LOOKUP_UNDER_WAY: &str = "The lookup so far";
 
-const LAST_LOOKUP: &str = "THE LAST LOOKUP";
+const LAST_LOOKUP: &str = "The last lookup";
 
 const DETAILS_NOTE: &str = "Look up asks MusicBrainz about the albums and artists not asked \
                             lately, which a scan does on its own when Online allows it. Refresh \

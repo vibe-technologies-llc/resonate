@@ -198,7 +198,7 @@ impl RootView {
         let eyebrow = match place {
             Place::Artists => titles
                 .get(chosen)
-                .map_or_else(|| place.eyebrow().to_owned(), |title| title.to_uppercase()),
+                .map_or_else(|| place.eyebrow().to_owned(), |title| title.clone()),
             Place::Artist { .. }
             | Place::Album { .. }
             | Place::Mix { .. }
@@ -1139,7 +1139,7 @@ mod tests {
         assert_eq!(locations.len(), 3);
         assert_eq!(start, 1);
         assert_eq!(locations[start], at("track/so-2"));
-        assert_eq!(songs_from(&[Row::Heading("SONGS")], 0), None);
+        assert_eq!(songs_from(&[Row::Heading("Songs")], 0), None);
     }
 
     #[test]
@@ -1151,7 +1151,7 @@ mod tests {
 
         let rows = rows_of_found(found);
 
-        assert!(matches!(rows[0], Row::Heading("SONGS")));
+        assert!(matches!(rows[0], Row::Heading("Songs")));
         assert_eq!(rows.len(), 2);
     }
 

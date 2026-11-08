@@ -308,7 +308,6 @@ impl RootView {
                         .flex_1()
                         .min_w(px(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow("COLLECTION"))
                         .child(kit::title("Listening Party"))
                         .child(kit::subtitle(under)),
                 )
@@ -499,7 +498,7 @@ impl RootView {
                     .flex_1()
                     .gap_1()
                     .min_w(px(0.0))
-                    .child(kit::eyebrow("NOW PLAYING"))
+                    .child(kit::eyebrow("Now playing"))
                     .child(
                         div()
                             .text_size(px(theme::text_lg()))

@@ -70,11 +70,11 @@ const LATER_HINT: &str = "Later — the words come a tenth of a second later, fo
 const PUT_BACK_HINT: &str = "How far the words are moved, minus for sooner and plus for later. \
                              Press to put them back on the sheet's own timing.";
 
-const WORD_SYNCED: &str = "WORD-SYNCED";
+const WORD_SYNCED: &str = "Word-synced";
 
-const SYNCED: &str = "SYNCED";
+const SYNCED: &str = "Synced";
 
-const UNSYNCED: &str = "UNSYNCED";
+const UNSYNCED: &str = "Unsynced";
 
 const BY: &str = "by";
 
@@ -86,7 +86,7 @@ const LAID_DOWN_WITH: &str = "Laid down with";
 
 const FROM_THE_RECORD: &str = "From";
 
-const END_OF_LYRICS: &str = "END OF LYRICS";
+const END_OF_LYRICS: &str = "End of lyrics";
 
 const BREATH_DOTS: usize = 3;
 
@@ -256,7 +256,7 @@ impl RootView {
 
         kit::heading().child(
             kit::heading_row()
-                .child(self.playing_heading("LYRICS", "lyrics-title", "lyrics-artist", playing, cx))
+                .child(self.playing_heading("lyrics-title", "lyrics-artist", playing, cx))
                 .child(
                     kit::actions()
                         .when(synced && !following, |actions| {

@@ -95,6 +95,16 @@ const HEARD_SHOWN: usize = 5;
 const HALF: f32 = 0.5;
 const HZ_A_KILOHERTZ: f32 = 1_000.0;
 
+const fn verdict_name(verdict: Verdict) -> &'static str {
+    match verdict {
+        Verdict::Genuine => "Genuine",
+        Verdict::Suspect => "Suspect",
+        Verdict::Fake => "Fake",
+        Verdict::Lossy => "Lossy",
+        Verdict::NotJudged => "Not judged",
+    }
+}
+
 fn verdict_colour(verdict: Verdict) -> u32 {
     match verdict {
         Verdict::Genuine => theme::lossless(),
@@ -138,8 +148,8 @@ impl RootView {
         let readback = match &studying {
             Studying::Done(drawn) => Some(read_back(&drawn.analysis)),
             Studying::Running(watch) => Some(watch.share().map_or_else(
-                || "decoding".to_owned(),
-                |share| format!("decoding · {:.0} %", share * 100.0),
+                || "Decoding".to_owned(),
+                |share| format!("Decoding · {:.0} %", share * 100.0),
             )),
             Studying::Idle | Studying::Failed => None,
         };
@@ -169,13 +179,7 @@ impl RootView {
     ) -> Div {
         kit::heading().child(
             kit::heading_row()
-                .child(self.playing_heading(
-                    "ANALYSIS",
-                    "analysis-title",
-                    "analysis-artist",
-                    playing,
-                    cx,
-                ))
+                .child(self.playing_heading("analysis-title", "analysis-artist", playing, cx))
                 .child(
                     kit::actions()
                         .children(readback.map(kit::figure))
@@ -356,18 +360,10 @@ fn verdict_card(analysis: &Analysis) -> Div {
                 .child(
                     div()
                         .flex_none()
-                        .flex()
-                        .items_center()
-                        .h(px(theme::text_sm() * FINDING_LEADING))
-                        .child(kit::mode_dot(finding_colour(finding))),
-                )
-                .child(
-                    div()
-                        .flex_none()
                         .min_w(theme::width(theme::text_sm() * SEVERITY_WORD_EMS))
                         .whitespace_nowrap()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme::muted()))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(rgb(finding_colour(finding)))
                         .child(severity_word(finding)),
                 )
                 .child(div().flex_1().min_w(px(0.0)).child(finding.told()))
@@ -381,12 +377,16 @@ fn verdict_card(analysis: &Analysis) -> Div {
                 .id("verdict")
                 .read_plainly_as(|| SharedString::from(judgement.verdict.told()))
                 .flex()
-                .items_center()
-                .gap_3()
-                .child(kit::badge(
-                    judgement.verdict.as_str().to_uppercase(),
-                    colour,
-                ))
+                .flex_col()
+                .gap_0p5()
+                .pb_1()
+                .child(
+                    div()
+                        .text_size(px(theme::text_lg()))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(colour))
+                        .child(verdict_name(judgement.verdict)),
+                )
                 .child(
                     div()
                         .text_color(rgb(theme::text()))
@@ -814,61 +814,61 @@ fn levels_card(analysis: &Analysis) -> Div {
     let stereo = levels
         .stereo
         .map(|stereo| match (stereo.identical, stereo.correlation) {
-            (true, _) => "identical".to_owned(),
+            (true, _) => "Identical".to_owned(),
             (false, Some(correlation)) => format!("{correlation:+.2}"),
-            (false, None) => "silent".to_owned(),
+            (false, None) => "Silent".to_owned(),
         });
     let rows: Vec<(&'static str, Option<Cow<'_, str>>)> = vec![
-        ("peak", decibels(levels.peak).map(Cow::Owned)),
-        ("rms", decibels(levels.rms).map(Cow::Owned)),
+        ("Peak", decibels(levels.peak).map(Cow::Owned)),
+        ("RMS", decibels(levels.rms).map(Cow::Owned)),
         (
-            "true peak",
+            "True peak",
             true_peak(study.loudness.true_peak).map(Cow::Owned),
         ),
         (
-            "loudness",
+            "Loudness",
             study
                 .loudness
                 .integrated
                 .map(|lufs| Cow::Owned(format!("{lufs:.1} LUFS"))),
         ),
         (
-            "loudness range",
+            "Loudness range",
             study
                 .loudness
                 .range
                 .map(|lu| Cow::Owned(format!("{lu:.1} LU"))),
         ),
         (
-            "momentary max",
+            "Momentary max",
             study
                 .loudness
                 .momentary_max
                 .map(|lufs| Cow::Owned(format!("{lufs:.1} LUFS"))),
         ),
         (
-            "short-term max",
+            "Short-term max",
             study
                 .loudness
                 .short_term_max
                 .map(|lufs| Cow::Owned(format!("{lufs:.1} LUFS"))),
         ),
         (
-            "dynamic range",
+            "Dynamic range",
             study
                 .loudness
                 .dynamic_range
                 .map(|dr| Cow::Owned(format!("DR{dr}"))),
         ),
         (
-            "clipped",
+            "Clipped",
             Some(Cow::Owned(format!(
                 "{} in {} runs",
                 levels.clipped, levels.clipped_runs
             ))),
         ),
-        ("dc offset", decibels(levels.dc).map(Cow::Owned)),
-        ("channel correlation", stereo.map(Cow::Owned)),
+        ("DC offset", decibels(levels.dc).map(Cow::Owned)),
+        ("Channel correlation", stereo.map(Cow::Owned)),
     ];
     fields(card("Levels"), rows)
 }
@@ -877,26 +877,26 @@ fn source_card(analysis: &Analysis) -> Div {
     let study = &analysis.study;
     let examined = &study.examined;
     let rows: Vec<(&'static str, Option<Cow<'_, str>>)> = vec![
-        ("codec", Some(Cow::Owned(examined.codec.to_string()))),
+        ("Codec", Some(Cow::Owned(examined.codec.to_string()))),
         (
-            "declared depth",
+            "Declared depth",
             examined
                 .declared_bits
                 .map(|bits| Cow::Owned(format!("{bits} bits"))),
         ),
         (
-            "bits in use",
+            "Bits in use",
             study
                 .levels
                 .bits_in_use
                 .map(|bits| Cow::Owned(format!("{bits} bits"))),
         ),
         (
-            "rate",
+            "Rate",
             Some(Cow::Owned(format!("{} kHz", examined.rate.kilohertz()))),
         ),
         (
-            "content ends",
+            "Content ends",
             study
                 .judgement
                 .cutoff
@@ -905,11 +905,11 @@ fn source_card(analysis: &Analysis) -> Div {
                 .map(|hz| Cow::Owned(format!("{:.1} kHz", hz as f32 / HZ_A_KILOHERTZ))),
         ),
         (
-            "heard",
+            "Heard",
             Some(Cow::Owned(format::spanned(study.spectrum.heard()))),
         ),
         (
-            "fingerprint",
+            "Fingerprint",
             study
                 .print
                 .as_ref()
@@ -967,13 +967,7 @@ fn agreed(agreement: Agreement, top: Option<&HeardAs>) -> Div {
         Agreement::Unheard => (UNHEARD.to_owned(), theme::faint()),
     };
 
-    div()
-        .flex()
-        .items_center()
-        .gap_2()
-        .pb_1()
-        .child(kit::mode_dot(colour))
-        .child(div().text_color(rgb(theme::text())).child(text))
+    div().pb_1().text_color(rgb(colour)).child(text)
 }
 
 fn billed(heard: &HeardAs) -> String {

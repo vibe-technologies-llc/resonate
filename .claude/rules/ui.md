@@ -213,8 +213,8 @@ is never named.
 - **Typing at a list no search narrows jumps through it.** The search narrows tracks, albums, artists,
   playlists-index and opened-playlist panes; the queue narrows on nothing, so `RootView::typed`
   routes a keystroke there to `TypeAhead` first. `jumped` prefers a row *starting with* the letters,
-  wraps; `RootView::jumping` is the one place saying which panes opt in. Pill says **JUMP TO** or
-  **NO MATCH** in words, no id, no listeners; held `HELD_FOR` (1100 ms). `typing.rs` holds the
+  wraps; `RootView::jumping` is the one place saying which panes opt in. Pill says *Jump to* or
+  *No match* in words, no id, no listeners; held `HELD_FOR` (1100 ms). `typing.rs` holds the
   gpui-free arithmetic; names fold through `resonate_library::folded_letters`.
   - **Names a jump reads come off the render thread.** `QueueNames` holds the queue's titles against
     a `NamedAt` (`Queued::revision`, `Library::names_stamp`, `Player::media_revision`);
@@ -318,7 +318,7 @@ is never named.
   `RootView::send` goes through `Zones::send`, and a refusal is a toast naming the zone in the way
   (`zones::refusal`); `store`/`forget` drop the `sink` and `volume` keys for any zone but the first
   (`SettingKey::is_the_zones_own`), its device and volume being kept with the zone. The output
-  picker routes through `route_to` and marks a device another zone holds *HELD BIT-PERFECT BY …*.
+  picker routes through `route_to` and marks a device another zone holds *Held bit-perfect by …*.
 - **`PlayerModel::state` returns a borrow of the model, not a copy.** Clone it before anything taking
   `&mut Context`: `let model = self.player.read(cx); let state = model.state().clone();`.
 
@@ -386,21 +386,27 @@ is never named.
   accent is what a colour *means*) but each lights them via its own `LitAt`
   (`each_ramped_palette_lights_the_accents_its_own_way` for the dark three; `LIT_ON_PAPER`,
   `LIT_ON_WHITE` for the light two, which the contrast tests hold).
-- **Two faces; figures always in the second.** Inter for text, JetBrains Mono for anything compared
-  across rows (clocks, rates, counts, bitrates, tag values). `theme::mono` builds the `Font` with
-  `tnum`; `kit::figure` is the one way to draw one. Neither face is embedded, so **the drawn family is
+- **One reading face, figures in tabular form; a second face only for codes.** Inter draws text and
+  every figure: `theme::ui` carries `tnum`, so clocks, rates, counts and bitrates line up across rows
+  without a monospace look, and `kit::figure` (body face, `text_xs`, muted) is the one way to draw
+  one. JetBrains Mono (`theme::mono`) is drawn only through `kit::code`, for a string read character
+  by character: the sync pairing code, the inspector's MusicBrainz ids, ISRC, barcode and catalogue
+  number (`inspector::CODES`) and a container's box kinds. Neither face is embedded, so **the drawn family is
   settled once against the machine**: `fonts::settle` walks a ladder per face (Inter, Adwaita Sans,
   Cantarell, ...; JetBrains Mono, Adwaita Mono, ...) against `cx.text_system().all_font_names()` at
   start; neither ladder offers a family the other does (test); a machine with none keeps the wanted
-  family. Not a setting; the About card reports the two (`fonts::drawn_in`). `theme::text_xs()`
+  family. Not a setting; the About card reports the two (`fonts::drawn_in`, *Body face* and *Codes*). `theme::text_xs()`
   through `text_title()` and `text_lyric()` are the whole type scale, set via `text_size`.
 - **A control is a `kit::button` in one of four tones; nothing draws its own.** `Tone::Primary` =
   accent fill, the one gesture a heading leads with (*Play*). `Tone::Outlined` = raised secondary
   (*Play next*/*Add to queue*, one pair one tone). `Tone::Destructive` = failure-edged, only for
   losing something for good. `Tone::Ghost` = everything else. `kit::icon_button` = the square
-  version; `kit::badge` = small
-  mono tag; `kit::format_badge` = codec badge beside depth and rate from `format::quality` (*24-bit /
-  96 kHz*, never `24/96`), coloured by `Codec::is_lossless`.
+  version; `kit::badge` = a word in its colour (body face, `text_xs`, medium), never a tinted pill,
+  in sentence case (*Default*, *In use*, *Pinned*); `kit::format_badge` = the codec in the lossless
+  or lossy colour beside depth and rate from `format::quality` in `faint` (*24-bit / 96 kHz*, never
+  `24/96`). **Labels are in sentence case everywhere**: eyebrows, section names, column headers,
+  badges, readings (*Muted*, *Track*); a codec keeps its own spelling (FLAC). Nothing is uppercased
+  at runtime.
 - **A choice is drawn by what it is, never a row of pills.** A few short values, one held:
   `kit::segmented` over `kit::segment`s (a statistics window, a Wrapped year, a lyric reading, a row
   cap, a speaker's place). A list with a long name or an open end: `kit::pick`, the held value and a
@@ -449,7 +455,9 @@ is never named.
   to an album or artist, playing a row, and `ask_about_what_is_drawn` whenever a listing is read with
   an artist scoped. Only reorders what the pass has left: a nudge, not a command (`library.md`).
 - **Every pane opens with the same heading; a page inside a category opens with a hero.**
-  `kit::heading` holds a `kit::heading_row`: eyebrow naming the section, `kit::title`,
+  `kit::heading` holds a `kit::heading_row`: an eyebrow only where it says something the title does
+  not (*Album*, *Playlist*, *Add songs*, *Settings*, *Search*; never the sidebar group a pane sits
+  under, nor *Lyrics*, *Visualiser*, *Analysis* or *Inspector* over the song's title), `kit::title`,
   `kit::subtitle` (counts, total length), `kit::actions` on the right; under it the *Reads* chips
   (`listing::reads`) and a naming row where a pane has one.
   - **The name keeps its room; actions drop under it.** Each name block holds `theme::heading_name()`
@@ -796,7 +804,7 @@ is never named.
   shadow as a solid rectangle behind the element, so a control with no ground of its own (a rail
   row, a segment, a ghost button) was filled with the ring colour. An inset shadow is painted before
   the element's children, so an opaque ground child (the `shown_while` wash of the settings rail,
-  `kit::segment` and the bar's toggles) is laid by `focus::beneath_the_ring`, inside the ring's
+  `kit::segment`) is laid by `focus::beneath_the_ring`, inside the ring's
   width. A field holding the caret still lights its border, since a click into it is where typing
   goes, read from `Field::is_focused` (`RootView::finding_holds_the_caret`, set as the pane is
   drawn), never gpui's `in_focus`, which lights what stands *inside* the focused element: the
@@ -981,9 +989,17 @@ is never named.
     `status_kept` drops volume reading, sleep control, repeat, shuffle, then volume rail, until the
     rest fits; never the queue button or the speaker. `signal_kept` likewise against `playing_room`
     (`kit::width_of`): depth and rate give way; the codec badge stays.
-  - **Now-playing panel**: cover (`theme::now_playing_cover()`), title, artist, album, signal path:
-    the decoding-format badge with depth and rate, and nothing of the output: the bar names no mode
-    (*bit-perfect*, *converted*), which the inspector's OUTPUT stage spells out. A press opens the inspector. **The path is as wide as what it says**: `self_start`
+  - **The bar is `theme::transport_height()` (88) on `surface` under a `soft_edge` rule.** The play
+    button is a 40 px disc in `text` with the glyph in `background`, dimmed to `kit::LIT` under the
+    pointer (never turned to the accent); the steps are bare glyphs lit on hover. Shuffle, repeat and
+    the queue are a glyph in the accent over a 4 px accent dot (`TOGGLE_DOT`) while on, the dot faded
+    by the same flip, never a tinted chip; the running sleep timer is its glyph and countdown in the
+    accent. The clocks are `kit::figure` in `faint`, time left with a true minus (*−3:12*).
+  - **Now-playing panel**: cover (`theme::now_playing_cover()`, 56, rounded by `cover_rounding`),
+    title, artist, album, signal path: the codec word in the lossless or lossy colour then depth and
+    rate in `faint` (`kit::format_badge`'s shape, no pill; the quality lights to `muted` under the
+    pointer, no wash), and nothing of the output: the bar names no mode (*Bit-perfect*, *Converted*),
+    which the inspector's Output column spells out. A press opens the inspector. **The path is as wide as what it says**: `self_start`
     under `max_w_full`, else the column stretched it and its hover wash ran to the panel's edge
     (`the_signal_path_is_as_wide_as_what_it_says_rather_than_the_panel`).
   - **A skip never blanks the panel.** While the next row opens the engine publishes no current track
@@ -1009,7 +1025,7 @@ is never named.
   - **Every bar control names itself via `views/hint.rs`**: a step names its key, a toggle its state
     and what the key does next. A rail is filled in `TEXT`, accent under the pointer or held. The
     volume reading is always drawn, `theme::volume_reading()` wide (`opacity(0)` left a hole);
-    `kit::readout` draws it in `theme::ui` (body face with `tnum`).
+    `kit::figure` draws it, the same face as the clocks.
 - **The play mark carries its optical nudge in the art, not a margin.** `play.svg` sits half a unit
   right of the 24-box centre because a triangle centred by bounding box reads left; a `margin-left`
   on the play state alone moved the mark sideways on every toggle.
@@ -2223,9 +2239,12 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `Library::remove_root`, forgetting every track from it. Roots ride in the one `Loaded` snapshot and
   live in the library database, not `config.toml`: the one setting outside the `Settings` seam.
 - **The inspector renders the engine's `StreamDigest`, never a second read of the file** (`audio.md`).
-  Order: signal path as three `stage` cards (*Source*: codec in the lossless colour over depth, rate,
-  channels, container; *Processing*; *Output*: mode in its colour over what was negotiated and the
-  sink), detail cards, bitrate graph, tags. Follows the *playing* file only. The live profile restarts
+  Order: the signal path as one card of three columns (*Source*: codec in the lossless colour over
+  depth, rate, channels, container; *Processing* in words, *Untouched*, *Dithered to 16-bit*,
+  *Converted to 48 kHz by the graph*; *Output*: mode in its colour over what was negotiated and the
+  sink; each a muted label over a `text_lg` semibold headline), detail cards, bitrate graph, tags.
+  `inspector::fields` is a property list: a muted label and its value at the same `text_sm`, a
+  `soft_edge` rule between rows, labels in sentence case. Follows the *playing* file only. The live profile restarts
   on every rebind (`StreamDigest::profiled_from`: a `ProfileBuilder`'s windows are unresumable
   mid-span); the digest is rebuilt once per closed window, and the decoder runs ahead of the sink, so
   the graph leads what is heard. A line, not bars: `plot::stroke` over a `plot::wash` from the accent to
@@ -2266,8 +2285,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     (cost in `audio.md`).
 - **The analysis pane draws the whole playing track and says whether it is what it claims.**
   `Pane::Analysis`: fourth pane under `Section::Playing`, `Icon::Analysis`. Heading = visualiser's,
-  reading back codec, declared depth and rate, or how far the decode has got. Then: verdict in its colour
-  over one sentence per finding (`Finding::told`); finding labels and descriptions share a font size and line height, with the dot centred on the first line so wrapped descriptions keep their alignment; waveform (lane per channel, min-max polygon washed in
+  reading back codec, declared depth and rate, or how far the decode has got. Then: the verdict as a
+  word in its colour at `text_lg` (*Genuine*, *Not judged*; never a tinted badge)
+  over one sentence per finding (`Finding::told`); each finding's severity word (*Fault*, *Caution*, *Note*) in its colour at a fixed width, sharing the description's font size and line height so wrapped descriptions keep their alignment; waveform (lane per channel, min-max polygon washed in
   the accent with RMS solid inside, heard part shaded, playhead a press seeks from); spectrogram (painted
   raster stretched to the card, cutoff a line in the verdict's colour); average spectrum; levels and
   source `fields` cards; a recognition card, led to the top where the audio is not the song the file

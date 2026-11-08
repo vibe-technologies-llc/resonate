@@ -200,18 +200,15 @@ pub(crate) fn reads(clauses: &[String]) -> Div {
         .flex_wrap()
         .items_center()
         .gap_1p5()
-        .child(kit::eyebrow("READS").pr_1p5());
+        .child(kit::eyebrow("Reads").pr_1p5());
 
     for clause in clauses {
         row = row.child(
             div()
                 .px_2()
                 .py_0p5()
-                .rounded_sm()
+                .rounded_md()
                 .bg(rgb(theme::raised()))
-                .border_1()
-                .border_color(rgb(theme::border()))
-                .font_family(theme::mono_face())
                 .text_size(px(theme::text_xs()))
                 .text_color(rgb(theme::text()))
                 .child(SharedString::from(clause.clone())),
@@ -480,10 +477,10 @@ pub(crate) fn columns(
         controls,
         cx,
     );
-    let title = heads(Sortable::Title, "TITLE", title_room(), sorted, controls, cx);
+    let title = heads(Sortable::Title, "Title", title_room(), sorted, controls, cx);
     let artist = heads(
         Sortable::Artist,
-        "ARTIST",
+        "Artist",
         artist_room(),
         sorted,
         controls,
@@ -491,7 +488,7 @@ pub(crate) fn columns(
     );
     let format = heads(
         Sortable::Format,
-        "FORMAT",
+        "Format",
         div().w(px(theme::row_format())).flex_none(),
         sorted,
         controls,
@@ -499,7 +496,7 @@ pub(crate) fn columns(
     );
     let heard = heads(
         Sortable::Heard,
-        "HEARD",
+        "Heard",
         div().w(px(theme::row_plays())).flex_none(),
         sorted,
         controls,
@@ -507,7 +504,7 @@ pub(crate) fn columns(
     );
     let length = heads(
         Sortable::Length,
-        "LENGTH",
+        "Length",
         div().w(px(theme::row_length())).flex_none().justify_end(),
         sorted,
         controls,

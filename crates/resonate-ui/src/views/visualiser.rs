@@ -794,13 +794,7 @@ impl RootView {
 
         kit::heading().child(
             kit::heading_row()
-                .child(self.playing_heading(
-                    "VISUALISER",
-                    "visualiser-title",
-                    "visualiser-artist",
-                    playing,
-                    cx,
-                ))
+                .child(self.playing_heading("visualiser-title", "visualiser-artist", playing, cx))
                 .child(
                     kit::actions()
                         .child(kit::figure(readback))

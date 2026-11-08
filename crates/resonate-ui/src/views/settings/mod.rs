@@ -69,7 +69,7 @@ pub(crate) const FILTER_PLACEHOLDER: &str = "Find a setting…";
 const REVERT_HINT: &str = "Put this back to what Resonate was built with, and take the key out of \
                            the settings file";
 
-const EXPERIMENTAL: &str = "EXPERIMENTAL";
+const EXPERIMENTAL: &str = "Experimental";
 
 const RESET_HINT: &str = "Put every setting in this category back to what Resonate was built with";
 
@@ -189,7 +189,7 @@ impl RootView {
                         .flex_1()
                         .min_w(theme::width(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow("SETTINGS"))
+                        .child(kit::eyebrow("Settings"))
                         .child(kit::title(title))
                         .child(kit::subtitle(about)),
                 )
@@ -362,7 +362,7 @@ impl RootView {
             for group in narrowing.anywhere() {
                 if last != Some(group.category()) {
                     last = Some(group.category());
-                    column = column.child(kit::eyebrow(group.category().label().to_uppercase()));
+                    column = column.child(kit::eyebrow(group.category().label()));
                 }
                 column = column.child(self.group(group, standing, cx));
             }
@@ -1214,7 +1214,6 @@ fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> St
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(theme::mono_face())
                 .text_size(px(theme::text_xs()))
                 .text_color(rgb(theme::text()))
                 .child(value),

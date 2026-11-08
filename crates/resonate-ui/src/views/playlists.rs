@@ -604,7 +604,6 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::eyebrow("COLLECTION"))
                             .child(kit::title("Playlists"))
                             .child(kit::subtitle(format::counted(
                                 saved,
@@ -919,8 +918,8 @@ impl RootView {
             parts.join(" · ")
         });
         let eyebrow = match rows {
-            Rows::Matched => "SAVED SEARCH",
-            Rows::InHand | Rows::Kept | Rows::Narrowed => "PLAYLIST",
+            Rows::Matched => "Saved search",
+            Rows::InHand | Rows::Kept | Rows::Narrowed => "Playlist",
         };
 
         let normal = named.as_ref().is_none_or(|named| named.query.is_none());
@@ -1538,7 +1537,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .gap_0p5()
-                            .child(kit::eyebrow("PLAYLIST"))
+                            .child(kit::eyebrow("Playlist"))
                             .child(
                                 div()
                                     .text_size(px(theme::text_lg()))
@@ -1571,7 +1570,7 @@ impl RootView {
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(kit::eyebrow("OR A NEW ONE"))
+                            .child(kit::eyebrow("Or a new one"))
                             .child(self.name_field(cx)),
                     ),
                 "playlist-picker-arrives",
@@ -1806,12 +1805,12 @@ impl RootView {
                             })
                             .when_some(shared_as, |row, editable| {
                                 row.child(kit::badge(
-                                    if editable { "SHARED" } else { "FOLLOWED" },
+                                    if editable { "Shared" } else { "Followed" },
                                     theme::accent(),
                                 ))
                             })
                             .when(pinned, |row| {
-                                row.child(kit::badge("PINNED", theme::accent()))
+                                row.child(kit::badge("Pinned", theme::accent()))
                             }),
                     )
                     .child(
@@ -2157,8 +2156,8 @@ impl RootView {
 
 fn kind_of(playlist: &Playlist) -> Option<(&'static str, u32)> {
     match (playlist.query.is_some(), playlist.kept.is_some()) {
-        (true, _) => Some(("SEARCH", theme::repacked())),
-        (false, true) => Some(("KEPT", theme::muted())),
+        (true, _) => Some(("Search", theme::repacked())),
+        (false, true) => Some(("Kept", theme::muted())),
         (false, false) => None,
     }
 }

@@ -193,10 +193,10 @@ pub fn headroom(gain: AppliedGain) -> String {
 
 pub fn mode(mode: OutputMode) -> (&'static str, u32) {
     match mode {
-        OutputMode::BitPerfect => ("bit-perfect", theme::bit_perfect()),
-        OutputMode::Repacked => ("repacked", theme::repacked()),
-        OutputMode::Dithered => ("dithered", theme::dithered()),
-        OutputMode::Converted => ("converted", theme::converted()),
+        OutputMode::BitPerfect => ("Bit-perfect", theme::bit_perfect()),
+        OutputMode::Repacked => ("Repacked", theme::repacked()),
+        OutputMode::Dithered => ("Dithered", theme::dithered()),
+        OutputMode::Converted => ("Converted", theme::converted()),
     }
 }
 

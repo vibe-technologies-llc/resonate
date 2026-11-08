@@ -62,16 +62,16 @@ impl Press {
 
 pub(crate) fn figure(text: impl Into<SharedString>) -> Div {
     div()
-        .font(theme::mono(FontWeight::NORMAL))
+        .font(theme::ui(FontWeight::NORMAL))
         .text_size(px(theme::text_xs()))
         .text_color(rgb(theme::muted()))
         .whitespace_nowrap()
         .child(text.into())
 }
 
-pub(crate) fn readout(text: impl Into<SharedString>) -> Div {
+pub(crate) fn code(text: impl Into<SharedString>) -> Div {
     div()
-        .font(theme::ui(FontWeight::NORMAL))
+        .font(theme::mono(FontWeight::NORMAL))
         .text_size(px(theme::text_xs()))
         .text_color(rgb(theme::muted()))
         .whitespace_nowrap()
@@ -595,13 +595,8 @@ pub(crate) fn tag(text: impl Into<SharedString>) -> Div {
 pub(crate) fn badge(text: impl Into<SharedString>, colour: u32) -> Div {
     div()
         .flex_none()
-        .px_1p5()
-        .py_0p5()
-        .rounded_sm()
-        .bg(theme::tinted(colour, 0x1c))
-        .font_family(theme::mono_face())
+        .font(theme::ui(FontWeight::MEDIUM))
         .text_size(px(theme::text_xs()))
-        .font_weight(FontWeight::MEDIUM)
         .text_color(rgb(colour))
         .whitespace_nowrap()
         .child(text.into())
@@ -622,9 +617,9 @@ pub(crate) fn format_badge(codec: Codec, spec: StreamSpec) -> Div {
         .flex()
         .flex_none()
         .items_center()
-        .gap_2()
+        .gap_1p5()
         .child(codec_badge(codec))
-        .child(figure(format::quality(spec)))
+        .child(figure(format::quality(spec)).text_color(rgb(theme::faint())))
 }
 
 pub(crate) fn mode_dot(colour: u32) -> Div {
@@ -1467,11 +1462,11 @@ mod tests {
     fn the_text_the_kit_draws_is_headings_and_plain_text_a_reader_can_reach() {
         spoken::listened_to(true);
 
-        let eyebrow = node_of(&eyebrow("SEARCH")).expect("an eyebrow is a node");
+        let eyebrow = node_of(&eyebrow("Search")).expect("an eyebrow is a node");
         let title = node_of(&title(SharedString::new_static("Albums"))).expect("a title is a node");
         let hero = node_of(&hero_title(SharedString::new_static("Echoes"), px(300.0)))
             .expect("a hero title is a node");
-        let section = node_of(&section_name("OUTPUT")).expect("a section name is a node");
+        let section = node_of(&section_name("Output")).expect("a section name is a node");
         let card = node_of(&card_title("Signal")).expect("a card title is a node");
         let empty = node_of(&nothing_here(
             Icon::Search,
@@ -1481,7 +1476,7 @@ mod tests {
         .map(|node| node.role());
 
         assert_eq!(eyebrow.role(), Role::Label);
-        assert_eq!(eyebrow.label(), Some("SEARCH"));
+        assert_eq!(eyebrow.label(), Some("Search"));
         assert_eq!(title.role(), Role::Heading);
         assert_eq!(title.level(), Some(1));
         assert_eq!(title.label(), Some("Albums"));

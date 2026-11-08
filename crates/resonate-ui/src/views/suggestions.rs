@@ -99,7 +99,7 @@ impl RootView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(kit::eyebrow(kind.name().to_uppercase()))
+                    .child(kit::eyebrow(kind.name()))
                     .child(
                         div()
                             .flex()
@@ -276,8 +276,8 @@ impl RootView {
                         .gap_1()
                         .child(kit::measures_its_height(self.hero_height.clone()))
                         .child(kit::eyebrow(format!(
-                            "SUGGESTION · {}",
-                            suggestion.reason.kind().name().to_uppercase()
+                            "Suggestion · {}",
+                            suggestion.reason.kind().name()
                         )))
                         .child(kit::title(SharedString::from(suggestion.name.clone())))
                         .child(kit::subtitle(SharedString::from(suggestion.reason.says())))
@@ -560,7 +560,6 @@ fn suggestions_heading(offered: usize) -> Div {
                 .flex_1()
                 .min_w(px(theme::heading_name()))
                 .gap_1()
-                .child(kit::eyebrow("COLLECTION"))
                 .child(kit::title("Suggestions"))
                 .when(offered > 0, |column| {
                     column.child(kit::subtitle(format::counted(offered, "list", "lists")))

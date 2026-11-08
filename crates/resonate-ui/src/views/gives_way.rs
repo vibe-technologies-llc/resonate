@@ -3,7 +3,7 @@ const VOLUME_LEAD: f32 = 8.0;
 const VOLUME_GAP: f32 = 8.0;
 const SLEEP_PADDING: f32 = 16.0;
 const SLEEP_GAP: f32 = 6.0;
-const PATH_GAP: f32 = 8.0;
+const PATH_GAP: f32 = 6.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct StatusWidths {

@@ -29,14 +29,13 @@ use crate::{
     views::{
         Pane,
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
-        focus,
         gives_way::{SignalWidths, StatusWidths, signal_kept, status_kept},
         hint::Names,
         kit::{self, KeepsItsWidth},
         listing::Pictured,
         menu::{self, Called, Menu},
         reorder::{self, LiftedTo},
-        root::Magnified,
+        root::{Magnified, cover_rounding},
         slider::{Handle, Pointed},
         spoken::{self, Reading, Spoken},
     },
@@ -82,9 +81,15 @@ const SIDE_AT_LEAST: f32 = 180.0;
 
 const CENTRE_AT_LEAST: f32 = 260.0;
 
-const BADGE_PADDING: f32 = 12.0;
-
 const BY_LINE_SEPARATOR: &str = "·";
+
+const SIGNAL_GROUP: &str = "signal-path";
+
+const MINUS: char = '\u{2212}';
+
+const TOGGLE_DOT: f32 = 4.0;
+
+const TOGGLE_DOT_INSET: f32 = 2.0;
 
 const BY_LINE_SEPARATOR_PADDING: f32 = 6.0;
 
@@ -119,9 +124,9 @@ const END_OF_QUEUE: &str = "End of queue";
 
 const SLEEP_OFF: &str = "Turn the sleep timer off";
 
-const END_OF_TRACK_READING: &str = "track";
+const END_OF_TRACK_READING: &str = "Track";
 
-const END_OF_QUEUE_READING: &str = "queue";
+const END_OF_QUEUE_READING: &str = "Queue";
 
 const PLAYBACK: &str = "Playback";
 
@@ -372,7 +377,7 @@ impl RootView {
             .flex_col()
             .flex_none()
             .border_t_1()
-            .border_color(rgb(theme::border()))
+            .border_color(rgb(theme::soft_edge()))
             .rounded_bl(corners.bottom_left)
             .rounded_br(corners.bottom_right)
             .bg(rgb(theme::surface()))
@@ -392,7 +397,7 @@ impl RootView {
                             .flex_shrink(1.0)
                             .min_w(px(CENTRE_AT_LEAST))
                             .items_center()
-                            .gap_1p5()
+                            .gap_1()
                             .child(self.controls(playing, cx))
                             .child(self.seek_bar(position, duration, rate, cx)),
                     )
@@ -406,7 +411,7 @@ impl RootView {
             .flex()
             .flex_none()
             .items_center()
-            .gap_3()
+            .gap_4()
             .child(self.step(
                 "previous",
                 Icon::Previous,
@@ -507,7 +512,7 @@ impl RootView {
             .hover(|button| button.bg(rgb(theme::hover())))
             .child(lit(Icon::Sleep, colour, sleeping.is_some()))
             .when_some(sleeping, |button, asleep| {
-                button.bg(theme::tinted(theme::accent(), 0x1c)).child(
+                button.child(
                     kit::figure(sleep_reading(asleep))
                         .w(px(theme::sleep_reading()))
                         .text_center()
@@ -609,7 +614,7 @@ impl RootView {
             .min_w(px(SIDE_AT_LEAST))
             .overflow_hidden()
             .items_center()
-            .gap_3p5()
+            .gap_3()
             .child(cover)
             .child(
                 div()
@@ -695,7 +700,6 @@ impl RootView {
 
     pub(crate) fn playing_heading(
         &self,
-        eyebrow: &'static str,
         of_the_title: &'static str,
         of_the_artist: &'static str,
         playing: &Playing,
@@ -725,7 +729,6 @@ impl RootView {
             .min_w(px(theme::heading_name()))
             .gap_1()
             .child(kit::measures_its_width(self.heading_room.clone()))
-            .child(kit::eyebrow(eyebrow))
             .child(kit::linked_title(self.opens(
                 of_the_title,
                 title,
@@ -833,28 +836,27 @@ impl RootView {
         let mut path = div()
             .id("signal-path")
             .debug_selector(|| "signal-path".to_owned())
+            .group(SIGNAL_GROUP)
             .flex()
             .self_start()
             .items_center()
-            .gap_2()
+            .gap_1p5()
             .mt_0p5()
             .min_w(px(0.0))
             .max_w_full()
             .overflow_hidden()
-            .rounded_sm()
             .cursor_pointer()
-            .hover(|path| path.bg(rgb(theme::hover())))
             .said_as(Role::Button, &hint)
             .names(hint);
 
         let quality = source.map(format::quality);
         let size = px(theme::text_xs());
         let measured = |text: &str, weight: FontWeight| {
-            f32::from(kit::width_of(text, &theme::mono(weight), size, cx))
+            f32::from(kit::width_of(text, &theme::ui(weight), size, cx))
         };
         let (lead, quality_width) = match (playing.codec, quality.as_deref()) {
             (Some(codec), quality) => (
-                measured(codec.as_str(), FontWeight::MEDIUM) + BADGE_PADDING,
+                measured(codec.as_str(), FontWeight::MEDIUM),
                 quality.map(|quality| measured(quality, FontWeight::NORMAL)),
             ),
             (None, Some(quality)) => (measured(quality, FontWeight::NORMAL), None),
@@ -872,10 +874,10 @@ impl RootView {
             (Some(codec), quality) => {
                 path = path.child(kit::codec_badge(codec));
                 if let Some(quality) = quality.filter(|_| kept.quality) {
-                    path = path.child(kit::figure(quality));
+                    path = path.child(signal_quality(quality));
                 }
             }
-            (None, Some(quality)) => path = path.child(kit::figure(quality)),
+            (None, Some(quality)) => path = path.child(signal_quality(quality)),
             (None, None) => {}
         }
 
@@ -898,7 +900,7 @@ impl RootView {
             .flex()
             .flex_none()
             .size(px(theme::now_playing_cover()))
-            .rounded_md()
+            .rounded(px(cover_rounding(theme::now_playing_cover())))
             .overflow_hidden()
             .bg(rgb(theme::raised()))
             .border_1()
@@ -1231,7 +1233,7 @@ impl RootView {
             })
             .when(reading, |bar| {
                 bar.child(
-                    kit::readout(volume_reading(level, muted))
+                    kit::figure(volume_reading(level, muted))
                         .w(px(theme::volume_reading()))
                         .text_right(),
                 )
@@ -1262,7 +1264,7 @@ impl RootView {
         let showing_left = self.showing_time_left && duration.is_some();
         let far_end = match duration {
             Some(duration) if showing_left => {
-                format!("-{}", format::left(position, duration, rate))
+                format!("{MINUS}{}", format::left(position, duration, rate))
             }
             Some(duration) => format::clock(duration, rate),
             None => "–:––".to_owned(),
@@ -1327,7 +1329,6 @@ impl RootView {
             .size(px(theme::transport_step()))
             .rounded_full()
             .cursor_pointer()
-            .hover(|button| button.bg(rgb(theme::hover())))
             .child(icons::lit_on_hover(
                 icons::icon(glyph, theme::transport_step_icon(), theme::muted()),
                 CONTROL_GROUP,
@@ -1355,7 +1356,7 @@ impl RootView {
             .rounded_full()
             .bg(rgb(theme::text()))
             .cursor_pointer()
-            .hover(|button| button.bg(rgb(theme::accent())))
+            .hover(|button| button.opacity(kit::LIT))
             .child(motion::popped(
                 icons::icon(glyph, theme::transport_play_icon(), theme::background()),
                 "glyph",
@@ -1413,9 +1414,19 @@ impl RootView {
             .cursor_pointer()
             .hover(|button| button.bg(rgb(theme::hover())))
             .child(motion::shown_while(
-                focus::beneath_the_ring(div())
-                    .rounded_md()
-                    .bg(theme::tinted(theme::accent(), 0x1c)),
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom(px(TOGGLE_DOT_INSET))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .size(px(TOGGLE_DOT))
+                            .rounded_full()
+                            .bg(rgb(theme::accent())),
+                    ),
                 "tint",
                 active,
             ))
@@ -1432,7 +1443,7 @@ impl RootView {
 
 fn volume_reading(level: f32, muted: bool) -> SharedString {
     if muted {
-        return SharedString::new_static("muted");
+        return SharedString::new_static("Muted");
     }
     SharedString::from(format!("{:.0}%", level * 100.0))
 }
@@ -1545,7 +1556,15 @@ fn clock(reading: String) -> Div {
     kit::figure(reading)
         .flex_none()
         .min_w(px(theme::clock_width()))
-        .text_color(rgb(theme::muted()))
+        .text_color(rgb(theme::faint()))
+}
+
+fn signal_quality(quality: String) -> Div {
+    kit::figure(quality)
+        .text_color(rgb(theme::faint()))
+        .group_hover(SIGNAL_GROUP, |quality| {
+            quality.text_color(rgb(theme::muted()))
+        })
 }
 
 fn along(duration: Frames, fraction: f32) -> Frames {

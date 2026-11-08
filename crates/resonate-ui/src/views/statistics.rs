@@ -102,17 +102,17 @@ struct Kind {
 }
 
 const MOST_LISTENED_TRACKS: Kind = Kind {
-    named: "TRACKS MOST LISTENED TO",
+    named: "Tracks most listened to",
     id: "most-listened-track",
 };
 
 const MOST_LISTENED_ALBUMS: Kind = Kind {
-    named: "ALBUMS MOST LISTENED TO",
+    named: "Albums most listened to",
     id: "most-listened-album",
 };
 
 const MOST_LISTENED_ARTISTS: Kind = Kind {
-    named: "ARTISTS MOST LISTENED TO",
+    named: "Artists most listened to",
     id: "most-listened-artist",
 };
 
@@ -489,7 +489,6 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::eyebrow("LIBRARY"))
                             .child(kit::title("Statistics"))
                             .child(kit::subtitle(format!(
                                 "{} {}",
@@ -629,7 +628,7 @@ impl RootView {
         let mut drawn: Vec<Stateful<Div>> = Vec::new();
         if let Some(track) = listened.tracks.first() {
             drawn.push(number_one(
-                "TOP TRACK",
+                "Top track",
                 cover(self, track.album, cx),
                 &track.name,
                 track.by.as_deref(),
@@ -639,7 +638,7 @@ impl RootView {
         }
         if let Some(album) = listened.albums.first() {
             drawn.push(number_one(
-                "TOP ALBUM",
+                "Top album",
                 cover(self, album.album, cx),
                 &album.name,
                 album.by.as_deref(),
@@ -649,7 +648,7 @@ impl RootView {
         }
         if let Some(artist) = listened.artists.first() {
             drawn.push(number_one(
-                "TOP ARTIST",
+                "Top artist",
                 self.pictured_face(artist, Portrayed::InAGrid, side, cx),
                 &artist.name,
                 None,
@@ -833,7 +832,7 @@ fn a_name(name: SharedString) -> Div {
 }
 
 fn a_faint_line(text: String) -> Div {
-    kit::readout(text)
+    kit::figure(text)
         .text_color(rgb(theme::faint()))
         .truncate()
         .ends_in_an_ellipsis()
@@ -881,14 +880,14 @@ fn the_headline(counts: Statistics, habits: &Habits, days_spanned: usize) -> Sta
         .justify_center()
         .gap_1()
         .bg(the_headline_ground())
-        .child(kit::eyebrow("TIME LISTENED"))
+        .child(kit::eyebrow("Time listened"))
         .child(
             kit::figure(reading)
-                .font(theme::mono(FontWeight::SEMIBOLD))
+                .font(theme::ui(FontWeight::SEMIBOLD))
                 .text_size(px(theme::text_lyric()))
                 .text_color(rgb(theme::text())),
         )
-        .child(kit::readout(pace).text_color(rgb(theme::muted())))
+        .child(kit::figure(pace).text_color(rgb(theme::muted())))
 }
 
 fn counted_tiles(counts: Statistics) -> Div {
@@ -907,12 +906,12 @@ fn counted_tiles(counts: Statistics) -> Div {
         .flex_1()
         .gap_3()
         .child(a_pair(
-            tile("PLAYS", Icon::Play, counts.plays.to_string()),
-            tile("TRACKS HEARD", Icon::Tracks, counts.tracks.to_string()),
+            tile("Plays", Icon::Play, counts.plays.to_string()),
+            tile("Tracks heard", Icon::Tracks, counts.tracks.to_string()),
         ))
         .child(a_pair(
-            tile("ALBUMS HEARD", Icon::Albums, counts.albums.to_string()),
-            tile("ARTISTS HEARD", Icon::Artists, counts.artists.to_string()),
+            tile("Albums heard", Icon::Albums, counts.albums.to_string()),
+            tile("Artists heard", Icon::Artists, counts.artists.to_string()),
         ))
 }
 
@@ -953,21 +952,21 @@ fn moments(rhythm: &Rhythm, this_year: i64) -> Option<Div> {
     let mut drawn: Vec<Stateful<Div>> = Vec::new();
     if let Some(busiest) = rhythm.busiest_day {
         drawn.push(moment(
-            "BUSIEST DAY",
+            "Busiest day",
             dated(busiest.date, this_year),
             format!("{} listened", format::heard_for(busiest.listened)),
         ));
     }
     if let Some(streak) = rhythm.longest_streak {
         drawn.push(moment(
-            "LONGEST RUN",
+            "Longest run",
             format::counted(streak.days as usize, "day", "days"),
             format!("from {}", dated(streak.from, this_year)),
         ));
     }
     if let Some(hour) = rhythm.busiest_hour() {
         drawn.push(moment(
-            "MOST OFTEN AT",
+            "Most often at",
             hour_named(hour),
             "the hour heard most".to_owned(),
         ));
@@ -977,7 +976,7 @@ fn moments(rhythm: &Rhythm, this_year: i64) -> Option<Div> {
         .and_then(|day| WEEKDAYS.get(day).copied())
     {
         drawn.push(moment(
-            "MOST OFTEN ON",
+            "Most often on",
             named.to_owned(),
             "the day heard most".to_owned(),
         ));
@@ -999,7 +998,7 @@ fn moment(named: &'static str, reading: String, note: String) -> Stateful<Div> {
                 .text_size(px(theme::text_lg()))
                 .text_color(rgb(theme::text())),
         )
-        .child(kit::readout(note).text_color(rgb(theme::faint())))
+        .child(kit::figure(note).text_color(rgb(theme::faint())))
 }
 
 fn listed_days(chart: &Chart) -> Stateful<Div> {
@@ -1075,7 +1074,7 @@ fn charted(chart: &Chart) -> Div {
     kit::section()
         .child(
             kit::section_header()
-                .child(kit::section_name("LISTENING BY DAY"))
+                .child(kit::section_name("Listening by day"))
                 .child(kit::figure(chart.says())),
         )
         .child(
@@ -1214,7 +1213,7 @@ fn hours_heard(rhythm: &Rhythm) -> Div {
 
     kit::section()
         .flex_1()
-        .child(kit::section_header().child(kit::section_name("WHEN IN THE DAY")))
+        .child(kit::section_header().child(kit::section_name("When in the day")))
         .child(
             kit::section_body()
                 .gap_2()
@@ -1245,7 +1244,7 @@ fn weekdays_heard(rhythm: &Rhythm) -> Div {
 
     kit::section()
         .flex_1()
-        .child(kit::section_header().child(kit::section_name("WHEN IN THE WEEK")))
+        .child(kit::section_header().child(kit::section_name("When in the week")))
         .child(
             kit::section_body()
                 .gap_2()
@@ -1330,7 +1329,7 @@ fn genres_heard(genres: &[Ranked]) -> Div {
 
     kit::section()
         .flex_1()
-        .child(kit::section_header().child(kit::section_name("GENRES MOST HEARD")))
+        .child(kit::section_header().child(kit::section_name("Genres most heard")))
         .child(listed)
 }
 
@@ -1342,11 +1341,11 @@ fn sound_heard(shares: FormatShares) -> Div {
         .gap_2()
         .child(
             kit::figure(percent(f32::from(shares.lossless_permille) / WHOLE_SHARE))
-                .font(theme::mono(FontWeight::SEMIBOLD))
+                .font(theme::ui(FontWeight::SEMIBOLD))
                 .text_size(px(theme::text_title()))
                 .text_color(rgb(theme::text())),
         )
-        .child(kit::readout("of it lossless").text_color(rgb(theme::muted())));
+        .child(kit::figure("of it lossless").text_color(rgb(theme::muted())));
     let stacked = div()
         .flex()
         .w_full()
@@ -1389,7 +1388,7 @@ fn sound_heard(shares: FormatShares) -> Div {
 
     kit::section()
         .flex_1()
-        .child(kit::section_header().child(kit::section_name("THE SOUND YOU HEAR")))
+        .child(kit::section_header().child(kit::section_name("The sound you hear")))
         .child(
             kit::section_body()
                 .gap_3()

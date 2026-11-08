@@ -548,7 +548,7 @@ impl RootView {
                 .flex_1()
                 .min_w(px(0.0))
                 .gap_3()
-                .child(kit::eyebrow("PAIRING CODE"))
+                .child(kit::eyebrow("Pairing code"))
                 .child(
                     div()
                         .id("sync-code-shown")

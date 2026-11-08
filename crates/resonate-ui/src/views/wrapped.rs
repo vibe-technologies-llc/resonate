@@ -362,7 +362,7 @@ fn slide_drawn(slide: &Slide) -> Stateful<Div> {
         .gap_3()
         .min_h(px(theme::chart_height() * 2.0))
         .overflow_y_scroll()
-        .child(kit::eyebrow(slide.eyebrow.to_uppercase()))
+        .child(kit::eyebrow(slide.eyebrow.clone()))
         .child(
             div()
                 .id("wrapped-headline")

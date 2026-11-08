@@ -37,7 +37,7 @@ impl RootView {
         kit::section_body()
             .child(reading("Version", VERSION))
             .child(reading("Body face", faces.body))
-            .child(reading("Figures", faces.monospace))
+            .child(reading("Codes", faces.monospace))
             .child(reading(
                 "Sinks",
                 match sinks {

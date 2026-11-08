@@ -246,10 +246,10 @@ impl Part {
 
     const fn named(self) -> &'static str {
         match self {
-            Self::Heard => "HISTORY",
-            Self::Playing => "NOW PLAYING",
-            Self::Next => "PLAYING NEXT",
-            Self::Rest => "CONTINUE PLAYING",
+            Self::Heard => "History",
+            Self::Playing => "Now playing",
+            Self::Next => "Playing next",
+            Self::Rest => "Continue playing",
         }
     }
 
@@ -996,7 +996,6 @@ impl RootView {
                         .flex_1()
                         .min_w(px(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow("NOW PLAYING"))
                         .child(kit::title("Queue"))
                         .child(kit::subtitle(under.join(" · "))),
                 )

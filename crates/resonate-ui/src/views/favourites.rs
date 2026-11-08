@@ -230,7 +230,6 @@ fn favourites_heading(held: Favourited, reads: &[String]) -> Div {
                     .flex_1()
                     .min_w(px(theme::heading_name()))
                     .gap_1()
-                    .child(kit::eyebrow("COLLECTION"))
                     .child(kit::title("Favourites"))
                     .when(!counted.is_empty(), |column| {
                         column.child(kit::subtitle(counted))

@@ -57,11 +57,11 @@ impl Place {
 
     pub(crate) const fn eyebrow(&self) -> &'static str {
         match self {
-            Self::Artists => "SERVICES",
-            Self::Artist { .. } => "ARTIST ON THE SERVER",
-            Self::Album { .. } => "ALBUM ON THE SERVER",
-            Self::Mix { .. } => "MIX ON THE SERVER",
-            Self::Found { .. } => "SEARCH ON THE SERVER",
+            Self::Artists => "Services",
+            Self::Artist { .. } => "Artist on the server",
+            Self::Album { .. } => "Album on the server",
+            Self::Mix { .. } => "Mix on the server",
+            Self::Found { .. } => "Search on the server",
         }
     }
 
@@ -147,19 +147,19 @@ pub(crate) fn rows_of_found(found: ServedFound) -> Vec<Row> {
     } = found;
     let mut rows = Vec::new();
     if !artists.is_empty() {
-        rows.push(Row::Heading("ARTISTS"));
+        rows.push(Row::Heading("Artists"));
         rows.extend(artists.into_iter().map(Row::Artist));
     }
     if !albums.is_empty() {
-        rows.push(Row::Heading("ALBUMS"));
+        rows.push(Row::Heading("Albums"));
         rows.extend(albums.into_iter().map(Row::Album));
     }
     if !mixes.is_empty() {
-        rows.push(Row::Heading("MIXES"));
+        rows.push(Row::Heading("Mixes"));
         rows.extend(mixes.into_iter().map(Row::Mix));
     }
     if !songs.is_empty() {
-        rows.push(Row::Heading("SONGS"));
+        rows.push(Row::Heading("Songs"));
         rows.extend(songs.into_iter().map(Row::Song));
     }
     rows

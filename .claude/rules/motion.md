@@ -47,9 +47,9 @@ share; `blended` lerps two colours.
 
 - `kit::switch`: knob thrown between two growing spacers, animation on a child so the track stays
   the `Stateful<Div>` `in_the_ring` takes.
-- `kit::segment`, settings rail, shuffle/repeat/queue toggles: ground layer fades in under the
-  label (`shown_while`), a child so callers keep building on the control. Sidebar chosen row
-  likewise, accent bar growing from its middle.
+- `kit::segment`, settings rail: ground layer fades in under the label (`shown_while`), a child so
+  callers keep building on the control. Sidebar chosen row likewise, accent bar growing from its
+  middle. The bar's shuffle, repeat and queue toggles fade their accent dot the same way.
 - `kit::radio` grows its dot. Play/pause, repeat glyph, mute mark `popped` on change.
 - `kit::star` (`motion::starred`): a newly favoured star scales past its size and back, keyed by the
   `which` it marks, not the row id (a row redrawn over another track after a sort must not pop).

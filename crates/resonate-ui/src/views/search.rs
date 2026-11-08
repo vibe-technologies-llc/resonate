@@ -876,7 +876,7 @@ impl RootView {
                                 .flex_1()
                                 .min_w(px(theme::heading_name()))
                                 .gap_1()
-                                .child(kit::eyebrow("SEARCH"))
+                                .child(kit::eyebrow("Search"))
                                 .child(kit::title(SharedString::from(format!("“{query}”"))))
                                 .when_some(meant, |column, meant| {
                                     column.child(

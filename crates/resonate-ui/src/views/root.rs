@@ -164,9 +164,9 @@ const PANE_REGION: &str = "pane-region";
 
 const SEARCH_REGION: &str = "Search";
 
-const JUMPED_TO: &str = "JUMP TO";
+const JUMPED_TO: &str = "Jump to";
 
-const JUMPED_NOWHERE: &str = "NO MATCH";
+const JUMPED_NOWHERE: &str = "No match";
 
 const CLEAR_SEARCH_HINT: &str = keyed!("Clear the search", key!(leave));
 
@@ -400,9 +400,9 @@ impl Section {
 
     const fn label(self) -> &'static str {
         match self {
-            Self::Library => "LIBRARY",
-            Self::Collection => "COLLECTION",
-            Self::Playing => "NOW PLAYING",
+            Self::Library => "Library",
+            Self::Collection => "Collection",
+            Self::Playing => "Now playing",
         }
     }
 }

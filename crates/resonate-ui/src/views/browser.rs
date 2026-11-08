@@ -342,7 +342,6 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::eyebrow("LIBRARY"))
                             .child(kit::title("Albums"))
                             .child(kit::subtitle(format::counted(counted, "album", "albums"))),
                     )
@@ -769,7 +768,6 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::eyebrow("LIBRARY"))
                             .child(kit::title("Artists"))
                             .child(kit::subtitle(format::counted(counted, "artist", "artists"))),
                     )
@@ -2020,11 +2018,9 @@ impl RootView {
                         .flex_1()
                         .min_w(px(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow(if adding_to.is_some() {
-                            "ADD SONGS"
-                        } else {
-                            "LIBRARY"
-                        }))
+                        .when(adding_to.is_some(), |column| {
+                            column.child(kit::eyebrow("Add songs"))
+                        })
                         .child(kit::title(title))
                         .child(kit::subtitle(under)),
                 )
@@ -2087,7 +2083,7 @@ impl RootView {
             .gap_1()
             .child(kit::measures_its_width(self.hero_width.clone()))
             .child(kit::measures_its_height(self.hero_height.clone()))
-            .child(kit::eyebrow("ALBUM"))
+            .child(kit::eyebrow("Album"))
             .child(kit::hero_title(title, self.hero_width.get()))
             .when_some(owner, |column, (artist, name)| {
                 column.child(
@@ -2188,7 +2184,7 @@ impl RootView {
             .gap_1()
             .child(kit::measures_its_width(self.hero_width.clone()))
             .child(kit::measures_its_height(self.hero_height.clone()))
-            .child(kit::eyebrow("ARTIST"))
+            .child(kit::eyebrow("Artist"))
             .child(kit::hero_title(
                 SharedString::from(name),
                 self.hero_width.get(),
@@ -2475,7 +2471,7 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_0p5()
-            .child(kit::eyebrow(format!("PRESSINGS · {}", listed.len())));
+            .child(kit::eyebrow(format!("Pressings · {}", listed.len())));
         for (at, pressing) in listed.iter().take(PRESSINGS_SHOWN).enumerate() {
             let in_use = current.as_ref() == Some(&pressing.id);
             let chosen = pressing.id.clone();
@@ -2497,7 +2493,7 @@ impl RootView {
                 .names(hint)
                 .child(kit::figure(line.clone()).truncate().ends_in_an_ellipsis())
                 .when(in_use, |row| {
-                    row.child(kit::badge("IN USE", theme::accent()))
+                    row.child(kit::badge("In use", theme::accent()))
                 });
             column = column.child(match in_use {
                 true => row.named_as(Role::ListItem, &line, hint).chosen(true),

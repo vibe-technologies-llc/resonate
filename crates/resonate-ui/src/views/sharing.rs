@@ -249,7 +249,7 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(kit::eyebrow("PEOPLE"));
+                .child(kit::eyebrow("People"));
             for (at, person) in seen.people.iter().enumerate() {
                 people = people.child(self.person_row(at, person, sharing, seen.may_edit, cx));
             }
