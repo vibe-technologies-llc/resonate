@@ -269,7 +269,8 @@ is never named.
   its own `stop_propagation` move listener to the app element and one element's listeners run in
   reverse order. gpui reports motion only inside the window, so a drag past the edge freezes at the
   last inside value; `on_mouse_up_out` still hears the release.
-  - Volume applies on every move (`VOLUME_SETTLE` debounces `config.toml` writes). A seek only previews
+  - Volume applies on every move (`VOLUME_SETTLE` debounces `config.toml` writes); holding shift on the press
+    or the drag snaps it to a `VOLUME_STEP` (5 %, `snapped_by`), the seek rail ignoring the key. A seek only previews
     and commits one `Command::Seek` on release, and only if the press's track still plays
     (`a_seek_rail_released_after_the_track_changed_seeks_nothing`); `PlayerModel::seek` holds the
     requested position until its `Outcome` answers (a refused seek restores the published position

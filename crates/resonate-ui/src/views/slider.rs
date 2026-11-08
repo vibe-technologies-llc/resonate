@@ -1,7 +1,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AccessibleAction, AnyElement, Bounds, Context, Div, KeyContext, Length, MouseButton,
+    AccessibleAction, AnyElement, Bounds, Context, Div, KeyContext, Length, Modifiers, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, canvas, div,
     prelude::*, px, relative, rgb,
 };
@@ -51,6 +51,17 @@ impl Handle {
     const fn fills_its_row(self) -> bool {
         matches!(self, Self::Seek)
     }
+}
+
+fn snapped_by(handle: Handle, modifiers: Modifiers, fraction: f32) -> f32 {
+    match handle {
+        Handle::Volume if modifiers.shift => snapped_to_steps(fraction, VOLUME_STEP),
+        Handle::Volume | Handle::Seek => fraction,
+    }
+}
+
+fn snapped_to_steps(fraction: f32, step: f32) -> f32 {
+    ((fraction / step).round() * step).clamp(0.0, 1.0)
 }
 
 fn halves_on_whole_pixels(wide: f32) -> f32 {
@@ -117,8 +128,18 @@ impl RootView {
             .map(|grab| grab.fraction)
     }
 
-    fn grab(&mut self, handle: Handle, at: Point<Pixels>, cx: &mut Context<Self>) {
-        let Some(fraction) = self.rail_of(handle).fraction_at(at) else {
+    fn grab(
+        &mut self,
+        handle: Handle,
+        at: Point<Pixels>,
+        modifiers: Modifiers,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(fraction) = self
+            .rail_of(handle)
+            .fraction_at(at)
+            .map(|fraction| snapped_by(handle, modifiers, fraction))
+        else {
             return;
         };
         let track = self.player.read(cx).state().current.map(|track| track.id);
@@ -130,11 +151,15 @@ impl RootView {
         self.dragged(handle, fraction, cx);
     }
 
-    fn drag(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
+    fn drag(&mut self, at: Point<Pixels>, modifiers: Modifiers, cx: &mut Context<Self>) {
         let Some(grab) = self.grabbed else {
             return;
         };
-        let Some(fraction) = self.rail_of(grab.handle).fraction_at(at) else {
+        let Some(fraction) = self
+            .rail_of(grab.handle)
+            .fraction_at(at)
+            .map(|fraction| snapped_by(grab.handle, modifiers, fraction))
+        else {
             return;
         };
         if fraction == grab.fraction {
@@ -179,7 +204,7 @@ impl RootView {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
                 match event.pressed_button {
                     Some(MouseButton::Left) => {
-                        this.drag(event.position, cx);
+                        this.drag(event.position, event.modifiers, cx);
                         this.drag_a_band(event.position, cx);
                     }
                     _ => this.let_everything_go(cx),
@@ -301,7 +326,7 @@ impl RootView {
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     cx.stop_propagation();
                     window.prevent_default();
-                    this.grab(handle, event.position, cx);
+                    this.grab(handle, event.position, event.modifiers, cx);
                 }),
             )
             .child(
@@ -530,6 +555,29 @@ mod tests {
             assert_eq!(halved % 2.0, 0.0, "{wide} is drawn at {halved}");
             assert!((halved - wide).abs() <= 1.0);
         }
+    }
+
+    #[test]
+    fn a_volume_dragged_with_shift_lands_on_a_step_of_five() {
+        let shift = Modifiers::shift();
+
+        for (at, lands) in [
+            (0.0, 0.0),
+            (0.02, 0.0),
+            (0.03, 0.05),
+            (0.52, 0.5),
+            (0.98, 1.0),
+        ] {
+            let snapped = snapped_by(Handle::Volume, shift, at);
+
+            assert!((snapped - lands).abs() < 1e-6, "{at} landed on {snapped}");
+        }
+    }
+
+    #[test]
+    fn a_volume_dragged_without_shift_and_a_seek_with_it_stay_where_they_are() {
+        assert_eq!(snapped_by(Handle::Volume, Modifiers::none(), 0.337), 0.337);
+        assert_eq!(snapped_by(Handle::Seek, Modifiers::shift(), 0.337), 0.337);
     }
 
     #[test]

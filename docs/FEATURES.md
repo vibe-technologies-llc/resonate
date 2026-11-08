@@ -69,7 +69,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   here to hear it on, so it would ship as Windows did, cross-checked and never played
 
 ## Playback and output
-- [S · 0.7.0] Snap the volume slider to steps of 5, for instance by a right click or a modifier on the drag
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
