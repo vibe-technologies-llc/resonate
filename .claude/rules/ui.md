@@ -1554,11 +1554,18 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 - **A song in the queue is taken out from its menu wherever listed**: *Take out of the queue* while
   `RootView::is_in_the_queue` finds a row with the same location and span; `take_out_of_the_queue`
   drops every such row through `drop_rows`.
-- **An ISRC is typed into a sheet of its own.** *Give it an ISRC…* on a track's menu sets
-  `RootView::isrc_for`; `isrc_sheet` (`Sheet::Typing`, `ISRC_PANEL`) holds the `typed_isrc` field,
-  checked by `Isrc::new` on enter or *Give it*, a refusal a toast and the sheet kept open; escape and
-  *Cancel* leave it. A landed code starts a lookup that asks the track first
-  (`LibraryModel::give_an_isrc`); *Enrich this song* is `look_up_a_track`.
+- **A song is matched to a recording in a sheet of its own** (`views/matching.rs`). *Identify ›
+  Match to a recording…* on a track's menu opens `matching_sheet` (`Sheet::Typing`,
+  `MATCHING_PANEL`) on a `Matching` for the track: the `typed_words` field opens holding the song's
+  title and is asked at once, again on enter or *Search*, through `LibraryModel::recordings_like`
+  (`Library::recordings_like`, a near search the strict rule does not weigh), a later answer
+  replacing an earlier only where it is the last asked (`Likely`: asking, found, unreached, Online
+  off). Each recording found is a row (title, credit, length, the release it is on,
+  `likely-recording-<n>`); a press is `LibraryModel::take_recording` and closes the sheet. Below,
+  *Or give it an ISRC*: the `typed_isrc` field, checked by `Isrc::new` on enter or *Give it*, a
+  refusal a toast and the sheet kept open, a landed code starting a lookup that asks the track first
+  (`give_an_isrc`). Escape, a press outside and *Cancel* leave it
+  (`a_song_matched_to_a_recording_its_name_only_nearly_spells_takes_that_recording`).
 - **A song leaves the disk only through a dialogue saying where it goes.** *Delete from
   disk…* (`Icon::Delete`) = `RootView::ask_to_delete` with a `Deleting` (track, title, artist, whether a
   cut); `deletion_sheet` (`theme::confirm_width`) names the song, says the file goes to the trash and the

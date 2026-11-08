@@ -120,6 +120,8 @@ const NO_LINK_TO_SHARE_ANY: &str = "There's no link for any of those tracks";
 const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
 const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
 const PLACED_ON: &str = "Placed the track on that release";
+const TOOK_THE_RECORDING: &str = "The song is that recording now";
+const NOT_TAKEN: &str = "MusicBrainz no longer answers for that recording";
 const GAVE_THE_ISRC: &str = "Gave the track that ISRC, looking it up by the code";
 const ALREADY_ON_A_RELEASE: &str =
     "That track is already on a release; Place on a release… moves it to another";
@@ -410,6 +412,7 @@ enum Change {
     ForgetTheMatch,
     TakePressing,
     PlaceOn,
+    TakeRecording,
     GiveIsrc,
     LookUp,
     ReadTheRest,
@@ -439,6 +442,7 @@ impl Change {
             Self::ForgetTheMatch => "forget that match",
             Self::TakePressing => "take that pressing",
             Self::PlaceOn => "place the track on that release",
+            Self::TakeRecording => "treat the song as that recording",
             Self::GiveIsrc => "give the track that ISRC",
             Self::LookUp => "look the track up",
             Self::ReadTheRest => "read the rest of the discography",
@@ -2887,6 +2891,43 @@ impl LibraryModel {
                 library
                     .place_on(track, reference.as_ref(), &recording, &release)
                     .map(|placed| placed.then(|| PLACED_ON.to_owned()))
+            },
+            cx,
+        );
+    }
+
+    pub fn recordings_like(
+        &self,
+        track: TrackId,
+        words: String,
+        cx: &mut Context<Self>,
+    ) -> Option<Task<resonate_library::Result<Vec<Recording>>>> {
+        let reference = self.reference.clone().filter(|_| self.online)?;
+        let library = Arc::clone(&self.library);
+        Some(
+            cx.background_executor()
+                .spawn(async move { library.recordings_like(track, reference.as_ref(), &words) }),
+        )
+    }
+
+    pub fn take_recording(
+        &mut self,
+        track: TrackId,
+        recording: Arc<Recording>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+            return;
+        };
+        self.edited(
+            Wanted::Everything,
+            Change::TakeRecording,
+            move |library| {
+                library
+                    .take_recording(track, reference.as_ref(), &recording)
+                    .map(|taken| {
+                        Some(if taken { TOOK_THE_RECORDING } else { NOT_TAKEN }.to_owned())
+                    })
             },
             cx,
         );

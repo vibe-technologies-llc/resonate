@@ -16,6 +16,7 @@ pub(crate) mod kit;
 mod listen;
 mod listing;
 mod lyrics;
+mod matching;
 pub(crate) mod menu;
 mod missing;
 mod mosaic;

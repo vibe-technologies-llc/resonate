@@ -893,6 +893,15 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
   under an album → the album then gets that release via `take_pressing`. A release the recording is
   not on → `false`, nothing written. The track menu offers *Place on a release…* wherever the
   reference is reachable.
+- **The listener can treat a track as a recording a near search found.**
+  `Library::recordings_like` asks `find_recording` in words, by the typed words (the track's title
+  where none are typed, its artist only while the words are the title), with no length, and answers
+  the best `LIKELY_RECORDINGS_OFFERED` (8) by score, weighed by no strict rule: the listener
+  chooses, so nothing is a guess. `Library::take_recording` tells the chosen recording where it
+  sits, lands it under `Certainty::Exactly` (the listener's choice corrects the names the file
+  carried) on the first release `in_the_order_worth_offering`, and gives the track's album that
+  pressing as `place_on` does
+  (`a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_chosen`).
 - **The listener can give a track an ISRC, and ask about one track at once.** `Library::set_isrc`
   writes `tracks.isrc` (the upsert's `isrc` arm keeps it across rescans of an unchanged file) and
   clears `asked`, `asks`, `refusals`, so the next lookup asks the track by its code.

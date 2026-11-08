@@ -5819,6 +5819,38 @@ impl Library {
         enrich::recordings_to_place_on(reference, &asked)
     }
 
+    pub fn recordings_like(
+        &self,
+        track: TrackId,
+        reference: &dyn Reference,
+        words: &str,
+    ) -> Result<Vec<Recording>> {
+        let Some(asked) = self.track_as_heard(track)? else {
+            return Ok(Vec::new());
+        };
+        enrich::recordings_like(reference, &asked, words)
+    }
+
+    pub fn take_recording(
+        &self,
+        track: TrackId,
+        reference: &dyn Reference,
+        chosen: &Recording,
+    ) -> Result<bool> {
+        let recording = enrich::told_where_it_sits(reference, chosen.clone())?;
+        let release = crate::elsewhere::in_the_order_worth_offering(&recording.releases)
+            .first()
+            .map(|release| (*release).clone());
+
+        self.landed_as(
+            track,
+            reference,
+            &recording,
+            Certainty::Exactly,
+            release.as_ref(),
+        )
+    }
+
     pub fn place_on(
         &self,
         track: TrackId,
@@ -5833,7 +5865,22 @@ impl Library {
         else {
             return Ok(false);
         };
-        self.land_recording(track, recording, Certainty::Nearly, Some(chosen))?;
+
+        self.landed_as(track, reference, recording, Certainty::Nearly, Some(chosen))
+    }
+
+    fn landed_as(
+        &self,
+        track: TrackId,
+        reference: &dyn Reference,
+        recording: &Recording,
+        certainty: Certainty,
+        release: Option<&RecordingRelease>,
+    ) -> Result<bool> {
+        self.land_recording(track, recording, certainty, release)?;
+        let Some(release) = release else {
+            return Ok(true);
+        };
         let album = self.inner.read(|connection| {
             connection
                 .query_row(
@@ -5845,7 +5892,7 @@ impl Library {
                 .map_err(|source| Error::store(StoreOp::Query, source))
         })?;
         match album.flatten() {
-            Some(album) => self.take_pressing(AlbumId::new(album as u64)?, reference, release),
+            Some(album) => self.take_pressing(AlbumId::new(album as u64)?, reference, &release.id),
             None => Ok(true),
         }
     }

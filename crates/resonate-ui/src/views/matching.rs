@@ -1,0 +1,444 @@
+use std::sync::Arc;
+
+use gpui::{
+    BoxShadow, Context, Div, Entity, FontWeight, MouseButton, SharedString, Stateful, Window, div,
+    point, prelude::*, px, rgb, rgba,
+};
+use resonate_core::{Isrc, TrackId};
+use resonate_library::{Recording, in_the_order_worth_offering};
+
+use crate::{
+    Notice, format,
+    icons::Icon,
+    motion, theme,
+    views::{
+        field::{Field, Submitted},
+        kit,
+        root::RootView,
+        sheets,
+        spoken::Spoken as _,
+    },
+};
+
+pub(crate) const MATCH_THE_SONG: &str = "Match to a recording…";
+
+const MATCHING_LABEL: &str = "Match the song to a recording";
+
+const MATCHING_SAYING: &str = "Choose the recording it is on MusicBrainz, and the song takes its \
+                               names and its place on a release. Or give it an ISRC for the next \
+                               lookup to ask by.";
+
+const WORDS_PLACEHOLDER: &str = "The song's name, then press enter";
+
+const ISRC_PLACEHOLDER: &str = "Twelve characters, like GBAYE7100389, then press enter";
+
+const ISRC_HEADING: &str = "Or give it an ISRC";
+
+const NOT_AN_ISRC: &str = "That is not an ISRC: it is twelve letters and digits";
+
+const LEAVE_HINT: &str = keyed!("Leave the song as it is", key!(leave));
+
+const SEARCH_HINT: &str = "Ask MusicBrainz for recordings called this";
+
+const GIVE_THE_ISRC_HINT: &str = "Give the song this ISRC and look it up by the code";
+
+const TAKE_HINT: &str = "Treat the song as this recording";
+
+const ASKING: &str = "Asking MusicBrainz…";
+
+const NOTHING_LIKE_IT: &str = "Nothing on MusicBrainz is called that. Try fewer or other words.";
+
+const UNREACHED: &str = "MusicBrainz could not be reached.";
+
+const OFFLINE: &str = "Turn Online on in the settings to search MusicBrainz.";
+
+const LIKELY_LIST_AT_MOST: f32 = 280.0;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) enum Likely {
+    #[default]
+    Unasked,
+    Offline,
+    Asking,
+    Found(Arc<[Arc<Recording>]>),
+    Unreached,
+}
+
+pub(crate) struct Matching {
+    pub(crate) track: TrackId,
+    likely: Likely,
+    asked: u64,
+}
+
+pub(crate) fn matching_fields(
+    window: &mut Window,
+    cx: &mut Context<RootView>,
+) -> (Entity<Field>, Entity<Field>) {
+    let words = cx.new(|cx| Field::new(WORDS_PLACEHOLDER, window, cx));
+    cx.subscribe_in(&words, window, |this, _, _: &Submitted, _, cx| {
+        this.look_for_likely_recordings(cx);
+    })
+    .detach();
+    let isrc = cx.new(|cx| Field::new(ISRC_PLACEHOLDER, window, cx));
+    cx.subscribe_in(&isrc, window, |this, _, _: &Submitted, window, cx| {
+        this.isrc_given(window, cx);
+    })
+    .detach();
+
+    (words, isrc)
+}
+
+fn credit_of(recording: &Recording) -> String {
+    recording
+        .credit
+        .iter()
+        .map(|credit| format!("{}{}", credit.name, credit.joined_by))
+        .collect()
+}
+
+fn likely_line(recording: &Recording) -> String {
+    let release = in_the_order_worth_offering(&recording.releases)
+        .first()
+        .map(
+            |release| match release.date.as_deref().and_then(|date| date.get(..4)) {
+                Some(year) => format!("{} ({year})", release.title),
+                None => release.title.clone(),
+            },
+        );
+
+    [
+        Some(recording.title.clone()),
+        Some(credit_of(recording)).filter(|credit| !credit.is_empty()),
+        recording.length.map(format::spanned),
+        release,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+impl RootView {
+    pub(crate) fn ask_to_match(
+        &mut self,
+        track: TrackId,
+        title: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_the_menu(cx);
+        self.matching = Some(Matching {
+            track,
+            likely: Likely::Unasked,
+            asked: 0,
+        });
+        self.typed_isrc.update(cx, |typed, cx| typed.clear(cx));
+        self.typed_words.update(cx, |typed, cx| {
+            typed.open_with(title.to_string(), cx);
+            typed.take_focus(window, cx);
+        });
+        self.look_for_likely_recordings(cx);
+    }
+
+    pub(crate) fn leave_the_matching(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.matching = None;
+        self.typed_isrc.update(cx, |typed, cx| typed.clear(cx));
+        self.typed_words.update(cx, |typed, cx| typed.clear(cx));
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    fn look_for_likely_recordings(&mut self, cx: &mut Context<Self>) {
+        let Some(matching) = self.matching.as_mut() else {
+            return;
+        };
+        let track = matching.track;
+        let words = self.typed_words.read(cx).text().trim().to_owned();
+        let asking = self
+            .library
+            .update(cx, |library, cx| library.recordings_like(track, words, cx));
+        let Some(asking) = asking else {
+            if let Some(matching) = self.matching.as_mut() {
+                matching.likely = Likely::Offline;
+            }
+            cx.notify();
+            return;
+        };
+        let Some(matching) = self.matching.as_mut() else {
+            return;
+        };
+        matching.asked += 1;
+        matching.likely = Likely::Asking;
+        let asked = matching.asked;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let answer = asking.await;
+            let _ = this.update(cx, |this, cx| {
+                let Some(matching) = this
+                    .matching
+                    .as_mut()
+                    .filter(|matching| matching.track == track && matching.asked == asked)
+                else {
+                    return;
+                };
+                matching.likely = match answer {
+                    Ok(found) => Likely::Found(found.into_iter().map(Arc::new).collect()),
+                    Err(error) => {
+                        tracing::warn!(%error, "MusicBrainz was not asked for recordings like the song");
+                        Likely::Unreached
+                    }
+                };
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn take_the_likely(
+        &mut self,
+        recording: Arc<Recording>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(track) = self.matching.as_ref().map(|matching| matching.track) else {
+            return;
+        };
+        self.library.update(cx, |library, cx| {
+            library.take_recording(track, recording, cx)
+        });
+        self.leave_the_matching(window, cx);
+    }
+
+    fn isrc_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(track) = self.matching.as_ref().map(|matching| matching.track) else {
+            return;
+        };
+        let typed = self.typed_isrc.read(cx).text().trim().to_owned();
+        let Ok(isrc) = Isrc::new(&typed) else {
+            self.report(Notice::Trouble(NOT_AN_ISRC.to_owned()), cx);
+            return;
+        };
+        self.library
+            .update(cx, |library, cx| library.give_an_isrc(track, isrc, cx));
+        self.leave_the_matching(window, cx);
+    }
+
+    fn likely_rows(&self, likely: &Likely, cx: &mut Context<Self>) -> Div {
+        let said = |words: &'static str| {
+            div()
+                .id(words)
+                .read_plainly(words)
+                .py_2()
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::muted()))
+                .child(words)
+        };
+
+        let rows = div().flex().flex_col().gap_1();
+        match likely {
+            Likely::Unasked => rows,
+            Likely::Offline => rows.child(said(OFFLINE)),
+            Likely::Asking => rows.child(said(ASKING)),
+            Likely::Unreached => rows.child(said(UNREACHED)),
+            Likely::Found(found) if found.is_empty() => rows.child(said(NOTHING_LIKE_IT)),
+            Likely::Found(found) => {
+                rows.children(found.iter().enumerate().map(|(at, recording)| {
+                    let taken = Arc::clone(recording);
+
+                    self.in_the_pane_ring(
+                        kit::button(
+                            ("likely-recording", at),
+                            Some(Icon::Disc),
+                            likely_line(recording),
+                            TAKE_HINT,
+                            kit::Tone::Ghost,
+                        )
+                        .w_full()
+                        .justify_start(),
+                        move |this, window, cx| {
+                            this.take_the_likely(Arc::clone(&taken), window, cx)
+                        },
+                        cx,
+                    )
+                }))
+            }
+        }
+    }
+
+    fn typed_into(field: &Entity<Field>, id: &'static str) -> Stateful<Div> {
+        div()
+            .id(id)
+            .flex()
+            .flex_1()
+            .items_center()
+            .gap_2()
+            .h(theme::width(theme::search_height()))
+            .px_3()
+            .rounded_md()
+            .bg(rgb(theme::background()))
+            .border_1()
+            .border_color(theme::tinted(theme::accent(), 0x99))
+            .text_size(px(theme::text_sm()))
+            .cursor_text()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(field.clone())
+            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+    }
+
+    pub(crate) fn matching_sheet(&self, cx: &mut Context<Self>) -> Div {
+        let likely = self
+            .matching
+            .as_ref()
+            .map(|matching| matching.likely.clone())
+            .unwrap_or_default();
+
+        let heading = div()
+            .id("matching-sheet-asking")
+            .headed(2, MATCHING_LABEL)
+            .text_size(px(theme::text_lg()))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(rgb(theme::text()))
+            .child(MATCHING_LABEL);
+        let saying = div()
+            .id("matching-sheet-saying")
+            .read_plainly(MATCHING_SAYING)
+            .text_size(px(theme::text_sm()))
+            .text_color(rgb(theme::muted()))
+            .child(MATCHING_SAYING);
+        let searching = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(Self::typed_into(&self.typed_words, "matching-words"))
+            .child(self.in_the_pane_ring(
+                kit::button(
+                    "search-for-likely-recordings",
+                    Some(Icon::Search),
+                    "Search",
+                    SEARCH_HINT,
+                    kit::Tone::Outlined,
+                ),
+                |this, _, cx| this.look_for_likely_recordings(cx),
+                cx,
+            ));
+        let found = div()
+            .id("likely-recordings")
+            .max_h(px(LIKELY_LIST_AT_MOST))
+            .overflow_y_scroll()
+            .child(self.likely_rows(&likely, cx));
+        let isrc_heading = div()
+            .id("matching-isrc-heading")
+            .headed(3, ISRC_HEADING)
+            .pt_2()
+            .text_size(px(theme::text_sm()))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(rgb(theme::text()))
+            .child(ISRC_HEADING);
+        let coding = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(Self::typed_into(&self.typed_isrc, "isrc-field"))
+            .child(self.in_the_pane_ring(
+                kit::button(
+                    "give-the-isrc",
+                    Some(Icon::Check),
+                    "Give it",
+                    GIVE_THE_ISRC_HINT,
+                    kit::Tone::Outlined,
+                ),
+                |this, window, cx| this.isrc_given(window, cx),
+                cx,
+            ));
+        let leaving = div().flex().justify_end().child(self.in_the_pane_ring(
+            kit::button(
+                "leave-the-matching",
+                None,
+                "Cancel",
+                LEAVE_HINT,
+                kit::Tone::Outlined,
+            ),
+            |this, window, cx| this.leave_the_matching(window, cx),
+            cx,
+        ));
+
+        let card = div()
+            .id("matching-sheet")
+            .dialog(MATCHING_LABEL)
+            .track_focus(&self.sheet_panels.holding(sheets::MATCHING_PANEL, cx))
+            .flex()
+            .flex_col()
+            .gap_3()
+            .w(px(theme::confirm_width() * 1.4))
+            .max_w_full()
+            .p_5()
+            .rounded_xl()
+            .bg(rgb(theme::surface()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .shadow(vec![BoxShadow {
+                color: theme::shadow(0.5),
+                offset: point(px(0.0), px(16.0)),
+                blur_radius: px(48.0),
+                spread_radius: px(0.0),
+                inset: false,
+            }])
+            .on_mouse_down_out(
+                cx.listener(|this, _, window, cx| this.leave_the_matching(window, cx)),
+            )
+            .child(heading)
+            .child(saying)
+            .child(searching)
+            .child(found)
+            .child(isrc_heading)
+            .child(coding)
+            .child(leaving);
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(theme::scrim()))
+            .occlude()
+            .child(motion::lifted_in(card, "matching-sheet-arrives"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_core::Mbid;
+    use resonate_library::{Credit, Issued, RecordingRelease};
+
+    use super::*;
+
+    #[test]
+    fn a_likely_recording_says_its_title_credit_length_and_the_release_it_is_on() {
+        let recording = Recording {
+            id: Mbid::new("b1a9c0de-1111-4222-8333-444455556666").expect("an mbid"),
+            title: "Echoes".to_owned(),
+            credit: vec![Credit {
+                name: "Pink Floyd".to_owned(),
+                joined_by: String::new(),
+                mbid: None,
+            }],
+            length: Some(std::time::Duration::from_secs(1411)),
+            isrcs: Vec::new(),
+            releases: vec![RecordingRelease {
+                id: Mbid::new("c2b8d1ef-2222-4333-8444-555566667777").expect("an mbid"),
+                title: "Meddle".to_owned(),
+                date: Some("1971-10-30".to_owned()),
+                disc: Some(1),
+                position: Some(6),
+                issued: Issued::default(),
+            }],
+        };
+
+        assert_eq!(
+            likely_line(&recording),
+            "Echoes · Pink Floyd · 23:31 · Meddle (1971)"
+        );
+    }
+}

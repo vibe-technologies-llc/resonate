@@ -33,6 +33,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
         listing::{self, Pictured},
+        matching,
         menu::{self, AtTheReach, Called, Menu},
         missing::MissingShows,
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
@@ -141,7 +142,6 @@ const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
 
 const RELEASES_OFFERED: usize = 10;
 const PLACE_ON: &str = "Place on a release…";
-const GIVE_AN_ISRC: &str = "Give it an ISRC…";
 const LOOK_IT_UP: &str = "Enrich this song";
 const READ_THE_REST: &str = "Read the rest";
 const READ_THE_REST_HINT: &str =
@@ -1319,6 +1319,7 @@ impl RootView {
                 });
 
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
+                let matched = SharedString::from(track.title.clone());
                 let deleting = Deleting::of(track);
                 let in_the_queue = this
                     .is_in_the_queue(&track.location, track.span, cx)
@@ -1350,9 +1351,13 @@ impl RootView {
                                         library.look_up_a_track(track, cx)
                                     });
                                 })
-                                .does(Icon::Rename, GIVE_AN_ISRC, move |this, window, cx| {
-                                    this.ask_for_an_isrc(track, window, cx);
-                                })
+                                .does(
+                                    Icon::Rename,
+                                    matching::MATCH_THE_SONG,
+                                    move |this, window, cx| {
+                                        this.ask_to_match(track, matched.clone(), window, cx);
+                                    },
+                                )
                                 .does(
                                     Icon::Disc,
                                     PLACE_ON,
@@ -4567,8 +4572,14 @@ mod tests {
                     .collect())
             }
 
-            fn find_recording(&self, _: &RecordingAsked) -> Result<Vec<RecordingMatch>> {
-                Ok(Vec::new())
+            fn find_recording(&self, asked: &RecordingAsked) -> Result<Vec<RecordingMatch>> {
+                Ok((asked.title == HEROES_MISSPELT)
+                    .then(|| RecordingMatch {
+                        score: 58,
+                        ..heroes_tonight()
+                    })
+                    .into_iter()
+                    .collect())
             }
 
             fn find_songs(&self, asked: &SongsAsked) -> Result<Vec<RecordingMatch>> {
@@ -4921,6 +4932,64 @@ mod tests {
                     self.file.clone(),
                 )))
             }
+        }
+
+        const HEROES_MISSPELT: &str = "Heros tonite";
+
+        #[gpui::test]
+        fn a_song_matched_to_a_recording_its_name_only_nearly_spells_takes_that_recording(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            folder.tone(&format!("{HEROES_MISSPELT}.wav"), 1);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let track = library
+                .tracks(&TrackQuery::default())
+                .expect("the tracks read")[0]
+                .id;
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+
+            let root = driven.root.clone();
+            driven.cx.update(|window, cx| {
+                root.update(cx, |root, cx| {
+                    root.ask_to_match(track, HEROES_MISSPELT.into(), window, cx);
+                });
+            });
+            assert!(
+                driven.read(|root, _| root.matching.is_some()),
+                "the matching sheet did not open"
+            );
+            driven.settle();
+            driven.click("likely-recording-0");
+            assert!(
+                driven.read(|root, _| root.matching.is_none()),
+                "the sheet stayed open once a recording was chosen"
+            );
+
+            driven.until(|_, _| {
+                library
+                    .tracks(&TrackQuery::default())
+                    .expect("the tracks read")
+                    .first()
+                    .is_some_and(|held| held.title == "Heroes Tonight")
+            });
+            let taken = &library
+                .tracks(&TrackQuery::default())
+                .expect("the tracks read")[0];
+            assert_eq!(taken.artist.as_deref(), Some("Janji & Johnning"));
+            assert_eq!(
+                library
+                    .track_to_ask(taken.id)
+                    .expect("the track read")
+                    .and_then(|asked| asked.mbid),
+                Some(mbid(HEROES_TONIGHT)),
+                "the song was not given the recording chosen"
+            );
         }
 
         #[gpui::test]

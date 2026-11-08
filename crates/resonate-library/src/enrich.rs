@@ -1497,6 +1497,39 @@ pub(crate) fn recordings_to_place_on(
         .collect()
 }
 
+pub const LIKELY_RECORDINGS_OFFERED: usize = 8;
+
+pub(crate) fn recordings_like(
+    reference: &dyn Reference,
+    track: &TrackToAsk,
+    words: &str,
+) -> Result<Vec<Recording>> {
+    let typed = words.trim();
+    let named_as_the_track = typed.is_empty() || typed == track.title;
+    let asked_with = named_as_the_track.then(|| asked_with(track)).flatten();
+    let asked = RecordingAsked {
+        title: if typed.is_empty() {
+            track.title.clone()
+        } else {
+            typed.to_owned()
+        },
+        artist: asked_with.map(|(artist, _)| artist.to_owned()),
+        artist_mbid: asked_with.and_then(|(_, mbid)| mbid.cloned()),
+        release: None,
+        length: None,
+        wording: Wording::Words,
+    };
+
+    let mut found = reference.find_recording(&asked)?;
+    found.sort_by_key(|found| std::cmp::Reverse(found.score));
+    found.truncate(LIKELY_RECORDINGS_OFFERED);
+
+    Ok(found
+        .into_iter()
+        .map(RecordingMatch::into_recording)
+        .collect())
+}
+
 fn takes_of_the_code(recordings: Vec<Recording>, track: &TrackToAsk) -> Vec<Recording> {
     if let [only] = recordings.as_slice() {
         return match the_only_take(only, track) {
@@ -1531,7 +1564,7 @@ fn searched_strictly(reference: &dyn Reference, track: &TrackToAsk) -> Result<Op
     Ok(None)
 }
 
-fn told_where_it_sits(reference: &dyn Reference, named: Recording) -> Result<Recording> {
+pub(crate) fn told_where_it_sits(reference: &dyn Reference, named: Recording) -> Result<Recording> {
     if !needs_its_releases_told(&named) {
         return Ok(named);
     }

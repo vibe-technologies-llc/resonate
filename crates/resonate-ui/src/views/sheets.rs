@@ -10,7 +10,7 @@ pub(crate) const DELETE_PANEL: &str = "delete-sheet-panel";
 
 pub(crate) const LISTEN_PANEL: &str = "listen-sheet-panel";
 
-pub(crate) const ISRC_PANEL: &str = "isrc-sheet-panel";
+pub(crate) const MATCHING_PANEL: &str = "matching-sheet-panel";
 
 pub(crate) const PICKER_PANEL: &str = "playlist-picker-panel-focus";
 
@@ -62,7 +62,7 @@ impl Sheet {
             Self::Listening => Some(LISTEN_PANEL),
             Self::Magnifying => Some(MAGNIFIER_PANEL),
             Self::Naming => Some(PICKER_PANEL),
-            Self::Typing => Some(ISRC_PANEL),
+            Self::Typing => Some(MATCHING_PANEL),
             Self::Recording => Some(RECORD_PANEL),
             Self::Wrapped => Some(WRAPPED_PANEL),
             Self::Sharing => Some(SHARING_PANEL),
@@ -156,7 +156,7 @@ impl RootView {
             Some(Sheet::Listening)
         } else if self.magnified.is_some() {
             Some(Sheet::Magnifying)
-        } else if self.isrc_for.is_some() {
+        } else if self.matching.is_some() {
             Some(Sheet::Typing)
         } else if self.adding.is_some() {
             Some(Sheet::Naming)

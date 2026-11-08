@@ -15014,6 +15014,66 @@ fn a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_st
 }
 
 #[test]
+fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_chosen() -> Result<()>
+{
+    let (_tree, library, _, file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "1 of these")
+            .text(ARTIST, "Somebody Else"),
+    )?;
+
+    let near = RecordingMatch {
+        score: 61,
+        ..recording_match(RECORDING, "One of These Days")
+    };
+    let far = RecordingMatch {
+        score: 34,
+        ..recording_match(ANOTHER_RECORDING, "One of These Nights")
+    };
+    let fake = Fake::new(Canned {
+        found_recordings_in_words: vec![far, near],
+        recordings: vec![orbits_recording(
+            RECORDING,
+            "One of These Days",
+            CODE,
+            on_orbits(2),
+        )],
+        ..Canned::default()
+    });
+    let track = library
+        .track_at(&file, None)?
+        .expect("the catalog holds the track");
+
+    let offered = library.recordings_like(track.id, &fake, "One of These Days")?;
+    let ids: Vec<Mbid> = offered
+        .iter()
+        .map(|recording| recording.id.clone())
+        .collect();
+    assert_eq!(
+        ids,
+        [mbid(RECORDING), mbid(ANOTHER_RECORDING)],
+        "a soft match below the strict rule was not offered, or not best first"
+    );
+
+    let [chosen, _] = offered.as_slice() else {
+        panic!("two recordings were offered");
+    };
+    assert!(library.take_recording(track.id, &fake, chosen)?);
+
+    let taken = library
+        .track_at(&file, None)?
+        .expect("the catalog still holds the track");
+    assert_eq!(taken.title, "One of These Days");
+    assert_eq!(taken.artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(
+        taken.track_number,
+        Some(2),
+        "the recording chosen was not placed on a release it is on"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<()> {
     let (_tree, library, database, file) = scanned_lone(
         Wav::new()
