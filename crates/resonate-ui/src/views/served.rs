@@ -1,8 +1,8 @@
 use std::{ops::Range, sync::Arc};
 
 use gpui::{
-    AnyElement, Context, Div, SharedString, Stateful, Window, div, prelude::*, px, rgb,
-    uniform_list,
+    AnyElement, Context, Div, Pixels, Point, SharedString, Stateful, Window, div, prelude::*, px,
+    rgb, uniform_list,
 };
 use resonate_core::MediaLocation;
 use resonate_engine::{Command, Placement, QueueItem, Unclaimed};
@@ -18,6 +18,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis as _, Tone},
         listing,
+        menu::Menu,
         root::{RootView, framed_cover, row},
         scrollbar::Scrollbars,
         spoken::{self, Spoken as _},
@@ -55,6 +56,10 @@ const FAVOURITES: &str = "Favourites";
 const SEARCH_FIRST: &str = "Search it above for an artist, an album or a song.";
 
 const CHOOSE_HINT: &str = "Browse this service";
+
+const CHOOSE_AMONG_HINT: &str = "Choose which service to browse";
+
+const SEGMENTS_AT_MOST: usize = 3;
 
 const NOTHING_FOUND: &str = "The server found nothing for that.";
 
@@ -227,6 +232,10 @@ impl RootView {
     }
 
     fn service_chooser(&self, titles: &[String], chosen: usize, cx: &mut Context<Self>) -> Div {
+        if titles.len() > SEGMENTS_AT_MOST {
+            return self.service_pick(titles, chosen, cx);
+        }
+
         titles
             .iter()
             .enumerate()
@@ -235,15 +244,31 @@ impl RootView {
                     self.in_the_pane_ring(
                         kit::segment(("served-service", index), title.clone(), index == chosen)
                             .names(CHOOSE_HINT),
-                        move |this, _, cx| {
-                            this.server
-                                .update(cx, |server, cx| server.choose(index, cx));
-                            this.server_search.update(cx, |field, cx| field.clear(cx));
-                        },
+                        move |this, _, cx| this.choose_a_service(index, cx),
                         cx,
                     ),
                 )
             })
+    }
+
+    fn service_pick(&self, titles: &[String], chosen: usize, cx: &mut Context<Self>) -> Div {
+        let offered = titles.to_vec();
+        let shown = titles.get(chosen).cloned().unwrap_or_default();
+
+        div().flex().flex_none().child(self.in_the_pane_ring_at(
+            kit::pick("served-service", shown, CHOOSE_AMONG_HINT),
+            move |this, at, cx| {
+                let menu = services_menu(at, &offered, chosen);
+                this.open_a_menu(menu, cx);
+            },
+            cx,
+        ))
+    }
+
+    fn choose_a_service(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.server
+            .update(cx, |server, cx| server.choose(index, cx));
+        self.server_search.update(cx, |field, cx| field.clear(cx));
     }
 
     fn server_search_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -790,6 +815,17 @@ fn queued_words(rows: usize, at: Placement, play: bool) -> String {
         (false, Placement::Next) => format!("{songs} to play next"),
         (false, Placement::Queued | Placement::At(_)) => format!("{songs} added to the queue"),
     }
+}
+
+fn services_menu(at: Point<Pixels>, titles: &[String], chosen: usize) -> Menu {
+    titles
+        .iter()
+        .enumerate()
+        .fold(Menu::at(at), |menu, (index, title)| {
+            menu.chooses(title.clone(), index == chosen, move |this, _, cx| {
+                this.choose_a_service(index, cx);
+            })
+        })
 }
 
 #[cfg(test)]
@@ -1665,5 +1701,27 @@ mod tests {
             named,
             (true, true, vec!["Subsonic".to_owned(), "TIDAL".to_owned()])
         );
+    }
+
+    #[gpui::test]
+    fn more_services_than_fit_a_bar_are_chosen_from_a_menu(cx: &mut TestAppContext) {
+        let mut driven = Driven::serving(
+            cx,
+            vec![
+                Arc::new(Held),
+                Arc::new(Searched),
+                Arc::new(Favoured),
+                Arc::new(NotPlayed::default()),
+            ],
+            an_account(),
+        );
+        open_the_server(&mut driven);
+        driven.until(|root, cx| root.server.read(cx).titles().len() == 4);
+
+        driven.click("served-service");
+        driven.click("menu-entry-1");
+        driven.until(|root, cx| root.server.read(cx).chosen() == 1);
+
+        assert!(driven.read(|root, _| root.menu.is_none()));
     }
 }

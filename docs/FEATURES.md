@@ -95,7 +95,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   has no way to take a picture back out
 
 ## Providers and network
-- [M · 0.7.0] Redesign the mode/service selector on the Services tab
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
   playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
   a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;

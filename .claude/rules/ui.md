@@ -1418,7 +1418,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   does nothing unless the services moved (the same `Arc`s in the same order); moved services start
   at the artists again on the service chosen before where it is still set, else the first, and
   forget the covers. **With several services a chooser heads the pane**: a `kit::segmented` of
-  their titles (`served-service-<n>`, `ServerModel::choose`), the first page's eyebrow the chosen
+  their titles (`served-service-<n>`) up to `SEGMENTS_AT_MOST` (3), else a `kit::pick` (`served-service`) of the
+  chosen title opening a `Menu` of them (`services_menu`, `more_services_than_fit_a_bar_are_chosen_from_a_menu`), both
+  ending in `RootView::choose_a_service` (`ServerModel::choose`), the first page's eyebrow the chosen
   one's title; a choice starts at its artists and clears the search. **The first page is
   `Serves::first_page`** (`artists` by default; the binary's adapter hands the service's own,
   `providers.md`): artists alone are listed bare, anything more under the search's headings
