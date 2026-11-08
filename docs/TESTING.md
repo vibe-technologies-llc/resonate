@@ -106,7 +106,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S · 0.6.1] `a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever` fails every run of
   the whole bus suite (`dbus-run-session -- cargo test -p resonate-mpris --test bus`, no
   `TrackMetadataChanged` within its patience) and passes alone: another test on the shared bus reaches
-  it. It failed the same way before 0.5.0's work
+  it. It failed the same way before 0.5.0's work. It fails on every run of the suite and passes with
+  `--test-threads=1`; `eprintln!` in the service's owed path shows nothing for its row, since a
+  helper thread spawned under another test captures that test's output, so a probe wants a file of
+  its own rather than stderr
 - [S · 0.6.1] `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` fails: at font scale 2 the Library
   tab's `Songs`, `Albums` and `Artists` are called clipped in their `PrimaryScrollableTabRow`, whose
   code had not moved since the sweep last passed. It fails on the emulator here; CI's Android job
