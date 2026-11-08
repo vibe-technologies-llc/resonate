@@ -107,9 +107,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the whole bus suite (`dbus-run-session -- cargo test -p resonate-mpris --test bus`, no
   `TrackMetadataChanged` within its patience) and passes alone: another test on the shared bus reaches
   it. It failed the same way before 0.5.0's work
-- [S · 0.6.1] `an_interpolated_kernel_stays_within_the_step_its_window_ends_on` fails on CI's runners and
-  locally with `RUSTFLAGS=` (Balanced, 44.1 kHz onto 47.993 kHz), so the job *Tests without the
-  window* is red: the bound depends on the target's floating-point code generation
 - [S · 0.6.1] `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` fails: at font scale 2 the Library
   tab's `Songs`, `Albums` and `Artists` are called clipped in their `PrimaryScrollableTabRow`, whose
   code had not moved since the sweep last passed. It fails on the emulator here; CI's Android job
