@@ -11,7 +11,9 @@ paths:
 
 - **Written once, read three times.** `cli.rs` is the clap derive alone; `build.rs` includes it to
   write man pages and completions (it links no workspace crate, so `cli.rs` names `std` and `clap`
-  only; `vocabulary.rs` maps `QualityArg` to `engine::Quality`). Flags mirroring a config key are
+  only; `vocabulary.rs` maps `QualityArg` to `engine::Quality`). It builds the command on a thread
+  of `GRAMMAR_STACK_BYTES` (16 MiB): a build script is unoptimised, and the whole grammar's derive
+  overflows Windows' 1 MiB main stack (Linux's 8 MiB hides it). Flags mirroring a config key are
   `global`; `--bit-perfect` with `--no-bit-perfect` is `Error::BitPerfectBothWays`, checked in `run`
   (a `global` flag propagates into the subcommand, where `conflicts_with` misses the one given
   before it).
