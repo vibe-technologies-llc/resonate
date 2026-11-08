@@ -113,6 +113,17 @@ impl Asking {
         }
     }
 
+    pub(crate) fn layered_by(self, layers: crate::sync::Layers) -> Self {
+        let layered = resonate_musicbrainz::Layered::new()
+            .keeping(layers.kept)
+            .consulting(Some(layers.peers))
+            .falling_back_on(Some(self.reference));
+        Self {
+            reference: Arc::new(layered),
+            ..self
+        }
+    }
+
     pub(crate) fn hearing_through(self, printer: Arc<dyn Fingerprints>) -> Self {
         Self {
             printer: Some(printer),
@@ -283,7 +294,7 @@ impl MobilePlayer {
                 .cancellable(Arc::clone(&told.cancelled)),
         );
         let key = options.acoustid_key.trim().to_owned();
-        let asking = Asking::over(Arc::clone(&yielding));
+        let asking = Asking::over(Arc::clone(&yielding)).layered_by(self.syncing.layered_lookups());
         let asking = if key.is_empty() {
             asking
         } else {

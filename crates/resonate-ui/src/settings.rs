@@ -190,6 +190,7 @@ pub enum SettingKey {
     Online,
     EnrichAfterScan,
     EnrichOnMetered,
+    MusicbrainzMirror,
     StallDownloadsOnMetered,
     Study,
     FetchLyrics,
@@ -282,7 +283,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 120] = [
+    pub const ALL: [Self; 121] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -314,6 +315,7 @@ impl SettingKey {
         Self::Online,
         Self::EnrichAfterScan,
         Self::EnrichOnMetered,
+        Self::MusicbrainzMirror,
         Self::StallDownloadsOnMetered,
         Self::Study,
         Self::FetchLyrics,
@@ -437,6 +439,7 @@ pub enum Setting {
     Online(bool),
     EnrichAfterScan(bool),
     EnrichOnMetered(bool),
+    MusicbrainzMirror(bool),
     StallDownloadsOnMetered(bool),
     Study(bool),
     FetchLyrics(bool),
@@ -574,6 +577,7 @@ impl Setting {
             Self::Online(_) => SettingKey::Online,
             Self::EnrichAfterScan(_) => SettingKey::EnrichAfterScan,
             Self::EnrichOnMetered(_) => SettingKey::EnrichOnMetered,
+            Self::MusicbrainzMirror(_) => SettingKey::MusicbrainzMirror,
             Self::StallDownloadsOnMetered(_) => SettingKey::StallDownloadsOnMetered,
             Self::Study(_) => SettingKey::Study,
             Self::FetchLyrics(_) => SettingKey::FetchLyrics,
@@ -674,6 +678,7 @@ pub struct Online {
     pub enabled: bool,
     pub after_scan: bool,
     pub enrich_on_metered: bool,
+    pub musicbrainz_mirror: bool,
     pub stall_downloads_on_metered: bool,
     pub studies: bool,
     pub lyrics: bool,
@@ -763,6 +768,7 @@ impl fmt::Debug for Online {
             enabled,
             after_scan,
             enrich_on_metered,
+            musicbrainz_mirror,
             stall_downloads_on_metered,
             studies,
             lyrics,
@@ -798,6 +804,7 @@ impl fmt::Debug for Online {
             .field("enabled", enabled)
             .field("after_scan", after_scan)
             .field("enrich_on_metered", enrich_on_metered)
+            .field("musicbrainz_mirror", musicbrainz_mirror)
             .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("studies", studies)
             .field("lyrics", lyrics)
@@ -1257,6 +1264,28 @@ pub enum RemoteShown {
 pub struct Continuing {
     pub cuts: Vec<Cut>,
     pub at: Frames,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MirrorTold {
+    Absent,
+    Building {
+        doing: &'static str,
+        done: Option<(u64, u64)>,
+    },
+    Held {
+        dump: String,
+        bytes: u64,
+    },
+    Failed(String),
+}
+
+pub trait Mirroring: Send + Sync {
+    fn told(&self) -> MirrorTold;
+
+    fn build(&self);
+
+    fn remove(&self);
 }
 
 pub trait Syncing: Send + Sync {

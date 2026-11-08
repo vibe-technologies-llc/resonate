@@ -326,6 +326,21 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
         trust: Mutex::new(RemoteTrust::default()),
     });
     let arranged = service.arranged(config, settings, library);
+    #[cfg(feature = "online")]
+    {
+        let reached = Arc::downgrade(&service);
+        let asked = crate::musicbrainz::AskedOfDevices(move |reach: &mut dyn FnMut(&Sync)| {
+            let running = reached
+                .upgrade()
+                .and_then(|service| service.running.lock().clone());
+            if let Some(running) = running {
+                reach(&running.sync);
+            }
+        });
+        crate::musicbrainz::consulting_through(Some(Arc::new(
+            resonate_musicbrainz::Consulting::new(asked),
+        )));
+    }
     let watching = settings.map(Path::to_path_buf).and_then(|settings| {
         let service = Arc::clone(&service);
         let library = Arc::clone(library);
@@ -405,6 +420,8 @@ fn started(
         library: Arc::clone(library),
     });
     let sync = Sync::start(settings, catalog).map_err(Error::Sync)?;
+    #[cfg(feature = "online")]
+    sync.consult_with(crate::musicbrainz::ConsultedHere::of(config));
     Ok(Some(Running {
         sync,
         #[cfg(feature = "ui")]

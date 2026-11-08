@@ -20,6 +20,7 @@ mcp = ["dep:resonate-mcp"]
 online = [
     "dep:resonate-jellyfin",
     "dep:resonate-monochrome",
+    "dep:resonate-musicbrainz",
     "dep:resonate-online",
     "dep:resonate-subsonic",
     "dep:resonate-tidal",
@@ -47,6 +48,7 @@ resonate-lyrics.workspace = true
 resonate-mcp = { workspace = true, optional = true }
 resonate-monochrome = { workspace = true, optional = true }
 resonate-mpris.workspace = true
+resonate-musicbrainz = { workspace = true, optional = true, features = ["download"] }
 resonate-online = { workspace = true, optional = true }
 resonate-jellyfin = { workspace = true, optional = true }
 resonate-subsonic = { workspace = true, optional = true }

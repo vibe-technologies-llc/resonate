@@ -6,7 +6,7 @@ use gpui::{
 use resonate_listen::Listening;
 
 use crate::{
-    ResonateApp, Setting,
+    MirrorTold, ResonateApp, Setting,
     icons::Icon,
     theme,
     views::{
@@ -20,6 +20,38 @@ use crate::{
 const LOOKUPS_NOTE: &str = "MusicBrainz for what a release and an artist are, the Cover Art \
                             Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and \
                             Better Lyrics for lyrics. Nothing sent identifies you unless a contact is given below.";
+
+const MIRROR_NOTE: &str = "MusicBrainz's own export, a 7.5 GB download read into a copy of about 10 \
+                           GB kept here, compressed and indexed; the build wants some 50 GB of \
+                           room for about an hour. A lookup is answered from it in milliseconds, \
+                           before the network, and a synced device without a copy asks this one.";
+
+const MIRROR_ABSENT: &str = "No copy is held yet. Building one fetches the export and reads it, \
+                             which takes a while; lookups go on as before meanwhile.";
+
+const MIRROR_REDRAWN_EVERY: Duration = Duration::from_secs(1);
+
+const BYTES_IN_A_GIGABYTE: f64 = 1_000_000_000.0;
+
+fn mirror_said(told: &MirrorTold) -> String {
+    match told {
+        MirrorTold::Absent => MIRROR_ABSENT.to_owned(),
+        MirrorTold::Building {
+            doing,
+            done: Some((read, of)),
+        } if *of > 0 => format!(
+            "Building: {doing}, {:.1} of {:.1} GB.",
+            *read as f64 / BYTES_IN_A_GIGABYTE,
+            *of as f64 / BYTES_IN_A_GIGABYTE
+        ),
+        MirrorTold::Building { doing, .. } => format!("Building: {doing}."),
+        MirrorTold::Held { dump, bytes } => format!(
+            "The export of {dump} is held, {:.1} GB on disc.",
+            *bytes as f64 / BYTES_IN_A_GIGABYTE
+        ),
+        MirrorTold::Failed(why) => format!("The last build failed: {why}."),
+    }
+}
 
 const METERED_NOTE: &str = "A connection NetworkManager reports as metered, a phone's hotspot or \
                             a capped plan, is the one these switches are about; one it cannot \
@@ -153,6 +185,110 @@ impl RootView {
             ))
             .child(note(LOOKUPS_NOTE))
             .when(on && !reachable, |body| body.child(note(NEXT_START_NOTE)))
+            .child(self.mirror_rows(cx))
+    }
+
+    fn mirror_rows(&mut self, cx: &mut Context<Self>) -> Div {
+        let mirrors = cx.global::<ResonateApp>().online.musicbrainz_mirror;
+        let told = cx
+            .global::<ResonateApp>()
+            .mirroring
+            .as_ref()
+            .map(|mirroring| mirroring.told());
+        let building = matches!(told, Some(MirrorTold::Building { .. }));
+        if building && self.mirror_redraws.is_none() {
+            self.mirror_redraws = Some(cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(MIRROR_REDRAWN_EVERY).await;
+                    let still = this.update(cx, |_, cx| {
+                        cx.notify();
+                        cx.global::<ResonateApp>()
+                            .mirroring
+                            .as_ref()
+                            .is_some_and(|mirroring| {
+                                matches!(mirroring.told(), MirrorTold::Building { .. })
+                            })
+                    });
+                    if !still.unwrap_or(false) {
+                        let _ = this.update(cx, |this, cx| {
+                            this.mirror_redraws = None;
+                            cx.notify();
+                        });
+                        return;
+                    }
+                }
+            }));
+        }
+        let held = matches!(told, Some(MirrorTold::Held { .. }));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(self.in_the_ring(
+                "musicbrainz-mirror",
+                switch_row(
+                    "Keep a copy of MusicBrainz here",
+                    "Off, MusicBrainz is asked over the network or of a synced device",
+                    mirrors,
+                    "musicbrainz-mirror",
+                ),
+                move |this, _, cx| this.set_musicbrainz_mirror(!mirrors, cx),
+                cx,
+            ))
+            .child(note(MIRROR_NOTE))
+            .when_some(told.filter(|_| mirrors), |body, told| {
+                body.child(note(mirror_said(&told))).child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .child(action(
+                            "musicbrainz-mirror-build",
+                            if held {
+                                "Build it again"
+                            } else {
+                                "Build it now"
+                            },
+                            Icon::Download,
+                            building,
+                            |_, _, cx| {
+                                if let Some(mirroring) =
+                                    cx.global::<ResonateApp>().mirroring.clone()
+                                {
+                                    mirroring.build();
+                                }
+                                cx.notify();
+                            },
+                            self,
+                            cx,
+                        ))
+                        .when(held, |row| {
+                            row.child(action(
+                                "musicbrainz-mirror-remove",
+                                "Remove the copy",
+                                Icon::Delete,
+                                building,
+                                |_, _, cx| {
+                                    if let Some(mirroring) =
+                                        cx.global::<ResonateApp>().mirroring.clone()
+                                    {
+                                        mirroring.remove();
+                                    }
+                                    cx.notify();
+                                },
+                                self,
+                                cx,
+                            ))
+                        }),
+                )
+            })
+    }
+
+    pub(crate) fn set_musicbrainz_mirror(&mut self, mirrors: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.online.musicbrainz_mirror = mirrors);
+        self.store(&Setting::MusicbrainzMirror(mirrors), cx);
+        cx.notify();
     }
 
     pub(super) fn after_scan_group(&mut self, cx: &mut Context<Self>) -> Div {

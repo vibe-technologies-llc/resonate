@@ -387,6 +387,17 @@ the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once
 fails is not kept: the frame is unlit for that call and the next frame asks again
 (`a_failed_reread_is_asked_again_by_the_next_frame`).
 
+## MusicBrainz asked of another device
+
+**The phones hold no copy of MusicBrainz; they ask a device that does, and keep what they learn**
+(`musicbrainz.md`). The boundary is unchanged:
+
+- `Asking::layered_by` wraps the enrichment pass's `Online` in a `resonate_musicbrainz::Layered` with
+  the kept answers (`kept.sqlite` under the sync folder's `musicbrainz/`, opened on first use) and
+  the online devices (`sync/consulted.rs`, `Consulting` over the running `Sync`).
+- Every `start` hands the `Sync` a `Consultable` over the kept answers alone, so a phone answers
+  another device from what it kept, and the answers both kept travel when they meet.
+
 ## Answers from other devices
 
 `DocumentCatalog` takes answers (`takes_answers` true) by the rules the desktop's `answers.rs`

@@ -23,6 +23,7 @@ resonate-subsonic.workspace = true
 resonate-sync.workspace = true
 resonate-tidal.workspace = true
 resonate-monochrome.workspace = true
+resonate-musicbrainz.workspace = true
 resonate-audio.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true

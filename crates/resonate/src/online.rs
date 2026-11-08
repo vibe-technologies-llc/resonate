@@ -156,10 +156,11 @@ pub fn reach(_on: bool) {}
 
 #[cfg(feature = "online")]
 pub fn reference(config: &Config, asking: Asking) -> Option<Arc<dyn Reference>> {
-    config.online_enabled().then(|| {
+    let online = config.online_enabled().then(|| {
         Arc::new(Online::with_client(client_for(config, asking)).with_spotify(spotify(config)))
             as Arc<dyn Reference>
-    })
+    });
+    crate::musicbrainz::layered(config, online)
 }
 
 #[cfg(feature = "online")]

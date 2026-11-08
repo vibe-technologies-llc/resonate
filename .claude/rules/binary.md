@@ -435,6 +435,20 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   wake what waits on them. The group says while `PollProgress::is_waiting_on_the_meter` holds that
   downloads wait. Neither key has a flag. `online = false` outranks both, and a build
   without `online` has no lookups to gate (`providers.md`, `online.md`).
+- **`musicbrainz-mirror` (off) keeps a copy of MusicBrainz on this device** (`musicbrainz.rs`,
+  `musicbrainz.md`). On, the window opens the copy held and builds or refreshes it in the
+  background (`keep_fresh`: none held, or one over 30 days old whose export `LATEST` no longer
+  names). The Online category's *Reference lookups* group has the switch (`Setting::MusicbrainzMirror`,
+  applied live through `musicbrainz::follow`), and under it what is held, the build's phase and
+  bytes (read through the `resonate_ui::Mirroring` seam, redrawn every second while building),
+  *Build it now* and *Remove the copy*. `resonate musicbrainz` is the terminal's way in:
+  - bare, it prints what is held and how many answers are kept;
+  - `--build [--from FOLDER]` builds in the foreground, a build in another process being
+    `AlreadyBuilding`;
+  - `--remove` takes the copy and its downloads away;
+  - `--search WORDS` lists recordings by score.
+
+  A build without `online` is `NoMirror`.
 - `enrich-after-scan` off leaves the reference to `enrich`, the Library card's *Look up*. `study` off starts no study pool from a lookup. `fetch-lyrics` off asks LRCLIB
   only as a track plays. `identify-by-sound`: `online::fingerprinters` always puts `ByEar` behind
   the AcoustID printer; it answers only while the switch is on (an `Arc<AtomicBool>` shared with it,

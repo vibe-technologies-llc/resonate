@@ -15,9 +15,9 @@ use resonate_core::{
     WholeFile, ZoneId,
 };
 use resonate_sync::{
-    Broadcast, Controlled, Controlling, DeviceId, Follow, Me, Nearby, Permille, Platform,
-    RemoteCommand, RemotePlayback, RemoteRow, RemoteZone, Server, Settings, Standing, Sync,
-    SyncKey, TransferState, Uncontrolled, Watched,
+    Broadcast, Consultable, Consulting, Controlled, Controlling, DeviceId, Follow, KeptAnswer, Me,
+    Nearby, Permille, Platform, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone, Server,
+    Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled, Watched,
 };
 
 use crate::shelf::{Shelf, song};
@@ -345,6 +345,120 @@ fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_sta
             .covers
             .contains_key(lacking.as_str())
     );
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[derive(Default)]
+struct Consulted {
+    answers: Mutex<Vec<(Vec<u8>, Vec<u8>)>>,
+    kept: Mutex<Vec<KeptAnswer>>,
+    marks: Mutex<Vec<(DeviceId, u64)>>,
+}
+
+impl Consultable for Consulted {
+    fn consult(&self, asked: &[u8]) -> Option<Vec<u8>> {
+        self.answers
+            .lock()
+            .iter()
+            .find(|(question, _)| question == asked)
+            .map(|(_, answer)| answer.clone())
+    }
+
+    fn kept_after(&self, after: u64, most: usize, _: DeviceId) -> Vec<KeptAnswer> {
+        self.kept
+            .lock()
+            .iter()
+            .filter(|kept| kept.seq > after)
+            .take(most)
+            .cloned()
+            .collect()
+    }
+
+    fn kept_mark(&self, device: DeviceId) -> u64 {
+        self.marks
+            .lock()
+            .iter()
+            .find(|(held, _)| *held == device)
+            .map_or(0, |(_, mark)| *mark)
+    }
+
+    fn take_kept(&self, device: DeviceId, answers: Vec<KeptAnswer>, mark: u64) {
+        let mut kept = self.kept.lock();
+        for answer in answers {
+            if !kept.iter().any(|held| held.key == answer.key) {
+                let seq = kept.len() as u64 + 1;
+                kept.push(KeptAnswer { seq, ..answer });
+            }
+        }
+        let mut marks = self.marks.lock();
+        marks.retain(|(held, _)| *held != device);
+        marks.push((device, mark));
+    }
+}
+
+#[test]
+fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach_another() {
+    let folder = scratch("consulted");
+    let key = SyncKey::minted().expect("a key");
+    let desk_answers = Arc::new(Consulted::default());
+    desk_answers
+        .answers
+        .lock()
+        .push((b"who sang creep".to_vec(), b"radiohead".to_vec()));
+    desk_answers.kept.lock().extend([
+        KeptAnswer {
+            seq: 1,
+            at: 1_790_000_000,
+            key: b"first".to_vec(),
+            packed: b"one".to_vec(),
+        },
+        KeptAnswer {
+            seq: 2,
+            at: 1_790_000_001,
+            key: b"second".to_vec(),
+            packed: b"two".to_vec(),
+        },
+    ]);
+    let phone_answers = Arc::new(Consulted::default());
+
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+    desk.consult_with(Arc::clone(&desk_answers) as Arc<dyn Consultable>);
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&desk),
+    );
+    phone.consult_with(Arc::clone(&phone_answers) as Arc<dyn Consultable>);
+
+    eventually("the desk's kept answers reaching the phone", || {
+        phone_answers.kept.lock().len() == 2
+    });
+    let answered = phone
+        .ask_to_consult(desk.device(), b"who sang creep".to_vec())
+        .answer(SETTLES_WITHIN);
+    let unknown = phone
+        .ask_to_consult(desk.device(), b"who sang echoes".to_vec())
+        .answer(SETTLES_WITHIN);
+    let unasked = desk
+        .ask_to_consult(phone.device(), b"who sang creep".to_vec())
+        .answer(SETTLES_WITHIN);
+
+    assert_eq!(answered, Consulting::Answered(b"radiohead".to_vec()));
+    assert_eq!(unknown, Consulting::Unconsulted);
+    assert_eq!(unasked, Consulting::Unconsulted);
+    assert_eq!(phone_answers.kept_mark(desk.device()), 2);
+    assert_eq!(phone_answers.kept.lock()[1].packed, b"two".to_vec());
 
     drop(phone);
     drop(desk);

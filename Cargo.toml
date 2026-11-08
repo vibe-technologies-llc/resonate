@@ -23,6 +23,7 @@ members = [
     "crates/resonate-lyrics",
     "crates/resonate-mcp",
     "crates/resonate-mpris",
+    "crates/resonate-musicbrainz",
     "crates/resonate-online",
     "crates/resonate-providers",
     "crates/resonate-server",
@@ -278,6 +279,7 @@ resonate-listen = { version = "0.6.0", path = "crates/resonate-listen" }
 resonate-lyrics = { version = "0.6.0", path = "crates/resonate-lyrics" }
 resonate-mcp = { version = "0.6.0", path = "crates/resonate-mcp" }
 resonate-mpris = { version = "0.6.0", path = "crates/resonate-mpris" }
+resonate-musicbrainz = { version = "0.6.0", path = "crates/resonate-musicbrainz" }
 resonate-online = { version = "0.6.0", path = "crates/resonate-online" }
 resonate-providers = { version = "0.6.0", path = "crates/resonate-providers" }
 resonate-sync = { version = "0.6.0", path = "crates/resonate-sync" }

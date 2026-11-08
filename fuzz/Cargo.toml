@@ -17,6 +17,7 @@ resonate-eq.path = "../crates/resonate-eq"
 resonate-library.path = "../crates/resonate-library"
 resonate-lyrics.path = "../crates/resonate-lyrics"
 resonate-mcp.path = "../crates/resonate-mcp"
+resonate-musicbrainz.path = "../crates/resonate-musicbrainz"
 resonate-online.path = "../crates/resonate-online"
 resonate-tidal.path = "../crates/providers/tidal"
 resonate-vault.path = "../crates/resonate-vault"
@@ -199,3 +200,10 @@ bench = false
 name = "together"
 path = "fuzz_targets/together.rs"
 test = false
+
+[[bin]]
+name = "musicbrainz"
+path = "fuzz_targets/musicbrainz.rs"
+test = false
+doc = false
+bench = false

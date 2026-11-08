@@ -969,6 +969,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
+
+[[package]]
 name = "c-enum"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2090,6 +2099,16 @@ dependencies = [
  "libc",
  "thiserror 1.0.69",
  "winapi",
+]
+
+[[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -3873,6 +3892,12 @@ name = "lebe"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
+
+[[package]]
+name = "libbz2-rs-sys"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32f454fd6831a29c0e827ed075bca2a15be201bd57f4168f0fd1041124eab17e"
 
 [[package]]
 name = "libc"
@@ -6094,6 +6119,7 @@ dependencies = [
  "resonate-mcp",
  "resonate-monochrome",
  "resonate-mpris",
+ "resonate-musicbrainz",
  "resonate-online",
  "resonate-providers",
  "resonate-subsonic",
@@ -6404,6 +6430,7 @@ dependencies = [
  "resonate-listen",
  "resonate-lyrics",
  "resonate-monochrome",
+ "resonate-musicbrainz",
  "resonate-online",
  "resonate-providers",
  "resonate-subsonic",
@@ -6450,6 +6477,24 @@ dependencies = [
  "wasapi",
  "windows 0.62.2",
  "zbus 6.2.1",
+]
+
+[[package]]
+name = "resonate-musicbrainz"
+version = "0.6.0"
+dependencies = [
+ "bzip2",
+ "parking_lot 0.13.0",
+ "resonate-core",
+ "resonate-fetch",
+ "resonate-library",
+ "rusqlite",
+ "sha2 0.11.1",
+ "tar",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+ "zstd",
 ]
 
 [[package]]
@@ -7906,6 +7951,16 @@ dependencies = [
  "serde",
  "slotmap",
  "smallvec",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
 ]
 
 [[package]]

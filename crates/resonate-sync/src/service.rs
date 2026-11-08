@@ -32,6 +32,7 @@ use tokio::{
 
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
+    consulted::{AskedToConsult, Consultable, Consulting},
     key::{Derived, PAIRING_LINK, hex, random_bytes},
     ledger::{Follow, Me, lacked},
     merge::one_recording_a_song,
@@ -41,8 +42,9 @@ use crate::{
         global_addresses_here, record_of, told_over_ipv6,
     },
     peer::{
-        Answering, DIAL_WITHIN, Heard, blocking, control, covers_from, dialled, dialled_within,
-        fetch, holdings_of, lyricsfiles_from, meet, prints_from, serve, tell, watch,
+        Answering, DIAL_WITHIN, Heard, blocking, consult, control, covers_from, dialled,
+        dialled_within, fetch, holdings_of, kept_from, lyricsfiles_from, meet, prints_from, serve,
+        tell, watch,
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     remote::{CONTROL_ANSWERED_WITHIN, Controlled, Controlling, RemoteCommand, Watched},
@@ -72,6 +74,7 @@ const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
 const BLOBS_PER_APPEND: usize = 32;
 const FOLLOW_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const COVERS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
+const KEPT_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const LYRICSFILES_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const PRINTS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 pub const A_FAILED_SONG_WAITS: Duration = Duration::from_secs(30 * 60);
@@ -268,6 +271,12 @@ enum Command {
         answer: std_mpsc::Sender<Controlling>,
     },
     Watch(DeviceId),
+    Consult {
+        device: DeviceId,
+        asked: Vec<u8>,
+        answer: std_mpsc::Sender<Consulting>,
+    },
+    KeptOwed,
     Stop,
 }
 
@@ -339,6 +348,10 @@ enum Work {
         answer: std_mpsc::Sender<Controlling>,
     },
     Watch,
+    Consult {
+        asked: Vec<u8>,
+        answer: std_mpsc::Sender<Consulting>,
+    },
 }
 
 #[derive(Default)]
@@ -523,6 +536,7 @@ struct Syncing {
     unanswered: Unanswered,
     covers_asked: BTreeMap<DeviceId, Instant>,
     lyricsfiles_asked: BTreeMap<DeviceId, Instant>,
+    kept_asked: BTreeMap<DeviceId, Instant>,
     prints_asked: BTreeMap<DeviceId, Instant>,
     follow_again_at: Option<Instant>,
     followed_again_at: Option<Instant>,
@@ -599,6 +613,7 @@ impl Sync {
             heard,
             transfers_allowed: Arc::clone(&transfers_allowed),
             controlled: RwLock::new(None),
+            consulted: RwLock::new(None),
         });
         let shown = Arc::new(RwLock::new(Shown {
             standing: if server.is_some() {
@@ -770,6 +785,25 @@ impl Sync {
 
     pub fn uncontrolled(&self) {
         *self.running.answering.controlled.write() = None;
+    }
+
+    pub fn consult_with(&self, consulted: Arc<dyn Consultable>) {
+        *self.running.answering.consulted.write() = Some(consulted);
+        let _ = self.commands.send(Command::KeptOwed);
+    }
+
+    pub fn unconsulted(&self) {
+        *self.running.answering.consulted.write() = None;
+    }
+
+    pub fn ask_to_consult(&self, device: DeviceId, asked: Vec<u8>) -> AskedToConsult {
+        let (answer, answered) = std_mpsc::channel();
+        let _ = self.commands.send(Command::Consult {
+            device,
+            asked,
+            answer,
+        });
+        AskedToConsult(answered)
     }
 
     pub fn control(&self, device: DeviceId, zone: ZoneId, command: RemoteCommand) -> Controlling {
@@ -1038,6 +1072,11 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                 }
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
                 Some(Command::Control { device, zone, command, answer }) => syncing.want(device, Work::Control { zone, command, answer }).await,
+                Some(Command::Consult { device, asked, answer }) => syncing.want(device, Work::Consult { asked, answer }).await,
+                Some(Command::KeptOwed) => {
+                    syncing.ask_every_peer_for_kept();
+                    Ok(())
+                }
                 Some(Command::Watch(device)) => {
                     if running.watching.lock().insert(device) {
                         syncing.want(device, Work::Watch).await
@@ -1440,6 +1479,7 @@ impl Syncing {
             unanswered: Unanswered::default(),
             covers_asked: BTreeMap::new(),
             lyricsfiles_asked: BTreeMap::new(),
+            kept_asked: BTreeMap::new(),
             prints_asked: BTreeMap::new(),
             follow_again_at: None,
             followed_again_at: None,
@@ -1559,6 +1599,7 @@ impl Syncing {
                     self.spawn(device, connection.clone(), work);
                 }
                 self.ask_for_covers(device, &connection);
+                self.ask_for_kept(device, &connection);
                 self.ask_for_lyricsfiles(device, &connection);
                 self.ask_for_prints(device, &connection);
                 self.peers.insert(device, connection);
@@ -2114,6 +2155,47 @@ impl Syncing {
         spawn_covers(Arc::clone(&self.running), connection.clone());
     }
 
+    fn ask_every_peer_for_kept(&mut self) {
+        let standing: Vec<(DeviceId, Connection)> = self
+            .peers
+            .iter()
+            .filter(|(_, connection)| connection.close_reason().is_none())
+            .map(|(device, connection)| (*device, connection.clone()))
+            .collect();
+        for (device, connection) in standing {
+            self.ask_for_kept(device, &connection);
+        }
+    }
+
+    fn ask_for_kept(&mut self, device: DeviceId, connection: &Connection) {
+        if device == self.running.device || !self.running.transfers_allowed() {
+            return;
+        }
+        let Some(consulted) = self.running.answering.consulted.read().clone() else {
+            return;
+        };
+        let now = Instant::now();
+        if self
+            .kept_asked
+            .get(&device)
+            .is_some_and(|at| now.duration_since(*at) < KEPT_ASKED_OF_A_DEVICE_EVERY)
+        {
+            return;
+        }
+        self.kept_asked.insert(device, now);
+        let asker = self.running.device;
+        let connection = connection.clone();
+        tokio::spawn(async move {
+            match kept_from(&connection, asker, device, consulted).await {
+                Ok(0) => {}
+                Ok(taken) => tracing::info!(taken, "lookup answers arrived from another device"),
+                Err(error) => {
+                    tracing::debug!(%error, "a device was not asked for the answers it kept");
+                }
+            }
+        });
+    }
+
     fn ask_for_lyricsfiles(&mut self, device: DeviceId, connection: &Connection) {
         if device == self.running.device || !self.running.transfers_allowed() {
             return;
@@ -2157,7 +2239,7 @@ impl Syncing {
                 self.follow_owed.insert(device);
                 return Ok(());
             }
-            Work::Follow | Work::Control { .. } | Work::Watch => {}
+            Work::Follow | Work::Control { .. } | Work::Watch | Work::Consult { .. } => {}
         }
         if let Some(connection) = self
             .peers
@@ -2258,7 +2340,7 @@ impl Syncing {
                 Work::Watch => {
                     self.running.watching.lock().remove(&device);
                 }
-                Work::Follow | Work::Control { .. } => {}
+                Work::Follow | Work::Control { .. } | Work::Consult { .. } => {}
             }
         }
     }
@@ -2552,6 +2634,7 @@ impl Syncing {
         self.followed.clear();
         self.covers_asked.clear();
         self.lyricsfiles_asked.clear();
+        self.kept_asked.clear();
         self.prints_asked.clear();
         self.dialled_at.clear();
         match self.server.take() {
@@ -2622,6 +2705,7 @@ impl Syncing {
             self.spawn(device, connection.clone(), work);
         }
         self.ask_for_covers(device, &connection);
+        self.ask_for_kept(device, &connection);
         self.ask_for_lyricsfiles(device, &connection);
         self.ask_for_prints(device, &connection);
         self.peers.insert(device, connection.clone());
@@ -2787,6 +2871,10 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
             answer,
         } => {
             let _ = answer.send(control(connection, zone, command).await);
+            return;
+        }
+        Work::Consult { asked, answer } => {
+            let _ = answer.send(consult(connection, asked).await);
             return;
         }
         Work::Watch => {

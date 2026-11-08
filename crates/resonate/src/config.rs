@@ -169,6 +169,7 @@ pub struct Config {
     pub online: Option<bool>,
     pub enrich_after_scan: Option<bool>,
     pub enrich_on_metered: Option<bool>,
+    pub musicbrainz_mirror: Option<bool>,
     pub stall_downloads_on_metered: Option<bool>,
     pub study: Option<bool>,
     pub fetch_lyrics: Option<bool>,
@@ -311,6 +312,7 @@ impl fmt::Debug for Config {
             online,
             enrich_after_scan,
             enrich_on_metered,
+            musicbrainz_mirror,
             stall_downloads_on_metered,
             study,
             fetch_lyrics,
@@ -439,6 +441,7 @@ impl fmt::Debug for Config {
             .field("online", online)
             .field("enrich_after_scan", enrich_after_scan)
             .field("enrich_on_metered", enrich_on_metered)
+            .field("musicbrainz_mirror", musicbrainz_mirror)
             .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("study", study)
             .field("fetch_lyrics", fetch_lyrics)
@@ -664,6 +667,11 @@ impl Config {
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn enriches_on_metered(&self) -> bool {
         self.enrich_on_metered.unwrap_or(false)
+    }
+
+    #[cfg(any(feature = "online", feature = "ui"))]
+    pub fn mirrors_musicbrainz(&self) -> bool {
+        self.musicbrainz_mirror.unwrap_or(false)
     }
 
     pub fn stalls_downloads_on_metered(&self) -> bool {
@@ -1103,6 +1111,7 @@ impl Config {
             ConfigKey::Online => config.online = Some(at.boolean(value)?),
             ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
             ConfigKey::EnrichOnMetered => config.enrich_on_metered = Some(at.boolean(value)?),
+            ConfigKey::MusicbrainzMirror => config.musicbrainz_mirror = Some(at.boolean(value)?),
             ConfigKey::StallDownloadsOnMetered => {
                 config.stall_downloads_on_metered = Some(at.boolean(value)?);
             }

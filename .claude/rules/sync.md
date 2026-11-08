@@ -886,6 +886,28 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `SharedPrint::travels`. It crosses end to end, never kept on the server
   (`a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_one_neither_holds_stays_missing`).
   The phones' catalogs ask and answer on the same pacing, the service being the same.
+- **A lookup is asked of a device, and the answers each kept travel device to device**
+  (`consulted.rs`, `musicbrainz.md`). The seam is `Consultable` (`consult`, `kept_after`,
+  `kept_mark`, `take_kept`), handed to a running `Sync` by `consult_with` and taken away by
+  `unconsulted`. The payloads are opaque bytes, since this crate may not see the library's
+  vocabulary.
+  - **Asking a lookup.** `ToPeer::Consult` (tag 10, at most `LARGEST_CONSULTATION`) is answered
+    `FromPeer::Consulted` (tag 15, at most `LARGEST_CONSULTED`) or `Unconsulted` (16), the latter
+    also from a device with no seam or with transfers not allowed. `Sync::ask_to_consult` goes
+    through `Work::Consult` and `want()`, as a command does, bounded by `CONSULT_ANSWERED_WITHIN`
+    (5 s) on the stream. A build without the request drops the stream, which reads as `Unanswered`.
+  - **Pulling kept answers.** `ToPeer::Kept` (tag 11: the asker, the mark, at most
+    `KEPT_ASKED_AT_MOST`, 512, the reader refusing more) is answered by `KeptAnswer` frames (tag 17:
+    seq, when, key, packed answer) and a `KeptEnd` (tag 18) naming the mark reached.
+    `ask_for_kept` pulls them on meeting and on a punched or relayed connection, beside covers. It
+    runs at most every `KEPT_ASKED_OF_A_DEVICE_EVERY` (30 minutes) a device, for up to
+    `KEPT_PAGES_A_MEETING` pages, and again for every standing peer when a seam is handed over.
+    *Sync now* forgets the times.
+  - **Marks and echoes.** The mark is the asked device's own `seq`, kept by the asker per device,
+    and the sender leaves out what it took from the asker. Nothing goes through the server
+    (`a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach_another`,
+    `a_lookup_and_the_answers_a_device_kept_read_back_and_too_many_asked_are_refused`).
+
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`

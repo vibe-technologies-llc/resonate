@@ -97,6 +97,12 @@ here, add it there.
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or `serde_json`
   (its protobuf and JSON are hand-written, so the binary without `online` still casts). The engine,
   codec, `rcgen` and `serde_json` are its dev-dependencies alone.
+- `resonate-musicbrainz`: core and `resonate-library` among workspace crates, with `resonate-fetch`
+  and `ureq` only under its `download` feature (the binary's `online` turns it on, the phones
+  leave it off); no gpui, engine, `resonate-online`, `resonate-sync`, serde, quinn or tokio;
+  reached by the binary and `resonate-mobile` alone. **`bzip2`** keeps its default features,
+  which are its pure-Rust `libbz2-rs-sys` backend (the C `bzip2-sys` is the other, off); **`tar`**
+  has no default features (`xattr` is not read). Both read the MusicBrainz export alone.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
   Reached by the binary (behind `sync`), `resonate-driven`, `resonate-mobile` and `resonate-server` alone; `resonate-server`
   reaches core, `resonate-sync` and, for its hifi-api gateway, `resonate-tidal` with the seam and
@@ -224,10 +230,14 @@ here, add it there.
 
 ## C-backed crates kept, and duplicates third parties force
 
-- **`zstd`** (via `zstd-sys`): `resonate-vault`'s alone. The WAVE form packs at `ARCHIVED_AT` (19) in
+- **`zstd`** (via `zstd-sys`): `resonate-vault`'s, and `resonate-musicbrainz`'s with
+  `zdict_builder`. The WAVE form packs at `ARCHIVED_AT` (19) in
   pledged frames, and `the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs` pins the
   encoder's output; the pure-Rust `ruzstd` encodes to roughly level 11 at best, so a switch would
-  weigh every vaulted WAVE again at a worse ratio. The decoder side (`Unpacking`) is the same crate.
+  weigh every vaulted WAVE again at a worse ratio. The decoder side (`Unpacking`) is the same crate. The MusicBrainz copy packs its blocks with a
+  dictionary trained per kind of document (`musicbrainz.md`), which `ruzstd` cannot write at all (it
+  writes its fastest level alone, with no dictionary), and both the binary and the phones link the
+  vault's copy already, so no second C library joins.
 - **`ring`** (C and assembly): the provider rustls runs on for `ureq` (`resonate-fetch`), `quinn`
   and a Cast receiver's TLS (`resonate-cast`, so also in the binary without `online` or `sync`),
   linked whether or not `resonate-sync` names it; `resonate-sync` uses the same crate directly for

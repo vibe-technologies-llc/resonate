@@ -16,6 +16,7 @@ use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 pub(crate) const ONLINE: bool = true;
 pub(crate) const ENRICH_AFTER_SCAN: bool = true;
 pub(crate) const ENRICH_ON_METERED: bool = false;
+pub(crate) const MUSICBRAINZ_MIRROR: bool = false;
 pub(crate) const STALL_DOWNLOADS_ON_METERED: bool = false;
 pub(crate) const STUDY: bool = true;
 pub(crate) const BY_SOUND: bool = false;
@@ -48,6 +49,7 @@ pub(crate) struct Standing {
     pub(crate) renderers: bool,
     pub(crate) appearance: Appearance,
     pub(crate) online: bool,
+    pub(crate) musicbrainz_mirror: bool,
     pub(crate) after_scan: bool,
     pub(crate) enrich_on_metered: bool,
     pub(crate) stall_downloads_on_metered: bool,
@@ -101,6 +103,7 @@ impl Standing {
             output: OutputSettings::of(&EngineConfig::default()),
             appearance: Appearance::DEFAULT,
             online: ONLINE,
+            musicbrainz_mirror: MUSICBRAINZ_MIRROR,
             after_scan: ENRICH_AFTER_SCAN,
             enrich_on_metered: ENRICH_ON_METERED,
             stall_downloads_on_metered: STALL_DOWNLOADS_ON_METERED,
@@ -177,7 +180,9 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::LossySources => worn.restoration != built.restoration,
         Group::Equalising => worn.equaliser.enabled != built.equaliser.enabled,
         Group::BoundTo => worn.equaliser.binds_anything(),
-        Group::Lookups => standing.online != ONLINE,
+        Group::Lookups => {
+            standing.online != ONLINE || standing.musicbrainz_mirror != MUSICBRAINZ_MIRROR
+        }
         Group::AfterScan => standing.after_scan != ENRICH_AFTER_SCAN,
         Group::Metered => {
             standing.enrich_on_metered != ENRICH_ON_METERED
@@ -518,6 +523,13 @@ mod tests {
             Group::Lookups,
             &Standing {
                 online: false,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Lookups,
+            &Standing {
+                musicbrainz_mirror: true,
                 ..built.clone()
             }
         ));

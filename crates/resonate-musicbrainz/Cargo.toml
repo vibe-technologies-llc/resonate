@@ -1,0 +1,28 @@
+[package]
+name = "resonate-musicbrainz"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[features]
+download = ["dep:resonate-fetch", "dep:ureq"]
+
+[dependencies]
+bzip2 = "0.6.1"
+parking_lot.workspace = true
+resonate-core.workspace = true
+resonate-fetch = { workspace = true, optional = true }
+resonate-library.workspace = true
+rusqlite.workspace = true
+sha2.workspace = true
+tar = { version = "0.4.46", default-features = false }
+thiserror.workspace = true
+tracing.workspace = true
+ureq = { workspace = true, optional = true }
+zstd = { workspace = true, features = ["zdict_builder"] }
+
+[lints]
+workspace = true

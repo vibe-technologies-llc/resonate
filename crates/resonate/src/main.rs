@@ -31,6 +31,8 @@ mod mcp;
 mod measuring;
 mod metered;
 mod mpris;
+#[cfg(feature = "online")]
+mod musicbrainz;
 mod online;
 #[cfg(feature = "sync")]
 mod party;
@@ -380,6 +382,15 @@ fn run() -> Result<()> {
         }
         #[cfg(not(feature = "online"))]
         Some(Sub::Ytmusic(_)) => Err(Error::NoServed),
+        #[cfg(feature = "online")]
+        Some(Sub::Musicbrainz {
+            build,
+            from,
+            remove,
+            search,
+        }) => musicbrainz::run(&config, *build, from.as_deref(), *remove, search.as_deref()),
+        #[cfg(not(feature = "online"))]
+        Some(Sub::Musicbrainz { .. }) => Err(Error::NoMirror),
         Some(Sub::Lastfm { user, forget }) => {
             let settings = settings_path(&cli)?;
             reloading::delivering(&settings, Some(Reloadable::Submission), || {
@@ -1586,6 +1597,16 @@ fn tell_the_players_where_files_went(summary: &OrganiseSummary) {
             );
         }
     }
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+fn mirroring(config: &Config) -> Option<Arc<dyn resonate_ui::Mirroring>> {
+    Some(musicbrainz::Mirroring::of(config))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+const fn mirroring(_config: &Config) -> Option<Arc<dyn resonate_ui::Mirroring>> {
+    None
 }
 
 fn until_told<Progress, Summary>(handle: PassHandle<Progress, Summary>) -> Result<Summary>
@@ -3097,6 +3118,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         })
     };
     let submitting = submitting::start(&config, &library, &player);
+    #[cfg(feature = "online")]
+    musicbrainz::keep_fresh(&config);
     #[cfg(feature = "sync")]
     let together = together::start(&config, &library).unwrap_or_else(|error| {
         tracing::warn!(%error, "shared playlists could not start");
@@ -3155,6 +3178,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 enabled: config.online_enabled(),
                 after_scan: config.enriches_after_scan(),
                 enrich_on_metered: config.enriches_on_metered(),
+                musicbrainz_mirror: config.mirrors_musicbrainz(),
                 stall_downloads_on_metered: config.stalls_downloads_on_metered(),
                 studies: config.studies(),
                 lyrics: config.fetches_lyrics(),
@@ -3195,6 +3219,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 }
             },
             listens,
+            mirroring: mirroring(&config),
         },
         resonate_ui::Stored {
             settings: Arc::new(settings),

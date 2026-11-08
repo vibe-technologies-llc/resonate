@@ -199,6 +199,13 @@ jobs:
               *) echo "::error::resonate-online is reached by $by"; failed=1 ;;
             esac
           done
+          refuse resonate-musicbrainz gpui resonate-engine resonate-online resonate-sync ureq serde serde_json quinn tokio
+          for by in $(held_by --workspace -i resonate-musicbrainz | grep '^resonate' | grep -vx resonate-musicbrainz || true); do
+            case "$by" in
+              resonate|resonate-mobile) ;;
+              *) echo "::error::resonate-musicbrainz is reached by $by"; failed=1 ;;
+            esac
+          done
           refuse resonate-sync gpui resonate-library resonate-engine ureq serde serde_json
           only resonate-sync resonate-core
           refuse resonate-server gpui resonate-library resonate-engine

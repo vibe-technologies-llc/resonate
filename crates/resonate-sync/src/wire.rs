@@ -18,6 +18,7 @@ use crate::{
         PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded, QueryNote,
         ShareNote, Stamp,
     },
+    consulted::KeptAnswer,
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     remote::{Controlling, RemoteCommand, RemoteZone, read_zones, write_zones},
     seal::SEALED_AT_LEAST,
@@ -57,6 +58,11 @@ const RECOGNITION_HEARD: u8 = 1;
 pub const COVERS_ASKED_AT_MOST: usize = 512;
 pub const LYRICSFILES_ASKED_AT_MOST: usize = 512;
 pub const PRINTS_ASKED_AT_MOST: usize = 512;
+pub const LARGEST_CONSULTATION: usize = 64 * 1024;
+pub const LARGEST_CONSULTED: usize = 16 * 1024 * 1024;
+pub const KEPT_ASKED_AT_MOST: usize = 512;
+pub const LARGEST_KEPT_KEY: usize = 64 * 1024;
+pub const LARGEST_KEPT_ANSWER: usize = 4 * 1024 * 1024;
 pub const LARGEST_SHARED_COVER: usize = 16 * 1024 * 1024;
 
 pub const HEADS_ASKED_AT_MOST: usize = 256;
@@ -261,6 +267,14 @@ pub enum ToPeer {
         command: RemoteCommand,
     },
     Watch,
+    Consult {
+        asked: Vec<u8>,
+    },
+    Kept {
+        asker: DeviceId,
+        after: u64,
+        most: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -299,6 +313,14 @@ pub enum FromPeer {
     Controlled(Controlling),
     Zones {
         zones: Vec<RemoteZone>,
+    },
+    Consulted {
+        answer: Vec<u8>,
+    },
+    Unconsulted,
+    KeptAnswer(KeptAnswer),
+    KeptEnd {
+        mark: u64,
     },
 }
 
@@ -1579,6 +1601,16 @@ impl ToPeer {
                 command.write(&mut writer);
             }
             Self::Watch => writer.byte(9),
+            Self::Consult { asked } => {
+                writer.byte(10);
+                writer.bytes(asked);
+            }
+            Self::Kept { asker, after, most } => {
+                writer.byte(11);
+                writer.device(*asker);
+                writer.number(*after);
+                writer.number(u64::from(*most));
+            }
         }
         writer.finish()
     }
@@ -1640,6 +1672,20 @@ impl ToPeer {
                 command: RemoteCommand::read(&mut reader)?,
             },
             9 => Self::Watch,
+            10 => Self::Consult {
+                asked: reader.bytes(LARGEST_CONSULTATION)?.to_vec(),
+            },
+            11 => {
+                let asker = reader.device()?;
+                let after = reader.number()?;
+                let most = reader.small()?;
+                if most as usize > KEPT_ASKED_AT_MOST {
+                    return Err(Error::Malformed(Malformed::Overlong {
+                        length: most as usize,
+                    }));
+                }
+                Self::Kept { asker, after, most }
+            }
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1705,6 +1751,22 @@ impl FromPeer {
                 writer.byte(14);
                 write_zones(&mut writer, zones);
             }
+            Self::Consulted { answer } => {
+                writer.byte(15);
+                writer.bytes(answer);
+            }
+            Self::Unconsulted => writer.byte(16),
+            Self::KeptAnswer(kept) => {
+                writer.byte(17);
+                writer.number(kept.seq);
+                writer.number(kept.at);
+                writer.bytes(&kept.key);
+                writer.bytes(&kept.packed);
+            }
+            Self::KeptEnd { mark } => {
+                writer.byte(18);
+                writer.number(*mark);
+            }
         }
         writer.finish()
     }
@@ -1755,6 +1817,19 @@ impl FromPeer {
             13 => Self::Controlled(Controlling::tagged(reader.byte()?)),
             14 => Self::Zones {
                 zones: read_zones(&mut reader)?,
+            },
+            15 => Self::Consulted {
+                answer: reader.bytes(LARGEST_CONSULTED)?.to_vec(),
+            },
+            16 => Self::Unconsulted,
+            17 => Self::KeptAnswer(KeptAnswer {
+                seq: reader.number()?,
+                at: reader.number()?,
+                key: reader.bytes(LARGEST_KEPT_KEY)?.to_vec(),
+                packed: reader.bytes(LARGEST_KEPT_ANSWER)?.to_vec(),
+            }),
+            18 => Self::KeptEnd {
+                mark: reader.number()?,
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -2493,6 +2568,48 @@ mod tests {
             FromPeer::decoded(&FromPeer::Missing.encoded()).expect("decoded"),
             FromPeer::Missing
         );
+    }
+
+    #[test]
+    fn a_lookup_and_the_answers_a_device_kept_read_back_and_too_many_asked_are_refused() {
+        let asked = ToPeer::Consult {
+            asked: vec![1, 2, 3],
+        };
+        let kept = ToPeer::Kept {
+            asker: DeviceId([7; DEVICE_BYTES]),
+            after: 41,
+            most: 512,
+        };
+        let too_many = ToPeer::Kept {
+            asker: DeviceId([7; DEVICE_BYTES]),
+            after: 0,
+            most: 513,
+        };
+        let answers = [
+            FromPeer::Consulted {
+                answer: vec![9; 300],
+            },
+            FromPeer::Unconsulted,
+            FromPeer::KeptAnswer(crate::KeptAnswer {
+                seq: 42,
+                at: 1_790_000_000,
+                key: vec![1, 0, 1],
+                packed: vec![0x28, 0xb5, 0x2f, 0xfd],
+            }),
+            FromPeer::KeptEnd { mark: 42 },
+        ];
+
+        assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+        assert_eq!(ToPeer::decoded(&kept.encoded()).expect("decoded"), kept);
+        assert!(ToPeer::decoded(&too_many.encoded()).is_err());
+        assert_eq!(asked.encoded()[0], 10);
+        assert_eq!(kept.encoded()[0], 11);
+        for answer in answers {
+            assert_eq!(
+                FromPeer::decoded(&answer.encoded()).expect("decoded"),
+                answer
+            );
+        }
     }
 
     #[test]

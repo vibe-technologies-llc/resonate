@@ -24,6 +24,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
 | `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs`, `keeps.rs` | the seam, the registry, the last resort, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, a YouTube Music account, a keep's queue, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
+| `musicbrainz.md` | resonate-musicbrainz, the binary's `musicbrainz.rs` and `online.rs`, the phones' `enrichment.rs` and `sync/consulted.rs` | the order a lookup is answered in (kept, mirror, a device, the network), the vocabulary on the wire, kept answers, the compressed and indexed mirror of the export and its search scores, fetching the export, devices consulting each other |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `sync.md` | resonate-sync, resonate-driven, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network, one device driving another's zones |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
@@ -67,7 +68,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-five crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Thirty-six crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -87,6 +88,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-upnp       UPnP AV renderers on the network as sinks beside PipeWire's
   ├── resonate-cast       Google Cast receivers as sinks beside them, over UPnP's paced stream
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
+  ├── resonate-musicbrainz  MusicBrainz kept here: the export compressed and indexed, kept answers, layered before `Online`  [`online`]
   ├── resonate-library    scan, tags, persistence  (also on codec, vault, analysis, providers)
   ├── resonate-lyrics     lyric vocabulary and the provider seam
   ├── resonate-vault      the managed archive: FLAC, WAVE+zstd, JXL covers
@@ -111,7 +113,7 @@ resonate-server      bin: keeps sealed sync records and introduces devices, over
 
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
-`resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; a provider crate reaches the seam, core and
+`resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; `resonate-musicbrainz` reaches core and the library (and `resonate-fetch` under its `download` feature) and is reached by the binary and `resonate-mobile` alone; a provider crate reaches the seam, core and
 (over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
 hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`) and is reached by the binary and `resonate-mobile` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
@@ -146,7 +148,9 @@ Invariants the layering protects (the rules files have the rest):
   is what a scan admits.
 - **The network is behind `Reference`; the library owns the seam**: `Online` implements it, so
   `cargo tree -p resonate --no-default-features` builds with no HTTP client. Same for `Scrobbler`,
-  `Fingerprints`, `Corrections`, `LyricProvider`.
+  `Fingerprints`, `Corrections`, `LyricProvider`. `resonate-musicbrainz::Layered` wraps it, so a
+  lookup is answered by what was kept, the local copy of the export, a synced device, then the
+  network (`musicbrainz.md`).
 - **A request says what this build is and nothing else**: User-Agent `resonate/<version>`; a contact,
   AcoustID key, Spotify client ID, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
   default; `online = false` stops every request (`online.md`).
@@ -252,7 +256,7 @@ stack's test harness:
 - **Output:** `sinks` (`--renderers` searches the network too), `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
-- **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
+- **Catalog:** `musicbrainz` (the local copy of MusicBrainz: `--build [--from FOLDER]`, `--remove`, `--search`), `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).

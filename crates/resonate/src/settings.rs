@@ -113,6 +113,20 @@ impl Settings for File {
                 }
                 #[cfg(feature = "online")]
                 SettingChange::Forget(SettingKey::EnrichOnMetered) => metered::allow_lookups(false),
+                #[cfg(feature = "online")]
+                SettingChange::Store(Setting::MusicbrainzMirror(mirrors)) => {
+                    crate::musicbrainz::follow(
+                        &config::load(Some(&self.path)).unwrap_or_default(),
+                        *mirrors,
+                    );
+                }
+                #[cfg(feature = "online")]
+                SettingChange::Forget(SettingKey::MusicbrainzMirror) => {
+                    crate::musicbrainz::follow(
+                        &config::load(Some(&self.path)).unwrap_or_default(),
+                        false,
+                    );
+                }
                 SettingChange::Store(Setting::StallDownloadsOnMetered(stalls)) => {
                     metered::stall_downloads(*stalls);
                 }
@@ -202,6 +216,9 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
         }
         Setting::EnrichOnMetered(allowed) => (ConfigKey::EnrichOnMetered, Some((*allowed).into())),
+        Setting::MusicbrainzMirror(mirrors) => {
+            (ConfigKey::MusicbrainzMirror, Some((*mirrors).into()))
+        }
         Setting::StallDownloadsOnMetered(stalls) => {
             (ConfigKey::StallDownloadsOnMetered, Some((*stalls).into()))
         }
@@ -480,6 +497,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Online => ConfigKey::Online,
         SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
         SettingKey::EnrichOnMetered => ConfigKey::EnrichOnMetered,
+        SettingKey::MusicbrainzMirror => ConfigKey::MusicbrainzMirror,
         SettingKey::StallDownloadsOnMetered => ConfigKey::StallDownloadsOnMetered,
         SettingKey::Study => ConfigKey::Study,
         SettingKey::FetchLyrics => ConfigKey::FetchLyrics,

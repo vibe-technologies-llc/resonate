@@ -41,6 +41,7 @@ pub enum ConfigKey {
     Online,
     EnrichAfterScan,
     EnrichOnMetered,
+    MusicbrainzMirror,
     StallDownloadsOnMetered,
     Study,
     FetchLyrics,
@@ -189,7 +190,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 125] = [
+    pub const ALL: [Self; 126] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -221,6 +222,7 @@ impl ConfigKey {
         Self::Online,
         Self::EnrichAfterScan,
         Self::EnrichOnMetered,
+        Self::MusicbrainzMirror,
         Self::StallDownloadsOnMetered,
         Self::Study,
         Self::FetchLyrics,
@@ -350,6 +352,7 @@ impl ConfigKey {
             Self::Online => "online",
             Self::EnrichAfterScan => "enrich-after-scan",
             Self::EnrichOnMetered => "enrich-on-metered",
+            Self::MusicbrainzMirror => "musicbrainz-mirror",
             Self::StallDownloadsOnMetered => "stall-downloads-on-metered",
             Self::Study => "study",
             Self::FetchLyrics => "fetch-lyrics",
@@ -733,6 +736,22 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error("online is off in the settings, so there is no reference to ask")]
     OnlineOff,
+
+    #[cfg(feature = "online")]
+    #[error("the copy of MusicBrainz could not be built or read")]
+    Musicbrainz(#[source] Box<resonate_musicbrainz::Error>),
+
+    #[cfg(feature = "online")]
+    #[error("the copy of MusicBrainz at {path} could not be removed")]
+    RemoveMirror {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(not(feature = "online"))]
+    #[error("this build keeps no copy of MusicBrainz; it was built without the online feature")]
+    NoMirror,
 
     #[cfg(not(feature = "online"))]
     #[error("this build has no TIDAL sign-in; it was built without the online feature")]

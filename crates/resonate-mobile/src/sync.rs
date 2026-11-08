@@ -41,6 +41,9 @@ use crate::{
 };
 
 mod answers;
+mod consulted;
+
+pub(crate) use self::consulted::Layers;
 mod driving;
 mod shared;
 
@@ -78,7 +81,8 @@ pub(crate) struct Syncing {
     server: Mutex<Option<String>>,
     pub(crate) chosen_server: Mutex<Option<String>>,
     resolving: Mutex<Option<Arc<DocumentCatalog>>>,
-    running: Mutex<Option<Running>>,
+    running: Arc<Mutex<Option<Running>>>,
+    kept: std::sync::OnceLock<Option<Arc<resonate_musicbrainz::Kept>>>,
     unmetered: AtomicBool,
     arrivals: Arc<AtomicU64>,
 }
@@ -89,6 +93,19 @@ struct Running {
 }
 
 impl Syncing {
+    fn kept(&self) -> Option<Arc<resonate_musicbrainz::Kept>> {
+        self.kept
+            .get_or_init(|| consulted::kept_under(&self.folder))
+            .clone()
+    }
+
+    pub(crate) fn layered_lookups(&self) -> consulted::Layers {
+        consulted::Layers {
+            kept: self.kept(),
+            peers: consulted::peers_through(Arc::clone(&self.running)),
+        }
+    }
+
     pub(crate) fn shared(&self) -> Option<Arc<Shared>> {
         self.shared.lock().clone()
     }
@@ -123,7 +140,8 @@ impl Syncing {
             server: Mutex::new(None),
             chosen_server: Mutex::new(None),
             resolving: Mutex::new(None),
-            running: Mutex::new(None),
+            running: Arc::new(Mutex::new(None)),
+            kept: std::sync::OnceLock::new(),
             unmetered: AtomicBool::new(false),
             arrivals: Arc::new(AtomicU64::new(0)),
         }
@@ -674,6 +692,7 @@ impl MobilePlayer {
         if let Some(driven) = self.driven() {
             sync.control_with(Arc::new(driven), config.control.into());
         }
+        sync.consult_with(consulted::ConsultedHere::of(self.syncing.kept()));
         Ok(Running {
             sync,
             metered_allowed: config.metered_allowed,

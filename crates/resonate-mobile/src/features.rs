@@ -662,7 +662,11 @@ impl MobilePlayer {
 
     pub fn enrich_track(&self, id: u64) -> Result<Track> {
         self.require_online()?;
-        self.enrich_one(&Asking::over(Arc::clone(self.services.online.client())), id)?;
+        self.enrich_one(
+            &Asking::over(Arc::clone(self.services.online.client()))
+                .layered_by(self.syncing.layered_lookups()),
+            id,
+        )?;
         self.catalog.track(id)
     }
 

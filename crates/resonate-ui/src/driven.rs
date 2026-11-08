@@ -474,6 +474,7 @@ impl Driven {
                 },
                 serving: crate::Serving::none(),
                 listens: nobody_listening(),
+                mirroring: None,
                 first_read: None,
                 copying: Copying::default(),
             });

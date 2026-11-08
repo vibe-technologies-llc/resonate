@@ -87,14 +87,15 @@ the listener, never by a script.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-five targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-six targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
   `cue`, `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader), `padding` (the tag writer's padded heads and its Matroska rewrite, kind 5), `journal` (an undo journal,
   sealed by the seam so the checksum is not the fuzzer's to guess), `overlay` (the write overlay
   driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings), `transcode` (the vault's JPEG-to-JXL transcode and its reconstruction),
   `pages` (the shared-page, Spotify, YouTube, TIDAL embed and song.link readers), `manifest` (TIDAL's BTS and
-  DASH documents), `kept` (the analysis cache reader), `sofa` (an HRIR set through `hdf5-reader`).
+  DASH documents), `kept` (the analysis cache reader), `sofa` (an HRIR set through `hdf5-reader`), `musicbrainz`
+  (a lookup and an answer read back as themselves, and a line of the export's COPY text).
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and
   `cue`): the last byte's low bit serves it as a pipe (`held::Arrival::Piped`: no seek, no length,

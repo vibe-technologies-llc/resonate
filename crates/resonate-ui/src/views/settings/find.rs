@@ -591,7 +591,8 @@ impl Group {
                  seconds opening"
             }
             Self::Lookups => {
-                "musicbrainz network internet covers lyrics lrclib better lyrics betterlyrics offline"
+                "musicbrainz network internet covers lyrics lrclib better lyrics betterlyrics offline \
+                 mirror dump database local"
             }
             Self::AfterScan => "enrich automatic handover",
             Self::Metered => {
@@ -761,7 +762,7 @@ impl Group {
             Self::History => &[SettingKey::HistoryKept],
             Self::Repeating => &[SettingKey::SkipUnderRepeat],
             Self::PreviousButton => &[SettingKey::PreviousRestarts],
-            Self::Lookups => &[SettingKey::Online],
+            Self::Lookups => &[SettingKey::Online, SettingKey::MusicbrainzMirror],
             Self::AfterScan => &[SettingKey::EnrichAfterScan],
             Self::Metered => &[
                 SettingKey::EnrichOnMetered,

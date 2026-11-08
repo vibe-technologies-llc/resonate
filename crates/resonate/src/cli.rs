@@ -1431,6 +1431,43 @@ pub enum Sub {
     },
 
     #[command(
+        about = "The copy of MusicBrainz kept on this device: say what is held, build it from the \
+                 newest export (downloaded, about 7.5 GB) or from a folder holding one, remove it, \
+                 or search it. Lookups ask it before the network while musicbrainz-mirror is on"
+    )]
+    Musicbrainz {
+        #[arg(
+            long,
+            conflicts_with_all = ["remove", "search"],
+            help = "Download the newest export and build the copy from it, replacing any held"
+        )]
+        build: bool,
+
+        #[arg(
+            long,
+            value_name = "FOLDER",
+            requires = "build",
+            help = "Build from mbdump.tar.bz2 and mbdump-derived.tar.bz2 in this folder rather \
+                    than downloading them"
+        )]
+        from: Option<PathBuf>,
+
+        #[arg(
+            long,
+            conflicts_with = "search",
+            help = "Remove the copy and what was downloaded for it"
+        )]
+        remove: bool,
+
+        #[arg(
+            long,
+            value_name = "WORDS",
+            help = "Search the copy for recordings by these words"
+        )]
+        search: Option<String>,
+    },
+
+    #[command(
         about = "Sign in to TIDAL: print the link and the code to approve it with, wait for the \
                  approval and keep the refresh token in the settings file. Needs tidal-client-id \
                  set"

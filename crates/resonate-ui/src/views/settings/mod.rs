@@ -595,7 +595,10 @@ impl RootView {
             ),
             Group::Equalising => self.switch_the_equaliser(false, cx),
             Group::BoundTo => self.unbind_every_device(cx),
-            Group::Lookups => self.set_online(defaults::ONLINE, cx),
+            Group::Lookups => {
+                self.set_online(defaults::ONLINE, cx);
+                self.set_musicbrainz_mirror(defaults::MUSICBRAINZ_MIRROR, cx);
+            }
             Group::AfterScan => self.set_after_scan(defaults::ENRICH_AFTER_SCAN, cx),
             Group::Metered => {
                 self.set_enrich_on_metered(defaults::ENRICH_ON_METERED, cx);
@@ -694,6 +697,7 @@ impl RootView {
             .as_ref()
             .is_some_and(|renderers| renderers.looking());
         let enrich_on_metered = cx.global::<ResonateApp>().online.enrich_on_metered;
+        let musicbrainz_mirror = cx.global::<ResonateApp>().online.musicbrainz_mirror;
         let stall_downloads_on_metered =
             cx.global::<ResonateApp>().online.stall_downloads_on_metered;
         let flac_renderers_named = !cx.global::<ResonateApp>().flac_above_96k_for.is_empty();
@@ -780,6 +784,7 @@ impl RootView {
             output: self.player.read(cx).output_settings().clone(),
             appearance: theme::chosen(),
             online,
+            musicbrainz_mirror,
             after_scan,
             enrich_on_metered,
             stall_downloads_on_metered,

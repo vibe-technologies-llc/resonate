@@ -25,13 +25,17 @@ use tokio::{
 
 use crate::{
     Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
+    consulted::{CONSULT_ANSWERED_WITHIN, Consultable, Consulting, KEPT_PAGES_A_MEETING},
     quic::{PEER_NAME, read_frame, send_frame},
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER,
         MIRROR_LOOKED_AT_EVERY, MIRROR_TOLD_AGAIN_AFTER, Mirror, RemoteCommand, RemoteZone,
         Watched, told_alike,
     },
-    wire::{FromPeer, LARGEST_SHARED_COVER, ToPeer},
+    wire::{
+        FromPeer, KEPT_ASKED_AT_MOST, LARGEST_CONSULTED, LARGEST_KEPT_ANSWER, LARGEST_KEPT_KEY,
+        LARGEST_SHARED_COVER, ToPeer,
+    },
 };
 
 pub const DIAL_WITHIN: Duration = Duration::from_secs(8);
@@ -82,6 +86,7 @@ pub async fn dialled_within(
 
 pub struct Answering {
     pub catalog: Arc<dyn Catalog>,
+    pub consulted: RwLock<Option<Arc<dyn Consultable>>>,
     pub controlled: RwLock<Option<(Arc<dyn Controlled>, RemoteTrust)>>,
     pub ledger: Arc<Mutex<Ledger>>,
     pub device: DeviceId,
@@ -209,6 +214,13 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
         }
         ToPeer::Watch => send_mirror(&mut send, &asked.answering).await?,
+        ToPeer::Consult { asked: question } => {
+            let answer = consulted_here(&asked.answering, question).await;
+            send_frame(&mut send, &answer.encoded()).await?;
+        }
+        ToPeer::Kept { asker, after, most } => {
+            send_kept(&mut send, &asked.answering, asker, after, most).await?
+        }
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
                 send_song(&mut send, catalog, recording, offset).await?;
@@ -224,6 +236,132 @@ impl Answering {
     fn controlled(&self) -> Option<(Arc<dyn Controlled>, RemoteTrust)> {
         self.controlled.read().clone()
     }
+
+    fn consultable(&self) -> Option<Arc<dyn Consultable>> {
+        if self.transfers_allowed.load(Ordering::Relaxed) {
+            self.consulted.read().clone()
+        } else {
+            None
+        }
+    }
+}
+
+async fn consulted_here(answering: &Answering, asked: Vec<u8>) -> FromPeer {
+    let Some(consulted) = answering.consultable() else {
+        return FromPeer::Unconsulted;
+    };
+    match blocking(move || Ok(consulted.consult(&asked))).await {
+        Ok(Some(answer)) if answer.len() <= LARGEST_CONSULTED => FromPeer::Consulted { answer },
+        Ok(_) => FromPeer::Unconsulted,
+        Err(error) => {
+            tracing::debug!(%error, "another device's lookup could not be answered");
+            FromPeer::Unconsulted
+        }
+    }
+}
+
+async fn send_kept(
+    send: &mut SendStream,
+    answering: &Answering,
+    asker: DeviceId,
+    after: u64,
+    most: u32,
+) -> Result<()> {
+    let kept = match answering.consultable() {
+        Some(consulted) => {
+            let most = (most as usize).min(KEPT_ASKED_AT_MOST);
+            blocking(move || Ok(consulted.kept_after(after, most, asker)))
+                .await
+                .unwrap_or_default()
+        }
+        None => Vec::new(),
+    };
+    let mut mark = after;
+    for answer in kept {
+        mark = mark.max(answer.seq);
+        if answer.key.len() <= LARGEST_KEPT_KEY && answer.packed.len() <= LARGEST_KEPT_ANSWER {
+            send_frame(send, &FromPeer::KeptAnswer(answer).encoded()).await?;
+        }
+    }
+    send_frame(send, &FromPeer::KeptEnd { mark }.encoded()).await
+}
+
+pub async fn consult(connection: &Connection, asked: Vec<u8>) -> Consulting {
+    let asking = timeout(CONSULT_ANSWERED_WITHIN, async {
+        let (mut send, mut recv) = connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))?;
+        send_frame(&mut send, &ToPeer::Consult { asked }.encoded()).await?;
+        send.finish().map_err(|_| Error::StreamClosed)?;
+        Ok::<_, Error>(match read_frame(&mut recv).await? {
+            Some(frame) => match FromPeer::decoded(&frame)? {
+                FromPeer::Consulted { answer } => Consulting::Answered(answer),
+                FromPeer::Unconsulted => Consulting::Unconsulted,
+                _ => Consulting::Unanswered,
+            },
+            None => Consulting::Unanswered,
+        })
+    })
+    .await;
+    match asking {
+        Ok(Ok(consulting)) => consulting,
+        Ok(Err(error)) => {
+            tracing::debug!(%error, "a device was not asked a lookup");
+            Consulting::Unanswered
+        }
+        Err(_) => Consulting::Unanswered,
+    }
+}
+
+pub async fn kept_from(
+    connection: &Connection,
+    asker: DeviceId,
+    device: DeviceId,
+    consulted: Arc<dyn Consultable>,
+) -> Result<usize> {
+    let mut taken = 0;
+    for _ in 0..KEPT_PAGES_A_MEETING {
+        let marking = Arc::clone(&consulted);
+        let after = blocking(move || Ok(marking.kept_mark(device))).await?;
+        let (mut send, mut recv) = quietly_short(async {
+            connection
+                .open_bi()
+                .await
+                .map_err(|source| Error::Connection(Box::new(source)))
+        })
+        .await?;
+        let most = u32::try_from(KEPT_ASKED_AT_MOST).unwrap_or(u32::MAX);
+        send_frame(&mut send, &ToPeer::Kept { asker, after, most }.encoded()).await?;
+        send.finish().map_err(|_| Error::StreamClosed)?;
+        let mut answers = Vec::new();
+        let mut mark = None;
+        while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
+            match FromPeer::decoded(&frame)? {
+                FromPeer::KeptAnswer(answer) => answers.push(answer),
+                FromPeer::KeptEnd { mark: told } => {
+                    mark = Some(told);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let Some(mark) = mark else {
+            break;
+        };
+        let told = answers.len();
+        let taking = Arc::clone(&consulted);
+        blocking(move || {
+            taking.take_kept(device, answers, mark);
+            Ok(())
+        })
+        .await?;
+        taken += told;
+        if told < KEPT_ASKED_AT_MOST || mark <= after {
+            break;
+        }
+    }
+    Ok(taken)
 }
 
 async fn controlled_here(
@@ -454,7 +592,11 @@ pub async fn lyricsfiles_from(
             | FromPeer::Printed { .. }
             | FromPeer::PrintsEnd
             | FromPeer::Controlled(_)
-            | FromPeer::Zones { .. } => {}
+            | FromPeer::Zones { .. }
+            | FromPeer::Consulted { .. }
+            | FromPeer::Unconsulted
+            | FromPeer::KeptAnswer(_)
+            | FromPeer::KeptEnd { .. } => {}
         }
     }
     Ok(landed)
@@ -525,7 +667,11 @@ pub async fn prints_from(
             | FromPeer::Documented { .. }
             | FromPeer::LyricsfilesEnd
             | FromPeer::Controlled(_)
-            | FromPeer::Zones { .. } => {}
+            | FromPeer::Zones { .. }
+            | FromPeer::Consulted { .. }
+            | FromPeer::Unconsulted
+            | FromPeer::KeptAnswer(_)
+            | FromPeer::KeptEnd { .. } => {}
         }
     }
     Ok(landed)
@@ -582,7 +728,11 @@ pub async fn covers_from(
             | FromPeer::Printed { .. }
             | FromPeer::PrintsEnd
             | FromPeer::Controlled(_)
-            | FromPeer::Zones { .. } => {}
+            | FromPeer::Zones { .. }
+            | FromPeer::Consulted { .. }
+            | FromPeer::Unconsulted
+            | FromPeer::KeptAnswer(_)
+            | FromPeer::KeptEnd { .. } => {}
         }
     }
     Ok(landed)
@@ -662,7 +812,11 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             | FromPeer::Printed { .. }
             | FromPeer::PrintsEnd
             | FromPeer::Controlled(_)
-            | FromPeer::Zones { .. } => {}
+            | FromPeer::Zones { .. }
+            | FromPeer::Consulted { .. }
+            | FromPeer::Unconsulted
+            | FromPeer::KeptAnswer(_)
+            | FromPeer::KeptEnd { .. } => {}
         }
     }
     Ok(holdings)
@@ -693,7 +847,11 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::Printed { .. }
         | FromPeer::PrintsEnd
         | FromPeer::Controlled(_)
-        | FromPeer::Zones { .. } => Err(Error::Unmet),
+        | FromPeer::Zones { .. }
+        | FromPeer::Consulted { .. }
+        | FromPeer::Unconsulted
+        | FromPeer::KeptAnswer(_)
+        | FromPeer::KeptEnd { .. } => Err(Error::Unmet),
     }
 }
 
@@ -850,7 +1008,11 @@ async fn fetched_from(
         | FromPeer::Printed { .. }
         | FromPeer::PrintsEnd
         | FromPeer::Controlled(_)
-        | FromPeer::Zones { .. } => {
+        | FromPeer::Zones { .. }
+        | FromPeer::Consulted { .. }
+        | FromPeer::Unconsulted
+        | FromPeer::KeptAnswer(_)
+        | FromPeer::KeptEnd { .. } => {
             return Err(Error::Missing(device));
         }
     };

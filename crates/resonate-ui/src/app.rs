@@ -173,6 +173,7 @@ pub struct Lookups {
     pub sourcing: Sourcing,
     pub serving: Serving,
     pub listens: Listens,
+    pub mirroring: Option<Arc<dyn crate::Mirroring>>,
 }
 
 pub struct ResonateApp {
@@ -233,6 +234,7 @@ pub struct ResonateApp {
     pub sourcing: Sourcing,
     pub serving: Serving,
     pub listens: Listens,
+    pub mirroring: Option<Arc<dyn crate::Mirroring>>,
     pub(crate) first_read: Option<FirstRead>,
     pub(crate) copying: Copying,
 }
@@ -1146,6 +1148,7 @@ pub fn run(
             sourcing: lookups.sourcing.clone(),
             serving: lookups.serving.clone(),
             listens: lookups.listens.clone(),
+            mirroring: lookups.mirroring.clone(),
             first_read,
             copying,
         });

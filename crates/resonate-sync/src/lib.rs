@@ -1,5 +1,6 @@
 mod catalog;
 mod change;
+mod consulted;
 mod error;
 mod key;
 mod ledger;
@@ -27,8 +28,9 @@ pub use crate::{
         Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
         QueryNote, ShareNote, Stamp,
     },
+    consulted::{AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, Consulting, KeptAnswer},
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
-    key::{Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
+    key::{DEVICE_BYTES, Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
     ledger::{Applied, Follow, Ledger, Looked, Me},
     nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
     quic::{read_frame, send_frame, transport},
