@@ -10,6 +10,8 @@ pub(crate) const DELETE_PANEL: &str = "delete-sheet-panel";
 
 pub(crate) const LISTEN_PANEL: &str = "listen-sheet-panel";
 
+pub(crate) const ISRC_PANEL: &str = "isrc-sheet-panel";
+
 pub(crate) const PICKER_PANEL: &str = "playlist-picker-panel-focus";
 
 pub(crate) const MAGNIFIER_PANEL: &str = "magnifier-panel";
@@ -37,6 +39,7 @@ pub(crate) enum Sheet {
     Listening,
     Magnifying,
     Naming,
+    Typing,
     Recording,
     Wrapped,
     Sharing,
@@ -59,6 +62,7 @@ impl Sheet {
             Self::Listening => Some(LISTEN_PANEL),
             Self::Magnifying => Some(MAGNIFIER_PANEL),
             Self::Naming => Some(PICKER_PANEL),
+            Self::Typing => Some(ISRC_PANEL),
             Self::Recording => Some(RECORD_PANEL),
             Self::Wrapped => Some(WRAPPED_PANEL),
             Self::Sharing => Some(SHARING_PANEL),
@@ -77,7 +81,7 @@ impl Sheet {
             Self::Wrapped => Welcome::Panel(WRAPPED_PANEL),
             Self::Sharing => Welcome::Panel(SHARING_PANEL),
             Self::Ordering => Welcome::Panel(ORDER_PANEL),
-            Self::Naming | Self::Menu => Welcome::Nowhere,
+            Self::Naming | Self::Typing | Self::Menu => Welcome::Nowhere,
         }
     }
 }
@@ -152,6 +156,8 @@ impl RootView {
             Some(Sheet::Listening)
         } else if self.magnified.is_some() {
             Some(Sheet::Magnifying)
+        } else if self.isrc_for.is_some() {
+            Some(Sheet::Typing)
         } else if self.adding.is_some() {
             Some(Sheet::Naming)
         } else if self.record.is_some() {

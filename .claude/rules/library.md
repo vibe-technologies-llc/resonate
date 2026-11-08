@@ -893,6 +893,14 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
   under an album → the album then gets that release via `take_pressing`. A release the recording is
   not on → `false`, nothing written. The track menu offers *Place on a release…* wherever the
   reference is reachable.
+- **The listener can give a track an ISRC, and ask about one track at once.** `Library::set_isrc`
+  writes `tracks.isrc` (the upsert's `isrc` arm keeps it across rescans of an unchanged file) and
+  clears `asked`, `asks`, `refusals`, so the next lookup asks the track by its code.
+  `Library::ask_about_again` clears the same clocks and `answered` for a track no release row is
+  paired with (`false` for a paired one: its album answers for it). `Sought::track` lifts one track
+  to the front of a pass, and `still_due` keeps the seek a nudge (`Library::track_is_due`). The menu
+  offers *Enrich this song* and *Give it an ISRC…* wherever the reference is reachable
+  (`an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_vain_before`).
 - **`fingerprint.rs` is the seam a recogniser fills.** `Fingerprints` answers a `Printed`
   (`Nothing`, or `Recognised` with `RecordingMatch`es) for a `Sounded` (location, span, length, the
   title and artist the *file* said, the study's `Chromaprint`, so no printer decodes).

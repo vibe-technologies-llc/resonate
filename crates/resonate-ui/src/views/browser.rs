@@ -137,6 +137,8 @@ const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
 
 const RELEASES_OFFERED: usize = 10;
 const PLACE_ON: &str = "Place on a release…";
+const GIVE_AN_ISRC: &str = "Give it an ISRC…";
+const LOOK_IT_UP: &str = "Enrich this song";
 const READ_THE_REST: &str = "Read the rest";
 const READ_THE_REST_HINT: &str =
     "Ask MusicBrainz for the releases past the first thousand this artist is credited on";
@@ -1318,7 +1320,14 @@ impl RootView {
                     .shares(track.id)
                     .looks_for_versions(track.clone(), at)
                     .when_some(placeable, |menu, track| {
-                        menu.does(Icon::Disc, PLACE_ON, move |this, _, cx| {
+                        menu.does(Icon::Globe, LOOK_IT_UP, move |this, _, cx| {
+                            this.library
+                                .update(cx, |library, cx| library.look_up_a_track(track, cx));
+                        })
+                        .does(Icon::Rename, GIVE_AN_ISRC, move |this, window, cx| {
+                            this.ask_for_an_isrc(track, window, cx);
+                        })
+                        .does(Icon::Disc, PLACE_ON, move |this, _, cx| {
                             this.offer_releases_to_place_on(track, at, cx);
                         })
                     })

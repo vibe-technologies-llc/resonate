@@ -1540,6 +1540,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 - **A song in the queue is taken out from its menu wherever listed**: *Take out of the queue* while
   `RootView::is_in_the_queue` finds a row with the same location and span; `take_out_of_the_queue`
   drops every such row through `drop_rows`.
+- **An ISRC is typed into a sheet of its own.** *Give it an ISRC…* on a track's menu sets
+  `RootView::isrc_for`; `isrc_sheet` (`Sheet::Typing`, `ISRC_PANEL`) holds the `typed_isrc` field,
+  checked by `Isrc::new` on enter or *Give it*, a refusal a toast and the sheet kept open; escape and
+  *Cancel* leave it. A landed code starts a lookup that asks the track first
+  (`LibraryModel::give_an_isrc`); *Enrich this song* is `look_up_a_track`.
 - **A song leaves the disk only through a dialogue saying where it goes.** *Delete from
   disk…* (`Icon::Delete`) = `RootView::ask_to_delete` with a `Deleting` (track, title, artist, whether a
   cut); `deletion_sheet` (`theme::confirm_width`) names the song, says the file goes to the trash and the

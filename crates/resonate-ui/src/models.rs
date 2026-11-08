@@ -29,17 +29,17 @@ use resonate_library::{
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
     GroupRelease, Habits, HeldReleaseTrack, HiddenTracks, HistoryKept, ImportOptions,
-    ImportProgress, ImportStats, ImportSummary, Imported, Issued, KeepStopped, KeepSummary, Kept,
-    KeptList, KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing,
-    MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
-    OrganiseSummary, Pace, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder,
-    PlaylistToKeep, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
-    RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
-    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
-    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked,
-    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
-    UnheldRelease, Upkeep, Window, Wording, albums_still_answering, artists_still_answering,
-    folded_letters, songs_asked, still_answering, weighed_for,
+    ImportProgress, ImportStats, ImportSummary, Imported, Isrc, Issued, KeepStopped, KeepSummary,
+    Kept, KeptList, KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured,
+    Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress,
+    OrganiseStats, OrganiseSummary, Pace, Performer, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, PlaylistToKeep, PollOptions, PollProgress, PollStats, PollSummary, Raster,
+    Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail,
+    ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder,
+    SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared,
+    SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery,
+    Undoable, UnheldRelease, Upkeep, Window, Wording, albums_still_answering,
+    artists_still_answering, folded_letters, songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::{Providers, WhyAway};
 
@@ -120,6 +120,9 @@ const NO_LINK_TO_SHARE_ANY: &str = "There's no link for any of those tracks";
 const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
 const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
 const PLACED_ON: &str = "Placed the track on that release";
+const GAVE_THE_ISRC: &str = "Gave the track that ISRC, looking it up by the code";
+const ALREADY_ON_A_RELEASE: &str =
+    "That track is already on a release; Place on a release… moves it to another";
 
 fn read_further(read: usize) -> String {
     match read {
@@ -407,6 +410,8 @@ enum Change {
     ForgetTheMatch,
     TakePressing,
     PlaceOn,
+    GiveIsrc,
+    LookUp,
     ReadTheRest,
     Undo,
     Redo,
@@ -434,6 +439,8 @@ impl Change {
             Self::ForgetTheMatch => "forget that match",
             Self::TakePressing => "take that pressing",
             Self::PlaceOn => "place the track on that release",
+            Self::GiveIsrc => "give the track that ISRC",
+            Self::LookUp => "look the track up",
             Self::ReadTheRest => "read the rest of the discography",
             Self::Undo => "put that back",
             Self::Redo => "do that again",
@@ -2880,6 +2887,46 @@ impl LibraryModel {
                 library
                     .place_on(track, reference.as_ref(), &recording, &release)
                     .map(|placed| placed.then(|| PLACED_ON.to_owned()))
+            },
+            cx,
+        );
+    }
+
+    pub fn give_an_isrc(&mut self, track: TrackId, isrc: Isrc, cx: &mut Context<Self>) {
+        self.edited_then(
+            Wanted::Everything,
+            Change::GiveIsrc,
+            move |library| {
+                library
+                    .set_isrc(track, &isrc)
+                    .map(|()| Some(GAVE_THE_ISRC.to_owned()))
+            },
+            move |this, edited, cx| {
+                if edited == Edited::Landed {
+                    this.sought.track(track);
+                    this.enrich(false, cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    pub fn look_up_a_track(&mut self, track: TrackId, cx: &mut Context<Self>) {
+        let due = Arc::new(AtomicBool::new(false));
+        let held = Arc::clone(&due);
+        self.edited_then(
+            Wanted::Everything,
+            Change::LookUp,
+            move |library| {
+                let asked_again = library.ask_about_again(track)?;
+                held.store(asked_again, Ordering::Relaxed);
+                Ok((!asked_again).then(|| ALREADY_ON_A_RELEASE.to_owned()))
+            },
+            move |this, edited, cx| {
+                if edited == Edited::Landed && due.load(Ordering::Relaxed) {
+                    this.sought.track(track);
+                    this.enrich(false, cx);
+                }
             },
             cx,
         );

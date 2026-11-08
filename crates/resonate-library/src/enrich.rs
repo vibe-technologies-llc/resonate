@@ -120,6 +120,7 @@ impl Default for EnrichOptions {
 enum Seek {
     Album(AlbumId),
     Artist(ArtistId),
+    Track(TrackId),
 }
 
 #[derive(Debug, Default)]
@@ -134,6 +135,10 @@ impl Sought {
 
     pub fn artist(&self, id: ArtistId) {
         self.seek(Seek::Artist(id));
+    }
+
+    pub fn track(&self, id: TrackId) {
+        self.seek(Seek::Track(id));
     }
 
     fn seek(&self, seek: Seek) {
@@ -158,9 +163,10 @@ impl Ask {
         match (self, seek) {
             (Self::Album(album), Seek::Album(id)) => album.id == id,
             (Self::Artist(artist), Seek::Artist(id)) => *artist == id,
-            (Self::Album(_), Seek::Artist(_))
-            | (Self::Artist(_), Seek::Album(_))
-            | (Self::Track(_), _) => false,
+            (Self::Track(track), Seek::Track(id)) => *track == id,
+            (Self::Album(_), Seek::Artist(_) | Seek::Track(_))
+            | (Self::Artist(_), Seek::Album(_) | Seek::Track(_))
+            | (Self::Track(_), Seek::Album(_) | Seek::Artist(_)) => false,
         }
     }
 }
@@ -1726,7 +1732,10 @@ impl Pass<'_> {
                         spent.insert(Seek::Album(album.id));
                         self.album(album)
                     }
-                    Ask::Track(track) => self.track(*track),
+                    Ask::Track(track) => {
+                        spent.insert(Seek::Track(*track));
+                        self.track(*track)
+                    }
                     Ask::Artist(artist) => {
                         spent.insert(Seek::Artist(*artist));
                         self.artist(*artist)
@@ -1846,6 +1855,10 @@ impl Pass<'_> {
                 .library
                 .artist_is_due(id, WAITS, refresh)?
                 .then_some(Ask::Artist(id)),
+            Seek::Track(id) => self
+                .library
+                .track_is_due(id, WAITS, refresh)?
+                .then_some(Ask::Track(id)),
         })
     }
 

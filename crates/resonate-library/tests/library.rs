@@ -30591,3 +30591,66 @@ fn a_song_kept_by_its_link_on_a_drive_unplugged_is_not_fetched_again() -> Result
     assert_eq!(library.keeps_pending()?, 0);
     Ok(())
 }
+
+#[test]
+fn an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_vain_before()
+-> Result<()> {
+    let (_tree, library, database, file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters"),
+    )?;
+    let track = library
+        .track_at(&file, None)?
+        .expect("the catalog holds the track");
+
+    let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+    let fake = Arc::new(Fake::new(Canned {
+        isrcs: vec![(isrc(CODE), whole.clone())],
+        recordings: vec![whole],
+        artists: vec![orbiters()],
+        ..Canned::default()
+    }));
+
+    let first = enrich(&library, &fake, false)?;
+    assert_eq!(first.stats.tracks, 1);
+    assert_eq!(fake.called(LookupOp::Isrc), 0);
+
+    let waiting = enrich(&library, &fake, false)?;
+    assert_eq!(waiting.stats.tracks, 0);
+
+    library.set_isrc(track.id, &isrc(CODE))?;
+    let typed = enrich(&library, &fake, false)?;
+
+    assert_eq!(typed.stats.tracks, 1);
+    assert_eq!(typed.stats.by_isrc, 1);
+    assert_eq!(fake.called(LookupOp::Isrc), 1);
+    assert_eq!(
+        stored(&database, &file).isrc.as_deref(),
+        Some(isrc(CODE).as_str())
+    );
+    Ok(())
+}
+
+#[test]
+fn a_track_asked_in_vain_is_asked_again_at_once_when_the_listener_asks() -> Result<()> {
+    let (_tree, library, _database, file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters"),
+    )?;
+    let track = library
+        .track_at(&file, None)?
+        .expect("the catalog holds the track");
+    let fake = Arc::new(Fake::new(Canned::default()));
+
+    let first = enrich(&library, &fake, false)?;
+    let waiting = enrich(&library, &fake, false)?;
+    assert_eq!(first.stats.tracks, 1);
+    assert_eq!(waiting.stats.tracks, 0);
+
+    assert!(library.ask_about_again(track.id)?);
+    let again = enrich(&library, &fake, false)?;
+    assert_eq!(again.stats.tracks, 1);
+    Ok(())
+}

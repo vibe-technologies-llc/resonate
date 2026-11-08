@@ -19,8 +19,8 @@ use gpui::{
     UniformListScrollHandle, Window, canvas, div, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
-    AlbumId, ArtistId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId,
-    Volume, ZoneId,
+    AlbumId, ArtistId, ArtistsDrawn, Frames, Isrc, MediaLocation, PlaylistId, QueueStamp, Span,
+    TrackId, Volume, ZoneId,
 };
 use resonate_engine::{
     Command, Counting, Placement, PlayerState, QueueItem, QueueRows, RepeatMode, Unclaimed,
@@ -220,6 +220,12 @@ const MOVED_TO_THE_TRASH: &str = "Its plays stay in your statistics.";
 const A_CUT_GOES_WHOLE: &str = "It is cut from a file holding other tracks too, so the whole file goes to the trash, and every track cut from it.";
 
 const NAME_PLACEHOLDER: &str = "Name the playlist, then press enter";
+const ISRC_PLACEHOLDER: &str = "Twelve characters, like GBAYE7100389, then press enter";
+const ISRC_LABEL: &str = "Give the song an ISRC";
+const ISRC_SAYING: &str = "The next lookup asks about the song by this code.";
+const NOT_AN_ISRC: &str = "That is not an ISRC: it is twelve letters and digits";
+const LEAVE_THE_ISRC_HINT: &str = keyed!("Leave the song as it is", key!(leave));
+const GIVE_THE_ISRC_HINT: &str = "Give the song this ISRC and look it up by the code";
 
 const CONTACT_PLACEHOLDER: &str = "How a service may reach you, then press enter";
 
@@ -605,6 +611,8 @@ pub struct RootView {
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
+    pub(crate) isrc_for: Option<TrackId>,
+    pub(crate) typed_isrc: Entity<Field>,
     pub(crate) party_offered: Option<String>,
     pub(crate) incoming: Option<Incoming>,
     pub(crate) taking_in: Option<TakingIn>,
@@ -1183,6 +1191,11 @@ impl RootView {
         cx.subscribe(&organising, |this, _, _: &Blurred, cx| this.layout_left(cx))
             .detach();
 
+        let typed_isrc = cx.new(|cx| Field::new(ISRC_PLACEHOLDER, window, cx));
+        cx.subscribe_in(&typed_isrc, window, |this, _, _: &Submitted, window, cx| {
+            this.isrc_given(window, cx);
+        })
+        .detach();
         let typed_root = cx.new(|cx| Field::new(TYPED_ROOT_PLACEHOLDER, window, cx));
         cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
             this.root_typed(window, cx);
@@ -1276,6 +1289,8 @@ impl RootView {
             downloads_open: false,
             downloads_pressed_off: None,
             deleting: None,
+            isrc_for: None,
+            typed_isrc,
             party_offered: None,
             incoming: None,
             taking_in: None,
@@ -3773,6 +3788,7 @@ impl RootView {
             && self.magnified.is_none()
             && self.record.is_none()
             && self.deleting.is_none()
+            && self.isrc_for.is_none()
             && self.party_offered.is_none()
             && self.ordering.is_none()
             && self.menu.is_none()
@@ -4318,6 +4334,8 @@ impl RootView {
     ) -> bool {
         if self.deleting.is_some() {
             self.keep_the_track(cx);
+        } else if self.isrc_for.is_some() {
+            self.leave_the_isrc(window, cx);
         } else if self.party_offered.is_some() {
             self.not_joining_the_party(cx);
         } else if self.listening_open {
@@ -4355,6 +4373,7 @@ impl RootView {
             || self.ordering.is_some()
             || self.listening_open
             || self.deleting.is_some()
+            || self.isrc_for.is_some()
             || self.party_offered.is_some()
     }
 
@@ -4435,6 +4454,7 @@ impl RootView {
             &self.search,
             &self.zone_name,
             &self.name,
+            &self.typed_isrc,
             &self.contact,
             &self.acoustid,
             &self.audd,
@@ -4611,6 +4631,10 @@ impl RootView {
         }
         if self.looking.read(cx).is_focused(window) {
             self.leave_looking(window, cx);
+            return;
+        }
+        if self.isrc_for.is_some() {
+            self.leave_the_isrc(window, cx);
             return;
         }
         if self.naming.is_some() || self.adding.is_some() {
@@ -5633,6 +5657,139 @@ impl RootView {
         cx.notify();
     }
 
+    pub(crate) fn ask_for_an_isrc(
+        &mut self,
+        track: TrackId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_the_menu(cx);
+        self.isrc_for = Some(track);
+        self.typed_isrc.update(cx, |typed, cx| {
+            typed.clear(cx);
+            typed.take_focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    fn leave_the_isrc(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.isrc_for = None;
+        self.typed_isrc.update(cx, |typed, cx| typed.clear(cx));
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    fn isrc_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(track) = self.isrc_for else {
+            return;
+        };
+        let typed = self.typed_isrc.read(cx).text().trim().to_owned();
+        let Ok(isrc) = Isrc::new(&typed) else {
+            self.report(Notice::Trouble(NOT_AN_ISRC.to_owned()), cx);
+            return;
+        };
+        self.library
+            .update(cx, |library, cx| library.give_an_isrc(track, isrc, cx));
+        self.leave_the_isrc(window, cx);
+    }
+
+    fn isrc_sheet(&self, cx: &mut Context<Self>) -> Div {
+        let card = div()
+            .id("isrc-sheet")
+            .dialog(ISRC_LABEL)
+            .track_focus(&self.sheet_panels.holding(sheets::ISRC_PANEL, cx))
+            .flex()
+            .flex_col()
+            .gap_4()
+            .w(px(theme::confirm_width()))
+            .p_5()
+            .rounded_xl()
+            .bg(rgb(theme::surface()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .shadow(vec![BoxShadow {
+                color: theme::shadow(0.5),
+                offset: point(px(0.0), px(16.0)),
+                blur_radius: px(48.0),
+                spread_radius: px(0.0),
+                inset: false,
+            }])
+            .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_the_isrc(window, cx)))
+            .child(
+                div()
+                    .id("isrc-sheet-asking")
+                    .headed(2, ISRC_LABEL)
+                    .text_size(px(theme::text_lg()))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text()))
+                    .child(ISRC_LABEL),
+            )
+            .child(
+                div()
+                    .id("isrc-sheet-saying")
+                    .read_plainly_as(|| SharedString::from(ISRC_SAYING))
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::muted()))
+                    .child(ISRC_SAYING),
+            )
+            .child(
+                div()
+                    .id("isrc-field")
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .h(theme::width(theme::search_height()))
+                    .px_3()
+                    .rounded_md()
+                    .bg(rgb(theme::background()))
+                    .border_1()
+                    .border_color(theme::tinted(theme::accent(), 0x99))
+                    .text_size(px(theme::text_sm()))
+                    .cursor_text()
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(self.typed_isrc.clone())
+                    .child(kit::figure("enter").text_color(rgb(theme::faint()))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(self.in_the_pane_ring(
+                        kit::button(
+                            "leave-the-isrc",
+                            None,
+                            "Cancel",
+                            LEAVE_THE_ISRC_HINT,
+                            kit::Tone::Outlined,
+                        ),
+                        |this, window, cx| this.leave_the_isrc(window, cx),
+                        cx,
+                    ))
+                    .child(self.in_the_pane_ring(
+                        kit::button(
+                            "give-the-isrc",
+                            Some(Icon::Check),
+                            "Give it",
+                            GIVE_THE_ISRC_HINT,
+                            kit::Tone::Outlined,
+                        ),
+                        |this, window, cx| this.isrc_given(window, cx),
+                        cx,
+                    )),
+            );
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(theme::scrim()))
+            .occlude()
+            .child(motion::lifted_in(card, "isrc-sheet-arrives"))
+    }
+
     fn deletion_sheet(&self, deleting: &Deleting, cx: &mut Context<Self>) -> Div {
         let card = div()
             .id("delete-sheet")
@@ -6322,6 +6479,13 @@ impl Render for RootView {
                 app.child(motion::faded_in(
                     self.party_offer_sheet(cx),
                     "party-offer-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
+            .when(self.isrc_for.is_some(), |app| {
+                app.child(motion::faded_in(
+                    self.isrc_sheet(cx),
+                    "isrc-scrim",
                     motion::ARRIVES_OVER,
                 ))
             })

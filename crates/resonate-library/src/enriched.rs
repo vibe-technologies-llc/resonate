@@ -1954,6 +1954,61 @@ pub(crate) fn artist_to_ask(connection: &Connection, id: ArtistId) -> Result<Opt
         .transpose()
 }
 
+pub(crate) fn track_is_due(
+    connection: &Connection,
+    id: TrackId,
+    waits: Waits,
+    refresh: bool,
+    now: SystemTime,
+) -> Result<bool> {
+    connection
+        .query_row(
+            &format!(
+                "SELECT 1 FROM tracks t WHERE t.id = ?6 AND NOT {IS_PAIRED} AND {}",
+                due_again("t")
+            ),
+            params_from_iter(due_for(due_parameters(waits, refresh, now), id.get())),
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|found: Option<()>| found.is_some())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn ask_about_again(tx: &Transaction<'_>, track: TrackId) -> Result<bool> {
+    let paired: bool = tx
+        .query_row(
+            &format!("SELECT {IS_PAIRED} FROM tracks t WHERE t.id = ?1"),
+            params![track.get() as i64],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+        .ok_or(Error::UnknownTrack(track))?;
+    if paired {
+        return Ok(false);
+    }
+    tx.execute(
+        "UPDATE tracks SET asked = NULL, asks = 0, refusals = 0, answered = NULL WHERE id = ?1",
+        params![track.get() as i64],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(true)
+}
+
+pub(crate) fn set_isrc(tx: &Transaction<'_>, track: TrackId, isrc: &Isrc) -> Result<()> {
+    let changed = tx
+        .execute(
+            "UPDATE tracks SET isrc = ?2, asked = NULL, asks = 0, refusals = 0 WHERE id = ?1",
+            params![track.get() as i64, isrc.to_string()],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    if changed == 0 {
+        return Err(Error::UnknownTrack(track));
+    }
+    Ok(())
+}
+
 pub(crate) fn artist_is_due(
     connection: &Connection,
     id: ArtistId,

@@ -6050,6 +6050,22 @@ impl Library {
         })
     }
 
+    pub fn track_is_due(&self, id: TrackId, waits: Waits, refresh: bool) -> Result<bool> {
+        self.inner.read(|connection| {
+            enriched::track_is_due(connection, id, waits, refresh, SystemTime::now())
+        })
+    }
+
+    pub fn ask_about_again(&self, track: TrackId) -> Result<bool> {
+        self.inner
+            .write(|transaction| enriched::ask_about_again(transaction, track))
+    }
+
+    pub fn set_isrc(&self, track: TrackId, isrc: &Isrc) -> Result<()> {
+        self.inner
+            .write(|transaction| enriched::set_isrc(transaction, track, isrc))
+    }
+
     pub fn tracks_to_ask(&self, waits: Waits, refresh: bool) -> Result<Vec<TrackId>> {
         self.inner.read(|connection| {
             enriched::tracks_to_ask(connection, waits, refresh, SystemTime::now())
