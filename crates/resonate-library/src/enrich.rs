@@ -1468,6 +1468,71 @@ pub fn best_recording(
         .map(|(_, recording)| (recording, Certainty::Exactly))
 }
 
+pub(crate) fn recordings_to_place_on(
+    reference: &dyn Reference,
+    track: &TrackToAsk,
+) -> Result<Vec<Recording>> {
+    if let Some(mbid) = &track.mbid {
+        return Ok(reference.recording(mbid)?.into_iter().collect());
+    }
+    let taken = match &track.isrc {
+        Some(isrc) => takes_of_the_code(reference.recordings_of_isrc(isrc)?, track),
+        None => Vec::new(),
+    };
+    let named = if taken.is_empty() {
+        searched_strictly(reference, track)?.into_iter().collect()
+    } else {
+        taken
+    };
+
+    named
+        .into_iter()
+        .map(|recording| told_where_it_sits(reference, recording))
+        .collect()
+}
+
+fn takes_of_the_code(recordings: Vec<Recording>, track: &TrackToAsk) -> Vec<Recording> {
+    if let [only] = recordings.as_slice() {
+        return match the_only_take(only, track) {
+            Some(_) => recordings,
+            None => Vec::new(),
+        };
+    }
+    let Some(length) = track.length else {
+        return Vec::new();
+    };
+
+    let mut near: Vec<(Duration, Recording)> = recordings
+        .into_iter()
+        .filter_map(|recording| {
+            let difference = apart(recording.length?, length);
+            (difference <= RECORDING_MAY_DIFFER_BY).then_some((difference, recording))
+        })
+        .collect();
+    near.sort_by_key(|(difference, _)| *difference);
+    near.into_iter().map(|(_, recording)| recording).collect()
+}
+
+fn searched_strictly(reference: &dyn Reference, track: &TrackToAsk) -> Result<Option<Recording>> {
+    for wording in [Wording::Phrase, Wording::Words] {
+        let Some(asked) = recording_asked(track, wording) else {
+            return Ok(None);
+        };
+        if let Some(top) = the_strict_recording(reference.find_recording(&asked)?, track) {
+            return Ok(Some(top.into_recording()));
+        }
+    }
+    Ok(None)
+}
+
+fn told_where_it_sits(reference: &dyn Reference, named: Recording) -> Result<Recording> {
+    if !needs_its_releases_told(&named) {
+        return Ok(named);
+    }
+
+    Ok(reference.recording(&named.id)?.unwrap_or(named))
+}
+
 pub(crate) fn top_heard(found: &[RecordingMatch]) -> Option<&RecordingMatch> {
     found
         .iter()

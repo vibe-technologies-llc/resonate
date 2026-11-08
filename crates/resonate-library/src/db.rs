@@ -5760,25 +5760,15 @@ impl Library {
         Ok(true)
     }
 
-    pub fn recording_of(
+    pub fn recordings_of(
         &self,
         track: TrackId,
         reference: &dyn Reference,
-    ) -> Result<Option<Recording>> {
-        let held = self.inner.read(|connection| {
-            connection
-                .query_row(
-                    "SELECT mbid FROM tracks WHERE id = ?1",
-                    params![track.get() as i64],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()
-                .map_err(|source| Error::store(StoreOp::Query, source))
-        })?;
-        let Some(recording) = store::mbid_in(held.flatten().as_deref()) else {
-            return Ok(None);
+    ) -> Result<Vec<Recording>> {
+        let Some(asked) = self.track_as_heard(track)? else {
+            return Ok(Vec::new());
         };
-        reference.recording(&recording)
+        enrich::recordings_to_place_on(reference, &asked)
     }
 
     pub fn place_on(

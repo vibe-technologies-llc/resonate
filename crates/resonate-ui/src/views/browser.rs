@@ -3541,17 +3541,13 @@ fn releases_to_want(at: Point<Pixels>, found: &Found) -> Menu {
     menu
 }
 
-fn releases_to_place_on(at: Point<Pixels>, track: TrackId, recording: Recording) -> Menu {
-    let recording = Arc::new(recording);
+fn releases_to_place_on(at: Point<Pixels>, track: TrackId, recordings: Vec<Recording>) -> Menu {
     let mut menu = Menu::at(at);
-    for release in in_the_order_worth_offering(&recording.releases)
-        .into_iter()
-        .take(RELEASES_OFFERED)
-    {
+    for (recording, release) in releases_beside_their_recordings(recordings) {
         let placed = release.id.clone();
-        let placing = Arc::clone(&recording);
-        menu = menu.does(Icon::Disc, release_line(release), move |this, _, cx| {
-            let placing = Arc::clone(&placing);
+        let line = release_line(&release);
+        menu = menu.does(Icon::Disc, line, move |this, _, cx| {
+            let placing = Arc::clone(&recording);
             let placed = placed.clone();
             this.library.update(cx, |library, cx| {
                 library.place_on(track, placing, placed, cx)
@@ -3559,6 +3555,23 @@ fn releases_to_place_on(at: Point<Pixels>, track: TrackId, recording: Recording)
         });
     }
     menu
+}
+
+fn releases_beside_their_recordings(
+    recordings: Vec<Recording>,
+) -> Vec<(Arc<Recording>, RecordingRelease)> {
+    let mut offered: Vec<(Arc<Recording>, RecordingRelease)> = Vec::new();
+    for recording in recordings.into_iter().map(Arc::new) {
+        for release in in_the_order_worth_offering(&recording.releases) {
+            if offered.len() == RELEASES_OFFERED {
+                return offered;
+            }
+            if offered.iter().all(|(_, held)| held.id != release.id) {
+                offered.push((Arc::clone(&recording), release.clone()));
+            }
+        }
+    }
+    offered
 }
 
 impl RootView {
@@ -3576,8 +3589,12 @@ impl RootView {
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
             let _ = this.update(cx, |this, cx| match asked {
-                Ok(Some(recording)) if !recording.releases.is_empty() => {
-                    this.open_a_menu(releases_to_place_on(at, track, recording), cx);
+                Ok(recordings)
+                    if recordings
+                        .iter()
+                        .any(|recording| !recording.releases.is_empty()) =>
+                {
+                    this.open_a_menu(releases_to_place_on(at, track, recordings), cx);
                 }
                 Ok(_) => this.report(Notice::Trouble(NOTHING_PLACES_IT.to_owned()), cx),
                 Err(error) => {

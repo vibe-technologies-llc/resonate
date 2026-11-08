@@ -2849,12 +2849,12 @@ impl LibraryModel {
         &self,
         track: TrackId,
         cx: &mut Context<Self>,
-    ) -> Option<Task<resonate_library::Result<Option<Recording>>>> {
+    ) -> Option<Task<resonate_library::Result<Vec<Recording>>>> {
         let reference = self.reference.clone().filter(|_| self.online)?;
         let library = Arc::clone(&self.library);
         Some(
             cx.background_executor()
-                .spawn(async move { library.recording_of(track, reference.as_ref()) }),
+                .spawn(async move { library.recordings_of(track, reference.as_ref()) }),
         )
     }
 

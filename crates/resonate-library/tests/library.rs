@@ -11953,13 +11953,15 @@ fn a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_on
         .next()
         .expect("a scanned track");
     assert!(
-        library.recording_of(track.id, &fake)?.is_none(),
+        library.recordings_of(track.id, &fake)?.is_empty(),
         "a track nothing identified offered releases"
     );
     library.land_recording(track.id, &recording, Certainty::Nearly, None)?;
 
     let offered = library
-        .recording_of(track.id, &fake)?
+        .recordings_of(track.id, &fake)?
+        .into_iter()
+        .next()
         .expect("the recording the track is identified as");
     let order: Vec<&str> = resonate_library::in_the_order_worth_offering(&offered.releases)
         .into_iter()
@@ -14911,6 +14913,68 @@ fn an_isrc_that_names_no_release_is_followed_up_by_asking_where_the_recording_si
         "the place the follow-up named was not written"
     );
     assert_eq!(row.disc_number, Some(1));
+    Ok(())
+}
+
+#[test]
+fn a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_strict_search()
+-> Result<()> {
+    let (_tree, coded, _, coded_file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters")
+            .text(ISRC, CODE),
+    )?;
+    let (_other_tree, named, _, named_file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters"),
+    )?;
+
+    let bare = orbits_recording(RECORDING, "One of These Days", CODE, Vec::new());
+    let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+    let fake = Fake::new(Canned {
+        isrcs: vec![(isrc(CODE), bare)],
+        recordings: vec![whole],
+        found_recordings: vec![recording_match(RECORDING, "One of These Days")],
+        ..Canned::default()
+    });
+    let coded_track = coded
+        .track_at(&coded_file, None)?
+        .expect("the catalog holds the coded track");
+    let named_track = named
+        .track_at(&named_file, None)?
+        .expect("the catalog holds the named track");
+
+    let by_code = coded.recordings_of(coded_track.id, &fake)?;
+    assert_eq!(fake.called(LookupOp::Isrc), 1);
+    assert_eq!(fake.called(LookupOp::FindRecording), 0);
+    let [offered] = by_code.as_slice() else {
+        panic!("the ISRC offered {} recordings, not one", by_code.len());
+    };
+    assert_eq!(offered.id, mbid(RECORDING));
+    assert_eq!(
+        offered.releases.len(),
+        1,
+        "the recording the ISRC named was not told where it sits"
+    );
+    assert!(coded.place_on(coded_track.id, &fake, offered, &mbid(RELEASE))?);
+    assert_eq!(
+        coded
+            .track_at(&coded_file, None)?
+            .expect("the catalog still holds the coded track")
+            .track_number,
+        Some(2),
+        "the release chosen was not landed on the track"
+    );
+
+    let by_name = named.recordings_of(named_track.id, &fake)?;
+    assert_eq!(fake.called(LookupOp::FindRecording), 1);
+    let [searched] = by_name.as_slice() else {
+        panic!("the search offered {} recordings, not one", by_name.len());
+    };
+    assert_eq!(searched.id, mbid(RECORDING));
+    assert_eq!(searched.releases.len(), 1);
     Ok(())
 }
 

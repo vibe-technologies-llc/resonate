@@ -881,8 +881,14 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
   false) → `take_recording` goes on to `land_release`; already answered → the track stops at its own
   row.
 - **The listener can place a held track on a release over the rule's choice.**
-  `Library::recording_of` reads the recording a track is identified as and asks the reference for it
-  whole; `in_the_order_worth_offering` lists its releases as `meant_release` weighs them.
+  `Library::recordings_of` (`enrich::recordings_to_place_on`) finds the recordings a track could be:
+  the one it is identified as (`tracks.mbid`, else the release row it is paired with), else every
+  recording its `tracks.isrc` names whose length agrees (the only one where it is alone, as
+  `best_recording` weighs it), else the strict search on its title, artist and length, phrase then
+  words; each is told where it sits as enrichment tells it. A guess is never offered. The menu lists
+  each release beside the recording it is on (`releases_beside_their_recordings`, a release once,
+  `in_the_order_worth_offering` within each), so `place_on` lands that recording
+  (`a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_strict_search`).
   `Library::place_on` lands the recording with the chosen release under `Certainty::Nearly`; a track
   under an album → the album then gets that release via `take_pressing`. A release the recording is
   not on → `false`, nothing written. The track menu offers *Place on a release…* wherever the
