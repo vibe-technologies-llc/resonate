@@ -103,50 +103,51 @@ impl RootView {
         let heard = self.playing(&state, Some(&digest), cx).heard;
         let heading = self.inspected(&state, &digest, cx);
 
-        let mut pane = div()
-            .id("inspector")
+        let mut column = div()
             .flex()
             .flex_col()
-            .flex_1()
-            .min_w(px(0.0))
-            .gap_5()
-            .px_6()
-            .py_5()
-            .overflow_y_scroll()
-            .track_scroll(&self.inspector_scroll)
-            .child(heading)
+            .w_full()
+            .max_w(px(theme::inspector_column()))
+            .gap_4()
+            .child(div().pb_1().child(heading))
             .child(signal_path(&digest, output, sink))
-            .child(beside(vec![
-                source(&digest.info).into_any_element(),
-                heard_card(heard.as_ref()).into_any_element(),
-                sink_card(output).into_any_element(),
-                bitrate(self, &digest, graphing, cx).into_any_element(),
-                replay_gain(
-                    digest.replay_gain_mode,
-                    digest.replay_gain,
-                    &digest.info.tags.heard_gain(),
-                )
-                .into_any_element(),
-            ]));
+            .child(source(&digest.info))
+            .child(sink_card(output))
+            .child(bitrate(self, &digest, graphing, cx));
 
         if graphing && digest.profile.is_some() {
             let series = self
                 .player
                 .update(cx, |model, _| model.condensed(GRAPH_COLUMNS));
-            pane = pane.child(graph(&digest, &series));
+            column = column.child(graph(&digest, &series));
         }
+
+        column = column
+            .child(replay_gain(
+                digest.replay_gain_mode,
+                digest.replay_gain,
+                &digest.info.tags.heard_gain(),
+            ))
+            .child(heard_card(heard.as_ref()));
         if let Some(layout) = digest.layout.as_ref() {
-            pane = pane.child(container(layout));
+            column = column.child(container(layout));
         }
 
         let carried = self.player.update(cx, |model, _| model.carried_lines());
+        let pane = div()
+            .id("inspector")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w(px(0.0))
+            .px_6()
+            .py_5()
+            .overflow_y_scroll()
+            .track_scroll(&self.inspector_scroll)
+            .child(column.child(tags(&digest.info.tags, carried)));
 
         Scrollbars::of(cx)
-            .around(
-                "inspector-scrollbar",
-                self.inspector_scroll.clone(),
-                pane.child(tags(&digest.info.tags, carried)),
-            )
+            .around("inspector-scrollbar", self.inspector_scroll.clone(), pane)
             .into_any_element()
     }
 }
@@ -163,18 +164,26 @@ fn signal_path(digest: &StreamDigest, output: Option<OutputStatus>, sink: Option
     let (mode_label, mode_colour) = output.map_or(("Closed", theme::faint()), |output| {
         format::mode(output.mode)
     });
-    let processing = output.map_or_else(
-        || "No stream".to_owned(),
+    let (processing, done_to) = output.map_or_else(
+        || ("No stream".to_owned(), None),
         |output| match output.mode {
-            OutputMode::BitPerfect => "Untouched".to_owned(),
-            OutputMode::Repacked => "Repacked".to_owned(),
-            OutputMode::Dithered => {
-                format!("Dithered to {}", format::depth(output.negotiated.format))
-            }
-            OutputMode::Converted => match graph_converting(output) {
-                Some(graph) => format!("Converted to {graph} kHz by the graph"),
-                None => format!("Converted to {}", format::quality(output.negotiated)),
-            },
+            OutputMode::BitPerfect => ("Untouched".to_owned(), None),
+            OutputMode::Repacked => ("Repacked".to_owned(), None),
+            OutputMode::Dithered => (
+                "Dithered".to_owned(),
+                Some(format!("To {}", format::depth(output.negotiated.format))),
+            ),
+            OutputMode::Converted => (
+                if output.negotiated.rate == info.spec.rate {
+                    "Converted".to_owned()
+                } else {
+                    "Resampled".to_owned()
+                },
+                Some(match graph_converting(output) {
+                    Some(graph) => format!("To {graph} kHz by the graph"),
+                    None => format!("To {}", format::quality(output.negotiated)),
+                }),
+            ),
         },
     );
     let gain = match (digest.replay_gain.gain, digest.replay_gain.is_capped()) {
@@ -200,13 +209,16 @@ fn signal_path(digest: &StreamDigest, output: Option<OutputStatus>, sink: Option
             "Processing",
             processing,
             theme::text(),
-            vec![
-                gain,
-                format!(
-                    "ReplayGain {}",
-                    mode_text(digest.replay_gain_mode).to_lowercase()
-                ),
-            ],
+            done_to
+                .into_iter()
+                .chain([
+                    gain,
+                    format!(
+                        "ReplayGain {}",
+                        mode_text(digest.replay_gain_mode).to_lowercase()
+                    ),
+                ])
+                .collect(),
         ))
         .child(stage(
             "Output",
@@ -646,7 +658,7 @@ fn tags<'a>(set: &'a TagSet, carried: Option<usize>) -> Div {
 }
 
 fn summary(title: &'static str) -> Div {
-    card(title).min_w(px(0.0))
+    card(title)
 }
 
 fn summary_beside(title: &'static str, beside: Div) -> Div {

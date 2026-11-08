@@ -15,7 +15,7 @@ use crate::{
         height_of, time_marks,
     },
     format,
-    icons::Icon,
+    icons::{self, Icon},
     models::Notice,
     theme, toast,
     views::{
@@ -347,31 +347,11 @@ fn verdict_card(analysis: &Analysis) -> Div {
         .findings
         .iter()
         .enumerate()
-        .map(|(nth, finding)| {
-            div()
-                .id(("finding", nth))
-                .read_plainly_as(|| spoken::joined([severity_word(finding), &finding.told()]))
-                .flex()
-                .items_start()
-                .gap_2()
-                .text_size(px(theme::text_sm()))
-                .line_height(px(theme::text_sm() * FINDING_LEADING))
-                .text_color(rgb(theme::muted()))
-                .child(
-                    div()
-                        .flex_none()
-                        .min_w(theme::width(theme::text_sm() * SEVERITY_WORD_EMS))
-                        .whitespace_nowrap()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(rgb(finding_colour(finding)))
-                        .child(severity_word(finding)),
-                )
-                .child(div().flex_1().min_w(px(0.0)).child(finding.told()))
-        })
+        .map(|(nth, finding)| finding_row(nth, finding))
         .collect();
 
     kit::card()
-        .gap_2()
+        .gap_0()
         .child(
             div()
                 .id("verdict")
@@ -379,7 +359,6 @@ fn verdict_card(analysis: &Analysis) -> Div {
                 .flex()
                 .flex_col()
                 .gap_0p5()
-                .pb_1()
                 .child(
                     div()
                         .text_size(px(theme::text_lg()))
@@ -393,10 +372,53 @@ fn verdict_card(analysis: &Analysis) -> Div {
                         .child(judgement.verdict.told()),
                 ),
         )
-        .children(told)
+        .when(!told.is_empty(), |card| {
+            card.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .mt_3()
+                    .pt_3()
+                    .border_t_1()
+                    .border_color(rgb(theme::soft_edge()))
+                    .children(told),
+            )
+        })
 }
 
-const SEVERITY_WORD_EMS: f32 = 4.0;
+fn finding_row(nth: usize, finding: &Finding) -> Stateful<Div> {
+    let line = theme::text_sm() * FINDING_LEADING;
+    let (mark, said_in) = match Severity::of(finding) {
+        Severity::Fault | Severity::Caution => (Icon::Alert, theme::text()),
+        Severity::Aside => (Icon::Info, theme::muted()),
+    };
+
+    div()
+        .id(("finding", nth))
+        .read_plainly_as(|| spoken::joined([severity_word(finding), &finding.told()]))
+        .flex()
+        .items_start()
+        .gap_2p5()
+        .text_size(px(theme::text_sm()))
+        .line_height(px(line))
+        .text_color(rgb(said_in))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .h(px(line))
+                .child(icons::icon(
+                    mark,
+                    theme::text_sm() * FINDING_MARK_EMS,
+                    finding_colour(finding),
+                )),
+        )
+        .child(div().flex_1().min_w(px(0.0)).child(finding.told()))
+}
+
+const FINDING_MARK_EMS: f32 = 1.2;
 const FINDING_LEADING: f32 = 1.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -440,8 +462,8 @@ fn severity_word(finding: &Finding) -> &'static str {
 fn finding_colour(finding: &Finding) -> u32 {
     match Severity::of(finding) {
         Severity::Fault => theme::failure(),
-        Severity::Caution => theme::converted(),
-        Severity::Aside => theme::faint(),
+        Severity::Caution => theme::suspect(),
+        Severity::Aside => theme::muted(),
     }
 }
 

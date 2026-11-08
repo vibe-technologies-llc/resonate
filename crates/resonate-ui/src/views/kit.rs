@@ -38,6 +38,8 @@ const CHECK_MARK: f32 = 10.0;
 
 const STEPPER_READING: f32 = 56.0;
 
+const TAB_MARK: f32 = 2.0;
+
 const DETAIL_SEPARATOR: &str = "·";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -746,6 +748,65 @@ pub(crate) fn segment(
                 option
                     .text_color(rgb(theme::muted()))
                     .lit_under_the_pointer(id, |option| option.text_color(rgb(theme::text())))
+            },
+        )
+        .child(label)
+}
+
+pub(crate) fn tab_strip() -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .flex_wrap()
+        .items_end()
+        .gap_x_6()
+        .gap_y_2()
+}
+
+pub(crate) fn tab(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    chosen: bool,
+) -> Stateful<Div> {
+    let id = id.into();
+    let label = label.into();
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .named_as(Role::RadioButton, &label, "")
+        .thrown(chosen)
+        .relative()
+        .flex()
+        .flex_none()
+        .items_center()
+        .pt_1()
+        .pb_2()
+        .text_size(px(theme::text_base()))
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .child(motion::shown_while(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .bottom_0()
+                .h(px(TAB_MARK))
+                .rounded_full()
+                .bg(rgb(theme::accent())),
+            "chosen",
+            chosen,
+        ))
+        .when_else(
+            chosen,
+            |tab| {
+                tab.text_color(rgb(theme::text()))
+                    .font_weight(FontWeight::SEMIBOLD)
+            },
+            |tab| {
+                tab.text_color(rgb(theme::muted()))
+                    .font_weight(FontWeight::MEDIUM)
+                    .lit_under_the_pointer(id, |tab| tab.text_color(rgb(theme::text())))
             },
         )
         .child(label)

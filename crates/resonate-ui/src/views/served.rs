@@ -195,16 +195,19 @@ impl RootView {
         let model = self.server.read(cx);
         let titles = model.titles();
         let chosen = model.chosen();
+        let chooser = (titles.len() > 1).then(|| self.service_chooser(&titles, chosen, cx));
         let eyebrow = match place {
-            Place::Artists => titles
-                .get(chosen)
-                .map_or_else(|| place.eyebrow().to_owned(), |title| title.clone()),
+            Place::Artists if chooser.is_some() => None,
+            Place::Artists => Some(
+                titles
+                    .get(chosen)
+                    .map_or_else(|| place.eyebrow().to_owned(), |title| title.clone()),
+            ),
             Place::Artist { .. }
             | Place::Album { .. }
             | Place::Mix { .. }
-            | Place::Found { .. } => place.eyebrow().to_owned(),
+            | Place::Found { .. } => Some(place.eyebrow().to_owned()),
         };
-        let chooser = (titles.len() > 1).then(|| self.service_chooser(&titles, chosen, cx));
 
         let heading = kit::heading()
             .when_some(chooser, |heading, chooser| heading.child(chooser))
@@ -230,7 +233,9 @@ impl RootView {
                         .flex_1()
                         .min_w(theme::width(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow(eyebrow))
+                        .when_some(eyebrow, |column, eyebrow| {
+                            column.child(kit::eyebrow(eyebrow))
+                        })
                         .child(kit::title(SharedString::from(title)))
                         .when_some(counted, |column, counted| {
                             column.child(kit::subtitle(SharedString::from(counted)))
@@ -248,10 +253,10 @@ impl RootView {
         titles
             .iter()
             .enumerate()
-            .fold(kit::segmented(), |chooser, (index, title)| {
+            .fold(kit::tab_strip(), |chooser, (index, title)| {
                 chooser.child(
                     self.in_the_pane_ring(
-                        kit::segment(("served-service", index), title.clone(), index == chosen)
+                        kit::tab(("served-service", index), title.clone(), index == chosen)
                             .names(CHOOSE_HINT),
                         move |this, _, cx| this.choose_a_service(index, cx),
                         cx,

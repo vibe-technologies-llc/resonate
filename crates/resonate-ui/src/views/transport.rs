@@ -89,6 +89,8 @@ const MINUS: char = '\u{2212}';
 
 const TOGGLE_DOT: f32 = 4.0;
 
+const RAIL_ROOM_UNDER_THE_TRACK: f32 = (theme::RAIL_HEIGHT - theme::RAIL_TRACK) / 2.0;
+
 const TOGGLE_DOT_INSET: f32 = 2.0;
 
 const BY_LINE_SEPARATOR_PADDING: f32 = 6.0;
@@ -387,7 +389,7 @@ impl RootView {
                     .items_center()
                     .gap_6()
                     .h(px(theme::transport_height()))
-                    .px_5()
+                    .px(px(bar_inset()))
                     .child(now_playing)
                     .child(
                         div()
@@ -398,6 +400,7 @@ impl RootView {
                             .min_w(px(CENTRE_AT_LEAST))
                             .items_center()
                             .gap_1()
+                            .pt(px(RAIL_ROOM_UNDER_THE_TRACK))
                             .child(self.controls(playing, cx))
                             .child(self.seek_bar(position, duration, rate, cx)),
                     )
@@ -1557,6 +1560,10 @@ fn clock(reading: String) -> Div {
         .flex_none()
         .min_w(px(theme::clock_width()))
         .text_color(rgb(theme::faint()))
+}
+
+fn bar_inset() -> f32 {
+    (theme::transport_height() - theme::now_playing_cover()) / 2.0
 }
 
 fn signal_quality(quality: String) -> Div {

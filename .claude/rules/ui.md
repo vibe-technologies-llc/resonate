@@ -412,7 +412,11 @@ is never named.
   cap, a speaker's place). A list with a long name or an open end: `kit::pick`, the held value and a
   chevron, its press opening a `Menu` of `Menu::chooses` entries, a check on the held one and room kept
   on the rest (*Fit toward*, *Preferred measurer*, *Heard through*; `pick` on a band's kind opens the
-  segments under its row). Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
+  segments under its row). What switches the whole pane between
+places of the same kind (the services the Services pane browses) is a `kit::tab_strip` of `kit::tab`s:
+names at `text_base`, the chosen one in `text` at semibold over a 2 px accent underline
+(`TAB_MARK`, faded by `shown_while`), the rest muted and lit under the pointer, no box around them.
+Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   sheet's microphones, the Sort pop-up's orders). **The Sort pop-up is small and anchored, not a sheet over a scrim**: every sort mark opens through `in_the_pane_ring_at`, `order_a_listing` keeps its corner in `RootView::ordering_at`, and `order_sheet` stands a `theme::order_width()` panel (direction segments over the orders, no close or *Done*) there in an `anchored` layer whose occluding ground closes it on any press outside (`the_sort_mark_opens_a_pop_up_under_itself_that_orders_the_tracks_and_leaves_by_every_way_out`). Several held at once: `kit::checkbox`es in a
   fixed-width grid (Filters). A value moved by a step: `kit::stepper` holding two `kit::step`s and a
   `kit::stepper_reading` (the speaker's degrees; `stepper_reading_put_back` where a press restores it,
@@ -534,9 +538,13 @@ is never named.
   the forward walk. **The walk has the undo keys while the queue is in front**: `undo_edit`/`redo_edit`
   try `put_the_queue_back`/`take_the_queue_out_again` first on `Pane::Queue`. The heading is drawn
   over an emptied queue while a *Put back* step stands, *Clear* and *Save as a playlist* hidden.
-- **A card leaves out what the file does not declare; cards stack in two columns.** `fields` takes an
-  `Option` per row and draws only what is there, one faint line where a whole card is empty; `beside`
-  deals the five cards into two `flex_col` columns that wrap to one in a narrow window.
+- **A card leaves out what the file does not declare; the inspector's cards stand in one column.**
+  `fields` takes an `Option` per row and draws only what is there, one faint line where a whole card
+  is empty. The inspector stacks the signal path, Source, Output, Bitrate (and its graph),
+  ReplayGain, Heard, Container layout and Tags in one column at most `theme::inspector_column()`
+  (760) wide: dealt into two columns, cards of one row stood beside cards of eight and left ragged
+  gaps. `beside` (two `flex_col` columns wrapping to one) is the analysis pane's, for its Levels and
+  Source.
 - **The inspector is the one pane reading the catalog, not the engine; the *Heard* card is why.** Every
   other card is the `StreamDigest` or `OutputStatus`; play count and last play come off the `Track`
   `Playing` already resolves through `LibraryModel::track_of` (no query). A row no scan has seen
@@ -989,7 +997,7 @@ is never named.
     `status_kept` drops volume reading, sleep control, repeat, shuffle, then volume rail, until the
     rest fits; never the queue button or the speaker. `signal_kept` likewise against `playing_room`
     (`kit::width_of`): depth and rate give way; the codec badge stays.
-  - **The bar is `theme::transport_height()` (88) on `surface` under a `soft_edge` rule.** The play
+  - **The bar is `theme::transport_height()` (88) on `surface` under a `soft_edge` rule, inset on each side by what the cover leaves above and below it (`bar_inset`, 16), and the centre column is padded at its top by the rail's room under the track (`RAIL_ROOM_UNDER_THE_TRACK`), so the play disc and the drawn track sit as far from the bar's top as from its bottom.** The play
     button is a 40 px disc in `text` with the glyph in `background`, dimmed to `kit::LIT` under the
     pointer (never turned to the accent); the steps are bare glyphs lit on hover. Shuffle, repeat and
     the queue are a glyph in the accent over a 4 px accent dot (`TOGGLE_DOT`) while on, the dot faded
@@ -1444,11 +1452,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `refresh`, which `observe_global::<ResonateApp>` calls on every change of the global and which
   does nothing unless the services moved (the same `Arc`s in the same order); moved services start
   at the artists again on the service chosen before where it is still set, else the first, and
-  forget the covers. **With several services a chooser heads the pane**: a `kit::segmented` of
-  their titles (`served-service-<n>`) up to `SEGMENTS_AT_MOST` (3), else a `kit::pick` (`served-service`) of the
+  forget the covers. **With several services a chooser heads the pane**: a `kit::tab_strip` of
+  `kit::tab`s, their titles (`served-service-<n>`), up to `SEGMENTS_AT_MOST` (3), else a `kit::pick` (`served-service`) of the
   chosen title opening a `Menu` of them (`services_menu`, `more_services_than_fit_a_bar_are_chosen_from_a_menu`), both
-  ending in `RootView::choose_a_service` (`ServerModel::choose`), the first page's eyebrow the chosen
-  one's title; a choice starts at its artists and clears the search. **The first page is
+  ending in `RootView::choose_a_service` (`ServerModel::choose`), the first page drawing no
+  eyebrow under the tabs (the chosen one's title where there is one service and no tabs); a choice starts at its artists and clears the search. **The first page is
   `Serves::first_page`** (`artists` by default; the binary's adapter hands the service's own,
   `providers.md`): artists alone are listed bare, anything more under the search's headings
   (`serving::first_rows`) and titled *Favourites*, counted as a search is
@@ -2240,9 +2248,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   live in the library database, not `config.toml`: the one setting outside the `Settings` seam.
 - **The inspector renders the engine's `StreamDigest`, never a second read of the file** (`audio.md`).
   Order: the signal path as one card of three columns (*Source*: codec in the lossless colour over
-  depth, rate, channels, container; *Processing* in words, *Untouched*, *Dithered to 16-bit*,
-  *Converted to 48 kHz by the graph*; *Output*: mode in its colour over what was negotiated and the
-  sink; each a muted label over a `text_lg` semibold headline), detail cards, bitrate graph, tags.
+  depth, rate, channels, container; *Processing* in words, a short headline (*Untouched*, *Repacked*,
+  *Dithered*, *Resampled* where the rate moved, else *Converted*) over what it went to (*To 16-bit /
+  48 kHz*, *To 48 kHz by the graph*); *Output*: mode in its colour over what was negotiated and the
+  sink; each a muted label over a `text_lg` semibold headline), then the detail cards in one column
+  (above), the bitrate graph after the Bitrate card, tags last.
   `inspector::fields` is a property list: a muted label and its value at the same `text_sm`, a
   `soft_edge` rule between rows, labels in sentence case. Follows the *playing* file only. The live profile restarts
   on every rebind (`StreamDigest::profiled_from`: a `ProfileBuilder`'s windows are unresumable
@@ -2287,7 +2297,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `Pane::Analysis`: fourth pane under `Section::Playing`, `Icon::Analysis`. Heading = visualiser's,
   reading back codec, declared depth and rate, or how far the decode has got. Then: the verdict as a
   word in its colour at `text_lg` (*Genuine*, *Not judged*; never a tinted badge)
-  over one sentence per finding (`Finding::told`); each finding's severity word (*Fault*, *Caution*, *Note*) in its colour at a fixed width, sharing the description's font size and line height so wrapped descriptions keep their alignment; waveform (lane per channel, min-max polygon washed in
+  over one sentence per finding (`Finding::told`); the findings under a `soft_edge` rule, each its description led by a mark in its severity's colour (`Icon::Alert` in the failure colour for a fault, in `suspect` for a caution; `Icon::Info` in muted for a note, its words muted too), centred on the first line so a wrapped description keeps its alignment, the severity word kept for a screen reader; waveform (lane per channel, min-max polygon washed in
   the accent with RMS solid inside, heard part shaded, playhead a press seeks from); spectrogram (painted
   raster stretched to the card, cutoff a line in the verdict's colour); average spectrum; levels and
   source `fields` cards; a recognition card, led to the top where the audio is not the song the file

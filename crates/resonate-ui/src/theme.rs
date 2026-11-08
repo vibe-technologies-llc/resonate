@@ -1038,6 +1038,7 @@ const MENU_ICON: f32 = 13.0;
 const GHOST_WIDTH: f32 = 260.0;
 const ROOT_ICON: f32 = 14.0;
 const SETTINGS_COLUMN: f32 = 680.0;
+const INSPECTOR_COLUMN: f32 = 760.0;
 const SETTINGS_RAIL: f32 = 188.0;
 const LYRIC_COLUMN: f32 = 720.0;
 const LYRIC_GUTTER: f32 = 32.0;
@@ -1222,6 +1223,7 @@ measures! {
     ghost_width => GHOST_WIDTH,
     root_icon => ROOT_ICON,
     settings_column => SETTINGS_COLUMN,
+    inspector_column => INSPECTOR_COLUMN,
     settings_rail => SETTINGS_RAIL,
     lyric_column => LYRIC_COLUMN,
     lyric_gutter => LYRIC_GUTTER,
