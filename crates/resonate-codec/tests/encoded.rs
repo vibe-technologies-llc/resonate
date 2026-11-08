@@ -5150,6 +5150,175 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
     }
 }
 
+fn attached_files(bytes: &[u8]) -> usize {
+    ebml_top(bytes)
+        .into_iter()
+        .filter(|element| element.id == EBML_ATTACHMENTS)
+        .map(|attachments| ebml_within(bytes, attachments.body, attachments.end).len())
+        .sum()
+}
+
+fn every_seek_lands_on_its_element(bytes: &[u8], name: &str) {
+    let segment = ebml_segment(bytes);
+    let entries = seek_entries(bytes);
+    assert!(
+        entries.iter().any(|(id, _)| *id == EBML_ATTACHMENTS),
+        "{name} does not index its picture"
+    );
+    for (id, position) in entries {
+        assert_eq!(
+            ebml_element(bytes, segment.body + position).id,
+            id,
+            "{name}'s seek head points at something else"
+        );
+    }
+}
+
+fn with_the_attachments_sized_narrowly(bytes: &[u8]) -> Vec<u8> {
+    let attachments = ebml_top(bytes)
+        .into_iter()
+        .find(|element| element.id == EBML_ATTACHMENTS)
+        .expect("the attachments written");
+    assert_eq!(attachments.end, bytes.len(), "the attachments are not last");
+    let body = &bytes[attachments.body..attachments.end];
+    let width = (1..=8)
+        .find(|width| (body.len() as u64) < (1_u64 << (7 * width)) - 1)
+        .expect("a width the body fits");
+    let marked = ((1_u64 << (7 * width)) | body.len() as u64).to_be_bytes();
+
+    let mut narrowed = bytes[..attachments.at].to_vec();
+    narrowed.extend_from_slice(&EBML_ATTACHMENTS.to_be_bytes());
+    narrowed.extend_from_slice(&marked[8 - width..]);
+    narrowed.extend_from_slice(body);
+    let segment = ebml_segment(bytes);
+    let size_at = segment.at + 4;
+    let segment_width = segment.body - size_at;
+    let segment_marked =
+        ((1_u64 << (7 * segment_width)) | (narrowed.len() - segment.body) as u64).to_be_bytes();
+    narrowed[size_at..segment.body].copy_from_slice(&segment_marked[8 - segment_width..]);
+    narrowed
+}
+
+fn replaced_once(bytes: &mut [u8], held: &[u8], with: &[u8]) {
+    let at = bytes
+        .windows(held.len())
+        .position(|window| window == held)
+        .expect("the bytes the file was written with");
+    bytes[at..at + with.len()].copy_from_slice(with);
+}
+
+#[test]
+fn a_matroska_file_whose_attachments_hold_no_cover_takes_the_picture_beside_them() {
+    let picture = CoverArt {
+        format: ImageFormat::Png,
+        bytes: ONE_PIXEL_PNG.to_vec(),
+    };
+    let tree = Tree::new();
+    for (name, path, narrowed) in [
+        (
+            "packed.mka",
+            opus_as_youtube_sends_it(&tree, "packed.mka"),
+            false,
+        ),
+        ("ffmpeg.mka", opus_in_webm(&tree, "ffmpeg.mka"), false),
+        ("narrow.mka", opus_in_webm(&tree, "narrow.mka"), true),
+    ] {
+        let Some(path) = path else {
+            return;
+        };
+        let location = MediaLocation::local(&path);
+        let tags = FileTags::over(Sources::local());
+        let writing = Writing {
+            picture: Some(&picture),
+            ..only_edits(&[])
+        };
+        tags.write(&location, writing).expect("a first attachment");
+        let mut bytes = fs::read(&path).expect("a written file");
+        replaced_once(&mut bytes, b"cover.png", b"fonts.png");
+        replaced_once(
+            &mut bytes,
+            &[0x46, 0xAE, 0x81, 0x01],
+            &[0x46, 0xAE, 0x81, 0x02],
+        );
+        if narrowed {
+            bytes = with_the_attachments_sized_narrowly(&bytes);
+        }
+        fs::write(&path, &bytes).expect("the attachment renamed");
+        let before = packets_of(&path);
+        assert_eq!(
+            tags.read(&location, Picturing::Copied)
+                .expect("a readable file")
+                .picture
+                .into_copied(),
+            None,
+            "{name} still reads a cover"
+        );
+
+        tags.write(&location, writing)
+            .expect("a picture beside the attachment standing");
+
+        let read = tags
+            .read(&location, Picturing::Copied)
+            .expect("a readable file");
+        assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
+        let bytes = fs::read(&path).expect("a written file");
+        assert_eq!(attached_files(&bytes), 2, "{name}");
+        assert_eq!(packets_of(&path), before, "{name} had its packets moved");
+        every_seek_lands_on_its_element(&bytes, name);
+        assert!(
+            read_by_ffmpeg_without_a_complaint(&path),
+            "{name} was read with complaints after its attachments grew"
+        );
+    }
+}
+
+#[test]
+fn a_matroska_file_with_no_seek_head_is_given_one_in_the_room_before_its_clusters() {
+    let picture = CoverArt {
+        format: ImageFormat::Png,
+        bytes: ONE_PIXEL_PNG.to_vec(),
+    };
+    let tree = Tree::new();
+    for (name, path) in [
+        ("packed.mka", opus_as_youtube_sends_it(&tree, "packed.mka")),
+        ("ffmpeg.mka", opus_in_webm(&tree, "ffmpeg.mka")),
+    ] {
+        let Some(path) = path else {
+            return;
+        };
+        let mut bytes = fs::read(&path).expect("a Matroska file");
+        let head = ebml_top(&bytes)
+            .into_iter()
+            .find(|element| element.id == EBML_SEEK_HEAD)
+            .expect("a seek head");
+        let length = head.end - head.at;
+        let mut void = vec![0xEC, 0x01];
+        void.extend_from_slice(&((length - 9) as u64).to_be_bytes()[1..]);
+        void.resize(length, 0);
+        bytes[head.at..head.end].copy_from_slice(&void);
+        fs::write(&path, &bytes).expect("the seek head taken out");
+        let location = MediaLocation::local(&path);
+        let tags = FileTags::over(Sources::local());
+        let samples = decode(&path).samples;
+
+        tags.write(
+            &location,
+            Writing {
+                picture: Some(&picture),
+                ..only_edits(&[])
+            },
+        )
+        .expect("a picture with an index laid for it");
+
+        let read = tags
+            .read(&location, Picturing::Copied)
+            .expect("a readable file");
+        assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
+        assert_eq!(decode(&path).samples, samples, "{name} had its audio moved");
+        every_seek_lands_on_its_element(&fs::read(&path).expect("a written file"), name);
+    }
+}
+
 #[test]
 fn a_second_picture_is_refused_by_a_matroska_file_that_holds_one() {
     let tree = Tree::new();

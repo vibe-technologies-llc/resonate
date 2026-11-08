@@ -31,6 +31,8 @@ const FILE_MEDIA_TYPE: u32 = 0x4660;
 const FILE_DATA: u32 = 0x465C;
 const FILE_UID: u32 = 0x46AE;
 const THE_PICTURE_UID: u64 = 1;
+const A_COVER_IS_NAMED: &[u8] = b"cover";
+const FILE_NAMES_READ_AT_MOST: u64 = 4096;
 
 const DOC_TYPES: [&[u8]; 2] = [b"matroska", b"webm"];
 const SEGMENT_ID_BYTES: u64 = 4;
@@ -69,6 +71,7 @@ pub(crate) enum Refused {
     Unindexed,
     SecondSeekHead,
     AttachmentsStand,
+    AttachmentsSizeTooNarrow,
     NoRoomInTheSeekHead,
     SegmentSizeTooNarrow,
 }
@@ -979,12 +982,12 @@ pub(crate) struct Attached<'a> {
     pub(crate) bytes: &'a [u8],
 }
 
-fn attachments_of(file: &Attached<'_>) -> Vec<u8> {
+fn attached_file_of(file: &Attached<'_>) -> Vec<u8> {
     let mut body = sized(FILE_NAME, file.name.as_bytes());
     body.extend_from_slice(&sized(FILE_MEDIA_TYPE, file.media_type.as_bytes()));
     body.extend_from_slice(&sized(FILE_DATA, file.bytes));
     body.extend_from_slice(&sized(FILE_UID, &number_bytes(THE_PICTURE_UID)));
-    sized(ATTACHMENTS, &sized(ATTACHED_FILE, &body))
+    sized(ATTACHED_FILE, &body)
 }
 
 pub(crate) fn attached<S: Read + Seek + ?Sized>(
@@ -993,22 +996,166 @@ pub(crate) fn attached<S: Read + Seek + ?Sized>(
 ) -> Refusable<Rewrite> {
     let layout = laid_out(source)?;
     let clusters: Vec<Child> = layout.clusters().copied().collect();
-    if !layout.all(ATTACHMENTS).is_empty() {
-        return Err(Refused::AttachmentsStand);
-    }
+    let element = attached_file_of(file);
 
+    let laid = match layout.all(ATTACHMENTS).as_slice() {
+        [] => attachments_appended(source, &layout, &element)?,
+        [standing] if layout.is_the_tail(*standing) => {
+            attachments_grown(source, &layout, *standing, &element)?
+        }
+        _ => return Err(Refused::AttachmentsStand),
+    };
+
+    Ok(Rewrite { laid, clusters })
+}
+
+fn attachments_appended<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    layout: &Layout,
+    element: &[u8],
+) -> Refusable<Vec<Laid>> {
     let at = layout.end;
-    let element = attachments_of(file);
-    let end = at + element.len() as u64;
-    let mut laid = vec![Laid { at, bytes: element }];
-    laid.extend(indexed(source, &layout, ATTACHMENTS, &[], Some(at), None)?);
+    let attachments =
+        with_width(ATTACHMENTS, element, MAX_LENGTH_BYTES).ok_or(Refused::UnreadableElement)?;
+    let end = at + attachments.len() as u64;
+    let mut laid = vec![Laid {
+        at,
+        bytes: attachments,
+    }];
+    laid.extend(indexed(source, layout, ATTACHMENTS, &[], Some(at), None)?);
     laid.push(Laid {
         at: layout.size_at,
         bytes: size_bytes(end - layout.body, layout.size_width)
             .ok_or(Refused::SegmentSizeTooNarrow)?,
     });
+    Ok(laid)
+}
 
-    Ok(Rewrite { laid, clusters })
+fn attachments_grown<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    layout: &Layout,
+    index: usize,
+    element: &[u8],
+) -> Refusable<Vec<Laid>> {
+    let standing = layout.children[index];
+    if holds_a_cover_or_the_picture(source, &standing)? {
+        return Err(Refused::AttachmentsStand);
+    }
+
+    let size_at = standing.at + id_bytes(ATTACHMENTS).len() as u64;
+    let width = u32::try_from(standing.body - size_at).map_err(|_| Refused::UnreadableElement)?;
+    let grown = standing.end - standing.body + element.len() as u64;
+    let mut laid = match size_bytes(grown, width) {
+        Some(size) => {
+            let (bytes, end) = laid_at_the_tail(layout, standing.end, element.to_vec())?;
+            vec![
+                Laid {
+                    at: standing.end,
+                    bytes,
+                },
+                Laid {
+                    at: size_at,
+                    bytes: size,
+                },
+            ]
+            .into_iter()
+            .chain(segment_grown_to(layout, end)?)
+            .collect::<Vec<_>>()
+        }
+        None => {
+            let mut body =
+                held_body(source, &standing).map_err(|_| Refused::AttachmentsSizeTooNarrow)?;
+            body.extend_from_slice(element);
+            let whole = with_width(ATTACHMENTS, &body, MAX_LENGTH_BYTES)
+                .ok_or(Refused::AttachmentsSizeTooNarrow)?;
+            let (bytes, end) = laid_at_the_tail(layout, standing.at, whole)?;
+            std::iter::once(Laid {
+                at: standing.at,
+                bytes,
+            })
+            .chain(segment_grown_to(layout, end)?)
+            .collect()
+        }
+    };
+    laid.extend(indexed(
+        source,
+        layout,
+        ATTACHMENTS,
+        &[index],
+        Some(standing.at),
+        Some(index),
+    )?);
+    Ok(laid)
+}
+
+fn laid_at_the_tail(layout: &Layout, at: u64, mut bytes: Vec<u8>) -> Refusable<(Vec<u8>, u64)> {
+    let length = bytes.len() as u64;
+    let end = match (layout.end - at).checked_sub(length) {
+        Some(0) => layout.end,
+        Some(left) if left >= SMALLEST_VOID_BYTES => {
+            bytes.extend_from_slice(&void_of(left).ok_or(Refused::UnreadableElement)?);
+            layout.end
+        }
+        Some(left) => {
+            let padding = left + PADDING_LEFT_FOR_THE_NEXT_EDIT;
+            bytes.extend_from_slice(&void_of(padding).ok_or(Refused::UnreadableElement)?);
+            at + length + padding
+        }
+        None => at + length,
+    };
+    Ok((bytes, end))
+}
+
+fn segment_grown_to(layout: &Layout, end: u64) -> Refusable<Option<Laid>> {
+    if end <= layout.end {
+        return Ok(None);
+    }
+    Ok(Some(Laid {
+        at: layout.size_at,
+        bytes: size_bytes(end - layout.body, layout.size_width)
+            .ok_or(Refused::SegmentSizeTooNarrow)?,
+    }))
+}
+
+fn holds_a_cover_or_the_picture<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    attachments: &Child,
+) -> Refusable<bool> {
+    for file in children_of(source, attachments)? {
+        if file.id != ATTACHED_FILE {
+            continue;
+        }
+        for part in children_of(source, &file)? {
+            if part.end - part.body > FILE_NAMES_READ_AT_MOST {
+                continue;
+            }
+            let said = match part.id {
+                FILE_NAME => is_named_a_cover(&held_body(source, &part)?),
+                FILE_UID => number_in(&held_body(source, &part)?) == Some(THE_PICTURE_UID),
+                _ => false,
+            };
+            if said {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn is_named_a_cover(name: &[u8]) -> bool {
+    name.get(..A_COVER_IS_NAMED.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(A_COVER_IS_NAMED))
+}
+
+fn children_of<S: Read + Seek + ?Sized>(source: &mut S, parent: &Child) -> Refusable<Vec<Child>> {
+    let mut children = Vec::new();
+    let mut at = parent.body;
+    while at < parent.end {
+        let child = child_at(source, at, parent.end)?;
+        at = child.end;
+        children.push(child);
+    }
+    Ok(children)
 }
 
 struct Placing {
@@ -1075,7 +1222,9 @@ fn indexed<S: Read + Seek + ?Sized>(
 
     let Some(index) = heads.first().copied() else {
         return if past_the_clusters {
-            Err(Refused::Unindexed)
+            a_seek_head_laid_in_a_void(layout, id, at)
+                .map(Some)
+                .ok_or(Refused::Unindexed)
         } else {
             Ok(None)
         };
@@ -1098,6 +1247,23 @@ fn indexed<S: Read + Seek + ?Sized>(
     let room = layout.room_of(index) - head.at;
     let bytes = laid_in_the_room(wanted, layout, id, room).ok_or(Refused::NoRoomInTheSeekHead)?;
     Ok(Some(Laid { at: head.at, bytes }))
+}
+
+fn a_seek_head_laid_in_a_void(layout: &Layout, id: u32, at: Option<u64>) -> Option<Laid> {
+    let first_cluster = layout.clusters().next()?.at;
+    let body = laid_seek_head(&[Entry {
+        id: id_bytes(id),
+        position: at? - layout.body,
+    }]);
+    layout
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, child)| child.id == u32::from(VOID) && child.end <= first_cluster)
+        .find_map(|(index, void)| {
+            let bytes = filling(SEEK_HEAD, &body, layout.room_of(index) - void.at)?;
+            Some(Laid { at: void.at, bytes })
+        })
 }
 
 fn laid_in_the_room(

@@ -395,6 +395,31 @@ fn a_song_is_named_from_one_listing_by_its_track_artist_and_album() {
 }
 
 #[test]
+fn a_songs_picture_is_named_by_its_widest_thumbnail_that_is_not_webp() {
+    let fake = answering(&json!({
+        "track": "Creep", "artist": "Radiohead",
+        "thumbnails": [
+            { "url": "https://i.ytimg.com/vi/9RfVp-GhKfs/default.jpg", "width": 120 },
+            { "url": "https://i.ytimg.com/vi/9RfVp-GhKfs/hqdefault.jpg?sqp=a", "width": 480 },
+            { "url": "https://i.ytimg.com/vi_webp/9RfVp-GhKfs/maxresdefault.webp", "width": 1280 },
+        ],
+    }));
+    let named = music(&fake, cookies());
+
+    assert_eq!(
+        named
+            .picture_named_for("9RfVp-GhKfs")
+            .expect("an answer")
+            .as_deref(),
+        Some("https://i.ytimg.com/vi/9RfVp-GhKfs/hqdefault.jpg?sqp=a")
+    );
+    assert_eq!(
+        named.picture_named_for("not a video").expect("an answer"),
+        None
+    );
+}
+
+#[test]
 fn a_video_with_no_track_is_named_by_its_title_and_its_channel_short_of_the_topic() {
     let fake = answering(&json!({ "title": "Луна", "channel": "Кошка - Topic", "duration": 201 }));
 

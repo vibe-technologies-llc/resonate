@@ -884,8 +884,16 @@ service offers it.
   `NotOffered` by default; YouTube Music's is its `cover`, so only `lh3.googleusercontent.com`,
   `yt3.googleusercontent.com` and `i.ytimg.com`) and `filed::tagged` writes it with the tags, a
   Matroska file taking it as an attachment (`library.md`); a picture that cannot be fetched or
-  written costs the song nothing but its picture. A song kept before this was written has none
-  (`ROADMAP.md`).
+  written costs the song nothing but its picture. **A landed keep with no picture address is asked
+  for one once**: each keep pass first walks the landed `kept_songs` rows with no `cover` and no
+  `picture_asked` whose source is registered (`picture_what_landed_bare`), asks
+  `Providers::picture_named_from` (`Provider::picture_named_for`, by the video; YouTube Music's runs
+  the tool's `-J` read of the video and names its widest thumbnail that is not WebP), and where the
+  file carries no picture writes the fetched one in and reads its root again; the row keeps the
+  address and the stamp, so nothing is asked twice, and a provider that could not answer is asked
+  on the next pass
+  (`a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once`,
+  `a_songs_picture_is_named_by_its_widest_thumbnail_that_is_not_webp`).
   (`a_song_kept_lands_with_the_picture_its_service_showed_for_it`,
   `a_song_whose_picture_cannot_be_fetched_is_kept_all_the_same`,
   `a_song_pressed_again_keeps_the_picture_it_was_first_pressed_with`)

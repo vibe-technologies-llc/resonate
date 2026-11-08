@@ -28271,6 +28271,8 @@ struct Tube {
 
 const A_PICTURE_THE_TUBE_REFUSES: &str = "https://i.ytimg.com/gone";
 
+const A_PICTURE_THE_TUBE_NAMES: &str = "https://i.ytimg.com/vi/";
+
 impl Tube {
     fn named(name: &str) -> Arc<Self> {
         Arc::new(Self {
@@ -28330,6 +28332,10 @@ impl Provider for Tube {
             });
         }
         Ok(png(64))
+    }
+
+    fn picture_named_for(&self, key: &str) -> ProvidedResult<Option<String>> {
+        Ok(Some(format!("{A_PICTURE_THE_TUBE_NAMES}{key}")))
     }
 
     fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
@@ -28438,6 +28444,14 @@ fn a_music_folder() -> Result<(Tree, Library)> {
     let library = Library::open_in_memory()?;
     delivering_into(&library, &tree);
     Ok((tree, library))
+}
+
+fn a_music_folder_on_disk() -> Result<(Tree, Library, PathBuf)> {
+    let tree = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    delivering_into(&library, &tree);
+    Ok((tree, library, database))
 }
 
 fn held_as(tree: &Tree, relative: &str, title: &str, frames: usize) -> PathBuf {
@@ -28582,6 +28596,57 @@ fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> 
         Some(png(64)),
         "the library draws no cover for a kept song"
     );
+    Ok(())
+}
+
+#[test]
+fn a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once() -> Result<()> {
+    let (tree, library, database) = a_music_folder_on_disk()?;
+    let tube = Tube::new();
+    library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    assert_eq!(pass(&library, &tube)?.landed, 1);
+    beside(&database)
+        .execute(
+            "UPDATE kept_songs SET cover = NULL, picture_asked = NULL",
+            [],
+        )
+        .expect("the keep is made one from before pictures");
+    let track = track_titled(&library, "San Tropez")?;
+    let bare = FileTags::over(Sources::local())
+        .read(&track.location, Picturing::Copied)
+        .expect("the file reads");
+    assert_eq!(bare.picture.into_copied(), None);
+    tube.pictures_asked.lock().clear();
+
+    pass(&library, &tube)?;
+    pass(&library, &tube)?;
+
+    let named = format!("{A_PICTURE_THE_TUBE_NAMES}abc123");
+    assert_eq!(
+        *tube.pictures_asked.lock(),
+        std::slice::from_ref(&named),
+        "the picture was not asked for once"
+    );
+    let carried = FileTags::over(Sources::local())
+        .read(&track.location, Picturing::Copied)
+        .expect("the file reads")
+        .picture
+        .into_copied()
+        .expect("the file carries the picture");
+    assert_eq!(carried.bytes, png(64));
+    let album = track_titled(&library, "San Tropez")?
+        .album_id
+        .expect("the song names its album");
+    assert_eq!(
+        library.cover_art(album)?.map(|art| art.bytes),
+        Some(png(64)),
+        "the library still draws no cover for the kept song"
+    );
+    let kept: Option<String> = beside(&database)
+        .query_row("SELECT cover FROM kept_songs", [], |row| row.get(0))
+        .expect("the keep reads");
+    assert_eq!(kept, Some(named));
+    assert!(tree.path().join("library.db").exists());
     Ok(())
 }
 

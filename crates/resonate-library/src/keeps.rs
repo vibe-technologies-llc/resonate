@@ -6,7 +6,9 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_codec::{CoverArt, ImageFormat};
+use resonate_codec::{
+    CoverArt, FileTags, ImageFormat, Picturing, Sources, TagSink as _, TagSource as _, Writing,
+};
 use resonate_core::{Gate, Link, Locator, MediaLocation, SourceId, TrackId};
 use resonate_providers::{
     ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Delivered, Delivery, Identity, Providers,
@@ -360,6 +362,7 @@ impl Library {
         let _under_way = KeepUnderWay::of(self);
         organise::sweep_what_a_dead_writer_staged(self);
         self.read_what_landed_unread()?;
+        self.picture_what_landed_bare(providers, cancelled)?;
 
         let queued = self.keeps_of(providers)?;
         if queued.is_empty() {
@@ -393,6 +396,44 @@ impl Library {
             }
             walked
         })
+    }
+
+    fn picture_what_landed_bare(
+        &self,
+        providers: &Providers,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<()> {
+        let offered = providers.names();
+        let bare = self.inner().read(landed_bare)?;
+        let mut roots = Vec::new();
+        for landed in bare
+            .iter()
+            .filter(|landed| offered.contains(&landed.source))
+        {
+            if cancelled() {
+                break;
+            }
+            let Some(address) = picture_heard_for(landed, providers) else {
+                continue;
+            };
+            let pictured = address
+                .as_deref()
+                .filter(|_| !carries_a_picture(&landed.path))
+                .and_then(|address| fetched(&landed.source, &landed.video, address, providers))
+                .is_some_and(|picture| written_into(&landed.path, &picture));
+            self.inner().write(|transaction| {
+                asked_for_its_picture(transaction, landed, address.as_deref())
+            })?;
+            if pictured {
+                roots.extend(self.root_reaching(&landed.path)?);
+            }
+        }
+        roots.sort();
+        roots.dedup();
+        for root in roots {
+            synced::scanned_once_free(self, root);
+        }
+        Ok(())
     }
 
     fn root_stands(&self, root: &Path) -> Result<()> {
@@ -928,22 +969,125 @@ fn asked(
 }
 
 fn pictured(song: &SongToKeep, providers: &Providers) -> Option<CoverArt> {
-    let address = song.cover.as_deref()?;
-    let bytes = match providers.picture_from(&song.source, address) {
+    fetched(&song.source, &song.video, song.cover.as_deref()?, providers)
+}
+
+fn fetched(
+    source: &SourceId,
+    video: &str,
+    address: &str,
+    providers: &Providers,
+) -> Option<CoverArt> {
+    let bytes = match providers.picture_from(source, address) {
         Ok(bytes) => bytes,
         Err(error) => {
-            tracing::warn!(%error, video = song.video, "a kept song's picture could not be fetched");
+            tracing::warn!(%error, video, "a kept song's picture could not be fetched");
             return None;
         }
     };
     let Some(format) = ImageFormat::sniff(&bytes) else {
         tracing::warn!(
-            video = song.video,
+            video,
             "a kept song's picture is in no format this build reads"
         );
         return None;
     };
     Some(CoverArt { format, bytes })
+}
+
+struct LandedBare {
+    id: i64,
+    source: SourceId,
+    video: String,
+    path: PathBuf,
+}
+
+fn landed_bare(connection: &Connection) -> Result<Vec<LandedBare>> {
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT id, source, video, landed FROM kept_songs
+              WHERE landed IS NOT NULL AND cover IS NULL AND picture_asked IS NULL
+                AND gone = 0
+              ORDER BY id",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, source, video, landed)| {
+            Some(LandedBare {
+                id,
+                source: SourceId::new(&source).ok()?,
+                video,
+                path: store::path_of(&landed),
+            })
+        })
+        .collect())
+}
+
+fn picture_heard_for(landed: &LandedBare, providers: &Providers) -> Option<Option<String>> {
+    match providers.picture_named_from(&landed.source, &landed.video) {
+        Ok(address) => Some(address),
+        Err(error) => {
+            tracing::debug!(%error, video = landed.video, "a kept song's picture could not be named");
+            None
+        }
+    }
+}
+
+fn carries_a_picture(path: &Path) -> bool {
+    FileTags::over(Sources::local())
+        .read(&MediaLocation::local(path), Picturing::Whether)
+        .is_ok_and(|tagged| tagged.picture.carries_one())
+}
+
+fn written_into(path: &Path, picture: &CoverArt) -> bool {
+    let location = MediaLocation::local(path);
+    let tags = FileTags::over(Sources::local());
+    if !tags.writes(&location) {
+        return false;
+    }
+    match tags.write(
+        &location,
+        Writing {
+            edits: &[],
+            taken: &[],
+            picture: Some(picture),
+            unpictured: false,
+            popularity: None,
+        },
+    ) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "a kept song could not take its picture");
+            false
+        }
+    }
+}
+
+fn asked_for_its_picture(
+    transaction: &Transaction<'_>,
+    landed: &LandedBare,
+    address: Option<&str>,
+) -> Result<()> {
+    transaction
+        .execute(
+            "UPDATE kept_songs SET picture_asked = ?2, cover = coalesce(cover, ?3)
+              WHERE id = ?1",
+            params![landed.id, store::to_nanos(SystemTime::now()), address],
+        )
+        .map(drop)
+        .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 fn length_column(length: Option<Duration>) -> Option<i64> {

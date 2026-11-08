@@ -58,6 +58,8 @@ struct Video {
     album: Option<String>,
     #[serde(default)]
     duration: Option<Value>,
+    #[serde(default)]
+    thumbnails: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -82,6 +84,24 @@ fn length_of(duration: Option<&Value>) -> Option<Duration> {
     Duration::try_from_secs_f64(duration?.as_f64()?).ok()
 }
 
+fn widest_picture_read(thumbnails: Option<&Value>) -> Option<Id> {
+    thumbnails?
+        .as_array()?
+        .iter()
+        .filter_map(|thumbnail| {
+            let address = thumbnail.get("url")?.as_str()?;
+            let width = thumbnail.get("width").and_then(Value::as_u64).unwrap_or(0);
+            (!is_webp(address)).then_some((width, address))
+        })
+        .max_by_key(|(width, _)| *width)
+        .and_then(|(_, address)| Id::new(address))
+}
+
+fn is_webp(address: &str) -> bool {
+    let path = address.split(['?', '#']).next().unwrap_or(address);
+    path.ends_with(".webp") || path.contains("/vi_webp/")
+}
+
 fn artist_of(channel: &str) -> String {
     channel
         .strip_suffix(A_TOPIC_CHANNEL_ENDS)
@@ -101,6 +121,7 @@ impl Video {
                 .or_else(|| named(self.channel.as_deref()).map(artist_of)),
             album: named(self.album.as_deref()).map(str::to_owned),
             length: length_of(self.duration.as_ref()),
+            cover: widest_picture_read(self.thumbnails.as_ref()),
             title,
             ..Song::only(Id::new(video.as_str())?)
         })

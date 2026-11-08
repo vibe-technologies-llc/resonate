@@ -13,9 +13,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono/stereo switch of a low-bitrate podcast; `opus-rs` 0.1.37 refuses a packet whose TOC channel
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
-
-## Providers and network
-- [S · 0.6.1] A YouTube Music song kept before keeps carried their picture has none: its file holds a
-  title, artist and album and no cover, and its `kept_songs` row holds no address to ask for one
-  again, so the library draws a disc for it. A Matroska file with no `SeekHead`, or one that already
-  holds an `Attachments` element, is left without a picture the same way (`library.md`)

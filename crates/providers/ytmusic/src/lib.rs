@@ -333,6 +333,16 @@ impl Provider for YtMusic {
         PlaysInPlace::cover(self, &cover, 0)
     }
 
+    fn picture_named_for(&self, key: &str) -> Result<Option<String>> {
+        let Some(video) = VideoId::read(key) else {
+            return Ok(None);
+        };
+        Ok(self
+            .song(&video)?
+            .and_then(|song| song.cover)
+            .map(|cover| cover.as_str().to_owned()))
+    }
+
     fn find(&self, identity: &Identity) -> Result<Obtained> {
         let video = match self.linked(identity) {
             Some(video) => video,

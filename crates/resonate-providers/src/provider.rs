@@ -34,6 +34,10 @@ pub trait Provider: Send + Sync {
     fn picture(&self, _address: &str) -> Result<Vec<u8>> {
         Err(not_offered(self.source(), ProviderOp::Cover))
     }
+
+    fn picture_named_for(&self, _key: &str) -> Result<Option<String>> {
+        Err(not_offered(self.source(), ProviderOp::Cover))
+    }
 }
 
 pub struct Unprovided {
@@ -206,6 +210,16 @@ impl Providers {
             .map_or_else(
                 || Err(not_offered(source, ProviderOp::Cover)),
                 |provider| provider.picture(address),
+            )
+    }
+
+    pub fn picture_named_from(&self, source: &SourceId, key: &str) -> Result<Option<String>> {
+        self.providers
+            .iter()
+            .find(|provider| provider.source() == source)
+            .map_or_else(
+                || Err(not_offered(source, ProviderOp::Cover)),
+                |provider| provider.picture_named_for(key),
             )
     }
 

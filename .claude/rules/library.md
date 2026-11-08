@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `by_origin` indexes on `vault_objects` and `object_deliveries` that find a delivery by its `taken_from`, the latest: `providers.md`'s *Keeping a song from a service*). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `by_origin` indexes on `vault_objects` and `object_deliveries` that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture, the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1139,20 +1139,28 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   eight-byte positions take a fourth entry; a rewritten `SeekHead` or `Tags` drops its `CRC-32`
   rather than carry a stale one. **Refused with the file untouched** (`Error::Unwritable`): a
   `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
-  `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it, a
-  `SeekHead` with no room, a second `SeekHead` where `Tags` move, a picture where the file already
-  holds an `Attachments` element or `unpictured` is asked (nothing is taken out).
+  `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it and no
+  `Void` there to lay one in, a `SeekHead` with no room, a second `SeekHead` where `Tags` move, a
+  picture where the file's `Attachments` already hold a file named `cover…` or carrying our
+  `FileUID`, or stand anywhere but the segment's tail, or `unpictured` is asked (nothing is taken out).
   `TagSink::rated` answers `Rated::Unrateable` and `TagSink::holds_pictures` false, so a retag
   offers such a file no sleeve and its names still land.
 - **A picture is attached to a Matroska file once, after the clusters, and indexed like `Tags`.**
   `matroska_tags::attached` appends one `Attachments` element (`AttachedFile` named `cover.<ext>`,
-  the media type, the bytes, a fixed `FileUID`) at the segment's end, the picture's one home,
+  the media type, the bytes, a fixed `FileUID`; its size field eight bytes wide so it can grow) at
+  the segment's end, the picture's one home; where an `Attachments` already ends the segment holding
+  no cover (a font), the `AttachedFile` is added inside it (`attachments_grown`: written after it and
+  its size moved, or the element laid again whole with a wide size where its own is too narrow);
   since symphonia finds it only through the `SeekHead` and `probe`'s `attached_cover` takes a file
   whose name begins `cover`; a file whose album or sleeve reads it back needs nothing else. The
   `SeekHead` entry for it takes the room `Tags` left; where the fifth entry does not fit (YouTube's
   head holds four), `laid_in_the_room` lets go of entries that point before the first `Cluster`,
   earliest first, since a reader takes those in order and no index is lost
   (`a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_the_index_whole`).
+  A file with no `SeekHead` is given one, naming the element alone, in a `Void` ahead of the first
+  `Cluster` (`a_seek_head_laid_in_a_void`;
+  `a_matroska_file_with_no_seek_head_is_given_one_in_the_room_before_its_clusters`,
+  `a_matroska_file_whose_attachments_hold_no_cover_takes_the_picture_beside_them`).
   `written_into_a_matroska` lands the tags first and the picture as a second landing
   (`Taken::of` read afresh); a keep that cannot take its picture is retried without it
   (`filed::tagged`), so the song is tagged whatever the picture does.
