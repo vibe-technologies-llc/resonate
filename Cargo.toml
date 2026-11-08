@@ -80,7 +80,7 @@ imbl = { version = "7.0.2", default-features = false }
 qrcode = { version = "0.14.1", default-features = false }
 parking_lot = { version = "0.13.0", default-features = false }
 rayon = { version = "1.12.0", default-features = false }
-notify = { version = "8.2.1", default-features = false }
+notify = { version = "8.2.2", default-features = false }
 bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
@@ -88,7 +88,7 @@ signal-hook = { version = "0.4.6", default-features = false, features = ["iterat
 same-file = "1.0.6"
 keepawake = { version = "0.6.1", default-features = false }
 fs4 = { version = "1.1.0", default-features = false }
-interprocess = { version = "2.4.7", default-features = false }
+interprocess = { version = "2.4.8", default-features = false }
 ctrlc = { version = "3.5.2", default-features = false, features = ["termination"] }
 crossterm = { version = "0.29.0", default-features = false, features = ["events", "windows"] }
 trash = { version = "5.3.0", default-features = false, features = ["coinit_apartmentthreaded"] }
@@ -101,7 +101,7 @@ unicode-normalization = { version = "0.1.26", default-features = false, features
 encoding_rs = { version = "0.8.44", default-features = false, features = ["alloc"] }
 chardetng = { version = "1.0.0", default-features = false }
 jiff = {
-    version = "0.2.39",
+    version = "0.2.40",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
