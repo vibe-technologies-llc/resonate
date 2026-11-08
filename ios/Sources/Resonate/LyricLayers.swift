@@ -387,15 +387,21 @@ final class LyricLayerView: UIView {
         }
         for (index, row) in scene.rows.enumerated() where index < laid.rows.count {
             let element = lines[index]
-            let frame = laid.rows[index].frame.offsetBy(dx: 0, dy: scene.offset + row.inset)
-            element.accessibilityFrameInContainerSpace = frame
-            element.isAccessibilityElement = !row.look.blank
-            element.accessibilityLabel = row.look.text
-            element.accessibilityValue = row.moment.map(ResonateLogic.clock)
-            element.accessibilityTraits = row.moment == nil ? (row.lit ? .selected : []) : (row.lit ? [.button, .selected] : .button)
-            let moment = row.moment
-            let seek = seek
-            element.activated = { moment.map { seek($0) } != nil }
+            let frame = laid.rows[index].frame.offsetBy(dx: 0, dy: scene.offset + row.inset).integral
+            let description = LyricLineDescription(frame: frame, blank: row.look.blank, text: row.look.text, moment: row.moment, lit: row.lit)
+            guard element.described != description else { continue }
+
+            if element.described?.frame != frame { element.accessibilityFrameInContainerSpace = frame }
+            if element.described?.blank != description.blank { element.isAccessibilityElement = !description.blank }
+            if element.described?.text != description.text { element.accessibilityLabel = description.text }
+            if element.described?.moment != description.moment {
+                let moment = description.moment
+                let seek = seek
+                element.accessibilityValue = moment.map(ResonateLogic.clock)
+                element.activated = { moment.map { seek($0) } != nil }
+            }
+            element.accessibilityTraits = description.traits
+            element.described = description
         }
     }
 
@@ -429,8 +435,31 @@ final class LyricLayerView: UIView {
     }
 }
 
+struct LyricDotLook: Equatable {
+    let frame: CGRect
+    let ink: Color.Resolved
+}
+
+struct LyricLineDescription: Equatable {
+    let frame: CGRect
+    let blank: Bool
+    let text: String
+    let moment: UInt64?
+    let lit: Bool
+
+    var traits: UIAccessibilityTraits {
+        switch (moment == nil, lit) {
+        case (true, true): .selected
+        case (true, false): []
+        case (false, true): [.button, .selected]
+        case (false, false): .button
+        }
+    }
+}
+
 final class LyricLineElement: UIAccessibilityElement {
     var activated: () -> Bool = { false }
+    var described: LyricLineDescription?
 
     override func accessibilityActivate() -> Bool {
         activated()
@@ -745,6 +774,7 @@ final class LyricRowLayers {
     private let blend = CAShapeLayer()
     private let breath = CALayer()
     private var dots: [CALayer] = []
+    private var dotLooks: [LyricDotLook] = []
     private var typeset: LyricTypeset?
     private var drawnAt: CGFloat?
     private var painting: CGFloat?
@@ -878,7 +908,8 @@ final class LyricRowLayers {
             return
         }
         if breath.isHidden { breath.isHidden = false }
-        breath.opacity = Float(look.opacity)
+        let opacity = Float(look.opacity)
+        if breath.opacity != opacity { breath.opacity = opacity }
         let widest = measures.dot * (1 + LyricPace.dotSwellsBy)
         let count = CGFloat(dots.count)
         let span = count * widest + (count - 1) * measures.dotGap
@@ -892,9 +923,20 @@ final class LyricRowLayers {
             let lit = min(max(look.through * Double(LyricPace.breathDots) - Double(index), 0), 1)
             let side = measures.dot * (1 + LyricPace.dotSwellsBy * look.swell * (0.5 + 0.5 * lit))
             let box = CGRect(x: start + CGFloat(index) * (widest + measures.dotGap), y: (area.height - widest) / 2, width: widest, height: widest)
-            dot.frame = CGRect(x: box.midX - side / 2, y: box.midY - side / 2, width: side, height: side)
-            dot.cornerRadius = side / 2
-            dot.backgroundColor = LyricInks.thinned(look.ink, to: Float(LyricPace.dimDot + (1 - LyricPace.dimDot) * lit)).cgColor
+            let shown = LyricDotLook(
+                frame: CGRect(x: box.midX - side / 2, y: box.midY - side / 2, width: side, height: side),
+                ink: LyricInks.thinned(look.ink, to: Float(LyricPace.dimDot + (1 - LyricPace.dimDot) * lit))
+            )
+            guard index >= dotLooks.count || dotLooks[index] != shown else { continue }
+
+            dot.frame = shown.frame
+            dot.cornerRadius = shown.frame.width / 2
+            dot.backgroundColor = shown.ink.cgColor
+            if index < dotLooks.count {
+                dotLooks[index] = shown
+            } else {
+                dotLooks.append(shown)
+            }
         }
     }
 

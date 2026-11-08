@@ -4,7 +4,6 @@ import ResonateNative
 import SwiftUI
 import UIKit
 
-@MainActor
 enum QRCodes {
     private static let context = CIContext()
     private static let correction = "M"
@@ -42,7 +41,12 @@ struct QRCodeImage: View {
         .background(Color.white, in: .rect(cornerRadius: Self.corner))
         .accessibilityElement()
         .accessibilityLabel("QR code of this link")
-        .task(id: text) { drawn = QRCodes.drawn(text) }
+        .task(id: text) {
+            let asked = text
+            let image = try? await Work.aside { QRCodes.drawn(asked) }
+            guard !Task.isCancelled else { return }
+            drawn = image
+        }
     }
 }
 

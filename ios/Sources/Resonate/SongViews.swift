@@ -26,7 +26,7 @@ struct SongsView: View {
             if search.isAsked {
                 List {
                     SearchCompletions(search: search).themedRows()
-                    SearchResults(search: search, scope: $scope) { Keyboard.stow() }.themedRows()
+                    SearchResults(search: search, scope: $scope) { Keyboard.stow() }.equatable().themedRows()
                 }
                 .listStyle(.plain)
                 .scrollDismissesKeyboard(.immediately)
@@ -372,8 +372,6 @@ struct TrackRow: View {
     var query: String?
     var ownsMenus = true
     let play: () -> Void
-    @State private var choosingPlaylist = false
-    @State private var queued = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -390,18 +388,17 @@ struct TrackRow: View {
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                queued += 1
+                navigation.feelQueued()
                 library.playNext([track])
             }
             .tint(.indigo)
             Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
-                queued += 1
+                navigation.feelQueued()
                 library.addToQueue([track])
             }
             .tint(.orange)
         }
-        .modifier(StandardTrackMenus(track: track, enabled: ownsMenus, choosingPlaylist: $choosingPlaylist, queued: $queued))
-        .sensoryFeedback(.success, trigger: queued)
+        .modifier(StandardTrackMenus(track: track, enabled: ownsMenus))
         .accessibilityAction(named: "Song details") { navigation.open(.inspector(track)) }
     }
 
@@ -498,10 +495,9 @@ struct PlayableTrack: View {
 
 struct StandardTrackMenus: ViewModifier {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     let track: Track
     let enabled: Bool
-    @Binding var choosingPlaylist: Bool
-    @Binding var queued: Int
 
     func body(content: Content) -> some View {
         if enabled {
@@ -512,11 +508,10 @@ struct StandardTrackMenus: ViewModifier {
                         library.setFavourite(track, !favourite)
                     }
                     .tint(.pink)
-                    Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                    Button("Add to playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
                         .tint(.blue)
                 }
-                .contextMenu { TrackMenu(track: track, choosingPlaylist: $choosingPlaylist, queued: $queued) }
-                .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]).sheetSized() }
+                .contextMenu { TrackMenu(track: track) }
         } else {
             content
         }
@@ -540,18 +535,16 @@ struct TrackMenu: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let track: Track
-    @Binding var choosingPlaylist: Bool
-    var queued: Binding<Int>?
 
     var body: some View {
         let favourite = library.isFavourite(track)
         Section {
             Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                queued?.wrappedValue += 1
+                navigation.feelQueued()
                 library.playNext([track])
             }
             Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
-                queued?.wrappedValue += 1
+                navigation.feelQueued()
                 library.addToQueue([track])
             }
         }
@@ -559,7 +552,7 @@ struct TrackMenu: View {
             Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
                 library.setFavourite(track, !favourite)
             }
-            Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+            Button("Add to playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
         }
         Section {
             SongPages(track: track)
@@ -598,5 +591,30 @@ struct SongPages: View {
                 navigation.deleting = SongsToDelete(tracks: [track])
             }
         }
+    }
+}
+
+struct PlaylistPickerHost: ViewModifier {
+    @Environment(Navigation.self) private var navigation
+    let insidePlayer: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: Binding(
+                get: { navigation.nowPlaying == insidePlayer ? navigation.addingToPlaylist : nil },
+                set: { if $0 == nil { navigation.addingToPlaylist = nil } }
+            )) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
+            .background { FeltFeedback() }
+    }
+}
+
+private struct FeltFeedback: View {
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        Color.clear
+            .sensoryFeedback(.success, trigger: navigation.queuedFelt)
+            .sensoryFeedback(.selection, trigger: navigation.heartFelt)
+            .accessibilityHidden(true)
     }
 }

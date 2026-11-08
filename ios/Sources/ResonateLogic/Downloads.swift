@@ -72,7 +72,10 @@ public enum DownloadStanding: Equatable {
     case cancelled
 
     public static func of(_ song: SearchSong, in jobs: [DownloadJob], starting: Bool) -> DownloadStanding {
-        let latest = jobs.last { $0.song.id == song.id }
+        of(song, latest: jobs.last { $0.song.id == song.id }, starting: starting)
+    }
+
+    public static func of(_ song: SearchSong, latest: DownloadJob?, starting: Bool) -> DownloadStanding {
         switch latest?.state {
         case .waiting: return .waiting
         case .finding, .validating: return .running(nil)
@@ -98,6 +101,32 @@ public enum DownloadStanding: Equatable {
         case .waiting, .running: true
         case .available, .held, .failed, .cancelled: false
         }
+    }
+}
+
+public struct DownloadStandingRead: Equatable {
+    public let standing: DownloadStanding
+    public let finished: Track?
+
+    public static func of(_ song: SearchSong, latest: DownloadJob?, starting: Bool) -> DownloadStandingRead {
+        let finished: Track? = if case .done(let track) = latest?.state { track } else { nil }
+        return DownloadStandingRead(standing: .of(song, latest: latest, starting: starting), finished: finished)
+    }
+
+    public static func songsMoved(from before: [DownloadJob], to after: [DownloadJob]) -> Set<String> {
+        let was = Dictionary(before.map { ($0.id, $0) }, uniquingKeysWith: { _, later in later })
+        let now = Dictionary(after.map { ($0.id, $0) }, uniquingKeysWith: { _, later in later })
+        let changed = after.filter { was[$0.id] != $0 }.map(\.song.id)
+        let gone = before.filter { now[$0.id] == nil }.map(\.song.id)
+        return Set(changed).union(gone)
+    }
+
+    public static func latest(in jobs: [DownloadJob]) -> [String: Int] {
+        var latest: [String: Int] = [:]
+        for (place, job) in jobs.enumerated() {
+            latest[job.song.id] = place
+        }
+        return latest
     }
 }
 

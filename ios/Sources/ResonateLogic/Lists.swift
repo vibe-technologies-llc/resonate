@@ -232,3 +232,17 @@ public enum NotInYourLibrary {
         [release.kind, release.year.map(String.init)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
+
+public enum QueueShape: Equatable, Sendable {
+    case empty
+    case one
+    case several
+
+    public init(count: Int) {
+        switch count {
+        case 0: self = .empty
+        case 1: self = .one
+        default: self = .several
+        }
+    }
+}

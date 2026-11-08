@@ -62,8 +62,8 @@ extension PlaylistFileFormat {
     }
 }
 
-func playlistFileTypes() -> [UTType] {
-    playlistFileExtensions().compactMap { UTType(filenameExtension: $0) }
+enum PlaylistFileTypes {
+    static let offered = playlistFileExtensions().compactMap { UTType(filenameExtension: $0) }
 }
 
 struct PlaylistView: View {
@@ -101,7 +101,7 @@ struct PlaylistView: View {
                 PlaylistArtwork(playlist: playlist, corner: 20)
             }
             if let search {
-                SavedSearchRows(search: search, rows: rows)
+                SavedSearchRows(search: search, rows: rows, entries: entries.of(rows))
             } else {
                 listRows(rows, empty: playlist?.songs == 0, mayEdit: mayEdit)
             }
@@ -337,6 +337,7 @@ struct SavedSearchRows: View {
     @Environment(Library.self) private var library
     let search: SavedSearch
     let rows: [Track]
+    let entries: [PlaylistEntry]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -357,9 +358,9 @@ struct SavedSearchRows: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
         }
-        ForEach(Array(rows.enumerated()), id: \.offset) { position, track in
-            TrackRow(track: track) {
-                library.play(rows, at: position)
+        ForEach(entries) { entry in
+            TrackRow(track: entry.track) {
+                library.play(rows, at: entry.position)
             }
             .listRowBackground(Color.clear)
         }
@@ -368,13 +369,12 @@ struct SavedSearchRows: View {
 
 struct PlaylistRow: View, Equatable {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     let entry: PlaylistEntry
     let count: Int
     let mayEdit: Bool
     let move: (Int, Int) -> Void
     let remove: (Int) -> Void
-    @State private var choosingPlaylist = false
-    @State private var queued = 0
 
     var body: some View {
         let track = entry.track
@@ -392,16 +392,16 @@ struct PlaylistRow: View, Equatable {
         .contextMenu {
             Section {
                 Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
-                    queued += 1
+                    navigation.feelQueued()
                     library.playNext([track])
                 }
                 Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
-                    queued += 1
+                    navigation.feelQueued()
                     library.addToQueue([track])
                 }
             }
             Section {
-                Button("Add to another playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                Button("Add to another playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
                 Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
                     library.setFavourite(track, !favourite)
                 }
@@ -421,8 +421,6 @@ struct PlaylistRow: View, Equatable {
                 }
             }
         }
-        .sensoryFeedback(.success, trigger: queued)
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]).sheetSized() }
     }
 
     nonisolated static func == (shown: PlaylistRow, other: PlaylistRow) -> Bool {
@@ -434,17 +432,34 @@ struct PlaylistRow: View, Equatable {
 @Observable
 final class ChosenSongs {
     private(set) var ids: [UInt64] = []
-    private(set) var held: Set<UInt64> = []
+    @ObservationIgnored private var flags: [UInt64: ChosenFlag] = [:]
 
     func toggle(_ id: UInt64) {
         if let at = ids.firstIndex(of: id) {
             ids.remove(at: at)
-            held.remove(id)
+            flag(of: id).on = false
         } else {
             ids.append(id)
-            held.insert(id)
+            flag(of: id).on = true
         }
     }
+
+    func isChosen(_ id: UInt64) -> Bool {
+        flag(of: id).on
+    }
+
+    private func flag(of id: UInt64) -> ChosenFlag {
+        if let kept = flags[id] { return kept }
+        let made = ChosenFlag()
+        flags[id] = made
+        return made
+    }
+}
+
+@MainActor
+@Observable
+final class ChosenFlag {
+    var on = false
 }
 
 struct AddSongsSheet: View {
@@ -479,9 +494,15 @@ struct AddSongsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .task(id: library.catalogEpoch) {
                 let tracks = library.allTracks
-                keyed = (try? await Work.aside { SongKeys.of(tracks) }) ?? keyed
+                let folded = Self.folded(search)
+                guard let (keys, found) = try? await Work.aside({ () -> (SongKeys, [Track]) in
+                    let keys = SongKeys.of(tracks)
+                    return (keys, keys.matching(folded))
+                }) else { return }
+                guard !Task.isCancelled else { return }
+                keyed = keys
                 keying = false
-                listed = keyed.matching(Self.folded(search))
+                listed = found
             }
             .task(id: search) {
                 if !search.isEmpty { try? await Task.sleep(for: Self.settles) }
@@ -500,8 +521,7 @@ struct AddSongsSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     AddChosenButton(chosen: chosen) {
-                        let byId = Dictionary(keyed.tracks.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
-                        let picked = chosen.ids.compactMap { byId[$0] }
+                        let picked = chosen.ids.compactMap { library.track($0) }
                         library.features.addToPlaylist(id, picked)
                         dismiss()
                     }
@@ -521,7 +541,7 @@ struct ChoosableSong: View {
     let chosen: ChosenSongs
 
     var body: some View {
-        let isChosen = chosen.held.contains(track.id)
+        let isChosen = chosen.isChosen(track.id)
         Button {
             chosen.toggle(track.id)
         } label: {

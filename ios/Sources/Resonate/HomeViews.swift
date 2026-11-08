@@ -98,7 +98,7 @@ struct HomeView: View {
             }
             wentToBackground = false
         }
-        .task(id: "\(library.collectionGeneration):\(library.catalogEpoch)") { await loadShelves() }
+        .background { CatalogReading { await loadShelves() } }
         .alert("Create playlist", isPresented: $naming) {
             PlaylistNameField(confirm: "Create") { features.createPlaylist($0) }
         }
@@ -113,8 +113,8 @@ struct HomeView: View {
                 Array(try native.artists(order: .plays).prefix(shelved))
             )
         }) else { return }
-        recent = albums
-        listenedTo = artists
+        if recent != albums { recent = albums }
+        if listenedTo != artists { listenedTo = artists }
     }
 }
 
@@ -184,9 +184,11 @@ private struct HomeMixes: View {
         } header: {
             SeeAllPageHeader(title: "Made for you", more: true, page: .suggestions)
         }
-        .task(id: "\(library.collectionGeneration):\(library.catalogEpoch)") {
-            guard let found = await OfferedMixes.read(in: library) else { return }
-            offered = found
+        .background {
+            CatalogReading {
+                guard let found = await OfferedMixes.read(in: library), found != offered else { return }
+                offered = found
+            }
         }
     }
 }

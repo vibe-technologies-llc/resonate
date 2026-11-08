@@ -170,6 +170,22 @@ sync seals its records and talks QUIC (TLS) of its own.
   runs (`CollectionsListed`).
   State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
   only when it changed, so an unchanged answer redraws nothing.
+  **An `@Observable` setter compares before it notifies**: the macro's `set` skips an assignment
+  `==` to the value held, which is a deep comparison on the main actor for an array of thousands
+  of rows, while a subscript or mutating write (`_modify`) always notifies. So the arrays compared
+  off the main actor before they are written (`Library.allTracks`, `tracks`, `artworkTracks` and
+  `queue`, `Features.playlistRows`) are `@ObservationIgnored` storage behind a computed property
+  that calls `access(keyPath:)` and `withMutation(keyPath:)`, and are written only where their
+  comparison on a `Work` lane found a change (`CatalogChanges`, `SongsListed`, `sameRows`, the
+  playlist read, which also counts writes made meanwhile, `playlistRowsWritten`, so an optimistic
+  edit is never left standing over a read that differs from it); the wants, a playlist read's
+  playlists, a search's answer (`SearchModel.same`, `@concurrent`) and the albums and artists
+  (`CollectionsListed`) are compared on the lane they are read on and returned as nothing when
+  unchanged. A catalog read hands `CatalogShown` the favourites shown before it (`CatalogBefore`),
+  so the favourite flags it touches are those whose answer moved or whose song entered the catalog
+  (`flagsMoved`), never every flag made. The three library searches ask again only when a catalog
+  read changed what is shown. `Features.foreground` acts only on a change, so the scene passing
+  through `.inactive` on its way to `.background` nudges no poll twice.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate, underruns and clamped samples. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
@@ -715,7 +731,7 @@ every route change (a pair of headphones at the same rate included), not from th
   asked rows is asked and one dropped after the heading's first song is in order; a row dropped
   directly at either side of the heading lands after the last asked row and so is asked. A row
   outside the asked ones also offers *Move to Playing next* in its context menu (`NextPlacement`,
-  not offered for the row already first after them); the player's More menu holds a *Queue* section while the queue holds a row:
+  not offered for the row already first after them); the player's More menu holds a *Queue* section while the queue holds a row (read from `Library.queueShape`, so an edit that keeps the queue's shape rebuilds no menu):
   *Save queue as playlist* and *Clear queue* (confirmed; it keeps the playing row). Play next and Add to queue are a
   song row's leading swipe and context-menu actions, and for a whole collection its toolbar's
   `CollectionMenu` (`CollectionQueueActions`: Play next, Add to queue, Add to playlist; inside the
@@ -727,7 +743,7 @@ every route change (a pair of headphones at the same rate included), not from th
   with the accent and lettered white, Shuffle clear and lettered in the tint, 50 pt scaled); nothing
   else sits in that row. In a list row a `Label`'s icon takes the list's accent tint over any
   button style, so `.glassProminent` drew Play's triangle blue on its blue fill: the capsule draws
-  its symbol and title as separate views, each given its colour, never a `Label`. The artwork's shadow is `HeaderShadow`, a shadow-only `Canvas` drawn once at scale 1 in the cover's outline, never `.shadow`, which was blurred again on every scrolled frame; a playlist's mosaic picks are kept per playlist and revision (`PlaylistCovers`). An album lists its tracks by disc,
+  its symbol and title as separate views, each given its colour, never a `Label`. The artwork's shadow is `HeaderShadow`, a shadow-only `Canvas` drawn once at scale 1 in the cover's outline and asynchronously, as `CoverShadow` is, never `.shadow`, which was blurred again on every scrolled frame; a playlist's mosaic picks are kept per playlist and revision (`PlaylistCovers`). An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
   trailing edge and a second line only for a track artist other than the album's. **The songs of its
   release the album lacks stand greyed at their places** (`mobile.md`'s *The songs an album lacks*):
@@ -738,7 +754,7 @@ every route change (a pair of headphones at the same rate included), not from th
   and the length, with `DownloadBadge`: a press downloads it as an online row does, its swipe and menu
   save it for later, and VoiceOver says *Not in your library*. Play, Shuffle, the summary and the shared
   quality read the songs held alone. Offline, or for an album no strict lookup matched, the page is as
-  it was. **An artist's page greys in what the discography lacks the same way** (`mobile.md`'s *The releases and songs an artist lacks*): `ArtistView` reads `artist_releases_not_held` and `artist_songs_not_held` with its albums and songs and, once per opened name, asks `learn_artist_discography`, then `learn_artist_songs` and then `learn_artist_covers` each until it answers 0, reading them again after each batch. *Not in your library · N releases* follows the albums, each the release's sleeve (`UnheldSleeve`: `unheld_release_cover` decoded off the main thread when `ReleaseNotHeld.covered`, at half strength) or a placeholder tile until one arrives or where none was found, with its title in `.secondary`, whose press opens `UnheldReleaseSheet` (it reads the release's songs, offers *Download all N songs* and a `NotHeldSongRow` for each), and *Not in your library · N songs* follows the songs, `NotInYourLibrary.songsShownFirst` of them and *Show all* (`NotInYourLibraryTests`). Play, Shuffle, the summary and the menu read the songs held alone.
+  it was. **An artist's page greys in what the discography lacks the same way** (`mobile.md`'s *The releases and songs an artist lacks*): `ArtistView` reads `artist_releases_not_held` and `artist_songs_not_held` with its albums and songs and, once per opened name, asks `learn_artist_discography`, then `learn_artist_songs` and then `learn_artist_covers` each until it answers 0, reading them again after each batch. *Not in your library · N releases* follows the albums, each the release's sleeve (`UnheldSleeve`: `unheld_release_cover` decoded off the main thread at the tile's size and kept in `UnheldSleeves`, 16 MiB, when `ReleaseNotHeld.covered`, at half strength) or a placeholder tile until one arrives or where none was found, with its title in `.secondary`, whose press opens `UnheldReleaseSheet` (it reads the release's songs, offers *Download all N songs* and a `NotHeldSongRow` for each), and *Not in your library · N songs* follows the songs, `NotInYourLibrary.songsShownFirst` of them and *Show all* (`NotInYourLibraryTests`). Play, Shuffle, the summary and the menu read the songs held alone.
 - **A failed read is never drawn as empty.** The album and artist pages, the online artist, album
   and release pages and the tag editor show the read's failure with *Try again* (`ReadFailure`)
   instead of "No songs…" or a blank editor (whose Save would overwrite the file's tags), and so does the lyrics pane (`Features.lyricsUnread`: *Lyrics could not be read* with *Try again* and *Add lyrics…*); a
@@ -767,6 +783,20 @@ every route change (a pair of headphones at the same rate included), not from th
   closes** (`Navigation.editTags`): asked inside the cover, it is held (`taggingAfterPlayer`), the
   cover dismissed, and the root's sheet presented from the cover's `onDismiss`
   (`Navigation.playerClosed`), since the root cannot present over the full-screen cover.
+  **No row holds a sheet or a haptic**: *Add to playlist* from a song, queue, playlist or collection
+  row sets `Navigation.addingToPlaylist`, presented by one `PlaylistPickerHost` on the root and one
+  on Now Playing (whichever is in front, as `DeleteSongsConfirmation` is), and Play next, Add to
+  queue and a heart are felt through `Navigation.feelQueued` and `feelHeart`, played by the host's
+  `FeltFeedback`; a sheet and two `sensoryFeedback`s per row were set up for every row a fast scroll made.
+- **Download progress wakes only what shows it** (`DownloadQueue`): the poll reads every job in
+  flight and writes `jobs` once a tick, only where it moved (1 s apart while the scene is away), the
+  downloads page and its summaries read `jobs`, the toolbar button reads `activeCount`, and a song's
+  row reads its own `DownloadStandingFlag` (the standing and the finished song, made as a row first
+  asks, as `FavouriteFlag` is), which a change sets only for the songs whose job or held-ness moved
+  (`DownloadStandingRead.songsMoved`, the latest job found by `latestJob`), so a download moving does
+  not rebuild every online and *Not in your library* row. The background task's progress is told at
+  most once a second unless a song settles. An online row matches the library again when the
+  catalog's size moves, not at every catalog read.
 - **A finished download refreshes the library once for a run of them** (`DownloadQueue.landed`
   sets `landedSince` and starts one `settleLandings` task, which loops until no song landed during
   its refresh), so *Download all missing* of N songs reads the catalog and rebuilds the search index
@@ -830,11 +860,13 @@ every route change (a pair of headphones at the same rate included), not from th
   `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions),
   `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
   shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
-  `.task` keyed by `Library.collectionGeneration`, which steps whenever the albums and artists
-  reload, and `catalogEpoch`, which steps whenever a catalog read lands that differs from the one shown (the
+  `.task` keyed by `Library.collectionGeneration`, which steps only when a reload of the albums and
+  artists reads something other than what is shown (`CollectionsListed`, compared on `Work.onScreen`), and `catalogEpoch`, which steps whenever a catalog read lands that differs from the one shown (the
   comparison, the index and the favourites are worked out on `Work.aside`, `CatalogChanges`,
   so an unchanged refresh after a download, landing or enrichment pass redraws nothing), keeping the last answer
-  meanwhile. The key or name is state: when an album or artist reads empty, the page looks up where
+  meanwhile. The task is a child of its own (`CatalogReading`, in the page's background), so the
+  page's body does not read the epoch and is not rebuilt by a catalog read, and each answer is assigned
+  only where it differs from the one shown (as Home's shelves, *Made for you* and a mix are). The key or name is state: when an album or artist reads empty, the page looks up where
   a song it showed went (`album_key` of that song's fresh row; the artist page asks `artist_tracks`
   for the song's artist and album artist) and follows it, or pops where the album is gone, so
   *Edit album tags* leaves the page on the album, not on "No songs from this album". A playlist's rows are keyed by song and occurrence, move and remove at once, and
@@ -909,7 +941,8 @@ every route change (a pair of headphones at the same rate included), not from th
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
   weeks for a year, months for all time, the day cut at the midnight of the phone's zone, `TimeZone.current.identifier` with its offset as the fallback; all time reads every day
   heard, not the last year's, and a year's or all time's end labels and busiest day carry the year) that a tap or a drag
-  selects a bar of to read its time and plays (to VoiceOver the chart is one adjustable element: swiping up or down steps the same selection from bar to bar and speaks that period's time and plays); most listened songs, albums and artists, five each
+  selects a bar of (the bars grouped on `Work.aside` with the statistics, `Features.listeningBars`, and
+  the selection the chart's own, so a drag redraws the chart, not the page, and groups nothing) to read its time and plays (to VoiceOver the chart is one adjustable element: swiping up or down steps the same selection from bar to bar and speaks that period's time and plays); most listened songs, albums and artists, five each
   and *Show more* for twenty-five (albums open `Destination.album(key)`, artists
   `Destination.artist(name)`, each a `CollectionRow` with the collection's menu and swipe, measured as
   a song row (`CollectionRowMeasure.song`: the 48 pt cover and 12 pt gap of `PlayableTrack`) so their
@@ -1025,7 +1058,9 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   settle before, refuses a stale answer by generation and keeps the last answer on screen until the
   next lands; blank text asks nothing. Rows light matched text through `highlights`, its UTF-16
   ranges turned into `String` indices by `NSRange` and widened to whole characters (`lit`). A
-  catalog change (`Library.refresh`) or a favourite asks again without the settle.
+  catalog read that changed what is shown, or a favourite, asks again without the settle; an answer
+  equal to the one shown (compared off the main actor) assigns nothing. The completions offered
+  (`offeredCompletions`) are folded once as an answer lands, not at each read.
 - **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
   Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;
   completions as a row of glass capsules heading the results (`SearchCompletions`, at most five,
@@ -1186,7 +1221,10 @@ in; it never opens on another colour first.
   the drift slows to 18 %. The tap has two reference counts, `hearLoudness` (a backdrop) and
   `visualize` (the visualizer page), so neither switches off the other's; the observed
   `Features.samples` is assigned only while a visualizer page holds it, the scene is in the foreground and a song is playing (`visualizersWatching`; otherwise it is emptied and the page says to play a song), so thirty reads a second
-  invalidate nothing behind Now Playing. A backdrop holds it only
+  invalidate nothing behind Now Playing. The tap's loop runs off the main actor (`Features.tap`, a
+  detached task): it writes the loudness to `HeardLevel` where it reads it and hops to the main actor
+  only to hand a watching visualizer its samples (`TapWatch`, an atomic the main actor sets with the
+  holders), so the backdrop's twenty reads a second wake nothing on the main thread. A backdrop holds it only
   while visible, active, moving and playing, so a paused page leaves the tap off; a tap that fails
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
@@ -1203,7 +1241,10 @@ in; it never opens on another colour first.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
   a single view behind the `TabView` never shows). Every page's `AmbientLayerView` shows the same
-  `CGImage`, rendered by the one `AmbientField` at scale 1 for the largest page in a window, so a
+  `CGImage`, rendered by the one `AmbientField` at scale 1 for the largest page in a window (as every
+  `FieldPicture` is, into a linear texture over a shared `MTLBuffer` lent by `FieldBuffers`, three idle
+  per size and four sizes, whose bytes the `CGImage` wears as they are and hands back when it is released,
+  so a tick allocates no texture and copies nothing back from the GPU), so a
   pushed page, a tab switched to and a page popped back to show exactly the frame the page before
   showed, from their first frame: one picture is drawn per tick however many pages hold it, a page
   joining a window takes the latest picture at once (rendering one synchronously only where none
@@ -1221,7 +1262,7 @@ in; it never opens on another colour first.
   where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
   opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
   `ThemedPage` on each stack's root and every `DestinationView` hides the scroll content background
-  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the whole Search tab, so nothing changes, redraws or re-evaluates in the first frames of the search field's widening); `AppBackdrop` reads it itself, so Now Playing opening or closing re-evaluates the backgrounds alone, not every page's `ThemedPage` and its container background in the zoom's first frame. `AppearanceState` keeps four settings in the `appearance` defaults,
+  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the whole Search tab, so nothing changes, redraws or re-evaluates in the first frames of the search field's widening); `AppBackdrop` reads it itself, so Now Playing opening or closing re-evaluates the backgrounds alone, not every page's `ThemedPage` and its container background in the zoom's first frame; it reads the strength and *Moving background* itself too, so `ThemedPage` reads only whether the background is on and dragging the strength re-evaluates the backgrounds alone. The strength and the intensity are written to the defaults 400 ms after they last move, not at every value a slider passes. `AppearanceState` keeps four settings in the `appearance` defaults,
   edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of
   its own beside `AppearanceView`): `themedBackground` (on), `movingBackground` (on; off draws the
   still frame), `backgroundStrength` (0.4), and `nowPlayingIntensity` (0.5, a section of its own on that page). A plain list's rows draw their own opaque fill, so each
@@ -1241,7 +1282,7 @@ in; it never opens on another colour first.
 `LyricsPane(track:compact:)` (`LyricsPane.swift`) is the desktop pane ported (`ui.md`'s lyrics
 entries, `mobile.md`'s *Lyrics*): the same `TURN`, `Glide`/`Leg`, falloffs, cascade, arrival,
 breath dots, word sweep and *END OF LYRICS* mark, with the same constants, arithmetic drawn from
-`lyric_frame`. `LyricStage` holds the motion outside observation (only `beat` is observed, bumped
+`lyric_frame`. `LyricStage` (made once as the pane appears, never as a `@State` initial value, which is built on every parent body) holds the motion outside observation (only `beat` is observed, bumped
 where a resting pane must wake) and turns a moment into a `LyricScene` of plain values (a row's
 standing, inset, inks and wipe; the sheet's offset), about 0.1 ms a frame.
 
@@ -1295,7 +1336,8 @@ never received the drag inside the full-screen cover. The sheet's offset is the 
 `ScrollView`'s: a vertical drag moves it (rubber-banded past the ends, released into a `Leg`
 launched at the finger's pace), opens the falloff out, offers *Follow* (a glass button present only
 while offered), and following returns `HANDS_OFF` after the last touch. VoiceOver reads one
-`LyricLineElement` per line (its text, its time, selected while lit, activating it seeks), framed
+`LyricLineElement` per line (its text, its time, selected while lit, activating it seeks; each frame
+rewrites only the elements whose `LyricLineDescription` moved, a frame rounded to whole points), framed
 where the line is drawn, and three-finger scrolling turns a page.
 
 **A song is given lyrics by hand** (`LyricWriter`, `ToolViews.swift`): the Lyrics page's *No
@@ -1359,9 +1401,12 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   first asks both only set it); the named songs alone have their `ArtStamp` bumped, which
   `ArtworkView` and the backdrop key their `.task` on. Each song's stamp is an observed object of
   its own (`Features.artGeneration(of:)` reads only that song's), so a cover found for one song
-  redraws that song's views, not every artwork on screen. A rise in `portraits` bumps
-  `portraitGeneration`. Past 4096 changes in a session, or 20 000 stamps, the stamps are dropped and
-  `artEpoch` stepped, which every song's generation includes.
+  redraws that song's views, not every artwork on screen. Portraits are stamped per artist the same
+  way (`Features.portraitGeneration(of:)`), and since the status reports only how many portraits
+  are held, a rise in `portraits` bumps the stamps of the artists whose portrait was asked and found
+  missing (`portraitsLacking`) and no other, so a portrait found redraws that artist's circles, not
+  every one on screen. Past 4096 changes in a session, or 20 000 stamps, the stamps are dropped and
+  `artEpoch` (`portraitEpoch` for portraits) stepped, which every generation includes.
 - **The cache decodes to the size drawn** (`ArtworkCache.swift`): `ArtworkView` measures itself
   (`onGeometryChange`), multiplies by the display scale and rounds up to a bucket of 96, 192, 384,
   512, 768 or 1024 px; an entry is keyed by picture (or portrait) and bucket, so the twelve songs of an album decode one
@@ -1852,7 +1897,9 @@ deck; what can be tested without a device (link routing, the sentences, the gate
 `OpenedLink` sends `resonate://shared/`, `resonate://party/` and their page forms to `accept_invitation`
 before anything could queue them as a song. Free signing rules out associated domains, so an https link
 reaches the app through its web page's button. The QR is CoreImage's generator, since pairing draws none,
-and the typed name is `shared-name` beside the device name. A link opened at launch waits for the first
+and the typed name is `shared-name` beside the device name; its code is drawn on `Work.aside`. Wrapped's
+card is rendered at 3× only when it is shared (`WrappedCardShare`, `Transferable`), its preview at scale 1
+after the deck has settled, never in the deck's presentation. A link opened at launch waits for the first
 `sync_start`, since a shared list needs sync running. While sync is off `shared_playlists` answers nothing,
 so a followed list shows edit controls and an edit answers `PlaylistFollowed` (`shared-playlists.md`,
 `party.md`).

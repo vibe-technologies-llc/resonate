@@ -235,6 +235,7 @@ struct NowPlayingView: View {
                 Text("Songs up next and in your history are removed. The playing song keeps playing.")
             }
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
+            .modifier(PlaylistPickerHost(insidePlayer: true))
             .modifier(SharingSheet(insidePlayer: true))
             .modifier(SleepTimerPresentation(insidePlayer: true))
             .modifier(ZonesPresentation(insidePlayer: true))
@@ -1268,6 +1269,7 @@ final class SystemVolumeLevel {
     private(set) var level: Float = SystemVolumeLevel.lastShown
     private(set) var steppedOutside = false
     @ObservationIgnored weak var driver: MPVolumeView?
+    @ObservationIgnored private weak var foundSlider: UISlider?
     @ObservationIgnored private var watching: NSKeyValueObservation?
     @ObservationIgnored private var heardSinceWatching = false
     @ObservationIgnored private var sessionAnswered = false
@@ -1303,6 +1305,7 @@ final class SystemVolumeLevel {
                 driver.layoutIfNeeded()
                 if let slider = Self.slider(in: driver) {
                     Self.hideDrawing(of: slider)
+                    foundSlider = slider
                     if watchAsked, !heardSinceWatching, !sessionAnswered { show(slider.value) }
                     return
                 }
@@ -1332,10 +1335,18 @@ final class SystemVolumeLevel {
     func set(_ wanted: Float) {
         heardSinceWatching = true
         show(wanted)
-        guard let slider = driver.flatMap(Self.slider(in:)) else { return }
-        Self.hideDrawing(of: slider)
+        guard let slider = driverSlider else { return }
         slider.setValue(wanted, animated: false)
         slider.sendActions(for: .valueChanged)
+    }
+
+    private var driverSlider: UISlider? {
+        guard let driver else { return nil }
+        if let foundSlider, foundSlider.isDescendant(of: driver) { return foundSlider }
+        guard let slider = Self.slider(in: driver) else { return nil }
+        Self.hideDrawing(of: slider)
+        foundSlider = slider
+        return slider
     }
 
     nonisolated private static func observing(
@@ -1472,11 +1483,11 @@ struct PlayerMoreMenu: View {
                     Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
                 }
             }
-            if !library.queue.isEmpty {
+            if library.queueShape != .empty {
                 Section("Queue") {
                     Button("Save queue as playlist", systemImage: "text.badge.plus") { asks.savingQueue = true }
                     Button("Clear queue", systemImage: "trash", role: .destructive) { asks.clearingQueue = true }
-                        .disabled(library.queue.count <= 1)
+                        .disabled(library.queueShape == .one)
                 }
             }
             Section {
@@ -1542,7 +1553,7 @@ struct UpNextList: View {
                 guard onScreen else { return }
                 withAnimation(reduceMotion ? nil : .smooth) { scroller.scrollTo(Self.playingRow, anchor: .top) }
             }
-            .onChange(of: library.queue.isEmpty) {
+            .onChange(of: library.queueShape == .empty) {
                 guard onScreen else { return }
                 scroller.scrollTo(Self.playingRow, anchor: .top)
             }
@@ -1702,9 +1713,7 @@ struct QueueSections: View {
                 row: row,
                 current: false,
                 edited: $edited,
-                moveToNext: placing?.takes(index).map { target in
-                    { library.moveInQueue(from: index, to: target) }
-                }
+                movesToNext: placing?.takes(index).map { QueueMove(from: index, to: $0) }
             )
         }
     }
@@ -1740,13 +1749,18 @@ struct QueueHeading: View {
     }
 }
 
+struct QueueMove: Equatable {
+    let from: Int
+    let to: Int
+}
+
 struct QueueRow: View {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     let row: Track
     let current: Bool
     @Binding var edited: Int
-    var moveToNext: (() -> Void)?
-    @State private var choosingPlaylist = false
+    var movesToNext: QueueMove?
 
     var body: some View {
         let favourite = library.isFavourite(row)
@@ -1761,11 +1775,11 @@ struct QueueRow: View {
             .tint(.red)
         }
         .contextMenu {
-            if let moveToNext {
+            if let movesToNext {
                 Section {
                     Button("Move to Playing next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                         edited += 1
-                        moveToNext()
+                        library.moveInQueue(from: movesToNext.from, to: movesToNext.to)
                     }
                 }
             }
@@ -1774,7 +1788,7 @@ struct QueueRow: View {
                     Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
                         library.setFavourite(row, !favourite)
                     }
-                    Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                    Button("Add to playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([row]) }
                 }
                 Section {
                     SongPages(track: row)
@@ -1787,7 +1801,6 @@ struct QueueRow: View {
                 }
             }
         }
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [row]).sheetSized() }
     }
 }
 

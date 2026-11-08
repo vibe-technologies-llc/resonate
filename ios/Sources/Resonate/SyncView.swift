@@ -61,7 +61,7 @@ struct SyncView: View {
                         NavigationLink {
                             SyncControlPage()
                         } label: {
-                            let offered = syncControlOffered()
+                            let offered = SyncControlsOffered.shown
                             LabeledContent {
                                 Text(offered.choices.first { $0.control == config.control }?.label ?? "")
                             } label: {
@@ -733,7 +733,7 @@ struct SyncTransferRow: View {
         let state: String = switch transfer.state {
         case .waiting: "Waiting"
         case .moving where transfer.size > 0:
-            "\(ByteCountFormatter.string(fromByteCount: Int64(transfer.received), countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: Int64(transfer.size), countStyle: .file))"
+            "\(Int64(transfer.received).formatted(.byteCount(style: .file))) of \(Int64(transfer.size).formatted(.byteCount(style: .file)))"
         case .moving: "Fetching"
         case .landed: "Fetched"
         case .failed: "Could not be fetched"
@@ -760,4 +760,8 @@ extension DevicePlatform {
         case .other: "questionmark.square.dashed"
         }
     }
+}
+
+enum SyncControlsOffered {
+    static let shown = syncControlOffered()
 }

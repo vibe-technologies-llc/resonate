@@ -95,7 +95,7 @@ struct ArtworkView: View {
             revision: track?.artRevision ?? 0,
             generation: track.map { $0.isServed ? features.servedGeneration : features.artGeneration(of: $0.id) } ?? 0,
             portrait: portraitMbid,
-            portraitGeneration: portraitMbid == nil ? 0 : features.portraitGeneration,
+            portraitGeneration: portraitMbid.map(features.portraitGeneration(of:)) ?? 0,
             bucket: bucket
         )
     }
@@ -346,9 +346,9 @@ enum Backdrop {
 
 struct FavouriteButton: View {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
-    @State private var tapped = 0
     @State private var starred = 0
 
     var body: some View {
@@ -363,7 +363,7 @@ struct FavouriteButton: View {
     private var heart: some View {
         let favourite = library.isFavourite(track)
         return Button {
-            tapped += 1
+            navigation.feelHeart()
             if !favourite { starred += 1 }
             withAnimation(MotionRendering.of(.flip, reduceMotion: reduceMotion, sceneActive: true).animation(Flip.animation)) {
                 library.setFavourite(track, !favourite)
@@ -377,7 +377,6 @@ struct FavouriteButton: View {
                 .buttonShape()
         }
         .buttonStyle(.plain)
-        .sensoryFeedback(.selection, trigger: tapped)
         .accessibilityLabel(favourite ? "Remove from favourites" : "Add to favourites")
         .accessibilityInputLabels(["Favourite", "Heart", "Like", "Add to favourites", "Remove from favourites"])
     }

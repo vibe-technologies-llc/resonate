@@ -26,6 +26,7 @@ struct SettingsView: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     @State private var search = ""
+    @State private var splitTerms = SplitTerms()
     @State private var confirmingErase = false
     private static let onlineWords = "Online features internet network artwork covers lyrics enrichment music search"
     private static let enrichmentWords = "Artwork and details automatically portraits Wi-Fi metered connection cellular missing covers"
@@ -244,7 +245,7 @@ struct SettingsView: View {
     }
 
     private var terms: [String] {
-        SettingsSearch.terms(search)
+        splitTerms.of(search)
     }
 
     private var nothingMatches: Bool {
@@ -1041,9 +1042,28 @@ struct UnaskedNoticesSection: View {
     }
 }
 
+@MainActor
+final class SplitTerms {
+    private var split = ""
+    private var terms: [String] = []
+
+    func of(_ search: String) -> [String] {
+        if search != split {
+            split = search
+            terms = SettingsSearch.terms(search)
+        }
+        return terms
+    }
+}
+
+@MainActor
+enum SearchHistoryStore {
+    static let defaults = UserDefaults(suiteName: SearchModel.historySuite)
+}
+
 struct SearchHistorySection: View {
     @Environment(Library.self) private var library
-    @AppStorage(SearchModel.historyKeptKey, store: UserDefaults(suiteName: SearchModel.historySuite)) private var kept = true
+    @AppStorage(SearchModel.historyKeptKey, store: SearchHistoryStore.defaults) private var kept = true
 
     var body: some View {
         Section {

@@ -23,12 +23,14 @@ final class AppearanceState {
         didSet {
             tint = Self.tint(of: accent)
             ink = Self.ink(of: accent)
+            resolvedTints = [:]
         }
     }
     private(set) var tint = Color.accentColor
     private(set) var ink = Color.white
     private(set) var iconRefused: String?
     @ObservationIgnored private var iconChange: Task<Void, Never>?
+    @ObservationIgnored private var resolvedTints: [TintLook: Color.Resolved] = [:]
 
     var themedBackground: Bool {
         didSet { settings.set(themedBackground, forKey: Self.backgroundKey) }
@@ -39,12 +41,15 @@ final class AppearanceState {
     }
 
     var backgroundStrength: Double {
-        didSet { settings.set(backgroundStrength, forKey: Self.strengthKey) }
+        didSet { keepLevelsSoon() }
     }
 
     var nowPlayingIntensity: Double {
-        didSet { settings.set(nowPlayingIntensity, forKey: Self.intensityKey) }
+        didSet { keepLevelsSoon() }
     }
+
+    @ObservationIgnored private var keepingLevels: Task<Void, Never>?
+    private static let levelsKeptAfter = Duration.milliseconds(400)
 
     private init() {
         let kept = settings.string(forKey: Self.accentKey)
@@ -59,6 +64,16 @@ final class AppearanceState {
         iconChange = Task { [weak self] in
             guard let self else { return }
             await showIcon(of: accent)
+        }
+    }
+
+    private func keepLevelsSoon() {
+        keepingLevels?.cancel()
+        keepingLevels = Task { [weak self] in
+            try? await Task.sleep(for: Self.levelsKeptAfter)
+            guard !Task.isCancelled, let self else { return }
+            settings.set(backgroundStrength, forKey: Self.strengthKey)
+            settings.set(nowPlayingIntensity, forKey: Self.intensityKey)
         }
     }
 
@@ -110,6 +125,23 @@ final class AppearanceState {
     static func color(of accent: ResonateAccent) -> Color {
         AccentColours.worn(accent.hex)
     }
+
+    func resolvedTint(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color.Resolved {
+        let look = TintLook(scheme: scheme, contrast: contrast)
+        if let held = resolvedTints[look] { return held }
+
+        var values = EnvironmentValues()
+        values.colorScheme = scheme
+        values._colorSchemeContrast = contrast
+        let resolved = tint.resolve(in: values)
+        resolvedTints[look] = resolved
+        return resolved
+    }
+}
+
+private struct TintLook: Hashable {
+    let scheme: ColorScheme
+    let contrast: ColorSchemeContrast
 }
 
 enum AccentColours {

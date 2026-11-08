@@ -398,12 +398,12 @@ struct OnlineSongRow: View {
             .accessibilityHint(track != nil ? "Plays the song" : standing.startsOnTap ? "Downloads the song" : "")
             DownloadBadge(standing: standing) { downloads.cancel(song) }
         }
-        .task(id: "\(song.id):\(library.catalogEpoch)") {
+        .task(id: "\(song.id):\(library.catalogCount)") {
             guard let native = try? await library.player() else { return }
             let matched = (try? await Work.onScreen { try native.matchLocalSong(song: song) }) ?? nil
             guard !Task.isCancelled else { return }
-            heldTrack = matched
-            heldSong = song.id
+            if heldTrack != matched { heldTrack = matched }
+            if heldSong != song.id { heldSong = song.id }
         }
         .swipeActions(edge: .trailing) {
             Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }

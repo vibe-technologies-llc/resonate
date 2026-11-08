@@ -129,6 +129,9 @@ struct EqualiserGraph: View {
     private static let reach: CGFloat = 32
     private static let tapTravel: CGFloat = 8
     private static let handleSize: CGFloat = 26
+    private static let handleShade = 0.15
+    private static let handleShadeReach: CGFloat = 1
+    private static let handleShadeDrop: CGFloat = 1
     private static let smallestPinch: CGFloat = 0.05
     private static let toldEvery: Duration = .milliseconds(50)
 
@@ -187,7 +190,9 @@ struct EqualiserGraph: View {
         GeometryReader { geometry in
             let scale = EqualiserScale(size: geometry.size, span: frozenSpan ?? currentSpan)
             ZStack(alignment: .topLeading) {
-                Canvas { context, _ in draw(in: &context, scale: scale) }
+                EqualiserGrid(scale: scale)
+                    .equatable()
+                Canvas { context, _ in drawResponse(in: &context, scale: scale) }
                     .accessibilityHidden(true)
                 ForEach(curve.bands.indices, id: \.self) { index in
                     handle(index, scale: scale)
@@ -219,44 +224,7 @@ struct EqualiserGraph: View {
         return nil
     }
 
-    private func draw(in context: inout GraphicsContext, scale: EqualiserScale) {
-        let size = scale.size
-        let faint = Color.secondary.opacity(0.18)
-        let marked = Color.secondary.opacity(0.4)
-
-        for hertz in EqualiserScale.fainterFrequencies {
-            let x = scale.x(hertz)
-            context.stroke(Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(faint), lineWidth: 0.5)
-        }
-        for (hertz, label) in EqualiserScale.labelledFrequencies {
-            let x = scale.x(hertz)
-            context.stroke(Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(marked), lineWidth: 0.75)
-            context.draw(
-                Text(label).font(.caption2).foregroundStyle(.secondary),
-                at: CGPoint(x: x + 3, y: size.height - 3),
-                anchor: .bottomLeading
-            )
-        }
-
-        var level = -scale.span
-        while level <= scale.span {
-            let y = scale.y(level)
-            let zero = level == 0
-            context.stroke(
-                Path { $0.move(to: CGPoint(x: 0, y: y)); $0.addLine(to: CGPoint(x: size.width, y: y)) },
-                with: .color(zero ? marked : faint),
-                lineWidth: zero ? 1 : 0.5
-            )
-            if zero || abs(level) == scale.span {
-                context.draw(
-                    Text(zero ? "0 dB" : String(format: "%+.0f", level)).font(.caption2).foregroundStyle(.secondary),
-                    at: CGPoint(x: 3, y: y + (level == scale.span ? 2 : -2)),
-                    anchor: level == scale.span ? .topLeading : .bottomLeading
-                )
-            }
-            level += EqualiserScale.markedEvery
-        }
-
+    private func drawResponse(in context: inout GraphicsContext, scale: EqualiserScale) {
         guard response.count > 1 else { return }
         context.fill(scale.washed(response), with: .color(Color.worn.opacity(0.18)))
         context.stroke(
@@ -275,7 +243,7 @@ struct EqualiserGraph: View {
             .frame(width: Self.handleSize, height: Self.handleSize)
             .background(Circle().fill(chosen ? Color.worn : Color(.systemBackground)))
             .overlay(Circle().strokeBorder(Color.worn, lineWidth: 2))
-            .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
+            .background(Circle().fill(Color.black.opacity(Self.handleShade)).padding(-Self.handleShadeReach).offset(y: Self.handleShadeDrop))
             .scaleEffect(heldBand == index ? 1.25 : 1)
             .motion(.snappy(duration: 0.15), value: heldBand == index)
             .position(x: scale.x(band.frequencyHz), y: scale.y(curve.level(of: band)))
@@ -594,5 +562,57 @@ extension EqualiserResponse {
         self.init(tracing: { curve, rate in
             try await Work.aside { try responseCurve(curve: curve, points: EqualiserResponse.points, rateHz: rate) }
         })
+    }
+}
+
+struct EqualiserGrid: View, Equatable {
+    let scale: EqualiserScale
+
+    var body: some View {
+        Canvas { context, _ in draw(in: &context) }
+            .accessibilityHidden(true)
+    }
+
+    nonisolated static func == (shown: EqualiserGrid, other: EqualiserGrid) -> Bool {
+        shown.scale == other.scale
+    }
+
+    private func draw(in context: inout GraphicsContext) {
+        let size = scale.size
+        let faint = Color.secondary.opacity(0.18)
+        let marked = Color.secondary.opacity(0.4)
+
+        for hertz in EqualiserScale.fainterFrequencies {
+            let x = scale.x(hertz)
+            context.stroke(Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(faint), lineWidth: 0.5)
+        }
+        for (hertz, label) in EqualiserScale.labelledFrequencies {
+            let x = scale.x(hertz)
+            context.stroke(Path { $0.move(to: CGPoint(x: x, y: 0)); $0.addLine(to: CGPoint(x: x, y: size.height)) }, with: .color(marked), lineWidth: 0.75)
+            context.draw(
+                Text(label).font(.caption2).foregroundStyle(.secondary),
+                at: CGPoint(x: x + 3, y: size.height - 3),
+                anchor: .bottomLeading
+            )
+        }
+
+        var level = -scale.span
+        while level <= scale.span {
+            let y = scale.y(level)
+            let zero = level == 0
+            context.stroke(
+                Path { $0.move(to: CGPoint(x: 0, y: y)); $0.addLine(to: CGPoint(x: size.width, y: y)) },
+                with: .color(zero ? marked : faint),
+                lineWidth: zero ? 1 : 0.5
+            )
+            if zero || abs(level) == scale.span {
+                context.draw(
+                    Text(zero ? "0 dB" : String(format: "%+.0f", level)).font(.caption2).foregroundStyle(.secondary),
+                    at: CGPoint(x: 3, y: y + (level == scale.span ? 2 : -2)),
+                    anchor: level == scale.span ? .topLeading : .bottomLeading
+                )
+            }
+            level += EqualiserScale.markedEvery
+        }
     }
 }

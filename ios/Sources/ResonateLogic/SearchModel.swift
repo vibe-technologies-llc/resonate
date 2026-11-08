@@ -26,6 +26,7 @@ public final class SearchModel {
     }
     public private(set) var found = SearchModel.nothing
     public private(set) var answered = ""
+    public private(set) var offeredCompletions: [String] = []
     public private(set) var asking = false
     public private(set) var recents: [String] = []
 
@@ -59,12 +60,26 @@ public final class SearchModel {
     public var hasAnswer: Bool { !answered.isEmpty }
     public var matchedNothing: Bool { hasAnswer && found.trackCount == 0 }
 
-    public var offeredCompletions: [String] {
-        let typed = answered.searchFolded
-        return found.completions.filter { completion in
-            let folded = completion.searchFolded
-            return folded != typed && folded.hasPrefix(typed)
+    private static func offered(_ completions: [String], answering typed: String) -> [String] {
+        let folded = typed.searchFolded
+        return completions.filter { completion in
+            let offered = completion.searchFolded
+            return offered != folded && offered.hasPrefix(folded)
         }
+    }
+
+    @concurrent
+    private static func same(_ answer: LibrarySearch, as shown: LibrarySearch) async -> Bool {
+        answer == shown
+    }
+
+    private func show(_ answer: LibrarySearch, answering query: String) {
+        if found.completions != answer.completions || answered != query {
+            let completions = Self.offered(answer.completions, answering: query)
+            if offeredCompletions != completions { offeredCompletions = completions }
+        }
+        found = answer
+        if answered != query { answered = query }
     }
 
     public func refresh() {
@@ -100,6 +115,7 @@ public final class SearchModel {
         guard !query.isEmpty else {
             found = Self.nothing
             answered = ""
+            if !offeredCompletions.isEmpty { offeredCompletions = [] }
             asking = false
             pending = nil
             return
@@ -116,8 +132,10 @@ public final class SearchModel {
             do {
                 let answer = try await answering(query)
                 guard asked == generation else { return }
-                found = answer
-                answered = query
+                let shown = found
+                let unchanged = answered == query ? await Self.same(answer, as: shown) : false
+                guard asked == generation else { return }
+                if !unchanged { show(answer, answering: query) }
             } catch {
                 guard asked == generation else { return }
                 reporting(error)

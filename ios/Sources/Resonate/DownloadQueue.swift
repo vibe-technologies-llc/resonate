@@ -18,17 +18,20 @@ extension ResonateNative.Error {
 final class DownloadQueue {
     private static let runningAtOnce = 2
     private static let pollEvery: Duration = .milliseconds(250)
+    private static let pollAwayEvery: Duration = .seconds(1)
     private static let folderKey = "download-folder"
     private static let wantsAutomaticallyKey = "download-wants-automatically"
     private static let wantsAskedAtLeast: Duration = .seconds(30)
     private static let wantsAskedEvery: Duration = .seconds(30 * 60)
     private static let progressSteps: Int64 = 1000
     private static let erasureWaitTicks = 40
+    private static let progressToldEvery: Duration = .seconds(1)
 
     var jobs: [DownloadJob] = [] {
-        didSet { findHeld() }
+        didSet { jobsMoved(from: oldValue) }
     }
     private(set) var held: Set<String> = []
+    private(set) var activeCount = 0
     private(set) var waitsOnTheMeter = false
     var awaitingFolder: [SearchSong] = []
     var missedProvider = false
@@ -55,6 +58,10 @@ final class DownloadQueue {
     @ObservationIgnored private var beginning: Set<String> = [] {
         didSet { findHeld() }
     }
+    @ObservationIgnored private var latestJob: [String: Int] = [:]
+    @ObservationIgnored private var standings: [String: DownloadStandingFlag] = [:]
+    @ObservationIgnored private var progressShownAt: ContinuousClock.Instant?
+    @ObservationIgnored private var progressShownSettled = 0
     @ObservationIgnored private lazy var background = BackgroundHold(
         name: "Downloading songs",
         continued: BackgroundHold.downloads
@@ -87,14 +94,38 @@ final class DownloadQueue {
     }
 
     func standing(of song: SearchSong) -> DownloadStanding {
-        DownloadStanding.of(song, in: jobs, starting: held.contains(song.id))
+        flag(of: song).standing
     }
 
     func finishedTrack(for song: SearchSong) -> Track? {
-        guard let job = jobs.last(where: { $0.song.id == song.id }),
-            case .done(let track) = job.state
-        else { return nil }
-        return track
+        flag(of: song).finished
+    }
+
+    private func flag(of song: SearchSong) -> DownloadStandingFlag {
+        if let kept = standings[song.id], kept.song == song { return kept }
+        let made = DownloadStandingFlag(song: song, read: read(song))
+        standings[song.id] = made
+        return made
+    }
+
+    private func read(_ song: SearchSong) -> DownloadStandingRead {
+        let latest = latestJob[song.id].map { jobs[$0] }
+        return DownloadStandingRead.of(song, latest: latest, starting: held.contains(song.id))
+    }
+
+    private func jobsMoved(from before: [DownloadJob]) {
+        latestJob = DownloadStandingRead.latest(in: jobs)
+        findHeld()
+        let active = jobs.count { $0.state.inFlight || $0.state == .waiting }
+        if activeCount != active { activeCount = active }
+        restand(DownloadStandingRead.songsMoved(from: before, to: jobs))
+    }
+
+    private func restand(_ songs: Set<String>) {
+        for id in songs {
+            guard let flag = standings[id] else { continue }
+            flag.show(read(flag.song))
+        }
     }
 
     func cancel(_ song: SearchSong) {
@@ -103,7 +134,10 @@ final class DownloadQueue {
 
     private func findHeld() {
         let found = beginning.union(jobs.lazy.filter { !$0.state.settled }.map(\.song.id))
-        if found != held { held = found }
+        guard found != held else { return }
+        let moved = found.symmetricDifference(held)
+        held = found
+        restand(moved)
     }
 
     func recover(_ native: MobilePlayer) {
@@ -296,6 +330,10 @@ final class DownloadQueue {
         let held = jobs.filter { batch.contains($0.id) }
         guard !held.isEmpty else { return }
         let settled = held.filter(\.state.settled).count
+        let now = ContinuousClock.now
+        if settled == progressShownSettled, let shownAt = progressShownAt, now - shownAt < Self.progressToldEvery { return }
+        progressShownAt = now
+        progressShownSettled = settled
         let done = held.reduce(Int64(0)) { sum, job in
             sum + (job.state.settled ? Self.progressSteps : Int64((job.fraction ?? 0) * Double(Self.progressSteps)))
         }
@@ -376,7 +414,8 @@ final class DownloadQueue {
         guard polling == nil else { return }
         polling = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: DownloadQueue.pollEvery)
+                let pace = self?.library.features.foreground == false ? DownloadQueue.pollAwayEvery : DownloadQueue.pollEvery
+                try? await Task.sleep(for: pace)
                 guard let self else { return }
                 let ids = jobs.filter(\.state.inFlight).map(\.id)
                 guard !ids.isEmpty else {
@@ -388,7 +427,12 @@ final class DownloadQueue {
                     (ids.compactMap { id in native.downloadProgress(job: id).map { (id, $0) } }, native.downloadsWaitOnTheMeter())
                 }) ?? ([], false)
                 if waitsOnTheMeter != waiting { waitsOnTheMeter = waiting }
-                for (id, progress) in read { update(id) { $0.follow(progress) } }
+                var followed = jobs
+                for (id, progress) in read {
+                    guard let index = followed.firstIndex(where: { $0.id == id }) else { continue }
+                    followed[index].follow(progress)
+                }
+                if followed != jobs { jobs = followed }
                 showProgress()
             }
         }
@@ -528,5 +572,24 @@ final class BackgroundHold {
                 Task { @MainActor in hold?.expire() }
             }
         }
+    }
+}
+
+@MainActor
+@Observable
+final class DownloadStandingFlag {
+    @ObservationIgnored let song: SearchSong
+    private(set) var standing: DownloadStanding
+    private(set) var finished: Track?
+
+    init(song: SearchSong, read: DownloadStandingRead) {
+        self.song = song
+        standing = read.standing
+        finished = read.finished
+    }
+
+    func show(_ read: DownloadStandingRead) {
+        if standing != read.standing { standing = read.standing }
+        if finished != read.finished { finished = read.finished }
     }
 }

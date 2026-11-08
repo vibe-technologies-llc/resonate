@@ -10,16 +10,41 @@ extension ArtistHit {
     var destination: Destination { .artist(name) }
 }
 
-struct SearchResults: View {
+struct SearchResults: View, Equatable {
     private static let topCollections = 6
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let search: SearchModel
     @Binding var scope: SearchScope
-    var chosen: () -> Void = {}
-    var songsAtTop = 5
-    var showsCollections = true
+    let chosen: () -> Void
+    let songsAtTop: Int
+    let showsCollections: Bool
+    private let searched: ObjectIdentifier
+    private let scopeShown: SearchScope
+
+    init(
+        search: SearchModel,
+        scope: Binding<SearchScope>,
+        chosen: @escaping () -> Void = {},
+        songsAtTop: Int = 5,
+        showsCollections: Bool = true
+    ) {
+        self.search = search
+        _scope = scope
+        self.chosen = chosen
+        self.songsAtTop = songsAtTop
+        self.showsCollections = showsCollections
+        searched = ObjectIdentifier(search)
+        scopeShown = scope.wrappedValue
+    }
+
+    nonisolated static func == (shown: SearchResults, other: SearchResults) -> Bool {
+        shown.searched == other.searched
+            && shown.scopeShown == other.scopeShown
+            && shown.songsAtTop == other.songsAtTop
+            && shown.showsCollections == other.showsCollections
+    }
 
     var body: some View {
         let found = search.found

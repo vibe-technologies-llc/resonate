@@ -266,6 +266,39 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
         #expect(DownloadStanding.of(searchSong("Seamus"), in: jobs, starting: false) == .available)
     }
 
+    @Test func theLatestJobOfEachSongIsFoundByItsPlace() {
+        let song = searchSong()
+        let other = searchSong("Fearless")
+        let jobs = [job(1, song, .failed("No match")), job(2, other, .downloading), job(3, song, .waiting)]
+
+        let latest = DownloadStandingRead.latest(in: jobs)
+
+        #expect(latest == [song.id: 2, other.id: 1])
+        #expect(DownloadStandingRead.of(song, latest: latest[song.id].map { jobs[$0] }, starting: false).standing == .waiting)
+    }
+
+    @Test func aFinishedJobIsReadWithTheSongItLanded() {
+        let song = searchSong()
+        let landed = track(7, title: "Echoes", artist: "Pink Floyd", album: "Meddle")
+
+        let read = DownloadStandingRead.of(song, latest: job(1, song, .done(landed)), starting: false)
+
+        #expect(read.standing == .held)
+        #expect(read.finished == landed)
+    }
+
+    @Test func onlyTheSongsWhoseJobsMovedAreToldOfIt() {
+        let song = searchSong()
+        let other = searchSong("Fearless")
+        let gone = searchSong("Seamus")
+        let before = [job(1, song, .downloading, received: 100, total: 1_000), job(2, other, .waiting), job(3, gone, .cancelled)]
+        let after = [job(1, song, .downloading, received: 400, total: 1_000), job(2, other, .waiting)]
+
+        let moved = DownloadStandingRead.songsMoved(from: before, to: after)
+
+        #expect(moved == [song.id, gone.id])
+    }
+
     @Test func aSongTheLibraryHoldsIsHeldWhateverAnEarlierJobSaid() {
         var song = searchSong()
         song.held = true

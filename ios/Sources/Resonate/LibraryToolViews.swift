@@ -240,7 +240,9 @@ struct SuggestedMix: Identifiable, Sendable {
         if case .search(let search) = source { search } else { nil }
     }
 
-    static var yours: [SuggestedMix] {
+    static let yours = madeYours()
+
+    private static func madeYours() -> [SuggestedMix] {
         var favourites = defaultTrackFilter()
         favourites.favourites = true
         var recent = defaultTrackFilter()
@@ -270,7 +272,7 @@ struct SuggestedMix: Identifiable, Sendable {
     }
 }
 
-struct OfferedMixes: Sendable {
+struct OfferedMixes: Equatable, Sendable {
     var lists: [SuggestedList] = []
     var covers: [String: [UInt64]] = [:]
 
@@ -335,9 +337,11 @@ struct SuggestionsView: View {
             .padding(20)
         }
         .navigationTitle("Suggestions")
-        .task(id: "\(library.collectionGeneration):\(library.catalogEpoch)") {
-            guard let found = await OfferedMixes.read(in: library) else { return }
-            offered = found
+        .background {
+            CatalogReading {
+                guard let found = await OfferedMixes.read(in: library), found != offered else { return }
+                offered = found
+            }
         }
     }
 }
@@ -385,7 +389,7 @@ struct MixView: View {
                 ProgressView().accessibilityLabel("Reading this mix")
             }
         }
-        .task(id: "\(id):\(library.collectionGeneration):\(library.catalogEpoch)") { await resolveAndLoad() }
+        .background { CatalogReading(subject: id) { await resolveAndLoad() } }
     }
 
     private func resolveAndLoad() async {
@@ -408,9 +412,10 @@ struct MixView: View {
                 (try mix.tracks(in: native), try mix.covers(in: native))
             }
             failure = nil
-            tracks = rows
-            covers = pictured.compactMap { library.artworkTrack($0) }
-            read = true
+            if tracks != rows { tracks = rows }
+            let pictures = pictured.compactMap { library.artworkTrack($0) }
+            if covers != pictures { covers = pictures }
+            if !read { read = true }
         } catch {
             failure = explained(error)
         }

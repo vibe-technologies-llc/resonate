@@ -110,9 +110,24 @@ final class Navigation {
     var listening = false
     var tagging: TagEditing?
     var deleting: SongsToDelete?
+    var addingToPlaylist: PickedTracks?
+    private(set) var queuedFelt = 0
+    private(set) var heartFelt = 0
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
     var librarySection = LibrarySection.home
+
+    func addToPlaylist(_ tracks: [Track]) {
+        addingToPlaylist = PickedTracks(tracks: tracks)
+    }
+
+    func feelQueued() {
+        queuedFelt += 1
+    }
+
+    func feelHeart() {
+        heartFelt += 1
+    }
 
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
@@ -320,6 +335,7 @@ struct RootView: View {
                 .environment(navigation)
         }
         .modifier(DeleteSongsConfirmation(insidePlayer: false))
+        .modifier(PlaylistPickerHost(insidePlayer: false))
         .modifier(SleepTimerPresentation(insidePlayer: false))
         .modifier(ZonesPresentation(insidePlayer: false))
         .sheet(isPresented: $navigation.filters) {
@@ -490,15 +506,11 @@ struct ThemedForm<Content: View>: View {
 
 struct ThemedPage: ViewModifier {
     func body(content: Content) -> some View {
-        let appearance = AppearanceState.shared
-        if appearance.themedBackground {
+        if AppearanceState.shared.themedBackground {
             content
                 .scrollContentBackground(.hidden)
                 .containerBackground(for: .navigation) {
-                    AppBackdrop(
-                        strength: Float(appearance.backgroundStrength),
-                        moving: appearance.movingBackground
-                    )
+                    AppBackdrop()
                 }
         } else {
             content
@@ -808,5 +820,23 @@ struct LibraryToolbar: ToolbarContent {
                 }
             }
         }
+    }
+}
+
+struct CatalogMoment: Equatable {
+    let subject: String
+    let collections: Int
+    let catalog: Int
+}
+
+struct CatalogReading: View {
+    @Environment(Library.self) private var library
+    var subject = ""
+    let read: () async -> Void
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .task(id: CatalogMoment(subject: subject, collections: library.collectionGeneration, catalog: library.catalogEpoch)) { await read() }
     }
 }

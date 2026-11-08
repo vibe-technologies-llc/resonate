@@ -152,9 +152,7 @@ struct BackdropView: View {
     }
 
     static func accentLinear(_ scheme: ColorScheme) -> SIMD3<Float> {
-        var values = EnvironmentValues()
-        values.colorScheme = scheme
-        let accent = Color.worn.resolve(in: values)
+        let accent = AppearanceState.shared.resolvedTint(scheme)
         return SIMD3<Float>(accent.linearRed, accent.linearGreen, accent.linearBlue)
     }
 
@@ -192,10 +190,16 @@ struct AppBackdrop: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var scheme
-    let strength: Float
-    let moving: Bool
     @State private var rendering = BackdropPipeline.finished ?? .loading
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
+
+    private var strength: Float {
+        Float(AppearanceState.shared.backgroundStrength)
+    }
+
+    private var moving: Bool {
+        AppearanceState.shared.movingBackground
+    }
 
     var body: some View {
         let palette = BackdropView.accentPalette(scheme)
@@ -349,7 +353,7 @@ enum FieldPicture {
             encoded.commands.commit()
         }
         guard encoded.commands.status == .completed else { return nil }
-        return image(of: encoded.texture, size: size)
+        return image(of: encoded.lent)
     }
 
     static func renderedNow(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) -> CGImage? {
@@ -357,14 +361,85 @@ enum FieldPicture {
         encoded.commands.commit()
         encoded.commands.waitUntilCompleted()
         guard encoded.commands.status == .completed else { return nil }
-        return image(of: encoded.texture, size: size)
+        return image(of: encoded.lent)
     }
 
     private static func resuming(_ continuation: CheckedContinuation<Void, Never>) -> @Sendable (any MTLCommandBuffer) -> Void {
         { _ in continuation.resume() }
     }
 
-    private static func encoded(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) -> (commands: any MTLCommandBuffer, texture: any MTLTexture)? {
+    private static func encoded(by gpu: BackdropGPU, _ uniforms: FieldUniforms, size: FieldSize) -> (commands: any MTLCommandBuffer, lent: LentFieldBuffer)? {
+        guard let lent = FieldBuffers.shared.lend(for: size, on: gpu.device) else { return nil }
+
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = lent.texture
+        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].storeAction = .store
+        guard let commands = gpu.queue.makeCommandBuffer(),
+            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
+        else {
+            FieldBuffers.shared.takeBack(lent)
+            return nil
+        }
+        var uniforms = uniforms
+
+        encoder.setRenderPipelineState(gpu.pipeline)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.size, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.endEncoding()
+        BackdropPipeline.reportFailures(of: commands)
+        return (commands, lent)
+    }
+
+    private static func image(of lent: LentFieldBuffer) -> CGImage? {
+        let lender = Unmanaged.passRetained(lent).toOpaque()
+
+        guard let provider = CGDataProvider(dataInfo: lender, data: lent.buffer.contents(), size: lent.bytes, releaseData: givenBack),
+            let space = CGColorSpace(name: CGColorSpace.sRGB)
+        else {
+            Unmanaged<LentFieldBuffer>.fromOpaque(lender).release()
+            FieldBuffers.shared.takeBack(lent)
+            return nil
+        }
+        return CGImage(
+            width: lent.size.width,
+            height: lent.size.height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 8 * bytesPerPixel,
+            bytesPerRow: lent.bytesPerRow,
+            space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+
+    private static let givenBack: CGDataProviderReleaseDataCallback = { lender, _, _ in
+        guard let lender else { return }
+        FieldBuffers.shared.takeBack(Unmanaged<LentFieldBuffer>.fromOpaque(lender).takeRetainedValue())
+    }
+
+    fileprivate static func bytesPerRow(of size: FieldSize, on device: any MTLDevice) -> Int {
+        let alignment = max(device.minimumLinearTextureAlignment(for: BackdropPipeline.pixelFormat), 1)
+        let tight = size.width * bytesPerPixel
+        return (tight + alignment - 1) / alignment * alignment
+    }
+}
+
+final class LentFieldBuffer: @unchecked Sendable {
+    let size: FieldSize
+    let bytesPerRow: Int
+    let buffer: any MTLBuffer
+    let texture: any MTLTexture
+
+    var bytes: Int {
+        bytesPerRow * size.height
+    }
+
+    init?(size: FieldSize, on device: any MTLDevice) {
+        let bytesPerRow = FieldPicture.bytesPerRow(of: size, on: device)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: BackdropPipeline.pixelFormat,
             width: size.width,
@@ -373,47 +448,40 @@ enum FieldPicture {
         )
         descriptor.usage = .renderTarget
         descriptor.storageMode = .shared
-        guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { return nil }
-
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = texture
-        pass.colorAttachments[0].loadAction = .dontCare
-        pass.colorAttachments[0].storeAction = .store
-        guard let commands = gpu.queue.makeCommandBuffer(),
-            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)
+        guard let buffer = device.makeBuffer(length: bytesPerRow * size.height, options: .storageModeShared),
+            let texture = buffer.makeTexture(descriptor: descriptor, offset: 0, bytesPerRow: bytesPerRow)
         else { return nil }
-        var uniforms = uniforms
 
-        encoder.setRenderPipelineState(gpu.pipeline)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.size, index: 0)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        encoder.endEncoding()
-        BackdropPipeline.reportFailures(of: commands)
-        return (commands, texture)
+        self.size = size
+        self.bytesPerRow = bytesPerRow
+        self.buffer = buffer
+        self.texture = texture
+    }
+}
+
+final class FieldBuffers: Sendable {
+    static let shared = FieldBuffers()
+
+    private static let keptPerSize = 3
+    private static let sizesKept = 4
+
+    private let idle = Mutex<[FieldSize: [LentFieldBuffer]]>([:])
+
+    func lend(for size: FieldSize, on device: any MTLDevice) -> LentFieldBuffer? {
+        let kept = idle.withLock { idle in idle[size]?.popLast() }
+        return kept ?? LentFieldBuffer(size: size, on: device)
     }
 
-    private static func image(of texture: any MTLTexture, size: FieldSize) -> CGImage? {
-        let bytesPerRow = size.width * bytesPerPixel
-        var pixels = Data(count: bytesPerRow * size.height)
-
-        pixels.withUnsafeMutableBytes { bytes in
-            guard let base = bytes.baseAddress else { return }
-            texture.getBytes(base, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, size.width, size.height), mipmapLevel: 0)
+    func takeBack(_ lent: LentFieldBuffer) {
+        idle.withLock { idle in
+            var waiting = idle[lent.size] ?? []
+            guard waiting.count < Self.keptPerSize else { return }
+            waiting.append(lent)
+            idle[lent.size] = waiting
+            if idle.count > Self.sizesKept, let other = idle.keys.first(where: { $0 != lent.size }) {
+                idle[other] = nil
+            }
         }
-        guard let provider = CGDataProvider(data: pixels as CFData), let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        return CGImage(
-            width: size.width,
-            height: size.height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 8 * bytesPerPixel,
-            bytesPerRow: bytesPerRow,
-            space: space,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        )
     }
 }
 
@@ -1378,10 +1446,10 @@ extension ProcessInfo {
         isLowPowerModeEnabled || thermalState == .serious || thermalState == .critical
     }
 
-    static var powerStateChanges: some Publisher<Notification, Never> {
-        NotificationCenter.default
-            .publisher(for: .NSProcessInfoPowerStateDidChange)
-            .merge(with: NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification))
-            .receive(on: DispatchQueue.main)
-    }
+    @MainActor static let powerStateChanges: AnyPublisher<Notification, Never> = NotificationCenter.default
+        .publisher(for: .NSProcessInfoPowerStateDidChange)
+        .merge(with: NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification))
+        .receive(on: DispatchQueue.main)
+        .share()
+        .eraseToAnyPublisher()
 }

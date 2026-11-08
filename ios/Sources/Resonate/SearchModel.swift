@@ -3,7 +3,7 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-enum SearchScope: String, CaseIterable, Identifiable {
+enum SearchScope: String, CaseIterable, Identifiable, Sendable {
     case top = "Top"
     case songs = "Songs"
     case albums = "Albums"

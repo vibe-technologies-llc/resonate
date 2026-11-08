@@ -5,7 +5,6 @@ import SwiftUI
 struct StatisticsView: View {
     @Environment(Library.self) private var library
     @State private var days: UInt32 = 0
-    @State private var selected: Date?
     @State private var widened: Set<StatisticsRank> = []
     @State private var showingWrapped = false
 
@@ -39,7 +38,7 @@ struct StatisticsView: View {
                 } else {
                     if !detail.days.isEmpty {
                         HeadedSection("Listening over time") {
-                            ListeningChart(days: detail.days, span: loadedDays, selected: $selected)
+                            ListeningChart(bars: features.listeningBars, span: loadedDays)
                                 .padding(.vertical, 8)
                         }
                     }
@@ -67,10 +66,7 @@ struct StatisticsView: View {
         }
         .navigationTitle("Statistics")
         .refreshable { features.loadStatistics(days: days) }
-        .task(id: days) {
-            selected = nil
-            features.loadStatistics(days: days)
-        }
+        .task(id: days) { features.loadStatistics(days: days) }
         .task { features.loadWrapped() }
         .fullScreenCover(isPresented: $showingWrapped) {
             if let year = features.wrappedYear {
@@ -285,12 +281,11 @@ struct ListenedCovers: Equatable, Sendable {
 }
 
 struct ListeningChart: View {
-    let days: [ListenedOnDay]
+    let bars: [ListeningBar]
     let span: UInt32
-    @Binding var selected: Date?
+    @State private var selected: Date?
 
     var body: some View {
-        let bars = ListeningBar.grouped(days, span: span)
         ListeningBars(bars: bars, span: span, tallest: max(bars.map(\.listenedMs).max() ?? 1, 1), selected: $selected)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Listening over time")
@@ -299,6 +294,7 @@ struct ListeningChart: View {
             .accessibilityAdjustableAction { direction in
                 step(direction, through: bars)
             }
+            .onChange(of: span) { selected = nil }
     }
 
     private func spoken(_ bars: [ListeningBar]) -> String {

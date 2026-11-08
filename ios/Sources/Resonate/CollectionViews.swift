@@ -70,6 +70,7 @@ struct LibraryView: View {
         let asked = page == .playlists ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
         let folded = asked.searchFolded
         let answered = !asked.isEmpty && shelfSearch.hasAnswer
+        let lighting = asked.isEmpty ? "" : shelfSearch.answered
         let playlists = library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) }
         let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
         let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
@@ -122,14 +123,14 @@ struct LibraryView: View {
             }
             if page == .home, !albumHits.isEmpty {
                 Section {
-                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: asked)
+                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: lighting)
                 } header: {
                     SeeAllPageHeader(title: "Albums", more: true, page: .albums)
                 }
             }
             if page == .home, !artistHits.isEmpty {
                 Section {
-                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: asked)
+                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: lighting)
                 } header: {
                     SeeAllPageHeader(title: "Artists", more: true, page: .artists)
                 }
@@ -161,7 +162,7 @@ struct LibraryView: View {
                         NavigationLink(value: album.destination) {
                             CollectionRow(
                                 track: library.artworkTrack(album.artworkTrack),
-                                title: lit(album.shownTitle, by: asked, in: .album),
+                                title: lit(album.shownTitle, by: lighting, in: .album),
                                 detail: album.detail
                             )
                         }
@@ -180,7 +181,7 @@ struct LibraryView: View {
                         NavigationLink(value: artist.destination) {
                             CollectionRow(
                                 track: library.artworkTrack(artist.artworkTrack),
-                                title: lit(artist.shownName, by: asked, in: .artist),
+                                title: lit(artist.shownName, by: lighting, in: .artist),
                                 detail: artist.detail,
                                 circle: true
                             )
@@ -231,7 +232,7 @@ struct LibraryView: View {
             LibraryToolbar()
         }
         .onAppear { library.features.loadPlaylists() }
-        .fileImporter(isPresented: $importing, allowedContentTypes: playlistFileTypes()) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: PlaylistFileTypes.offered) { result in
             switch result {
             case .success(let url): library.importPlaylistFile(url)
             case .failure(let failure): library.report(failure)
@@ -488,7 +489,7 @@ struct PlaylistArtwork: View {
     var body: some View {
         let name = playlist?.name ?? ""
         let held = playlist.flatMap { PlaylistCovers.held(for: $0) }
-        MosaicArtwork(covers: covers ?? held ?? [], accents: namedAccents(name: name), mark: "music.note.list", name: name, corner: corner)
+        MosaicArtwork(covers: covers ?? held ?? [], accents: NamedAccents.of(name), mark: "music.note.list", name: name, corner: corner)
             .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
                 guard let playlist else { return }
                 if let held = PlaylistCovers.held(for: playlist) {
@@ -560,7 +561,7 @@ struct HeaderShadow: View {
     let outline: CoverOutline
 
     var body: some View {
-        Canvas { context, size in
+        Canvas(rendersAsynchronously: true) { context, size in
             let cover = CGRect(origin: .zero, size: size).insetBy(dx: Self.reach, dy: Self.reach)
             guard cover.width > 0, cover.height > 0 else { return }
 
@@ -859,7 +860,7 @@ struct AlbumView: View {
         .navigationTitle(shownTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { CollectionMenu(tracks: tracks, artist: album?.variousArtists == true ? nil : artist, editsTags: true) }
-        .task(id: "\(key):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
+        .background { CatalogReading(subject: key) { await load() } }
         .task(id: key) { await learnTheRelease() }
     }
 
@@ -895,10 +896,10 @@ struct AlbumView: View {
                 return
             }
         }
-        album = found
-        tracks = rows
-        notHeld = lacking
-        read = true
+        if album != found { album = found }
+        if tracks != rows { tracks = rows }
+        if notHeld != lacking { notHeld = lacking }
+        if !read { read = true }
     }
 }
 
@@ -1108,7 +1109,7 @@ struct ArtistView: View {
         .sheet(item: $openRelease) { release in
             UnheldReleaseSheet(artist: name, release: release)
         }
-        .task(id: "\(name):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
+        .background { CatalogReading(subject: name) { await load() } }
         .task(id: "\(name):\(phase == .background)") { await learnTheDiscography() }
     }
 
@@ -1135,8 +1136,8 @@ struct ArtistView: View {
         guard let (releases, songs) = try? await Work.aside({
             (try native.artistReleasesNotHeld(name: name), try native.artistSongsNotHeld(name: name))
         }) else { return }
-        releasesLacked = releases
-        songsLacked = songs
+        if releasesLacked != releases { releasesLacked = releases }
+        if songsLacked != songs { songsLacked = songs }
     }
 
     private func load() async {
@@ -1170,12 +1171,12 @@ struct ArtistView: View {
                 return
             }
         }
-        albums = found
-        tracks = rows
-        top = played
-        releasesLacked = releases
-        songsLacked = songs
-        read = true
+        if albums != found { albums = found }
+        if tracks != rows { tracks = rows }
+        if top != played { top = played }
+        if releasesLacked != releases { releasesLacked = releases }
+        if songsLacked != songs { songsLacked = songs }
+        if !read { read = true }
     }
 }
 
@@ -1183,8 +1184,33 @@ extension ReleaseNotHeld: Identifiable {
     public var id: String { group }
 }
 
+final class UnheldSleeves: @unchecked Sendable {
+    static let shared = UnheldSleeves()
+
+    private static let costLimit = 16 * 1024 * 1024
+
+    private let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = costLimit
+        return cache
+    }()
+
+    static func name(of group: String, edge: Int) -> String {
+        "\(group)@\(edge)"
+    }
+
+    func picture(named name: String) -> UIImage? {
+        cache.object(forKey: name as NSString)
+    }
+
+    func keep(_ picture: UIImage, named name: String) {
+        cache.setObject(picture, forKey: name as NSString, cost: ArtworkDecoder.cost(of: picture))
+    }
+}
+
 struct UnheldSleeve: View {
     @Environment(Library.self) private var library
+    @Environment(\.displayScale) private var displayScale
     let release: ReleaseNotHeld
     let edge: CGFloat
     @State private var picture: UIImage?
@@ -1211,12 +1237,21 @@ struct UnheldSleeve: View {
                 return
             }
             let group = release.group
-            picture = try? await Work.aside {
-                guard let bytes = try native.unheldReleaseCover(group: group),
-                    let image = UIImage(data: bytes)
-                else { return nil }
-                return image.preparingForDisplay() ?? image
+            let pixels = Int((edge * displayScale).rounded(.up))
+            let name = UnheldSleeves.name(of: group, edge: pixels)
+            if let kept = UnheldSleeves.shared.picture(named: name) {
+                picture = kept
+                return
             }
+            let decoded = try? await Work.aside { () -> UIImage? in
+                guard let bytes = try native.unheldReleaseCover(group: group), let image = ArtworkDecoder.thumbnail(bytes, edge: pixels) else {
+                    return nil
+                }
+                UnheldSleeves.shared.keep(image, named: name)
+                return image
+            }
+            guard !Task.isCancelled else { return }
+            picture = decoded
         }
     }
 }
@@ -1377,8 +1412,6 @@ struct CollectionActions: ViewModifier {
     @Environment(Navigation.self) private var navigation
     let source: CollectionSource
     var artist: String?
-    @State private var picked: PickedTracks?
-    @State private var acted = 0
 
     func body(content: Content) -> some View {
         content
@@ -1392,7 +1425,7 @@ struct CollectionActions: ViewModifier {
                     Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
                 }
                 Section {
-                    Button("Add to playlist", systemImage: "text.badge.plus") { act { picked = PickedTracks(tracks: $0) } }
+                    Button("Add to playlist", systemImage: "text.badge.plus") { act { navigation.addToPlaylist($0) } }
                     if let artist, !artist.isEmpty {
                         Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
                     }
@@ -1404,8 +1437,6 @@ struct CollectionActions: ViewModifier {
                 Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
                     .tint(.orange)
             }
-            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
-            .sensoryFeedback(.success, trigger: acted)
     }
 
     private func act(_ action: @escaping @MainActor ([Track]) -> Void) {
@@ -1415,7 +1446,7 @@ struct CollectionActions: ViewModifier {
                 let native = try await library.player()
                 let tracks = try await Work.aside { try source.tracks(native) }
                 guard !tracks.isEmpty else { return }
-                acted += 1
+                navigation.feelQueued()
                 action(tracks)
             } catch {
                 library.report(error)
@@ -1435,5 +1466,19 @@ struct FavouritesCountRow: View {
 
     var body: some View {
         FavouritesRow(count: library.favouriteTracks.count)
+    }
+}
+
+@MainActor
+enum NamedAccents {
+    private static let keptAtMost = 512
+    private static var kept: [String: MixAccents] = [:]
+
+    static func of(_ name: String) -> MixAccents {
+        if let held = kept[name] { return held }
+        let accents = namedAccents(name: name)
+        if kept.count >= keptAtMost { kept.removeAll(keepingCapacity: true) }
+        kept[name] = accents
+        return accents
     }
 }

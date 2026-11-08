@@ -29,6 +29,7 @@ struct SearchTab: View {
                     if !link, area != .online {
                         SearchHeading(title: "In your library")
                         LibraryFindings(search: search, seeAll: $seeAll, compact: area == .all, chosen: stowKeyboard)
+                            .equatable()
                         if area == .all, search.hasAnswer, !search.matchedNothing {
                             Button { area = .library } label: {
                                 Label("All library results", systemImage: "chevron.forward")
@@ -198,11 +199,24 @@ struct SearchStart: View {
     }
 }
 
-struct LibraryFindings: View {
+struct LibraryFindings: View, Equatable {
     let search: SearchModel
     @Binding var seeAll: SearchScope?
-    var compact = false
+    let compact: Bool
     let chosen: () -> Void
+    private let searched: ObjectIdentifier
+
+    init(search: SearchModel, seeAll: Binding<SearchScope?>, compact: Bool = false, chosen: @escaping () -> Void) {
+        self.search = search
+        _seeAll = seeAll
+        self.compact = compact
+        self.chosen = chosen
+        searched = ObjectIdentifier(search)
+    }
+
+    nonisolated static func == (shown: LibraryFindings, other: LibraryFindings) -> Bool {
+        shown.searched == other.searched && shown.compact == other.compact
+    }
 
     var body: some View {
         SearchCompletions(search: search)
@@ -229,6 +243,7 @@ struct LibraryFindings: View {
                 songsAtTop: compact ? 3 : 5,
                 showsCollections: !compact
             )
+            .equatable()
         }
     }
 }
@@ -277,7 +292,7 @@ struct LibrarySearchPage: View {
 
     var body: some View {
         List {
-            SearchResults(search: library.tabSearch, scope: .constant(scope)).themedRows()
+            SearchResults(search: library.tabSearch, scope: .constant(scope)).equatable().themedRows()
         }
         .listStyle(.plain)
         .navigationTitle(scope.rawValue)

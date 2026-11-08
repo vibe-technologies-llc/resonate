@@ -3,6 +3,7 @@ import Network
 import Observation
 import ResonateLogic
 import ResonateNative
+import Synchronization
 import UIKit
 
 struct PlaylistSync: Equatable {
@@ -84,6 +85,7 @@ final class Features {
     private(set) var stallDownloadsOnMetered: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
+    private(set) var listeningBars: [ListeningBar] = []
     private(set) var listenedCovers = ListenedCovers()
     var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
@@ -105,11 +107,23 @@ final class Features {
     var inspectorTrack: UInt64?
     var inspectorArtist: ArtistLookup = .idle
     var playlists: [MusicPlaylist] = [] {
-        didSet { foldedNames = Dictionary(playlists.map { ($0.id, $0.name.searchFolded) }, uniquingKeysWith: { kept, _ in kept }) }
+        didSet { foldNames() }
     }
-    @ObservationIgnored private var foldedNames: [UInt64: String] = [:]
+    @ObservationIgnored private var foldedNames: [String: String] = [:]
     @ObservationIgnored private var writableKinds: [String: Bool] = [:]
-    var playlistRows: [Track] = []
+    @ObservationIgnored private var keptPlaylistRows: [Track] = []
+    @ObservationIgnored private var playlistRowsWritten = 0
+
+    var playlistRows: [Track] {
+        get {
+            access(keyPath: \.playlistRows)
+            return keptPlaylistRows
+        }
+        set {
+            playlistRowsWritten += 1
+            withMutation(keyPath: \.playlistRows) { keptPlaylistRows = newValue }
+        }
+    }
     var openPlaylist: UInt64?
     var playlistToShow: UInt64?
     var followedProfiles: [ProfileFollowed] = []
@@ -129,7 +143,9 @@ final class Features {
     @ObservationIgnored private var artStamps: [UInt64: ArtStamp] = [:]
     @ObservationIgnored private var artStamped = 0
     private(set) var artEpoch = 0
-    var portraitGeneration = 0
+    @ObservationIgnored private var portraitStamps: [String: ArtStamp] = [:]
+    @ObservationIgnored private var portraitsLacking: Set<String> = []
+    private(set) var portraitEpoch = 0
     var syncConfig: SyncConfig?
     @ObservationIgnored private var secretsUnread = false
     @ObservationIgnored private var unreadReported = false
@@ -177,6 +193,7 @@ final class Features {
     @ObservationIgnored private var artRevision: UInt64?
     @ObservationIgnored var foreground = true {
         didSet {
+            guard foreground != oldValue else { return }
             library.nudgePoll()
             wakeSyncPoll()
             enrichment.foregroundChanged(foreground)
@@ -913,7 +930,15 @@ final class Features {
     }
 
     func foldedName(of playlist: MusicPlaylist) -> String {
-        foldedNames[playlist.id] ?? playlist.name.searchFolded
+        foldedNames[playlist.name] ?? playlist.name.searchFolded
+    }
+
+    private func foldNames() {
+        let names = Set(playlists.map(\.name))
+        foldedNames = foldedNames.filter { names.contains($0.key) }
+        for name in names where foldedNames[name] == nil {
+            foldedNames[name] = name.searchFolded
+        }
     }
 
     func artGeneration(of id: UInt64) -> Int {
@@ -941,7 +966,18 @@ final class Features {
     }
 
     private func portraitRequest(_ mbid: String, bucket: ArtworkBucket) -> ArtworkRequest {
-        ArtworkRequest(subject: .portrait(mbid), revision: 0, generation: portraitGeneration, bucket: bucket)
+        ArtworkRequest(subject: .portrait(mbid), revision: 0, generation: portraitGeneration(of: mbid), bucket: bucket)
+    }
+
+    func portraitGeneration(of mbid: String) -> Int {
+        portraitEpoch * Self.artGenerationsAtMost + portraitStamp(of: mbid).value
+    }
+
+    private func portraitStamp(of mbid: String) -> ArtStamp {
+        if let kept = portraitStamps[mbid] { return kept }
+        let made = ArtStamp()
+        portraitStamps[mbid] = made
+        return made
     }
 
     func artwork(_ track: Track, bucket: ArtworkBucket) async -> UIImage? {
@@ -982,11 +1018,20 @@ final class Features {
     func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {
         let request = portraitRequest(mbid, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
-        return await artworks.image(request) { try native.artistPortrait(mbid: mbid) }
+        let found = await artworks.image(request) { try native.artistPortrait(mbid: mbid) }
+        if found == nil { portraitsLacking.insert(mbid) }
+        return found
     }
 
     func portraitsChanged() {
-        portraitGeneration += 1
+        let lacking = portraitsLacking
+        portraitsLacking = []
+        guard portraitStamps.count + lacking.count <= Self.artStampsAtMost else {
+            portraitStamps = [:]
+            portraitEpoch += 1
+            return
+        }
+        for mbid in lacking { portraitStamp(of: mbid).value += 1 }
     }
 
     func scanned() {
@@ -1132,7 +1177,7 @@ final class Features {
     }
 
     func selectPlaylist(_ id: UInt64?) {
-        if openPlaylist != id { playlistRows = [] }
+        if openPlaylist != id, !keptPlaylistRows.isEmpty { playlistRows = [] }
         openPlaylist = id
         if let id { work { [weak self] native in await self?.reloadPlaylist(native, id) } }
     }
@@ -1140,7 +1185,7 @@ final class Features {
     func leavePlaylist(_ id: UInt64) {
         guard openPlaylist == id else { return }
         openPlaylist = nil
-        playlistRows = []
+        if !keptPlaylistRows.isEmpty { playlistRows = [] }
     }
 
     func createPlaylist(_ name: String, with tracks: [Track] = [], then: PlaylistEdited? = nil) {
@@ -1222,14 +1267,18 @@ final class Features {
     private func reloadPlaylist(_ native: MobilePlayer, _ id: UInt64) async {
         playlistRequest += 1
         let request = playlistRequest
+        let shown = keptPlaylistRows
+        let written = playlistRowsWritten
+        let shownPlaylists = playlists
         do {
-            let (rows, found) = try await Work.aside {
+            let (rows, unchanged, found) = try await Work.aside {
                 let rows = try Library.everyPage { try native.playlistTracks(id: id, offset: $0, limit: Library.page) }
-                return (rows, try native.playlists())
+                let found = try native.playlists()
+                return (rows, rows == shown, found == shownPlaylists ? nil : found)
             }
             guard request == playlistRequest else { return }
-            if openPlaylist == id, playlistRows != rows { playlistRows = rows }
-            if playlists != found { playlists = found }
+            if openPlaylist == id, !unchanged || playlistRowsWritten != written { playlistRows = rows }
+            if let found { playlists = found }
         } catch {
             library.report(error)
         }
@@ -1252,6 +1301,7 @@ final class Features {
                     days: days, limit: shown, timeZone: identifier, utcOffsetSeconds: offset)
             }
             let covers = try await Work.aside { ListenedCovers.of(detail, from: native) }
+            let bars = try await Work.aside { ListeningBar.grouped(detail.days, span: days) }
             let breakdown = try await Work.aside { try native.libraryBreakdown() }
             let listening: HomeListening? = if days == 0 {
                 try await Work.aside { HomeListening.of(found, detail, covers: covers) }
@@ -1261,9 +1311,10 @@ final class Features {
             guard let self, request == statisticsRequest else { return }
             if statistics != found { statistics = found }
             if listeningDetail != detail { listeningDetail = detail }
+            if listeningBars != bars { listeningBars = bars }
             if listenedCovers != covers { listenedCovers = covers }
             if libraryBreakdown != breakdown { libraryBreakdown = breakdown }
-            statisticsDays = days
+            if statisticsDays != days { statisticsDays = days }
             if let listening, homeListening != listening { homeListening = listening }
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
@@ -1805,15 +1856,18 @@ final class Features {
     }
 
     private func refreshWanted(_ native: MobilePlayer) async {
+        let shown = wanted
         do {
-            wanted = try await Work.aside {
+            let read = try await Work.aside { () -> [WantedSong]? in
                 var rows: [WantedSong] = []
                 while true {
                     let page = try native.wantedSongs(offset: UInt32(rows.count), limit: Library.page)
                     rows += page
-                    if page.count < Library.page { return rows }
+                    if page.count < Library.page { return rows == shown ? nil : rows }
                 }
             }
+            guard let read else { return }
+            wanted = read
             downloads.wantsChanged()
         } catch {
             library.report(error)
@@ -2035,6 +2089,7 @@ final class Features {
     @ObservationIgnored private var visualizers = 0
     @ObservationIgnored private var loudnessListeners = 0
     @ObservationIgnored let heardLevel = HeardLevel()
+    @ObservationIgnored private let tapWatch = TapWatch()
 
     func visualize(_ enabled: Bool) {
         visualizers = max(visualizers + (enabled ? 1 : -1), 0)
@@ -2051,6 +2106,7 @@ final class Features {
     }
 
     func tapHoldersChanged() {
+        tapWatch.watch(visualizersWatching)
         if !visualizersWatching, !samples.isEmpty { samples = [] }
         guard visualizersWatching || loudnessListeners > 0 else {
             visualization?.cancel()
@@ -2059,25 +2115,59 @@ final class Features {
             return
         }
         guard visualization == nil else { return }
-        visualization = Task { [weak self] in
+        let paces = TapPaces(visualizing: Self.visualizerFrame, hearing: Self.loudnessFrame, retrying: Self.visualizerRetry)
+        let level = heardLevel
+        let watch = tapWatch
+        visualization = Task.detached(priority: .utility) { [weak self] in
             guard let native = try? await self?.library.player() else { return }
-            while !Task.isCancelled {
-                var wait = self?.visualizersWatching == true ? Features.visualizerFrame : Features.loudnessFrame
-                do {
-                    let heard = try await Work.aside { HeardSignal(try native.visualizer(enabled: true)) }
-                    self?.heard(heard)
-                } catch {
-                    wait = Features.visualizerRetry
-                }
-                try? await Task.sleep(for: wait)
+            await Features.tap(native, paces: paces, level: level, watch: watch) { [weak self] samples in
+                await self?.show(samples)
             }
-            _ = try? await Work.aside { try native.visualizer(enabled: false) }
         }
     }
 
-    private func heard(_ signal: HeardSignal) {
-        heardLevel.hear(signal.rms)
-        if visualizersWatching { samples = signal.samples }
+    nonisolated private static func tap(
+        _ native: MobilePlayer,
+        paces: TapPaces,
+        level: HeardLevel,
+        watch: TapWatch,
+        showing: @Sendable ([Float]) async -> Void
+    ) async {
+        while !Task.isCancelled {
+            let visualizing = watch.visualizing
+            var wait = visualizing ? paces.visualizing : paces.hearing
+            do {
+                let heard = try await Work.aside { HeardSignal(try native.visualizer(enabled: true)) }
+                level.hear(heard.rms)
+                if visualizing { await showing(heard.samples) }
+            } catch {
+                wait = paces.retrying
+            }
+            try? await Task.sleep(for: wait)
+        }
+        _ = try? await Work.aside { try native.visualizer(enabled: false) }
+    }
+
+    private func show(_ heard: [Float]) {
+        if visualizersWatching { samples = heard }
+    }
+}
+
+struct TapPaces: Sendable {
+    let visualizing: Duration
+    let hearing: Duration
+    let retrying: Duration
+}
+
+final class TapWatch: Sendable {
+    private let visualizes = Atomic<Bool>(false)
+
+    var visualizing: Bool {
+        visualizes.load(ordering: .relaxed)
+    }
+
+    func watch(_ visualizing: Bool) {
+        visualizes.store(visualizing, ordering: .relaxed)
     }
 }
 

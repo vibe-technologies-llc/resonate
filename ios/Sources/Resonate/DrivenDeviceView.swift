@@ -224,7 +224,7 @@ struct SyncControlPage: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        let offered = syncControlOffered()
+        let offered = SyncControlsOffered.shown
         let features = library.features
         ThemedForm {
             if let config = features.syncConfig {

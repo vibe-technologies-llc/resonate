@@ -1,11 +1,12 @@
 import ResonateLogic
 import ResonateNative
+import Synchronization
 import SwiftUI
 import UIKit
 
 struct LyricsPane: View {
     @Environment(Library.self) private var library
-    @State private var stage: LyricStage
+    @State private var stage: LyricStage?
     @State private var visible = false
     @State private var lookedLong = false
 
@@ -17,7 +18,6 @@ struct LyricsPane: View {
         self.track = track
         self.compact = compact
         self.addLyrics = addLyrics
-        _stage = State(initialValue: LyricStage())
     }
 
     var body: some View {
@@ -37,7 +37,11 @@ struct LyricsPane: View {
                     description: Text("Play a song to follow its words.")
                 )
             } else if let sheet, !sheet.lines.isEmpty {
-                LyricFollowing(sheet: sheet, track: track, stage: stage, visible: visible, compact: compact)
+                if let stage {
+                    LyricFollowing(sheet: sheet, track: track, stage: stage, visible: visible, compact: compact)
+                } else {
+                    Color.clear
+                }
             } else if let track, sheet == nil, !features.lyricsLoading, features.lyricsUnread == track.id {
                 ContentUnavailableView {
                     Label("Lyrics could not be read", systemImage: "exclamationmark.bubble")
@@ -77,10 +81,13 @@ struct LyricsPane: View {
             try? await Task.sleep(for: LyricPace.looksQuietlyFor)
             if !Task.isCancelled { lookedLong = true }
         }
-        .onAppear { visible = true }
+        .onAppear {
+            if stage == nil { stage = LyricStage() }
+            visible = true
+        }
         .onDisappear {
             visible = false
-            stage.rest()
+            stage?.rest()
         }
     }
 
@@ -118,7 +125,7 @@ private struct LyricFollowing: View {
         let measures = LyricMeasures.at(words: compact ? compactWords : fullWords, compact: compact)
         let inks = LyricInks(
             scheme: scheme,
-            accent: Color.worn.resolve(in: Self.resolving(scheme, contrast)),
+            accent: AppearanceState.shared.resolvedTint(scheme, contrast: contrast),
             legibility: contrast == .increased || reduceTransparency ? .solid : .glass
         )
         let awake = visible && phase == .active
@@ -148,13 +155,6 @@ private struct LyricFollowing: View {
             }
             .overlay(alignment: .bottom) { follow }
             .motion(.easeInOut(duration: LyricPace.turn), value: offersFollow)
-    }
-
-    private static func resolving(_ scheme: ColorScheme, _ contrast: ColorSchemeContrast) -> EnvironmentValues {
-        var values = EnvironmentValues()
-        values.colorScheme = scheme
-        values._colorSchemeContrast = contrast
-        return values
     }
 
     private var hand: some Gesture {
@@ -293,9 +293,18 @@ struct LyricMeasures: Equatable {
     private static let largestWords: CGFloat = 56
     private static let leading: CGFloat = 1.28
 
+    private static let naturalHeights = Mutex<[CGFloat: CGFloat]>([:])
+
+    private static func naturalHeight(of words: CGFloat) -> CGFloat {
+        if let held = naturalHeights.withLock({ $0[words] }) { return held }
+        let natural = UIFont.systemFont(ofSize: words, weight: .bold).lineHeight
+        naturalHeights.withLock { $0[words] = natural }
+        return natural
+    }
+
     static func at(words asked: CGFloat, compact: Bool) -> LyricMeasures {
         let words = min(asked, largestWords)
-        let natural = UIFont.systemFont(ofSize: words, weight: .bold).lineHeight
+        let natural = naturalHeight(of: words)
         return LyricMeasures(
             words: words,
             lineSpacing: max(words * leading - natural, 0),

@@ -4,7 +4,8 @@ import SwiftUI
 import UIKit
 
 struct WrappedDeck: View {
-    private static let cardScale: CGFloat = 3
+    private static let previewScale: CGFloat = 1
+    private static let previewAfter = Duration.milliseconds(450)
 
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
@@ -13,7 +14,7 @@ struct WrappedDeck: View {
     @State private var asked: Int64?
     @State private var at = 0
     @State private var copies = 0
-    @State private var card: Image?
+    @State private var preview: Image?
     @State private var failure: String?
 
     init(year: WrappedYear) {
@@ -43,7 +44,7 @@ struct WrappedDeck: View {
             .toolbar { toolbar }
             .modifier(ThemedPage())
             .sensoryFeedback(.success, trigger: copies)
-            .task(id: shown.year) { drawCard() }
+            .task(id: shown.year) { await drawPreview() }
             .task(id: asked) { await read() }
         }
         .tint(AppearanceState.shared.tint)
@@ -85,9 +86,12 @@ struct WrappedDeck: View {
             }
             .announced(copies > 0 ? "Copied" : nil)
         }
-        if let card {
+        if let words = WrappedCardWords.of(shown), let preview {
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: card, preview: SharePreview("Your \(String(shown.year)) on Resonate", image: card)) {
+                ShareLink(
+                    item: WrappedCardShare(words: words, accent: AppearanceState.shared.tint),
+                    preview: SharePreview("Your \(String(shown.year)) on Resonate", image: preview)
+                ) {
                     Label("Share card", systemImage: "square.and.arrow.up")
                 }
             }
@@ -115,14 +119,18 @@ struct WrappedDeck: View {
         }
     }
 
-    private func drawCard() {
+    private func drawPreview() async {
         guard let words = WrappedCardWords.of(shown) else {
-            card = nil
+            preview = nil
             return
         }
+        if preview == nil {
+            try? await Task.sleep(for: Self.previewAfter)
+            guard !Task.isCancelled else { return }
+        }
         let renderer = ImageRenderer(content: WrappedCard(words: words, accent: AppearanceState.shared.tint))
-        renderer.scale = Self.cardScale
-        card = renderer.uiImage.map { Image(uiImage: $0) }
+        renderer.scale = Self.previewScale
+        preview = renderer.uiImage.map { Image(uiImage: $0) }
     }
 }
 
@@ -227,6 +235,29 @@ struct WrappedBars: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+}
+
+enum WrappedCardFailure: Swift.Error {
+    case notDrawn
+}
+
+struct WrappedCardShare: Transferable, Sendable {
+    private static let scale: CGFloat = 3
+
+    let words: WrappedCardWords
+    let accent: Color
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { share in try await share.png() }
+    }
+
+    @MainActor
+    private func png() throws -> Data {
+        let renderer = ImageRenderer(content: WrappedCard(words: words, accent: accent))
+        renderer.scale = Self.scale
+        guard let drawn = renderer.uiImage?.pngData() else { throw WrappedCardFailure.notDrawn }
+        return drawn
     }
 }
 

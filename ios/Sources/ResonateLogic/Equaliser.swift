@@ -106,7 +106,7 @@ public enum EqualiserUnits {
     }
 }
 
-public struct EqualiserScale {
+public struct EqualiserScale: Equatable, Sendable {
     public static let lowestHz: Float = 20
     public static let highestHz: Float = 20_000
     public static let narrowestSpan: Float = 15

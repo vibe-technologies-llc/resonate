@@ -6,8 +6,7 @@ struct DownloadsButton: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        let downloads = library.features.downloads
-        let active = downloads.jobs.filter { $0.state.inFlight || $0.state == .waiting }.count
+        let active = library.features.downloads.activeCount
         NavigationLink {
             DownloadsView()
         } label: {
@@ -204,7 +203,7 @@ struct DownloadJobRow: View {
                     .foregroundStyle(.secondary)
             } else {
                 ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
-                Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: job.received), countStyle: .file)) received")
+                Text("\(Int64(clamping: job.received).formatted(.byteCount(style: .file))) received")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
             }

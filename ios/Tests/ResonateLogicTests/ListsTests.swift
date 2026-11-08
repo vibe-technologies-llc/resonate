@@ -190,6 +190,15 @@ import Testing
     }
 }
 
+@Suite struct QueueShapeTests {
+    @Test func aQueueIsEmptyOneRowOrSeveral() {
+        #expect(QueueShape(count: 0) == .empty)
+        #expect(QueueShape(count: 1) == .one)
+        #expect(QueueShape(count: 2) == .several)
+        #expect(QueueShape(count: 5_000) == .several)
+    }
+}
+
 @Suite struct QueuePartsTests {
     @Test func aQueueWithNothingAskedIsHistoryThePlayingRowAndTheRest() {
         let parts = QueueParts(rows: 10, playing: 3, next: nil)
