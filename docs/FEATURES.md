@@ -69,6 +69,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   here to hear it on, so it would ship as Windows did, cross-checked and never played
 
 ## Playback and output
+- [S · 0.7.0] Snap the volume slider to steps of 5, for instance by a right click or a modifier on the drag
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
@@ -95,6 +96,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   has no way to take a picture back out
 
 ## Providers and network
+- [M · 0.7.0] Redesign the mode/service selector on the Services tab
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
   playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
   a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;

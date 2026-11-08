@@ -74,7 +74,8 @@ demand and never announced. Ids:
   added and removed within one poll, and unlike `Queued::revision` a reorder leaves it).
 - **`GetTracksMetadata` answers positionally**: one entry per id; an unknown id gets
   `mpris:trackid` alone. One `READ_BUDGET` (500 ms) per call: a row with unread tags answers with
-  its file stem and `Owed` remembers it; the poll watches `Player::media_revision` and emits
+  its file stem and `Owed` remembers it; the poll watches `Player::media_revision`, and reads the owed rows again on every poll while any is owed (a
+  read can land before the call notes its row, and the revision then never moves again), and emits
   `TrackMetadataChanged` once settled. `Player::tags_read` answers `TagsRead`: a read that answered
   nothing is announced with the stem and dropped. A cover, and a `TrackAdded` that missed
   `ANNOUNCE_BUDGET` (100 ms), are owed likewise; a cover whose read failed (`ArtRead::Failed`, which

@@ -826,6 +826,10 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   (`a_video_refused_for_its_own_reason_opens_as_gone_and_lists_no_tier`,
   `trouble_of_the_account_or_the_network_is_no_verdict_on_the_video`,
   `a_tool_that_never_reached_the_video_is_the_tool_failed`).
+- **The live test is gated and by hand.** `tests/live.rs` runs only under `RESONATE_YTMUSIC_TESTS` (cookies from
+  `RESONATE_YTMUSIC_COOKIES`, the song from `RESONATE_YTMUSIC_SONG`, a playlist from
+  `RESONATE_YTMUSIC_PLAYLIST`): the album song's best tier read to the head of the container it names, the
+  account's check and a playlist listed. Off in CI.
 - ***Check connection* has six answers** (`Connection`, `resonate ytmusic check`, the pane's notice):
   `Premium`, `SignedInWithoutPremium`, `NotSignedIn` (no cookies, or turned away), `ToolMissing`,
   `CheckSongGone` (the song it asks about has left YouTube, which forgets no lapse) and `CouldNotCheck`

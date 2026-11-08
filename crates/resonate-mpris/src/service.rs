@@ -992,7 +992,7 @@ fn publish_tracks(
             (*now.metadata).clone(),
         )));
     }
-    if before.reads != now.reads {
+    if before.reads != now.reads || shared.owed.is_owing() {
         publish_late_reads(tracks, shared, now);
     }
 }

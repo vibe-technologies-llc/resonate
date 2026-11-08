@@ -79,10 +79,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   manifest's own permissions have never been in the path
 
 ## Providers and network
-- [S · 0.7.0] The live test of YouTube Music the design named (`RESONATE_YTMUSIC_TESTS`, off in CI, run
-  by hand on the listener's account) was never built: `resonate-ytmusic` is proved against a fake
-  `yt-dlp` and a fake InnerTube on loopback, and a real keep of an album song and a playlist is on the
-  listener's acceptance list
+- [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
+  `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,
+  `RESONATE_YTMUSIC_PLAYLIST`) has never been run: it lists an album song, reads the head of its best
+  tier and reads a playlist of the account, and nothing here holds an account or has run it at all
 - [S · blocked: NetworkManager] `resonate-mpris`'s `metered.rs` has only been run against a
   stand-in `org.freedesktop.NetworkManager` on a private bus: the `Metered` values a real manager
   sends for a phone hotspot or a connection the listener marked metered, and that it announces a
@@ -103,18 +103,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.7.0] `a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever` fails every run of
-  the whole bus suite (`dbus-run-session -- cargo test -p resonate-mpris --test bus`, no
-  `TrackMetadataChanged` within its patience) and passes alone: another test on the shared bus reaches
-  it. It failed the same way before 0.5.0's work. It fails on every run of the suite and passes with
-  `--test-threads=1`; `eprintln!` in the service's owed path shows nothing for its row, since a
-  helper thread spawned under another test captures that test's output, so a probe wants a file of
-  its own rather than stderr
-- [S · 0.7.0] `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` fails: at font scale 2 the Library
-  tab's `Songs`, `Albums` and `Artists` are called clipped in their `PrimaryScrollableTabRow`, whose
-  code had not moved since the sweep last passed. It fails on the emulator here; CI's Android job
-  is red too, though its log does not name the test. Nobody has yet looked at it on screen, so
-  whether a listener sees a cut word or the sweep misreads a scrollable row is open
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -150,7 +151,7 @@ fun LibraryScreen() {
                             Tab(
                                 selected = pager.currentPage == shelf.ordinal,
                                 onClick = { scope.launch { pager.animateScrollToPage(shelf.ordinal) } },
-                                text = { Text(shelf.title, maxLines = 1) },
+                                text = { Text(shelf.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 modifier = Modifier.testTag("shelf-${shelf.name.lowercase()}"),
                             )
                         }

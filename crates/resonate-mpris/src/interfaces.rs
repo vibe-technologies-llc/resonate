@@ -37,6 +37,10 @@ impl Owed {
         self.rows.lock().insert(track);
     }
 
+    pub(crate) fn is_owing(&self) -> bool {
+        !self.rows.lock().is_empty()
+    }
+
     pub(crate) fn taken(&self) -> Vec<TrackId> {
         mem::take(&mut *self.rows.lock()).into_iter().collect()
     }
