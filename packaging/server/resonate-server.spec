@@ -1,5 +1,5 @@
 Name:           resonate-server
-Version:        0.6.0
+Version:        0.7.0
 Release:        1%{?dist}
 Summary:        Sync server for Resonate: keeps sealed records and introduces devices
 License:        AGPL-3.0-or-later
@@ -51,6 +51,8 @@ install -Dm644 packaging/server/resonate-server.env %{buildroot}%{_sysconfdir}/r
 %config(noreplace) %{_sysconfdir}/resonate-server/resonate-server.env
 
 %changelog
+* Mon Nov 09 2026 Resonate - 0.7.0-1
+- Features; see the GitHub release for the list
 * Sat Nov 07 2026 Resonate - 0.6.0-1
 - Features; see the GitHub release for the list
 * Thu Nov 05 2026 Resonate - 0.5.0-1

@@ -44,8 +44,8 @@ cut from `master`, and each release is a `vMAJOR.MINOR.PATCH[-rcN]` tag with a G
 | `0.4.0` | minor | [FEATURES.md](FEATURES.md) |
 | `0.5.0` | minor | [FEATURES.md](FEATURES.md) |
 | `0.6.0` | minor | [FEATURES.md](FEATURES.md) |
-| `0.6.1` | patch | [BUGS.md](BUGS.md), [PERFORMANCE.md](PERFORMANCE.md), [TESTING.md](TESTING.md) |
 | `0.7.0` | minor | [FEATURES.md](FEATURES.md) |
+| `0.7.1` | patch | [BUGS.md](BUGS.md), [PERFORMANCE.md](PERFORMANCE.md), [TESTING.md](TESTING.md) |
 
 A fix found on a released line lands on `master` and is cherry-picked to its `release/` branch. A
 target moves when the work does; the table grows a row when a release is planned.
