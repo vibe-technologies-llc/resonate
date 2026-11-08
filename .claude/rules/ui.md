@@ -490,8 +490,8 @@ is never named.
   pane, queue and opened playlist put over their rows; `number_cell`, `title_cell`, `artist_cell`,
   `format_cell`, `heard`, `length_cell` the cells under it, so no two disagree about a width. Title and
   artist give way together (`title_room` and `artist_room` start from `theme::row_artist()` and both
-  shrink, only the title growing). A track with other copies carries `+N` inside the title cell
-  (`tagged_title_cell`); text cells end in an ellipsis. The playing row draws `listing::playing_mark`
+  shrink, only the title growing). A title carries no badge, neither an explicit mark nor a count of
+  other copies (those are reached from the row's menu); text cells end in an ellipsis. The playing row draws `listing::playing_mark`
   in the number cell and its title in the accent. Row controls sit in `browser::row_controls`,
   **always drawn**: they were once hidden until hovered or focused, but gpui's `in_focus` styles an
   element *inside* the focused one, so they showed on every row while the window itself held the
@@ -2406,6 +2406,6 @@ anywhere but the card closes it; a press on the heading is told apart by its pos
 (`devices_without_room_float_over_the_categories_until_pressed_away_and_return_once_they_fit`).
 Watches are released when the device, sync service or window goes away.
 
-A song marked explicit by its file content advisory, provider rating or title qualifier wears an E badge beside its title, including beside an alternate-copy badge. A clean advisory overrides a title qualifier; an unmarked title is never assumed clean. A held track menu offers clean and explicit version searches using the title without its rating qualifier and the artist. These searches change no files; results still need the listener to choose a recording.
+A song is rated explicit by its file content advisory, provider rating or title qualifier; a clean advisory overrides a title qualifier and an unmarked title is never assumed clean. No row draws the rating. A held track menu offers clean and explicit version searches using the title without its rating qualifier and the artist. These searches change no files; results still need the listener to choose a recording.
 
 A song row nests Share into song.link and Upload file to Catbox (public). The upload runs on the background executor and copies the returned public URL, with progress and failure toasts. Only whole local files are uploaded; cue spans and remote sources are refused rather than exposing an entire backing file.

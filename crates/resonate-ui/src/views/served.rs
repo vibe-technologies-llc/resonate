@@ -396,28 +396,14 @@ impl RootView {
                     .flex_1()
                     .min_w(px(0.0))
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .min_w(px(0.0))
-                                    .truncate()
-                                    .ends_in_an_ellipsis()
-                                    .text_color(rgb(theme::text()))
-                                    .child(SharedString::from(title)),
-                            )
-                            .when(
-                                row.song().is_some_and(|song| {
-                                    resonate_core::titles::Rating::of(
-                                        Some(song.rating),
-                                        &song.title,
-                                        None,
-                                    ) == resonate_core::titles::Rating::Explicit
-                                }),
-                                |title| title.child(listing::explicit_badge()),
-                            ),
+                        div().flex().items_center().gap_2().child(
+                            div()
+                                .min_w(px(0.0))
+                                .truncate()
+                                .ends_in_an_ellipsis()
+                                .text_color(rgb(theme::text()))
+                                .child(SharedString::from(title)),
+                        ),
                     )
                     .when_some(by, |column, by| {
                         column.child(

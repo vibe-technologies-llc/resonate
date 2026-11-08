@@ -90,9 +90,6 @@ const FORGET_THE_MATCH_ARMED: &str = "Press again to forget the match";
 const FORGET_THE_MATCH_ARMED_HINT: &str = "Takes away the release, its rows and what it linked, \
      and the next lookup asks again without it";
 
-const OTHER_COPIES_HINT: &str =
-    "Also held in other formats; this is the best of them, and the row's menu plays the others";
-
 const WAY_BACK_HINT: &str = keyed!("Back to where this was opened from", key!(leave));
 
 const ORDER_HINT: &str = "Choose what this listing is put in order by";
@@ -1165,24 +1162,11 @@ impl RootView {
                     cx,
                 ))
             })
-            .child(if track.alternatives > 0 {
-                listing::tagged_title_cell(
-                    SharedString::from(track.title.clone()),
-                    lit_title,
-                    playing,
-                    track.explicit,
-                    kit::tag(format!("+{}", track.alternatives))
-                        .id(("track-copies", index))
-                        .names(OTHER_COPIES_HINT),
-                )
-            } else {
-                listing::rated_title_cell(
-                    SharedString::from(track.title.clone()),
-                    lit_title,
-                    playing,
-                    track.explicit,
-                )
-            })
+            .child(listing::title_cell(
+                SharedString::from(track.title.clone()),
+                lit_title,
+                playing,
+            ))
             .child(listing::artist_cell(
                 self.opens(
                     ("track-artist", index),

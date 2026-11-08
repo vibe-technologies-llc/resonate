@@ -462,7 +462,7 @@ rows read via `Player::media` like any unscanned row.
   `+tracks.alternative_of IS NULL` (`THE_BEST_COPY`; the unary plus keeps the term off the index so
   order indexes still lead), album and artist counts count the best copy alone
   (`HOLDS_A_BEST_COPY`), and an album whose every track is another's alternative leaves the albums
-  pane. `Track::alternatives` = copies a row stands for (`+N`); `Library::alternatives_of` = what
+  pane. `Track::alternatives` = copies a row stands for; `Library::alternatives_of` = what
   the menu offers to play instead. A best copy that goes puts `ON DELETE SET NULL` on rows under it;
   the end-of-scan pass and every other removal (`remove_root`, `forget_delivered`, `delete_tracks`:
   each runs `store::sweep_orphans` then `alternatives::settle_if_owed`) crown the next.

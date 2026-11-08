@@ -721,11 +721,10 @@ impl RootView {
                                             ))
                                         })
                                         .child(cover)
-                                        .child(listing::rated_title_cell(
+                                        .child(listing::title_cell(
                                             drawn.title,
                                             Lit::new(),
                                             current,
-                                            drawn.explicit,
                                         ))
                                         .child(listing::artist_cell(
                                             this.opens(
