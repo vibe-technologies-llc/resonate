@@ -1350,6 +1350,12 @@ fn connect(source: &Source, role: schema::Role) -> Result<Connection> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WrittenElsewhere(i64);
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HiddenTracks {
+    pub counted: u64,
+    pub tracks: Vec<Track>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Applying {
     Yes,
@@ -1729,6 +1735,48 @@ impl Library {
                     (id.get() as i64, hidden),
                 )
                 .map(|changed| changed > 0)
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })
+    }
+
+    pub fn hidden_tracks(&self, at_most: usize) -> Result<HiddenTracks> {
+        let (counted, ids) = self.inner.read(|connection| {
+            let counted = connection
+                .query_row("SELECT count(*) FROM tracks WHERE hidden = 1", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            let mut statement = connection
+                .prepare_cached(
+                    "SELECT id FROM tracks WHERE hidden = 1
+                      ORDER BY title COLLATE NOCASE, id LIMIT ?1",
+                )
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            let ids = statement
+                .query_map([i64::try_from(at_most).unwrap_or(i64::MAX)], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            Ok((counted, ids))
+        })?;
+        let ids = ids
+            .into_iter()
+            .map(|id| TrackId::new(id as u64))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut tracks = self.tracks_with_ids(&ids)?;
+        tracks.sort_by_key(|track| ids.iter().position(|id| *id == track.id));
+        Ok(HiddenTracks {
+            counted: u64::try_from(counted).unwrap_or(0),
+            tracks,
+        })
+    }
+
+    pub fn show_every_hidden_track(&self) -> Result<u64> {
+        self.inner.write(|transaction| {
+            transaction
+                .execute("UPDATE tracks SET hidden = 0 WHERE hidden = 1", [])
+                .map(|changed| changed as u64)
                 .map_err(|source| Error::store(StoreOp::Update, source))
         })
     }

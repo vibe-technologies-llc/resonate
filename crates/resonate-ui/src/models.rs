@@ -28,9 +28,9 @@ use resonate_library::{
     ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut,
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
-    GroupRelease, Habits, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress,
-    ImportStats, ImportSummary, Imported, Issued, KeepStopped, KeepSummary, Kept, KeptList,
-    KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing,
+    GroupRelease, Habits, HeldReleaseTrack, HiddenTracks, HistoryKept, ImportOptions,
+    ImportProgress, ImportStats, ImportSummary, Imported, Issued, KeepStopped, KeepSummary, Kept,
+    KeptList, KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing,
     MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats,
     OrganiseSummary, Pace, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder,
     PlaylistToKeep, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
@@ -223,7 +223,10 @@ struct Standing {
     habits: Habits,
     suggestions: Arc<[Suggestion]>,
     roots: Vec<PathBuf>,
+    hidden: HiddenTracks,
 }
+
+pub const HIDDEN_LISTED_AT_MOST: usize = 200;
 
 struct Loaded {
     browsed: Option<Browsed>,
@@ -798,6 +801,7 @@ pub struct LibraryModel {
     missing_track_rows: Arc<[MissingRow]>,
     unheld_release_rows: Arc<[MissingRow]>,
     roots: Vec<PathBuf>,
+    hidden: Arc<HiddenTracks>,
     playlists: Arc<[Playlist]>,
     lists: Arc<[Playlist]>,
     pictured: AHashMap<PlaylistId, Arc<[AlbumId]>>,
@@ -1087,6 +1091,7 @@ impl LibraryModel {
             missing_track_rows: Arc::default(),
             unheld_release_rows: Arc::default(),
             roots: Vec::new(),
+            hidden: Arc::default(),
             playlists: Arc::default(),
             lists: Arc::default(),
             pictured: AHashMap::new(),
@@ -3009,6 +3014,19 @@ impl LibraryModel {
         self.revision
     }
 
+    pub fn hidden(&self) -> Arc<HiddenTracks> {
+        Arc::clone(&self.hidden)
+    }
+
+    pub fn show_every_hidden_track(&mut self, cx: &mut Context<Self>) {
+        self.edited(
+            Wanted::Everything,
+            Change::Hide { hidden: false },
+            |library| library.show_every_hidden_track().map(|_| None),
+            cx,
+        );
+    }
+
     pub fn suggestions(&self) -> Arc<[Suggestion]> {
         Arc::clone(&self.suggestions)
     }
@@ -4823,6 +4841,9 @@ impl LibraryModel {
             self.habits = Arc::new(standing.habits);
             self.suggestions = standing.suggestions;
             self.roots = standing.roots;
+            if self.hidden.as_ref() != &standing.hidden {
+                self.hidden = Arc::new(standing.hidden);
+            }
         }
         self.sung = browsed.sung;
         renewed(&mut self.kept_songs, browsed.kept_songs);
@@ -7533,6 +7554,7 @@ fn standing(library: &Library, window: Window) -> resonate_library::Result<Stand
         habits: library.habits(window)?,
         suggestions: library.suggestions()?,
         roots: library.roots()?,
+        hidden: library.hidden_tracks(HIDDEN_LISTED_AT_MOST)?,
     })
 }
 

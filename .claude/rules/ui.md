@@ -1850,6 +1850,13 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `kit::section`s (header strip: title, revert mark, info mark). Body scrolls under
   `RootView::settings_scroll`; `show_settings` resets it on category change (gpui keys scroll offset by
   element id).
+- **Hidden songs are brought back from Filters** (`Group::Hidden`, `filters.rs`'s `hidden_group`):
+  the songs hidden from their menus, listed by title off `LibraryModel::hidden` (read with the
+  standing part of every whole read, `Library::hidden_tracks`, at most `HIDDEN_LISTED_AT_MOST`
+  (200), the count said beside them where more are hidden), each with *Show again*
+  (`hide_track(id, false)`); *Show them all again* is one edit (`show_every_hidden_track`) and *List
+  them in Tracks* puts `is:hidden` in the search. Nothing is a setting, so the group puts nothing
+  back (`a_hidden_song_is_listed_in_the_filters_and_shown_again_by_one_press`).
 - **Filters** (groups `MusicExtensions`, `MinimumLength`): a wrapping grid of `kit::checkbox`es,
   all ticked by default; *Select
   all*/*Clear selection* greyed where they would change nothing. Minimum: seconds field, 0 to 600,

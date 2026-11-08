@@ -109,6 +109,7 @@ pub(crate) enum Group {
     Abx,
     MusicExtensions,
     MinimumLength,
+    Hidden,
     Folders,
     Updating,
     Organising,
@@ -159,7 +160,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 70] = [
+    pub(crate) const ALL: [Self; 71] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -183,6 +184,7 @@ impl Group {
         Self::Abx,
         Self::MusicExtensions,
         Self::MinimumLength,
+        Self::Hidden,
         Self::Folders,
         Self::Updating,
         Self::Organising,
@@ -259,7 +261,7 @@ impl Group {
             | Self::Measured
             | Self::RoomCorrection
             | Self::Abx => Category::Equaliser,
-            Self::MusicExtensions | Self::MinimumLength => Category::Filters,
+            Self::MusicExtensions | Self::MinimumLength | Self::Hidden => Category::Filters,
             Self::Folders
             | Self::Organising
             | Self::Vault
@@ -331,6 +333,7 @@ impl Group {
             Self::Abx => "Listening test",
             Self::MusicExtensions => "File extensions",
             Self::MinimumLength => "Minimum length",
+            Self::Hidden => "Hidden songs",
             Self::Folders => "Music folders",
             Self::Updating => "Rescan, refresh and retag",
             Self::Organising => "Organising",
@@ -406,6 +409,9 @@ impl Group {
             Self::Abx => ABX_HINT,
             Self::MusicExtensions => {
                 "Choose which supported file extensions appear in the library. Every supported extension is included by default. Files and catalog entries are kept when excluded."
+            }
+            Self::Hidden => {
+                "The songs taken out of the listings with Hide. Show one again, or every one at once; nothing about them was lost."
             }
             Self::MinimumLength => {
                 "Only show tracks at least this long. The minimum can be between 0 seconds and 10 minutes. Zero keeps the current behavior, including tracks whose length is unknown."
@@ -527,6 +533,9 @@ impl Group {
             }
             Self::MinimumLength => {
                 "music filters duration seconds minutes short songs minimum length"
+            }
+            Self::Hidden => {
+                "hidden hide unhide show again songs tracks removed taken out listings undo"
             }
             Self::Folders => {
                 "roots directories add scan music path primary main default home destination \
@@ -720,6 +729,7 @@ impl Group {
             ],
             Self::MusicExtensions => &[SettingKey::MusicExtensions],
             Self::MinimumLength => &[SettingKey::MinimumLength],
+            Self::Hidden => &[],
             Self::RoomCorrection => &[
                 SettingKey::Convolution,
                 SettingKey::SpeakerAngle,

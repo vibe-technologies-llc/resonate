@@ -450,6 +450,7 @@ impl RootView {
             Group::Measured => self.measured_group(cx),
             Group::RoomCorrection => self.room_group(cx),
             Group::Abx => self.abx_group(cx),
+            Group::Hidden => self.hidden_group(cx),
             Group::MusicExtensions => self.music_extensions_group(cx),
             Group::MinimumLength => self.minimum_length_group(cx),
             Group::Folders => self.folders_group(cx),

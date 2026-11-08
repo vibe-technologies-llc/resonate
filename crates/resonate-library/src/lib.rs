@@ -88,7 +88,7 @@ pub fn read_a_playlist_sheet(text: &str) {
 
 pub use crate::{
     copies::{Copies, NumberedCopy},
-    db::{CatalogStamp, Library, WrittenElsewhere},
+    db::{CatalogStamp, HiddenTracks, Library, WrittenElsewhere},
     deleted::{Deleted, Removal, Trashes},
     elsewhere::{
         ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, AlbumFound, ArtistFound,

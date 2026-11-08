@@ -31,21 +31,22 @@ use resonate_library::{
     ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, Compacted,
     CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
     Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
-    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
-    ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped, KeepSummary, Kept, KeptList,
-    KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames, Linked, LinkedPlaylist,
-    LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love, Loved, LovedNames,
-    LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack,
-    NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat,
-    PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions, PollProgress,
-    PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS, Rated, Recording,
-    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
-    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal, Result, RetagOptions,
-    RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble,
-    Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep,
-    SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP,
-    TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery,
-    Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Waits, Window, Wording, Written,
+    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept, ImageFormat,
+    ImportOptions, ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped, KeepSummary, Kept,
+    KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames, Linked,
+    LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love, Loved,
+    LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing,
+    MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
+    PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions,
+    PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS,
+    Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
+    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal,
+    Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions,
+    ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar,
+    SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
+    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Waits, Window, Wording,
+    Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -8583,6 +8584,40 @@ fn a_hidden_track_is_found_by_asking_for_it_and_shown_again() -> Result<()> {
             })?
             .is_empty()
     );
+    Ok(())
+}
+
+#[test]
+fn the_hidden_tracks_are_listed_by_title_counted_past_the_list_and_shown_again_at_once()
+-> Result<()> {
+    let (_, library) = scanned_sheet();
+    let rows = library.tracks(&TrackQuery::default())?;
+    assert_eq!(library.hidden_tracks(10)?, HiddenTracks::default());
+    let mut hidden: Vec<&Track> = rows.iter().take(2).collect();
+    for track in &hidden {
+        library.hide_track(track.id, true)?;
+    }
+    hidden.sort_by_key(|track| track.title.to_lowercase());
+
+    let listed = library.hidden_tracks(10)?;
+    let first = library.hidden_tracks(1)?;
+
+    assert_eq!(listed.counted, 2);
+    assert_eq!(
+        listed
+            .tracks
+            .iter()
+            .map(|track| track.id)
+            .collect::<Vec<_>>(),
+        hidden.iter().map(|track| track.id).collect::<Vec<_>>(),
+        "the hidden tracks are not listed by title"
+    );
+    assert_eq!(first.counted, 2, "a short list counts only what it holds");
+    assert_eq!(first.tracks.len(), 1);
+
+    assert_eq!(library.show_every_hidden_track()?, 2);
+    assert_eq!(library.hidden_tracks(10)?, HiddenTracks::default());
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), rows.len());
     Ok(())
 }
 
