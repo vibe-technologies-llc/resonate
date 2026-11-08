@@ -542,7 +542,13 @@ every route change (a pair of headphones at the same rate included), not from th
 
 - **With shuffle on, a song pressed in the Search tab's results plays `Library.allTracks` shuffled from that song**, not the results alone (the results from that song, shuffle on, where it has left the catalog); with it off the results are the queue.
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
-  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. **A drag on the scrubber or the volume row is the cover's
+  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. **The cover's band closes it
+  wherever the system's own dismissal does not begin**: the zoom's interactive dismissal was not
+  begun by a swipe down on the cover's left and right sides, so `LargeArtwork` is a hit shape the
+  screen's whole width (its gutter undone) carrying a `simultaneousGesture` that closes the cover
+  on letting go of a swipe mostly down, at least `CoverSwipe.closesPast` (80 pt) and flung on to
+  `flungPast` (`CoverSwipe.closes`, `MotionTests`). Where the system's dismissal begins it takes the
+  touches and the gesture never ends, so the interactive zoom stays where it worked. **A drag on the scrubber or the volume row is the cover's
   when it goes down**: each slider's `DragGesture` is a `simultaneousGesture` (as the lyrics pane's is) and reads its heading
   once it has moved 8 pt (`SliderDrag`, `MotionTests`), letting go of a drag mostly down and committing nothing; as an
   exclusive `.gesture` with no minimum distance, a swipe down that began on either 44 pt band never dismissed the cover.

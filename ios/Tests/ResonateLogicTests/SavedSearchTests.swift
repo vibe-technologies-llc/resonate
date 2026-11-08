@@ -65,7 +65,9 @@ import Testing
     }
 
     @Test func everyOrderIsOfferedOnceUnderItsOwnTitle() {
-        #expect(Set(SearchOrder.offered).count == 10)
-        #expect(Set(SearchOrder.offered.map(\.label)).count == 10)
+        let everyOrder = SearchOrder.offered.count
+        #expect(everyOrder == 11)
+        #expect(Set(SearchOrder.offered).count == everyOrder)
+        #expect(Set(SearchOrder.offered.map(\.label)).count == everyOrder)
     }
 }

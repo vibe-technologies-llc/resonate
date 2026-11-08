@@ -175,7 +175,7 @@ enum PlayerMode {
 }
 
 struct NowPlayingView: View {
-    private static let gutter: CGFloat = 24
+    static let gutter: CGFloat = 24
     private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
     private static let arriving = Arrival.animation
     private static let leaving: Animation = .easeOut(duration: 0.12)
@@ -460,11 +460,32 @@ struct CoverSlot: PreferenceKey {
 }
 
 struct LargeArtwork: View {
+    private static let swipeNoticedPast: CGFloat = 24
+
+    @Environment(Navigation.self) private var navigation
+
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .anchorPreference(key: CoverSlot.self, value: .bounds) { [.large: $0] }
             .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, -NowPlayingView.gutter)
+            .contentShape(.rect)
+            .simultaneousGesture(swipeDown)
+            .padding(.horizontal, NowPlayingView.gutter)
+    }
+
+    private var swipeDown: some Gesture {
+        DragGesture(minimumDistance: Self.swipeNoticedPast)
+            .onEnded { drag in
+                guard CoverSwipe.closes(
+                    across: drag.translation.width,
+                    down: drag.translation.height,
+                    flungDown: drag.predictedEndTranslation.height
+                ) else { return }
+                navigation.nowPlaying = false
+            }
     }
 }
 

@@ -151,6 +151,15 @@ public struct HeldHeight: Equatable, Sendable {
     }
 }
 
+public enum CoverSwipe {
+    public static let closesPast = 80.0
+    public static let flungPast = 160.0
+
+    public static func closes(across: Double, down: Double, flungDown: Double) -> Bool {
+        down > abs(across) && down >= closesPast && flungDown >= flungPast
+    }
+}
+
 public enum SliderDrag: Equatable, Sendable {
     case undecided
     case sliding

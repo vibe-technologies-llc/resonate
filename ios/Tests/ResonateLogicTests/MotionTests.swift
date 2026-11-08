@@ -173,6 +173,20 @@ import Testing
         #expect(held.height == 120)
     }
 
+    @Test func aSwipeMostlyDownAndFarEnoughClosesTheCover() {
+        #expect(CoverSwipe.closes(across: 20, down: 120, flungDown: 260))
+    }
+
+    @Test func aSwipeTooShortOrMostlyAcrossLeavesTheCoverOpen() {
+        #expect(!CoverSwipe.closes(across: 0, down: 40, flungDown: 200))
+        #expect(!CoverSwipe.closes(across: 150, down: 120, flungDown: 260))
+        #expect(!CoverSwipe.closes(across: 0, down: -120, flungDown: -260))
+    }
+
+    @Test func aSwipeDrawnBackUpBeforeLettingGoLeavesTheCoverOpen() {
+        #expect(!CoverSwipe.closes(across: 0, down: 100, flungDown: 40))
+    }
+
     @Test func aSliderDragIsUndecidedUntilItMovesPastTheThreshold() {
         #expect(SliderDrag.undecided.after(across: 3, down: 5) == .undecided)
     }
