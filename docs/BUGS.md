@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Sync and sharing
-- [S · 0.7.1] A record a shared-playlist member sends can ask for gigabytes before anything
-  decodes: `decoded_ops` reserves `Vec::with_capacity(count)` of `SharedOp` for a `count` the reader
-  bounds only by the bytes left (`OP_AT_LEAST` is 1), the seal opens up to 64 MiB of plaintext and a
-  zero-filled one deflates far under `LARGEST_RECORD`, so a record of a large count and a run of
-  zeros makes every other member's client reserve count times the size of an op (many GB) and abort
-  where the allocator refuses, on every poll while the record stays; the same coarse `Reader::count()`
-  sizes a `Vec` at seven more sites in `wire.rs`, which only a key holder can reach
 - [S · 0.7.1] A guest who knows a room's token can take the host's seat: `Rooms::join` inserts
   the member under any `DeviceId` once the token matches and every guest is handed the host's id in
   `RoomWelcome`, so joining as it replaces the host's member entry and ends the host's session with

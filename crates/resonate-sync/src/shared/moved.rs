@@ -122,7 +122,7 @@ pub fn encoded_seats(seats: &[Seat]) -> Vec<u8> {
 pub fn decoded_seats(bytes: &[u8]) -> Result<Vec<Seat>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count_of(SEAT_AT_LEAST)?;
-    let mut seats = Vec::with_capacity(count);
+    let mut seats = crate::wire::reserved(count);
     for _ in 0..count {
         seats.push(Seat {
             member: MemberId(reader.fixed()?),

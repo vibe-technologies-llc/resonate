@@ -6,7 +6,7 @@ use crate::{
     Result, Stamp,
     error::{Error, Malformed},
     shared::place::Place,
-    wire::{Reader, Writer},
+    wire::{Reader, Writer, reserved},
 };
 
 pub const ENTRY_BYTES: usize = 16;
@@ -76,7 +76,7 @@ pub fn encoded_ops(ops: &[SharedOp]) -> Vec<u8> {
 pub fn decoded_ops(bytes: &[u8]) -> Result<Vec<SharedOp>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count_of(OP_AT_LEAST)?;
-    let mut ops = Vec::with_capacity(count);
+    let mut ops = reserved(count);
     for _ in 0..count {
         if let Some(op) = decoded_op(reader.bytes(LARGEST_OP)?)? {
             ops.push(op);
@@ -451,6 +451,16 @@ mod tests {
             .into_iter()
             .map(|row| row.recording.title)
             .collect()
+    }
+
+    #[test]
+    fn a_count_of_ops_far_past_what_follows_reserves_no_more_than_a_little() {
+        let mut writer = Writer::new();
+        writer.length(30_000_000);
+        let mut hostile = writer.finish();
+        hostile.resize(hostile.len() + 30_000_000, 0);
+
+        assert!(decoded_ops(&hostile).is_err());
     }
 
     #[test]

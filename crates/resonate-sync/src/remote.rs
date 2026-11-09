@@ -279,7 +279,7 @@ impl RemoteZone {
         if count > ROWS_MIRRORED_AT_MOST {
             return Err(Error::Malformed(Malformed::Overlong { length: count }));
         }
-        let mut rows = Vec::with_capacity(count);
+        let mut rows = crate::wire::reserved(count);
         for _ in 0..count {
             rows.push(RemoteRow {
                 title: reader.text()?,
@@ -333,7 +333,7 @@ pub(crate) fn read_zones(reader: &mut Reader<'_>) -> Result<Vec<RemoteZone>> {
     if count > ZONES_MIRRORED_AT_MOST {
         return Err(Error::Malformed(Malformed::Overlong { length: count }));
     }
-    let mut zones = Vec::with_capacity(count);
+    let mut zones = crate::wire::reserved(count);
     for _ in 0..count {
         zones.push(RemoteZone::read(reader)?);
     }

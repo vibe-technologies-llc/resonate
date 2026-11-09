@@ -29,6 +29,8 @@ pub const SERVER_ALPN: &[u8] = b"resonate-sync/1";
 pub const PEER_ALPN: &[u8] = b"resonate-peer/1";
 pub const LARGEST_FRAME: usize = 32 * 1024 * 1024;
 pub const LONGEST_TEXT: usize = 4096;
+
+const RESERVED_AT_MOST: usize = 1024;
 pub const LARGEST_BLOB: usize = LARGEST_FRAME;
 pub const LARGEST_RECORD: usize = 256 * 1024;
 pub const LARGEST_DATAGRAM: usize = 2048;
@@ -334,6 +336,10 @@ pub struct Beacon {
 
 #[derive(Default)]
 pub struct Writer(Vec<u8>);
+
+pub fn reserved<T>(count: usize) -> Vec<T> {
+    Vec::with_capacity(count.min(RESERVED_AT_MOST))
+}
 
 pub struct Reader<'a> {
     rest: &'a [u8],
@@ -1078,7 +1084,7 @@ impl<'a> Reader<'a> {
 
     pub fn blobs(&mut self) -> Result<Vec<Vec<u8>>> {
         let count = self.count_of(SEALED_AT_LEAST + 1)?;
-        let mut blobs = Vec::with_capacity(count);
+        let mut blobs = reserved(count);
         for _ in 0..count {
             blobs.push(self.sealed()?);
         }
@@ -1258,7 +1264,7 @@ impl ToServer {
                 if count > HEADS_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Number));
                 }
-                let mut asked = Vec::with_capacity(count);
+                let mut asked = reserved(count);
                 for _ in 0..count {
                     asked.push(SpaceAsked {
                         space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
@@ -1452,7 +1458,7 @@ impl FromServer {
         let message = match reader.byte()? {
             0 => {
                 let count = reader.count()?;
-                let mut online = Vec::with_capacity(count);
+                let mut online = reserved(count);
                 for _ in 0..count {
                     online.push(reader.device()?);
                 }
@@ -1468,7 +1474,7 @@ impl FromServer {
             },
             2 => {
                 let count = reader.count_of(RECORD_AT_LEAST)?;
-                let mut entries = Vec::with_capacity(count);
+                let mut entries = reserved(count);
                 for _ in 0..count {
                     let seq = reader.number()?;
                     let blob = if reader.flag()? {
@@ -1507,7 +1513,7 @@ impl FromServer {
             },
             11 => {
                 let count = reader.count_of(SPACE_HEAD_AT_LEAST)?;
-                let mut heads = Vec::with_capacity(count);
+                let mut heads = reserved(count);
                 for _ in 0..count {
                     heads.push(SpaceHead {
                         space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
@@ -1519,7 +1525,7 @@ impl FromServer {
             }
             12 => {
                 let count = reader.count_of(DEVICE_BYTES)?;
-                let mut members = Vec::with_capacity(count);
+                let mut members = reserved(count);
                 for _ in 0..count {
                     members.push(reader.device()?);
                 }
@@ -1639,7 +1645,7 @@ impl ToPeer {
                 if count > COVERS_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong { length: count }));
                 }
-                let mut releases = Vec::with_capacity(count);
+                let mut releases = reserved(count);
                 for _ in 0..count {
                     releases.push(reader.mbid()?);
                 }
@@ -1650,7 +1656,7 @@ impl ToPeer {
                 if count > LYRICSFILES_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong { length: count }));
                 }
-                let mut recordings = Vec::with_capacity(count);
+                let mut recordings = reserved(count);
                 for _ in 0..count {
                     recordings.push(reader.recording()?);
                 }
@@ -1661,7 +1667,7 @@ impl ToPeer {
                 if count > PRINTS_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong { length: count }));
                 }
-                let mut files = Vec::with_capacity(count);
+                let mut files = reserved(count);
                 for _ in 0..count {
                     files.push(reader.whole_file()?);
                 }
@@ -1776,7 +1782,7 @@ impl FromPeer {
         let message = match reader.byte()? {
             0 => {
                 let count = reader.count()?;
-                let mut items = Vec::with_capacity(count);
+                let mut items = reserved(count);
                 for _ in 0..count {
                     items.push(Held {
                         recording: reader.recording()?,
@@ -1860,7 +1866,7 @@ impl Beacon {
             answering: reader.flag()?,
             addresses: {
                 let count = reader.count()?;
-                let mut addresses = Vec::with_capacity(count);
+                let mut addresses = reserved(count);
                 for _ in 0..count {
                     addresses.push(reader.ip()?);
                 }
@@ -1884,7 +1890,7 @@ pub fn encoded_candidates(candidates: &[SocketAddr]) -> Vec<u8> {
 pub fn decoded_candidates(bytes: &[u8]) -> Result<Vec<SocketAddr>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count()?;
-    let mut candidates = Vec::with_capacity(count);
+    let mut candidates = reserved(count);
     for _ in 0..count {
         candidates.push(reader.address()?);
     }
@@ -2045,7 +2051,7 @@ pub fn decoded_bundle(bytes: &[u8]) -> Result<Vec<Change>> {
 fn decoded_bundle_knowing(bytes: &[u8], answers: &[u8]) -> Result<Vec<Change>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count()?;
-    let mut changes = Vec::with_capacity(count);
+    let mut changes = reserved(count);
     for _ in 0..count {
         let encoded = reader.bytes(LARGEST_BLOB)?;
         if let Some(change) = decoded_change(encoded, answers)? {
@@ -2077,7 +2083,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
             let body = if reader.flag()? {
                 let name = reader.text()?;
                 let count = reader.count()?;
-                let mut entries = Vec::with_capacity(count);
+                let mut entries = reserved(count);
                 for _ in 0..count {
                     entries.push(reader.recording()?);
                 }
@@ -2103,7 +2109,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
             let device = reader.device()?;
             let stamp = reader.stamp()?;
             let count = reader.count()?;
-            let mut rows = Vec::with_capacity(count);
+            let mut rows = reserved(count);
             for _ in 0..count {
                 rows.push(reader.recording()?);
             }
@@ -2165,7 +2171,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
             let folded = PlaylistKey(reader.fixed()?);
             let into = PlaylistKey(reader.fixed()?);
             let count = reader.count()?;
-            let mut entries = Vec::with_capacity(count);
+            let mut entries = reserved(count);
             for _ in 0..count {
                 entries.push(reader.recording()?);
             }
@@ -2214,7 +2220,7 @@ pub fn encoded_recordings(recordings: &[Recording]) -> Vec<u8> {
 pub fn decoded_recordings(bytes: &[u8]) -> Result<Vec<Recording>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count()?;
-    let mut recordings = Vec::with_capacity(count);
+    let mut recordings = reserved(count);
     for _ in 0..count {
         recordings.push(reader.recording()?);
     }

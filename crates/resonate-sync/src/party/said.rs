@@ -129,7 +129,7 @@ impl PartySaid {
             },
             SAID_PEOPLE => {
                 let count = reader.length(PEOPLE_TOLD_AT_MOST)?;
-                let mut people = Vec::with_capacity(count);
+                let mut people = crate::wire::reserved(count);
                 for _ in 0..count {
                     let member = reader.device()?;
                     people.push((member, reader.text()?));
@@ -143,7 +143,7 @@ impl PartySaid {
                     None
                 };
                 let count = reader.length(SONGS_AHEAD_TOLD_AT_MOST)?;
-                let mut next = Vec::with_capacity(count);
+                let mut next = crate::wire::reserved(count);
                 for _ in 0..count {
                     next.push(read_song(&mut reader)?);
                 }
