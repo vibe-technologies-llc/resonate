@@ -475,9 +475,8 @@ struct OutputView: View {
 
 struct ScrobblingView: View {
     @Environment(Library.self) private var library
+    @Environment(\.openURL) private var openURL
     @State private var account = ScrobbleAccount(listenbrainzToken: "", lastfmKey: "", lastfmSecret: "", lastfmSession: "")
-    @State private var user = ""
-    @State private var password = ""
     @State private var history = false
 
     var body: some View {
@@ -494,13 +493,21 @@ struct ScrobblingView: View {
                 SecureField("Last.fm application key", text: $account.lastfmKey)
                 SecureField("Last.fm application secret", text: $account.lastfmSecret)
                 SecureField("Last.fm session", text: $account.lastfmSession)
-                TextField("Last.fm username", text: $user).textInputAutocapitalization(.never)
-                SecureField("Last.fm password (used only to sign in)", text: $password)
-                Button("Sign in to Last.fm") {
-                    features.signInLastFm(account, user: user, password: password)
-                    password = ""
+                Button(features.lastfmBusy ? "Waiting for Last.fm…" : "Sign in to Last.fm") {
+                    features.signInLastFm(account)
                 }
-                .disabled(account.lastfmKey.isEmpty || account.lastfmSecret.isEmpty || user.isEmpty || password.isEmpty)
+                .disabled(account.lastfmKey.isEmpty || account.lastfmSecret.isEmpty || features.lastfmBusy)
+                if features.lastfmBusy {
+                    Button("Cancel sign-in", role: .cancel) { features.cancelLastFmSignIn() }
+                }
+                if let address = features.lastfmAddress, let url = URL(string: address) {
+                    Button("Open the Last.fm page again") { openURL(url) }
+                    Text("Allow Resonate on the Last.fm page; no password is typed here.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onChange(of: features.lastfmAddress) { _, address in
+                if let address, let url = URL(string: address) { openURL(url) }
             }
             Section {
                 Toggle("Include existing listening history", isOn: $history)

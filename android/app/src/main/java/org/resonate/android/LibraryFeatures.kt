@@ -148,6 +148,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val tidalAuthorization = MutableStateFlow<TidalAuthorization?>(null)
     val tidalBusy = MutableStateFlow(false)
     val jellyfinCode = MutableStateFlow<String?>(null)
+    val lastfmAddress = MutableStateFlow<String?>(null)
+    val lastfmBusy = MutableStateFlow(false)
     val jellyfinBusy = MutableStateFlow(false)
     private val artistRequest = AtomicLong()
     private val analysisRequest = AtomicLong()
@@ -1715,20 +1717,28 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scrobbleStatus.value = native.validateScrobbling(account).joinToString(" · ")
     }
 
-    fun signInLastFm(account: ScrobbleAccount, user: String, password: String, onSignedIn: () -> Unit) = work { native ->
-        val session = native.lastfmSignIn(account.lastfmKey, account.lastfmSecret, user, password)
-        val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
-        val signedIn =
-            kept.copy(
-                lastfmKey = account.lastfmKey,
-                lastfmSecret = account.lastfmSecret,
-                lastfmSession = session,
-            )
-        accounts.writeScrobbling(signedIn)
-        native.startScrobbling(ScrobbleService.LAST_FM, false)
-        scrobbleAccount.value = signedIn
-        scrobbleStatus.value = "Signed in to Last.fm"
-        onSignedIn()
+    fun signInLastFm(account: ScrobbleAccount) {
+        lastfmBusy.value = true
+        work { native ->
+            try {
+                lastfmAddress.value = native.authorizeLastfm(account.lastfmKey, account.lastfmSecret)
+                val signed = native.finishLastfmAuthorization() ?: return@work
+                val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
+                val signedIn =
+                    kept.copy(
+                        lastfmKey = account.lastfmKey,
+                        lastfmSecret = account.lastfmSecret,
+                        lastfmSession = signed.session,
+                    )
+                accounts.writeScrobbling(signedIn)
+                native.startScrobbling(ScrobbleService.LAST_FM, false)
+                scrobbleAccount.value = signedIn
+                scrobbleStatus.value = "Signed in to Last.fm as ${signed.name}"
+            } finally {
+                lastfmAddress.value = null
+                lastfmBusy.value = false
+            }
+        }
     }
 
     fun signOutLastFm() = work { _ ->
@@ -2071,6 +2081,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         tidalBusy.value = false
         jellyfinBusy.value = false
         jellyfinCode.value = null
+        lastfmBusy.value = false
+        lastfmAddress.value = null
         correctionBusy.value = false
         correctionApplying.value = false
     }

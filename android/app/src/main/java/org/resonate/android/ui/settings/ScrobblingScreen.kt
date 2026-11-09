@@ -1,5 +1,6 @@
 package org.resonate.android.ui.settings
 
+import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
@@ -13,6 +14,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -24,19 +26,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.resonateViewModel
 
-data class ScrobbleDraft(
-    val account: ScrobbleAccount,
-    val includeHistory: Boolean = false,
-    val user: String = "",
-    val password: String = "",
-)
+data class ScrobbleDraft(val account: ScrobbleAccount, val includeHistory: Boolean = false)
 
 fun ScrobbleAccount.trimmed(): ScrobbleAccount =
     copy(
@@ -46,14 +45,13 @@ fun ScrobbleAccount.trimmed(): ScrobbleAccount =
     )
 
 fun canSignInToLastFm(draft: ScrobbleDraft): Boolean =
-    draft.account.lastfmKey.isNotBlank() &&
-        draft.account.lastfmSecret.isNotBlank() &&
-        draft.user.isNotBlank() &&
-        draft.password.isNotEmpty()
+    draft.account.lastfmKey.isNotBlank() && draft.account.lastfmSecret.isNotBlank()
 
-class ScrobblingViewModel(resonate: Resonate) : ViewModel() {
+class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
 
+    val lastfmAddress = features.lastfmAddress
+    val lastfmBusy = features.lastfmBusy
     val stored = features.scrobbleAccount
     val status = features.scrobbleStatus
     val online = features.online
@@ -97,10 +95,15 @@ class ScrobblingViewModel(resonate: Resonate) : ViewModel() {
 
     fun signIn() {
         val current = draft ?: return
-        features.signInLastFm(current.account.trimmed(), current.user.trim(), current.password) {
-            viewModelScope.launch { edit { it.copy(password = "") } }
-        }
+        features.signInLastFm(current.account.trimmed())
     }
+
+    fun cancelSignIn() =
+        resonate.attempt(viewModelScope) { native ->
+            withContext(Dispatchers.IO) { native.cancelLastfmAuthorization() }
+        }
+
+    fun open(link: String) = resonate.host.open(Uri.parse(link))
 
     fun signOut() = features.signOutLastFm()
 
@@ -114,6 +117,9 @@ fun ScrobblingScreen() {
     val draft = model.draft
     val status by model.status.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
+    val lastfmAddress by model.lastfmAddress.collectAsStateWithLifecycle()
+    val lastfmBusy by model.lastfmBusy.collectAsStateWithLifecycle()
+    LaunchedEffect(lastfmAddress) { lastfmAddress?.let(model::open) }
     Page("Scrobbling") { padding ->
         val current = draft
         if (current == null) {
@@ -189,32 +195,34 @@ fun ScrobblingScreen() {
                         title = "Sign in to Last.fm",
                         icon = Icons.Rounded.Lock,
                         supporting =
-                            "Your password is used once to start a session and is never saved",
-                    )
-                }
-                item(key = "lastfm-user") {
-                    Field(
-                        value = current.user,
-                        onValueChange = { value -> model.edit { it.copy(user = value) } },
-                        label = "Last.fm username",
-                    )
-                }
-                item(key = "lastfm-password") {
-                    Field(
-                        value = current.password,
-                        onValueChange = { value -> model.edit { it.copy(password = value) } },
-                        label = "Last.fm password",
-                        secret = true,
+                            if (lastfmBusy) "Allow Resonate on the Last.fm page your browser opened"
+                            else "Last.fm's own page opens in your browser; no password is typed here",
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
                 item(key = "lastfm-sign-in") {
                     ButtonRow {
-                        FilledTonalButton(
-                            onClick = model::signIn,
-                            enabled = online && canSignInToLastFm(current),
-                            modifier = Modifier.testTag("lastfm-sign-in"),
-                        ) {
-                            Text("Sign in")
+                        val waiting = lastfmAddress
+                        if (lastfmBusy) {
+                            TextButton(
+                                onClick = { model.cancelSignIn() },
+                                modifier = Modifier.testTag("lastfm-cancel"),
+                            ) {
+                                Text("Cancel")
+                            }
+                            if (waiting != null) {
+                                OutlinedButton(onClick = { model.open(waiting) }) {
+                                    Text("Open the page again")
+                                }
+                            }
+                        } else {
+                            FilledTonalButton(
+                                onClick = model::signIn,
+                                enabled = online && canSignInToLastFm(current),
+                                modifier = Modifier.testTag("lastfm-sign-in"),
+                            ) {
+                                Text("Sign in")
+                            }
                         }
                     }
                 }
