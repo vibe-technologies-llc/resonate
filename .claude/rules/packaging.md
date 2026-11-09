@@ -27,10 +27,12 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   dependency could leave the player uninstallable there), and the Flatpak builds each from its
   release archive, checksummed, into `/app/share/fonts` (the runtime holds neither)
   (`every_package_brings_the_reading_face_and_the_face_for_codes`).
-- **`yt-dlp` is suggested, never depended on**: `optdepends` in both Arch recipes (and `.SRCINFO`),
-  `Suggests` in the spec and the player's DEB control. Only YouTube Music runs it (browsing the
-  account, the poll's last-resort answer and *Keep*), a Flatpak holds none and shows the provider as
-  unavailable, and no package ships it (`providers.md`).
+- **`yt-dlp` and `deno` are suggested, never depended on**: `optdepends` in both Arch recipes (and
+  `.SRCINFO`), `Suggests` in the spec and the player's DEB control. Only YouTube Music runs it
+  (browsing the account, the poll's last-resort answer and *Keep*); recent `yt-dlp` needs a
+  JavaScript runtime for YouTube's challenges, and `deno` is the one it finds by itself (`node` or
+  `bun` serve where present). A Flatpak holds neither and shows the provider as unavailable, and no
+  package ships them (`providers.md`).
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment
   `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
   build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the

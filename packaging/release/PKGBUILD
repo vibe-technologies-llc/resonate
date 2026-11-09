@@ -10,7 +10,8 @@ license=('AGPL-3.0-or-later')
 depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
          'freetype2' 'vulkan-icd-loader' 'inter-font' 'ttf-jetbrains-mono')
 makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11')
-optdepends=('yt-dlp: keeping songs from YouTube Music')
+optdepends=('yt-dlp: keeping songs from YouTube Music'
+            'deno: a JavaScript runtime yt-dlp needs for YouTube Music')
 conflicts=('resonate-player' 'resonate-player-git' 'resonate-git')
 replaces=('resonate-player')
 options=('!lto' '!debug')

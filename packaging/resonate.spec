@@ -27,6 +27,7 @@ Requires:       vulkan-loader
 Requires:       rsms-inter-fonts
 Requires:       jetbrains-mono-fonts
 Suggests:       yt-dlp
+Suggests:       deno
 
 %description
 Resonate plays music through PipeWire with a native Wayland interface.

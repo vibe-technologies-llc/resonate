@@ -24,6 +24,7 @@ pkgbase = resonate-player-git
 	depends = inter-font
 	depends = ttf-jetbrains-mono
 	optdepends = yt-dlp: keeping songs from YouTube Music
+	optdepends = deno: a JavaScript runtime yt-dlp needs for YouTube Music
 	provides = resonate
 	conflicts = resonate
 	conflicts = resonate-git
