@@ -12,6 +12,14 @@ pub enum JarOp {
     PutInPlace,
 }
 
+#[cfg(feature = "window")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineOp {
+    Build,
+    Address,
+    Cookies,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{op:?} of the cookie jar failed")]
@@ -19,6 +27,25 @@ pub enum Error {
         op: JarOp,
         #[source]
         source: io::Error,
+    },
+
+    #[cfg(feature = "window")]
+    #[error("the sign-in window could not be made")]
+    Window {
+        #[source]
+        source: tao::error::OsError,
+    },
+
+    #[cfg(feature = "window")]
+    #[error("the sign-in window has nowhere to hold its page")]
+    NoContainer,
+
+    #[cfg(feature = "window")]
+    #[error("{op:?} of the browser engine failed")]
+    Engine {
+        op: EngineOp,
+        #[source]
+        source: Box<wry::Error>,
     },
 }
 

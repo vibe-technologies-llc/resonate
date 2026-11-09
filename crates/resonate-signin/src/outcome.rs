@@ -4,6 +4,8 @@ pub const SIGNED_IN: i32 = 0;
 
 pub const CLOSED: i32 = 3;
 
+pub const FAILED: i32 = 1;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     SignedIn,
@@ -25,12 +27,10 @@ impl Outcome {
             Self::SignedIn => SIGNED_IN,
             Self::Closed => CLOSED,
             Self::Failed { code: Some(code) } => code,
-            Self::Failed { code: None } => FAILED_WITH_NO_CODE,
+            Self::Failed { code: None } => FAILED,
         }
     }
 }
-
-const FAILED_WITH_NO_CODE: i32 = 1;
 
 #[cfg(test)]
 mod tests {

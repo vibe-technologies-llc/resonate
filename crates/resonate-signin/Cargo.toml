@@ -14,11 +14,16 @@ required-features = ["window"]
 
 [features]
 default = ["window"]
-window = []
+window = ["dep:clap", "dep:tao", "dep:tracing", "dep:tracing-subscriber", "dep:wry"]
 
 [dependencies]
+clap = { workspace = true, optional = true }
 resonate-core.workspace = true
+tao = { workspace = true, optional = true }
 thiserror.workspace = true
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+wry = { workspace = true, optional = true }
 
 [lints]
 workspace = true
