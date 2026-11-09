@@ -264,6 +264,9 @@ fn account(server: &str) -> DownloadAccount {
         client_id: String::new(),
         client_secret: String::new(),
         refresh_token: String::new(),
+        token: String::new(),
+        user_id: String::new(),
+        device: String::new(),
     }
 }
 

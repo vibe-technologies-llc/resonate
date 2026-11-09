@@ -54,10 +54,18 @@ pub(crate) struct Downloads {
     offer_held_for: OfferHeldFor,
     authorizing: Mutex<Option<SigningIn>>,
     sign_ins: AtomicU64,
+    quick_connecting: Mutex<Option<QuickConnecting>>,
+    quick_connects: AtomicU64,
     refreshed: Arc<Mutex<Option<String>>>,
     hosted_services_declined: AtomicBool,
     stalling: Mutex<Gate>,
     waiting: AtomicUsize,
+}
+
+struct QuickConnecting {
+    attempt: u64,
+    asking: resonate_jellyfin::QuickConnect,
+    approving: resonate_jellyfin::Approving,
 }
 
 struct SigningIn {
@@ -73,6 +81,19 @@ pub enum MusicProvider {
     Tidal,
     HifiApi,
     Jellyfin,
+}
+
+fn kept_session(
+    token: String,
+    user: String,
+    device: String,
+) -> Option<resonate_jellyfin::KeptSession> {
+    let given = |field: &str| !field.trim().is_empty();
+    (given(&token) && given(&user) && given(&device)).then_some(resonate_jellyfin::KeptSession {
+        token,
+        user,
+        device,
+    })
 }
 
 impl fmt::Display for MusicProvider {
@@ -96,6 +117,12 @@ pub struct DownloadAccount {
     pub client_id: String,
     pub client_secret: String,
     pub refresh_token: String,
+    #[uniffi(default = "")]
+    pub token: String,
+    #[uniffi(default = "")]
+    pub user_id: String,
+    #[uniffi(default = "")]
+    pub device: String,
 }
 
 enum Reached {
@@ -159,6 +186,19 @@ pub struct DownloadProgress {
     pub received: u64,
     pub total: Option<u64>,
     pub provider: Option<MusicProvider>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct JellyfinQuickConnect {
+    pub code: String,
+}
+
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JellyfinSession {
+    pub token: String,
+    pub user_id: String,
+    pub device: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -511,6 +551,57 @@ impl Downloads {
         self.sign_ins.fetch_add(1, Ordering::AcqRel);
     }
 
+    fn quick_connect_asked(&self) -> u64 {
+        self.quick_connects.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    fn quick_connect_began(
+        &self,
+        attempt: u64,
+        asking: resonate_jellyfin::QuickConnect,
+        approving: resonate_jellyfin::Approving,
+    ) {
+        let mut slot = self.quick_connecting.lock();
+        if self.quick_connects.load(Ordering::Acquire) == attempt {
+            *slot = Some(QuickConnecting {
+                attempt,
+                asking,
+                approving,
+            });
+        }
+    }
+
+    fn cancel_quick_connect(&self) {
+        self.quick_connects.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn quick_connected(
+        &self,
+        unreached: &(dyn Fn() -> bool + Sync),
+    ) -> Result<Option<JellyfinSession>> {
+        let QuickConnecting {
+            attempt,
+            asking,
+            approving,
+        } = self
+            .quick_connecting
+            .lock()
+            .take()
+            .ok_or(Error::DownloadExpired)?;
+        let ended = || self.quick_connects.load(Ordering::Acquire) != attempt || unreached();
+        asking
+            .approved(&approving, &ended)
+            .map(|signed| {
+                signed.map(|signed| JellyfinSession {
+                    token: signed.session.token,
+                    user_id: signed.session.user,
+                    device: signed.session.device,
+                    name: signed.name,
+                })
+            })
+            .map_err(|source| failure_of(MusicProvider::Jellyfin, &source))
+    }
+
     fn signed_in(
         &self,
         signs_in: &dyn SignsIn,
@@ -555,6 +646,9 @@ impl Downloads {
             client_id,
             client_secret,
             refresh_token,
+            token,
+            user_id,
+            device,
         } = account;
         let custom = !server.trim().is_empty();
         match provider {
@@ -576,7 +670,7 @@ impl Downloads {
                     url: server,
                     user,
                     password,
-                    kept: None,
+                    kept: kept_session(token, user_id, device),
                 }))
             }
             MusicProvider::Tidal => {
@@ -1124,6 +1218,37 @@ impl MobilePlayer {
     pub fn refreshed_tidal_token(&self) -> Option<String> {
         self.downloads.refreshed.lock().take()
     }
+
+    pub fn begin_jellyfin_quick_connect(&self, server: String) -> Result<JellyfinQuickConnect> {
+        self.require_online()?;
+        let attempt = self.downloads.quick_connect_asked();
+        let asking = resonate_jellyfin::QuickConnect::at(&server);
+        let offered = asking
+            .offered()
+            .map_err(|source| failure_of(MusicProvider::Jellyfin, &source))?;
+        if !offered {
+            return Err(Error::QuickConnectOff);
+        }
+        let approving = asking
+            .begun()
+            .map_err(|source| failure_of(MusicProvider::Jellyfin, &source))?;
+        let begun = JellyfinQuickConnect {
+            code: approving.code.clone(),
+        };
+        self.downloads
+            .quick_connect_began(attempt, asking, approving);
+        Ok(begun)
+    }
+
+    pub fn finish_jellyfin_quick_connect(&self) -> Result<Option<JellyfinSession>> {
+        self.require_online()?;
+        self.downloads
+            .quick_connected(&|| !self.services.online.client().is_reaching())
+    }
+
+    pub fn cancel_jellyfin_quick_connect(&self) {
+        self.downloads.cancel_quick_connect();
+    }
 }
 
 impl MobilePlayer {
@@ -1270,6 +1395,9 @@ mod tests {
             client_id: String::new(),
             client_secret: String::new(),
             refresh_token: String::new(),
+            token: String::new(),
+            user_id: String::new(),
+            device: String::new(),
         }
     }
 
