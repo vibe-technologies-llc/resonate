@@ -57,7 +57,7 @@ class MixViewModel(private val resonate: Resonate, mix: Mix) : ViewModel() {
         combine(
                 resonate.catalogRead(retry, follow = false) { native ->
                     val filter = mix.filter()
-                    MixPage(pagedFully { offset, limit -> native.filteredTracks(filter, offset, limit) }, native.picturedBy(filter))
+                    MixPage(pagedFully(native) { offset, limit -> native.filteredTracks(filter, offset, limit) }, native.picturedBy(filter))
                 },
                 resonate.library.allTracks,
             ) { loaded, _ ->
@@ -81,7 +81,7 @@ class SuggestedViewModel(private val resonate: Resonate, search: SuggestedSearch
                 resonate.catalogRead(retry, follow = false) { native ->
                     val asked = search.native()
                     MixPage(
-                        pagedFully { offset, limit -> native.savedSearchPage(asked, offset, limit) },
+                        pagedFully(native) { offset, limit -> native.savedSearchPage(asked, offset, limit) },
                         native.measureSavedSearch(asked).covers,
                     )
                 },

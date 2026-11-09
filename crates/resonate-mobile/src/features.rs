@@ -386,6 +386,10 @@ impl MobilePlayer {
         self.downloads.are_waiting()
     }
 
+    pub fn catalog_revision(&self) -> u64 {
+        self.catalog.revision()
+    }
+
     pub fn filtered_tracks(
         &self,
         filter: TrackFilter,

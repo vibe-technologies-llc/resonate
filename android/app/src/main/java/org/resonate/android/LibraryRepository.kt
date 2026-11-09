@@ -184,15 +184,10 @@ class LibraryRepository(private val context: Context) {
         native: MobilePlayer,
         query: TrackFilter,
         stillWanted: () -> Boolean,
-    ): List<Track> {
-        val found = ArrayList<Track>()
-        do {
-            val page =
-                access.withLock { native.filteredTracks(query, found.size.toUInt(), PAGE_ROWS) }
-            found.addAll(page)
-        } while (page.size == PAGE_ROWS.toInt() && stillWanted())
-        return found
-    }
+    ): List<Track> =
+        pagedSteadily(PAGE_ROWS, native::catalogRevision, Track::id, stillWanted) { offset, limit ->
+            access.withLock { native.filteredTracks(query, offset, limit) }
+        }
 
     @Volatile private var failureText: String? = null
 

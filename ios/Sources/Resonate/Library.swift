@@ -1295,7 +1295,7 @@ final class Library {
                 return
             }
 
-            let whole = try await Work.onScreen { first + (try Library.pages(native, everything, from: Library.page)) }
+            let whole = try await Work.onScreen { try Library.steadily(native, everything) }
             guard request == catalogRequest else { return }
             await publishCatalog(whole, request: request)
             caughtUpWithCatalog()
@@ -1410,7 +1410,7 @@ final class Library {
 
                 let listedBefore = tracks
                 let whole = try await Work.onScreen {
-                    SongsListed(first + (try Library.pages(native, query, from: Library.page)), shown: listedBefore)
+                    SongsListed(try Library.steadily(native, query), shown: listedBefore)
                 }
                 guard request == queryRequest else { return }
                 if let whole { list(whole) }
@@ -1468,8 +1468,10 @@ final class Library {
         collectionGeneration += 1
     }
 
-    nonisolated private static func pages(_ native: MobilePlayer, _ filter: TrackFilter, from offset: UInt32) throws -> [Track] {
-        try everyPage { try native.filteredTracks(filter: filter, offset: offset + $0, limit: Library.page) }
+    nonisolated private static func steadily(_ native: MobilePlayer, _ filter: TrackFilter) throws -> [Track] {
+        try Paging.steadily(revision: { native.catalogRevision() }, key: \.id) {
+            try everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) }
+        }
     }
 
     nonisolated static func everyPage(_ page: (UInt32) throws -> [Track]) rethrows -> [Track] {

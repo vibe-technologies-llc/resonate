@@ -699,7 +699,7 @@ song the scan indexed there (`keep_folder_cover`), not once a song. Albums group
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
 request. `refresh()` and `reload()` take the repository's `access` lock one 500-row page at a time
 (`pagedTracks`), so the poll and queued transport actions run between the pages of a big library's
-read, and a `reload` a newer request overtook stops at its next page. A song's album page opens by `album_key` (`albumKey`), so a song with
+read, and a `reload` a newer request overtook stops at its next page. **A walk of pages is read again where the catalog moved under it** (`pagedSteadily`, also `pagedFully`): `catalog_revision` is read before and after, a moved one starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times, and each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key (`PagedSteadilyTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
 another spelling, no album artist or a shared title opens its own album, and the song sheet's
 heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music files

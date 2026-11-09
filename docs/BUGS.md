@@ -3,17 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Mobile
-- [M · 0.7.1] A refresh of the phones' song list can duplicate rows and crash the list: Android's
-  `pagedTracks` and iOS's `Library.pages` read 500 rows at a time by offset against the live
-  catalog, `scanDocument` runs between pages without the lock the pages take, a new song sorting
-  before the offset moves the last row of one page onto the next and a deletion skips one, and
-  `SongsTab`, `AddSongsSheet` and `LibraryResults` key their lazy lists by `track.id`, so Compose
-  throws *Key was already used* when the doubled row is composed; a pull-to-refresh, a sync arrival,
-  artwork enrichment and `forgetMissing` all refresh while a scan runs, and `pagedFully` pages the
-  same way with no lock (the boundary should hand back the revision it read and the pages restart
-  when it moves, or slice one snapshot of the ordered ids)
-
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its

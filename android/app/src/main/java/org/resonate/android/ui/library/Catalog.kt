@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.Track
+import org.resonate.android.pagedSteadily
 import org.resonate.android.ui.Resonate
 
 sealed interface Loaded<out T> {
@@ -92,14 +93,8 @@ fun Resonate.currentRows(tracks: Flow<Loaded<List<Track>>>): Flow<Loaded<List<Tr
         }
     }
 
-fun <T> pagedFully(page: (offset: UInt, limit: UInt) -> List<T>): List<T> {
-    val rows = ArrayList<T>()
-    do {
-        val next = page(rows.size.toUInt(), PAGE_ROWS)
-        rows.addAll(next)
-    } while (next.size == PAGE_ROWS.toInt())
-    return rows
-}
+fun pagedFully(native: MobilePlayer, page: (offset: UInt, limit: UInt) -> List<Track>): List<Track> =
+    pagedSteadily(PAGE_ROWS, native::catalogRevision, Track::id, { true }, page)
 
 fun Resonate.playInOrder(tracks: List<Track>, index: Int = 0) {
     if (tracks.isEmpty()) return
