@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -48,10 +48,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.OutputRoute
+import org.resonate.android.R
 import org.resonate.android.RoomView
+import org.resonate.android.Words
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
 import org.resonate.android.ui.components.Page
@@ -66,29 +69,30 @@ import org.resonate.android.ui.settings.Note
 import org.resonate.android.ui.settings.SettingRow
 import org.resonate.android.ui.settings.SettingsList
 import org.resonate.android.ui.settings.SwitchRow
+import org.resonate.android.words
 
-private val presetIcons: Map<String, ImageVector> =
-    mapOf(
-        "Flat" to Icons.Rounded.HorizontalRule,
-        "Bass boost" to Icons.Rounded.Speaker,
-        "Bass only" to Icons.Rounded.SpeakerGroup,
-        "Bass cut" to Icons.Rounded.Waves,
-        "Vocals" to Icons.Rounded.MicNone,
-        "Warm" to Icons.Rounded.WbSunny,
-        "Bright" to Icons.Rounded.AutoAwesome,
-        "Treble cut" to Icons.Rounded.Cloud,
-        "Rock" to Icons.Rounded.MusicNote,
-        "Electronic" to Icons.Rounded.GraphicEq,
+private val presetIcons: List<ImageVector> =
+    listOf(
+        Icons.Rounded.HorizontalRule,
+        Icons.Rounded.Speaker,
+        Icons.Rounded.SpeakerGroup,
+        Icons.Rounded.Waves,
+        Icons.Rounded.MicNone,
+        Icons.Rounded.WbSunny,
+        Icons.Rounded.AutoAwesome,
+        Icons.Rounded.Cloud,
+        Icons.Rounded.MusicNote,
+        Icons.Rounded.GraphicEq,
     )
 
-const val OWN_SOUND = "Your own sound, shaped on the graph above."
-
-const val FIT_NOTE = "Fit brings the queue's loudest peak to full scale."
-
-fun roomStatus(room: RoomView): String =
+fun roomStatus(words: Words, room: RoomView): String =
     when (val name = room.name) {
-        null -> "No response chosen"
-        else -> if (room.on) "On · $name" else "Off · $name"
+        null -> words.string(R.string.equaliser_room_none)
+        else ->
+            words.string(
+                if (room.on) R.string.equaliser_room_on else R.string.equaliser_room_off,
+                name,
+            )
     }
 
 fun othersStatus(others: List<OutputRoute>): String = others.joinToString(" · ") { it.name }
@@ -101,7 +105,10 @@ fun EqualiserScreen() {
     val shown by model.shown.collectAsStateWithLifecycle()
     var selected by rememberSaveable { mutableStateOf<Int?>(null) }
     var resetting by rememberSaveable { mutableStateOf(false) }
-    Page("Equaliser", actions = { MoreMenu(onReset = { resetting = true }) }) { padding ->
+    Page(
+        stringResource(R.string.equaliser_title),
+        actions = { MoreMenu(onReset = { resetting = true }) },
+    ) { padding ->
         val loaded = info
         val curve = shown
         val enabled = preferences?.equaliserEnabled
@@ -113,10 +120,9 @@ fun EqualiserScreen() {
     }
     if (resetting) {
         ConfirmDialog(
-            title = "Reset curve?",
-            text =
-                "Every band goes and the preamp returns to 0 dB. The equaliser stays on or off as it is.",
-            confirm = "Reset",
+            title = stringResource(R.string.equaliser_reset_title),
+            text = stringResource(R.string.equaliser_reset_text),
+            confirm = stringResource(R.string.equaliser_reset),
             onConfirm = {
                 selected = null
                 model.reset()
@@ -132,11 +138,14 @@ private fun MoreMenu(onReset: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("equaliser-more")) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+            Icon(
+                Icons.Rounded.MoreVert,
+                contentDescription = stringResource(R.string.equaliser_more_options),
+            )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
-                text = { Text("Reset curve") },
+                text = { Text(stringResource(R.string.equaliser_reset_curve)) },
                 leadingIcon = { Icon(Icons.Rounded.RestartAlt, null) },
                 onClick = {
                     open = false
@@ -159,6 +168,7 @@ private fun EqualiserContent(
     padding: PaddingValues,
 ) {
     val navigator = LocalNavigator.current
+    val words = words()
     val route by model.route.collectAsStateWithLifecycle()
     val bound by model.boundRoutes.collectAsStateWithLifecycle()
     val room by model.room.collectAsStateWithLifecycle()
@@ -170,13 +180,14 @@ private fun EqualiserContent(
     SettingsList(padding, Modifier.testTag("equaliser-list")) {
         item(key = "switch") {
             SwitchRow(
-                title = "Equaliser",
+                title = stringResource(R.string.equaliser_title),
                 checked = enabled,
                 onCheckedChange = model::enable,
                 icon = Icons.Rounded.Equalizer,
                 supporting =
-                    if (enabled) "${shownName(curve)} · ${curveScope(route, bound)}"
-                    else "Off · Original sound",
+                    if (enabled) {
+                        "${shownName(words, curve)} · ${curveScope(words, route, bound)}"
+                    } else stringResource(R.string.equaliser_off_original),
                 modifier = Modifier.testTag("equaliser-switch"),
             )
         }
@@ -184,12 +195,15 @@ private fun EqualiserContent(
             item(key = "output-curve") {
                 val kept = isBound(playing, bound)
                 SwitchRow(
-                    title = "Only for ${playing.name}",
+                    title = stringResource(R.string.equaliser_only_for, playing.name),
                     checked = kept,
                     onCheckedChange = model::bind,
                     icon = Icons.Rounded.Speaker,
                     supporting =
-                        if (kept) "Kept for this output alone" else "Shared by every output",
+                        stringResource(
+                            if (kept) R.string.equaliser_kept_alone
+                            else R.string.equaliser_shared_by_every
+                        ),
                     modifier = Modifier.testTag("output-curve-switch"),
                 )
             }
@@ -237,12 +251,12 @@ private fun EqualiserContent(
             }
         }
         item(key = "preamp") {
-            SectionHeader("Preamp")
+            SectionHeader(stringResource(R.string.equaliser_preamp))
             Column(Modifier.padding(horizontal = Sizes.gutter)) {
                 MeasureControl(
-                    measure = preampMeasure(bounds),
+                    measure = preampMeasure(words, bounds),
                     value = curve.preampDb,
-                    description = "Preamp",
+                    description = stringResource(R.string.equaliser_preamp),
                     onCommit = { model.commit(curve.withPreamp(it, bounds)) },
                     tag = "preamp",
                     action = {
@@ -258,49 +272,51 @@ private fun EqualiserContent(
                                 Modifier.size(ButtonDefaults.IconSize),
                             )
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text("Fit")
+                            Text(stringResource(R.string.equaliser_fit))
                         }
                     },
                 )
             }
-            Note(FIT_NOTE)
+            Note(stringResource(R.string.equaliser_fit_note))
         }
         item(key = "presets") {
             Presets(info.presets, shownPreset(info.presets, curve), model::choose)
         }
-        item(key = "corrections") { SectionHeader("Corrections") }
+        item(key = "corrections") {
+            SectionHeader(stringResource(R.string.equaliser_corrections))
+        }
         item(key = "headphones") {
             SettingRow(
-                title = "Headphone correction",
+                title = stringResource(R.string.equaliser_headphone_correction),
                 icon = Icons.Rounded.Headphones,
-                supporting = "Search AutoEq or paste a profile",
+                supporting = stringResource(R.string.equaliser_headphone_correction_detail),
                 onClick = { navigator.open(Screen.HeadphoneCorrection) },
                 modifier = Modifier.testTag("headphone-correction"),
             )
         }
         item(key = "measurement") {
             SettingRow(
-                title = "Measure with a microphone",
+                title = stringResource(R.string.equaliser_measure),
                 icon = Icons.Rounded.Mic,
-                supporting = "Fit a measurement or a sweep toward a target",
+                supporting = stringResource(R.string.equaliser_measure_detail),
                 onClick = { navigator.open(Screen.Measurement) },
                 modifier = Modifier.testTag("measurement"),
             )
         }
         item(key = "room") {
             SettingRow(
-                title = "Room correction",
+                title = stringResource(R.string.equaliser_room_correction),
                 icon = Icons.Rounded.SurroundSound,
-                supporting = roomStatus(room),
+                supporting = roomStatus(words, room),
                 onClick = { navigator.open(Screen.RoomCorrection) },
                 modifier = Modifier.testTag("room-correction"),
             )
         }
         item(key = "listening-test") {
             SettingRow(
-                title = "Listening test",
+                title = stringResource(R.string.equaliser_listening_test),
                 icon = Icons.Rounded.Hearing,
-                supporting = "A blind ABX test of the curve or a setting",
+                supporting = stringResource(R.string.equaliser_listening_test_detail),
                 onClick = { navigator.open(Screen.ListeningTest) },
                 modifier = Modifier.testTag("listening-test"),
             )
@@ -308,7 +324,7 @@ private fun EqualiserContent(
         if (others.isNotEmpty()) {
             item(key = "kept-curves") {
                 SettingRow(
-                    title = "Curves for other outputs",
+                    title = stringResource(R.string.equaliser_other_curves),
                     icon = Icons.Rounded.SpeakerGroup,
                     supporting = othersStatus(others),
                     onClick = { navigator.open(Screen.OutputCurves) },
@@ -327,21 +343,21 @@ private fun Presets(
 ) {
     val first = presets.indexOfFirst { it.name == shown?.name }.coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = first)
-    SectionHeader("Presets")
+    SectionHeader(stringResource(R.string.equaliser_presets))
     LazyRow(
         state = state,
         contentPadding = PaddingValues(horizontal = Sizes.gutter),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.testTag("presets"),
     ) {
-        items(presets, key = { it.name }) { preset ->
+        itemsIndexed(presets, key = { _, preset -> preset.name }) { index, preset ->
             FilterChip(
                 selected = preset.name == shown?.name,
                 onClick = { onChoose(preset) },
                 label = { Text(preset.name) },
                 leadingIcon = {
                     Icon(
-                        presetIcons[preset.name] ?: Icons.Rounded.Equalizer,
+                        presetIcons.getOrNull(index) ?: Icons.Rounded.Equalizer,
                         null,
                         Modifier.size(FilterChipDefaults.IconSize),
                     )
@@ -350,5 +366,5 @@ private fun Presets(
             )
         }
     }
-    Note(shown?.detail ?: OWN_SOUND)
+    Note(shown?.detail ?: stringResource(R.string.equaliser_own_sound))
 }

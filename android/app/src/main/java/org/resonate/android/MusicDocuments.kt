@@ -15,6 +15,8 @@ import org.resonate.android.nativecore.StandingDocument
 
 object MusicDocuments {
     const val TREE_DEPTH_AT_MOST = 32
+    private const val LIKE = "LIKE"
+    private const val AND = "AND"
 
     val downloads: Uri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
@@ -42,10 +44,13 @@ object MusicDocuments {
                 MediaStore.MediaColumns.DATE_MODIFIED,
             )
         val selection =
-            "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ? AND " +
-                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND " +
-                "${MediaStore.MediaColumns.IS_PENDING} = 0 AND " +
-                "${MediaStore.MediaColumns.IS_TRASHED} = 0"
+            listOf(
+                    "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ?",
+                    "${MediaStore.MediaColumns.RELATIVE_PATH} $LIKE ?",
+                    "${MediaStore.MediaColumns.IS_PENDING} = 0",
+                    "${MediaStore.MediaColumns.IS_TRASHED} = 0",
+                )
+                .joinToString(" $AND ")
         val arguments =
             arrayOf(
                 MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO.toString(),

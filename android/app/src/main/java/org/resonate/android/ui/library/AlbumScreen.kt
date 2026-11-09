@@ -2,10 +2,10 @@ package org.resonate.android.ui.library
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -13,7 +13,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,9 +24,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.DownloadJob
 import org.resonate.android.DownloadPlan
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
@@ -34,10 +37,10 @@ import org.resonate.android.ui.clock
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.SongArtwork
-import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.SongSelectionBar
-import org.resonate.android.ui.components.rememberSelection
+import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberArtwork
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
@@ -48,6 +51,7 @@ import org.resonate.android.ui.search.onlineSongActions
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.rememberSeedOf
+import org.resonate.android.words
 
 data class AlbumPage(val album: AlbumHit?, val tracks: List<Track>, val notHeld: List<SearchSong>)
 
@@ -95,7 +99,7 @@ fun AlbumScreen(screen: Screen.Album) {
     var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     val page = loaded.valueOrNull()
     val album = page?.album
-    val title = album?.shownTitle ?: screen.title.ifBlank { "Unknown album" }
+    val title = album?.shownTitle ?: screen.title.ifBlank { stringResource(R.string.library_unknown_album) }
     val cover = album?.artworkTrack ?: screen.artworkTrack ?: page?.tracks?.firstOrNull()?.id
     val owner = album?.artist ?: screen.artist
     val various = album?.variousArtists == true
@@ -125,24 +129,39 @@ fun AlbumScreen(screen: Screen.Album) {
                 OverflowMenu(
                     listOf(
                         listOf(
-                            MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) { resonate.playNext(tracks) },
-                            MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { resonate.addToQueue(tracks) },
-                            MenuEntry.Action("Add to playlist", Icons.AutoMirrored.Rounded.PlaylistAdd) { sheets.addToPlaylist(tracks) },
+                            MenuEntry.Action(
+                                stringResource(R.string.library_play_next),
+                                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            ) {
+                                resonate.playNext(tracks)
+                            },
+                            MenuEntry.Action(
+                                stringResource(R.string.library_add_to_queue),
+                                Icons.AutoMirrored.Rounded.QueueMusic,
+                            ) {
+                                resonate.addToQueue(tracks)
+                            },
+                            MenuEntry.Action(
+                                stringResource(R.string.library_add_to_playlist),
+                                Icons.AutoMirrored.Rounded.PlaylistAdd,
+                            ) {
+                                sheets.addToPlaylist(tracks)
+                            },
                         ),
                         if (tracks.none(resonate.features.tags::writable)) emptyList()
                         else listOf(
-                            MenuEntry.Action("Edit album tags", Icons.Rounded.Edit) {
+                            MenuEntry.Action(stringResource(R.string.library_edit_album_tags), Icons.Rounded.Edit) {
                                 sheets.editTags(tracks)
                             }
                         ),
                         if (various || owner.isBlank()) emptyList()
                         else listOf(
-                            MenuEntry.Action("Go to artist", Icons.Rounded.Person) {
+                            MenuEntry.Action(stringResource(R.string.library_go_to_artist), Icons.Rounded.Person) {
                                 navigator.open(Screen.Artist(owner, cover))
                             }
                         ),
                     ),
-                    description = "Album options",
+                    description = stringResource(R.string.library_album_options),
                 )
             },
         ) { shown ->
@@ -150,13 +169,13 @@ fun AlbumScreen(screen: Screen.Album) {
             item("header") {
                 CollectionHeader(
                     title = title,
-                    overline = "Album",
-                    summary = collectionSummary(shown.album?.year?.toString(), tracks = tracks),
+                    overline = stringResource(R.string.library_overline_album),
+                    summary = collectionSummary(words(), shown.album?.year?.toString(), tracks = tracks),
                     onPlay = { resonate.playInOrder(tracks) },
                     onShuffle = { resonate.playShuffled(tracks) },
                     playable = tracks.isNotEmpty(),
                     link = {
-                        if (various) ArtistLink("Various artists", null, null)
+                        if (various) ArtistLink(stringResource(R.string.library_various_artists), null, null)
                         else if (owner.isNotBlank())
                             ArtistLink(owner, cover) { navigator.open(Screen.Artist(owner, cover)) }
                     },
@@ -168,7 +187,7 @@ fun AlbumScreen(screen: Screen.Album) {
             val discs = discsOf(tracks, shown.notHeld)
             discs.forEach { disc ->
                 if (discs.size > 1) {
-                    item("disc:${disc.number}") { SectionHeader(discTitle(disc.number)) }
+                    item("disc:${disc.number}") { SectionHeader(discTitle(words(), disc.number)) }
                 }
                 disc.rows.forEach { row ->
                     when (row) {
@@ -180,7 +199,7 @@ fun AlbumScreen(screen: Screen.Album) {
                                     onClick = { resonate.playback.play(tracks, row.index) },
                                     playing = track.id == playing,
                                     number = trackNumber(track, row.index),
-                                    supporting = albumRowLine(track, owner, various),
+                                    supporting = albumRowLine(words(), track, owner, various),
                                     note = clock(track.durationMs),
                                     onMore = { sheets.song(track) },
                                     selection = selection.row(track.id),
@@ -224,7 +243,7 @@ fun AlbumScreen(screen: Screen.Album) {
     choosing?.let { songs -> DownloadChooser(songs, model.downloads) { choosing = null } }
 }
 
-private fun albumRowLine(track: Track, owner: String, various: Boolean): String =
-    if (various || !track.artist.equals(owner, ignoreCase = true)) track.shownArtist else ""
+private fun albumRowLine(words: Words, track: Track, owner: String, various: Boolean): String =
+    if (various || !track.artist.equals(owner, ignoreCase = true)) track.shownArtist(words) else ""
 
 private const val SEED_EDGE = 96

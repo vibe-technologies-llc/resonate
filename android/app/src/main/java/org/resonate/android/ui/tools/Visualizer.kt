@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -69,6 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.rememberCalm
@@ -89,13 +91,13 @@ fun VisualizerScreen() {
     val resonate = LocalResonate.current
     val snapshot by resonate.library.snapshot.collectAsStateWithLifecycle()
     val current = snapshot?.current
-    Page("Visualizer") { padding ->
+    Page(stringResource(R.string.visualizer_title)) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             val wide = maxWidth > maxHeight
             val titles: @Composable () -> Unit = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        current?.shownTitle ?: "Play a song to see it move",
+                        current?.shownTitle ?: stringResource(R.string.visualizer_idle_title),
                         style = MaterialTheme.typography.headlineSmall,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
@@ -103,7 +105,7 @@ fun VisualizerScreen() {
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        current?.shownArtist ?: "Live audio from the Resonate engine",
+                        current?.shownArtist ?: stringResource(R.string.visualizer_idle_detail),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -171,19 +173,20 @@ private fun LiveVisual() {
                     0f,
                     360f,
                     infiniteRepeatable(tween(TURN_MS, easing = LinearEasing), RepeatMode.Restart),
-                    label = "visualizer turn",
+                    label = "visualizer-turn",
                 )
     val scheme = MaterialTheme.colorScheme
+    val described =
+        stringResource(
+            if (stopped) R.string.visualizer_paused_description
+            else R.string.visualizer_playing_description
+        )
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Canvas(
             Modifier.fillMaxWidth()
                 .aspectRatio(1f)
                 .testTag("visualizer")
-                .semantics {
-                    contentDescription =
-                        if (stopped) "Visualisation of the music, paused"
-                        else "Live visualisation of the music playing"
-                }
+                .semantics { contentDescription = described }
         ) {
             if (calm.reduced || stopped) drawCalmBars(heard.levels, scheme.primary, scheme.tertiary, scheme.surfaceContainerHighest)
             else drawRing(heard, turn?.value ?: 0f, scheme.primary, scheme.tertiary, scheme.primaryContainer)
@@ -203,7 +206,11 @@ private fun LiveVisual() {
                     Modifier.size(ButtonDefaults.IconSize),
                 )
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(if (paused) "Resume visualiser" else "Pause visualiser")
+                Text(
+                    stringResource(
+                        if (paused) R.string.visualizer_resume else R.string.visualizer_pause
+                    )
+                )
             }
         }
     }

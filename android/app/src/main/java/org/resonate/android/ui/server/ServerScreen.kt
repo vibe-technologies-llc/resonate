@@ -35,11 +35,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.R
 import org.resonate.android.nativecore.ServedFound
 import org.resonate.android.nativecore.ServedService
 import org.resonate.android.ui.components.EmptyState
@@ -49,6 +51,7 @@ import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.library.LoadedContent
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 @Composable
 fun ServerScreen() {
@@ -59,7 +62,8 @@ fun ServerScreen() {
     val firstPage by model.firstPage.collectAsStateWithLifecycle()
     val found by model.found.collectAsStateWithLifecycle()
     val title = chosen?.title.orEmpty()
-    Page("Server") { padding ->
+    val words = words()
+    Page(stringResource(R.string.server_title)) { padding ->
         val direction = LocalLayoutDirection.current
         val below =
             PaddingValues(
@@ -78,15 +82,19 @@ fun ServerScreen() {
                     FoundList(shown, below, actions, "served-first-page") {
                         EmptyState(
                             Icons.Rounded.Search,
-                            searchHeadline(title),
-                            detail = firstPageEmpty(title),
+                            searchHeadline(words, title),
+                            detail = firstPageEmpty(words, title),
                         )
                     }
                 }
             } else {
                 LoadedContent(asked, model.searchRetry::again) { shown ->
                     FoundList(shown, below, actions, "served-found") {
-                        EmptyState(Icons.Rounded.Search, "Nothing matches", detail = nothingMatches(title))
+                        EmptyState(
+                            Icons.Rounded.Search,
+                            stringResource(R.string.server_nothing_matches),
+                            detail = nothingMatches(words, title),
+                        )
                     }
                 }
             }
@@ -133,21 +141,21 @@ private fun FoundList(
         return
     }
     LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag(tag)) {
-        item("summary") { SectionHeader(foundSummary(found)) }
+        item("summary") { SectionHeader(foundSummary(words(), found)) }
         if (found.artists.isNotEmpty()) {
-            item("artists") { SectionHeader("Artists") }
+            item("artists") { SectionHeader(stringResource(R.string.server_artists)) }
             items(found.artists, key = { "artist:${it.uri}" }) { artist ->
                 ServedArtistRow(artist, onClick = { navigator.open(artist.screen()) }, actions = actions)
             }
         }
         if (found.albums.isNotEmpty()) {
-            item("albums") { SectionHeader("Albums") }
+            item("albums") { SectionHeader(stringResource(R.string.server_albums)) }
             items(found.albums, key = { "album:${it.uri}" }) { album ->
                 ServedAlbumRow(album, onClick = { navigator.open(album.screen()) }, actions = actions)
             }
         }
         if (found.songs.isNotEmpty()) {
-            item("songs") { SectionHeader("Songs") }
+            item("songs") { SectionHeader(stringResource(R.string.server_songs)) }
             items(found.songs.size, key = { "song:${found.songs[it].uri}" }) { index ->
                 val song = found.songs[index]
                 ServedSongRow(song, onClick = { actions.playFrom(found.songs, index) }, actions = actions)
@@ -168,13 +176,22 @@ private fun ServerSearchField(model: ServerViewModel, title: String) {
                 .padding(horizontal = Sizes.gutter, vertical = 8.dp)
                 .heightIn(min = 56.dp)
                 .testTag("served-search-field"),
-        placeholder = { Text(searchHeadline(title), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        placeholder = {
+            Text(
+                searchHeadline(words(), title),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
         trailingIcon =
             if (typed) {
                 {
                     IconButton(onClick = model::clear, modifier = Modifier.testTag("served-search-clear")) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Clear search")
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.server_clear_search),
+                        )
                     }
                 }
             } else null,

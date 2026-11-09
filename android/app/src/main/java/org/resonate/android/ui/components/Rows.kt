@@ -1,6 +1,5 @@
 package org.resonate.android.ui.components
 
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.byline
 import org.resonate.android.ui.shownTitle
@@ -94,10 +96,14 @@ fun TrackRow(
     val label = title?.text ?: track.shownTitle
     val lines = rememberTitleMaxLines()
     val oneLine = subtitle == null && supporting.isEmpty()
+    val favourite = stringResource(R.string.rows_favourite)
+    val moreOptions = stringResource(R.string.library_more_options)
+    val select = stringResource(R.string.rows_select)
+    val selectThis = stringResource(R.string.rows_select_this, label)
     val heart: @Composable () -> Unit = {
         Icon(
             Icons.Rounded.Favorite,
-            contentDescription = "Favourite",
+            contentDescription = favourite,
             tint = scheme.primary,
             modifier = Modifier.size(14.dp),
         )
@@ -109,7 +115,7 @@ fun TrackRow(
                 ?: onMore?.let { more ->
                     {
                         IconButton(onClick = more) {
-                            Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                            Icon(Icons.Rounded.MoreVert, contentDescription = moreOptions)
                         }
                     }
                 }
@@ -122,7 +128,7 @@ fun TrackRow(
                     if (held.selecting) held.toggle() else held.begin()
                 }
             },
-        onLongClickLabel = selection?.let { "Select" },
+        onLongClickLabel = selection?.let { select },
         modifier =
             modifier
                 .then(if (selected) Modifier.background(scheme.secondaryContainer) else Modifier)
@@ -135,7 +141,7 @@ fun TrackRow(
                                 if (selecting) emptyList()
                                 else
                                     listOf(
-                                        CustomAccessibilityAction("Select $label") {
+                                        CustomAccessibilityAction(selectThis) {
                                             selection.begin()
                                             true
                                         }
@@ -460,7 +466,7 @@ fun PlayShuffleButtons(
                 modifier = Modifier.size(ButtonDefaults.IconSize),
             )
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text("Play")
+            Text(stringResource(R.string.rows_play))
         }
         FilledTonalButton(
             onClick = onShuffle,
@@ -474,7 +480,7 @@ fun PlayShuffleButtons(
                 modifier = Modifier.size(ButtonDefaults.IconSize),
             )
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text("Shuffle")
+            Text(stringResource(R.string.rows_shuffle))
         }
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -49,6 +50,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.AutoEqDevice
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.parseEqProfile
@@ -67,12 +70,10 @@ import org.resonate.android.ui.settings.SettingsList
 
 data class CurrentCurve(val name: String, val enabled: Boolean)
 
-fun currentOf(preferences: PlaybackPreferences?): CurrentCurve? =
-    preferences?.let { CurrentCurve(shownName(it.equaliser), it.equaliserEnabled) }
+fun currentOf(words: Words, preferences: PlaybackPreferences?): CurrentCurve? =
+    preferences?.let { CurrentCurve(shownName(words, it.equaliser), it.equaliserEnabled) }
 
 private const val TYPING_SETTLES_MS = 350L
-
-private const val PROFILE_EXAMPLE = "Preamp: -6 dB\nFilter 1: ON PK Fc 100 Hz Gain 3 dB Q 0.7"
 
 @OptIn(FlowPreview::class)
 class HeadphoneCorrectionViewModel(private val resonate: Resonate) : ViewModel() {
@@ -97,11 +98,11 @@ class HeadphoneCorrectionViewModel(private val resonate: Resonate) : ViewModel()
 
     val current: StateFlow<CurrentCurve?> =
         library.preferences
-            .map(::currentOf)
+            .map { currentOf(library.words, it) }
             .stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5_000),
-                currentOf(library.preferences.value),
+                currentOf(library.words, library.preferences.value),
             )
 
     init {
@@ -154,7 +155,7 @@ class HeadphoneCorrectionViewModel(private val resonate: Resonate) : ViewModel()
                     parseEqProfile(text.toByteArray(Charsets.UTF_8), name)
                 }
             library.updatePreferences { it.withCurve(found.curve) }
-            library.notice(importSentence(found))
+            library.notice(importSentence(library.words, found))
             profileName = ""
             profileText = ""
         }
@@ -172,38 +173,42 @@ fun HeadphoneCorrectionScreen() {
     val current by model.current.collectAsStateWithLifecycle()
     var confirming by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
     val focus = LocalFocusManager.current
-    Page("Headphone correction") { padding ->
+    Page(stringResource(R.string.equaliser_headphone_correction)) { padding ->
         SettingsList(padding, Modifier.testTag("correction-list")) {
             item(key = "current") {
                 val curve = current
                 SettingRow(
-                    title = curve?.name ?: "Reading the curve…",
+                    title = curve?.name ?: stringResource(R.string.equaliser_reading_curve),
                     icon = Icons.Rounded.Equalizer,
                     supporting =
                         when {
                             curve == null -> null
-                            curve.enabled -> "The curve in use · Equaliser on"
-                            else -> "The curve in use · Equaliser off"
+                            curve.enabled -> stringResource(R.string.equaliser_curve_in_use_on)
+                            else -> stringResource(R.string.equaliser_curve_in_use_off)
                         },
                     modifier = Modifier.testTag("correction-current"),
                 )
             }
             item(key = "autoeq") {
                 SectionHeader("AutoEq")
-                Note(
-                    "Measured corrections for thousands of headphones and earphones. Applying one replaces the curve."
-                )
+                Note(stringResource(R.string.equaliser_autoeq_note))
                 Column(Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp)) {
                     OutlinedTextField(
                         value = query,
                         onValueChange = model::type,
-                        label = { Text("Search AutoEq") },
-                        placeholder = { Text("Headphone brand or model") },
+                        label = { Text(stringResource(R.string.equaliser_autoeq_search)) },
+                        placeholder = {
+                            Text(stringResource(R.string.equaliser_autoeq_placeholder))
+                        },
                         leadingIcon = { Icon(Icons.Rounded.Search, null) },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { model.type("") }) {
-                                    Icon(Icons.Rounded.Close, contentDescription = "Clear search")
+                                    Icon(
+                                        Icons.Rounded.Close,
+                                        contentDescription =
+                                            stringResource(R.string.equaliser_clear_search),
+                                    )
                                 }
                             }
                         },
@@ -230,43 +235,43 @@ fun HeadphoneCorrectionScreen() {
                     item(key = "offline") {
                         NoticeCard(
                             Icons.Rounded.CloudOff,
-                            "Online features are off. Turn them on in Settings to search AutoEq.",
+                            stringResource(R.string.equaliser_autoeq_offline),
                         )
                     }
                 results.isEmpty() && !busy && searched ->
                     item(key = "empty") {
-                        Note(
-                            "No headphones match. Try the brand alone, or fewer words of the model."
-                        )
+                        Note(stringResource(R.string.equaliser_autoeq_none))
                     }
                 else ->
                     items(results, key = { it.id }) { device ->
                         val named = measured(device.name)
+                        val by =
+                            named.source?.let {
+                                stringResource(R.string.equaliser_measured_by, it)
+                            }
                         SettingRow(
                             title = named.headphone,
                             icon = Icons.Rounded.Headphones,
-                            supporting = named.source?.let { "Measured by $it" },
+                            supporting = by,
                             onClick = { confirming = device.id to device.name },
                             modifier = Modifier.testTag("correction-${device.id}"),
                         )
                     }
             }
             item(key = "import") {
-                SectionHeader("Import a profile")
-                Note(
-                    "Paste EqualizerAPO or GraphicEQ text. Parametric filters load as bands; a GraphicEQ line is fitted onto bands."
-                )
+                SectionHeader(stringResource(R.string.equaliser_import))
+                Note(stringResource(R.string.equaliser_import_note))
                 Field(
                     value = model.profileName,
                     onValueChange = { model.profileName = it },
-                    label = "Profile name",
+                    label = stringResource(R.string.equaliser_import_name),
                     modifier = Modifier.testTag("import-name"),
                 )
                 OutlinedTextField(
                     value = model.profileText,
                     onValueChange = { model.profileText = it },
-                    label = { Text("Profile text") },
-                    placeholder = { Text(PROFILE_EXAMPLE) },
+                    label = { Text(stringResource(R.string.equaliser_import_text)) },
+                    placeholder = { Text(stringResource(R.string.equaliser_import_example)) },
                     minLines = 4,
                     maxLines = 10,
                     shape = MaterialTheme.shapes.large,
@@ -281,7 +286,7 @@ fun HeadphoneCorrectionScreen() {
                         enabled = model.profileText.isNotBlank(),
                         modifier = Modifier.testTag("import-apply"),
                     ) {
-                        Text("Apply profile")
+                        Text(stringResource(R.string.equaliser_import_apply))
                     }
                 }
             }
@@ -289,10 +294,9 @@ fun HeadphoneCorrectionScreen() {
     }
     confirming?.let { (id, name) ->
         ConfirmDialog(
-            title = "Replace the curve?",
-            text =
-                "Apply ${measured(name).headphone}? It replaces the current curve and turns the equaliser on.",
-            confirm = "Apply",
+            title = stringResource(R.string.equaliser_replace_title),
+            text = stringResource(R.string.equaliser_replace_text, measured(name).headphone),
+            confirm = stringResource(R.string.equaliser_apply),
             onConfirm = { model.apply(AutoEqDevice(id, name)) },
             onDismiss = { confirming = null },
             icon = Icons.Rounded.Headphones,

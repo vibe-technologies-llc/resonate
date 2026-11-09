@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -75,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import org.resonate.android.R
 import org.resonate.android.nativecore.LyricSheet
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
@@ -119,18 +121,20 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
             loading && shown == null -> LoadingIndicator()
             shown == null && unread == track.id ->
                 NoLyrics(
-                    "Lyrics could not be read",
-                    detail = "Try again to ask for them once more.",
-                    action = "Try again",
+                    stringResource(R.string.lyrics_unread),
+                    detail = stringResource(R.string.lyrics_unread_detail),
+                    action = stringResource(R.string.lyrics_try_again),
                     onAction = { features.loadLyrics(track.id, refresh = true) },
                 )
             shown == null ->
                 NoLyrics(
-                    "No lyrics for this song",
+                    stringResource(R.string.lyrics_none),
                     detail =
-                        if (online) "Saved lyrics work offline, and none were found online for this song."
-                        else "Saved lyrics work offline. Turn on online features to search for more.",
-                    action = if (online) "Search again" else null,
+                        stringResource(
+                            if (online) R.string.lyrics_none_online
+                            else R.string.lyrics_none_offline
+                        ),
+                    action = if (online) stringResource(R.string.lyrics_search_again) else null,
                     onAction = { features.loadLyrics(track.id, refresh = true) },
                 )
             else -> LyricLines(track, shown, style)
@@ -234,7 +238,7 @@ private fun LyricLines(track: Track, sheet: LyricSheet, style: TextStyle) {
             ) {
                 Icon(Icons.Rounded.MyLocation, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("Follow lyrics")
+                Text(stringResource(R.string.lyrics_follow))
             }
         }
     }
@@ -254,14 +258,19 @@ private fun LyricLine(
     val lit = look.tone == LineTone.LIT
     val plain = look.tone == LineTone.PLAIN
     val spec = if (reduced) snap<Float>() else tween<Float>(350)
-    val alpha by animateFloatAsState(if (lit || plain) 1f else QUIET_ALPHA, spec, label = "line alpha")
-    val scale by animateFloatAsState(if (lit || plain) 1f else RESTING_SCALE, spec, label = "line scale")
+    val alpha by
+        animateFloatAsState(if (lit || plain) 1f else QUIET_ALPHA, spec, label = "lineAlpha")
+    val scale by
+        animateFloatAsState(if (lit || plain) 1f else RESTING_SCALE, spec, label = "lineScale")
+
+    val playFromHere = stringResource(R.string.lyrics_play_from_line)
+    val currentLine = stringResource(R.string.lyrics_current_line)
     val ink = LocalContentColor.current
     val clickable =
         if (onSeek != null)
             Modifier.clickable(
                 role = Role.Button,
-                onClickLabel = "Play from this line",
+                onClickLabel = playFromHere,
                 onClick = onSeek,
             )
         else Modifier
@@ -269,7 +278,8 @@ private fun LyricLine(
         Modifier.fillMaxWidth()
             .clip(MaterialTheme.shapes.large)
             .then(clickable)
-            .semantics(mergeDescendants = true) { if (lit) stateDescription = "Current line" }
+            .semantics(mergeDescendants = true) { if (lit) stateDescription = currentLine }
+
             .padding(vertical = if (blank) 4.dp else 10.dp, horizontal = 8.dp)
     ) {
         Column(

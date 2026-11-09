@@ -1,9 +1,11 @@
 package org.resonate.android.ui.components
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
@@ -25,6 +27,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -32,10 +35,11 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.zIndex
-import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.flow.collectLatest
+import org.resonate.android.R
+import org.resonate.android.Words
 
 @Stable
 class Reorder<T>(
@@ -176,26 +180,27 @@ fun LazyItemScope.reorderable(reorder: Reorder<*>, key: Any): Modifier {
 }
 
 fun Modifier.reorderActions(
+    words: Words,
     title: String,
-    removal: String,
+    @StringRes removal: Int,
     onRemove: () -> Unit,
     onMoveUp: (() -> Unit)?,
     onMoveDown: (() -> Unit)?,
 ): Modifier = semantics {
     customActions =
         listOfNotNull(
-            CustomAccessibilityAction("Remove $title from $removal") {
+            CustomAccessibilityAction(words.string(removal, title)) {
                 onRemove()
                 true
             },
             onMoveUp?.let { up ->
-                CustomAccessibilityAction("Move $title up") {
+                CustomAccessibilityAction(words.string(R.string.reorder_move_up, title)) {
                     up()
                     true
                 }
             },
             onMoveDown?.let { down ->
-                CustomAccessibilityAction("Move $title down") {
+                CustomAccessibilityAction(words.string(R.string.reorder_move_down, title)) {
                     down()
                     true
                 }
@@ -205,6 +210,8 @@ fun Modifier.reorderActions(
 
 @Composable
 fun DragHandle(reorder: Reorder<*>, key: Any, title: String) {
+    val described = stringResource(R.string.reorder_handle, title)
+    val standing = stringResource(R.string.reorder_handle_state)
     Icon(
         Icons.Rounded.DragHandle,
         contentDescription = null,
@@ -213,8 +220,8 @@ fun DragHandle(reorder: Reorder<*>, key: Any, title: String) {
             Modifier.padding(12.dp)
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Reorder $title"
-                    stateDescription = "Drag, or use the row's actions to move it"
+                    contentDescription = described
+                    stateDescription = standing
                 }
                 .draggable(
                     orientation = Orientation.Vertical,

@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -24,7 +24,6 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.ui.window.PopupProperties
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.FilterChip
@@ -36,10 +35,10 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,21 +51,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.albumOwner
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.words
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -75,6 +78,7 @@ fun FilterSheet(model: LibraryViewModel, initial: TrackFilter, onDismiss: () -> 
     val scope = rememberCoroutineScope()
     val genres by model.genres.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf(initial) }
+    val words = words()
     val close: (() -> Unit) -> Unit = { then ->
         scope.launch { state.hide() }.invokeOnCompletion {
             then()
@@ -90,46 +94,73 @@ fun FilterSheet(model: LibraryViewModel, initial: TrackFilter, onDismiss: () -> 
         ) {
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 Text(
-                    "Filter and sort",
+                    stringResource(R.string.library_filter_title),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(horizontal = 24.dp).semantics { heading() },
                 )
-                SheetSection("Sort by")
+                SheetSection(stringResource(R.string.library_filter_sort_by))
                 ChoiceChips(
                     TrackOrder.entries,
                     selected = draft.order,
-                    label = { it.label },
+                    label = { words.string(it.label) },
                     onSelect = { draft = draft.copy(order = it) },
                 )
-                SwitchRow(Icons.Rounded.SwapVert, "Descending order", draft.descending) {
+                SwitchRow(
+                    Icons.Rounded.SwapVert,
+                    stringResource(R.string.library_filter_descending),
+                    draft.descending,
+                ) {
                     draft = draft.copy(descending = it)
                 }
                 HorizontalDivider(Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp))
-                SwitchRow(Icons.Rounded.Favorite, "Favourites only", draft.favourites) {
+                SwitchRow(
+                    Icons.Rounded.Favorite,
+                    stringResource(R.string.library_filter_favourites_only),
+                    draft.favourites,
+                ) {
                     draft = draft.copy(favourites = it)
                 }
-                SwitchRow(Icons.Rounded.FiberNew, "Never played", draft.unplayed) {
+                SwitchRow(
+                    Icons.Rounded.FiberNew,
+                    stringResource(R.string.library_filter_unplayed),
+                    draft.unplayed,
+                ) {
                     draft = draft.copy(unplayed = it)
                 }
-                SheetSection("From")
+                SheetSection(stringResource(R.string.library_filter_from))
                 Column(
                     Modifier.padding(horizontal = Sizes.gutter),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    SuggestingField("Artist", draft.artist, { songs -> songs.map { it.artist }.asSequence() + songs.map { it.albumOwner }.asSequence() }) {
+                    SuggestingField(
+                        stringResource(R.string.library_order_artist),
+                        draft.artist,
+                        { songs ->
+                            songs.map { it.artist }.asSequence() +
+                                songs.map { it.albumOwner }.asSequence()
+                        },
+                    ) {
                         draft = draft.copy(artist = it)
                     }
-                    SuggestingField("Album", draft.album, { songs -> songs.map { it.album }.asSequence() }) {
+                    SuggestingField(
+                        stringResource(R.string.library_order_album),
+                        draft.album,
+                        { songs -> songs.map { it.album }.asSequence() },
+                    ) {
                         draft = draft.copy(album = it)
                     }
                     if (genres.size > GENRE_CHIPS_AT_MOST) {
-                        SuggestingField("Genre", draft.genre, { songs -> songs.map { it.genre }.asSequence() }) {
+                        SuggestingField(
+                            stringResource(R.string.library_filter_genre),
+                            draft.genre,
+                            { songs -> songs.map { it.genre }.asSequence() },
+                        ) {
                             draft = draft.copy(genre = it)
                         }
                     }
                 }
                 if (genres.isNotEmpty() && genres.size <= GENRE_CHIPS_AT_MOST) {
-                    SheetSection("Genre")
+                    SheetSection(stringResource(R.string.library_filter_genre))
                     ChoiceChips(
                         genres,
                         selected = genres.firstOrNull { it.equals(draft.genre.trim(), ignoreCase = true) },
@@ -137,10 +168,14 @@ fun FilterSheet(model: LibraryViewModel, initial: TrackFilter, onDismiss: () -> 
                         onSelect = { genre -> draft = draft.copy(genre = if (draft.genre == genre) "" else genre) },
                     )
                 }
-                SheetSection("Minimum sample rate")
-                ChoiceChips(sampleRates, draft.minimumRate, ::rateLabel) { draft = draft.copy(minimumRate = it) }
-                SheetSection("Minimum bit depth")
-                ChoiceChips(bitDepths, draft.minimumBits, ::depthLabel) { draft = draft.copy(minimumBits = it) }
+                SheetSection(stringResource(R.string.library_filter_minimum_rate))
+                ChoiceChips(sampleRates, draft.minimumRate, { rateLabel(words, it) }) {
+                    draft = draft.copy(minimumRate = it)
+                }
+                SheetSection(stringResource(R.string.library_filter_minimum_bits))
+                ChoiceChips(bitDepths, draft.minimumBits, { depthLabel(words, it) }) {
+                    draft = draft.copy(minimumBits = it)
+                }
                 Spacer(Modifier.height(16.dp))
             }
             HorizontalDivider()
@@ -148,12 +183,14 @@ fun FilterSheet(model: LibraryViewModel, initial: TrackFilter, onDismiss: () -> 
                 Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, androidx.compose.ui.Alignment.End),
             ) {
-                TextButton(onClick = { close(model::clearFilter) }) { Text("Clear all") }
+                TextButton(onClick = { close(model::clearFilter) }) {
+                    Text(stringResource(R.string.library_filter_clear_all))
+                }
                 Button(
                     onClick = { close { model.applyFilter(draft) } },
                     modifier = Modifier.testTag("apply-filters"),
                 ) {
-                    Text("Show songs")
+                    Text(stringResource(R.string.library_filter_show_songs))
                 }
             }
         }

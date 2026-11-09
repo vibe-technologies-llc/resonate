@@ -1,54 +1,67 @@
 package org.resonate.android.ui.settings
 
 import java.util.Locale
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncTransfer
 import org.resonate.android.nativecore.SyncTransferState
 import org.resonate.android.nativecore.SyncedDevice
-import org.resonate.android.ui.counted
-
-const val BACKGROUND_SYNC_SAYS =
-    "Catch up every 15 minutes while a network is up, and finish what is on its way after you leave"
 
 private fun SyncStatus?.others(): List<SyncedDevice> = this?.devices.orEmpty().filter { !it.thisDevice }
 
-fun syncHeadline(status: SyncStatus?, config: SyncConfig, online: Boolean): String {
-    if (!config.enabled) return "Off"
-    if (!online && !config.nearbyOnly) return "Waiting for online features"
+fun syncHeadline(words: Words, status: SyncStatus?, config: SyncConfig, online: Boolean): String {
+    if (!config.enabled) return words.string(R.string.sync_headline_off)
+    if (!online && !config.nearbyOnly) return words.string(R.string.sync_headline_waiting_online)
     val nearby = status.others().any { it.nearby }
     return when (status?.standing) {
-        null -> "Starting…"
-        SyncStanding.OFF -> "Off"
-        SyncStanding.CONNECTING -> "Connecting…"
-        SyncStanding.REFUSED -> "Refused"
-        SyncStanding.UNREACHABLE -> if (nearby) "Catching up" else "Not syncing"
-        SyncStanding.NEARBY -> if (nearby) "Catching up" else "Looking for devices"
+        null -> words.string(R.string.sync_starting)
+        SyncStanding.OFF -> words.string(R.string.sync_headline_off)
+        SyncStanding.CONNECTING -> words.string(R.string.sync_headline_connecting)
+        SyncStanding.REFUSED -> words.string(R.string.sync_headline_refused)
+        SyncStanding.UNREACHABLE ->
+            words.string(
+                if (nearby) R.string.sync_headline_catching_up
+                else R.string.sync_headline_not_syncing
+            )
+        SyncStanding.NEARBY ->
+            words.string(
+                if (nearby) R.string.sync_headline_catching_up else R.string.sync_headline_looking
+            )
         SyncStanding.CONNECTED ->
-            if (status.owed > 0u) "Sending ${counted(status.owed, "change")}" else "Up to date"
+            if (status.owed > 0u) {
+                val owed = status.owed.toInt()
+                words.plural(R.plurals.sync_headline_sending, owed, owed)
+            } else {
+                words.string(R.string.sync_headline_up_to_date)
+            }
     }
 }
 
-fun syncStanding(status: SyncStatus?, config: SyncConfig, online: Boolean): String {
-    if (!config.enabled) return "Playlists, favourites and history follow you across devices"
-    if (!online && !config.nearbyOnly) return "Turn on online features, or sync only on this network"
+fun syncStanding(words: Words, status: SyncStatus?, config: SyncConfig, online: Boolean): String {
+    if (!config.enabled) return words.string(R.string.sync_standing_off)
+    if (!online && !config.nearbyOnly) return words.string(R.string.sync_standing_offline)
     val others = status.others()
     val nearby = others.count { it.nearby }
     val reached = others.count { it.online }
     return when (status?.standing) {
         SyncStanding.CONNECTED ->
-            if (reached == 0) "No other device online" else "${counted(reached, "device")} online"
+            if (reached == 0) words.string(R.string.sync_standing_none_online)
+            else words.plural(R.plurals.sync_standing_online, reached, reached)
         SyncStanding.NEARBY ->
-            if (nearby == 0) "Looking on this network"
-            else "${counted(nearby, "device")} on this network"
+            if (nearby == 0) words.string(R.string.sync_standing_looking_nearby)
+            else words.plural(R.plurals.sync_standing_nearby, nearby, nearby)
         SyncStanding.UNREACHABLE ->
-            if (nearby == 0) "Can't reach the server" else "Server unreachable · $nearby on this network"
-        SyncStanding.REFUSED -> "The server refused this device"
+            if (nearby == 0) words.string(R.string.sync_standing_unreachable)
+            else words.string(R.string.sync_standing_unreachable_nearby, nearby)
+        SyncStanding.REFUSED -> words.string(R.string.sync_standing_refused)
         SyncStanding.CONNECTING ->
-            if (nearby == 0) "Reaching the server" else "Reaching the server · $nearby on this network"
+            if (nearby == 0) words.string(R.string.sync_standing_reaching)
+            else words.string(R.string.sync_standing_reaching_nearby, nearby)
         SyncStanding.OFF,
-        null -> "Starting…"
+        null -> words.string(R.string.sync_starting)
     }
 }
 
@@ -60,41 +73,53 @@ fun orderedDevices(devices: List<SyncedDevice>): List<SyncedDevice> =
             .thenBy { it.name.lowercase(Locale.ROOT) }
     )
 
-fun deviceState(device: SyncedDevice): String =
-    when {
-        device.thisDevice -> "This device"
-        device.online && device.nearby -> "Online · on this network"
-        device.online -> "Online"
-        device.nearby -> "On this network"
-        else -> "Offline"
-    }
+fun deviceState(words: Words, device: SyncedDevice): String =
+    words.string(
+        when {
+            device.thisDevice -> R.string.sync_device_this
+            device.online && device.nearby -> R.string.sync_device_online_nearby
+            device.online -> R.string.sync_device_online
+            device.nearby -> R.string.sync_device_nearby
+            else -> R.string.sync_device_offline
+        }
+    )
 
 fun mayForget(device: SyncedDevice): Boolean = !device.thisDevice && !device.online
 
 private fun megabytes(bytes: ULong): String =
     String.format(Locale.getDefault(), "%.1f", bytes.toDouble() / 1_048_576.0)
 
-fun transferLine(transfer: SyncTransfer): String =
+fun transferLine(words: Words, transfer: SyncTransfer): String =
     listOfNotNull(
             transfer.artist.takeIf { it.isNotBlank() },
-            transfer.from.takeIf { it.isNotBlank() }?.let { "from $it" },
+            transfer.from
+                .takeIf { it.isNotBlank() }
+                ?.let { words.string(R.string.sync_transfer_from, it) },
             when (transfer.state) {
-                SyncTransferState.WAITING -> "Waiting"
-                SyncTransferState.FAILED -> "Failed"
-                SyncTransferState.LANDED -> "Kept"
+                SyncTransferState.WAITING -> words.string(R.string.sync_transfer_waiting)
+                SyncTransferState.FAILED -> words.string(R.string.sync_transfer_failed)
+                SyncTransferState.LANDED -> words.string(R.string.sync_transfer_kept)
                 SyncTransferState.MOVING ->
                     if (transfer.size > 0uL)
-                        "${megabytes(minOf(transfer.received, transfer.size))} of ${megabytes(transfer.size)} MB"
+                        words.string(
+                            R.string.sync_transfer_megabytes,
+                            megabytes(minOf(transfer.received, transfer.size)),
+                            megabytes(transfer.size),
+                        )
                     else null
             },
         )
         .joinToString(" · ")
 
-fun transfersHeader(downloading: UInt, waiting: UInt): String =
+fun transfersHeader(words: Words, downloading: UInt, waiting: UInt): String =
     listOfNotNull(
-            "Transfers",
-            "$downloading downloading".takeIf { downloading > 0u },
-            "$waiting waiting".takeIf { waiting > 0u },
+            words.string(R.string.sync_transfers),
+            words
+                .plural(R.plurals.sync_transfers_downloading, downloading.toInt(), downloading.toInt())
+                .takeIf { downloading > 0u },
+            words
+                .plural(R.plurals.sync_transfers_waiting, waiting.toInt(), waiting.toInt())
+                .takeIf { waiting > 0u },
         )
         .joinToString(" · ")
 

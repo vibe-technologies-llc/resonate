@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
@@ -65,8 +66,8 @@ class LibraryLogicTest {
             listOf(FilterPart.GENRE, FilterPart.RATE, FilterPart.DEPTH, FilterPart.FAVOURITES, FilterPart.UNPLAYED),
             narrowed.parts(),
         )
-        assertEquals("96 kHz or more", narrowed.label(FilterPart.RATE))
-        assertEquals("24 bit or more", narrowed.label(FilterPart.DEPTH))
+        assertEquals("96 kHz or more", narrowed.label(English, FilterPart.RATE))
+        assertEquals("24 bit or more", narrowed.label(English, FilterPart.DEPTH))
         assertEquals(
             listOf(FilterPart.GENRE, FilterPart.DEPTH, FilterPart.FAVOURITES, FilterPart.UNPLAYED),
             narrowed.without(FilterPart.RATE).parts(),
@@ -86,7 +87,10 @@ class LibraryLogicTest {
     fun anOrderOtherThanTitleOrDescendingCounts() {
         assertTrue(plain.copy(order = TrackOrder.ADDED).ordered)
         assertTrue(plain.copy(descending = true).ordered)
-        assertEquals("Most played, descending", plain.copy(order = TrackOrder.PLAYS, descending = true).orderLabel())
+        assertEquals(
+            "Most played, descending",
+            plain.copy(order = TrackOrder.PLAYS, descending = true).orderLabel(English),
+        )
     }
 
     @Test
@@ -199,16 +203,16 @@ class LibraryLogicTest {
     fun theSummaryCountsSongsAndLength() {
         val tracks = listOf(song(1uL, durationMs = 300_000uL), song(2uL, durationMs = 300_000uL))
 
-        assertEquals("2019 · 2 songs · 10 min", collectionSummary("2019", tracks = tracks))
-        assertEquals("0 songs", collectionSummary(null, tracks = emptyList()))
+        assertEquals("2019 · 2 songs · 10 min", collectionSummary(English, "2019", tracks = tracks))
+        assertEquals("0 songs", collectionSummary(English, null, tracks = emptyList()))
     }
 
     @Test
     fun theGreetingFollowsTheHour() {
-        assertEquals("Good morning", greeting(8))
-        assertEquals("Good afternoon", greeting(13))
-        assertEquals("Good evening", greeting(21))
-        assertEquals("Good evening", greeting(2))
+        assertEquals("Good morning", greeting(English, 8))
+        assertEquals("Good afternoon", greeting(English, 13))
+        assertEquals("Good evening", greeting(English, 21))
+        assertEquals("Good evening", greeting(English, 2))
     }
 
     @Test

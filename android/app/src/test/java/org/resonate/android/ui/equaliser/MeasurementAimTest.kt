@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.BuiltInTarget
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserImport
@@ -71,19 +72,19 @@ class MeasurementAimTest {
     fun theFitIsToldWithItsBandsItsTargetAndTheErrorBeforeAndAfter() {
         assertEquals(
             "Fitted 7 bands toward Harman over-ear 2018: off by 5.1 dB before, 1.2 dB after.",
-            fitSentence(fit(7u, 5.14f, 1.2f), "Harman over-ear 2018"),
+            fitSentence(English, fit(7u, 5.14f, 1.2f), "Harman over-ear 2018"),
         )
         assertEquals(
             "Fitted 1 band toward Flat: off by 2.0 dB before, 0.5 dB after.",
-            fitSentence(fit(1u, 2f, 0.5f), "Flat"),
+            fitSentence(English, fit(1u, 2f, 0.5f), "Flat"),
         )
     }
 
     @Test
     fun linesThatWereNoPointAreMentionedOnlyWhenThereWereSome() {
-        assertTrue(fitSentence(fit(3u, 2f, 1f, 1u), "Flat").endsWith(" One line of the file was passed over."))
-        assertTrue(fitSentence(fit(3u, 2f, 1f, 12u), "Flat").endsWith(" 12 lines of the file were passed over."))
-        assertFalse(fitSentence(fit(3u, 2f, 1f), "Flat").contains("passed over"))
+        assertTrue(fitSentence(English, fit(3u, 2f, 1f, 1u), "Flat").endsWith(" One line of the file was passed over."))
+        assertTrue(fitSentence(English, fit(3u, 2f, 1f, 12u), "Flat").endsWith(" 12 lines of the file were passed over."))
+        assertFalse(fitSentence(English, fit(3u, 2f, 1f), "Flat").contains("passed over"))
     }
 
     @Test

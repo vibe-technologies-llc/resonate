@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,6 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.WantedSong
@@ -47,17 +51,17 @@ import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TitleSize
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.settings.SwitchRow
+import org.resonate.android.words
 
-fun wantedSummary(songs: List<WantedSong>): String? {
+fun wantedSummary(words: Words, songs: List<WantedSong>): String? {
     if (songs.isEmpty()) return null
     val held = songs.count { it.held }
-    val saved = counted(songs.size, "song")
-    return if (held == 0) saved else "$saved · $held in your library"
+    val saved = words.plural(R.plurals.count_songs, songs.size, songs.size)
+    return if (held == 0) saved else words.string(R.string.wanted_summary_held, saved, held)
 }
 
 class WantedViewModel(private val resonate: Resonate) : ViewModel() {
@@ -106,12 +110,13 @@ private fun WantedControls(
     val ready by downloads.ready.collectAsStateWithLifecycle()
     Column {
         SwitchRow(
-            title = "Download saved songs automatically",
+            title = stringResource(R.string.wanted_automatic),
             supporting =
                 when {
-                    !automatic -> "Saved songs wait until you download them"
-                    remembered == null -> "Remember a download folder to start"
-                    else -> "Matches are fetched into ${remembered?.name} on an unmetered network while Resonate is open"
+                    !automatic -> stringResource(R.string.wanted_automatic_off)
+                    remembered == null -> stringResource(R.string.wanted_automatic_no_folder)
+                    else ->
+                        stringResource(R.string.wanted_automatic_into, remembered?.name.orEmpty())
                 },
             checked = automatic,
             onCheckedChange = downloads::automatically,
@@ -122,7 +127,7 @@ private fun WantedControls(
                 onClick = downloads::forgetFolder,
                 modifier = Modifier.padding(horizontal = 8.dp).testTag("forget-download-folder"),
             ) {
-                Text("Forget ${remembered?.name}")
+                Text(stringResource(R.string.wanted_forget_folder, remembered?.name.orEmpty()))
             }
         }
         if (ready && missing.isNotEmpty()) {
@@ -130,7 +135,13 @@ private fun WantedControls(
                 onClick = { downloads.request(missing) { choose(missing) } },
                 modifier = Modifier.padding(horizontal = Sizes.gutter).testTag("download-missing"),
             ) {
-                Text("Download ${counted(missing.size, "missing song")}")
+                Text(
+                    pluralStringResource(
+                        R.plurals.wanted_download_missing,
+                        missing.size,
+                        missing.size,
+                    )
+                )
             }
         }
     }
@@ -147,10 +158,11 @@ fun WantedScreen() {
     var acting by remember { mutableStateOf<WantedSong?>(null) }
     var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     LaunchedEffect(Unit) { model.downloads.refresh() }
+    val words = words()
 
     Page(
-        "Saved for later",
-        subtitle = songs?.let(::wantedSummary),
+        stringResource(R.string.wanted_title),
+        subtitle = songs?.let { wantedSummary(words, it) },
         size = TitleSize.MEDIUM,
     ) { padding ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -172,10 +184,10 @@ fun WantedScreen() {
                     item(key = "empty") {
                         EmptyState(
                             Icons.Outlined.BookmarkBorder,
-                            "Nothing saved for later",
+                            stringResource(R.string.wanted_empty),
                             Modifier.fillParentMaxHeight(0.8f).padding(bottom = 32.dp),
-                            detail = "Save songs from online search and find them here to download later.",
-                            action = "Search online",
+                            detail = stringResource(R.string.wanted_empty_detail),
+                            action = stringResource(R.string.wanted_search_online),
                             onAction = { navigator.selectAtRoot(Screen.Search) },
                         )
                     }
@@ -206,8 +218,8 @@ fun WantedScreen() {
                         lasting.launch {
                             val answer =
                                 sheets.snackbar.showSnackbar(
-                                    "Removed “${wanted.song.title}”",
-                                    actionLabel = "Undo",
+                                    words.string(R.string.wanted_removed, wanted.song.title),
+                                    actionLabel = words.string(R.string.wanted_undo),
                                     duration = SnackbarDuration.Long,
                                 )
                             if (answer == SnackbarResult.ActionPerformed) {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.annotation.StringRes
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -15,18 +16,25 @@ import org.resonate.android.nativecore.SyncConfig
 class ProviderAccountStore(context: Context) {
     private val storage = context.getSharedPreferences("provider-accounts", Context.MODE_PRIVATE)
     private val alias = "resonate-provider-accounts"
+    private val resources = context.resources
 
     @Synchronized
     fun readAccounts(): ProviderAccountBook {
         if (!ProviderAccountRecords.isCurrent(storage.all)) {
-            committed(ProviderAccountRecords.migration(storage.all, ::encrypt), ACCOUNTS_NOT_SAVED)
+            committed(
+                ProviderAccountRecords.migration(storage.all, ::encrypt),
+                R.string.provider_accounts_not_saved,
+            )
         }
         return ProviderAccountRecords.decode(storage.all, ::open)
     }
 
     @Synchronized
     fun writeAccounts(book: ProviderAccountBook) {
-        committed(ProviderAccountRecords.encode(book, ::encrypt, storage.all.keys), ACCOUNTS_NOT_SAVED)
+        committed(
+            ProviderAccountRecords.encode(book, ::encrypt, storage.all.keys),
+            R.string.provider_accounts_not_saved,
+        )
     }
 
     @Synchronized
@@ -55,7 +63,7 @@ class ProviderAccountStore(context: Context) {
                 "lastfm-session" to account.lastfmSession,
             )
             .forEach { (key, value) -> edit.putString(key, encrypt(value)) }
-        check(edit.commit()) { "Scrobbling accounts could not be saved" }
+        check(edit.commit()) { resources.getString(R.string.provider_scrobbling_not_saved) }
     }
 
     @Synchronized
@@ -70,7 +78,7 @@ class ProviderAccountStore(context: Context) {
                 "spotify-refresh-token" to account.refreshToken,
             )
             .forEach { (key, value) -> edit.putString(key, encrypt(value)) }
-        check(edit.commit()) { "The Spotify account could not be saved" }
+        check(edit.commit()) { resources.getString(R.string.provider_spotify_not_saved) }
     }
 
     @Synchronized fun readRecognitionKey() = decrypt("acoustid-key")
@@ -80,14 +88,14 @@ class ProviderAccountStore(context: Context) {
     @Synchronized
     fun writeAuddToken(value: String) {
         check(storage.edit().putString("audd-token", encrypt(value)).commit()) {
-            "The AudD token could not be saved"
+            resources.getString(R.string.provider_audd_not_saved)
         }
     }
 
     @Synchronized
     fun writeRecognitionKey(value: String) {
         check(storage.edit().putString("acoustid-key", encrypt(value)).commit()) {
-            "Recognition key could not be saved"
+            resources.getString(R.string.provider_recognition_not_saved)
         }
     }
 
@@ -121,7 +129,7 @@ class ProviderAccountStore(context: Context) {
                 .putBoolean("sync-everything", config.everything)
                 .putBoolean("sync-metered-allowed", config.meteredAllowed)
                 .putString("sync-control", SyncControls.spelt(config.control))
-        check(edit.commit()) { "Device sync settings could not be saved" }
+        check(edit.commit()) { resources.getString(R.string.provider_sync_not_saved) }
     }
 
     private fun key(): SecretKey {
@@ -153,12 +161,12 @@ class ProviderAccountStore(context: Context) {
             Base64.encodeToString(cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
     }
 
-    private fun committed(changes: Changes, failure: String) {
+    private fun committed(changes: Changes, @StringRes failure: Int) {
         val edit = storage.edit()
         changes.forEach { (name, value) ->
             if (value == null) edit.remove(name) else edit.putString(name, value)
         }
-        check(edit.commit()) { failure }
+        check(edit.commit()) { resources.getString(failure) }
     }
 
     private fun decrypt(name: String): String = open(storage.getString(name, null).orEmpty())
@@ -175,9 +183,5 @@ class ProviderAccountStore(context: Context) {
                 )
             }
         return String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
-    }
-
-    private companion object {
-        const val ACCOUNTS_NOT_SAVED = "Provider accounts could not be saved"
     }
 }

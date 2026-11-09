@@ -1,6 +1,8 @@
 package org.resonate.android.ui.equaliser
 
 import java.util.Locale
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.BuiltInTarget
 import org.resonate.android.nativecore.MeasurementFit
 import org.resonate.android.nativecore.MeasurementOffers
@@ -65,16 +67,13 @@ fun Aim.label(targets: List<BuiltInTarget>): String =
 fun profileNameFor(documentName: String): String =
     documentName.substringBeforeLast('.').trim().ifEmpty { documentName.trim() }
 
-fun fitSentence(fit: MeasurementFit, toward: String): String {
-    val count = if (fit.bands == 1u) "1 band" else "${fit.bands} bands"
+fun fitSentence(words: Words, fit: MeasurementFit, toward: String): String {
+    val count = words.plural(R.plurals.equaliser_fit_bands, fit.bands.toInt(), fit.bands.toInt())
     val before = String.format(Locale.ROOT, "%.1f", fit.offByDbBefore)
     val after = String.format(Locale.ROOT, "%.1f", fit.offByDbAfter)
-    val passed = fit.imported.passedOver
+    val passed = fit.imported.passedOver.toInt()
     val skipped =
-        when {
-            passed == 0u -> ""
-            passed == 1u -> " One line of the file was passed over."
-            else -> " $passed lines of the file were passed over."
-        }
-    return "Fitted $count toward $toward: off by $before dB before, $after dB after.$skipped"
+        if (passed == 0) ""
+        else " " + words.plural(R.plurals.equaliser_fit_passed_over, passed, passed)
+    return words.string(R.string.equaliser_fit_sentence, count, toward, before, after) + skipped
 }

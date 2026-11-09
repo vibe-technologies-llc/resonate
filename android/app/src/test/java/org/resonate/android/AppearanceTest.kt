@@ -33,8 +33,8 @@ class AppearanceTest {
 
     @Test
     fun wallpaper_is_named_when_no_accent_is_chosen() {
-        assertEquals("Wallpaper", Appearance().accentLabel)
-        assertEquals("Teal", Appearance(accent = Accent.TEAL).accentLabel)
+        assertEquals("Wallpaper", English.string(Appearance().accentLabel))
+        assertEquals("Teal", English.string(Appearance(accent = Accent.TEAL).accentLabel))
     }
 
     @Test

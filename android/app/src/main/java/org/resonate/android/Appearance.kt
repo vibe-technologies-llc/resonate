@@ -1,23 +1,24 @@
 package org.resonate.android
 
 import android.content.SharedPreferences
+import androidx.annotation.StringRes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-enum class ThemeMode(val label: String, val detail: String) {
-    SYSTEM("System", "Follow the phone's light and dark setting"),
-    LIGHT("Light", "Always light"),
-    DARK("Dark", "Always dark"),
+enum class ThemeMode(@StringRes val label: Int, @StringRes val detail: Int) {
+    SYSTEM(R.string.appearance_theme_system, R.string.appearance_theme_system_detail),
+    LIGHT(R.string.appearance_theme_light, R.string.appearance_theme_light_detail),
+    DARK(R.string.appearance_theme_dark, R.string.appearance_theme_dark_detail),
 }
 
-enum class Accent(val label: String, val hex: Int) {
-    MAUVE("Mauve", 0xB98EF0),
-    BLUE("Blue", 0x7CB6EA),
-    TEAL("Teal", 0x5ECFC0),
-    GREEN("Green", 0x5CCB92),
-    AMBER("Amber", 0xE4A960),
-    PEACH("Peach", 0xE8875F),
-    RED("Red", 0xE36F6F),
+enum class Accent(@StringRes val label: Int, val hex: Int) {
+    MAUVE(R.string.appearance_accent_mauve, 0xB98EF0),
+    BLUE(R.string.appearance_accent_blue, 0x7CB6EA),
+    TEAL(R.string.appearance_accent_teal, 0x5ECFC0),
+    GREEN(R.string.appearance_accent_green, 0x5CCB92),
+    AMBER(R.string.appearance_accent_amber, 0xE4A960),
+    PEACH(R.string.appearance_accent_peach, 0xE8875F),
+    RED(R.string.appearance_accent_red, 0xE36F6F),
 }
 
 data class Appearance(
@@ -28,11 +29,12 @@ data class Appearance(
     val backgroundStrength: Float = Appearance.STRENGTH_DEFAULT,
     val nowPlayingIntensity: Float = Appearance.INTENSITY_DEFAULT,
 ) {
-    val accentLabel: String
+    @get:StringRes
+    val accentLabel: Int
         get() = accent?.label ?: WALLPAPER
 
     companion object {
-        const val WALLPAPER = "Wallpaper"
+        val WALLPAPER = R.string.appearance_accent_wallpaper
         const val STRENGTH_DEFAULT = 0.7f
         const val INTENSITY_DEFAULT = 0.5f
     }

@@ -19,7 +19,7 @@ class ConnectionMetersTest {
 
     @Test
     fun theWaitingLineShowsOnlyWhileDownloadsWaitOnTheMeter() {
-        assertEquals("Waiting for a network that is not metered", DownloadPlan.meterLine(true))
-        assertNull(DownloadPlan.meterLine(false))
+        assertEquals("Waiting for a network that is not metered", DownloadPlan.meterLine(English, true))
+        assertNull(DownloadPlan.meterLine(English, false))
     }
 }

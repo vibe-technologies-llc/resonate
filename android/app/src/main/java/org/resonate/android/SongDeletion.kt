@@ -20,21 +20,19 @@ data class Deleted(
 )
 
 object DeletionSentences {
-    fun kept(count: Int): String =
-        "${plural(count, "file")} could not be deleted; " +
-            "${if (count == 1) "its folder" else "their folders"} would not let go of " +
-            if (count == 1) "it" else "them"
+    fun kept(words: Words, count: Int): String =
+        words.plural(R.plurals.deletion_files_kept, count, count)
 
-    fun deleted(tracks: List<String>): String =
-        if (tracks.size == 1) "Deleted “${tracks.single()}”" else "Deleted ${plural(tracks.size, "song")}"
+    fun deleted(words: Words, tracks: List<String>): String =
+        if (tracks.size == 1) words.string(R.string.deletion_deleted_one, tracks.single())
+        else words.plural(R.plurals.deletion_deleted_songs, tracks.size, tracks.size)
 
-    fun folded(count: Int): String =
-        "Deleted ${plural(count, "identical file")}; each song keeps one"
+    fun folded(words: Words, count: Int): String =
+        words.plural(R.plurals.deletion_folded, count, count)
 
-    fun title(titles: List<String>): String =
-        if (titles.size == 1) "Delete “${titles.single()}”?" else "Delete ${plural(titles.size, "song")}?"
-
-    private fun plural(count: Int, noun: String): String = "$count $noun${if (count == 1) "" else "s"}"
+    fun title(words: Words, titles: List<String>): String =
+        if (titles.size == 1) words.string(R.string.deletion_title_one, titles.single())
+        else words.plural(R.plurals.deletion_title_songs, titles.size, titles.size)
 }
 
 class SongDeletion(
@@ -47,7 +45,12 @@ class SongDeletion(
             val removed = removeFiles(tracks)
             if (removed.gone.isNotEmpty())
                 library.native().forgetDeletedSongs(removed.gone.map { it.id })
-            Deleted(removed.gone.size, removed.kept, 0, removed.gone.map { it.shownTitle })
+            Deleted(
+                removed.gone.size,
+                removed.kept,
+                0,
+                removed.gone.map { it.shownTitle(library.words) },
+            )
         }
 
     suspend fun foldCopies(sets: List<IdenticalSongs>): Deleted =
@@ -90,7 +93,9 @@ class SongDeletion(
         val own = OpenedNames.localName(uri)
         if (own != null) {
             File(File(context.filesDir, OpenedNames.FOLDER), own).let {
-                check(!it.exists() || it.delete()) { "The song could not be removed" }
+                check(!it.exists() || it.delete()) {
+                    context.getString(R.string.deletion_song_not_removed)
+                }
             }
             return
         }

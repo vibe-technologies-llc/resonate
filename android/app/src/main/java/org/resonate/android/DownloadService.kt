@@ -33,7 +33,11 @@ class DownloadService : Service() {
         super.onCreate()
         library.retain()
         notifications.createNotificationChannel(
-            NotificationChannel("downloads", "Music downloads", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(
+                "downloads",
+                getString(R.string.transfer_notification_channel),
+                NotificationManager.IMPORTANCE_LOW,
+            )
         )
     }
 
@@ -103,20 +107,35 @@ class DownloadService : Service() {
         if (!library.features.downloading.value) {
             val moving = library.features.syncStatus.value?.moving ?: 0u
             return builder
-                .setContentTitle("Resonate · device sync")
+                .setContentTitle(getString(R.string.transfer_notification_sync_title))
                 .setContentText(
                     if (moving > 0u)
-                        "Moving $moving ${if (moving == 1u) "song" else "songs"} between your devices"
-                    else "Keeping songs from your devices"
+                        resources.getQuantityString(
+                            R.plurals.transfer_notification_moving,
+                            moving.toInt(),
+                            moving.toInt(),
+                        )
+                    else getString(R.string.transfer_notification_keeping)
                 )
                 .build()
         }
         return builder
-            .setContentTitle("Resonate · music download")
+            .setContentTitle(getString(R.string.transfer_notification_title))
             .setContentText(
-                "${library.features.downloadStatus.value.orEmpty()} · ${library.features.downloadedBytes.value / 1024uL} KiB"
+                getString(
+                    R.string.transfer_notification_progress,
+                    library.features.downloadStatus.value.orEmpty(),
+                    (library.features.downloadedBytes.value / 1024uL).toLong(),
+                )
             )
-            .addAction(Notification.Action.Builder(null, "Cancel", cancel).build())
+            .addAction(
+                Notification.Action.Builder(
+                        null,
+                        getString(R.string.transfer_notification_cancel),
+                        cancel,
+                    )
+                    .build()
+            )
             .build()
     }
 }

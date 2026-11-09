@@ -71,7 +71,12 @@ class Together(
 
     fun sharingNeedsSync(): String? {
         val config = syncConfig.value ?: return null
-        return TogetherWords.sharingNeedsSync(config.enabled, config.nearbyOnly, online.value)
+        return TogetherWords.sharingNeedsSync(
+            library.words,
+            config.enabled,
+            config.nearbyOnly,
+            online.value,
+        )
     }
 
     fun arriving(link: String, party: Boolean) {
@@ -80,7 +85,7 @@ class Together(
 
     fun arrive(link: String) = work { native ->
         if (invitationKind(link) == null) {
-            library.notice(TogetherWords.NOT_AN_INVITATION)
+            library.notice(R.string.together_not_an_invitation)
         } else {
             withTimeoutOrNull(INVITATION_WAITS_FOR_SYNC_AT_MOST_MS) { syncApplied.first { it } }
             accept(native, link)
@@ -89,7 +94,7 @@ class Together(
 
     fun paste(clipboard: String?) {
         if (clipboard == null || invitationKind(clipboard) == null) {
-            library.notice(TogetherWords.NOTHING_TO_PASTE)
+            library.notice(R.string.together_nothing_to_paste)
         } else {
             arrive(clipboard)
         }
@@ -104,9 +109,9 @@ class Together(
                 return
             } catch (refused: NativeFailure.Sync) {
                 Log.w("Resonate", "An invitation was not taken up", refused)
-                library.notice(TogetherWords.LINK_NOT_OPENED)
+                library.notice(R.string.together_link_not_opened)
                 return
-            } ?: return library.notice(TogetherWords.NOT_AN_INVITATION)
+            } ?: return library.notice(R.string.together_not_an_invitation)
 
         when (kind) {
             InvitationKind.PARTY -> {
@@ -143,7 +148,7 @@ class Together(
 
     fun playNext(request: Int) = work { native ->
         if (!native.partyPlayNext(request.toUInt()))
-            library.notice(TogetherWords.NOT_FOUND_TO_PLAY_NEXT)
+            library.notice(R.string.together_not_found_to_play_next)
         mutableParty.value = native.partyShown()
     }
 

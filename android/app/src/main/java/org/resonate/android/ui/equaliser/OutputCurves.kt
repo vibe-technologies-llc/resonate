@@ -13,10 +13,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
 import org.resonate.android.OutputRoute
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
@@ -32,8 +35,9 @@ fun isBound(route: OutputRoute?, bound: List<OutputRoute>): Boolean =
 fun keptForOthers(route: OutputRoute?, bound: List<OutputRoute>): List<OutputRoute> =
     bound.filter { it.id != route?.id }
 
-fun curveScope(route: OutputRoute?, bound: List<OutputRoute>): String =
-    if (route != null && isBound(route, bound)) route.name else "Every output"
+fun curveScope(words: Words, route: OutputRoute?, bound: List<OutputRoute>): String =
+    if (route != null && isBound(route, bound)) route.name
+    else words.string(R.string.equaliser_every_output)
 
 class OutputCurvesViewModel(resonate: Resonate) : ViewModel() {
     private val library = resonate.library
@@ -53,19 +57,15 @@ fun OutputCurvesScreen() {
     var forgetting by rememberSaveable { mutableStateOf<String?>(null) }
     val others = keptForOthers(route, bound)
     val asked = others.firstOrNull { it.id == forgetting }
-    Page("Curves for other outputs") { padding ->
+    Page(stringResource(R.string.equaliser_other_curves)) { padding ->
         SettingsList(padding, Modifier.testTag("output-curves-list")) {
-            item(key = "note") {
-                Note(
-                    "Each comes back when that output plays. Forgetting one lets it use the shared curve."
-                )
-            }
+            item(key = "note") { Note(stringResource(R.string.equaliser_other_curves_note)) }
             if (others.isEmpty()) {
                 item(key = "none") {
                     EmptyState(
                         Icons.Rounded.SpeakerGroup,
-                        "No other output keeps a curve",
-                        detail = "Turn on Only for an output on the equaliser while it plays.",
+                        stringResource(R.string.equaliser_other_curves_none),
+                        detail = stringResource(R.string.equaliser_other_curves_none_detail),
                     )
                 }
             }
@@ -75,7 +75,10 @@ fun OutputCurvesScreen() {
                     icon = Icons.Rounded.SpeakerGroup,
                     trailing = {
                         IconButton(onClick = { forgetting = other.id }) {
-                            Icon(Icons.Rounded.DeleteOutline, "Forget the curve for ${other.name}")
+                            Icon(
+                                Icons.Rounded.DeleteOutline,
+                                stringResource(R.string.equaliser_forget_curve_for, other.name),
+                            )
                         }
                     },
                     modifier = Modifier.testTag("kept-curve"),
@@ -85,10 +88,9 @@ fun OutputCurvesScreen() {
     }
     if (asked != null) {
         ConfirmDialog(
-            title = "Forget the curve for ${asked.name}?",
-            text =
-                "That output will use the shared curve. You can keep a curve for it again later.",
-            confirm = "Forget",
+            title = stringResource(R.string.equaliser_forget_curve_title, asked.name),
+            text = stringResource(R.string.equaliser_forget_curve_text),
+            confirm = stringResource(R.string.equaliser_forget),
             onConfirm = { model.forget(asked) },
             onDismiss = { forgetting = null },
             icon = Icons.Rounded.DeleteOutline,

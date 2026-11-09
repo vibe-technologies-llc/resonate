@@ -39,18 +39,18 @@ class TogetherWordsTest {
 
     @Test
     fun aConnectionSaysNothingOnlyWhileHere() {
-        assertNull(TogetherWords.connection(PartyConnection.HERE))
-        assertEquals("Reaching the server…", TogetherWords.connection(PartyConnection.CONNECTING))
-        assertEquals("Lost the server; trying again…", TogetherWords.connection(PartyConnection.RECONNECTING))
-        assertEquals("The party is over", TogetherWords.connection(PartyConnection.ENDED))
+        assertNull(TogetherWords.connection(English, PartyConnection.HERE))
+        assertEquals("Reaching the server…", TogetherWords.connection(English, PartyConnection.CONNECTING))
+        assertEquals("Lost the server; trying again…", TogetherWords.connection(English, PartyConnection.RECONNECTING))
+        assertEquals("The party is over", TogetherWords.connection(English, PartyConnection.ENDED))
         assertEquals(
             "That party has ended, or was never begun",
-            TogetherWords.connection(PartyConnection.NO_SUCH_PARTY),
+            TogetherWords.connection(English, PartyConnection.NO_SUCH_PARTY),
         )
-        assertEquals("The server turned that link away", TogetherWords.connection(PartyConnection.TURNED_AWAY))
+        assertEquals("The server turned that link away", TogetherWords.connection(English, PartyConnection.TURNED_AWAY))
         assertEquals(
             "The server is too old to hold parties",
-            TogetherWords.connection(PartyConnection.SERVER_TOO_OLD),
+            TogetherWords.connection(English, PartyConnection.SERVER_TOO_OLD),
         )
     }
 
@@ -80,18 +80,18 @@ class TogetherWordsTest {
             )
 
         said.forEach { (following, sentence) ->
-            assertEquals(sentence, TogetherWords.following(following))
+            assertEquals(sentence, TogetherWords.following(English, following))
         }
         assertEquals(PartyFollowing.entries.size, said.size)
     }
 
     @Test
     fun aPartysLineSaysTheConnectionFirstThenWhatThisSeatIsDoing() {
-        assertEquals("In step with the host", TogetherWords.partyLine(party))
-        assertEquals("You are hosting", TogetherWords.partyLine(party.copy(hosting = true)))
+        assertEquals("In step with the host", TogetherWords.partyLine(English, party))
+        assertEquals("You are hosting", TogetherWords.partyLine(English, party.copy(hosting = true)))
         assertEquals(
             "Reaching the server…",
-            TogetherWords.partyLine(party.copy(hosting = true, connection = PartyConnection.CONNECTING)),
+            TogetherWords.partyLine(English, party.copy(hosting = true, connection = PartyConnection.CONNECTING)),
         )
     }
 
@@ -99,23 +99,23 @@ class TogetherWordsTest {
     fun aPersonIsYouTheirNameOrSomeone() {
         val person = TogetherPerson(ByteArray(16), "Ada", isMe = false, isHost = false)
 
-        assertEquals("Ada", TogetherWords.person(person))
-        assertEquals("You", TogetherWords.person(person.copy(isMe = true)))
-        assertEquals("Someone", TogetherWords.person(person.copy(name = " ")))
+        assertEquals("Ada", TogetherWords.person(English, person))
+        assertEquals("You", TogetherWords.person(English, person.copy(isMe = true)))
+        assertEquals("Someone", TogetherWords.person(English, person.copy(name = " ")))
     }
 
     @Test
     fun aListWeMayEditIsSharedAndOneWeMayNotIsFollowed() {
-        assertEquals("Shared", TogetherWords.badge(list))
-        assertEquals("Followed", TogetherWords.badge(list.copy(mayEdit = false)))
-        assertNull(TogetherWords.badge(null))
+        assertEquals("Shared", TogetherWords.badge(English, list))
+        assertEquals("Followed", TogetherWords.badge(English, list.copy(mayEdit = false)))
+        assertNull(TogetherWords.badge(English, null))
     }
 
     @Test
     fun aFollowedListIsToldFromTheOthersWithSyncOffToo() {
-        assertEquals("Followed", TogetherWords.badge(null, followed = true))
-        assertNull(TogetherWords.badge(null, followed = false))
-        assertEquals("Shared", TogetherWords.badge(list, followed = true))
+        assertEquals("Followed", TogetherWords.badge(English, null, followed = true))
+        assertNull(TogetherWords.badge(English, null, followed = false))
+        assertEquals("Shared", TogetherWords.badge(English, list, followed = true))
         assertEquals(true, TogetherWords.mayEdit(null, followed = false))
         assertEquals(false, TogetherWords.mayEdit(null, followed = true))
         assertEquals(true, TogetherWords.mayEdit(list, followed = true))
@@ -124,19 +124,19 @@ class TogetherWordsTest {
 
     @Test
     fun aListReachedSaysNothingOfItsReach() {
-        assertNull(TogetherWords.reach(SharedPlaylistReach.REACHED))
+        assertNull(TogetherWords.reach(English, SharedPlaylistReach.REACHED))
         SharedPlaylistReach.entries.filter { it != SharedPlaylistReach.REACHED }.forEach {
-            assertTrue(TogetherWords.reach(it).orEmpty().isNotBlank())
+            assertTrue(TogetherWords.reach(English, it).orEmpty().isNotBlank())
         }
     }
 
     @Test
     fun songsNotHeldAreNamedUpToFiveAndCountedPastThat() {
-        assertNull(TogetherWords.notHeld(emptyList()))
-        assertEquals("Not in your library: A, B", TogetherWords.notHeld(listOf("A", "B")))
+        assertNull(TogetherWords.notHeld(English, emptyList()))
+        assertEquals("Not in your library: A, B", TogetherWords.notHeld(English, listOf("A", "B")))
         assertEquals(
             "Not in your library: A, B, C, D, E and 2 more",
-            TogetherWords.notHeld(listOf("A", "B", "C", "D", "E", "F", "G")),
+            TogetherWords.notHeld(English, listOf("A", "B", "C", "D", "E", "F", "G")),
         )
     }
 
@@ -144,16 +144,16 @@ class TogetherWordsTest {
     fun sharingSaysPlainlyWhatItLacks() {
         assertEquals(
             "Sharing a playlist needs device sync. Turn it on in Devices.",
-            TogetherWords.sharingNeedsSync(enabled = false, nearbyOnly = false, online = true),
+            TogetherWords.sharingNeedsSync(English, enabled = false, nearbyOnly = false, online = true),
         )
         assertEquals(
             "Nothing can be shared while sync stays on this network.",
-            TogetherWords.sharingNeedsSync(enabled = true, nearbyOnly = true, online = true),
+            TogetherWords.sharingNeedsSync(English, enabled = true, nearbyOnly = true, online = true),
         )
         assertEquals(
             "Sharing a playlist needs online features. Turn them on in Settings.",
-            TogetherWords.sharingNeedsSync(enabled = true, nearbyOnly = false, online = false),
+            TogetherWords.sharingNeedsSync(English, enabled = true, nearbyOnly = false, online = false),
         )
-        assertNull(TogetherWords.sharingNeedsSync(enabled = true, nearbyOnly = false, online = true))
+        assertNull(TogetherWords.sharingNeedsSync(English, enabled = true, nearbyOnly = false, online = true))
     }
 }

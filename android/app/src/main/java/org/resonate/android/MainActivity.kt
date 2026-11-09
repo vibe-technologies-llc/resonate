@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity(), Host {
     private val audioPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) library.features.useDownloadsAndScan()
-            else library.notice("Allow music access to read existing songs in Downloads")
+            else library.notice(R.string.main_allow_music_access)
         }
     private var consentAnswer: CompletableDeferred<Boolean>? = null
     private val mediaConsent =
@@ -168,7 +168,7 @@ class MainActivity : ComponentActivity(), Host {
         lifecycleScope.launch {
             try {
                 val found = tracks()
-                if (found.isEmpty()) library.notice("Nothing in your library matches")
+                if (found.isEmpty()) library.notice(R.string.main_nothing_matches)
                 playback.play(found)
                 library.refresh()
             } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity(), Host {
             playWhatWasOpened()
         } catch (failure: ExecutionException) {
             Log.w("Resonate", "Playback controls could not connect", failure)
-            library.notice("Playback controls could not connect")
+            library.notice(R.string.main_controls_not_connected)
         } catch (cancelled: CancellationException) {
             Log.w("Resonate", "Playback controls connection was cancelled", cancelled)
         }

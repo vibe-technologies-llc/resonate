@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.R
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
@@ -54,8 +56,8 @@ fun MissingSong(padding: PaddingValues) {
     Box(Modifier.fillMaxSize().padding(padding)) {
         EmptyState(
             Icons.Rounded.MusicOff,
-            "This song is not in the library",
-            detail = "It may have been removed or its folder is no longer shared with Resonate.",
+            stringResource(R.string.song_missing),
+            detail = stringResource(R.string.song_missing_detail),
         )
     }
 }
@@ -65,13 +67,20 @@ fun LyricsScreen(track: ULong) {
     val song = rememberSong(track)
     val resonate = LocalResonate.current
     Page(
-        title = song?.shownTitle ?: "Lyrics",
+        title = song?.shownTitle ?: stringResource(R.string.song_lyrics),
         subtitle = song?.shownArtist,
         size = TitleSize.SMALL,
         actions = {
-            IconButton(onClick = { resonate.features.loadLyrics(track, refresh = true) }, enabled = song != null) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh lyrics")
+            IconButton(
+                onClick = { resonate.features.loadLyrics(track, refresh = true) },
+                enabled = song != null,
+            ) {
+                Icon(
+                    Icons.Rounded.Refresh,
+                    contentDescription = stringResource(R.string.song_refresh_lyrics),
+                )
             }
+
         },
     ) { padding ->
         if (song == null) MissingSong(padding)

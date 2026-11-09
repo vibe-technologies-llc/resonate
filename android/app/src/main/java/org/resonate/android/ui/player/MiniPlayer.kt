@@ -45,6 +45,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -56,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import org.resonate.android.R
 import org.resonate.android.rowKey
 import org.resonate.android.ui.components.Artwork
 import org.resonate.android.ui.components.rememberTitleMaxLines
@@ -79,6 +82,7 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
         var dragged by remember { mutableFloatStateOf(0f) }
         val inset = if (short) SHORT_ARTWORK_INSET else ARTWORK_INSET
         val titleLines = rememberTitleMaxLines()
+        val openPlayer = stringResource(R.string.player_open)
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(CAPSULE_CORNER),
@@ -96,7 +100,11 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                         onDragStarted = { dragged = 0f },
                         onDragStopped = { velocity -> expansion.settle(velocity, dragged) },
                     )
-                    .clickable(role = Role.Button, onClickLabel = "Open player", onClick = expansion::expand),
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = openPlayer,
+                        onClick = expansion::expand,
+                    ),
         ) {
             Column {
                 Row(
@@ -119,7 +127,7 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                         transitionSpec = { fadeIn() togetherWith fadeOut() },
                         contentKey = { it?.rowKey },
                         modifier = Modifier.weight(1f),
-                        label = "mini titles",
+                        label = "miniTitles",
                     ) { shown ->
                         Column {
                             Text(
@@ -138,17 +146,27 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                         }
                     }
                     IconButton(onClick = model::previous) {
-                        Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous")
+                        Icon(
+                            Icons.Rounded.SkipPrevious,
+                            contentDescription = stringResource(R.string.player_previous),
+                        )
                     }
                     FilledIconButton(onClick = model::toggle) {
                         Icon(
                             if (playing?.active == true) Icons.Rounded.Pause
                             else Icons.Rounded.PlayArrow,
-                            contentDescription = if (playing?.active == true) "Pause" else "Play",
+                            contentDescription =
+                                stringResource(
+                                    if (playing?.active == true) R.string.player_pause
+                                    else R.string.player_play
+                                ),
                         )
                     }
                     IconButton(onClick = model::next) {
-                        Icon(Icons.Rounded.SkipNext, contentDescription = "Next")
+                        Icon(
+                            Icons.Rounded.SkipNext,
+                            contentDescription = stringResource(R.string.player_next),
+                        )
                     }
                 }
                 MiniProgress(model, playing?.durationMs ?: 0L)
@@ -161,10 +179,17 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
 private fun MiniProgress(model: PlayerViewModel, durationMs: Long) {
     val position by model.position.collectAsStateWithLifecycle()
     val fraction = if (durationMs > 0) (position.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val progress = stringResource(R.string.player_song_progress)
+    val percent =
+        pluralStringResource(
+            R.plurals.player_percent,
+            (fraction * 100).toInt(),
+            (fraction * 100).toInt(),
+        )
     Box(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 8.dp).semantics {
-            contentDescription = "Song progress"
-            stateDescription = "${(fraction * 100).toInt()} percent"
+            contentDescription = progress
+            stateDescription = percent
             progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
         }
     ) {

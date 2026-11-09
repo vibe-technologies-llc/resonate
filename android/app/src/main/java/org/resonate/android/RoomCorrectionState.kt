@@ -42,7 +42,8 @@ fun roomStem(name: String): String = name.substringBeforeLast('.')
 
 fun roomExtension(name: String): String = name.substringAfterLast('.', "")
 
-fun pairedRoomName(left: String, right: String): String = "${roomStem(left)} and ${roomStem(right)}"
+fun pairedRoomName(words: Words, left: String, right: String): String =
+    words.string(R.string.equaliser_room_pair_name, roomStem(left), roomStem(right))
 
 class RoomCorrectionState(
     context: Context,
@@ -118,7 +119,7 @@ class RoomCorrectionState(
                         rightBytes,
                         roomExtension(right),
                     )
-                val named = pairedRoomName(left.name, right)
+                val named = pairedRoomName(library.words, left.name, right)
                 settings.edit().putString(NAME_KEY, named).apply()
                 view.value = view.value.copy(kept = kept, name = named)
                 apply(native, true)
@@ -183,7 +184,7 @@ class RoomCorrectionState(
 
     private fun gone() {
         remember(false)
-        library.notice("The room response is no longer kept, so room correction stays off")
+        library.notice(R.string.equaliser_room_gone)
     }
 
     private fun remember(on: Boolean) {

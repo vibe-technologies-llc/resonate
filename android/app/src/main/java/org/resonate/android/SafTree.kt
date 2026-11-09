@@ -34,7 +34,7 @@ class SafTree(private val context: Context, private val tree: Uri) : DocumentTre
                 DocumentsContract.Document.COLUMN_MIME_TYPE,
             )
         val listed = DocumentsContract.buildChildDocumentsUriUsingTree(tree, directoryId)
-        return refusable("A folder could not be listed") {
+        return refusable({ Log.w("Resonate", "A folder could not be listed", it) }) {
             resolver.query(listed, columns, null, null, null)?.use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) {
@@ -53,7 +53,7 @@ class SafTree(private val context: Context, private val tree: Uri) : DocumentTre
     }
 
     override fun makeDirectory(parentId: String, name: String): String? =
-        refusable("A folder could not be made") {
+        refusable({ Log.w("Resonate", "A folder could not be made", it) }) {
             DocumentsContract.createDocument(
                     resolver,
                     documentUri(parentId),
@@ -64,7 +64,7 @@ class SafTree(private val context: Context, private val tree: Uri) : DocumentTre
         }
 
     override fun move(documentId: String, fromId: String, toId: String): String? =
-        refusable("A document could not be moved") {
+        refusable({ Log.w("Resonate", "A document could not be moved", it) }) {
             DocumentsContract.moveDocument(
                     resolver,
                     documentUri(documentId),
@@ -75,24 +75,24 @@ class SafTree(private val context: Context, private val tree: Uri) : DocumentTre
         }
 
     override fun rename(documentId: String, name: String): String? =
-        refusable("A document could not be renamed") {
+        refusable({ Log.w("Resonate", "A document could not be renamed", it) }) {
             DocumentsContract.renameDocument(resolver, documentUri(documentId), name)
                 ?.let(DocumentsContract::getDocumentId)
         }
 
     override fun delete(documentId: String): Boolean =
-        refusable("A folder could not be removed") {
+        refusable({ Log.w("Resonate", "A folder could not be removed", it) }) {
             DocumentsContract.deleteDocument(resolver, documentUri(documentId))
         } ?: false
 
     private fun documentUri(documentId: String): Uri =
         DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
 
-    private fun <T> refusable(said: String, action: () -> T?): T? =
+    private fun <T> refusable(refused: (Exception) -> Unit, action: () -> T?): T? =
         try {
             action()
-        } catch (refused: Exception) {
-            Log.w("Resonate", said, refused)
+        } catch (failure: Exception) {
+            refused(failure)
             null
         }
 }

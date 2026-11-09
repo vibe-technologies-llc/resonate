@@ -44,15 +44,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserFilter
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.words
 
 @Composable
 fun BandChips(
@@ -62,6 +65,7 @@ fun BandChips(
     onSelect: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
+    val words = words()
     val state = rememberLazyListState(initialFirstVisibleItemIndex = chosen ?: 0)
     LaunchedEffect(chosen, curve.bands.size) {
         val wanted = chosen ?: return@LaunchedEffect
@@ -82,14 +86,14 @@ fun BandChips(
                     .testTag("band-chips"),
         ) {
             itemsIndexed(curve.bands) { index, band ->
+                val described =
+                    stringResource(R.string.equaliser_band_named, index + 1, bandName(words, band))
                 FilterChip(
                     selected = chosen == index,
                     onClick = { onSelect(index) },
                     label = { Text("${index + 1}") },
                     modifier =
-                        Modifier.semantics {
-                                contentDescription = "Band ${index + 1}, ${bandName(band)}"
-                            }
+                        Modifier.semantics { contentDescription = described }
                             .testTag("band-chip-$index"),
                 )
             }
@@ -97,7 +101,7 @@ fun BandChips(
         AssistChip(
             onClick = onAdd,
             enabled = curve.bands.size < bounds.bandsAtMost,
-            label = { Text("Add band") },
+            label = { Text(stringResource(R.string.equaliser_add_band)) },
             leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(AssistChipDefaults.IconSize)) },
             colors =
                 AssistChipDefaults.assistChipColors(
@@ -149,6 +153,8 @@ fun BandCard(
     modifier: Modifier = Modifier,
 ) {
     val number = index + 1
+    val words = words()
+    val removeBand = stringResource(R.string.equaliser_remove_band, number)
     EqualiserCard(modifier.testTag("band-card")) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 12.dp)) {
             FlowRow(
@@ -158,7 +164,7 @@ fun BandCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Band $number",
+                        stringResource(R.string.equaliser_band, number),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.semantics { heading() },
                     )
@@ -177,37 +183,41 @@ fun BandCard(
                         ),
                     contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
                     modifier =
-                        Modifier.semantics { contentDescription = "Remove band $number" }
+                        Modifier.semantics { contentDescription = removeBand }
                             .testTag("remove-band"),
                 ) {
                     Icon(Icons.Rounded.DeleteOutline, null, Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                    Text("Remove")
+                    Text(stringResource(R.string.equaliser_remove))
                 }
             }
             Column(Modifier.padding(end = 8.dp)) {
                 MeasureControl(
-                    measure = gainMeasure(bounds),
+                    measure = gainMeasure(words, bounds),
                     value = band.gainDb,
-                    description = "Band $number gain",
+                    description = stringResource(R.string.equaliser_band_gain, number),
                     onCommit = { onChange(band.copy(gainDb = tidyDb(it.coerceIn(bounds.gain)))) },
                     tag = "band-gain",
                     enabled = band.filter.usesGain,
-                    unused = "Not used by ${band.filter.label.lowercase()}",
+                    unused =
+                        stringResource(
+                            R.string.equaliser_not_used_by,
+                            stringResource(band.filter.label).lowercase(),
+                        ),
                 )
                 MeasureControl(
-                    measure = hertzMeasure(bounds),
+                    measure = hertzMeasure(words, bounds),
                     value = band.frequencyHz,
-                    description = "Band $number frequency",
+                    description = stringResource(R.string.equaliser_band_frequency, number),
                     onCommit = {
                         onChange(band.copy(frequencyHz = tidyHertz(it.coerceIn(bounds.hertz))))
                     },
                     tag = "band-frequency",
                 )
                 MeasureControl(
-                    measure = widthMeasure(bounds),
+                    measure = widthMeasure(words, bounds),
                     value = band.q,
-                    description = "Band $number width",
+                    description = stringResource(R.string.equaliser_band_width, number),
                     onCommit = { onChange(band.copy(q = tidyQ(it.coerceIn(bounds.q)))) },
                     tag = "band-width",
                 )
@@ -219,21 +229,22 @@ fun BandCard(
 @Composable
 private fun FilterMenu(filter: EqualiserFilter, number: Int, onChoose: (EqualiserFilter) -> Unit) {
     var open by remember { mutableStateOf(false) }
+    val label = stringResource(filter.label)
+    val described = stringResource(R.string.equaliser_band_type, number, label)
     Box {
         TextButton(
             onClick = { open = true },
             contentPadding = PaddingValues(start = 8.dp, end = 4.dp),
             modifier =
-                Modifier.semantics { contentDescription = "Band $number type, ${filter.label}" }
-                    .testTag("band-type"),
+                Modifier.semantics { contentDescription = described }.testTag("band-type"),
         ) {
-            Text(filter.label, style = MaterialTheme.typography.titleMedium)
+            Text(label, style = MaterialTheme.typography.titleMedium)
             Icon(Icons.Rounded.ArrowDropDown, null)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             EqualiserFilter.entries.forEach { choice ->
                 DropdownMenuItem(
-                    text = { Text(choice.label) },
+                    text = { Text(stringResource(choice.label)) },
                     onClick = {
                         open = false
                         if (choice != filter) onChoose(choice)

@@ -1,5 +1,6 @@
 package org.resonate.android.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -41,6 +42,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +59,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.nativecore.LibraryBreakdown
 import org.resonate.android.nativecore.LibraryShare
 import org.resonate.android.nativecore.LibraryStatistics
@@ -81,6 +85,7 @@ import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.wrapped.WrappedDeck
 import org.resonate.android.ui.wrapped.WrappedWords
+import org.resonate.android.words
 
 data class Ranked(val entry: ListenedTo, val artworkSong: ULong?)
 
@@ -103,7 +108,6 @@ sealed interface StatisticsState {
 private const val MOST_LISTENED_SHOWN = 5u
 private const val TOP_SONGS_FIRST_SHOWN = 10
 private const val DAYS_DRAWN = 60
-private const val WRAPPED_DETAIL = "A look back at what you played"
 
 private fun albumSong(entry: ListenedTo, tracks: List<Track>): ULong? =
     (tracks.firstOrNull {
@@ -174,7 +178,9 @@ class StatisticsViewModel(private val resonate: Resonate) : ViewModel() {
                         )
                     },
                     onFailure = {
-                        StatisticsState.Failed(it.message ?: "Statistics could not be read")
+                        StatisticsState.Failed(
+                            it.message ?: resonate.library.words.string(R.string.stats_unread)
+                        )
                     },
                 )
         }
@@ -192,11 +198,11 @@ class StatisticsViewModel(private val resonate: Resonate) : ViewModel() {
     }
 }
 
-enum class BreakdownKind(val label: String) {
-    FORMATS("Formats"),
-    RATES("Sample rates"),
-    GENRES("Genres"),
-    DECADES("Decades"),
+enum class BreakdownKind(@StringRes val label: Int) {
+    FORMATS(R.string.stats_kind_formats),
+    RATES(R.string.stats_kind_rates),
+    GENRES(R.string.stats_kind_genres),
+    DECADES(R.string.stats_kind_decades),
 }
 
 private fun LibraryBreakdown.of(kind: BreakdownKind): List<LibraryShare> =
@@ -222,15 +228,16 @@ fun StatisticsScreen() {
     var deckOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(period) { model.load(period) }
     LaunchedEffect(Unit) { model.readWrapped() }
-    Page("Listening statistics") { padding ->
+    val words = words()
+    Page(stringResource(R.string.stats_title)) { padding ->
         SettingsList(padding, Modifier.testTag("statistics-list")) {
             item(key = "periods") { Periods(period) { period = it } }
             wrapped?.let { year ->
                 item(key = "wrapped") {
                     Shortcut(
                         icon = Icons.Rounded.AutoAwesome,
-                        title = WrappedWords.entry(year.year),
-                        detail = WRAPPED_DETAIL,
+                        title = WrappedWords.entry(words, year.year),
+                        detail = stringResource(R.string.stats_wrapped_detail),
                         container = MaterialTheme.colorScheme.tertiaryContainer,
                         content = MaterialTheme.colorScheme.onTertiaryContainer,
                         badge = MaterialTheme.colorScheme.tertiary,
@@ -249,16 +256,18 @@ fun StatisticsScreen() {
                     item(key = "failed") {
                         EmptyState(
                             Icons.Rounded.BarChart,
-                            "Statistics could not be read",
+                            stringResource(R.string.stats_unread),
                             detail = current.message,
-                            action = "Try again",
+                            action = stringResource(R.string.stats_try_again),
                             onAction = { model.retry(period) },
                         )
                     }
                 is StatisticsState.Ready -> {
                     val listening = current.listening
                     val totals = listening.totals
-                    item(key = "listening-header") { SectionHeader("Your listening") }
+                    item(key = "listening-header") {
+                        SectionHeader(stringResource(R.string.stats_listening_header))
+                    }
                     item(key = "listening") { ListeningFigures(listening) }
                     val days = listening.detail?.days.orEmpty()
                     if (days.count { it.listenedMs > 0uL } > 1) {
@@ -270,10 +279,13 @@ fun StatisticsScreen() {
                             else totals.topTracks.take(TOP_SONGS_FIRST_SHOWN)
                         item(key = "top-header") {
                             SectionHeader(
-                                "Top songs",
+                                stringResource(R.string.stats_top_songs),
                                 action =
                                     if (totals.topTracks.size > TOP_SONGS_FIRST_SHOWN)
-                                        if (allSongs) "Show fewer" else "Show all"
+                                        stringResource(
+                                            if (allSongs) R.string.stats_show_fewer
+                                            else R.string.stats_show_all
+                                        )
                                     else null,
                                 onAction = { allSongs = !allSongs },
                             )
@@ -288,7 +300,9 @@ fun StatisticsScreen() {
                         }
                     }
                     if (listening.albums.isNotEmpty()) {
-                        item(key = "albums-header") { SectionHeader("Albums you played most") }
+                        item(key = "albums-header") {
+                            SectionHeader(stringResource(R.string.stats_albums_header))
+                        }
                         itemsIndexed(listening.albums, key = { _, it -> "album-${it.entry.key}" }) { _, ranked ->
                             RankedRow(ranked, circle = false) {
                                 navigator.open(
@@ -303,7 +317,9 @@ fun StatisticsScreen() {
                         }
                     }
                     if (listening.artists.isNotEmpty()) {
-                        item(key = "artists-header") { SectionHeader("Artists you played most") }
+                        item(key = "artists-header") {
+                            SectionHeader(stringResource(R.string.stats_artists_header))
+                        }
                         itemsIndexed(listening.artists, key = { _, it -> "artist-${it.entry.key}" }) { _, ranked ->
                             RankedRow(ranked, circle = true) {
                                 navigator.open(Screen.Artist(ranked.entry.name, ranked.artworkSong))
@@ -314,18 +330,22 @@ fun StatisticsScreen() {
                         item(key = "nothing") {
                             NoticeCard(
                                 Icons.Rounded.BarChart,
-                                "Nothing played ${listening.period.within}. Songs count once you have heard half of them, or four minutes.",
+                                stringResource(listening.period.nothing),
                             )
                         }
                     }
-                    item(key = "library-header") { SectionHeader("Your library") }
+                    item(key = "library-header") {
+                        SectionHeader(stringResource(R.string.stats_library_header))
+                    }
                     item(key = "library") { LibraryFigures(totals) }
                     breakdown?.let { found ->
                         item(key = "kinds") { Kinds(kind) { kind = it } }
                         val shares = found.of(kind)
                         val whole = shareWhole(shares, totals.songs)
                         if (shares.isEmpty()) {
-                            item(key = "no-shares") { Note("Nothing to show yet.") }
+                            item(key = "no-shares") {
+                                Note(stringResource(R.string.stats_no_shares))
+                            }
                         }
                         itemsIndexed(shares, key = { _, it -> "${kind.name}-${it.name}" }) { _, share ->
                             ShareRow(share, whole)
@@ -356,7 +376,7 @@ private fun Periods(selected: Period, onSelect: (Period) -> Unit) {
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
                 icon = {},
             ) {
-                Text(period.label, maxLines = 1, textAlign = TextAlign.Center)
+                Text(stringResource(period.label), maxLines = 1, textAlign = TextAlign.Center)
             }
         }
     }
@@ -431,31 +451,47 @@ private fun count(value: ULong, unit: String = "") = Figure(grouped(value), unit
 @Composable
 private fun ListeningFigures(listening: Listening) {
     val totals = listening.totals
+    val words = words()
     Column(
         Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FigureTile("Time listening", durationFigure(totals.listenedMs), Modifier.fillMaxWidth(), hero = true)
+        FigureTile(
+            stringResource(R.string.stats_time_listening),
+            durationFigure(words, totals.listenedMs),
+            Modifier.fillMaxWidth(),
+            hero = true,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FigureTile("Listens", count(totals.plays), Modifier.weight(1f))
+            FigureTile(
+                stringResource(R.string.stats_listens_tile),
+                count(totals.plays),
+                Modifier.weight(1f),
+            )
             listening.detail?.let {
-                FigureTile("Different songs", count(it.songsHeard), Modifier.weight(1f))
+                FigureTile(
+                    stringResource(R.string.stats_different_songs),
+                    count(it.songsHeard),
+                    Modifier.weight(1f),
+                )
             }
         }
     }
     listening.detail?.firstHeard?.let {
-        Footnote("Counting since ${dayLabel(it)}")
+        Footnote(stringResource(R.string.stats_counting_since, dayLabel(it)))
     }
 }
 
 @Composable
 private fun LibraryFigures(totals: LibraryStatistics) {
+    val words = words()
     Figures(
         listOf(
-            "Songs" to count(totals.songs),
-            "Albums" to count(totals.albums),
-            "Artists" to count(totals.artists),
-            "To listen through" to durationFigure(totals.durationMs),
+            stringResource(R.string.stats_songs) to count(totals.songs),
+            stringResource(R.string.stats_albums) to count(totals.albums),
+            stringResource(R.string.stats_artists) to count(totals.artists),
+            stringResource(R.string.stats_to_listen_through) to
+                durationFigure(words, totals.durationMs),
         )
     )
 }
@@ -470,16 +506,35 @@ private fun DaysChart(days: List<ListenedOnDay>) {
     val busiest = busiestDay(days)
     val bar = scheme.primary
     val track = scheme.surfaceContainerHighest
+    val words = words()
+    val described =
+        if (busiest != null) {
+            pluralStringResource(
+                R.plurals.stats_days_described_busiest,
+                days.size,
+                days.size,
+                dayLabel(busiest.starts),
+            )
+        } else {
+            pluralStringResource(R.plurals.stats_days_described, days.size, days.size)
+        }
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Listening by day · last ${days.size} days", style = MaterialTheme.typography.titleSmall)
+            Text(
+                pluralStringResource(R.plurals.stats_days_chart, days.size, days.size),
+                style = MaterialTheme.typography.titleSmall,
+            )
             busiest?.let {
                 Text(
-                    "Busiest of these days: ${dayLabel(it.starts)} · ${listenedLine(it.plays, it.listenedMs)}",
+                    stringResource(
+                        R.string.stats_busiest,
+                        dayLabel(it.starts),
+                        listenedLine(words, it.plays, it.listenedMs),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )
@@ -487,9 +542,7 @@ private fun DaysChart(days: List<ListenedOnDay>) {
             Spacer(Modifier.height(12.dp))
             Canvas(
                 Modifier.fillMaxWidth().height(96.dp).semantics {
-                    contentDescription =
-                        "Listening on ${days.size} days" +
-                            (busiest?.let { ", most on ${dayLabel(it.starts)}" } ?: "")
+                    contentDescription = described
                 }
             ) {
                 val slot = size.width / days.size
@@ -528,6 +581,7 @@ private fun DaysChart(days: List<ListenedOnDay>) {
 @Composable
 private fun RankedRow(ranked: Ranked, circle: Boolean, onClick: () -> Unit) {
     val entry = ranked.entry
+    val words = words()
     ListItem(
         onClick = onClick,
         leadingContent = {
@@ -544,7 +598,7 @@ private fun RankedRow(ranked: Ranked, circle: Boolean, onClick: () -> Unit) {
             Text(
                 listOfNotNull(
                         entry.by.takeIf { !circle && it.isNotBlank() },
-                        listenedLine(entry.plays, entry.listenedMs),
+                        listenedLine(words, entry.plays, entry.listenedMs),
                     )
                     .joinToString(" · "),
                 maxLines = 2,
@@ -553,7 +607,15 @@ private fun RankedRow(ranked: Ranked, circle: Boolean, onClick: () -> Unit) {
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     ) {
-        Text(entry.name.ifBlank { if (circle) "Unknown artist" else "Unknown album" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            entry.name.ifBlank {
+                stringResource(
+                    if (circle) R.string.unknown_artist else R.string.stats_unknown_album
+                )
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -569,7 +631,7 @@ private fun Kinds(selected: BreakdownKind, onSelect: (BreakdownKind) -> Unit) {
             FilterChip(
                 selected = kind == selected,
                 onClick = { onSelect(kind) },
-                label = { Text(kind.label) },
+                label = { Text(stringResource(kind.label)) },
             )
         }
     }
@@ -577,7 +639,9 @@ private fun Kinds(selected: BreakdownKind, onSelect: (BreakdownKind) -> Unit) {
 
 @Composable
 private fun ShareRow(share: LibraryShare, whole: ULong) {
-    val figure = durationFigure(share.durationMs)
+    val figure = durationFigure(words(), share.durationMs)
+    val songs =
+        pluralStringResource(R.plurals.stats_share_songs, share.songs.toInt(), grouped(share.songs))
     Column(
         Modifier.fillMaxWidth()
             .padding(horizontal = Sizes.gutter, vertical = 8.dp)
@@ -585,7 +649,7 @@ private fun ShareRow(share: LibraryShare, whole: ULong) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                share.name.ifBlank { "Unknown" },
+                share.name.ifBlank { stringResource(R.string.stats_unknown) },
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -605,7 +669,7 @@ private fun ShareRow(share: LibraryShare, whole: ULong) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "${grouped(share.songs)} ${if (share.songs == 1uL) "song" else "songs"} · ${figure.value} ${figure.unit}",
+            "$songs · ${figure.value} ${figure.unit}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

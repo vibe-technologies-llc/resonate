@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -74,6 +75,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
+import org.resonate.android.R
 import org.resonate.android.nativecore.DevicePlatform
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.SyncConfig
@@ -91,6 +93,7 @@ import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.syncActivity
+import org.resonate.android.words
 
 class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
@@ -132,7 +135,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     fun press(device: String, zone: UInt, control: RemoteControl) =
         resonate.attempt(viewModelScope) { native ->
             val answer = withContext(Dispatchers.IO) { native.syncControl(device, zone, control) }
-            DrivenWords.refusal(answer)?.let { resonate.library.notice(it) }
+            DrivenWords.refusal(resonate.library.words, answer)?.let { resonate.library.notice(it) }
         }
 
     fun forget(device: SyncedDevice) =
@@ -190,8 +193,10 @@ fun SyncScreen() {
     var driving by rememberSaveable { mutableStateOf<String?>(null) }
     var joinCode by rememberSaveable { mutableStateOf("") }
     val copy = rememberCopy()
+    val words = words()
+    val pairingCode = stringResource(R.string.sync_pairing_code)
     LaunchedEffect(Unit) { model.refreshFolders() }
-    Page("Device sync") { padding ->
+    Page(stringResource(R.string.sync_title)) { padding ->
         val config = stored
         if (config == null) {
             Loading(padding)
@@ -209,7 +214,7 @@ fun SyncScreen() {
         SettingsList(padding, Modifier.testTag("sync-list")) {
             item(key = "main") {
                 MainSwitch(
-                    title = "Use device sync",
+                    title = stringResource(R.string.sync_use),
                     checked = config.enabled,
                     onCheckedChange = { value -> model.change { it.copy(enabled = value) } },
                 )
@@ -225,22 +230,24 @@ fun SyncScreen() {
                         Icons.Rounded.ErrorOutline,
                         said,
                         error = true,
-                        action = "Folders",
+                        action = stringResource(R.string.sync_notice_folders),
                         onAction = { navigator.open(Screen.Folders) },
                     )
                 }
             }
             if (transfers.isNotEmpty()) {
                 item(key = "transfers-header") {
-                    SectionHeader(transfersHeader(status?.downloading ?: 0u, status?.waiting ?: 0u))
+                    SectionHeader(
+                        transfersHeader(words, status?.downloading ?: 0u, status?.waiting ?: 0u)
+                    )
                 }
                 transfers.forEachIndexed { index, transfer ->
                     item(key = "transfer-$index") {
                         val progress = transferProgress(transfer)
                         SettingRow(
-                            title = transfer.title.ifBlank { "A song" },
+                            title = transfer.title.ifBlank { stringResource(R.string.sync_a_song) },
                             icon = Icons.Rounded.Download,
-                            supporting = transferLine(transfer),
+                            supporting = transferLine(words, transfer),
                         )
                         Box(Modifier.fillMaxWidth().padding(start = 56.dp, end = Sizes.gutter, bottom = 8.dp)) {
                             if (progress != null)
@@ -253,13 +260,16 @@ fun SyncScreen() {
                     }
                 }
             }
-            item(key = "devices-header") { SectionHeader("Your devices") }
+            item(key = "devices-header") {
+                SectionHeader(stringResource(R.string.sync_devices_header))
+            }
             if (devices.isEmpty()) {
                 item(key = "no-devices") {
                     Note(
-                        if (config.enabled)
-                            "No devices yet. On another device, join with this device's pairing code."
-                        else "Turn on device sync to see your other devices."
+                        stringResource(
+                            if (config.enabled) R.string.sync_no_devices
+                            else R.string.sync_turn_on_to_see
+                        )
                     )
                 }
             }
@@ -281,13 +291,14 @@ fun SyncScreen() {
                     }
                 }
             }
-            item(key = "pairing-header") { SectionHeader("Pairing") }
+            item(key = "pairing-header") {
+                SectionHeader(stringResource(R.string.sync_pairing_header))
+            }
             item(key = "pairing") {
                 SettingRow(
-                    title = "Pairing code",
+                    title = pairingCode,
                     icon = Icons.Rounded.Key,
-                    supporting =
-                        "Devices with the same code share playlists, favourites and history. Keep it to yourself.",
+                    supporting = stringResource(R.string.sync_pairing_code_detail),
                 )
                 if (showCode && code.isNotEmpty()) {
                     CodeText(codeLines(code), Modifier.testTag("pairing-code"))
@@ -303,15 +314,19 @@ fun SyncScreen() {
                             contentDescription = null,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text(if (showCode) "Hide pairing code" else "Show pairing code")
+                        Text(
+                            stringResource(
+                                if (showCode) R.string.sync_hide_code else R.string.sync_show_code
+                            )
+                        )
                     }
                     OutlinedButton(
-                        onClick = { copy("Pairing code", code) },
+                        onClick = { copy(pairingCode, code) },
                         enabled = code.isNotEmpty(),
                     ) {
                         Icon(Icons.Rounded.ContentCopy, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Copy")
+                        Text(stringResource(R.string.sync_copy))
                     }
                 }
             }
@@ -319,84 +334,89 @@ fun SyncScreen() {
                 Field(
                     value = joinCode,
                     onValueChange = { joinCode = it },
-                    label = "Code from another device",
+                    label = stringResource(R.string.sync_join_code),
                     secret = true,
                     modifier = Modifier.testTag("join-code"),
                 )
                 ButtonRow {
-                    TextButton(onClick = { asking = Asking.NEW_GROUP }) { Text("Start a new group") }
+                    TextButton(onClick = { asking = Asking.NEW_GROUP }) {
+                        Text(stringResource(R.string.sync_new_group))
+                    }
                     FilledTonalButton(
                         onClick = { asking = Asking.JOIN },
                         enabled = joinCode.isNotBlank() && joinCode.trim() != code,
                         modifier = Modifier.testTag("join"),
                     ) {
-                        Text("Join")
+                        Text(stringResource(R.string.sync_join))
                     }
                 }
             }
-            item(key = "follow-header") { SectionHeader("What follows you") }
+            item(key = "follow-header") {
+                SectionHeader(stringResource(R.string.sync_follow_header))
+            }
             item(key = "favourites") {
                 SwitchRow(
-                    title = "Favourites",
+                    title = stringResource(R.string.sync_favourites),
                     icon = Icons.Rounded.Favorite,
-                    supporting = "Keep songs favoured on another device here too",
+                    supporting = stringResource(R.string.sync_favourites_detail),
                     checked = config.favourites,
                     onCheckedChange = { value -> model.change { it.copy(favourites = value) } },
                 )
             }
             item(key = "playlists") {
                 SwitchRow(
-                    title = "Playlists",
+                    title = stringResource(R.string.sync_playlists),
                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                    supporting = "Keep the songs of playlists set to keep their songs here",
+                    supporting = stringResource(R.string.sync_playlists_detail),
                     checked = config.playlists,
                     onCheckedChange = { value -> model.change { it.copy(playlists = value) } },
                 )
             }
             item(key = "everything") {
                 SwitchRow(
-                    title = "All music",
+                    title = stringResource(R.string.sync_everything),
                     icon = Icons.Rounded.LibraryMusic,
-                    supporting = "Keep every song your other devices hold",
+                    supporting = stringResource(R.string.sync_everything_detail),
                     checked = config.everything,
                     onCheckedChange = { value -> model.change { it.copy(everything = value) } },
                 )
             }
             item(key = "metered") {
                 SwitchRow(
-                    title = "Use mobile data",
+                    title = stringResource(R.string.sync_metered),
                     icon = Icons.Rounded.SignalCellularAlt,
-                    supporting = "Without it, songs move only on Wi-Fi",
+                    supporting = stringResource(R.string.sync_metered_detail),
                     checked = config.meteredAllowed,
                     onCheckedChange = { value -> model.change { it.copy(meteredAllowed = value) } },
                 )
             }
             item(key = "background") {
                 SwitchRow(
-                    title = "Sync in the background",
+                    title = stringResource(R.string.sync_background),
                     icon = Icons.Rounded.Autorenew,
-                    supporting = BACKGROUND_SYNC_SAYS,
+                    supporting = stringResource(R.string.sync_background_says),
                     checked = inBackground,
                     onCheckedChange = model::syncInBackground,
                 )
             }
-            item(key = "destination-header") { SectionHeader("Songs from your devices") }
+            item(key = "destination-header") {
+                SectionHeader(stringResource(R.string.sync_destination_header))
+            }
             if (writable.isEmpty()) {
                 item(key = "no-destination") {
                     SettingRow(
-                        title = "Add a music folder Resonate can write to",
+                        title = stringResource(R.string.sync_no_destination),
                         icon = Icons.Rounded.CreateNewFolder,
-                        supporting = "Songs from your other devices are saved there",
+                        supporting = stringResource(R.string.sync_no_destination_detail),
                         onClick = { navigator.open(Screen.Folders) },
                     )
                 }
             } else {
                 item(key = "destinations") {
                     if (destination == null) {
-                        Note(
-                            "Choose where songs from your other devices are kept. Downloads is used only when you choose it."
-                        )
+                        Note(stringResource(R.string.sync_choose_destination))
                     }
+                    val chosenForYou = stringResource(R.string.sync_chosen_for_you)
                     Column(Modifier.selectableGroup()) {
                         writable.forEach { target ->
                             RadioRow(
@@ -405,22 +425,24 @@ fun SyncScreen() {
                                     if (target.uri == MusicDocuments.downloads) Icons.Rounded.Download
                                     else Icons.Rounded.Folder,
                                 supporting =
-                                    if (chosen == null && target == destination) "Chosen for you"
+                                    if (chosen == null && target == destination) chosenForYou
                                     else null,
                                 selected = target == destination,
                                 onClick = { model.choose(target) },
                             )
                         }
                     }
-                    Footnote("Songs from your other devices are saved in this folder and added to your library.")
+                    Footnote(stringResource(R.string.sync_destination_note))
                 }
             }
-            item(key = "connection-header") { SectionHeader("Connection") }
+            item(key = "connection-header") {
+                SectionHeader(stringResource(R.string.sync_connection_header))
+            }
             item(key = "nearby") {
                 SwitchRow(
-                    title = "Only this network",
+                    title = stringResource(R.string.sync_nearby),
                     icon = Icons.Rounded.Wifi,
-                    supporting = "Devices on the same network sync without a server, even with online features off",
+                    supporting = stringResource(R.string.sync_nearby_detail),
                     checked = config.nearbyOnly,
                     onCheckedChange = { value -> model.change { it.copy(nearbyOnly = value) } },
                 )
@@ -429,23 +451,23 @@ fun SyncScreen() {
                 Field(
                     value = device,
                     onValueChange = { device = it },
-                    label = "Device name",
-                    supporting = "How your other devices see this one",
+                    label = stringResource(R.string.sync_device_name),
+                    supporting = stringResource(R.string.sync_device_name_detail),
                     modifier = Modifier.testTag("device-name"),
                 )
                 Field(
                     value = forOthers,
                     onValueChange = { forOthers = it },
-                    label = "Name other people see",
-                    supporting = "On a shared playlist or at a party. Empty until you type it.",
+                    label = stringResource(R.string.sync_name_for_others),
+                    supporting = stringResource(R.string.sync_name_for_others_detail),
                     modifier = Modifier.testTag("name-for-others"),
                 )
                 if (!config.nearbyOnly) {
                     Field(
                         value = server,
                         onValueChange = { server = it },
-                        label = "Sync server",
-                        supporting = "The server your devices meet through",
+                        label = stringResource(R.string.sync_server),
+                        supporting = stringResource(R.string.sync_server_detail),
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
                         modifier = Modifier.testTag("sync-server"),
                     )
@@ -454,7 +476,9 @@ fun SyncScreen() {
                     namesUnsaved(config, device, server) || forOthers.trim() != keptNameForOthers
                 ButtonRow {
                     Button(onClick = { model.saveNames(device, server, forOthers) }, enabled = unsaved) {
-                        Text(if (unsaved) "Save" else "Saved")
+                        Text(
+                            stringResource(if (unsaved) R.string.sync_save else R.string.sync_saved)
+                        )
                     }
                 }
             }
@@ -475,17 +499,16 @@ fun SyncScreen() {
                 Footnote(offered.told)
             }
             item(key = "keystore") {
-                Footnote("The pairing code stays encrypted with Android Keystore. The server keeps only sealed records it cannot read.")
+                Footnote(stringResource(R.string.sync_keystore))
             }
         }
     }
     when (asking) {
         Asking.JOIN ->
             ConfirmDialog(
-                title = "Join another group?",
-                text =
-                    "This device leaves its current group and syncs with the devices that use the code you entered.",
-                confirm = "Join",
+                title = stringResource(R.string.sync_join_title),
+                text = stringResource(R.string.sync_join_text),
+                confirm = stringResource(R.string.sync_join),
                 icon = Icons.Rounded.GroupAdd,
                 onConfirm = {
                     model.join(joinCode)
@@ -495,10 +518,9 @@ fun SyncScreen() {
             )
         Asking.NEW_GROUP ->
             ConfirmDialog(
-                title = "Start a new group?",
-                text =
-                    "This device leaves its current group and gets a new pairing code. Your other devices will need the new code to sync with it.",
-                confirm = "Start new group",
+                title = stringResource(R.string.sync_new_group_title),
+                text = stringResource(R.string.sync_new_group_text),
+                confirm = stringResource(R.string.sync_new_group_confirm),
                 icon = Icons.Rounded.GroupAdd,
                 onConfirm = model::newGroup,
                 onDismiss = { asking = null },
@@ -508,10 +530,9 @@ fun SyncScreen() {
     val leaving = status?.devices?.firstOrNull { it.id == forgetting }
     if (leaving != null) {
         ConfirmDialog(
-            title = "Forget ${leaving.name}?",
-            text =
-                "It leaves your list of devices. If it syncs again with your pairing code, it comes back.",
-            confirm = "Forget",
+            title = stringResource(R.string.sync_forget_title, leaving.name),
+            text = stringResource(R.string.sync_forget_text),
+            confirm = stringResource(R.string.sync_forget),
             icon = Icons.Rounded.DeleteOutline,
             destructive = true,
             onConfirm = { model.forget(leaving) },
@@ -563,10 +584,11 @@ private fun StatusRow(
             }
         }
     val activity = syncActivity(status, askedAt, now)
+    val words = words()
     val waitingForOnline = config.enabled && !online && !config.nearbyOnly
     SettingRow(
-        title = syncHeadline(status, config, online),
-        supporting = syncStanding(status, config, online),
+        title = syncHeadline(words, status, config, online),
+        supporting = syncStanding(words, status, config, online),
         icon = if (activity == null) standingIcon(status, config, online) else null,
         leadingContent = if (activity != null) ({ SmallLoading() }) else null,
         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("sync-status"),
@@ -577,13 +599,13 @@ private fun StatusRow(
                 FilledTonalButton(onClick = onNearbyOnly) {
                     Icon(Icons.Rounded.Wifi, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Sync only on this network")
+                    Text(stringResource(R.string.sync_nearby_only_action))
                 }
             } else {
                 FilledTonalButton(onClick = onSyncNow, modifier = Modifier.testTag("sync-now")) {
                     Icon(Icons.Rounded.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Sync now")
+                    Text(stringResource(R.string.sync_now))
                 }
             }
         }
@@ -607,9 +629,10 @@ private fun DeviceRow(
 ) {
     val scheme = MaterialTheme.colorScheme
     val lit = device.thisDevice || device.online || device.nearby
+    val words = words()
     SettingRow(
-        title = device.name.ifBlank { "Unnamed device" },
-        supporting = deviceState(device),
+        title = device.name.ifBlank { stringResource(R.string.sync_unnamed_device) },
+        supporting = deviceState(words, device),
         leadingContent = {
             Box {
                 Icon(
@@ -632,7 +655,10 @@ private fun DeviceRow(
                         Icon(
                             if (driven) Icons.Rounded.Close else Icons.Rounded.PlayCircle,
                             contentDescription =
-                                if (driven) "Stop driving ${device.name}" else "Drive ${device.name}",
+                                stringResource(
+                                    if (driven) R.string.sync_stop_driving else R.string.sync_drive,
+                                    device.name,
+                                ),
                         )
                     }
                 }
@@ -641,7 +667,8 @@ private fun DeviceRow(
                     IconButton(onClick = onForget) {
                         Icon(
                             Icons.Rounded.DeleteOutline,
-                            contentDescription = "Forget ${device.name}",
+                            contentDescription =
+                                stringResource(R.string.sync_forget_device, device.name),
                         )
                     }
                 }

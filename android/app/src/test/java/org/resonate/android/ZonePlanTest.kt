@@ -54,10 +54,13 @@ class ZonePlanTest {
 
     @Test
     fun aCastReceiverIsNamedAsOneBesideItsHostAndAStreamerByItsHostAlone() {
-        assertEquals("192.168.1.20", ZonePlan.rendererLine(RendererKind.UPNP, "192.168.1.20"))
+        assertEquals(
+            "192.168.1.20",
+            ZonePlan.rendererLine(English, RendererKind.UPNP, "192.168.1.20"),
+        )
         assertEquals(
             "Google Cast · 192.168.1.30",
-            ZonePlan.rendererLine(RendererKind.CAST, "192.168.1.30"),
+            ZonePlan.rendererLine(English, RendererKind.CAST, "192.168.1.30"),
         )
     }
 
@@ -84,8 +87,8 @@ class ZonePlanTest {
 
     @Test
     fun aZoneSaysItsOutputAndWhatItIsDoing() {
-        assertEquals("Topping · Playing Echoes", ZonePlan.line("Topping", Transport.PLAYING, "Echoes"))
-        assertEquals("Topping · Paused", ZonePlan.line("Topping", Transport.PAUSED, null))
-        assertEquals("System default · Stopped", ZonePlan.line("System default", Transport.STOPPED, null))
+        assertEquals("Topping · Playing Echoes", ZonePlan.line(English, "Topping", Transport.PLAYING, "Echoes"))
+        assertEquals("Topping · Paused", ZonePlan.line(English, "Topping", Transport.PAUSED, null))
+        assertEquals("System default · Stopped", ZonePlan.line(English, "System default", Transport.STOPPED, null))
     }
 }

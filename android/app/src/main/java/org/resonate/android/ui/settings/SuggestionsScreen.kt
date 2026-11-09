@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,6 +44,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.R
 import org.resonate.android.nativecore.SuggestedList
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
@@ -82,7 +84,7 @@ fun SuggestionsScreen() {
             scheme.surfaceContainerHighest to scheme.onSurface,
         )
     val shelves = loaded.valueOrNull().orEmpty().groupBy { it.shelfName }
-    Page("Made for you") { padding ->
+    Page(stringResource(R.string.suggestions_title)) { padding ->
         val direction = LocalLayoutDirection.current
         val fontScale = LocalDensity.current.fontScale
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -105,7 +107,7 @@ fun SuggestionsScreen() {
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        "Lists drawn from your music and your listening, turning over each day.",
+                        stringResource(R.string.suggestions_intro),
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 4.dp),
@@ -114,8 +116,8 @@ fun SuggestionsScreen() {
                 item(key = "favourites") {
                     SuggestionCard(
                         key = "favourites",
-                        title = "Your favourites",
-                        subtitle = "The ones you come back to.",
+                        title = stringResource(R.string.suggestions_favourites),
+                        subtitle = stringResource(R.string.suggestions_favourites_detail),
                         icon = Icons.Rounded.Favorite,
                         container = palettes[0].first,
                         content = palettes[0].second,
@@ -126,7 +128,7 @@ fun SuggestionsScreen() {
                 if (loaded is Loaded.Failed) {
                     item(key = "unread", span = { GridItemSpan(maxLineSpan) }) {
                         TextButton(onClick = model.retry::again) {
-                            Text("Lists could not be read. Try again")
+                            Text(stringResource(R.string.suggestions_unread))
                         }
                     }
                 }

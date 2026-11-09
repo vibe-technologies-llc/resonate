@@ -9,15 +9,18 @@ import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.ProviderAccountBook
+import org.resonate.android.R
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 class ProvidersViewModel(resonate: Resonate) : ViewModel() {
     private val features = resonate.features
@@ -41,7 +44,8 @@ fun ProvidersScreen() {
     val book by model.book.collectAsStateWithLifecycle()
     val hostedServices by model.hostedServices.collectAsStateWithLifecycle()
     val stallDownloadsOnMetered by model.stallDownloadsOnMetered.collectAsStateWithLifecycle()
-    Page("Download sources") { padding ->
+    val words = words()
+    Page(stringResource(R.string.providers_title)) { padding ->
         val all = book
         if (all == null) {
             Loading(padding)
@@ -50,15 +54,14 @@ fun ProvidersScreen() {
         SettingsList(padding, Modifier.testTag("providers-list")) {
             item(key = "intro") {
                 Note(
-                    "Songs you find in Search can be downloaded from the sources chosen here. Downloads are matched by recording codes, or by title, artist and length, and you choose the folder for each song. ${accountsLead(all.asked.size)}"
+                    stringResource(R.string.providers_intro, accountsLead(words, all.asked.size))
                 )
             }
             item(key = "hosted-services") {
                 SwitchRow(
-                    title = "Ask the hosted services",
+                    title = stringResource(R.string.providers_hosted_services),
                     icon = Icons.Rounded.Cloud,
-                    supporting =
-                        "A Monochrome or hifi-api source with no server address is asked at the hosted service unless this is off",
+                    supporting = stringResource(R.string.providers_hosted_services_detail),
                     checked = hostedServices,
                     onCheckedChange = model::setHostedServices,
                     modifier = Modifier.testTag("setting-hosted-services"),
@@ -66,24 +69,24 @@ fun ProvidersScreen() {
             }
             item(key = "stall-downloads-on-metered") {
                 SwitchRow(
-                    title = "Wait on a metered connection",
+                    title = stringResource(R.string.providers_stall_on_metered),
                     icon = Icons.Rounded.SignalCellularAlt,
-                    supporting = "Downloads pause until the network is not metered",
+                    supporting = stringResource(R.string.providers_stall_on_metered_detail),
                     checked = stallDownloadsOnMetered,
                     onCheckedChange = model::setStallDownloadsOnMetered,
                     modifier = Modifier.testTag("setting-stall-downloads-on-metered"),
                 )
             }
-            item(key = "sources-header") { SectionHeader("Your sources") }
+            item(key = "sources-header") { SectionHeader(stringResource(R.string.providers_yours)) }
             if (all.kept.isEmpty()) {
-                item(key = "none") { Note("Add a source below to download songs.") }
+                item(key = "none") { Note(stringResource(R.string.providers_none)) }
             }
             all.kept.forEach { kept ->
                 item(key = "account-${kept.id}") {
                     SettingRow(
                         title = providerName(kept.account.provider),
                         icon = iconFor(kept.account.provider),
-                        supporting = accountSummary(kept.account, kept.on),
+                        supporting = accountSummary(words, kept.account, kept.on),
                         trailing = {
                             Switch(
                                 checked = kept.on,
@@ -100,13 +103,13 @@ fun ProvidersScreen() {
                     )
                 }
             }
-            item(key = "add-header") { SectionHeader("Add a source") }
+            item(key = "add-header") { SectionHeader(stringResource(R.string.providers_add)) }
             providersShown.filter(all::accepts).forEach { provider ->
                 item(key = "add-${provider.name}") {
                     SettingRow(
                         title = providerName(provider),
                         icon = Icons.Rounded.Add,
-                        supporting = providerDetail(provider),
+                        supporting = providerDetail(words, provider),
                         onClick = {
                             navigator.open(
                                 Screen.ProviderAccount(ProviderAccountBook.UNSAVED, provider.name)
@@ -117,7 +120,7 @@ fun ProvidersScreen() {
                 }
             }
             item(key = "keystore") {
-                Footnote("Passwords, secrets and tokens stay encrypted with Android Keystore.")
+                Footnote(stringResource(R.string.provider_keystore))
             }
         }
     }

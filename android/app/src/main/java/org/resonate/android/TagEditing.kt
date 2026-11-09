@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.StringRes
 import java.io.File
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
@@ -24,21 +25,21 @@ import org.resonate.android.nativecore.documentNotFound
 import org.resonate.android.nativecore.documentRefused
 
 enum class TagName(
-    val label: String,
+    @StringRes val label: Int,
     val numbered: Boolean = false,
     val eachSongsOwn: Boolean = false,
 ) {
-    Title("Title", eachSongsOwn = true),
-    Artist("Artist"),
-    Album("Album"),
-    AlbumArtist("Album artist"),
-    Genre("Genre"),
-    Date("Year or date"),
-    TrackNumber("Track", numbered = true, eachSongsOwn = true),
-    TrackTotal("of", numbered = true),
-    DiscNumber("Disc", numbered = true),
-    DiscTotal("of", numbered = true),
-    Composer("Composer");
+    Title(R.string.tagging_title, eachSongsOwn = true),
+    Artist(R.string.tagging_artist),
+    Album(R.string.tagging_album),
+    AlbumArtist(R.string.tagging_album_artist),
+    Genre(R.string.tagging_genre),
+    Date(R.string.tagging_date),
+    TrackNumber(R.string.tagging_track, numbered = true, eachSongsOwn = true),
+    TrackTotal(R.string.tagging_of, numbered = true),
+    DiscNumber(R.string.tagging_disc, numbered = true),
+    DiscTotal(R.string.tagging_of, numbered = true),
+    Composer(R.string.tagging_composer);
 
     fun of(tags: SongTags): String? =
         when (this) {
@@ -108,32 +109,42 @@ object TagDiff {
 data class TagNotice(val text: String, val failure: Boolean)
 
 object TagSentences {
-    fun told(written: Int, failed: Int, failure: String?, undoing: Boolean): TagNotice =
+    fun told(
+        words: Words,
+        written: Int,
+        failed: Int,
+        failure: String?,
+        undoing: Boolean,
+    ): TagNotice =
         when {
             failure != null ->
                 TagNotice(
-                    if (written > 0) "$failure (${songs(failed)} left as they were)" else failure,
+                    if (written > 0)
+                        words.plural(R.plurals.tagging_failed_and_left, failed, failure, failed)
+                    else failure,
                     failure = true,
                 )
             written > 0 ->
                 TagNotice(
-                    (if (undoing) "Put back the tags of " else "Saved the tags of ") + songs(written),
+                    words.plural(
+                        if (undoing) R.plurals.tagging_put_back else R.plurals.tagging_saved,
+                        written,
+                        written,
+                    ),
                     failure = false,
                 )
-            else -> TagNotice("Nothing to change", failure = false)
+            else -> TagNotice(words.string(R.string.tagging_nothing_to_change), failure = false)
         }
 
-    fun notAllowed(count: Int): String? =
-        if (count == 0) null
-        else if (count == 1) "Writing to 1 song was not allowed, so it was left as it was"
-        else "Writing to $count songs was not allowed, so they were left as they were"
+    fun notAllowed(words: Words, count: Int): String? =
+        if (count == 0) null else words.plural(R.plurals.tagging_not_allowed, count, count)
 
-    fun cannotBeWritten(count: Int): String =
-        "${songs(count)} cannot be written and will be left alone."
+    fun cannotBeWritten(words: Words, count: Int): String =
+        words.plural(R.plurals.tagging_cannot_be_written, count, count)
 
-    fun editTitle(count: Int): String = if (count == 1) "Edit tags" else "Edit ${songs(count)}"
-
-    private fun songs(count: Int): String = "$count song${if (count == 1) "" else "s"}"
+    fun editTitle(words: Words, count: Int): String =
+        if (count == 1) words.string(R.string.tagging_edit_one)
+        else words.plural(R.plurals.tagging_edit_several, count, count)
 }
 
 object TagFiles {
@@ -220,9 +231,10 @@ class TagEditing(
                 if (told.written > 0u) library.refresh()
                 val notice =
                     TagSentences.told(
+                        library.words,
                         told.written.toInt(),
                         told.failed.toInt() + refused,
-                        told.failure ?: TagSentences.notAllowed(refused),
+                        told.failure ?: TagSentences.notAllowed(library.words, refused),
                         undoing,
                     )
                 if (notice.failure) library.report(IllegalStateException(notice.text))

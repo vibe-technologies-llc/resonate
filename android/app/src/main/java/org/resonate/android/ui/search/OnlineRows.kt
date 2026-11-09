@@ -1,5 +1,6 @@
 package org.resonate.android.ui.search
 
+import androidx.annotation.StringRes
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -38,15 +39,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.clock
 import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.SheetRow
 import org.resonate.android.ui.components.Sizes
 
-class SongAction(val icon: ImageVector, val label: String, val run: () -> Unit)
+class SongAction(val icon: ImageVector, @StringRes val label: Int, val run: () -> Unit)
 
 fun songLine(song: SearchSong, withAlbum: Boolean = true): String =
     listOfNotNull(
@@ -62,16 +65,16 @@ fun onlineSongActions(
     album: (() -> Unit)?,
     artist: (() -> Unit)?,
 ): List<SongAction> = buildList {
-    add(SongAction(Icons.Outlined.BookmarkAdd, "Save for later", save))
-    add(SongAction(Icons.Rounded.Download, "Download…", download))
-    album?.let { add(SongAction(Icons.Rounded.Album, "Go to album", it)) }
-    artist?.let { add(SongAction(Icons.Rounded.Person, "Go to artist", it)) }
+    add(SongAction(Icons.Outlined.BookmarkAdd, R.string.search_action_save, save))
+    add(SongAction(Icons.Rounded.Download, R.string.search_action_download, download))
+    album?.let { add(SongAction(Icons.Rounded.Album, R.string.search_action_album, it)) }
+    artist?.let { add(SongAction(Icons.Rounded.Person, R.string.search_action_artist, it)) }
 }
 
 fun wantedSongActions(download: () -> Unit, remove: () -> Unit): List<SongAction> =
     listOf(
-        SongAction(Icons.Rounded.Download, "Download…", download),
-        SongAction(Icons.Rounded.DeleteOutline, "Remove from saved", remove),
+        SongAction(Icons.Rounded.Download, R.string.search_action_download, download),
+        SongAction(Icons.Rounded.DeleteOutline, R.string.search_action_remove_saved, remove),
     )
 
 @Composable
@@ -98,7 +101,7 @@ fun HeldLabel() {
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            "In your library",
+            stringResource(R.string.search_in_your_library),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
@@ -139,11 +142,19 @@ fun OnlineSongRow(
         },
         trailingContent = {
             IconButton(onClick = onClick) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "More options for ${song.title}")
+                Icon(
+                    Icons.Rounded.MoreVert,
+                    contentDescription =
+                        stringResource(R.string.search_more_options_for, song.title),
+                )
             }
         },
     ) {
-            Text(song.title.ifBlank { "Unknown song" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                song.title.ifBlank { stringResource(R.string.unknown_song) },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 }
 
@@ -175,7 +186,13 @@ fun OnlineCollectionRow(
         },
         supportingContent =
             detail.takeIf { it.isNotBlank() }?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-    ) { Text(title.ifBlank { "Untitled" }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+    ) {
+        Text(
+            title.ifBlank { stringResource(R.string.search_untitled) },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -197,7 +214,7 @@ fun OnlineSongSheet(song: SearchSong, held: Boolean, dismiss: () -> Unit, action
                 },
             ) {
                     Text(
-                        song.title.ifBlank { "Unknown song" },
+                        song.title.ifBlank { stringResource(R.string.unknown_song) },
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -205,7 +222,7 @@ fun OnlineSongSheet(song: SearchSong, held: Boolean, dismiss: () -> Unit, action
                 }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             actions.forEach { action ->
-                SheetRow(action.icon, action.label) {
+                SheetRow(action.icon, stringResource(action.label)) {
                     dismiss()
                     action.run()
                 }

@@ -10,6 +10,8 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.Track
@@ -24,14 +26,38 @@ enum class Tone {
 
 data class Verdict(val title: String, val detail: String, val tone: Tone)
 
-fun verdictOf(name: String): Verdict =
-    when (name) {
-        "genuine" -> Verdict("Consistent with lossless", "Nothing in the audio suggests a lossy source.", Tone.GOOD)
-        "suspect" -> Verdict("Suspect", "It may be a high-bitrate lossy encode.", Tone.WARNING)
-        "fake" -> Verdict("Not truly lossless", "It is not the lossless master it claims to be.", Tone.BAD)
-        "lossy" -> Verdict("Lossy by its codec", "The format itself discards audio, so there is nothing to judge.", Tone.NEUTRAL)
-        else -> Verdict("Not judged", "There was not enough to go on.", Tone.NEUTRAL)
-    }
+fun verdictOf(words: Words, name: String): Verdict {
+    val (title, detail, tone) =
+        when (name) {
+            "genuine" ->
+                Triple(
+                    R.string.analysis_verdict_genuine,
+                    R.string.analysis_verdict_genuine_detail,
+                    Tone.GOOD,
+                )
+            "suspect" ->
+                Triple(
+                    R.string.analysis_verdict_suspect,
+                    R.string.analysis_verdict_suspect_detail,
+                    Tone.WARNING,
+                )
+            "fake" ->
+                Triple(R.string.analysis_verdict_fake, R.string.analysis_verdict_fake_detail, Tone.BAD)
+            "lossy" ->
+                Triple(
+                    R.string.analysis_verdict_lossy,
+                    R.string.analysis_verdict_lossy_detail,
+                    Tone.NEUTRAL,
+                )
+            else ->
+                Triple(
+                    R.string.analysis_verdict_unjudged,
+                    R.string.analysis_verdict_unjudged_detail,
+                    Tone.NEUTRAL,
+                )
+        }
+    return Verdict(words.string(title), words.string(detail), tone)
+}
 
 fun decibelsOf(level: Float): Float? = if (level > 0f) 20 * log10(level) else null
 
@@ -43,21 +69,54 @@ fun signed(value: Float, digits: Int, unit: String): String {
 
 data class Metric(val label: String, val value: String, val detail: String)
 
-fun metricsOf(report: AnalysisReport): List<Metric> =
+fun metricsOf(words: Words, report: AnalysisReport): List<Metric> =
     listOfNotNull(
         report.loudnessLufs?.let {
-            Metric("Loudness", String.format(Locale.ROOT, "%.1f LUFS", it), "Integrated, as streaming services measure")
+            Metric(
+                words.string(R.string.analysis_metric_loudness),
+                words.string(R.string.analysis_metric_lufs, String.format(Locale.ROOT, "%.1f", it)),
+                words.string(R.string.analysis_metric_loudness_detail),
+            )
         },
-        report.dynamicRange?.let { Metric("Dynamic range", "DR$it", "Higher is less compressed") },
-        decibelsOf(report.peak)?.let { Metric("Peak", signed(it, 2, "dBFS"), "Loudest sample") },
-        decibelsOf(report.truePeak)?.let { Metric("True peak", signed(it, 2, "dBTP"), "Between samples, after reconstruction") },
-        decibelsOf(report.rms)?.let { Metric("RMS", signed(it, 2, "dBFS"), "Average level") },
+        report.dynamicRange?.let {
+            Metric(
+                words.string(R.string.analysis_metric_dynamic_range),
+                "DR$it",
+                words.string(R.string.analysis_metric_dynamic_range_detail),
+            )
+        },
+        decibelsOf(report.peak)?.let {
+            Metric(
+                words.string(R.string.analysis_metric_peak),
+                signed(it, 2, "dBFS"),
+                words.string(R.string.analysis_metric_peak_detail),
+            )
+        },
+        decibelsOf(report.truePeak)?.let {
+            Metric(
+                words.string(R.string.analysis_metric_true_peak),
+                signed(it, 2, "dBTP"),
+                words.string(R.string.analysis_metric_true_peak_detail),
+            )
+        },
+        decibelsOf(report.rms)?.let {
+            Metric("RMS", signed(it, 2, "dBFS"), words.string(R.string.analysis_metric_rms_detail))
+        },
         Metric(
-            "Clipped samples",
+            words.string(R.string.analysis_metric_clipped),
             String.format(Locale.ROOT, "%,d", report.clipped.toLong()),
-            if (report.clipped == 0uL) "None at full scale" else "At full scale",
+            words.string(
+                if (report.clipped == 0uL) R.string.analysis_metric_clipped_none
+                else R.string.analysis_metric_clipped_some
+            ),
         ),
-        report.bitsInUse?.let { Metric("Bits in use", "$it bit", "Depth the samples actually reach") },
+        report.bitsInUse?.let {
+            Metric(
+                words.string(R.string.analysis_metric_bits_in_use),
+                words.string(R.string.unit_bits, it.toInt()),
+                words.string(R.string.analysis_metric_bits_in_use_detail),
+            )
+        },
     )
 
 const val SPECTRUM_FLOOR_DB = -120f
@@ -86,46 +145,91 @@ data class Detail(val label: String, val value: String, val copyable: Boolean = 
 
 private fun Detail?.kept(): Detail? = this?.takeIf { it.value.isNotBlank() }
 
-fun technicalDetails(track: Track, inspector: Inspector?): List<Detail> =
+fun technicalDetails(words: Words, track: Track, inspector: Inspector?): List<Detail> =
     listOfNotNull(
-        inspector?.container?.let { Detail("Container", it) }.kept(),
-        Detail("Codec", track.codec).kept(),
-        inspector?.sampleFormat?.let { Detail("Sample format", it) }.kept(),
-        track.rate.takeIf { it > 0u }?.let { Detail("Sample rate", String.format(Locale.ROOT, "%,d Hz", it.toLong())) },
-        track.bits?.let { Detail("Bit depth", "$it bit") },
-        track.channels.takeIf { it > 0u }?.let { Detail("Channels", channelsOf(it)) },
-        Detail("Duration", clock(track.durationMs)),
-        inspector?.let { Detail("Seekable", if (it.seekable) "Yes" else "No") },
-        inspector?.encoder?.let { Detail("Encoder", it) }.kept(),
+        inspector
+            ?.container
+            ?.let { Detail(words.string(R.string.song_detail_container), it) }
+            .kept(),
+        Detail(words.string(R.string.song_detail_codec), track.codec).kept(),
+        inspector
+            ?.sampleFormat
+            ?.let { Detail(words.string(R.string.song_detail_sample_format), it) }
+            .kept(),
+        track.rate
+            .takeIf { it > 0u }
+            ?.let {
+                Detail(
+                    words.string(R.string.song_detail_sample_rate),
+                    words.string(
+                        R.string.song_detail_hertz,
+                        String.format(Locale.ROOT, "%,d", it.toLong()),
+                    ),
+                )
+            },
+        track.bits?.let {
+            Detail(
+                words.string(R.string.song_detail_bit_depth),
+                words.string(R.string.unit_bits, it.toInt()),
+            )
+        },
+        track.channels
+            .takeIf { it > 0u }
+            ?.let { Detail(words.string(R.string.song_detail_channels), channelsOf(words, it)) },
+        Detail(words.string(R.string.song_detail_duration), clock(track.durationMs)),
+        inspector?.let {
+            Detail(
+                words.string(R.string.song_detail_seekable),
+                words.string(
+                    if (it.seekable) R.string.song_detail_yes else R.string.song_detail_no
+                ),
+            )
+        },
+        inspector?.encoder?.let { Detail(words.string(R.string.song_detail_encoder), it) }.kept(),
     )
 
-fun taggedDetails(track: Track, inspector: Inspector?): List<Detail> =
+fun taggedDetails(words: Words, track: Track, inspector: Inspector?): List<Detail> =
     listOfNotNull(
-        Detail("Title", track.title, copyable = true).kept(),
-        Detail("Artist", track.artist, copyable = true).kept(),
-        Detail("Album", track.album, copyable = true).kept(),
-        Detail("Album artist", track.albumArtist).kept(),
-        Detail("Genre", track.genre).kept(),
-        Detail("Date", track.date).kept(),
-        track.trackNumber?.let { Detail("Track", "$it") },
-        track.discNumber?.let { Detail("Disc", "$it") },
+        Detail(words.string(R.string.song_detail_title), track.title, copyable = true).kept(),
+        Detail(words.string(R.string.song_detail_artist), track.artist, copyable = true).kept(),
+        Detail(words.string(R.string.song_detail_album), track.album, copyable = true).kept(),
+        Detail(words.string(R.string.song_detail_album_artist), track.albumArtist).kept(),
+        Detail(words.string(R.string.song_detail_genre), track.genre).kept(),
+        Detail(words.string(R.string.song_detail_date), track.date).kept(),
+        track.trackNumber?.let { Detail(words.string(R.string.song_detail_track), "$it") },
+        track.discNumber?.let { Detail(words.string(R.string.song_detail_disc), "$it") },
         inspector?.isrc?.let { Detail("ISRC", it, copyable = true) }.kept(),
-        track.recording?.let { Detail("MusicBrainz recording", it, copyable = true) }.kept(),
-        track.release?.let { Detail("MusicBrainz release", it, copyable = true) }.kept(),
-        track.artistMbid?.let { Detail("MusicBrainz artist", it, copyable = true) }.kept(),
-        inspector?.copyright?.let { Detail("Copyright", it) }.kept(),
-        inspector?.comment?.let { Detail("Comment", it, copyable = true) }.kept(),
-        Detail("File", track.name, copyable = true).kept(),
+        track.recording
+            ?.let { Detail(words.string(R.string.song_detail_recording), it, copyable = true) }
+            .kept(),
+        track.release
+            ?.let { Detail(words.string(R.string.song_detail_release), it, copyable = true) }
+            .kept(),
+        track.artistMbid
+            ?.let { Detail(words.string(R.string.song_detail_artist_mbid), it, copyable = true) }
+            .kept(),
+        inspector
+            ?.copyright
+            ?.let { Detail(words.string(R.string.song_detail_copyright), it) }
+            .kept(),
+
+        inspector
+            ?.comment
+            ?.let { Detail(words.string(R.string.song_detail_comment), it, copyable = true) }
+            .kept(),
+        Detail(words.string(R.string.song_detail_file), track.name, copyable = true).kept(),
     )
 
-fun channelsOf(count: UInt): String =
+fun channelsOf(words: Words, count: UInt): String =
     when (count) {
-        1u -> "Mono"
-        2u -> "Stereo"
-        else -> "$count channels"
+        1u -> words.string(R.string.song_channels_mono)
+        2u -> words.string(R.string.song_channels_stereo)
+        else -> words.plural(R.plurals.song_channels_count, count.toInt(), count.toInt())
     }
 
-fun scoreOf(score: UInt): String = "${score.coerceAtMost(100u)}% match"
+fun scoreOf(words: Words, score: UInt): String =
+    words.string(R.string.analysis_recognition_score, score.coerceAtMost(100u).toInt())
+
 
 class Bands(private val count: Int, private val window: Int) {
     private val bins: List<IntRange> = buildList {

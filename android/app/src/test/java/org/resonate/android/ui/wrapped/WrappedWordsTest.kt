@@ -4,12 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 
 class WrappedWordsTest {
     @Test
     fun aSlideSaysWhereItStandsCountedFromOne() {
-        assertEquals("1 of 9", WrappedWords.place(0, 9))
-        assertEquals("9 of 9", WrappedWords.place(8, 9))
+        assertEquals("1 of 9", WrappedWords.place(English, 0, 9))
+        assertEquals("9 of 9", WrappedWords.place(English, 8, 9))
     }
 
     @Test

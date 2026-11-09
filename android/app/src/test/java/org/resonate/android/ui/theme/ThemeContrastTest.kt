@@ -21,7 +21,7 @@ class ThemeContrastTest {
 
     private fun variants(contrast: Double): List<Variant> {
         val seeds =
-            Accent.entries.map { it.label to Color(0xFF000000.toInt() or it.hex) } +
+            Accent.entries.map { it.name to Color(0xFF000000.toInt() or it.hex) } +
                 ("Wallpaper" to wallpaperStandIn)
         return seeds.flatMap { (name, seed) ->
             listOf(

@@ -1,6 +1,9 @@
 package org.resonate.android.ui.equaliser
 
+import androidx.annotation.StringRes
 import java.util.Locale
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.ListeningTest
 import org.resonate.android.nativecore.SettingKind
 import org.resonate.android.nativecore.TestArm
@@ -14,31 +17,23 @@ import org.resonate.android.ui.settings.phaseChoices
 import org.resonate.android.ui.settings.qualityChoices
 import org.resonate.android.ui.settings.restorationChoices
 
-private const val HOW_X_IS_DRAWN =
-    " X is one of the two, drawn afresh for every trial: hear A, B and X as often as you like on the song playing, then say which X was. A change is heard a few moments after you press, within the audio already buffered."
-
-enum class Testing(val label: String, val kind: SettingKind?, val how: String) {
-    Equaliser(
-        "Equaliser",
-        null,
-        "A is the equaliser as set, B is the signal with it bypassed. Each is lowered, never raised, until their loudness across 20 Hz to 16 kHz agrees to 0.1 dB, so the louder one cannot give itself away.$HOW_X_IS_DRAWN The room correction stays on in both. Editing the curve ends the comparison.",
-    ),
+enum class Testing(@StringRes val label: Int, val kind: SettingKind?, @StringRes val how: Int) {
+    Equaliser(R.string.equaliser_test_equaliser, null, R.string.equaliser_test_equaliser_how),
     Restoration(
-        "Restoration",
+        R.string.equaliser_test_restoration,
         SettingKind.RESTORATION,
-        "A is lossy restoration as set, B the setting you choose. Restoration changes how loud a song plays, so the song is first measured through both, which takes a moment, and the louder is lowered, never raised, until the two agree. A lossless file is touched by neither.$HOW_X_IS_DRAWN",
+        R.string.equaliser_test_restoration_how,
     ),
     Resampling(
-        "Resampler",
+        R.string.equaliser_test_resampler,
         SettingKind.RESAMPLING,
-        "A is the resampler as set, B the quality and phase you choose. Both play at one level. The resampler works only where the song's rate has to be changed to the device's; where it does not, the two sound alike and the test is refused.$HOW_X_IS_DRAWN",
+        R.string.equaliser_test_resampler_how,
     ),
-    Dither(
-        "Dither",
-        SettingKind.DITHER,
-        "A is the dither as the phone plays it, B the kind you choose. Both play at one level. Dither works only where the bits are cut down to the device's depth; where they are not, the two sound alike and the test is refused.$HOW_X_IS_DRAWN",
-    ),
+    Dither(R.string.equaliser_test_dither, SettingKind.DITHER, R.string.equaliser_test_dither_how),
 }
+
+fun howWords(words: Words, testing: Testing): String =
+    words.string(testing.how, words.string(R.string.equaliser_test_how_x))
 
 class ListeningRun(val test: ListeningTest, val standing: TestStanding, val testing: Testing)
 
@@ -71,65 +66,94 @@ data class ListeningTestView(
     }
 }
 
-val ditherChoices =
+fun ditherChoices(words: Words) =
     listOf(
-        Choice(TestedDither.OFF, "None"),
-        Choice(TestedDither.FLAT, "Triangular"),
-        Choice(TestedDither.SHAPED, "Triangular, shaped"),
+        Choice(TestedDither.OFF, words.string(R.string.equaliser_test_dither_none)),
+        Choice(TestedDither.FLAT, words.string(R.string.equaliser_test_dither_triangular)),
+        Choice(TestedDither.SHAPED, words.string(R.string.equaliser_test_dither_shaped)),
     )
 
-fun beginningWords(testing: Testing): String =
-    if (testing == Testing.Restoration) "Measuring…" else "Starting…"
+fun beginningWords(words: Words, testing: Testing): String =
+    words.string(
+        if (testing == Testing.Restoration) R.string.equaliser_test_measuring
+        else R.string.equaliser_test_starting
+    )
 
-fun scoreWords(standing: TestStanding): String {
+fun scoreWords(words: Words, standing: TestStanding): String {
     val chance = String.format(Locale.ROOT, "%.1f", standing.chancePercent)
-    return "${standing.right} of ${standing.answered} right, chance of that by guessing $chance%"
+    return words.string(
+        R.string.equaliser_test_score,
+        standing.right.toInt(),
+        standing.answered.toInt(),
+        chance,
+    )
 }
 
-fun standingWords(standing: TestStanding): String {
-    if (standing.answered == 0u) return "Trial 1 of ${standing.planned}"
+fun standingWords(words: Words, standing: TestStanding): String {
+    val planned = standing.planned.toInt()
+    if (standing.answered == 0u) return words.string(R.string.equaliser_test_trial, 1, planned)
     val trial =
-        if (standing.finished) "Finished" else "Trial ${standing.answered + 1u} of ${standing.planned}"
-    return "$trial — ${scoreWords(standing)}"
+        if (standing.finished) words.string(R.string.equaliser_test_finished)
+        else words.string(R.string.equaliser_test_trial, standing.answered.toInt() + 1, planned)
+    return "$trial — ${scoreWords(words, standing)}"
 }
 
-fun levelsWords(levels: TestLevels): String =
+fun levelsWords(words: Words, levels: TestLevels): String =
     when (levels) {
         is TestLevels.Matched ->
-            "Levels matched to ${String.format(Locale.ROOT, "%.3f", levels.residualDb)} dB"
-        TestLevels.Alike -> "Both play at one level"
-        TestLevels.MeasuredAlike -> "Measured through both, the two play at one level"
+            words.string(
+                R.string.equaliser_test_levels_matched,
+                String.format(Locale.ROOT, "%.3f", levels.residualDb),
+            )
+        TestLevels.Alike -> words.string(R.string.equaliser_test_levels_alike)
+        TestLevels.MeasuredAlike -> words.string(R.string.equaliser_test_levels_measured_alike)
         is TestLevels.Lowered ->
-            "${levels.arm.name} lowered by ${String.format(Locale.ROOT, "%.2f", levels.db)} dB to match the other"
+            words.string(
+                R.string.equaliser_test_levels_lowered,
+                levels.arm.name,
+                String.format(Locale.ROOT, "%.2f", levels.db),
+            )
     }
 
-fun heardWords(standing: TestStanding): String {
+fun heardWords(words: Words, standing: TestStanding): String {
     val hearing =
         when (standing.heard) {
-            TestArm.A -> "Hearing A"
-            TestArm.B -> "Hearing B"
-            null -> "Hearing nothing chosen yet"
+            TestArm.A -> words.string(R.string.equaliser_test_hearing_a)
+            TestArm.B -> words.string(R.string.equaliser_test_hearing_b)
+            null -> words.string(R.string.equaliser_test_hearing_nothing)
         }
-    return "${levelsWords(standing.levels)}. $hearing"
+    return "${levelsWords(words, standing.levels)}. $hearing"
 }
 
-fun playedAsWords(setting: TestedSetting): String =
+fun playedAsWords(words: Words, setting: TestedSetting): String =
     when (setting) {
         is TestedSetting.Restoration ->
-            "A is ${labelOf(restorationChoices, setting.a)}"
+            words.string(
+                R.string.equaliser_test_a_is,
+                labelOf(restorationChoices(words), setting.a),
+            )
         is TestedSetting.Resampling ->
-            "A is ${labelOf(qualityChoices, setting.aQuality)} · ${labelOf(phaseChoices, setting.aPhase)}"
-        is TestedSetting.Dither -> "A is ${labelOf(ditherChoices, setting.a)}"
+            words.string(
+                R.string.equaliser_test_a_is_both,
+                labelOf(qualityChoices(words), setting.aQuality),
+                labelOf(phaseChoices(words), setting.aPhase),
+            )
+        is TestedSetting.Dither ->
+            words.string(R.string.equaliser_test_a_is, labelOf(ditherChoices(words), setting.a))
     }
 
 fun verdictsInALine(standing: TestStanding): String =
     standing.verdicts.joinToString(" ") { if (it) "✓" else "✗" }
 
-fun lastWords(standing: TestStanding): String? =
+fun lastWords(words: Words, standing: TestStanding): String? =
     standing.verdicts.lastOrNull()?.takeIf { !standing.finished }?.let {
-        if (it) "The last one was right" else "The last one was wrong"
+        words.string(
+            if (it) R.string.equaliser_test_last_right else R.string.equaliser_test_last_wrong
+        )
     }
 
-fun conclusionWords(standing: TestStanding): String =
-    if (standing.significant) "That is unlikely to be luck: you can hear this."
-    else "That could well be luck: no difference was shown."
+fun conclusionWords(words: Words, standing: TestStanding): String =
+    words.string(
+        if (standing.significant) R.string.equaliser_test_heard
+        else R.string.equaliser_test_luck
+    )

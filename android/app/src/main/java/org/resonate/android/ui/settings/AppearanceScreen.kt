@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,7 +51,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 import org.resonate.android.Accent
 import org.resonate.android.Appearance
+import org.resonate.android.R
 import org.resonate.android.ThemeMode
+import org.resonate.android.words
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.CommitSlider
 import org.resonate.android.ui.components.Page
@@ -97,56 +100,54 @@ private const val SWATCHES_A_ROW = 4
 fun AppearanceScreen() {
     val model = resonateViewModel { AppearanceViewModel(it) }
     val appearance by model.appearance.collectAsStateWithLifecycle()
-    Page("Appearance") { padding ->
+    Page(stringResource(R.string.settings_appearance_title)) { padding ->
         SettingsList(padding, Modifier.testTag("appearance-list")) {
-            item(key = "theme") { SectionHeader("Theme") }
+            item(key = "theme") { SectionHeader(stringResource(R.string.settings_inner_theme)) }
             items(ThemeMode.entries, key = { "theme-${it.name}" }) { mode ->
                 RadioRow(
-                    title = mode.label,
+                    title = stringResource(mode.label),
                     selected = appearance.mode == mode,
                     onClick = { model.chooseMode(mode) },
                     icon = mode.icon,
-                    supporting = mode.detail,
+                    supporting = stringResource(mode.detail),
                     modifier = Modifier.testTag("theme-${mode.name.lowercase()}"),
                 )
             }
             item(key = "pitch-black") {
                 SwitchRow(
-                    title = "Pitch black",
+                    title = stringResource(R.string.settings_inner_pitch_black),
                     checked = appearance.pitchBlack,
                     onCheckedChange = model::choosePitchBlack,
                     icon = Icons.Rounded.Contrast,
-                    supporting = "True black backgrounds for OLED screens, in the dark theme",
+                    supporting = stringResource(R.string.appearance_pitch_black_detail),
                     modifier = Modifier.testTag("pitch-black"),
                 )
             }
             item(key = "high-contrast") {
                 SwitchRow(
-                    title = "High contrast",
+                    title = stringResource(R.string.settings_inner_high_contrast),
                     checked = appearance.highContrast,
                     onCheckedChange = model::chooseHighContrast,
                     icon = Icons.Rounded.InvertColors,
-                    supporting = "Stronger colours for text and controls, on top of the phone's own contrast setting",
+                    supporting = stringResource(R.string.appearance_high_contrast_detail),
                     modifier = Modifier.testTag("high-contrast"),
                 )
             }
-            item(key = "accent") { SectionHeader("Accent colour") }
+            item(key = "accent") {
+                SectionHeader(stringResource(R.string.settings_inner_accent_colour))
+            }
             item(key = "swatches") { Swatches(appearance, model::chooseAccent) }
             item(key = "note") {
-                Footnote(
-                    "Wallpaper takes its colours from your wallpaper. The other accents are " +
-                        "Resonate's own, the ones the desktop wears."
-                )
+                Footnote(stringResource(R.string.appearance_accent_note))
             }
-            item(key = "background") { SectionHeader("Player background") }
+            item(key = "background") {
+                SectionHeader(stringResource(R.string.settings_inner_player_background))
+            }
             item(key = "strength") {
                 BackgroundStrength(appearance.backgroundStrength, model::chooseBackgroundStrength)
             }
             item(key = "strength-note") {
-                Footnote(
-                    "How strongly the song's cover colours the background of the player. " +
-                        "At 0 % the player has no coloured background."
-                )
+                Footnote(stringResource(R.string.appearance_strength_note))
             }
             item(key = "intensity") {
                 NowPlayingIntensity(
@@ -155,10 +156,7 @@ fun AppearanceScreen() {
                 )
             }
             item(key = "intensity-note") {
-                Footnote(
-                    "How dark or vivid the cover's colours are behind the player and its lyrics. " +
-                        "The middle is the colours as they were."
-                )
+                Footnote(stringResource(R.string.appearance_intensity_note))
             }
         }
     }
@@ -173,6 +171,7 @@ private fun PercentSetting(
     stored: Float,
     onCommit: (Float) -> Unit,
 ) {
+    val words = words()
     var draft by remember { mutableStateOf<Float?>(null) }
     val shown = draft ?: stored
     Column(Modifier.fillMaxWidth()) {
@@ -192,7 +191,13 @@ private fun PercentSetting(
             onCommit = onCommit,
             onDraft = { draft = it },
             trackHeight = SLIDER_TRACK,
-            stateText = { "${(it * 100).roundToInt()} percent" },
+            stateText = {
+                words.plural(
+                    R.plurals.appearance_percent_spoken,
+                    (it * 100).roundToInt(),
+                    (it * 100).roundToInt(),
+                )
+            },
             modifier =
                 Modifier.fillMaxWidth()
                     .padding(start = 56.dp, end = Sizes.gutter)
@@ -205,9 +210,9 @@ private fun PercentSetting(
 @Composable
 private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
     PercentSetting(
-        title = "Strength",
+        title = stringResource(R.string.appearance_strength),
         icon = Icons.Rounded.Gradient,
-        described = "Player background strength",
+        described = stringResource(R.string.appearance_strength_described),
         tag = "background-strength",
         stored = stored,
         onCommit = onCommit,
@@ -218,9 +223,9 @@ private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
 private fun NowPlayingIntensity(stored: Float, onCommit: (Float) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         PercentSetting(
-            title = "Intensity",
+            title = stringResource(R.string.appearance_intensity),
             icon = Icons.Rounded.InvertColors,
-            described = "Player intensity",
+            described = stringResource(R.string.settings_inner_player_intensity),
             tag = "now-playing-intensity",
             stored = stored,
             onCommit = onCommit,
@@ -231,7 +236,7 @@ private fun NowPlayingIntensity(stored: Float, onCommit: (Float) -> Unit) {
                 modifier =
                     Modifier.padding(start = 48.dp).testTag("now-playing-intensity-reset"),
             ) {
-                Text("Reset to default")
+                Text(stringResource(R.string.appearance_intensity_reset))
             }
         }
     }
@@ -248,7 +253,7 @@ private fun Swatches(appearance: Appearance, onChoose: (Accent?) -> Unit) {
         maxItemsInEachRow = SWATCHES_A_ROW,
     ) {
         Swatch(
-            name = Appearance.WALLPAPER,
+            name = stringResource(Appearance.WALLPAPER),
             color = wallpaper,
             chosen = appearance.accent == null,
             onChoose = { onChoose(null) },
@@ -257,7 +262,7 @@ private fun Swatches(appearance: Appearance, onChoose: (Accent?) -> Unit) {
         )
         Accent.entries.forEach { accent ->
             Swatch(
-                name = accent.label,
+                name = stringResource(accent.label),
                 color = Color(0xFF000000.toInt() or accent.hex),
                 chosen = appearance.accent == accent,
                 onChoose = { onChoose(accent) },
