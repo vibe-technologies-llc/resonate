@@ -24,7 +24,9 @@ use crate::{
     wrapped_card::{self, CardColours},
 };
 
-const WRAPPED_DECK_TALL: f32 = 480.0;
+const DECK_STANDS_BELOW_THE_TOP: f32 = 0.12;
+
+const DECK_HEIGHT_AT_MOST: f32 = 0.84;
 
 const NOTHING_PLAYED: &str = "Nothing has been played yet, so there is no year to review";
 
@@ -225,8 +227,7 @@ impl RootView {
             .flex_col()
             .gap_4()
             .w(px(theme::wrapped_width()))
-            .h(px(WRAPPED_DECK_TALL))
-            .max_h(relative(0.92))
+            .max_h(relative(DECK_HEIGHT_AT_MOST))
             .p_6()
             .rounded_xl()
             .bg(rgb(theme::surface()))
@@ -239,25 +240,31 @@ impl RootView {
                 spread_radius: px(0.0),
                 inset: false,
             }])
-            .child(div().flex_1().min_h(px(0.0)).overflow_hidden().when_some(
-                slide,
-                |body, slide| {
-                    body.child(motion::faded_in(
-                        slide_drawn(&slide, &deck.review),
-                        ("wrapped-slide", deck.at),
-                        motion::HANDS_OVER,
-                    ))
-                },
-            ))
             .child(self.wrapped_steps(deck, cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_shrink(1.0)
+                    .min_h(px(0.0))
+                    .when_some(slide, |body, slide| {
+                        body.child(motion::faded_in(
+                            slide_drawn(&slide, &deck.review),
+                            ("wrapped-slide", deck.at),
+                            motion::HANDS_OVER,
+                        ))
+                    }),
+            )
+            .child(kit::rule())
             .child(self.wrapped_foot(deck, cx));
 
         div()
             .absolute()
             .inset_0()
             .flex()
-            .items_center()
+            .items_start()
             .justify_center()
+            .pt(relative(DECK_STANDS_BELOW_THE_TOP))
             .bg(rgba(theme::scrim()))
             .occlude()
             .child(motion::lifted_in(card, "wrapped-sheet-arrives"))
@@ -368,8 +375,7 @@ fn slide_drawn(slide: &Slide, review: &YearReview) -> Stateful<Div> {
         .flex()
         .flex_col()
         .gap_3()
-        .size_full()
-        .when(says_little, |body| body.justify_center().gap_4())
+        .min_h(px(0.0))
         .overflow_y_scroll()
         .child(kit::eyebrow(slide.eyebrow.clone()))
         .child(

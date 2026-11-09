@@ -855,14 +855,14 @@ impl IntoElement for Rows {
 }
 
 fn cell() -> Div {
-    div().flex().flex_col().gap_2().px_3().py_2p5()
+    div().flex().flex_col().gap_2().px_3().py_2()
 }
 
 fn row_rule() -> Div {
     div()
         .flex_none()
         .h(px(RULE))
-        .mx_3()
+        .my_1()
         .bg(rgb(theme::soft_edge()))
 }
 
