@@ -106,6 +106,7 @@ impl Rooms {
         let hosting = match asked.host_token {
             Some(host_token) if room.host_token == *host_token => true,
             Some(_) => return Err(Refusal::Token),
+            None if asked.member == room.host => return Err(Refusal::Token),
             None => false,
         };
         if !room.members.contains_key(&asked.member) && room.members.len() >= limits.members {
@@ -372,6 +373,24 @@ mod tests {
         );
 
         assert!(matches!(forged, Err(Refusal::Token)));
+    }
+
+    #[test]
+    fn no_guest_can_take_the_hosts_seat_by_joining_under_its_id() {
+        let rooms = Rooms::default();
+        let mut hosting = host(&rooms);
+        let _guest = guest(&rooms, GUEST).expect("a guest joins");
+        let _arrived = hosting.notices.try_recv();
+
+        let seated = guest(&rooms, HOST);
+
+        assert!(matches!(seated, Err(Refusal::Token)));
+        assert!(hosting.notices.try_recv().is_err());
+        assert_eq!(
+            rooms.leave(ROOM, HOST, hosting.session),
+            Leaving::TheHostLeft
+        );
+        assert!(matches!(guest(&rooms, HOST), Err(Refusal::Token)));
     }
 
     #[test]

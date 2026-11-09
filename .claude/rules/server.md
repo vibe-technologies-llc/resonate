@@ -77,7 +77,7 @@ holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
 
 A room lives in memory only: nothing is stored, and a restart ends every party. **The first frame
 `Room` either makes one or joins one**: a host token makes the room and only that token is the host
-from then on, and a guest finds `NoSuchRoom` until it exists. **The server enforces the star, so
+from then on, and a guest finds `NoSuchRoom` until it exists. A guest naming the host's `DeviceId` (which every guest is told in `RoomWelcome`) is refused `Token`, so the host's seat is never replaced by anyone without the host token. **The server enforces the star, so
 nobody can forge the host**: `RoomSay` from the host reaches everyone (or the one member it names),
 from a guest it reaches the host alone, whatever it names. `RoomKick` and a host's `Close` are the
 host's; a guest asking changes nothing. **A host gone is waited for** (`Limits::host_back_within`,

@@ -4,14 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Sync and sharing
-- [S · 0.7.1] A guest who knows a room's token can take the host's seat: `Rooms::join` inserts
-  the member under any `DeviceId` once the token matches and every guest is handed the host's id in
-  `RoomWelcome`, so joining as it replaces the host's member entry and ends the host's session with
-  `Replaced` (it reconnects under its host token and can be displaced again); the replaced session's
-  later `leave` is ignored because the session numbers differ, so `host_session` keeps naming it,
-  the 30 s grace timer never starts and `RoomEnded` is never sent, and a room everyone has left is
-  never taken out of `held.rooms` and holds one of the `--rooms` slots until the server restarts;
-  speech is not forged (`say` trusts `host_session` and the host token), the seat is
 - [M · 0.7.1] The server reads a session's frames faster than it handles them: each session and
   room spawns `read_frames` into an `unbounded_channel`, the frame cap, record limit and store work
   run in the select loop, and while that loop waits on a write to a client that reads nothing the
