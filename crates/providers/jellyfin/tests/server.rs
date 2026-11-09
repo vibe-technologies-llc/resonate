@@ -7,7 +7,9 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_jellyfin::{Flavour, Id, Jellyfin, Named, Patience, PlaysInPlace as _, Server};
+use resonate_jellyfin::{
+    Flavour, Id, Jellyfin, KeptSession, Named, Patience, PlaysInPlace as _, Server,
+};
 use resonate_providers::{Error, ProviderOp};
 
 const AUDIO: &[u8] = b"fLaC and the rest of the file";
@@ -144,6 +146,20 @@ impl Fake {
             url: self.url.clone(),
             user: "listener".to_owned(),
             password: "sesame".to_owned(),
+            kept: None,
+        })
+    }
+
+    fn kept(&self) -> Jellyfin {
+        Jellyfin::at(Server {
+            url: self.url.clone(),
+            user: "listener".to_owned(),
+            password: String::new(),
+            kept: Some(KeptSession {
+                token: TOKEN.to_owned(),
+                user: USER_ID.to_owned(),
+                device: "kept-device".to_owned(),
+            }),
         })
     }
 
@@ -539,6 +555,37 @@ fn a_token_the_server_turned_down_is_signed_in_for_again_once() {
 }
 
 #[test]
+fn a_kept_session_is_asked_with_its_token_and_never_signs_in() {
+    let fake = Fake::serving(library);
+
+    let artists = fake.kept().artists().expect("the artists");
+
+    assert_eq!(artists.len(), 1);
+    assert!(fake.heard_at("/Users/AuthenticateByName").is_empty());
+    assert!(
+        fake.heard()
+            .iter()
+            .all(|asked| asked.parameter("api_key") == Some(TOKEN))
+    );
+}
+
+#[test]
+fn a_kept_token_turned_away_is_the_account_turned_away_and_not_a_new_sign_in() {
+    let fake = Fake::serving(|_, _| Canned::status(401));
+
+    assert!(matches!(
+        fake.kept().artists(),
+        Err(Error::Unwelcome {
+            op: ProviderOp::SignIn,
+            code: 401,
+            ..
+        })
+    ));
+    assert!(fake.heard_at("/Users/AuthenticateByName").is_empty());
+    assert_eq!(fake.heard().len(), 1);
+}
+
+#[test]
 fn a_token_turned_down_twice_is_a_refusal_and_not_a_loop() {
     let fake = Fake::serving(|asked, _| {
         if asked.is("POST", "/Users/AuthenticateByName") {
@@ -602,6 +649,7 @@ fn an_address_that_names_the_emby_route_is_signed_in_to_there_alone() {
         url: format!("{}/emby/", fake.url),
         user: "listener".to_owned(),
         password: "sesame".to_owned(),
+        kept: None,
     });
 
     jellyfin.artists().expect("the artists");
@@ -660,6 +708,7 @@ fn a_server_that_never_answers_is_given_up_within_the_patience() {
         url,
         user: "listener".to_owned(),
         password: "sesame".to_owned(),
+        kept: None,
     })
     .waiting(Patience {
         answered_within: IMPATIENT,

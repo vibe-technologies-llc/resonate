@@ -143,6 +143,7 @@ fn jellyfin_of(made: &Made, server: &JellyfinServer) -> Arc<Jellyfin> {
             url: server.url.clone(),
             user: server.user.clone(),
             password: server.password.clone(),
+            kept: None,
         })
     })
 }

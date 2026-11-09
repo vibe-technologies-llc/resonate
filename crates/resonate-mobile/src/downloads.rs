@@ -576,6 +576,7 @@ impl Downloads {
                     url: server,
                     user,
                     password,
+                    kept: None,
                 }))
             }
             MusicProvider::Tidal => {
