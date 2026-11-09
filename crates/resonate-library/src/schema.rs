@@ -52,7 +52,18 @@ const MIGRATIONS: &[&str] = &[
     TRACKS_ARE_READ_IN_FORMAT_ORDER_OFF_AN_INDEX,
     A_KEPT_SONG_IS_ASKED_FOR_ITS_PICTURE_ONCE,
     HIDDEN_TRACKS_ARE_LISTED_OFF_AN_INDEX,
+    A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST,
 ];
+
+const A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST: &str = "
+UPDATE tracks SET album_id = NULL
+ WHERE album_id IN (SELECT id FROM albums WHERE trim(coalesce(release_title, title)) = '');
+UPDATE tracks SET artist_id = NULL
+ WHERE artist_id IN (SELECT id FROM artists WHERE trim(name) = '');
+UPDATE albums SET artist_id = NULL
+ WHERE artist_id IN (SELECT id FROM artists WHERE trim(name) = '');
+UPDATE settle_owed SET owed = 1;
+";
 
 const HIDDEN_TRACKS_ARE_LISTED_OFF_AN_INDEX: &str = "
 CREATE INDEX tracks_hidden ON tracks(title COLLATE NOCASE, id) WHERE hidden = 1;
@@ -1517,6 +1528,62 @@ mod tests {
             )
             .expect("the carried song");
         assert_eq!(kept, ("A song".to_owned(), None, true));
+    }
+
+    #[test]
+    fn an_album_and_an_artist_a_blank_tag_named_are_let_go_and_the_named_ones_stay() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        connection.execute_batch(V1).expect("the baseline");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST)
+            .expect("the blank-tag migration");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name) VALUES (1, '', ''), (2, 'ada', 'Ada');
+                 INSERT INTO albums (id, title, artist_id) VALUES (1, ' ', 1), (2, 'Takk', 2);
+                 INSERT INTO tracks (path, title, artist, artist_id, album_id, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                      VALUES ('/music/blank.opus', 'Blank', '', 1, 1, 48000, 2, 16, 3, 100, 1, 1, 1),
+                             ('/music/named.flac', 'Named', 'Ada', 2, 2, 44100, 2, 16, 1, 100, 1, 1, 1);
+                 UPDATE settle_owed SET owed = 0;",
+            )
+            .expect("a catalog holding a blank album and artist");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the blank-tag migration");
+        connection
+            .execute_batch(store::ORPHANS)
+            .expect("the orphans swept");
+
+        let read = |sql: &str| -> Vec<(Option<i64>, Option<i64>)> {
+            let mut statement = connection.prepare(sql).expect("the query");
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .expect("the rows")
+                .collect::<rusqlite::Result<_>>()
+                .expect("each row")
+        };
+        let owed: bool = connection
+            .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
+            .expect("the settle mark");
+
+        assert_eq!(
+            read("SELECT artist_id, album_id FROM tracks ORDER BY id"),
+            vec![(None, None), (Some(2), Some(2))]
+        );
+        assert_eq!(
+            read("SELECT id, artist_id FROM albums"),
+            vec![(Some(2), Some(2))]
+        );
+        assert_eq!(read("SELECT id, id FROM artists"), vec![(Some(2), Some(2))]);
+        assert!(owed);
     }
 
     fn studies_hold_their_bands(connection: &Connection) -> bool {

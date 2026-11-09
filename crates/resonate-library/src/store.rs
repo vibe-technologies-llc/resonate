@@ -942,6 +942,10 @@ fn named(value: Option<&str>) -> Option<&str> {
     (!named.is_empty()).then_some(named)
 }
 
+fn stated(value: Option<&str>) -> Option<&str> {
+    value.filter(|value| !value.trim().is_empty())
+}
+
 pub fn mbid_in(text: Option<&str>) -> Option<Mbid> {
     let text = named(text)?;
     match Mbid::new(text) {
@@ -965,14 +969,14 @@ pub fn isrc_in(text: Option<&str>) -> Option<Isrc> {
 }
 
 fn attribution(tags: &TagSet) -> (Option<Billing<'_>>, Option<Billing<'_>>) {
-    let album_artist = tags.album_artist.as_deref().map(|name| {
+    let album_artist = stated(tags.album_artist.as_deref()).map(|name| {
         Billing::of(
             name,
             tags.musicbrainz_album_artist_id.as_deref(),
             tags.album_artist_sort.as_deref(),
         )
     });
-    let artist = tags.artist.as_deref().map(|name| {
+    let artist = stated(tags.artist.as_deref()).map(|name| {
         Billing::of(
             name,
             tags.musicbrainz_artist_id.as_deref(),
@@ -1013,7 +1017,7 @@ pub fn apply(
         _ => owner_id,
     };
 
-    let album_id = match record.tags.album.as_deref() {
+    let album_id = match stated(record.tags.album.as_deref()) {
         Some(title) => Some(album(
             tx,
             cache,
