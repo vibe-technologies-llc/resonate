@@ -185,7 +185,7 @@ fun ScrobblingScreen() {
                     SettingRow(
                         title = "Signed in to Last.fm",
                         icon = Icons.Rounded.CheckCircle,
-                        supporting = "Resonate keeps the session, never your password",
+                        supporting = "Resonate keeps the session key",
                         trailing = { TextButton(onClick = model::signOut) { Text("Sign out") } },
                     )
                 }

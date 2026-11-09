@@ -32,6 +32,8 @@ const GET_TOKEN: &str = "auth.getToken";
 const GET_SESSION: &str = "auth.getSession";
 const ALLOWED_ON: &str = "https://www.last.fm/api/auth/";
 const NOT_YET_AUTHORISED: u32 = 14;
+const TOKEN_EXPIRED: u32 = 15;
+const UNREACHED_POLLS_AT_MOST: usize = 5;
 const ASKED_EVERY: Duration = Duration::from_secs(3);
 const LOVE: &str = "track.love";
 const UNLOVE: &str = "track.unlove";
@@ -107,9 +109,7 @@ pub struct LastfmApproving {
 
 impl fmt::Debug for LastfmApproving {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LastfmApproving")
-            .field("application", &self.application)
-            .finish_non_exhaustive()
+        f.debug_struct("LastfmApproving").finish_non_exhaustive()
     }
 }
 
@@ -120,7 +120,11 @@ pub fn approval_asked(
     let fields = Fields::default()
         .with("method", GET_TOKEN)
         .with("api_key", &application.key);
-    let answer = asked(&client, LookupOp::Token, &fields, &application.secret)?;
+    let op = LookupOp::Token;
+    let answer = approval_answered(&client, op, &fields, &application.secret)?;
+    if let Some(code) = answer.error {
+        return Err(refused(op, code));
+    }
     let token = answer
         .token
         .filter(|token| !token.trim().is_empty())
@@ -151,6 +155,7 @@ impl LastfmApproving {
         cancelled: &dyn Fn() -> bool,
     ) -> resonate_library::Result<Option<Session>> {
         let op = LookupOp::Token;
+        let mut unreached = 0;
         loop {
             if cancelled() || Instant::now() >= self.until {
                 return Ok(None);
@@ -159,11 +164,25 @@ impl LastfmApproving {
                 .with("method", GET_SESSION)
                 .with("api_key", &self.application.key)
                 .with("token", &self.token);
-            let answer = answered(&self.client, op, &fields, &self.application.secret)?;
-            match answer.error {
-                Some(NOT_YET_AUTHORISED) => {}
-                Some(code) => return Err(refused(op, code)),
-                None => return session_of(answer).map(Some),
+            match approval_answered(&self.client, op, &fields, &self.application.secret) {
+                Ok(answer) => {
+                    unreached = 0;
+                    match answer.error {
+                        Some(NOT_YET_AUTHORISED) => {}
+                        Some(TOKEN_EXPIRED) => return Ok(None),
+                        Some(code) => return Err(refused(op, code)),
+                        None if cancelled() => return Ok(None),
+                        None => return session_of(answer).map(Some),
+                    }
+                }
+                Err(error @ resonate_library::Error::Unreachable { .. }) => {
+                    unreached += 1;
+                    if unreached >= UNREACHED_POLLS_AT_MOST {
+                        return Err(error);
+                    }
+                    tracing::debug!(%error, "Last.fm did not answer the poll; asking again");
+                }
+                Err(error) => return Err(error),
             }
             if !waited(ASKED_EVERY, self.until, cancelled) {
                 return Ok(None);
@@ -370,6 +389,26 @@ fn asked(
         None => Ok(answer),
         Some(code) => Err(refused(op, code)),
     }
+}
+
+fn approval_answered(
+    client: &Client,
+    op: LookupOp,
+    fields: &Fields,
+    secret: &str,
+) -> resonate_library::Result<Answer> {
+    let answer: Option<Answer> = client.posted_saying_failures(
+        Host::LastFm,
+        op,
+        Host::LastFm.base(),
+        &Posted {
+            content_type: FORM.to_owned(),
+            encoded: Encoded::Plain,
+            bytes: fields.signed(secret).into_bytes(),
+            authorization: None,
+        },
+    )?;
+    answer.ok_or(resonate_library::Error::Unreadable { op })
 }
 
 fn answered(

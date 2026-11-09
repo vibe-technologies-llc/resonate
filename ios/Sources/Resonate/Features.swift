@@ -1735,7 +1735,11 @@ final class Features {
             guard let self, lastfmRequest == request else { return }
             lastfmAddress = address
             let answer = try await Work.aside { try native.finishLastfmAuthorization() }
-            guard let signed = answer, lastfmRequest == request else { return }
+            guard lastfmRequest == request else { return }
+            guard let signed = answer else {
+                scrobbleStatus = "The Last.fm sign-in ended before Resonate was allowed"
+                return
+            }
             var signedIn = account
             signedIn.lastfmSession = signed.session
             let store = accounts

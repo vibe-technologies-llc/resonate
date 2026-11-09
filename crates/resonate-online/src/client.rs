@@ -643,6 +643,34 @@ impl Client {
         self.answered(host, op, url, Sending::Post(body), largest)
     }
 
+    pub(crate) fn posted_saying_failures<T: DeserializeOwned>(
+        &self,
+        host: Host,
+        op: LookupOp,
+        url: &str,
+        body: &Posted,
+    ) -> Result<Option<T>> {
+        let response = self.exchange(host, op, url, Sending::Post(body))?;
+        let status = response.status();
+        if !status.is_client_error() || status == StatusCode::NOT_FOUND {
+            let Some(bytes) = Self::read(response, host, op, LARGEST_DOCUMENT)? else {
+                return Ok(None);
+            };
+            return serde_json::from_slice(&bytes).map(Some).map_err(|error| {
+                tracing::debug!(%error, ?host, ?op, url, "an answer was not the document expected");
+                Error::Unreadable { host, op }
+            });
+        }
+        let bytes = Self::body_of(response, host, op, LARGEST_DOCUMENT)?;
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|_| Error::Refused {
+                host,
+                op,
+                status: status.as_u16(),
+            })
+    }
+
     pub(crate) fn json_as<T: DeserializeOwned>(
         &self,
         host: Host,
@@ -764,7 +792,7 @@ impl Client {
     }
 
     fn read(
-        mut response: Response<Body>,
+        response: Response<Body>,
         host: Host,
         op: LookupOp,
         limit: usize,
@@ -780,7 +808,15 @@ impl Client {
                 status: status.as_u16(),
             });
         }
+        Self::body_of(response, host, op, limit).map(Some)
+    }
 
+    fn body_of(
+        mut response: Response<Body>,
+        host: Host,
+        op: LookupOp,
+        limit: usize,
+    ) -> Result<Vec<u8>> {
         let mut read = Vec::new();
         response
             .body_mut()
@@ -791,7 +827,7 @@ impl Client {
         if read.len() > limit {
             return Err(Error::TooLarge { host, op, limit });
         }
-        Ok(Some(read))
+        Ok(read)
     }
 
     fn reachable(&self, host: Host, op: LookupOp) -> Result<()> {

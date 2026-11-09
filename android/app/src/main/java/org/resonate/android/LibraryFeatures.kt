@@ -1722,7 +1722,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         work { native ->
             try {
                 lastfmAddress.value = native.authorizeLastfm(account.lastfmKey, account.lastfmSecret)
-                val signed = native.finishLastfmAuthorization() ?: return@work
+                val signed = native.finishLastfmAuthorization()
+                if (signed == null) {
+                    scrobbleStatus.value = "The Last.fm sign-in ended before Resonate was allowed"
+                    return@work
+                }
                 val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
                 val signedIn =
                     kept.copy(

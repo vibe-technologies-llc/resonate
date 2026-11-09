@@ -161,6 +161,8 @@ pub enum Error {
     DownloadExpired,
     #[error("This server has Quick Connect off, so sign in with the password")]
     QuickConnectOff,
+    #[error("The sign-in was cancelled")]
+    SignInCancelled,
     #[error("No download is under that number")]
     UnknownDownload,
     #[error("The downloaded file exceeds the eight GiB limit")]

@@ -1,7 +1,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, UNIX_EPOCH},
 };
@@ -77,8 +77,8 @@ impl ScrobbleService {
 
 #[derive(Default)]
 pub(crate) struct LastfmSigning {
-    waiting: parking_lot::Mutex<Option<resonate_online::LastfmApproving>>,
-    cancelled: Arc<AtomicBool>,
+    waiting: parking_lot::Mutex<Option<(u64, resonate_online::LastfmApproving)>>,
+    attempts: Arc<AtomicU64>,
 }
 
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
@@ -236,7 +236,7 @@ impl MobilePlayer {
     pub fn authorize_lastfm(&self, key: String, secret: String) -> Result<String> {
         self.require_online()?;
         let signing = &self.services.lastfm_signing;
-        signing.cancelled.store(false, Ordering::Relaxed);
+        let attempt = signing.attempts.fetch_add(1, Ordering::AcqRel) + 1;
         *signing.waiting.lock() = None;
         let approving = resonate_online::approval_asked(
             Arc::clone(self.services.online.client()),
@@ -244,20 +244,24 @@ impl MobilePlayer {
         )
         .map_err(|source| Error::reference(LookupOp::Token, source))?;
         let address = approving.address().to_owned();
-        *signing.waiting.lock() = Some(approving);
+        let mut waiting = signing.waiting.lock();
+        if signing.attempts.load(Ordering::Acquire) != attempt {
+            return Err(Error::SignInCancelled);
+        }
+        *waiting = Some((attempt, approving));
         Ok(address)
     }
 
     pub fn finish_lastfm_authorization(&self) -> Result<Option<LastfmSignedIn>> {
         self.require_online()?;
         let signing = &self.services.lastfm_signing;
-        let Some(approving) = signing.waiting.lock().take() else {
+        let Some((attempt, approving)) = signing.waiting.lock().take() else {
             return Ok(None);
         };
-        let cancelled = Arc::clone(&signing.cancelled);
+        let attempts = Arc::clone(&signing.attempts);
         let reaching = Arc::clone(self.services.online.client());
         approving
-            .approved(&|| cancelled.load(Ordering::Relaxed) || !reaching.is_reaching())
+            .approved(&|| attempts.load(Ordering::Acquire) != attempt || !reaching.is_reaching())
             .map(|session| {
                 session.map(|session| LastfmSignedIn {
                     name: session.name,
@@ -269,7 +273,7 @@ impl MobilePlayer {
 
     pub fn cancel_lastfm_authorization(&self) {
         let signing = &self.services.lastfm_signing;
-        signing.cancelled.store(true, Ordering::Relaxed);
+        signing.attempts.fetch_add(1, Ordering::AcqRel);
         *signing.waiting.lock() = None;
     }
 

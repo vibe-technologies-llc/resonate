@@ -218,9 +218,7 @@ pub struct LastfmSignIn {
 
 impl fmt::Debug for LastfmSignIn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LastfmSignIn")
-            .field("key", &self.key)
-            .finish_non_exhaustive()
+        f.debug_struct("LastfmSignIn").finish_non_exhaustive()
     }
 }
 
