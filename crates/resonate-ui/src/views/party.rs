@@ -340,8 +340,7 @@ impl RootView {
             .items_center()
             .justify_center()
             .min_w(px(0.0))
-            .px_6()
-            .py_8()
+            .p_6()
             .child(
                 div()
                     .flex()

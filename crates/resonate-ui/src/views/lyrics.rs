@@ -186,7 +186,11 @@ impl RootView {
                 words::lyrics_pane::unsourced(),
                 Some(words::lyrics_pane::unsourced_more()),
             ),
-            Look::Refused(notice) => notice_of(notice.clone()),
+            Look::Refused => kit::trouble(
+                Icon::Lyrics,
+                words::lyrics_pane::refused(),
+                Some(words::lyrics_pane::refused_more()),
+            ),
             Look::Found(_) => {
                 self.lyric_lines(position, now, synced, moving || (synced && sounding), cx)
             }
@@ -1004,18 +1008,6 @@ fn quietly(moving: bool) -> AnyElement {
     div()
         .flex_1()
         .child(asks_for_a_frame(moving))
-        .into_any_element()
-}
-
-fn notice_of(text: SharedString) -> AnyElement {
-    div()
-        .flex()
-        .flex_1()
-        .items_center()
-        .justify_center()
-        .px_8()
-        .text_color(rgb(theme::failure()))
-        .child(text)
         .into_any_element()
 }
 

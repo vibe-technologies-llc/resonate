@@ -778,7 +778,7 @@ fn menu_panel(id: &'static str) -> Stateful<Div> {
 }
 
 fn apart() -> Div {
-    div().my_1().mx_2().h(px(1.0)).bg(rgb(theme::border()))
+    kit::rule().my_1().mx_2()
 }
 
 pub(crate) fn opens_a_reachable_menu(

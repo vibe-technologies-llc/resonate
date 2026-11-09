@@ -256,22 +256,8 @@ impl RootView {
     }
 
     fn server_search_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id(SEARCH_ID)
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_2()
+        kit::framed_field(SEARCH_ID, false)
             .w(theme::width(theme::picker_width()))
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .child(icons::icon(
                 Icon::Search,
                 theme::search_icon(),
@@ -402,6 +388,9 @@ impl RootView {
 
         let favourite = row.song().cloned();
         row_frame()
+            .when(!press_does_nothing, |row| {
+                row.hover(|row| row.bg(rgb(theme::hover())))
+            })
             .child(open)
             .child(self.server_controls(index, location, favourite, cx))
             .into_any_element()

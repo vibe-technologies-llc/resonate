@@ -73,6 +73,7 @@ drop-shown = Drop shown
 all-playlists = all-playlists
 keep-this-order = Keep this order
 or-a-new-one = Or a new one
+a-new-one = New playlist
 undo = Undo
 redo = Redo
 shared = Shared

@@ -1,9 +1,8 @@
 use std::{collections::VecDeque, time::Duration};
 
 use gpui::{
-    Animation, AnimationElement, AnimationExt, App, BoxShadow, Context, Div, FocusHandle, Global,
-    Pixels, SharedString, Task, Window, div, ease_in_out, ease_out_quint, point, prelude::*, px,
-    rgb,
+    Animation, AnimationElement, AnimationExt, App, Context, Div, FocusHandle, Global, Pixels,
+    SharedString, Task, Window, div, ease_in_out, ease_out_quint, prelude::*, px, rgb,
 };
 use resonate_engine::{Cause, CommandKind};
 
@@ -14,6 +13,7 @@ use crate::{
     theme,
     views::{
         RootView, focus,
+        kit::{self, Casts as _},
         spoken::{Spoken, Urgency},
     },
     words,
@@ -301,13 +301,7 @@ pub(crate) fn drawn(
                 .bg(rgb(theme::raised()))
                 .border_1()
                 .border_color(rgb(theme::soft_edge()))
-                .shadow(vec![BoxShadow {
-                    color: theme::shadow(0.45),
-                    offset: point(px(0.0), px(4.0)),
-                    blur_radius: px(16.0),
-                    spread_radius: px(0.0),
-                    inset: false,
-                }])
+                .casting(kit::Cast::Slight)
                 .cursor_pointer()
                 .on_click(cx.listener(|_, _, _, cx| dismiss(cx)))
                 .child(icons::icon(icon, theme::row_control_icon(), ink))

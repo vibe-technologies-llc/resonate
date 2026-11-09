@@ -12,11 +12,11 @@ use std::{
 use ahash::{AHashMap, AHashSet, AHasher};
 use futures_channel::oneshot;
 use gpui::{
-    AnimationElement, AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId,
-    Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, Modifiers, MouseButton,
-    MouseDownEvent, MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point,
-    Render, Role, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
-    UniformListScrollHandle, Window, canvas, div, img, point, prelude::*, px, rgb, rgba,
+    AnimationElement, AnyElement, App, Canvas, Context, Div, DragMoveEvent, ElementId, Entity,
+    ExternalPaths, FocusHandle, Focusable, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent,
+    MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point, Render, Role,
+    ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle, Window,
+    canvas, div, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
     AlbumId, ArtistId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId,
@@ -65,7 +65,7 @@ use crate::{
         field::{Blurred, Caught, Composing, Field, Submitted},
         focus::Controls,
         hint::{self, Names},
-        kit::{self, EndsInAnEllipsis},
+        kit::{self, Casts as _, EndsInAnEllipsis},
         listing::{self, Pictured},
         matching::{self, Matching},
         menu::{self, AtTheReach, Menu},
@@ -132,8 +132,6 @@ fn unsaved(written: Result<crate::Result<()>, oneshot::Canceled>) -> Option<Noti
 const PANE_GROUP: &str = "pane";
 
 const PANE_REGION: &str = "pane-region";
-
-const PINNED_ROW: f32 = 26.0;
 
 const PINNED_INSET: f32 = 22.0;
 
@@ -546,6 +544,9 @@ pub struct RootView {
     pub(crate) ordering: Option<Ordered>,
     pub(crate) ordering_at: Point<Pixels>,
     pub(crate) ordering_scroll: ScrollHandle,
+    pub(crate) downloads_scroll: ScrollHandle,
+    pub(crate) heard_earlier_scroll: ScrollHandle,
+    pub(crate) likely_scroll: ScrollHandle,
     pub(crate) ordering_typed: TypeAhead,
     pub(crate) queue_order: RowOrder,
     pub(crate) queue_reading: Direction,
@@ -719,7 +720,7 @@ pub(crate) fn framed_cover(art: Option<Picture>, side: f32) -> Div {
         .overflow_hidden()
         .bg(rgb(theme::raised()))
         .border_1()
-        .border_color(theme::tinted(theme::text(), 0x0c));
+        .border_color(kit::cover_edge());
 
     match art {
         Some(art) => frame.child(
@@ -728,7 +729,7 @@ pub(crate) fn framed_cover(art: Option<Picture>, side: f32) -> Div {
                 .object_fit(ObjectFit::Cover)
                 .rounded(px(cover_rounding(side))),
         ),
-        None => frame.child(icons::icon(Icon::Disc, side * 0.42, theme::faint())),
+        None => frame.child(kit::uncovered_mark(side)),
     }
 }
 
@@ -1242,6 +1243,9 @@ impl RootView {
             ordering: None,
             ordering_at: Point::default(),
             ordering_scroll: ScrollHandle::new(),
+            downloads_scroll: ScrollHandle::new(),
+            heard_earlier_scroll: ScrollHandle::new(),
+            likely_scroll: ScrollHandle::new(),
             ordering_typed: TypeAhead::default(),
             queue_order: RowOrder::default(),
             queue_reading: Direction::default(),
@@ -4075,13 +4079,7 @@ impl RootView {
                         .rounded_xl()
                         .overflow_hidden()
                         .bg(rgb(theme::raised()))
-                        .shadow(vec![BoxShadow {
-                            color: theme::shadow(0.6),
-                            offset: point(px(0.0), px(16.0)),
-                            blur_radius: px(48.0),
-                            spread_radius: px(0.0),
-                            inset: false,
-                        }])
+                        .casting(kit::Cast::Long)
                         .child(img(art).size(side).object_fit(ObjectFit::Contain)),
                     "magnified-cover-arrives",
                 ))
@@ -4352,13 +4350,7 @@ impl RootView {
                         .bg(rgb(theme::raised()))
                         .border_1()
                         .border_color(rgb(theme::soft_edge()))
-                        .shadow(vec![BoxShadow {
-                            color: theme::shadow(0.45),
-                            offset: point(px(0.0), px(4.0)),
-                            blur_radius: px(16.0),
-                            spread_radius: px(0.0),
-                            inset: false,
-                        }])
+                        .casting(kit::Cast::Slight)
                         .child(kit::eyebrow(says))
                         .child(
                             div()
@@ -4863,10 +4855,14 @@ impl RootView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .size(px(22.0))
+                    .size(px(theme::wordmark_mark()))
                     .rounded_md()
                     .bg(rgb(theme::accent()))
-                    .child(icons::icon(Icon::Resonate, 14.0, theme::accent_ink())),
+                    .child(icons::icon(
+                        Icon::Resonate,
+                        theme::root_icon(),
+                        theme::accent_ink(),
+                    )),
             )
             .child(
                 div()
@@ -4892,7 +4888,7 @@ impl RootView {
             .gap_2()
             .h(px(theme::search_height()))
             .px_3()
-            .rounded_md()
+            .rounded_lg()
             .bg(rgb(if searching {
                 theme::background()
             } else {
@@ -4900,7 +4896,7 @@ impl RootView {
             }))
             .border_1()
             .border_color(if searching {
-                theme::tinted(theme::accent(), 0x99)
+                kit::field_lit()
             } else {
                 rgb(theme::soft_edge())
             })
@@ -5141,7 +5137,7 @@ impl RootView {
                     .debug_selector(move || format!("pinned-playlist-{}", id.get()))
                     .flex()
                     .items_center()
-                    .h(px(PINNED_ROW))
+                    .h(px(theme::pinned_row()))
                     .pl(px(PINNED_INSET + theme::pane_icon()))
                     .pr_3()
                     .rounded_md()
@@ -5215,13 +5211,13 @@ impl RootView {
             .flex()
             .items_center()
             .gap_2p5()
+            .h(px(theme::sidebar_row()))
             .px_3()
-            .py_1p5()
             .rounded_md()
             .cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
             .names(hint)
-            .child(icons::icon(Icon::Download, theme::text_base(), mark))
+            .child(icons::icon(Icon::Download, theme::pane_icon(), mark))
             .child(
                 div()
                     .flex_1()
@@ -5283,6 +5279,7 @@ impl RootView {
             .gap_0p5()
             .max_h(px(theme::downloads_height()))
             .overflow_y_scroll()
+            .track_scroll(&self.downloads_scroll)
             .when_some(keeping, |list, left| list.child(self.keep_row(left, cx)));
         for (at, (download, fetching)) in rows.into_iter().enumerate() {
             list = list.child(self.download_row(at, &download, fetching, cx));
@@ -5303,16 +5300,10 @@ impl RootView {
                 .gap_1()
                 .p_2()
                 .rounded_lg()
-                .bg(rgb(theme::surface()))
+                .bg(rgb(theme::raised()))
                 .border_1()
-                .border_color(rgb(theme::border()))
-                .shadow(vec![BoxShadow {
-                    color: theme::shadow(0.5),
-                    offset: point(px(0.0), px(12.0)),
-                    blur_radius: px(32.0),
-                    spread_radius: px(0.0),
-                    inset: false,
-                }])
+                .border_color(rgb(theme::soft_edge()))
+                .casting(kit::Cast::Short)
                 .occlude()
                 .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                     this.downloads_pressed_off = Some(Instant::now());
@@ -5361,7 +5352,12 @@ impl RootView {
                                 )),
                         ),
                 )
-                .child(list),
+                .child(
+                    div().relative().child(list).child(
+                        Scrollbars::of(cx)
+                            .vertical("downloads-scrollbar", self.downloads_scroll.clone()),
+                    ),
+                ),
             "downloads-arrives",
             resting,
         ))
@@ -5682,13 +5678,13 @@ impl RootView {
             .flex()
             .items_center()
             .gap_2p5()
+            .h(px(theme::sidebar_row()))
             .px_3()
-            .py_1p5()
             .rounded_md()
             .cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
             .names(words::root::enriching_hint())
-            .child(icons::icon(Icon::Globe, theme::text_base(), theme::faint()))
+            .child(icons::icon(Icon::Globe, theme::pane_icon(), theme::faint()))
             .child(
                 div()
                     .flex_1()
@@ -6448,7 +6444,7 @@ pub(crate) fn row(selected: bool) -> Div {
         .px(px(listing::ROW_INSET))
         .h(px(theme::row_height()))
         .text_size(px(theme::text_sm()))
-        .when(selected, |row| row.bg(theme::tinted(theme::accent(), 0x14)))
+        .when(selected, |row| row.bg(kit::chosen_wash()))
 }
 
 pub(crate) fn tall_row(selected: bool) -> Div {
@@ -6458,10 +6454,6 @@ pub(crate) fn tall_row(selected: bool) -> Div {
 pub(crate) fn empty(icon: Icon, message: &'static str, more: Option<&'static str>) -> AnyElement {
     kit::empty(icon, message, more)
 }
-
-const CHOSEN_MARK: f32 = 14.0;
-
-const CHOSEN_MARK_FROM_THE_TOP: f32 = 9.0;
 
 fn chosen_ground(chosen: bool) -> impl IntoElement {
     motion::flips(
@@ -6474,14 +6466,15 @@ fn chosen_ground(chosen: bool) -> impl IntoElement {
         chosen,
         |ground, from, to, share| {
             let at = motion::turned(from, to, share);
+            let grown = theme::chosen_mark() * at;
 
             ground.opacity(at).child(
                 div()
                     .absolute()
                     .left_0()
-                    .top(px(CHOSEN_MARK_FROM_THE_TOP + CHOSEN_MARK * (1.0 - at) / 2.0))
+                    .top(px((theme::sidebar_row() - grown) / 2.0))
                     .w(px(2.0))
-                    .h(px(CHOSEN_MARK * at))
+                    .h(px(grown))
                     .rounded_full()
                     .bg(rgb(theme::accent())),
             )

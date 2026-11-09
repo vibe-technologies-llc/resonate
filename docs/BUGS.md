@@ -13,3 +13,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono/stereo switch of a low-bitrate podcast; `opus-rs` 0.1.37 refuses a packet whose TOC channel
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
+
+## The window
+- [S · 0.7.1] An album cell's artist cut by an ellipsis leaves a gap before the `·` and the year
+  (`browser.rs` `album_cell_captioned`): the link keeps the room it was given while the cut text
+  ends well short of it, so *Björk Ásgeirsdóttir…* stands some twenty pixels off its year
+- [S · 0.7.1] A hint can come up over a sheet its own control opened: a press on the header's
+  microphone with the pointer left at rest shows *Listen for a song…* above the Listen sheet's
+  scrim until the pointer next moves, gpui scheduling the hint from the move it replays after the
+  press and never weighing the scrim that then covers the control

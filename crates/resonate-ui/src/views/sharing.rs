@@ -1,13 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use gpui::{
-    BoxShadow, Context, Div, FontWeight, SharedString, Stateful, div, point, prelude::*, px,
-    relative, rgb, rgba,
-};
+use gpui::{Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb};
 use resonate_core::PlaylistId;
 
 use crate::{
-    Notice, ResonateApp, clipboard, keys, motion, theme,
+    Notice, ResonateApp, clipboard,
+    icons::Icon,
+    keys, motion, theme,
     together::{SharedPerson, SharedReach, SharedSeen, Together},
     views::{
         kit::{self, EndsInAnEllipsis as _, Tone},
@@ -99,28 +98,13 @@ impl RootView {
             .as_ref()
             .and_then(|together| together.seen(sharing.playlist));
 
-        let mut card = div()
+        let mut card = kit::sheet()
             .id("sharing-sheet")
             .dialog(words::sharing::share_label())
             .track_focus(&self.sheet_panels.holding(sheets::SHARING_PANEL, cx))
-            .flex()
-            .flex_col()
-            .gap_4()
             .w(px(theme::wrapped_width()))
             .max_h(relative(0.94))
             .overflow_y_scroll()
-            .p_6()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_sharing(cx)));
 
         card = match seen {
@@ -128,15 +112,7 @@ impl RootView {
             None => card.child(self.unshared_body(&sharing, together.is_some(), cx)),
         };
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "sharing-sheet-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "sharing-sheet-arrives"))
     }
 
     fn unshared_body(&self, sharing: &Sharing, can_share: bool, cx: &mut Context<Self>) -> Div {
@@ -506,15 +482,7 @@ fn close_button() -> Stateful<Div> {
 }
 
 fn heading(text: impl Into<SharedString>) -> impl IntoElement {
-    let text = text.into();
-
-    div()
-        .id("sharing-heading")
-        .headed(2, &text)
-        .text_size(px(theme::text_lg()))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(theme::text()))
-        .child(text)
+    kit::sheet_heading("sharing-heading", Icon::Share, theme::accent(), text)
 }
 
 fn said(text: impl Into<SharedString>) -> Div {

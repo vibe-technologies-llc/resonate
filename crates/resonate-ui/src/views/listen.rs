@@ -20,6 +20,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::RootView,
+        scrollbar::Scrollbars,
         sheets,
         spoken::{self, Spoken, Urgency},
     },
@@ -949,7 +950,12 @@ impl RootView {
             .items_center()
             .justify_between()
             .gap_3()
+            .mx(px(-EARLIER_ROW_INSET))
+            .px(px(EARLIER_ROW_INSET))
+            .py_1p5()
+            .rounded_md()
             .cursor_pointer()
+            .hover(|row| row.bg(rgb(theme::hover())))
             .child(setting_named(
                 words::listen::keep_listening(),
                 Some(
@@ -970,9 +976,9 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_0p5()
-                .mx(px(-EARLIER_ROW_INSET))
                 .max_h(px(EARLIER_DRAWN_AT_MOST))
-                .overflow_y_scroll(),
+                .overflow_y_scroll()
+                .track_scroll(&self.heard_earlier_scroll),
             |rows, (at, found)| {
                 let finding = found.clone();
                 rows.child(self.in_the_pane_ring(
@@ -991,7 +997,16 @@ impl RootView {
             .border_t_1()
             .border_color(rgb(theme::soft_edge()))
             .child(kit::eyebrow(words::listen::heard_earlier()))
-            .child(rows)
+            .child(
+                div()
+                    .relative()
+                    .mx(px(-EARLIER_ROW_INSET))
+                    .child(rows)
+                    .child(
+                        Scrollbars::of(cx)
+                            .vertical("heard-earlier-scrollbar", self.heard_earlier_scroll.clone()),
+                    ),
+            )
     }
 }
 

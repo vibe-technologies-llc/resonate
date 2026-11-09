@@ -1902,9 +1902,7 @@ fn folder_card(folder: &Path, chosen: bool) -> Stateful<Div> {
         .items_center()
         .gap_3()
         .bleeds()
-        .when(chosen, |card| {
-            card.bg(theme::tinted(theme::accent(), kit::CHOSEN_WASH))
-        })
+        .when(chosen, |card| card.bg(kit::chosen_wash()))
 }
 
 fn folder_name(folder: &Path) -> Div {

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use gpui::{
-    BoxShadow, Context, Div, Entity, FontWeight, MouseButton, SharedString, Stateful, Window, div,
-    point, prelude::*, px, rgb, rgba,
+    Context, Div, Entity, FontWeight, MouseButton, SharedString, Stateful, Window, div, prelude::*,
+    px, rgb,
 };
 use resonate_core::{Isrc, TrackId};
 use resonate_library::{Recording, in_the_order_worth_offering};
@@ -15,6 +15,7 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
+        scrollbar::Scrollbars,
         sheets,
         spoken::Spoken as _,
     },
@@ -241,20 +242,8 @@ impl RootView {
     }
 
     fn typed_into(field: &Entity<Field>, id: &'static str) -> Stateful<Div> {
-        div()
-            .id(id)
-            .flex()
+        kit::framed_field(id, false)
             .flex_1()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_md()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(theme::tinted(theme::accent(), 0x99))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(field.clone())
             .child(kit::figure("enter").text_color(rgb(theme::faint())))
@@ -267,13 +256,12 @@ impl RootView {
             .map(|matching| matching.likely.clone())
             .unwrap_or_default();
 
-        let heading = div()
-            .id("matching-sheet-asking")
-            .headed(2, words::matching::matching_label())
-            .text_size(px(theme::text_lg()))
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(theme::text()))
-            .child(words::matching::matching_label());
+        let heading = kit::sheet_heading(
+            "matching-sheet-asking",
+            Icon::Globe,
+            theme::accent(),
+            words::matching::matching_label(),
+        );
         let saying = div()
             .id("matching-sheet-saying")
             .read_plainly(words::matching::matching_saying())
@@ -300,7 +288,12 @@ impl RootView {
             .id("likely-recordings")
             .max_h(px(LIKELY_LIST_AT_MOST))
             .overflow_y_scroll()
+            .track_scroll(&self.likely_scroll)
             .child(self.likely_rows(&likely, cx));
+        let found = div()
+            .relative()
+            .child(found)
+            .child(Scrollbars::of(cx).vertical("likely-scrollbar", self.likely_scroll.clone()));
         let isrc_heading = div()
             .id("matching-isrc-heading")
             .headed(3, words::matching::isrc_heading())
@@ -325,7 +318,7 @@ impl RootView {
                 |this, window, cx| this.isrc_given(window, cx),
                 cx,
             ));
-        let leaving = div().flex().justify_end().child(self.in_the_pane_ring(
+        let leaving = kit::sheet_actions().child(self.in_the_pane_ring(
             kit::button(
                 "leave-the-matching",
                 None,
@@ -337,27 +330,13 @@ impl RootView {
             cx,
         ));
 
-        let card = div()
+        let card = kit::sheet()
             .id("matching-sheet")
             .dialog(words::matching::matching_label())
             .track_focus(&self.sheet_panels.holding(sheets::MATCHING_PANEL, cx))
-            .flex()
-            .flex_col()
             .gap_3()
             .w(px(theme::confirm_width() * 1.4))
             .max_w_full()
-            .p_5()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .on_mouse_down_out(
                 cx.listener(|this, _, window, cx| this.leave_the_matching(window, cx)),
             )
@@ -369,15 +348,7 @@ impl RootView {
             .child(coding)
             .child(leaving);
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "matching-sheet-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "matching-sheet-arrives"))
     }
 }
 

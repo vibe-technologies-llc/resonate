@@ -63,7 +63,6 @@ const CHOSEN_HANDLE_RADIUS: f32 = 6.5;
 const HANDLE_BORDER: f32 = 2.0;
 const CHANNEL_SWATCH: f32 = 12.0;
 
-const BOUND_TO_NOTHING: &str = "nothing";
 impl RootView {
     pub(super) fn equalising_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let on = self.equaliser.read(cx).bindings().enabled;
@@ -141,7 +140,7 @@ impl RootView {
                 if sink.is_some() && bindings.fallback.is_some() {
                     words::settings_equaliser::follows_the_default().to_owned()
                 } else {
-                    BOUND_TO_NOTHING.to_owned()
+                    words::settings_equaliser::bound_to_nothing().to_owned()
                 },
                 named.is_none(),
                 cx,
@@ -329,7 +328,7 @@ impl RootView {
             .py_1()
             .px_1()
             .rounded_md()
-            .when(chosen, |line| line.bg(theme::tinted(theme::accent(), 0x14)))
+            .when(chosen, |line| line.bg(kit::chosen_wash()))
             .child(self.band_number(row, chosen, cx))
             .child(self.kind_cell(row, band.kind, cx))
             .child(self.numeric_cell(row, Cell::Frequency, editing, cx))
@@ -370,6 +369,7 @@ impl RootView {
                 .w(px(theme::row_plays() / 2.0))
                 .rounded_md()
                 .cursor_pointer()
+                .hover(|number| number.bg(rgb(theme::hover())))
                 .border_1()
                 .border_color(gpui::transparent_black())
                 .child(

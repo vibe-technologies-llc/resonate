@@ -51,7 +51,7 @@ use crate::{
         field::Field,
         focus::{self, by_the_pointer},
         hint::{self, Names},
-        kit::{self, Press, Tone},
+        kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::RootView,
         scrollbar::Scrollbars,
         settings::{
@@ -301,9 +301,9 @@ impl RootView {
                         .flex()
                         .items_center()
                         .gap_2p5()
+                        .h(px(theme::sidebar_row()))
                         .px_3()
-                        .py_2()
-                        .rounded_lg()
+                        .rounded_md()
                         .text_size(px(theme::text_sm()))
                         .whitespace_nowrap()
                         .cursor_pointer()
@@ -311,7 +311,7 @@ impl RootView {
                         .text_color(rgb(ink))
                         .child(motion::shown_while(
                             focus::beneath_the_ring(div())
-                                .rounded_lg()
+                                .rounded_md()
                                 .bg(rgb(theme::hover())),
                             "chosen",
                             selected,
@@ -323,7 +323,14 @@ impl RootView {
                         )
                         .names(category.about())
                         .child(icons::icon(category.icon(), theme::root_icon(), ink))
-                        .child(div().flex_1().min_w(px(0.0)).child(category.label()))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .truncate()
+                                .ends_in_an_ellipsis()
+                                .child(category.label()),
+                        )
                         .when_some(found, |row, found| {
                             row.child(kit::figure(found.to_string()).text_color(rgb(
                                 if found == 0 {
@@ -368,25 +375,11 @@ impl RootView {
                 }
             }
             if places.is_empty() {
-                column = column.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .py_8()
-                        .child(
-                            div()
-                                .text_size(px(theme::text_base()))
-                                .text_color(rgb(theme::muted()))
-                                .child(words::settings_pane::nothing_found()),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(theme::text_sm()))
-                                .text_color(rgb(theme::faint()))
-                                .child(words::settings_pane::nothing_found_more()),
-                        ),
-                );
+                column = column.child(kit::empty(
+                    Icon::Search,
+                    words::settings_pane::nothing_found(),
+                    Some(words::settings_pane::nothing_found_more()),
+                ));
             }
             for ((category, page), groups) in places {
                 let mut place = div()

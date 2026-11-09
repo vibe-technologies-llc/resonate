@@ -2,7 +2,7 @@ use std::{env, path::PathBuf, rc::Rc, sync::Arc, time::SystemTime};
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
-    PathPromptOptions, Pixels, Point, Role, SharedString, Stateful, div, prelude::*, px, rgb, rgba,
+    PathPromptOptions, Pixels, Point, Role, SharedString, Stateful, div, prelude::*, px, rgb,
     uniform_list,
 };
 use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
@@ -20,7 +20,7 @@ use crate::{
     views::{
         browser,
         hint::{self, Names},
-        kit::{self, EndsInAnEllipsis, Tone},
+        kit::{self, Casts as _, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         mosaic::{self, Framed, Mosaic},
@@ -622,20 +622,8 @@ impl RootView {
     }
 
     pub(crate) fn name_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id("playlist-name")
-            .flex()
+        kit::framed_field("playlist-name", true)
             .flex_1()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_md()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(theme::tinted(theme::accent(), 0x99))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|this, _, window, cx| {
                 this.name.update(cx, |name, cx| name.take_focus(window, cx));
@@ -1437,81 +1425,64 @@ impl RootView {
         .w_full()
         .h(theme::width(theme::row_height() * shown as f32));
 
-        div()
-            .id("playlist-picker")
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .on_click(cx.listener(|this, _, window, cx| this.stop_naming(window, cx)))
-            .child(motion::lifted_in(
-                div()
-                    .id("playlist-picker-panel")
-                    .dialog(words::playlists::picker_label())
-                    .track_focus(&self.sheet_panels.holding(sheets::PICKER_PANEL, cx))
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .w(theme::width(theme::picker_width()))
-                    .rounded_xl()
-                    .bg(rgb(theme::surface()))
-                    .border_1()
-                    .border_color(rgb(theme::soft_edge()))
-                    .shadow(vec![gpui::BoxShadow {
-                        color: theme::shadow(0.55),
-                        offset: gpui::point(px(0.0), px(12.0)),
-                        blur_radius: px(40.0),
-                        spread_radius: px(0.0),
-                        inset: false,
-                    }])
-                    .on_click(|_, _, cx| cx.stop_propagation())
-                    .child(
+        kit::over_a_scrim(motion::lifted_in(
+            kit::sheet()
+                .id("playlist-picker-panel")
+                .dialog(words::playlists::picker_label())
+                .track_focus(&self.sheet_panels.holding(sheets::PICKER_PANEL, cx))
+                .gap_3()
+                .w(theme::width(theme::picker_width()))
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(kit::eyebrow(words::playlists::playlist()))
+                        .child(
+                            div()
+                                .text_size(px(theme::text_lg()))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(asked),
+                        ),
+                )
+                .when(shown > 0, |panel| {
+                    panel.child(
                         div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(kit::eyebrow(words::playlists::playlist()))
+                            .rounded_md()
+                            .overflow_hidden()
+                            .border_1()
+                            .border_color(rgb(theme::border()))
                             .child(
                                 div()
-                                    .text_size(px(theme::text_lg()))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(asked),
+                                    .relative()
+                                    .w_full()
+                                    .h(theme::width(theme::row_height() * shown as f32))
+                                    .child(rows)
+                                    .child(Scrollbars::of(cx).vertical(
+                                        "playlist-picker-scrollbar",
+                                        self.picker_rows.clone(),
+                                    )),
                             ),
                     )
-                    .when(shown > 0, |panel| {
-                        panel.child(
-                            div()
-                                .rounded_md()
-                                .overflow_hidden()
-                                .border_1()
-                                .border_color(rgb(theme::border()))
-                                .child(
-                                    div()
-                                        .relative()
-                                        .w_full()
-                                        .h(theme::width(theme::row_height() * shown as f32))
-                                        .child(rows)
-                                        .child(Scrollbars::of(cx).vertical(
-                                            "playlist-picker-scrollbar",
-                                            self.picker_rows.clone(),
-                                        )),
-                                ),
-                        )
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(kit::eyebrow(words::playlists::or_a_new_one()))
-                            .child(self.name_field(cx)),
-                    ),
-                "playlist-picker-arrives",
-            ))
-            .into_any_element()
+                })
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .child(kit::eyebrow(if shown > 0 {
+                            words::playlists::or_a_new_one()
+                        } else {
+                            words::playlists::a_new_one()
+                        }))
+                        .child(self.name_field(cx)),
+                ),
+            "playlist-picker-arrives",
+        ))
+        .id("playlist-picker")
+        .on_click(cx.listener(|this, _, window, cx| this.stop_naming(window, cx)))
+        .into_any_element()
     }
 
     fn undoing(&self, undoable: &Undoable, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1926,15 +1897,7 @@ impl RootView {
                 div()
                     .relative()
                     .rounded(px(mosaic::ART_ROUNDING))
-                    .group_hover(PLAYLIST_CELL, |frame| {
-                        frame.shadow(vec![gpui::BoxShadow {
-                            color: theme::shadow(0.5),
-                            offset: gpui::point(px(0.0), px(8.0)),
-                            blur_radius: px(24.0),
-                            spread_radius: px(0.0),
-                            inset: false,
-                        }])
-                    })
+                    .group_hover(PLAYLIST_CELL, |frame| frame.casting(kit::Cast::Short))
                     .child(art)
                     .when(reached, |frame| frame.child(browser::reached_ring()))
                     .when(cursor_only, |frame| frame.child(browser::cursor_ring()))
@@ -1948,7 +1911,7 @@ impl RootView {
                             .top_1()
                             .right_1()
                             .rounded_md()
-                            .bg(theme::tinted(theme::background(), 0xb0)),
+                            .bg(kit::cover_veil()),
                     )
                     .when(playlist.entries > 0, |frame| {
                         frame.child(
@@ -2069,13 +2032,7 @@ impl RootView {
             .size(px(PLAY_ON_THE_ART))
             .rounded_full()
             .bg(rgb(theme::accent()))
-            .shadow(vec![gpui::BoxShadow {
-                color: theme::shadow(0.45),
-                offset: gpui::point(px(0.0), px(4.0)),
-                blur_radius: px(12.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
+            .casting(kit::Cast::Slight)
             .names(words::playlists::play_hint())
             .child(icons::icon(
                 Icon::Play,

@@ -51,10 +51,12 @@ impl RootView {
     fn inspected(&self, state: &PlayerState, digest: &StreamDigest, cx: &mut Context<Self>) -> Div {
         let playing = self.playing(state, Some(digest), cx);
 
-        div()
+        let named = div()
             .flex()
             .flex_col()
             .relative()
+            .flex_1()
+            .min_w(px(theme::heading_name()))
             .gap_1()
             .child(kit::measures_its_width(self.inspected_room.clone()))
             .child(kit::linked_title(copied_on_a_right_click(
@@ -79,7 +81,9 @@ impl RootView {
                 &playing,
                 self.inspected_room.get(),
                 cx,
-            ))
+            ));
+
+        kit::heading().child(kit::heading_row().child(named))
     }
 
     pub(crate) fn inspector(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -107,7 +111,6 @@ impl RootView {
             .max_w(px(theme::inspector_column()))
             .mx_auto()
             .gap_4()
-            .child(div().pb_1().child(heading))
             .child(signal_path(&digest, output, sink))
             .child(source(&digest.info))
             .child(sink_card(output))
@@ -143,8 +146,13 @@ impl RootView {
             .track_scroll(&self.inspector_scroll)
             .child(column.child(tags(&digest.info.tags, carried)));
 
-        Scrollbars::of(cx)
-            .around("inspector-scrollbar", self.inspector_scroll.clone(), pane)
+        kit::pane()
+            .child(heading)
+            .child(Scrollbars::of(cx).around(
+                "inspector-scrollbar",
+                self.inspector_scroll.clone(),
+                pane,
+            ))
             .into_any_element()
     }
 }

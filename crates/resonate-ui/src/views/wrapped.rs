@@ -1,8 +1,8 @@
 use std::{env, fs, path::PathBuf, sync::Arc, time::SystemTime};
 
 use gpui::{
-    Background, BoxShadow, Context, Div, FontWeight, Role, SharedString, Stateful, div,
-    linear_color_stop, linear_gradient, point, prelude::*, px, relative, rgb,
+    Background, Context, Div, FontWeight, Role, SharedString, Stateful, div, linear_color_stop,
+    linear_gradient, prelude::*, px, relative, rgb,
 };
 use resonate_core::{
     Calendar,
@@ -18,7 +18,7 @@ use crate::{
     motion, theme, toast,
     views::{
         hint::Names,
-        kit::{self, Tone},
+        kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
         sheets,
         spoken::{Placed, Spoken},
@@ -250,28 +250,13 @@ impl RootView {
                 ))
             });
 
-        let card = div()
+        let card = kit::sheet()
             .id("wrapped-sheet")
             .dialog(REVIEW_NAME)
             .track_focus(&self.sheet_panels.holding(sheets::WRAPPED_PANEL, cx))
             .relative()
-            .flex()
-            .flex_col()
-            .gap_5()
             .w(px(theme::wrapped_width()))
             .max_h(relative(DECK_HEIGHT_AT_MOST))
-            .p_6()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .child(
                 div()
                     .absolute()
@@ -601,6 +586,7 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
                         .child(
                             div()
                                 .truncate()
+                                .ends_in_an_ellipsis()
                                 .text_size(px(theme::text_base()))
                                 .text_color(rgb(theme::text()))
                                 .child(SharedString::from(row.name.clone())),
@@ -609,6 +595,7 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
                             named.child(
                                 div()
                                     .truncate()
+                                    .ends_in_an_ellipsis()
                                     .text_size(px(theme::text_xs()))
                                     .text_color(rgb(theme::muted()))
                                     .child(SharedString::from(by)),

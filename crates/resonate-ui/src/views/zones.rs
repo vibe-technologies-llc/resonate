@@ -14,7 +14,7 @@ use crate::{
     theme, toast,
     views::{
         hint::Names as _,
-        kit::EndsInAnEllipsis as _,
+        kit::{self, EndsInAnEllipsis as _},
         menu::{self, Menu},
         queue::{QueueNames, TakenBack},
         root::RootView,
@@ -458,19 +458,8 @@ impl RootView {
 
     pub(crate) fn zone_switcher(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.naming_the_zone.is_some() {
-            return div()
-                .id("zone-naming")
-                .flex_none()
+            return kit::framed_field("zone-naming", true)
                 .w(px(NAMING_FIELD_WIDTH))
-                .h(px(theme::search_height()))
-                .px_2()
-                .flex()
-                .items_center()
-                .rounded_md()
-                .bg(rgb(theme::background()))
-                .border_1()
-                .border_color(theme::tinted(theme::accent(), 0x99))
-                .text_size(px(theme::text_sm()))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                     this.stop_naming_the_zone(window, cx);
@@ -496,9 +485,7 @@ impl RootView {
             .rounded_md()
             .cursor_pointer()
             .hover(|button| button.bg(rgb(theme::hover())))
-            .when(several, |button| {
-                button.bg(theme::tinted(theme::accent(), 0x1c))
-            })
+            .when(several, |button| button.bg(kit::mark_wash(theme::accent())))
             .child(match several {
                 true => icons::icon(Icon::Volume, theme::toggle_icon(), theme::accent()),
                 false => icons::lit_on_hover(

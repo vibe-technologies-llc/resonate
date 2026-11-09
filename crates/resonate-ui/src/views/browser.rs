@@ -8,9 +8,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
-    MouseDownEvent, ObjectFit, Pixels, Point, Role, SharedString, Stateful, Window, anchored,
-    deferred, div, img, point, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton, MouseDownEvent,
+    ObjectFit, Pixels, Point, Role, SharedString, Stateful, Window, anchored, deferred, div, img,
+    prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId};
 use resonate_engine::Placement;
@@ -31,7 +31,7 @@ use crate::{
     motion, theme, toast,
     views::{
         hint::Names,
-        kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
+        kit::{self, Casts as _, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
         listing::{self, Pictured},
         menu::{self, AtTheReach, Called, Menu},
         missing::MissingShows,
@@ -446,15 +446,7 @@ impl RootView {
                 div()
                     .relative()
                     .rounded(px(8.0))
-                    .group_hover(CELL_GROUP, |frame| {
-                        frame.shadow(vec![gpui::BoxShadow {
-                            color: theme::shadow(0.5),
-                            offset: gpui::point(px(0.0), px(8.0)),
-                            blur_radius: px(24.0),
-                            spread_radius: px(0.0),
-                            inset: false,
-                        }])
-                    })
+                    .group_hover(CELL_GROUP, |frame| frame.casting(kit::Cast::Short))
                     .child(cover)
                     .when(reached, |frame| frame.child(reached_ring()))
                     .when(cursor_only, |frame| frame.child(cursor_ring()))
@@ -470,7 +462,7 @@ impl RootView {
                         .top_1()
                         .right_1()
                         .rounded_md()
-                        .bg(theme::tinted(theme::background(), 0xb0)),
+                        .bg(kit::cover_veil()),
                     ),
             )
             .child(
@@ -1771,7 +1763,7 @@ impl RootView {
                         .top_1()
                         .right_1()
                         .rounded_md()
-                        .bg(theme::tinted(theme::background(), 0xb0)),
+                        .bg(kit::cover_veil()),
                     ),
             )
             .child(
@@ -2720,15 +2712,7 @@ impl RootView {
                     .relative()
                     .rounded(px(8.0))
                     .when(pressable, |frame| {
-                        frame.group_hover(CELL_GROUP, |frame| {
-                            frame.shadow(vec![gpui::BoxShadow {
-                                color: theme::shadow(0.5),
-                                offset: gpui::point(px(0.0), px(8.0)),
-                                blur_radius: px(24.0),
-                                spread_radius: px(0.0),
-                                inset: false,
-                            }])
-                        })
+                        frame.group_hover(CELL_GROUP, |frame| frame.casting(kit::Cast::Short))
                     })
                     .child(cover),
             )
@@ -3375,7 +3359,7 @@ fn not_held_heading(albums: usize, under_the_held: bool) -> Div {
         .when(under_the_held, |heading| heading.pt_4())
         .text_size(px(theme::text_xs()))
         .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(theme::muted()))
+        .text_color(rgb(theme::faint()))
         .child(SharedString::from(
             words::browser::releases_not_in_your_library(albums),
         ))
@@ -3401,8 +3385,6 @@ fn described(kind: &Option<String>, first_released: Option<&str>) -> String {
     .join(" · ")
 }
 
-const FETCHING_VEIL: u8 = 0xb8;
-
 fn fetching_over(cover: Div, spun: ElementId) -> Div {
     let side = theme::row_cover();
 
@@ -3419,7 +3401,7 @@ fn fetching_over(cover: Div, spun: ElementId) -> Div {
                 .items_center()
                 .justify_center()
                 .rounded(px(cover_rounding(side)))
-                .bg(theme::tinted(theme::background(), FETCHING_VEIL))
+                .bg(kit::cover_veil())
                 .child(motion::spinning(
                     icons::icon(Icon::Spinner, side * 0.6, theme::accent()),
                     spun,
@@ -3519,7 +3501,7 @@ pub(crate) fn run_heading(named: impl IntoElement) -> Div {
             .border_color(rgb(theme::border()))
             .text_size(px(theme::text_xs()))
             .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(theme::muted()))
+            .text_color(rgb(theme::faint()))
             .child(named),
     )
 }
@@ -3789,27 +3771,12 @@ pub(crate) enum OpenedRecord {
 }
 
 fn detail_card(title: &'static str) -> Stateful<Div> {
-    div()
+    kit::floating()
         .id("record")
         .dialog(title)
-        .flex()
-        .flex_col()
         .w(px(theme::record_width()))
         .p_3()
         .gap_2()
-        .rounded_lg()
-        .bg(rgb(theme::raised()))
-        .border_1()
-        .border_color(rgb(theme::soft_edge()))
-        .shadow(vec![BoxShadow {
-            color: theme::shadow(0.5),
-            offset: point(px(0.0), px(6.0)),
-            blur_radius: px(24.0),
-            spread_radius: px(0.0),
-            inset: false,
-        }])
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
         .child(
             div()
                 .id("record-title")

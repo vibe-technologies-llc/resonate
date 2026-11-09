@@ -1,7 +1,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, BoxShadow, Div, ElementId, Font, FontWeight, MouseButton, Pixels, Role,
+    AnyElement, App, BoxShadow, Div, ElementId, Font, FontWeight, MouseButton, Pixels, Rgba, Role,
     ScrollHandle, SharedString, Stateful, TruncateFrom, canvas, div, point, prelude::*, px,
     relative, rgb, rgba,
 };
@@ -27,13 +27,21 @@ const WAY_BACK_GROUP: &str = "way-back";
 
 const NAV_ROW_GROUP: &str = "nav-row";
 
-const NAV_MARK_WASH: u8 = 0x1f;
+const MARK_WASH: u8 = 0x1c;
 
 const FIELD_LIT: u8 = 0x99;
 
+const COVER_EDGE: u8 = 0x0c;
+
+const COVER_VEIL: u8 = 0xb8;
+
+const UNCOVERED_MARK_SHARE: f32 = 0.42;
+
+const PRIMARY_PRESSED: u8 = 0xcc;
+
 const ROW_CONTROL_SHARE: f32 = 0.6;
 
-pub(crate) const CHOSEN_WASH: u8 = 0x1a;
+const CHOSEN_WASH: u8 = 0x1a;
 
 pub(crate) const GREYED: f32 = 0.5;
 
@@ -45,7 +53,7 @@ const RADIO: f32 = 14.0;
 
 const RADIO_DOT: f32 = 6.0;
 
-const CHECK_MARK: f32 = 10.0;
+const TICK: f32 = 10.0;
 
 const STEPPER_READING: f32 = 56.0;
 
@@ -63,9 +71,82 @@ const FLOATING_SHADOW_DROP: f32 = 6.0;
 
 const FLOATING_SHADOW_BLUR: f32 = 24.0;
 
+const SLIGHT_SHADOW_DROP: f32 = 4.0;
+
+const SLIGHT_SHADOW_BLUR: f32 = 16.0;
+
 const SHADOW_STRENGTH: f32 = 0.5;
 
 const RULE: f32 = 1.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Cast {
+    Long,
+    Short,
+    Slight,
+}
+
+impl Cast {
+    const fn drop_and_blur(self) -> (f32, f32) {
+        match self {
+            Self::Long => (SHEET_SHADOW_DROP, SHEET_SHADOW_BLUR),
+            Self::Short => (FLOATING_SHADOW_DROP, FLOATING_SHADOW_BLUR),
+            Self::Slight => (SLIGHT_SHADOW_DROP, SLIGHT_SHADOW_BLUR),
+        }
+    }
+
+    fn shadows(self) -> Vec<BoxShadow> {
+        let (drop, blur) = self.drop_and_blur();
+
+        vec![BoxShadow {
+            color: theme::shadow(SHADOW_STRENGTH),
+            offset: point(px(0.0), px(drop)),
+            blur_radius: px(blur),
+            spread_radius: px(0.0),
+            inset: false,
+        }]
+    }
+}
+
+pub(crate) trait Casts: Styled + Sized {
+    fn casting(self, cast: Cast) -> Self {
+        self.shadow(cast.shadows())
+    }
+}
+
+impl<E: Styled> Casts for E {}
+
+pub(crate) trait GivesUnderAPress: StatefulInteractiveElement + Sized {
+    fn gives_under_a_press(self) -> Self {
+        self.active(|pressed| pressed.bg(rgb(theme::pressed())))
+    }
+}
+
+impl<E: StatefulInteractiveElement> GivesUnderAPress for E {}
+
+pub(crate) fn chosen_wash() -> Rgba {
+    theme::tinted(theme::accent(), CHOSEN_WASH)
+}
+
+pub(crate) fn mark_wash(shade: u32) -> Rgba {
+    theme::tinted(shade, MARK_WASH)
+}
+
+pub(crate) fn field_lit() -> Rgba {
+    theme::tinted(theme::accent(), FIELD_LIT)
+}
+
+pub(crate) fn cover_edge() -> Rgba {
+    theme::tinted(theme::text(), COVER_EDGE)
+}
+
+pub(crate) fn uncovered_mark(side: f32) -> impl IntoElement {
+    icons::icon(Icon::Disc, side * UNCOVERED_MARK_SHARE, theme::faint())
+}
+
+pub(crate) fn cover_veil() -> Rgba {
+    theme::tinted(theme::background(), COVER_VEIL)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Tone {
@@ -264,6 +345,10 @@ pub(crate) fn button_when(
         Tone::Ghost | Tone::Outlined | Tone::Destructive => theme::hover(),
         Tone::Primary => theme::accent(),
     };
+    let pressed = match tone {
+        Tone::Ghost | Tone::Outlined | Tone::Destructive => theme::pressed(),
+        Tone::Primary => theme::accent(),
+    };
 
     let id = id.into();
     let label = label.into();
@@ -298,6 +383,7 @@ pub(crate) fn button_when(
                         button.focus_visible(focus::lit_over(theme::accent()))
                     })
                     .hover(move |button| button.bg(theme::tinted(hovered, hover_alpha(tone))))
+                    .active(move |button| button.bg(theme::tinted(pressed, pressed_alpha(tone))))
                     .lit_under_the_pointer(id, |button| {
                         button.text_color(rgb(match tone {
                             Tone::Ghost | Tone::Outlined => theme::text(),
@@ -332,6 +418,13 @@ const fn hover_alpha(tone: Tone) -> u8 {
     match tone {
         Tone::Ghost | Tone::Outlined | Tone::Destructive => 0xff,
         Tone::Primary => 0xe6,
+    }
+}
+
+const fn pressed_alpha(tone: Tone) -> u8 {
+    match tone {
+        Tone::Ghost | Tone::Outlined | Tone::Destructive => 0xff,
+        Tone::Primary => PRIMARY_PRESSED,
     }
 }
 
@@ -421,6 +514,7 @@ fn marked(
                 button
                     .cursor_pointer()
                     .hover(|button| button.bg(rgb(theme::hover())))
+                    .gives_under_a_press()
             },
             |button| button.opacity(GREYED).cursor_default(),
         )
@@ -458,6 +552,7 @@ pub(crate) fn pick(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|pick| pick.bg(rgb(theme::hover())))
+        .gives_under_a_press()
         .names(saying)
         .child(
             div()
@@ -495,7 +590,7 @@ pub(crate) fn radio_row(
         .cursor_pointer()
         .when_else(
             chosen,
-            |row| row.bg(theme::tinted(theme::accent(), 0x14)),
+            |row| row.bg(chosen_wash()),
             |row| row.hover(|row| row.bg(rgb(theme::hover()))),
         )
         .child(radio(chosen))
@@ -572,7 +667,7 @@ pub(crate) fn checkbox(
             .border_color(rgb(theme::accent()))
             .child(icons::icon(
                 Icon::Check,
-                CHECK_MARK,
+                TICK,
                 theme::ink_over(theme::accent()),
             )),
         false => square.border_color(rgb(theme::outline())),
@@ -650,6 +745,7 @@ pub(crate) fn stepper_reading_put_back(
         .text_color(rgb(theme::accent()))
         .cursor_pointer()
         .hover(|reading| reading.bg(rgb(theme::hover())))
+        .gives_under_a_press()
         .names(saying)
 }
 
@@ -1000,6 +1096,7 @@ pub(crate) fn nav_row(
         .bleeds()
         .cursor_pointer()
         .hover(|row| row.bg(rgb(theme::hover())))
+        .gives_under_a_press()
         .names(under.clone())
         .child(
             div()
@@ -1009,7 +1106,7 @@ pub(crate) fn nav_row(
                 .justify_center()
                 .size(px(theme::row_control()))
                 .rounded_md()
-                .bg(theme::tinted(theme::accent(), NAV_MARK_WASH))
+                .bg(mark_wash(theme::accent()))
                 .child(icons::icon(
                     icon,
                     theme::row_control_icon(),
@@ -1054,6 +1151,7 @@ pub(crate) fn place_link(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|link| link.bg(rgb(theme::hover())))
+        .gives_under_a_press()
         .lit_under_the_pointer(id, |link| link.text_color(rgb(theme::text())))
         .names(saying)
         .child(label)
@@ -1080,14 +1178,14 @@ pub(crate) fn framed_field(id: impl Into<ElementId>, lit: bool) -> Stateful<Div>
         .bg(rgb(theme::background()))
         .border_1()
         .border_color(if lit {
-            theme::tinted(theme::accent(), FIELD_LIT)
+            field_lit()
         } else {
             rgb(theme::soft_edge())
         })
         .text_size(px(theme::text_sm()))
         .cursor_text()
         .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-        .hover(|field| field.border_color(theme::tinted(theme::accent(), FIELD_LIT)))
+        .hover(|field| field.border_color(field_lit()))
 }
 
 pub(crate) fn segmented() -> Div {
@@ -1319,7 +1417,7 @@ pub(crate) fn dot_swatch(
                     theme::ink_over(colour),
                 ))
             },
-            |swatch| swatch.hover(|swatch| swatch.opacity(0.85)),
+            |swatch| swatch.hover(|swatch| swatch.opacity(LIT)),
         )
 }
 
@@ -1341,7 +1439,7 @@ pub(crate) fn choice_row(
         .cursor_pointer()
         .when_else(
             chosen,
-            |row| row.bg(theme::tinted(theme::accent(), CHOSEN_WASH)),
+            |row| row.bg(chosen_wash()),
             |row| row.hover(|row| row.bg(rgb(theme::hover()))),
         )
 }
@@ -1450,7 +1548,7 @@ pub(crate) fn sheet() -> Div {
         .bg(rgb(theme::surface()))
         .border_1()
         .border_color(rgb(theme::border()))
-        .shadow(cast(SHEET_SHADOW_DROP, SHEET_SHADOW_BLUR))
+        .casting(Cast::Long)
 }
 
 pub(crate) fn over_a_scrim(card: impl IntoElement) -> Div {
@@ -1512,23 +1610,13 @@ pub(crate) fn floating() -> Div {
         .bg(rgb(theme::raised()))
         .border_1()
         .border_color(rgb(theme::soft_edge()))
-        .shadow(cast(FLOATING_SHADOW_DROP, FLOATING_SHADOW_BLUR))
+        .casting(Cast::Short)
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
 }
 
 pub(crate) fn rule() -> Div {
     div().flex_none().h(px(RULE)).bg(rgb(theme::soft_edge()))
-}
-
-fn cast(drop: f32, blur: f32) -> Vec<BoxShadow> {
-    vec![BoxShadow {
-        color: theme::shadow(SHADOW_STRENGTH),
-        offset: point(px(0.0), px(drop)),
-        blur_radius: px(blur),
-        spread_radius: px(0.0),
-        inset: false,
-    }]
 }
 
 pub(crate) fn heading() -> Div {
@@ -1558,6 +1646,7 @@ pub(crate) fn way_back(
         .flex_none()
         .items_center()
         .gap_1()
+        .max_w_full()
         .h(px(theme::way_back_height()))
         .pl_1()
         .pr_2p5()
@@ -1569,13 +1658,20 @@ pub(crate) fn way_back(
         .whitespace_nowrap()
         .cursor_pointer()
         .hover(|back| back.bg(rgb(theme::hover())))
+        .gives_under_a_press()
         .lit_under_the_pointer(id, |back| back.text_color(rgb(theme::text())))
         .names(saying)
         .child(icons::lit_on_hover(
             icons::icon(Icon::Back, theme::row_control_icon(), theme::muted()),
             WAY_BACK_GROUP,
         ))
-        .child(label.into())
+        .child(
+            div()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(label.into()),
+        )
 }
 
 pub(crate) fn hero() -> Div {
@@ -1806,8 +1902,6 @@ pub(crate) const EMPTY_MARK_SIDE: f32 = 72.0;
 
 const EMPTY_WORDS_AT_MOST: f32 = 440.0;
 
-const EMPTY_WASH: u8 = 0x1c;
-
 pub(crate) fn empty_mark(icon: Icon, shade: u32) -> Div {
     div()
         .flex()
@@ -1816,7 +1910,7 @@ pub(crate) fn empty_mark(icon: Icon, shade: u32) -> Div {
         .justify_center()
         .size(px(EMPTY_MARK_SIDE))
         .rounded_full()
-        .bg(theme::tinted(shade, EMPTY_WASH))
+        .bg(mark_wash(shade))
         .child(icons::icon(icon, theme::empty_icon(), shade))
 }
 
@@ -1880,10 +1974,11 @@ pub(crate) fn avatar_at(name: &str, lit: bool, side: f32, letter: f32) -> Div {
         .justify_center()
         .size(px(side))
         .rounded_full()
-        .bg(theme::tinted(
-            if lit { theme::accent() } else { theme::muted() },
-            0x1c,
-        ))
+        .bg(mark_wash(if lit {
+            theme::accent()
+        } else {
+            theme::muted()
+        }))
         .text_size(px(letter))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(if lit { theme::accent() } else { theme::muted() }))

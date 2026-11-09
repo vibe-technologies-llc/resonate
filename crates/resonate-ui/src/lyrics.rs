@@ -209,7 +209,7 @@ pub enum Look {
     Searching,
     Missing,
     Found(Arc<Lyrics>),
-    Refused(SharedString),
+    Refused,
 }
 
 #[derive(Clone, Copy)]
@@ -754,7 +754,7 @@ impl LyricsModel {
     fn found(&self) -> Option<&Lyrics> {
         match &self.look {
             Look::Found(lyrics) => Some(lyrics),
-            Look::Nothing | Look::Searching | Look::Missing | Look::Refused(_) => None,
+            Look::Nothing | Look::Searching | Look::Missing | Look::Refused => None,
         }
     }
 
@@ -1171,7 +1171,7 @@ impl LyricsModel {
                     Ok(None) => Look::Missing,
                     Err(error) => {
                         tracing::warn!(%error, "no lyric provider answered");
-                        Look::Refused(SharedString::from(error.to_string()))
+                        Look::Refused
                     }
                 };
                 if moved_on || !this.already_shows(&look) {

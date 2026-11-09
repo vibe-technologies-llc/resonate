@@ -10,6 +10,7 @@ use crate::{
     icons::{self, Icon},
     models::Picture,
     theme,
+    views::kit,
 };
 
 pub(crate) const TILES_A_SIDE: usize = 2;
@@ -29,8 +30,6 @@ const LETTERED_LINES: usize = 3;
 pub(crate) const ART_ROUNDING: f32 = 8.0;
 
 const MARK_ALPHA: u8 = 0x9c;
-
-const HAIRLINE_ALPHA: u8 = 0x0c;
 
 pub(crate) struct Mosaic<'a> {
     pub(crate) drawn: &'a [Picture],
@@ -90,7 +89,7 @@ fn hairline() -> Div {
         .inset_0()
         .rounded(px(ART_ROUNDING))
         .border_1()
-        .border_color(theme::tinted(theme::text(), HAIRLINE_ALPHA))
+        .border_color(kit::cover_edge())
 }
 
 fn lettered(mark: Icon, name: &str, side: f32, ground: u32) -> Div {

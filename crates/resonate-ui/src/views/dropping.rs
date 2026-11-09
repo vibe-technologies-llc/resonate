@@ -5,8 +5,8 @@ use std::{
 };
 
 use gpui::{
-    AnimationElement, BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, point,
-    prelude::*, px, relative, rgb, rgba,
+    AnimationElement, Context, Div, ExternalPaths, SharedString, Stateful, div, prelude::*, px,
+    relative, rgb, rgba,
 };
 use parking_lot::Mutex;
 use resonate_core::names_audio;
@@ -20,7 +20,7 @@ use crate::{
     icons::{self, Icon},
     motion, theme, toast,
     views::{
-        kit::{self, EndsInAnEllipsis as _},
+        kit::{self, Casts as _, EndsInAnEllipsis as _},
         root::RootView,
         settings::Category,
     },
@@ -554,13 +554,7 @@ impl RootView {
             .border_2()
             .border_dashed()
             .border_color(rgb(ink))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
+            .casting(kit::Cast::Long)
             .child(
                 div()
                     .flex()
@@ -656,19 +650,17 @@ impl RootView {
                         .bg(rgb(theme::raised()))
                         .border_1()
                         .border_color(rgb(theme::soft_edge()))
-                        .shadow(vec![BoxShadow {
-                            color: theme::shadow(0.45),
-                            offset: point(px(0.0), px(4.0)),
-                            blur_radius: px(16.0),
-                            spread_radius: px(0.0),
-                            inset: false,
-                        }])
+                        .casting(kit::Cast::Slight)
                         .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .gap_2()
-                                .child(icons::icon(Icon::Import, 16.0, theme::accent()))
+                                .child(icons::icon(
+                                    Icon::Import,
+                                    theme::pane_icon(),
+                                    theme::accent(),
+                                ))
                                 .child(
                                     div()
                                         .flex_1()
@@ -732,7 +724,7 @@ fn dropped_row(dropped: &Dropped) -> Div {
         .flex()
         .items_center()
         .gap_2()
-        .child(icons::icon(icon, 14.0, ink))
+        .child(icons::icon(icon, theme::root_icon(), ink))
         .child(
             div()
                 .flex_1()

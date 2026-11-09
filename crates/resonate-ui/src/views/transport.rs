@@ -187,7 +187,7 @@ fn face(face: Face) -> Div {
         ),
         None => drawn
             .bg(rgb(theme::raised()))
-            .child(icons::icon(Icon::Disc, 24.0, theme::faint())),
+            .child(kit::uncovered_mark(theme::now_playing_cover())),
     }
 }
 
@@ -866,7 +866,7 @@ impl RootView {
             .overflow_hidden()
             .bg(rgb(theme::raised()))
             .border_1()
-            .border_color(theme::tinted(theme::text(), 0x0c));
+            .border_color(kit::cover_edge());
 
         let drawn = cover
             .pictured()

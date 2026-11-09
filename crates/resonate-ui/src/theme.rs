@@ -814,11 +814,35 @@ fn soft_edge_of(flavour: &Flavour) -> u32 {
     )
 }
 
+pub(crate) fn pressed() -> u32 {
+    pressed_of(WORN.read().flavour)
+}
+
+fn pressed_of(flavour: &Flavour) -> u32 {
+    let further = motion::blended(flavour.hover, flavour.text, PRESSED_TOWARD_THE_TEXT);
+
+    if contrast(flavour.text, further) >= TEXT_READS_ON_A_PRESS {
+        further
+    } else {
+        motion::blended(
+            flavour.hover,
+            flavour.raised,
+            PRESSED_BACK_TOWARD_THE_RAISED,
+        )
+    }
+}
+
 pub(crate) fn switch_knob_off() -> u32 {
     ink_over(outline())
 }
 
 const SOFT_EDGE_TOWARD_THE_OUTLINE: f32 = 0.25;
+
+const PRESSED_TOWARD_THE_TEXT: f32 = 0.08;
+
+const PRESSED_BACK_TOWARD_THE_RAISED: f32 = 0.5;
+
+const TEXT_READS_ON_A_PRESS: f32 = 4.5;
 
 pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
 
@@ -1013,6 +1037,7 @@ const SCOPE_COVER: f32 = 224.0;
 const BUTTON_HEIGHT: f32 = 28.0;
 const PILL_HEIGHT: f32 = 26.0;
 const WAY_BACK_HEIGHT: f32 = 26.0;
+const PINNED_ROW: f32 = 26.0;
 const COLUMN_HEADER_HEIGHT: f32 = 28.0;
 const SIDEBAR_ROW: f32 = 32.0;
 const ROW_HEIGHT: f32 = 36.0;
@@ -1038,6 +1063,8 @@ const MENU_ROW: f32 = 28.0;
 const MENU_ICON: f32 = 13.0;
 const GHOST_WIDTH: f32 = 260.0;
 const ROOT_ICON: f32 = 14.0;
+const WORDMARK_MARK: f32 = 22.0;
+const CHOSEN_MARK: f32 = 14.0;
 const SETTINGS_COLUMN: f32 = 720.0;
 const CURVE_HEIGHT_AT_LEAST: f32 = 160.0;
 const CURVE_HEIGHT_AT_MOST: f32 = 320.0;
@@ -1198,6 +1225,7 @@ measures! {
     button_height => BUTTON_HEIGHT,
     pill_height => PILL_HEIGHT,
     way_back_height => WAY_BACK_HEIGHT,
+    pinned_row => PINNED_ROW,
     column_header_height => COLUMN_HEADER_HEIGHT,
     sidebar_row => SIDEBAR_ROW,
     row_height => ROW_HEIGHT,
@@ -1226,6 +1254,8 @@ measures! {
     menu_icon => MENU_ICON,
     ghost_width => GHOST_WIDTH,
     root_icon => ROOT_ICON,
+    wordmark_mark => WORDMARK_MARK,
+    chosen_mark => CHOSEN_MARK,
     settings_column => SETTINGS_COLUMN,
     curve_height_at_least => CURVE_HEIGHT_AT_LEAST,
     curve_height_at_most => CURVE_HEIGHT_AT_MOST,
@@ -1722,6 +1752,30 @@ mod tests {
     }
 
     #[test]
+    fn a_pressed_ground_is_a_step_past_the_hover_and_still_read() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let pressed = pressed_of(flavour);
+            let read = contrast(flavour.text, pressed);
+            if pressed == flavour.hover {
+                failures.push(format!("{theme}: a press looks as the hover does"));
+            }
+            if read < READS_AS_BODY {
+                failures.push(format!(
+                    "{theme}: text on a pressed ground reads at {read:.2}"
+                ));
+            }
+            if pressed == flavour.raised {
+                failures.push(format!("{theme}: a press looks as a resting button does"));
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
     fn every_focus_ring_stands_off_the_panes_it_rings() {
         let mut failures = Vec::new();
 
@@ -2035,11 +2089,8 @@ mod tests {
 
     const HEIGHT_CALLS: [&str; 4] = [".h(px(", ".min_h(px(", ".max_h(px(", ".size(px("];
     const HAIRLINES: [f32; 2] = [0.0, 1.0];
-    const FIXED_BY_DESIGN: [(&str, &str); 3] = [
-        ("dropping.rs", ".h(px(4.0))"),
-        ("kit.rs", ".size(px(7.0))"),
-        ("root.rs", ".size(px(22.0))"),
-    ];
+    const FIXED_BY_DESIGN: [(&str, &str); 2] =
+        [("dropping.rs", ".h(px(4.0))"), ("kit.rs", ".size(px(7.0))")];
 
     fn view_sources(folder: &Path, read: &mut Vec<(String, String)>) {
         let mut entries: Vec<PathBuf> = fs::read_dir(folder)
@@ -2135,6 +2186,42 @@ mod tests {
                 "{file}: {literal} is allowed but no longer drawn, so it leaves the list"
             );
         }
+    }
+
+    const CASTS_ITS_OWN_SHADOW: [&str; 3] = ["chrome.rs", "focus.rs", "kit.rs"];
+
+    #[test]
+    fn a_shadow_is_cast_by_the_kit_and_no_view_builds_its_own() {
+        let mut read = Vec::new();
+        view_sources(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src")
+                .join("views")
+                .as_path(),
+            &mut read,
+        );
+        read.push((
+            "toast.rs".to_owned(),
+            fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("src")
+                    .join("toast.rs"),
+            )
+            .expect("the toast's source is readable"),
+        ));
+
+        let building: Vec<&str> = read
+            .iter()
+            .filter(|(name, source)| {
+                source.contains("BoxShadow {") && !CASTS_ITS_OWN_SHADOW.contains(&name.as_str())
+            })
+            .map(|(name, _)| name.as_str())
+            .collect();
+
+        assert!(
+            building.is_empty(),
+            "a shadow built outside the kit's casts: {building:?}"
+        );
     }
 
     #[test]

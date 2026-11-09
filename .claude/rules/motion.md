@@ -39,7 +39,8 @@ open does not. A hint is a new entity per show, so it fades in each time.
 - **Nothing waits on the way out**: a dismissed surface leaves that frame, so a closing animation
   never holds a backdrop after the listener moved on. The toast is excepted: nobody dismissed it.
 - **Hover is not animated**: gpui resolves `hover`/`group_hover` in paint; a transition would mean
-  tracking the pointer per row of every list.
+  tracking the pointer per row of every list. A press is not either: `kit::GivesUnderAPress` is
+  gpui's `active`, resolved in the same paint, there for as long as the button is held.
 
 ## What flips
 

@@ -19,6 +19,7 @@ use crate::{
         kit,
         listing::{Sortable, Sorted},
         root::RootView,
+        scrollbar::Scrollbars,
         sheets,
         spoken::Spoken,
         typing::jumped,
@@ -366,7 +367,18 @@ impl RootView {
             .flex_col()
             .gap_1()
             .min_h(px(0.0))
-            .child(orders)
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .min_h(px(0.0))
+                    .child(orders)
+                    .child(
+                        Scrollbars::of(cx)
+                            .vertical("order-scrollbar", self.ordering_scroll.clone()),
+                    ),
+            )
             .child(kit::rule().mx_1())
             .child(div().flex_none().px_1().pb_1().child(readings))
     }
