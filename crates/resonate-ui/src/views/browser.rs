@@ -68,6 +68,28 @@ pub(crate) const TRACK_ADD_CONTROLS: usize = 2;
 
 const CONTROL_GAP: f32 = 2.0;
 
+const GRID_PADDING: f32 = 48.0;
+
+const A_CELL_GROWS_AT_MOST: f32 = 1.5;
+
+fn columns_across(width: f32) -> usize {
+    let cell = theme::grid_cover() + theme::grid_gap();
+
+    (((width - GRID_PADDING + theme::grid_gap()) / cell).floor() as usize).max(1)
+}
+
+fn side_across(width: f32) -> f32 {
+    let columns = columns_across(width) as f32;
+    let filled = (width - GRID_PADDING - (columns - 1.0) * theme::grid_gap()) / columns;
+
+    filled.floor().clamp(
+        theme::grid_cover(),
+        theme::grid_cover() * A_CELL_GROWS_AT_MOST,
+    )
+}
+
+const ROW_CONTROLS_AT_REST: f32 = 0.4;
+
 pub(crate) fn controls_width(controls: usize) -> f32 {
     theme::row_control() * controls as f32 + CONTROL_GAP * controls.saturating_sub(1) as f32
 }
@@ -175,6 +197,8 @@ impl RootView {
             .flex_none()
             .items_center()
             .gap_0p5()
+            .opacity(ROW_CONTROLS_AT_REST)
+            .group_hover(ROW_GROUP, |controls| controls.opacity(1.0))
     }
 
     pub(crate) fn favour_mark_under(
@@ -291,7 +315,7 @@ impl RootView {
                                                         .flex()
                                                         .gap(px(theme::grid_gap()))
                                                         .px_6()
-                                                        .h(px(theme::grid_row()))
+                                                        .h(px(this.grid_row()))
                                                         .children(cells),
                                                 );
                                             }
@@ -326,15 +350,21 @@ impl RootView {
     }
 
     pub(crate) fn grid_columns(&self) -> usize {
-        let width = f32::from(self.grid_width.get()) - 48.0;
-        let cell = theme::grid_cover() + theme::grid_gap();
-        (((width + theme::grid_gap()) / cell).floor() as usize).max(1)
+        columns_across(f32::from(self.grid_width.get()))
+    }
+
+    pub(crate) fn grid_side(&self) -> f32 {
+        side_across(f32::from(self.grid_width.get()))
+    }
+
+    pub(crate) fn grid_row(&self) -> f32 {
+        theme::grid_row() - theme::grid_cover() + self.grid_side()
     }
 
     fn album_cell(&self, album: &Album, at: usize, cx: &mut Context<Self>) -> Stateful<Div> {
         self.album_cell_captioned(
             album,
-            theme::grid_cover(),
+            self.grid_side(),
             Caption::ByArtist,
             Some(Chooses::among(Listed::Albums, at)),
             cx,
@@ -1654,6 +1684,7 @@ impl RootView {
                             this.reach_further(range.end * columns, held, cx);
                             range
                                 .map(|index| {
+                                    let tall = this.grid_row();
                                     let cells = artists
                                         .iter()
                                         .enumerate()
@@ -1667,7 +1698,7 @@ impl RootView {
                                         .flex()
                                         .gap(px(theme::grid_gap()))
                                         .px_6()
-                                        .h(px(theme::grid_row()))
+                                        .h(px(tall))
                                         .children(cells)
                                 })
                                 .collect()
@@ -1689,7 +1720,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = artist.id;
-        let side = theme::grid_cover();
+        let side = self.grid_side();
         let shift = Shift::Listing(Listed::Artists);
         let reached = self.reaches(shift, at);
         let cursor_only = self.stands_unchosen_on(shift, at);
@@ -2579,7 +2610,7 @@ impl RootView {
             cells.push(
                 self.album_cell_captioned(
                     album,
-                    theme::grid_cover(),
+                    self.grid_side(),
                     Caption::Beside(artist),
                     None,
                     cx,
@@ -2592,7 +2623,7 @@ impl RootView {
         }
         for album in not_held.iter() {
             cells.push(
-                self.album_not_held_cell(album, theme::grid_cover(), cx)
+                self.album_not_held_cell(album, self.grid_side(), cx)
                     .into_any_element(),
             );
         }
@@ -2605,6 +2636,7 @@ impl RootView {
             .track_scroll(&self.artist_records_scroll)
             .child(
                 div()
+                    .relative()
                     .flex()
                     .flex_wrap()
                     .items_start()
@@ -2612,6 +2644,7 @@ impl RootView {
                     .px_6()
                     .pt_5()
                     .pb_6()
+                    .child(kit::measures_the_grid(self.grid_width.clone()))
                     .children(cells),
             )
     }
@@ -4331,7 +4364,38 @@ const REACHED_RING: f32 = 2.0;
 mod tests {
     use resonate_library::{CoverSource, HeldMedium, Link, ReleaseDetail};
 
-    use super::record_of;
+    use super::{A_CELL_GROWS_AT_MOST, GRID_PADDING, columns_across, record_of, side_across};
+    use crate::theme;
+
+    #[test]
+    fn the_cells_of_a_grid_fill_its_width_and_never_shrink_under_a_cover() {
+        for width in [520.0_f32, 700.0, 861.0, 1_283.0, 1_921.0, 2_560.0] {
+            let columns = columns_across(width) as f32;
+            let side = side_across(width);
+            let filled = columns * side + (columns - 1.0) * theme::grid_gap();
+            let room = width - GRID_PADDING;
+
+            assert!(
+                side >= theme::grid_cover(),
+                "a cell under a cover at {width}"
+            );
+            assert!(filled <= room, "the grid overflows a pane {width} wide");
+            assert!(
+                room - filled < columns,
+                "the grid stops {} short of a pane {width} wide",
+                room - filled
+            );
+        }
+    }
+
+    #[test]
+    fn one_cell_in_a_wide_pane_grows_no_further_than_its_picture_stays_sharp() {
+        let narrow = theme::grid_cover() + GRID_PADDING;
+
+        assert_eq!(columns_across(narrow), 1);
+        assert_eq!(side_across(narrow), theme::grid_cover());
+        assert!(side_across(narrow + 180.0) <= theme::grid_cover() * A_CELL_GROWS_AT_MOST);
+    }
 
     fn unreleased() -> ReleaseDetail {
         ReleaseDetail {

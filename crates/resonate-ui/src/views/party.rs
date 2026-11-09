@@ -283,7 +283,7 @@ impl RootView {
     }
 
     fn nobody_here(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let mark = kit::empty_mark(Icon::Party, theme::accent());
+        let mark = kit::empty_mark(Icon::Party, theme::faint());
         let welcome = div()
             .flex()
             .flex_col()

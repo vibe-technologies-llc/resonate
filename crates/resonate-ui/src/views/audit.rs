@@ -4,7 +4,7 @@ mod tests {
 
     const CLICKED: &str = ".on_click(";
 
-    const NAMES_A_ROLE: [&str; 19] = [
+    const NAMES_A_ROLE: [&str; 20] = [
         "said_as(",
         "named_as(",
         "listed_as(",
@@ -24,9 +24,16 @@ mod tests {
         "kit::star(",
         "kit::choice_row(",
         "kit::dot_swatch(",
+        "kit::play_on_the_art(",
     ];
 
-    const HAS_AN_ID: [&str; 4] = [".id(", "kit::button(", "kit::icon_button(", "kit::segment("];
+    const HAS_AN_ID: [&str; 5] = [
+        ".id(",
+        "kit::button(",
+        "kit::icon_button(",
+        "kit::segment(",
+        "kit::play_on_the_art(",
+    ];
 
     const STILL_POINTER_ONLY: &[&str] = &[
         "browser.rs | cell.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
@@ -42,7 +49,6 @@ mod tests {
         "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
         "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
         "playlists.rs | control(\"play-saved\", id, Icon::Play, words::playlists::play_hint()) | .on_click(cx.listener(move |this, _, _, cx| {",
-        "playlists.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
         "playlists.rs | div() | .on_click(cx.listener(move |this, _, window, cx| {",
         "playlists.rs | kit::framed_field(\"playlist-name\", true) | .on_click(cx.listener(|this, _, window, cx| {",
         "playlists.rs | let cell = div() | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
@@ -59,7 +65,6 @@ mod tests {
         "settings/mod.rs | let clicked = press.clone(); | Self::ringed_for_keys(handle, control, press, cx).on_click(cx.listener(",
         "settings/output.rs | row.track_focus(&self.controls.at(reached, cx)) | .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {",
         "settings/sync.rs | div() | .on_click(cx.listener(|this, _, _, cx| this.show_the_pairing(true, cx)))",
-        "suggestions.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
     ];
 
     fn indent(line: &str) -> usize {

@@ -2904,7 +2904,7 @@ impl RootView {
             || (shift == Shift::Listing(Listed::Playlists)
                 && self.playlists_drawn == PlaylistsDrawn::Grid);
         if in_a_grid {
-            return ((shown / theme::grid_row()) as usize).max(1) * self.grid_columns();
+            return ((shown / self.grid_row()) as usize).max(1) * self.grid_columns();
         }
         ((shown / theme::row_height()) as usize).max(1)
     }
@@ -4010,8 +4010,8 @@ impl RootView {
 
     fn row_height_of(&self, pane: Pane) -> f32 {
         match pane {
-            Pane::Albums => theme::grid_row(),
-            Pane::Artists if self.artists_drawn == ArtistsDrawn::Grid => theme::grid_row(),
+            Pane::Albums => self.grid_row(),
+            Pane::Artists if self.artists_drawn == ArtistsDrawn::Grid => self.grid_row(),
             Pane::Artists => theme::tall_row_height(),
             _ => theme::row_height(),
         }

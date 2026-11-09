@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use gpui::{
-    Background, Div, FontWeight, ObjectFit, SharedString, div, img, linear_color_stop,
-    linear_gradient, prelude::*, px, rgb,
-};
-use resonate_core::Accent;
+use gpui::{Div, FontWeight, ObjectFit, SharedString, div, img, prelude::*, px, rgb};
 
 use crate::{
     icons::{self, Icon},
@@ -29,57 +25,38 @@ const LETTERED_LINES: usize = 3;
 
 pub(crate) const ART_ROUNDING: f32 = 8.0;
 
-const MARK_ALPHA: u8 = 0x9c;
-
 pub(crate) struct Mosaic<'a> {
     pub(crate) drawn: &'a [Picture],
-    pub(crate) ground: (Accent, Accent),
     pub(crate) mark: Icon,
     pub(crate) name: &'a str,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Framed {
-    Alone,
-    OnACard,
-}
-
 impl Mosaic<'_> {
-    pub(crate) fn drawn(&self, side: f32, framed: Framed) -> Div {
-        let (from, to) = (theme::hue(self.ground.0), theme::hue(self.ground.1));
+    pub(crate) fn drawn(&self, side: f32) -> Div {
         let side = side.round();
         let rounding = px(ART_ROUNDING);
 
-        let frame = div().relative().flex_none().overflow_hidden();
-        let frame = match framed {
-            Framed::OnACard => frame
-                .w_full()
-                .h(px(side))
-                .rounded_tl(rounding)
-                .rounded_tr(rounding),
-            Framed::Alone => frame.size(px(side)).rounded(rounding),
-        };
+        let frame = div()
+            .relative()
+            .flex_none()
+            .overflow_hidden()
+            .size(px(side))
+            .rounded(rounding);
 
         let art = match self.drawn {
             [] => frame
-                .bg(ground(from, to))
-                .child(lettered(self.mark, self.name, side, from)),
+                .bg(rgb(theme::raised()))
+                .child(lettered(self.mark, self.name, side)),
             [only] => frame.child({
-                let image = img(Arc::clone(only))
+                img(Arc::clone(only))
                     .size(px(side))
-                    .object_fit(ObjectFit::Cover);
-                match framed {
-                    Framed::OnACard => image.rounded_tl(rounding).rounded_tr(rounding),
-                    Framed::Alone => image.rounded(rounding),
-                }
+                    .object_fit(ObjectFit::Cover)
+                    .rounded(rounding)
             }),
-            several => frame.child(tiled(several, side, (from, to), framed)),
+            several => frame.child(tiled(several, side)),
         };
 
-        match framed {
-            Framed::OnACard => art,
-            Framed::Alone => art.child(hairline()),
-        }
+        art.child(hairline())
     }
 }
 
@@ -92,9 +69,7 @@ fn hairline() -> Div {
         .border_color(kit::cover_edge())
 }
 
-fn lettered(mark: Icon, name: &str, side: f32, ground: u32) -> Div {
-    let ink = theme::ink_over(ground);
-
+fn lettered(mark: Icon, name: &str, side: f32) -> Div {
     div()
         .absolute()
         .inset_0()
@@ -102,30 +77,22 @@ fn lettered(mark: Icon, name: &str, side: f32, ground: u32) -> Div {
         .flex_col()
         .justify_between()
         .p(px(side * LETTERED_INSET))
-        .child(icons::icon(mark, side * MARK_ON_THE_ART, ink))
+        .child(icons::icon(mark, side * MARK_ON_THE_ART, theme::faint()))
         .child(
             div()
                 .text_size(px(side * NAME_ON_THE_ART))
                 .line_height(px(side * NAME_ON_THE_ART * LETTERED_LEADING))
                 .font_weight(FontWeight::BOLD)
-                .text_color(theme::tinted(ink, MARK_ALPHA))
+                .text_color(rgb(theme::muted()))
                 .line_clamp(LETTERED_LINES)
                 .child(SharedString::from(name.to_owned())),
         )
 }
 
-fn ground(from: u32, to: u32) -> Background {
-    linear_gradient(
-        135.0,
-        linear_color_stop(rgb(from), 0.0),
-        linear_color_stop(rgb(to), 1.0),
-    )
-}
-
-fn tiled(drawn: &[Picture], side: f32, (from, to): (u32, u32), framed: Framed) -> Div {
+fn tiled(drawn: &[Picture], side: f32) -> Div {
     let mut grid = div().flex().flex_wrap().size(px(side));
     for at in 0..TILES {
-        let corner = Corner::of_tile(at, framed);
+        let corner = Corner::of_tile(at);
         let (wide, high) = (
             tile_span(side, at % TILES_A_SIDE),
             tile_span(side, at / TILES_A_SIDE),
@@ -140,7 +107,11 @@ fn tiled(drawn: &[Picture], side: f32, (from, to): (u32, u32), framed: Framed) -
                         .object_fit(ObjectFit::Cover),
                 ),
             ),
-            None => cell.bg(rgb(if at % 2 == 0 { from } else { to })),
+            None => cell.bg(rgb(if at % 2 == 0 {
+                theme::raised()
+            } else {
+                theme::hover()
+            })),
         });
     }
 
@@ -162,19 +133,17 @@ enum Corner {
     TopRight,
     BottomLeft,
     BottomRight,
-    Square,
 }
 
 impl Corner {
-    const fn of_tile(at: usize, framed: Framed) -> Self {
+    const fn of_tile(at: usize) -> Self {
         let right = at % TILES_A_SIDE == TILES_A_SIDE - 1;
         let bottom = at / TILES_A_SIDE == TILES_A_SIDE - 1;
-        match (bottom, right, framed) {
-            (false, false, _) => Self::TopLeft,
-            (false, true, _) => Self::TopRight,
-            (true, _, Framed::OnACard) => Self::Square,
-            (true, false, Framed::Alone) => Self::BottomLeft,
-            (true, true, Framed::Alone) => Self::BottomRight,
+        match (bottom, right) {
+            (false, false) => Self::TopLeft,
+            (false, true) => Self::TopRight,
+            (true, false) => Self::BottomLeft,
+            (true, true) => Self::BottomRight,
         }
     }
 
@@ -185,14 +154,13 @@ impl Corner {
             Self::TopRight => element.rounded_tr(rounding),
             Self::BottomLeft => element.rounded_bl(rounding),
             Self::BottomRight => element.rounded_br(rounding),
-            Self::Square => element,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Corner, Framed, TILES, TILES_A_SIDE, tile_span};
+    use super::{Corner, TILES, TILES_A_SIDE, tile_span};
 
     #[test]
     fn the_tiles_of_a_side_fill_it_to_the_pixel_whether_it_is_odd_or_even() {
@@ -204,30 +172,16 @@ mod tests {
     }
 
     #[test]
-    fn each_tile_rounds_the_one_corner_it_stands_in_and_a_card_keeps_its_foot_square() {
-        let alone: Vec<Corner> = (0..TILES)
-            .map(|at| Corner::of_tile(at, Framed::Alone))
-            .collect();
-        let carded: Vec<Corner> = (0..TILES)
-            .map(|at| Corner::of_tile(at, Framed::OnACard))
-            .collect();
+    fn each_tile_rounds_the_one_corner_it_stands_in() {
+        let corners: Vec<Corner> = (0..TILES).map(Corner::of_tile).collect();
 
         assert_eq!(
-            alone,
+            corners,
             [
                 Corner::TopLeft,
                 Corner::TopRight,
                 Corner::BottomLeft,
                 Corner::BottomRight
-            ]
-        );
-        assert_eq!(
-            carded,
-            [
-                Corner::TopLeft,
-                Corner::TopRight,
-                Corner::Square,
-                Corner::Square
             ]
         );
     }

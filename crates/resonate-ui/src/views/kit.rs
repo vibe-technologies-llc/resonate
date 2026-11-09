@@ -144,6 +144,29 @@ pub(crate) fn uncovered_mark(side: f32) -> impl IntoElement {
     icons::icon(Icon::Disc, side * UNCOVERED_MARK_SHARE, theme::faint())
 }
 
+const PLAY_ON_THE_ART: f32 = 36.0;
+
+const PLAY_MARK_ON_THE_ART: f32 = 0.45;
+
+pub(crate) fn play_on_the_art(id: impl Into<ElementId>, hint: &'static str) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(PLAY_ON_THE_ART))
+        .rounded_full()
+        .bg(rgb(theme::accent()))
+        .casting(Cast::Slight)
+        .said_as(Role::Button, hint)
+        .names(hint)
+        .child(icons::icon(
+            Icon::Play,
+            PLAY_ON_THE_ART * PLAY_MARK_ON_THE_ART,
+            theme::ink_over(theme::accent()),
+        ))
+}
+
 pub(crate) fn cover_veil() -> Rgba {
     theme::tinted(theme::background(), COVER_VEIL)
 }
@@ -1105,13 +1128,7 @@ pub(crate) fn nav_row(
                 .items_center()
                 .justify_center()
                 .size(px(theme::row_control()))
-                .rounded_md()
-                .bg(mark_wash(theme::accent()))
-                .child(icons::icon(
-                    icon,
-                    theme::row_control_icon(),
-                    theme::accent(),
-                )),
+                .child(icons::icon(icon, theme::row_control_icon(), theme::muted())),
         )
         .child(named(name, under))
         .child(icons::lit_on_hover(
@@ -1526,6 +1543,36 @@ pub(crate) fn card() -> Div {
         .border_color(rgb(theme::border()))
 }
 
+pub(crate) fn ledger(across: usize, cells: Vec<AnyElement>) -> Div {
+    let across = across.max(1);
+    let mut cells = cells.into_iter().peekable();
+    let mut ledger = section();
+    let mut below_the_first = false;
+    while cells.peek().is_some() {
+        let mut line = div().flex().w_full().when(below_the_first, |line| {
+            line.border_t_1().border_color(rgb(theme::border()))
+        });
+        for place in 0..across {
+            line = line.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .p_4()
+                    .when(place > 0, |cell| {
+                        cell.border_l_1().border_color(rgb(theme::border()))
+                    })
+                    .children(cells.next()),
+            );
+        }
+        ledger = ledger.child(line);
+        below_the_first = true;
+    }
+
+    ledger
+}
+
 pub(crate) fn card_title(text: impl Into<SharedString>) -> Stateful<Div> {
     let text = text.into();
 
@@ -1898,9 +1945,7 @@ pub(crate) fn trouble_offering(
         .into_any_element()
 }
 
-pub(crate) const EMPTY_MARK_SIDE: f32 = 72.0;
-
-const EMPTY_WORDS_AT_MOST: f32 = 440.0;
+const EMPTY_WORDS_AT_MOST: f32 = 420.0;
 
 pub(crate) fn empty_mark(icon: Icon, shade: u32) -> Div {
     div()
@@ -1908,14 +1953,11 @@ pub(crate) fn empty_mark(icon: Icon, shade: u32) -> Div {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(EMPTY_MARK_SIDE))
-        .rounded_full()
-        .bg(mark_wash(shade))
         .child(icons::icon(icon, theme::empty_icon(), shade))
 }
 
 fn nothing_here(icon: Icon, message: &'static str, more: Option<&'static str>) -> Div {
-    stands_empty(icon, theme::accent(), message, more)
+    stands_empty(icon, theme::faint(), message, more)
 }
 
 fn stands_empty(icon: Icon, shade: u32, message: &'static str, more: Option<&'static str>) -> Div {
@@ -1925,7 +1967,7 @@ fn stands_empty(icon: Icon, shade: u32, message: &'static str, more: Option<&'st
         .flex_col()
         .items_center()
         .justify_center()
-        .gap_2()
+        .gap_1p5()
         .px_8()
         .py_8()
         .child(empty_mark(icon, shade))
@@ -1933,9 +1975,9 @@ fn stands_empty(icon: Icon, shade: u32, message: &'static str, more: Option<&'st
             div()
                 .id(message)
                 .headed(2, message)
-                .pt_2()
+                .pt_3()
                 .max_w(px(EMPTY_WORDS_AT_MOST))
-                .text_size(px(theme::text_xl()))
+                .text_size(px(theme::text_lg()))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(theme::text()))
                 .text_center()
@@ -1947,8 +1989,8 @@ fn stands_empty(icon: Icon, shade: u32, message: &'static str, more: Option<&'st
                     .id(more)
                     .read_plainly(more)
                     .max_w(px(EMPTY_WORDS_AT_MOST))
-                    .pb_2()
-                    .text_size(px(theme::text_base()))
+                    .pb_3()
+                    .text_size(px(theme::text_sm()))
                     .text_color(rgb(theme::muted()))
                     .text_center()
                     .child(more),

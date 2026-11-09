@@ -775,10 +775,6 @@ pub(crate) fn accent() -> u32 {
     WORN.read().accent
 }
 
-pub(crate) fn hue(accent: Accent) -> u32 {
-    WORN.read().flavour.accents.pick(accent)
-}
-
 pub(crate) fn beside_the_accent(nth: usize) -> u32 {
     let worn = WORN.read();
     let others: Vec<u32> = Accent::ALL
@@ -997,7 +993,7 @@ const HEADER_HEIGHT: f32 = 52.0;
 const SIDEBAR_WIDTH: f32 = 216.0;
 const SEARCH_WIDTH: f32 = 560.0;
 const TRANSPORT_HEIGHT: f32 = 88.0;
-const TRANSPORT_CENTRE: f32 = 460.0;
+const TRANSPORT_CENTRE: f32 = 560.0;
 const TRANSPORT_STEP: Control = Control::of(36.0, 18.0);
 const TRANSPORT_PLAY: Control = Control::of(40.0, 20.0);
 const TOGGLE: Control = Control::of(32.0, 16.0);
@@ -1081,20 +1077,15 @@ const LYRIC_DOT_GAP: f32 = 10.0;
 const LYRIC_BREATH: f32 = 28.0;
 const VOLUME_WIDTH: f32 = 88.0;
 const AVATAR: f32 = 34.0;
-const STAGE_WIDTH: f32 = 200.0;
-const STAT_TILE: f32 = 150.0;
 const CHART_HEIGHT: f32 = 148.0;
 const CHART_AXIS: f32 = 56.0;
 const CHART_BAR_WIDEST: f32 = 48.0;
 const RHYTHM_HEIGHT: f32 = 96.0;
 const RHYTHM_BAR_WIDEST: f32 = 40.0;
-const STAT_MARK: f32 = 32.0;
-const STAT_MARK_ICON: f32 = 16.0;
 const STATISTICS_TWO_COLUMNS: f32 = 760.0;
 const NUMBER_ONE_ART: f32 = 72.0;
 const METER_HEIGHT: f32 = 6.0;
 const LEGEND_MARK: f32 = 9.0;
-const SUGGESTION_CARD: f32 = 252.0;
 const EMPTY_ICON: f32 = 34.0;
 const THEME_SWATCH: f32 = 128.0;
 const THEME_SWATCH_STRIP: f32 = 28.0;
@@ -1272,20 +1263,15 @@ measures! {
     lyric_breath => LYRIC_BREATH,
     volume_width => VOLUME_WIDTH,
     avatar => AVATAR,
-    stage_width => STAGE_WIDTH,
-    stat_tile => STAT_TILE,
     chart_height => CHART_HEIGHT,
     chart_axis => CHART_AXIS,
     chart_bar_widest => CHART_BAR_WIDEST,
     rhythm_height => RHYTHM_HEIGHT,
     rhythm_bar_widest => RHYTHM_BAR_WIDEST,
-    stat_mark => STAT_MARK,
-    stat_mark_icon => STAT_MARK_ICON,
     statistics_two_columns => STATISTICS_TWO_COLUMNS,
     number_one_art => NUMBER_ONE_ART,
     meter_height => METER_HEIGHT,
     legend_mark => LEGEND_MARK,
-    suggestion_card => SUGGESTION_CARD,
     empty_icon => EMPTY_ICON,
     theme_swatch => THEME_SWATCH,
     theme_swatch_strip => THEME_SWATCH_STRIP,

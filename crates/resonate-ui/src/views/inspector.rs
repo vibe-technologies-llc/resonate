@@ -30,6 +30,9 @@ const GRAPH_COLUMNS: usize = 240;
 const GRAPH_HEIGHT: f32 = 160.0;
 const GRAPH_LINE: f32 = 1.75;
 const CARD_WIDTH: f32 = 232.0;
+const STAGES: usize = 3;
+const PART_MARGIN: f32 = 176.0;
+const A_PART_IS_NAMED_BESIDE_ITS_FIRST_ROW: f32 = 18.0;
 const ATOM_KIND_WIDTH: f32 = 56.0;
 const ATOM_AT_WIDTH: f32 = 112.0;
 
@@ -110,9 +113,8 @@ impl RootView {
             .w_full()
             .max_w(px(theme::inspector_column()))
             .mx_auto()
-            .gap_4()
             .child(signal_path(&digest, output, sink))
-            .child(source(&digest.info))
+            .child(source(&digest.info).mt_3().border_t_0())
             .child(sink_card(output))
             .child(bitrate(self, &digest, graphing, cx));
 
@@ -199,58 +201,60 @@ fn signal_path(digest: &StreamDigest, output: Option<OutputStatus>, sink: Option
         _ => words::inspector::gain(format::applied(digest.replay_gain)),
     };
 
-    kit::card()
-        .flex_row()
-        .flex_wrap()
-        .gap_x_8()
-        .gap_y_4()
-        .child(stage(
-            words::inspector::source(),
-            codec.as_str().to_owned(),
-            source_colour,
-            vec![
-                format::quality(info.spec),
-                format!("{} · {container}", info.spec.channels),
-            ],
-        ))
-        .child(stage(
-            words::inspector::processing(),
-            processing,
-            theme::text(),
-            done_to
-                .into_iter()
-                .chain([gain, replay_gain_said(digest.replay_gain_mode).to_owned()])
-                .collect(),
-        ))
-        .child(stage(
-            words::inspector::output(),
-            mode_label.to_owned(),
-            mode_colour,
-            vec![
-                output.map_or_else(
-                    || words::inspector::stream_closed().to_owned(),
-                    |output| format::quality(output.negotiated),
-                ),
-                sink.unwrap_or_else(|| words::inspector::no_sink().to_owned()),
-            ],
-        ))
+    kit::ledger(
+        STAGES,
+        vec![
+            stage(
+                words::inspector::source(),
+                codec.as_str().to_owned(),
+                source_colour,
+                vec![
+                    format::quality(info.spec),
+                    format!("{} · {container}", info.spec.channels),
+                ],
+            )
+            .into_any_element(),
+            stage(
+                words::inspector::processing(),
+                processing,
+                theme::text(),
+                done_to
+                    .into_iter()
+                    .chain([gain, replay_gain_said(digest.replay_gain_mode).to_owned()])
+                    .collect(),
+            )
+            .into_any_element(),
+            stage(
+                words::inspector::output(),
+                mode_label.to_owned(),
+                mode_colour,
+                vec![
+                    output.map_or_else(
+                        || words::inspector::stream_closed().to_owned(),
+                        |output| format::quality(output.negotiated),
+                    ),
+                    sink.unwrap_or_else(|| words::inspector::no_sink().to_owned()),
+                ],
+            )
+            .into_any_element(),
+        ],
+    )
 }
 
 fn stage(label: &'static str, figure: String, colour: u32, lines: Vec<String>) -> Div {
     let mut column = div()
         .flex()
         .flex_col()
-        .flex_1()
-        .min_w(px(theme::stage_width()))
+        .min_w(px(0.0))
         .gap_0p5()
         .child(
             div()
                 .id(label)
                 .headed(3, label)
                 .pb_1()
-                .text_size(px(theme::text_sm()))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb(theme::muted()))
+                .text_size(px(theme::text_xs()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::faint()))
                 .child(label),
         )
         .child(
@@ -461,7 +465,7 @@ fn bitrate(
             ),
         ],
     )
-    .child(div().mt_1().child(root.in_the_pane_ring(
+    .child(div().mt_2().mb_1().child(root.in_the_pane_ring(
         kit::button(
             "bitrate-graph",
             Some(Icon::Inspector),
@@ -535,7 +539,7 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
         shares.push(*level);
     }
 
-    card(words::inspector::bitrate_over_time())
+    summary(words::inspector::bitrate_over_time())
         .child(
             div()
                 .id("bitrate-graph")
@@ -548,7 +552,7 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
                 })
                 .h(px(GRAPH_HEIGHT))
                 .w_full()
-                .mt_2()
+                .my_2()
                 .child(traced(shares)),
         )
         .child(
@@ -617,7 +621,7 @@ fn container(layout: &BoxLayout) -> Div {
     );
 
     let mut panel = fields(
-        card(words::inspector::container_layout()),
+        summary(words::inspector::container_layout()),
         vec![(words::inspector::faststart(), Some(verdict))],
     );
     for entry in &layout.boxes {
@@ -727,24 +731,40 @@ fn tags<'a>(set: &'a TagSet, carried: Option<usize>) -> Div {
         ),
     ];
 
-    fields(card(said::tags()), named.into())
+    fields(summary(said::tags()), named.into())
 }
 
 fn summary(title: &'static str) -> Div {
-    card(title)
+    part().child(margin().child(kit::card_title(title)))
 }
 
 fn summary_beside(title: &'static str, beside: Div) -> Div {
-    kit::card().gap_1p5().min_w(px(0.0)).child(
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap_3()
-            .pb_1()
-            .child(kit::card_title(title))
-            .child(beside),
-    )
+    part().child(margin().child(kit::card_title(title)).child(beside))
+}
+
+fn part() -> Div {
+    div()
+        .relative()
+        .flex()
+        .flex_col()
+        .min_w(px(0.0))
+        .pl(px(PART_MARGIN))
+        .py_3()
+        .border_t_1()
+        .border_color(rgb(theme::border()))
+}
+
+fn margin() -> Div {
+    div()
+        .absolute()
+        .left_0()
+        .top(px(A_PART_IS_NAMED_BESIDE_ITS_FIRST_ROW))
+        .w(px(PART_MARGIN))
+        .flex()
+        .flex_col()
+        .items_start()
+        .gap_1()
+        .pr_4()
 }
 
 pub(crate) fn beside(cards: Vec<AnyElement>) -> Div {

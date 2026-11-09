@@ -46,7 +46,8 @@ started can hold it open after the script ends.
 ## The parts
 
 - `fakein/`: a small Wayland client over `wayland-protocols-plasma`, reading `move X Y`, `down`,
-  `up`, `rdown`, `rup`, `sleep S`, `drag X0 Y0 X1 Y1 STEPS` and `quit` from its stdin and answering `fakein: done
+  `up`, `rdown`, `rup`, `key CODE down`, `key CODE up` (an evdev key code: 1 is escape, 38 `l`),
+  `sleep S`, `drag X0 Y0 X1 Y1 STEPS` and `quit` from its stdin and answering `fakein: done
   <line>` for each, which `drag.sh` waits on: commands sent ahead of the pointer take their
   screenshot before the drag has moved. It binds version 5 of the global, the newest the crate knows
   (KWin offers 6). It is its own Cargo project (`[workspace]` in its manifest), built into
@@ -59,7 +60,12 @@ started can hold it open after the script ends.
   start and end points are known (the source at 40,40, the app at 320,60).
 
 To drive another gesture, change the command list in `drag.sh`; a click is `down` then `up`, and a
-window's contents are only where the screenshot shows them.
+window's contents are only where the screenshot shows them. The same compositor, bus and `fakein`
+serve a tour of the window's panes: host them as `drag.sh` does, keep `fakein` reading a fifo held
+open, and send a click per sidebar row with a screenshot after each. A wheel (`axis`) sent this way
+did not scroll a gpui list, so a long pane is seen whole by hosting a taller output instead. Give
+the app `volume = 0` in its scratch `config.toml`: it plays through the listener's own PipeWire, and
+a press on Play is heard.
 
 ## What it proves
 

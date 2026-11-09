@@ -4,17 +4,17 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, Background, Context, Div, FontWeight, Role, SharedString, Stateful, div,
-    linear_color_stop, linear_gradient, prelude::*, px, relative, rgb,
+    AnyElement, App, Context, Div, FontWeight, Role, SharedString, Stateful, div, prelude::*, px,
+    relative, rgb,
 };
 use resonate_core::{
-    Accent, AlbumId, ArtistId, Calendar, CivilDate,
+    AlbumId, ArtistId, Calendar, CivilDate,
     wrapped::{DAYS_IN_A_WEEK, FormatShares, Ranked, Rhythm},
 };
 use resonate_library::{Day, Habits, Listened, MostListened, Statistics, Window};
 
 use crate::{
-    Selection, format, icons,
+    Selection, format,
     icons::Icon,
     models::Portrayed,
     theme,
@@ -48,21 +48,19 @@ const WEEKDAYS: [(Said, Said); DAYS_IN_A_WEEK] = [
 
 const WHOLE_SHARE: f32 = 1_000.0;
 
-const WASH_OF_A_ROW: u8 = 0x1c;
-
 const WASH_OF_A_RAISED_BAR: u8 = 0x1f;
 
 const WHOLE_STRENGTH: u8 = 0xff;
 
 const AVATAR_LETTER_TO_SIDE: f32 = 0.42;
 
-const A_WASH_STANDS_OFF_ITS_ROW_BY: f32 = 2.0;
+const HEADLINE_LEADING: f32 = 1.15;
 
-const WASH_OF_A_MARK: u8 = 0x24;
+const COUNTS_ACROSS: usize = 4;
 
-const WASH_OF_THE_HEADLINE_FROM: u8 = 0x38;
+const COUNTS_ACROSS_WHEN_NARROW: usize = 2;
 
-const WASH_OF_THE_HEADLINE_TO: u8 = 0x08;
+const NUMBER_ONES_ACROSS: usize = 3;
 
 const BODY_OF_A_BAR: u8 = 0x8c;
 
@@ -499,14 +497,10 @@ impl RootView {
             .p_6()
             .overflow_y_scroll()
             .track_scroll(&self.statistics_scroll)
-            .child(side_by_side(
-                wide,
-                the_headline(counts, habits, days_spanned),
-                counted_tiles(counts),
-            ))
+            .child(the_headline(wide, counts, habits, days_spanned))
             .children(self.number_ones(wide, listened, cx))
             .child(charted(chart))
-            .children(moments(&habits.rhythm, chart.this_year))
+            .children(moments(wide, &habits.rhythm, chart.this_year))
             .child(side_by_side(
                 wide,
                 hours_heard(&habits.rhythm),
@@ -600,56 +594,55 @@ impl RootView {
                 .into_any_element(),
             None => framed_cover(None, side).into_any_element(),
         };
-        let mut drawn: Vec<Stateful<Div>> = Vec::new();
+        let mut drawn: Vec<AnyElement> = Vec::new();
         if let Some(track) = listened.tracks.first() {
-            drawn.push(number_one(
-                "top-track",
-                words::statistics::top_track(),
-                cover(self, track.album, cx),
-                &track.name,
-                track.by.as_deref(),
-                track.plays,
-                track.listened,
-            ));
+            drawn.push(
+                number_one(
+                    "top-track",
+                    words::statistics::top_track(),
+                    cover(self, track.album, cx),
+                    &track.name,
+                    track.by.as_deref(),
+                    track.plays,
+                    track.listened,
+                )
+                .into_any_element(),
+            );
         }
         if let Some(album) = listened.albums.first() {
-            drawn.push(number_one(
-                "top-album",
-                words::statistics::top_album(),
-                cover(self, album.album, cx),
-                &album.name,
-                album.by.as_deref(),
-                album.plays,
-                album.listened,
-            ));
+            drawn.push(
+                number_one(
+                    "top-album",
+                    words::statistics::top_album(),
+                    cover(self, album.album, cx),
+                    &album.name,
+                    album.by.as_deref(),
+                    album.plays,
+                    album.listened,
+                )
+                .into_any_element(),
+            );
         }
         if let Some(artist) = listened.artists.first() {
-            drawn.push(number_one(
-                "top-artist",
-                words::statistics::top_artist(),
-                self.pictured_face(artist, Portrayed::InAGrid, side, cx),
-                &artist.name,
-                None,
-                artist.plays,
-                artist.listened,
-            ));
+            drawn.push(
+                number_one(
+                    "top-artist",
+                    words::statistics::top_artist(),
+                    self.pictured_face(artist, Portrayed::InAGrid, side, cx),
+                    &artist.name,
+                    None,
+                    artist.plays,
+                    artist.listened,
+                )
+                .into_any_element(),
+            );
         }
         if drawn.is_empty() {
             return None;
         }
+        let across = if wide { NUMBER_ONES_ACROSS } else { 1 };
 
-        Some(
-            div()
-                .flex()
-                .w_full()
-                .gap_3()
-                .when(!wide, |row| row.flex_col())
-                .children(
-                    drawn
-                        .into_iter()
-                        .map(|one| one.when(wide, |one| one.flex_1())),
-                ),
-        )
+        Some(kit::ledger(across, drawn))
     }
 
     fn most_listened_to<Id: Copy>(
@@ -750,17 +743,6 @@ impl RootView {
         };
 
         tall_row(false)
-            .relative()
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(px(A_WASH_STANDS_OFF_ITS_ROW_BY))
-                    .bottom(px(A_WASH_STANDS_OFF_ITS_ROW_BY))
-                    .w(relative(share))
-                    .rounded_md()
-                    .bg(theme::tinted(theme::accent(), WASH_OF_A_ROW)),
-            )
             .child(
                 kit::figure(SharedString::from((rank + 1).to_string()))
                     .w(px(theme::row_number()))
@@ -778,8 +760,15 @@ impl RootView {
                     .child(a_faint_line(by_line(held.by.as_deref(), held.plays))),
             )
             .child(
+                div()
+                    .flex_none()
+                    .w(px(theme::row_plays()))
+                    .child(a_meter(share, rank == 0)),
+            )
+            .child(
                 kit::figure(format::heard_for(held.listened))
                     .flex_none()
+                    .w(px(theme::row_length()))
                     .text_right(),
             )
     }
@@ -836,118 +825,92 @@ fn side_by_side(wide: bool, one: impl IntoElement, other: impl IntoElement) -> D
         .child(holder(other.into_any_element()))
 }
 
-fn the_headline_ground() -> Background {
-    linear_gradient(
-        135.0,
-        linear_color_stop(
-            theme::tinted(theme::accent(), WASH_OF_THE_HEADLINE_FROM),
-            0.0,
-        ),
-        linear_color_stop(theme::tinted(theme::accent(), WASH_OF_THE_HEADLINE_TO), 1.0),
-    )
-}
-
-fn the_headline(counts: Statistics, habits: &Habits, days_spanned: usize) -> Stateful<Div> {
+fn the_headline(wide: bool, counts: Statistics, habits: &Habits, days_spanned: usize) -> Div {
     let reading = format::heard_for(counts.listened);
     let pace = the_pace_of(counts.listened, habits.rhythm.days_heard, days_spanned);
-
-    kit::card()
+    let listened = div()
         .id("statistics-headline")
         .read_plainly(&words::statistics::time_listened_said(&pace, &reading))
+        .flex()
+        .flex_col()
         .flex_1()
-        .justify_center()
-        .gap_1()
-        .bg(the_headline_ground())
+        .min_w(px(0.0))
         .child(kit::eyebrow(words::statistics::time_listened()))
         .child(
             kit::figure(reading)
                 .font(theme::ui(FontWeight::SEMIBOLD))
                 .text_size(px(theme::text_lyric()))
+                .line_height(relative(HEADLINE_LEADING))
                 .text_color(rgb(theme::text())),
         )
-        .child(kit::figure(pace).text_color(rgb(theme::muted())))
-}
-
-fn counted_tiles(counts: Statistics) -> Div {
-    let a_pair = |one: Stateful<Div>, other: Stateful<Div>| {
-        div()
-            .flex()
-            .flex_1()
-            .gap_3()
-            .child(one.flex_1().min_w(px(0.0)))
-            .child(other.flex_1().min_w(px(0.0)))
+        .child(kit::figure(pace).text_color(rgb(theme::muted())));
+    let across = if wide {
+        COUNTS_ACROSS
+    } else {
+        COUNTS_ACROSS_WHEN_NARROW
     };
 
     div()
         .flex()
-        .flex_col()
-        .flex_1()
-        .gap_3()
-        .child(a_pair(
-            tile(
-                "plays",
-                words::statistics::plays_tile(),
-                Icon::Play,
-                counts.plays.to_string(),
-            ),
-            tile(
-                "tracks-heard",
-                words::statistics::tracks_heard(),
-                Icon::Tracks,
-                counts.tracks.to_string(),
-            ),
-        ))
-        .child(a_pair(
-            tile(
-                "albums-heard",
-                words::statistics::albums_heard(),
-                Icon::Albums,
-                counts.albums.to_string(),
-            ),
-            tile(
-                "artists-heard",
-                words::statistics::artists_heard(),
-                Icon::Artists,
-                counts.artists.to_string(),
-            ),
-        ))
-}
-
-fn tile(id: &'static str, named: &'static str, mark: Icon, reading: String) -> Stateful<Div> {
-    kit::card()
-        .id(id)
-        .read_plainly(&format!("{named}: {reading}"))
-        .flex_row()
-        .items_center()
-        .gap_3()
-        .child(
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .size(px(theme::stat_mark()))
-                .rounded_lg()
-                .bg(theme::tinted(theme::accent(), WASH_OF_A_MARK))
-                .child(icons::icon(mark, theme::stat_mark_icon(), theme::accent())),
-        )
+        .w_full()
+        .gap_6()
+        .pb_2()
+        .when(wide, |band| band.items_end())
+        .when(!wide, |band| band.flex_col())
+        .child(listened)
         .child(
             div()
                 .flex()
                 .flex_col()
+                .when(wide, |holder| holder.flex_1())
                 .min_w(px(0.0))
-                .gap_0p5()
-                .child(kit::eyebrow(named))
-                .child(
-                    kit::figure(reading)
-                        .text_size(px(theme::text_lg()))
-                        .text_color(rgb(theme::text())),
-                ),
+                .child(kit::ledger(across, counted(counts))),
         )
 }
 
-fn moments(rhythm: &Rhythm, this_year: i64) -> Option<Div> {
-    let mut drawn: Vec<Stateful<Div>> = Vec::new();
+fn counted(counts: Statistics) -> Vec<AnyElement> {
+    [
+        ("plays", words::statistics::plays_tile(), counts.plays),
+        (
+            "tracks-heard",
+            words::statistics::tracks_heard(),
+            counts.tracks,
+        ),
+        (
+            "albums-heard",
+            words::statistics::albums_heard(),
+            counts.albums,
+        ),
+        (
+            "artists-heard",
+            words::statistics::artists_heard(),
+            counts.artists,
+        ),
+    ]
+    .into_iter()
+    .map(|(id, named, count)| a_count(id, named, count.to_string()).into_any_element())
+    .collect()
+}
+
+fn a_count(id: &'static str, named: &'static str, reading: String) -> Stateful<Div> {
+    div()
+        .id(id)
+        .read_plainly(&format!("{named}: {reading}"))
+        .flex()
+        .flex_col()
+        .min_w(px(0.0))
+        .gap_0p5()
+        .child(kit::eyebrow(named))
+        .child(
+            kit::figure(reading)
+                .font(theme::ui(FontWeight::MEDIUM))
+                .text_size(px(theme::text_xl()))
+                .text_color(rgb(theme::text())),
+        )
+}
+
+fn moments(wide: bool, rhythm: &Rhythm, this_year: i64) -> Option<Div> {
+    let mut drawn: Vec<AnyElement> = Vec::new();
     if let Some(busiest) = rhythm.busiest_day {
         drawn.push(moment(
             "busiest-day",
@@ -983,17 +946,23 @@ fn moments(rhythm: &Rhythm, this_year: i64) -> Option<Div> {
             words::statistics::the_day_heard_most().to_owned(),
         ));
     }
+    let across = if wide {
+        drawn.len()
+    } else {
+        COUNTS_ACROSS_WHEN_NARROW
+    };
 
-    (!drawn.is_empty()).then(|| div().flex().flex_wrap().gap_3().children(drawn))
+    (!drawn.is_empty()).then(|| kit::ledger(across, drawn))
 }
 
-fn moment(id: &'static str, named: &'static str, reading: String, note: String) -> Stateful<Div> {
-    kit::card()
+fn moment(id: &'static str, named: &'static str, reading: String, note: String) -> AnyElement {
+    div()
         .id(id)
         .read_plainly(&format!("{named}: {reading}, {note}"))
-        .flex_1()
-        .gap_1()
-        .min_w(px(theme::stat_tile()))
+        .flex()
+        .flex_col()
+        .min_w(px(0.0))
+        .gap_0p5()
         .child(kit::eyebrow(named))
         .child(
             kit::figure(reading)
@@ -1001,6 +970,7 @@ fn moment(id: &'static str, named: &'static str, reading: String, note: String) 
                 .text_color(rgb(theme::text())),
         )
         .child(kit::figure(note).text_color(rgb(theme::faint())))
+        .into_any_element()
 }
 
 fn listed_days(chart: &Chart) -> Stateful<Div> {
@@ -1273,7 +1243,7 @@ fn the_sound_heard(wide: bool, habits: &Habits) -> Option<Div> {
     }
 }
 
-fn a_meter(share: f32, colour: u32) -> Div {
+fn a_meter(share: f32, lit: bool) -> Div {
     div()
         .w_full()
         .h(px(theme::meter_height()))
@@ -1285,7 +1255,7 @@ fn a_meter(share: f32, colour: u32) -> Div {
                 .h_full()
                 .w(relative(share))
                 .rounded_full()
-                .bg(rgb(colour)),
+                .bg(a_fill(true, lit)),
         )
 }
 
@@ -1303,8 +1273,6 @@ fn genres_heard(genres: &[Ranked]) -> Div {
         .gap_3();
     for (at, (genre, share)) in genres.iter().zip(shares).enumerate() {
         let heard = format::heard_for(genre.listened);
-        let (accent, _) = Accent::named_pair(&genre.name);
-
         listed = listed.child(
             div()
                 .id(("genre-heard", at))
@@ -1329,7 +1297,7 @@ fn genres_heard(genres: &[Ranked]) -> Div {
                         )
                         .child(kit::figure(heard).flex_none()),
                 )
-                .child(a_meter(share, theme::hue(accent))),
+                .child(a_meter(share, at == 0)),
         );
     }
 
@@ -1420,10 +1388,10 @@ fn number_one(
     let heard = format::heard_for(listened);
     let line = by_line(by, plays);
 
-    kit::card()
+    div()
         .id(id)
         .read_plainly(&format!("{named}: {name}, {line}, {heard}"))
-        .flex_row()
+        .flex()
         .items_center()
         .gap_3()
         .min_w(px(0.0))

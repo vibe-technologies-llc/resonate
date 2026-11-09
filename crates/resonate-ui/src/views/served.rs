@@ -388,6 +388,7 @@ impl RootView {
 
         let favourite = row.song().cloned();
         row_frame()
+            .group(crate::views::playlists::ROW_GROUP)
             .when(!press_does_nothing, |row| {
                 row.hover(|row| row.bg(rgb(theme::hover())))
             })

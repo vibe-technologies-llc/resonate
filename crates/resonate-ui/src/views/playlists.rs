@@ -5,7 +5,7 @@ use gpui::{
     PathPromptOptions, Pixels, Point, Role, SharedString, Stateful, div, prelude::*, px, rgb,
     uniform_list,
 };
-use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
+use resonate_core::{AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Queued, Unclaimed};
 use resonate_library::{
     Cut, Edit, Favoured, Lit, Maker, Playlist, PlaylistEntry, PlaylistSource, Undoable, Upkeep,
@@ -23,7 +23,7 @@ use crate::{
         kit::{self, Casts as _, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
         menu::{self, Called, Menu},
-        mosaic::{self, Framed, Mosaic},
+        mosaic::{self, Mosaic},
         pointed::{self, LitUnderThePointer as _},
         reorder::{self, Carried, Chosen, LiftedTo, Listed, Shift, Step},
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
@@ -38,10 +38,6 @@ use crate::{
 const LAST_RESORT_FOLDER: &str = "/";
 
 const PLAYLIST_CELL: &str = "playlist-cell";
-
-const PLAY_ON_THE_ART: f32 = 36.0;
-
-const PLAY_MARK_ON_THE_ART: f32 = 0.45;
 
 pub(crate) const ROW_GROUP: &str = "listed-row";
 
@@ -355,7 +351,7 @@ impl RootView {
                     Some(Icon::Plus),
                     words::playlists::new_playlist(),
                     words::playlists::new_hint(),
-                    Tone::Primary,
+                    Tone::Outlined,
                 ),
                 |this, window, cx| {
                     this.name_a_playlist(Naming::New, window, cx);
@@ -403,6 +399,7 @@ impl RootView {
                             let now = this.drawn_at();
                             range
                                 .map(|index| {
+                                    let tall = this.grid_row();
                                     let cells = saved
                                         .iter()
                                         .enumerate()
@@ -421,7 +418,7 @@ impl RootView {
                                         .flex()
                                         .gap(px(theme::grid_gap()))
                                         .px_6()
-                                        .h(px(theme::grid_row()))
+                                        .h(px(tall))
                                         .children(cells)
                                 })
                                 .collect()
@@ -513,7 +510,11 @@ impl RootView {
                             .min_w(px(theme::heading_name()))
                             .gap_1()
                             .child(kit::title(words::playlists::playlists()))
-                            .child(kit::subtitle(words::playlists::playlists_counted(saved))),
+                            .when(saved > 0, |column| {
+                                column.child(kit::subtitle(words::playlists::playlists_counted(
+                                    saved,
+                                )))
+                            }),
                     )
                     .child(actions),
             )
@@ -1858,7 +1859,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = playlist.id;
-        let side = theme::grid_cover();
+        let side = self.grid_side();
         let pinned = playlist.pinned.is_some();
         let searched = playlist.query.is_some();
         let reached = self.reaches(Shift::Listing(Listed::Playlists), at);
@@ -2024,25 +2025,14 @@ impl RootView {
     }
 
     fn play_on_the_art(&self, id: PlaylistId, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id(("play-cell", id.get() as usize))
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(px(PLAY_ON_THE_ART))
-            .rounded_full()
-            .bg(rgb(theme::accent()))
-            .casting(kit::Cast::Slight)
-            .names(words::playlists::play_hint())
-            .child(icons::icon(
-                Icon::Play,
-                PLAY_ON_THE_ART * PLAY_MARK_ON_THE_ART,
-                theme::ink_over(theme::accent()),
-            ))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                cx.stop_propagation();
-                this.play_the_playlist(id, cx);
-            }))
+        kit::play_on_the_art(
+            ("play-cell", id.get() as usize),
+            words::playlists::play_hint(),
+        )
+        .on_click(cx.listener(move |this, _, _, cx| {
+            cx.stop_propagation();
+            this.play_the_playlist(id, cx);
+        }))
     }
 
     fn playlist_art(
@@ -2064,11 +2054,10 @@ impl RootView {
 
         Mosaic {
             drawn: &drawn,
-            ground: Accent::named_pair(name),
             mark: if query { Icon::Search } else { Icon::Playlists },
             name,
         }
-        .drawn(side, Framed::Alone)
+        .drawn(side)
     }
 
     pub(crate) fn add_songs_to_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {

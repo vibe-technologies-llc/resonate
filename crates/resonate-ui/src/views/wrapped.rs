@@ -1,8 +1,7 @@
 use std::{env, fs, path::PathBuf, sync::Arc, time::SystemTime};
 
 use gpui::{
-    Background, Context, Div, FontWeight, Role, SharedString, Stateful, div, linear_color_stop,
-    linear_gradient, prelude::*, px, relative, rgb,
+    Context, Div, FontWeight, Role, SharedString, Stateful, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{
     Calendar,
@@ -30,10 +29,6 @@ use crate::{
 const DECK_HEIGHT_AT_MOST: f32 = 0.88;
 
 const PROGRESS_THICKNESS: f32 = 3.0;
-
-const WASH_OF_THE_DECK: u8 = 0x2a;
-
-const WASH_REACHES: f32 = 0.55;
 
 const ACTIONS_PARTED_BY: f32 = 16.0;
 
@@ -75,6 +70,10 @@ impl Deck {
             review: Arc::new(review),
             at: 0,
         }
+    }
+
+    fn place_said(&self) -> String {
+        words::wrapped::slide_of(self.at + 1, self.slides.len())
     }
 
     fn turned_by(&mut self, slides: isize) -> bool {
@@ -257,13 +256,6 @@ impl RootView {
             .relative()
             .w(px(theme::wrapped_width()))
             .max_h(relative(DECK_HEIGHT_AT_MOST))
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .rounded_xl()
-                    .bg(the_deck_ground()),
-            )
             .child(self.wrapped_head(deck, cx))
             .child(stage)
             .child(kit::rule())
@@ -274,7 +266,7 @@ impl RootView {
 
     fn wrapped_head(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
         let count = deck.slides.len();
-        let reading = words::wrapped::slide_of(count, deck.at + 1);
+        let reading = deck.place_said();
 
         let mut progress = div()
             .id("wrapped-progress")
@@ -435,14 +427,6 @@ impl RootView {
     }
 }
 
-fn the_deck_ground() -> Background {
-    linear_gradient(
-        160.0,
-        linear_color_stop(theme::tinted(theme::accent(), WASH_OF_THE_DECK), 0.0),
-        linear_color_stop(theme::tinted(theme::accent(), 0x00), WASH_REACHES),
-    )
-}
-
 fn named_file(path: &std::path::Path) -> String {
     path.file_name()
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
@@ -509,32 +493,34 @@ fn tallies_drawn(review: &YearReview) -> Stateful<Div> {
         (words::wrapped::days(), u64::from(review.rhythm.days_heard)),
     ];
 
-    let mut drawn = div().id("wrapped-tallies").flex().w_full().gap_2();
-    for (at, (named, count)) in tallies.into_iter().enumerate() {
-        let reading = count.to_string();
+    let cells = tallies
+        .into_iter()
+        .enumerate()
+        .map(|(at, (named, count))| {
+            let reading = count.to_string();
 
-        drawn = drawn.child(
-            kit::card()
+            div()
                 .id(("wrapped-tally", at))
                 .read_plainly(&format!("{named}: {reading}"))
-                .flex_1()
-                .min_w(px(0.0))
+                .flex()
+                .flex_col()
                 .items_center()
                 .gap_1()
-                .p_3()
-                .bg(rgb(theme::raised()))
-                .border_color(rgb(theme::soft_edge()))
                 .child(kit::eyebrow(named))
                 .child(
                     kit::figure(reading)
                         .text_size(px(theme::text_xl()))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(theme::text())),
-                ),
-        );
-    }
+                )
+                .into_any_element()
+        })
+        .collect::<Vec<_>>();
 
-    drawn
+    div()
+        .id("wrapped-tallies")
+        .w_full()
+        .child(kit::ledger(cells.len(), cells))
 }
 
 fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
@@ -724,6 +710,19 @@ mod tests {
 
         assert!(driven.read(|root, _| root.wrapped.is_none()));
         assert_eq!(driven.read(|root, _| root.pane), pane);
+    }
+
+    #[test]
+    fn a_deck_says_the_slide_shown_before_how_many_it_holds() {
+        let mut deck = a_deck();
+        let count = deck.slides.len();
+
+        assert!(count > 1);
+        assert_eq!(deck.place_said(), format!("1 of {count}"));
+
+        deck.turned_by(1);
+
+        assert_eq!(deck.place_said(), format!("2 of {count}"));
     }
 
     #[test]
