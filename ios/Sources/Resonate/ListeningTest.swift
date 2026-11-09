@@ -85,71 +85,86 @@ final class ListeningTestState {
     }
 }
 
-struct ListeningTestSection: View {
+struct ListeningTestView: View {
     @Environment(Library.self) private var library
-
-    let curve: EqualiserCurve
 
     var body: some View {
         let testing = library.features.listeningTest
-        Section {
+        ThemedForm {
             if let standing = testing.standing {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(ListeningTestWords.standing(standing))
-                    Text(ListeningTestWords.heard(standing)).font(.footnote).foregroundStyle(.secondary)
-                    if !standing.verdicts.isEmpty {
-                        Text(ListeningTestWords.verdicts(standing)).font(.footnote).foregroundStyle(.secondary)
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(ListeningTestWords.standing(standing))
+                        Text(ListeningTestWords.heard(standing)).font(.footnote).foregroundStyle(.secondary)
+                        if !standing.verdicts.isEmpty {
+                            Text(ListeningTestWords.verdicts(standing)).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        if let last = ListeningTestWords.last(standing) {
+                            Text(last).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        if standing.finished {
+                            Text(ListeningTestWords.conclusion(standing))
+                        }
                     }
-                    if let last = ListeningTestWords.last(standing) {
-                        Text(last).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                    if !standing.finished {
+                        HStack {
+                            Button("Hear A", systemImage: "play.fill") { testing.hear(.a) }
+                            Button("Hear B", systemImage: "play.fill") { testing.hear(.b) }
+                            Button("Hear X", systemImage: "play.fill") { testing.hear(.x) }
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        HStack {
+                            Button("X is A", systemImage: "checkmark") { testing.say(.a) }
+                            Button("X is B", systemImage: "checkmark") { testing.say(.b) }
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                     }
-                    if standing.finished {
-                        Text(ListeningTestWords.conclusion(standing))
-                    }
+                    Button(standing.finished ? "Done" : "End the test", systemImage: "stop.fill") { testing.end() }
+                } header: {
+                    Text(testing.running.label)
+                } footer: {
+                    Text(testing.running.howItWorks)
                 }
-                .accessibilityElement(children: .combine)
-                if !standing.finished {
-                    HStack {
-                        Button("Hear A", systemImage: "play.fill") { testing.hear(.a) }
-                        Button("Hear B", systemImage: "play.fill") { testing.hear(.b) }
-                        Button("Hear X", systemImage: "play.fill") { testing.hear(.x) }
-                    }
-                    .buttonStyle(.bordered)
-                    HStack {
-                        Button("X is A", systemImage: "checkmark") { testing.say(.a) }
-                        Button("X is B", systemImage: "checkmark") { testing.say(.b) }
-                    }
-                    .buttonStyle(.bordered)
-                }
-                Button(standing.finished ? "Done" : "End the test", systemImage: "stop.fill") { testing.end() }
             } else {
-                Picker(
-                    "Test",
-                    selection: Binding(
-                        get: { testing.testing },
-                        set: { testing.choose($0, preferences: library.preferences) }
-                    )
-                ) {
-                    ForEach(ListeningTesting.allCases, id: \.self) { Text($0.label).tag($0) }
+                Section {
+                    Picker(
+                        "Test",
+                        selection: Binding(
+                            get: { testing.testing },
+                            set: { testing.choose($0, preferences: library.preferences) }
+                        )
+                    ) {
+                        ForEach(ListeningTesting.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(testing.beginning)
+                } header: {
+                    Text("What is tested")
+                } footer: {
+                    Text(testing.testing.howItWorks)
                 }
-                .pickerStyle(.segmented)
-                .disabled(testing.beginning)
                 if testing.testing != .equaliser, let against = testing.against {
-                    AgainstPickers(setting: against) { testing.set(against: $0) }
+                    Section("Against") {
+                        AgainstPickers(setting: against) { testing.set(against: $0) }
+                    }
+                    .disabled(testing.beginning)
                 }
-                ForEach(testing.lengths, id: \.self) { trials in
-                    Button(
-                        testing.beginning ? ListeningTestWords.beginning(testing.testing) : "Begin \(trials) trials",
-                        systemImage: "play.fill"
-                    ) { testing.begin(trials, curve: curve) }
-                        .disabled(testing.beginning)
+                Section("Trials") {
+                    ForEach(testing.lengths, id: \.self) { trials in
+                        Button(
+                            testing.beginning ? ListeningTestWords.beginning(testing.testing) : "Begin \(trials) trials",
+                            systemImage: "play.fill"
+                        ) { testing.begin(trials, curve: library.preferences?.equaliser ?? .flat) }
+                            .disabled(testing.beginning)
+                    }
                 }
             }
-        } header: {
-            Text("Listening test")
-        } footer: {
-            Text((testing.standing == nil ? testing.testing : testing.running).howItWorks)
         }
+        .navigationTitle("Listening test")
+        .onDisappear { testing.end() }
     }
 }
 

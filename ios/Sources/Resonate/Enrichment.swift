@@ -283,6 +283,26 @@ final class Enrichment {
     }
 }
 
+struct EnrichmentView: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let features = library.features
+        ThemedForm {
+            if !features.online {
+                Section {
+                    Toggle(isOn: Binding(get: { features.online }, set: { features.setOnline($0) })) {
+                        ToolRow(title: "Online features", detail: "Artwork and details are looked up online", symbol: "globe")
+                    }
+                }
+            }
+            EnrichmentSection()
+                .disabled(!features.online)
+        }
+        .navigationTitle("Artwork and details")
+    }
+}
+
 struct EnrichmentSection: View {
     @Environment(Library.self) private var library
 
@@ -312,8 +332,8 @@ struct EnrichmentSection: View {
                 )
             }
             EnrichmentProgressRow()
-        } header: {
-            Text("Artwork and details")
+        } footer: {
+            Text("Looked up while Resonate is open. A guess is never written: only a strict match is kept.")
         }
         .task { enrichment.read() }
     }

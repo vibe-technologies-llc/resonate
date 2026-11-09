@@ -40,33 +40,19 @@ struct SyncView: View {
                         )
                     }
                     Section("Options") {
-                        NavigationLink {
-                            SyncSongsPage()
-                        } label: {
-                            LabeledContent {
-                                Text(Self.songs(config))
-                            } label: {
-                                Label("Songs", systemImage: "music.note")
-                            }
+                        NavigationLink(value: Destination.syncSongs) {
+                            ToolRow(title: "Songs", detail: Self.songs(config), symbol: SettingsPlace.syncSongs.symbol)
                         }
-                        NavigationLink {
-                            SyncConnectionPage()
-                        } label: {
-                            LabeledContent {
-                                Text(Self.connection(config))
-                            } label: {
-                                Label("Connection", systemImage: "point.3.connected.trianglepath.dotted")
-                            }
+                        NavigationLink(value: Destination.syncConnection) {
+                            ToolRow(title: "Connection", detail: Self.connection(config), symbol: SettingsPlace.syncConnection.symbol)
                         }
-                        NavigationLink {
-                            SyncControlPage()
-                        } label: {
+                        NavigationLink(value: Destination.syncControl) {
                             let offered = SyncControlsOffered.shown
-                            LabeledContent {
-                                Text(offered.choices.first { $0.control == config.control }?.label ?? "")
-                            } label: {
-                                Label(offered.title, systemImage: "dial.medium")
-                            }
+                            ToolRow(
+                                title: offered.title,
+                                detail: offered.choices.first { $0.control == config.control }?.label ?? "",
+                                symbol: SettingsPlace.syncControl.symbol
+                            )
                         }
                     }
                 }
@@ -279,9 +265,7 @@ struct KnownDeviceEntry: View {
 
     var body: some View {
         if !known.thisDevice, known.online || known.nearby {
-            NavigationLink {
-                DrivenDeviceView(device: known)
-            } label: {
+            NavigationLink(value: Destination.syncDevice(known.id)) {
                 KnownDeviceRow(known: known)
             }
             .accessibilityHint("Play, pause, skip and set the volume of what it plays")

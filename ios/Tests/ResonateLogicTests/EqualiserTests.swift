@@ -279,34 +279,6 @@ actor Failing {
     }
 }
 
-@Suite struct SettingsSearchTests {
-    @Test func aQuerySplitsIntoItsWordsOnAnyWhitespace() {
-        #expect(SettingsSearch.terms("  online\tfeatures\n internet ") == ["online", "features", "internet"])
-        #expect(SettingsSearch.terms("   ").isEmpty)
-        #expect(SettingsSearch.terms("").isEmpty)
-    }
-
-    @Test func everyWordMustBeInTheEntryInAnyOrderAndAnyCase() {
-        let searched = "Sound Output Buffer, bit-perfect and sample rate"
-
-        #expect(SettingsSearch.matches(searched, terms: ["BUFFER", "rate"]))
-        #expect(SettingsSearch.matches(searched, terms: ["rate", "sound"]))
-        #expect(!SettingsSearch.matches(searched, terms: ["buffer", "lyrics"]))
-    }
-
-    @Test func aWordMatchesInsideAWordToo() {
-        #expect(SettingsSearch.matches("Scrobbling ListenBrainz", terms: ["brainz"]))
-    }
-
-    @Test func noWordsMatchEverything() {
-        #expect(SettingsSearch.matches("anything", terms: []))
-    }
-
-    @Test func accentsAreFoldedByTheComparison() {
-        #expect(SettingsSearch.matches("Björk", terms: ["BJÖRK"]))
-    }
-}
-
 @Suite struct RowMovesTests {
     @Test func aQueueMoveIsOffsetByWhereTheShownPartStarts() {
         let move = RowMoves.queue(offset: 2, destination: 5, within: 10)

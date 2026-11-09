@@ -244,7 +244,7 @@ final class RoomCorrectionState {
     }
 }
 
-struct RoomCorrectionSection: View {
+struct RoomCorrectionView: View {
     private static let responseTypes: [UTType] =
         [.audio] + (UTType(filenameExtension: "sofa").map { [$0] } ?? [])
 
@@ -256,37 +256,51 @@ struct RoomCorrectionSection: View {
 
     var body: some View {
         let room = library.features.room
-        Section {
-            Toggle("Correct for the room", isOn: Binding(get: { room.on }, set: { room.turn($0) }))
-                .disabled(room.kept == nil && room.name == nil)
-            if let name = room.name {
-                LabeledContent(name, value: room.kept.map(Self.described) ?? "")
-            }
-            Button(room.reading ? "Reading…" : room.name == nil ? "Choose a response…" : "Choose another response…",
-                   systemImage: "waveform.path") { choosing = true }
-                .disabled(room.reading || room.left != nil)
-                .fileImporter(isPresented: $choosing, allowedContentTypes: Self.responseTypes) { result in
-                    switch result {
-                    case .success(let url): room.choose(url)
-                    case .failure(let failure): library.report(failure)
+        let chosen = room.name != nil
+        ThemedForm {
+            Section {
+                if let name = room.name {
+                    Toggle(isOn: Binding(get: { room.on }, set: { room.turn($0) })) {
+                        ToolRow(title: "Correct for the room", detail: room.kept.map(Self.described).map { "\(name) · \($0)" } ?? name, symbol: "waveform.path")
                     }
-                }
-            if let left = room.left {
-                LabeledContent("Left speaker", value: left.lastPathComponent)
-                Button(room.reading ? "Reading…" : "Choose the right speaker's response…", systemImage: "waveform.path") {
-                    choosingRight = true
-                }
-                .disabled(room.reading)
-                .fileImporter(isPresented: $choosingRight, allowedContentTypes: Self.responseTypes) { result in
-                    switch result {
-                    case .success(let url): room.chooseRight(url)
-                    case .failure(let failure): library.report(failure)
-                    }
-                }
-                Button("Cancel", systemImage: "xmark") { room.cancelPair() }
                     .disabled(room.reading)
-            } else {
-                Button("Choose a pair…", systemImage: "headphones") { choosingLeft = true }
+                }
+                if let left = room.left {
+                    LabeledContent("Left speaker", value: left.lastPathComponent)
+                    Button { choosingRight = true } label: {
+                        ToolRow(
+                            title: room.reading ? "Reading…" : "Choose the right speaker's response…",
+                            detail: "As heard at both ears",
+                            symbol: "waveform.path"
+                        )
+                    }
+                    .disabled(room.reading)
+                    .fileImporter(isPresented: $choosingRight, allowedContentTypes: Self.responseTypes) { result in
+                        switch result {
+                        case .success(let url): room.chooseRight(url)
+                        case .failure(let failure): library.report(failure)
+                        }
+                    }
+                    Button("Cancel", systemImage: "xmark") { room.cancelPair() }
+                        .disabled(room.reading)
+                } else {
+                    Button { choosing = true } label: {
+                        ToolRow(
+                            title: room.reading ? "Reading…" : chosen ? "Choose another response…" : "Choose a response…",
+                            detail: "An impulse response or a SOFA set",
+                            symbol: "doc.badge.plus"
+                        )
+                    }
+                    .disabled(room.reading)
+                    .fileImporter(isPresented: $choosing, allowedContentTypes: Self.responseTypes) { result in
+                        switch result {
+                        case .success(let url): room.choose(url)
+                        case .failure(let failure): library.report(failure)
+                        }
+                    }
+                    Button { choosingLeft = true } label: {
+                        ToolRow(title: "Choose a pair…", detail: "The left speaker's response, then the right's", symbol: "hifispeaker.2")
+                    }
                     .disabled(room.reading)
                     .fileImporter(isPresented: $choosingLeft, allowedContentTypes: Self.responseTypes) { result in
                         switch result {
@@ -294,36 +308,49 @@ struct RoomCorrectionSection: View {
                         case .failure(let failure): library.report(failure)
                         }
                     }
+                }
+                if chosen {
+                    Button(role: .destructive) { forgetting = true } label: {
+                        ToolRow(title: "Forget the response", detail: "Room correction turns off", symbol: "trash", ink: Color.failure)
+                    }
+                    .disabled(room.reading)
+                }
+            } header: {
+                Text("The response")
+            } footer: {
+                Text("Convolved before the equaliser on every output, and lowered where it would lift the music past full scale. A four-channel file or a pair is a two-by-two (binaural) response.")
             }
-            Stepper(
-                value: Binding(get: { room.angle }, set: { room.speak(at: $0) }),
-                in: Int(RoomCorrectionState.limits.angleLeastDegrees)...Int(RoomCorrectionState.limits.angleMostDegrees)
-            ) {
-                LabeledContent("Speaker angle", value: "\(room.angle)°")
+            if chosen {
+                Section {
+                    Stepper(
+                        value: Binding(get: { room.angle }, set: { room.speak(at: $0) }),
+                        in: Int(RoomCorrectionState.limits.angleLeastDegrees)...Int(RoomCorrectionState.limits.angleMostDegrees)
+                    ) {
+                        LabeledContent("Speaker angle", value: "\(room.angle)°")
+                    }
+                    .accessibilityIdentifier("speaker-angle")
+                    Stepper(
+                        value: Binding(get: { room.elevation }, set: { room.raise(to: $0) }),
+                        in: Int(RoomCorrectionState.limits.elevationLeastDegrees)...Int(RoomCorrectionState.limits.elevationMostDegrees)
+                    ) {
+                        LabeledContent("Speaker elevation", value: "\(room.elevation)°")
+                    }
+                    .accessibilityIdentifier("speaker-elevation")
+                    Stepper(
+                        value: Binding(get: { room.yaw }, set: { room.turn(to: $0) }),
+                        in: Int(RoomCorrectionState.limits.yawLeastDegrees)...Int(RoomCorrectionState.limits.yawMostDegrees)
+                    ) {
+                        LabeledContent("Head turned", value: "\(room.yaw)°")
+                    }
+                    .accessibilityIdentifier("head-yaw")
+                } header: {
+                    Text("The speakers")
+                } footer: {
+                    Text("Where the speakers stand either side of the front and above the ears, and how far your head is turned. A SOFA set is read from the measurements around them.")
+                }
             }
-            .accessibilityIdentifier("speaker-angle")
-            Stepper(
-                value: Binding(get: { room.elevation }, set: { room.raise(to: $0) }),
-                in: Int(RoomCorrectionState.limits.elevationLeastDegrees)...Int(RoomCorrectionState.limits.elevationMostDegrees)
-            ) {
-                LabeledContent("Speaker elevation", value: "\(room.elevation)°")
-            }
-            .accessibilityIdentifier("speaker-elevation")
-            Stepper(
-                value: Binding(get: { room.yaw }, set: { room.turn(to: $0) }),
-                in: Int(RoomCorrectionState.limits.yawLeastDegrees)...Int(RoomCorrectionState.limits.yawMostDegrees)
-            ) {
-                LabeledContent("Head turned", value: "\(room.yaw)°")
-            }
-            .accessibilityIdentifier("head-yaw")
-            if room.name != nil {
-                Button("Forget the response", systemImage: "trash", role: .destructive) { forgetting = true }
-            }
-        } header: {
-            Text("Room correction")
-        } footer: {
-            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements around the speaker angle either side of the front, the elevation above the ears and the turn of your head, blended where several surround them. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.")
         }
+        .navigationTitle("Room correction")
         .confirmationDialog("Forget the room correction?", isPresented: $forgetting, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { room.forget() }
         }

@@ -39,56 +39,6 @@ struct ResonateApp: App {
     }
 }
 
-enum Root: String, Hashable, Codable {
-    case home, library, settings, search
-}
-
-enum Destination: Hashable, Codable {
-    case album(String)
-    case artist(String)
-    case playlist(UInt64)
-    case playlists
-    case albums
-    case artists
-    case favourites
-    case tools
-    case folders
-    case suggestions
-    case mix(String)
-    case statistics
-    case wanted
-    case providers
-    case scrobbling
-    case spotify
-    case sync
-    case server
-    case output
-    case sound
-    case processing
-    case songLyrics(UInt64?)
-    case visualizer
-    case songAnalysis(UInt64?)
-    case songDetails(UInt64)
-    case appearance
-    case background
-    case identicalSongs
-    case songs
-    case served(ServedPlace)
-    case party
-
-    static func lyrics(_ track: Track?) -> Destination {
-        .songLyrics(track?.id)
-    }
-
-    static func analysis(_ track: Track?) -> Destination {
-        .songAnalysis(track?.id)
-    }
-
-    static func inspector(_ track: Track) -> Destination {
-        .songDetails(track.id)
-    }
-}
-
 enum PlayerTransition {
     static let source = "player"
 }
@@ -206,23 +156,6 @@ final class Navigation {
     }
 }
 
-struct KeptNavigation: Codable, Equatable {
-    let tab: Root
-    let paths: [Root: [Destination]]
-
-    var destinations: [Destination] {
-        Array(Set(paths.values.joined()))
-    }
-
-    var encoded: Data? {
-        try? JSONEncoder().encode(self)
-    }
-
-    static func decoded(_ data: Data) -> KeptNavigation? {
-        try? JSONDecoder().decode(KeptNavigation.self, from: data)
-    }
-}
-
 struct NavigationKeeper: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -249,22 +182,6 @@ struct NavigationKeeper: View {
         Task {
             let gone = await library.gone(among: destinations)
             navigation.drop(gone)
-        }
-    }
-}
-
-extension Destination {
-    var drawsItsOwnBackdrop: Bool {
-        switch self {
-        case .album, .artist, .playlist, .mix, .songLyrics, .visualizer: true
-        default: false
-        }
-    }
-
-    var belongsToSettings: Bool {
-        switch self {
-        case .sound, .processing, .output, .scrobbling, .spotify, .providers, .sync, .server, .folders, .appearance, .background: true
-        default: false
         }
     }
 }
@@ -559,7 +476,19 @@ struct DestinationView: View {
         case .sync: SyncView()
         case .server: ServerView()
         case .output: OutputView()
-        case .sound: SoundSettingsView()
+        case .sound: EqualiserView()
+        case .headphoneCorrection: HeadphoneCorrectionView()
+        case .microphoneMeasurement: MicrophoneMeasurementView()
+        case .roomCorrection: RoomCorrectionView()
+        case .listeningTest: ListeningTestView()
+        case .otherOutputs: OtherOutputsView()
+        case .enrichment: EnrichmentView()
+        case .searchHistory: SearchHistoryView()
+        case .notices: NoticesView()
+        case .syncSongs: SyncSongsPage()
+        case .syncConnection: SyncConnectionPage()
+        case .syncControl: SyncControlPage()
+        case .syncDevice(let id): DrivenDevicePage(id: id)
         case .processing: ProcessingView()
         case .appearance: AppearanceView()
         case .background: BackgroundView()

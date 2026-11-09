@@ -2,6 +2,26 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
+struct DrivenDevicePage: View {
+    @Environment(Library.self) private var library
+    let id: String
+
+    var body: some View {
+        let status = library.features.syncStatus
+        if let device = status?.devices.first(where: { $0.id == id }) {
+            DrivenDeviceView(device: device)
+        } else if status == nil {
+            ProgressView("Finding the device…")
+        } else {
+            ContentUnavailableView(
+                "This device is no longer paired",
+                systemImage: "iphone.slash",
+                description: Text("Pair it again from Device sync.")
+            )
+        }
+    }
+}
+
 struct DrivenDeviceView: View {
     @Environment(Library.self) private var library
     let device: SyncedDevice

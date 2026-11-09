@@ -8,7 +8,7 @@ struct DownloadsButton: View {
     var body: some View {
         let active = library.features.downloads.activeCount
         NavigationLink {
-            DownloadsView()
+            DownloadsView().modifier(ThemedPage())
         } label: {
             Label("Downloads", systemImage: active > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
         }
@@ -26,7 +26,7 @@ struct DownloadProgress: View {
         if !downloads.jobs.isEmpty {
             Section {
                 NavigationLink {
-                    DownloadsView()
+                    DownloadsView().modifier(ThemedPage())
                 } label: {
                     DownloadSummary(jobs: downloads.jobs, waitsOnTheMeter: downloads.waitsOnTheMeter)
                 }
@@ -42,12 +42,12 @@ struct DownloadProviderPrompt: View {
         if library.features.downloads.needsProvider {
             Section {
                 NavigationLink {
-                    ProviderView()
+                    ProviderView().modifier(ThemedPage())
                 } label: {
-                    Label("Set up a download provider", systemImage: "arrow.down.circle")
+                    Label("Set up a download source", systemImage: "arrow.down.circle")
                 }
             } footer: {
-                Text("No download provider is ready. Switch one on and fill in what it needs.")
+                Text("No download source is ready. Switch one on and fill in what it needs.")
             }
         }
     }
@@ -335,7 +335,7 @@ struct WantedRow: View {
 }
 
 func providersDetail(_ asked: [DownloadAccount]) -> String {
-    asked.isEmpty ? "Set up a download provider" : asked.map(\.provider.title).joined(separator: " · ")
+    asked.isEmpty ? "Set up a download source" : asked.map(\.provider.title).joined(separator: " · ")
 }
 
 struct ProviderView: View {
@@ -367,7 +367,7 @@ struct ProviderView: View {
                 ProviderSection(saved: providers.account(provider), on: providers.isOn(provider))
             }
         }
-        .navigationTitle("Download providers")
+        .navigationTitle("Download sources")
     }
 }
 

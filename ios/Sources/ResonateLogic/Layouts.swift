@@ -161,3 +161,13 @@ public enum SheetSizing: Sendable, Equatable {
         weight == .long || accessibilityText ? .page : .form
     }
 }
+
+public enum EqualiserGraphShape {
+    public static let heightOverWidth = 10.0 / 16.0
+    public static let shortest = 180.0
+    public static let tallest = 340.0
+
+    public static func height(forWidth width: Double) -> Double {
+        min(max(width * heightOverWidth, shortest), tallest)
+    }
+}

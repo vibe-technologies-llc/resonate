@@ -293,7 +293,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   banner that opens the sync page. `transferring` (the background hold, the 2 s poll) counts only
   received songs that can land now (`landable`: a writable folder and no back-off), so a song with
   nowhere to go never holds the app awake or keeps `cameForward` from rebuilding sync.
-- **Erase all data** (the last Settings section, confirmed) first reads every song's URI
+- **Erase all data** (the last row of Settings, confirmed) first reads every song's URI
   (`song_uris`, hidden ones included): where that fails nothing is erased and the failure is shown.
   A catalog that would not open is such a failure: erasing waits for an open under way and refuses where it fails, since the songs in granted folders could not be found. It then stops what could write afterwards (the poll, the scan, sync, scrobbling, Listen,
   enrichment, and downloads, which are cancelled and waited for so each deletes its half-written
@@ -310,7 +310,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   *Devices* (this iPhone first, then the others online first, each with its platform and *On this
   network*, *Online* or *Away*; *Add a device…* opens `PairingSheet`), *Continue listening*
   (`HandoffRows`, keyed and asked by `HandedOff.id`), the active then ten latest finished
-  transfers, and *Options*: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
+  transfers, and *Options*, each a `Destination`: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
   folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
   Resonate's server, your own server with its address, or *This network only*, which is
   `SyncConfig.nearby_only` and defaults off (`sync-nearby-only`); and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
@@ -334,7 +334,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   `name (n)` made beside it; the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
   writable folder, else the first writable one), and one that is not readable holds the songs back
   with a notice rather than sending them to another folder (`LandingDestinationTests`).
-- **An online device on the sync page opens `DrivenDeviceView`**, which drives its zones: transport, volume, seek, and jump, move and remove by row. **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).
+- **An online device on the sync page opens `DrivenDeviceView`** (`Destination.syncDevice(id)`, through `DrivenDevicePage`), which drives its zones: transport, volume, seek, and jump, move and remove by row. **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
   assigns `syncConfig` on the main actor at once, then restarts on `Work.inSync`, so a second switch
   flipped straight after builds on the first; `applySync` puts a minted code into the *current*
@@ -417,8 +417,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   no line, reads no catalog and tells nothing; the live line appears with the first new or changed
   song and an unasked notice counts them (*Found N new or changed songs*). **What the library learns
   by itself is told only where asked**: `Library.noticeUnasked` drops the notice unless
-  `unasked-notices` (suite `library-features`, off by default; Settings' *Notices* section,
-  `UnaskedNoticesSection`) is on. It carries an unasked scan's count, the songs hidden as gone and
+  `unasked-notices` (suite `library-features`, off by default; Settings › App › Notices,
+  `NoticesView`) is on. It carries an unasked scan's count, the songs hidden as gone and
   the songs kept from other devices; a listener's own scan, a stopped scan and every failure are told
   whatever it says. It never runs the missing-song pass,
   which coming forward already runs; a failing root is told once per distinct text. A listener's scan
@@ -803,7 +803,7 @@ every route change (a pair of headphones at the same rate included), not from th
   a few times, not N, as `landReceived` does once a batch.
 - **A destination already on top of a stack is not pushed again** (`Navigation.open` switches the tab and returns), so *Go to album* from Now Playing on that album or *More › Equaliser* twice never leaves a copy for Back to land on.
 - **The tab and every stack outlive the process** (`NavigationKeeper`, behind the `TabView`): the
-  selected tab and each tab's path are `KeptNavigation` (`Root` and `Destination` are `Codable`),
+  selected tab and each tab's path are `KeptNavigation` (`Root` and `Destination` are `Codable`, `ResonateLogic`'s, *Settings*),
   JSON in the scene's `@SceneStorage("navigation")`, written on every change once restored. They are
   restored on the root's first appearance, so the page shows from the first frame, and then checked
   once the player is open and the whole catalog read (`Library.wholeCatalog`): a song page whose id
@@ -1068,8 +1068,8 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   offers only, on an empty field, the last ten searches (`UserDefaults` suite `library-features`,
   key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and
   each tab re-reads it on appearing), kept when a search is submitted or one of its results opened.
-  **Search history can be turned off**: Settings' *Search* section holds *Keep search history*
-  (`SearchHistorySection`, `keep-search-history` in the same suite, on unless set), and while it is
+  **Search history can be turned off**: Settings › App › Search history holds *Keep search history*
+  (`SearchHistoryView`, `keep-search-history` in the same suite, on unless set), and while it is
   off `SearchModel` keeps nothing and offers nothing; turning it off forgets what both searches
   kept.
   Completions are never `.searchSuggestions` while typing: that overlay sat over the results and
@@ -1449,9 +1449,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   account (also from a find that failed, so the next job does not start from a token already spent), creates the destination with `Folders.fresh` on `Work.aside`, journals its URI, copies
   (`download_offer`), indexes (`index_download`), drops the journal entry, seeks the new song in the
   lookup and refreshes the library, the wants and the changed art. With no ready account nothing is
-  begun and the downloads row offers "Set up a download provider" until one is ready; a job's row
+  begun and the downloads row offers "Set up a download source" until one is ready; a job's row
   names the provider that delivered.
-- **Every provider is configured at once, as on the desktop** (`ProviderView`): one section per
+- **Every provider is configured at once, as on the desktop** (`ProviderView`, Settings' *Download sources*): one section per
   `MusicProvider.every`, each with its switch, its own credentials and Save, and a status
   (`DownloadAccount.readiness`): Monochrome and hifi-api are always ready (a blank server is the
   hosted service); Subsonic and Jellyfin need a server, user and password (the desktop's three; a Jellyfin account is browsed and played in place and never asked for a want); TIDAL a client
@@ -1469,7 +1469,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   `NWPathMonitor` hands every path to `ConnectionMeters.of(satisfied:expensive:constrained:)` (an
   unsatisfied path is `Unknown`, an expensive or constrained one `Metered`, else `Unmetered`) and
   `Features.networkChanged` calls `report_connection` with the latest. *Wait on a metered connection*
-  (`stall-downloads-on-metered`, off, Download providers) is `configure_stall_downloads_on_metered`;
+  (`stall-downloads-on-metered`, off, Download sources) is `configure_stall_downloads_on_metered`;
   the 250 ms poll reads `downloads_wait_on_the_meter()` into `DownloadQueue.waitsOnTheMeter`, and the
   Downloads screen and its summary say *Waiting for a network that is not metered*.
 - **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the
@@ -1542,7 +1542,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 ## Services played in place
 
-- **The Server page (`Destination.server`, a row under Settings' Connected services) browses and plays every service that plays in place** (`mobile.md`'s *Services
+- **The Server page (`Destination.server`, a row under Settings' *Online & services*) browses and plays every service that plays in place** (`mobile.md`'s *Services
   played in place*; `ServerViews.swift`, `ResonateLogic/Served.swift`). `Features.servedAccounts`
   is `ProviderAccounts.served(online:hosted:)`: the download accounts on and ready, none while
   online is off, and a hosted Monochrome or hifi-api (`DownloadAccount.isHosted`) left out while
@@ -1623,82 +1623,166 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   made, and awaited before a clip is asked), typed in the sheet's *Recognition* section;
   blank, only Shazam is asked (`online.md`).
 
+## Settings
+
+- **The Settings tab is a stack of pages, one row each** (`SettingsView`, `SettingsViews.swift`),
+  Android's groups and words (`android.md`): a search field, then *Sound* (Equaliser, Sound
+  processing, Audio output, Sleep timer), *Library* (Music folders, Artwork and details), *Online &
+  services* (Online features, a switch; Download sources; Server while serving; Scrobbling;
+  Spotify), *Devices* (Device sync), *Appearance* (Accent colour, Background) and *App* (Search
+  history, Notices, the version, *Erase all data* last). Every row is a `ToolRow` (the symbol in a
+  scaled column, the title, a one-line status) opening a `Destination`, but for the Online switch,
+  the sleep timer's sheet, the version and Erase; each row reads its status in a view of its own
+  (`SettingsStatusRow`, `SleepTimerRow`, `SearchHistoryStatus`), so a tick or a sync poll rebuilds
+  that row alone. Settings stays a stack on every width (*Orientation and iPad*).
+- **What the rows are is `ResonateLogic`'s `SettingsCatalog.swift`** (`SettingsPlace`,
+  `SettingsGroup`, `SettingsSearch`; `SettingsCatalogTests`): each place's group, title, summary,
+  symbol, the words of what its page holds (`inner`), its parent page and what opens it. With no
+  text the root lists the places with no parent; text lists every place whose title, summary or one
+  inner phrase holds every word as the start of one of its words (folded for case and accents, a
+  hyphen joining or splitting), in its group, a title match before a summary or inner one, and a row
+  an inner phrase matched shows that phrase as its status, a sub-page's under its page's title
+  (*Equaliser · ABX*, `SettingsMatch.detail`), as Android words it. So sub-pages are found and open directly:
+  *AutoEq* opens Headphone correction, *room* Room correction, *ABX* the listening test,
+  *microphone* the measurement. The Server and *Curves for other outputs* are hidden while they
+  would show nothing.
+- **Every settings page is a `Destination`** (`ResonateLogic/Destinations.swift`, beside `Root` and
+  `KeptNavigation`), the sync page's *Options* (`syncSongs`, `syncConnection`, `syncControl`) and a
+  device driven from it or from Home (`syncDevice(id)`, `DrivenDevicePage` finding it in the sync
+  status) included, so the scene keeps and restores them and `ThemedPage` reaches them. **A kept
+  stack from an earlier build still opens**: the cases it could hold (`sound`, `processing`,
+  `output`, `providers` and the rest) keep their names, so the synthesized coding reads it unchanged,
+  and a new page is a new case (`DestinationsTests`). The download pages stay view links wearing
+  `ThemedPage` (`DownloadsButton`, `DownloadProgress`, `DownloadProviderPrompt`): their parents are
+  online pages pushed by view links or a release sheet's own stack with no destinations, where a
+  value link would push past a page the path does not hold or go nowhere.
+- **A page is a `ThemedForm` or `ThemedList` of `ToolRow`s**, the Server page included (`ServerView`,
+  cards). Search history (`SearchHistoryView`), Notices (`NoticesView`) and Artwork and details
+  (`EnrichmentView`, which offers the Online switch while it is off) are pages of their own; *Rescan
+  library* is a row of Music folders (`RescanRow`: the scan's count and *Stop* while it reads).
+
 ## The equaliser
 
-- **The page leads with the presets, as Android's does** (`SoundSettingsView`): the switch, then
-  `EqualiserPresetGrid`, a grid of capsules of the boundary's `equaliser_presets` (`eq.md`'s *The
-  phones*; only the SF Symbol is iOS's, `EqualiserPreset.mark`), the chosen one in the accent and its
-  line under the grid. A preset replaces the curve and switches the equaliser on. *Adjust sound*
-  chooses *Sliders* (the default) or *Advanced* and holds *Reset curve*. Sliders are
-  `EqualiserSliders`: a `BandGainSlider` per gain band, named by its audible range (Sub-bass to Air,
-  `EqualiserUnits.range`) over its frequency, reading its signed gain live and committing on release (switching the equaliser on),
-  reaching ±12 dB or the band's own gain where more; a gainless band is a row whose *Edit* opens it in
-  Advanced. A curve with no bands shows ten flat octave sliders, the bands made by the first edit.
-  Advanced holds the graph, *Add a band* and the inspector below. *Output gain* is the preamp slider
-  and *Fit the preamp*. Every band, preamp or fit edit clears the curve's name, so a moved preset or
-  AutoEq curve no longer reads as one; a preset or a correction loaded names it.
-- **The curve is drawn and shaped on a graph** (`EqualiserGraph.swift`, in `SoundSettingsView`'s
-  *Advanced*):
-  log frequency 20 Hz to 20 kHz across, decibels up, gridlines every 5 dB with 0 dB marked and the
-  edges labelled, 100, 1k and 10k labelled among fainter decade lines. The span is ±15 dB widened in
-  5 dB steps to hold the response and the handles, at most ±30 (a pass filter's floor is clipped),
-  and frozen while a handle is held, as on the desktop. The response is `response_curve` at 256
-  points and the stream's rate, asked by `EqualiserResponse` on `Work.aside`: the latest curve asked
-  wins and asks are at least 30 ms apart while one is pending, so a drag is followed without
-  queueing; a curve asked that equals the one drawn clears what is pending, so a step back within the throttle never lets the older ask land. It is washed to the zero line.
-- **A handle per band**, numbered, lifted by the preamp (a gainless kind sits at the preamp). A
-  one-finger drag beginning within 32 pt of a handle moves it, frequency across and gain up (tidied
-  to 0.1, 1 or 10 Hz by decade and to 0.1 dB); a pinch turns the Q of the held band, else the
-  selected one; a tap on empty space adds a peaking band there (Q 1) and switches the equaliser on.
-  Grab and release are felt (`sensoryFeedback`). The graph draws a held handle from its own draft
-  at the display's rate and tells the page at most every 50 ms (`EqualiserGraph.toldEvery`, the
-  latest owed), so the page's sections are not rebuilt per touch event. A drag the system cancels (a call, an alert) never
-  reaches `onEnded`; a `@GestureState` flag falling with a touch still held releases it and discards
-  the draft, so the next touch starts clean. What a gesture moves is a draft drawn at once; the
-  engine and the store hear the release, once, as the sliders did, and the draft gives way when the
-  committed curve arrives, or a second after the release where none did, so a refused commit
-  cannot linger.
-- **The selected band's inspector** is a section below: type (all eight kinds), frequency, gain
-  (gain kinds only) and Q, each typed (committed on return) or stepped (a semitone, 0.5 dB, a sixth
-  of an octave of Q), and Delete. *Fit the preamp* asks the player's `fitted_preamp` (through the room correction applied) on `Work.aside` at the
-  stream's rate and commits it as a preamp move is; it is off with no bands. *Add a band* adds a
-  peaking band at 1 kHz; *Reset* in *Adjust sound*
-  confirms either removing every band or starting from ten flat octave bands. VoiceOver reads each
-  handle as an adjustable element, labelled with its number, kind and frequency, valued with its
-  gain and Q: swiping steps the gain 0.5 dB (Q, for a gainless kind), activating selects it.
-- **Headphone correction is a section of the equaliser page** (`HeadphoneCorrectionSection`, then
-  `ProfileImportSection`), not a page of its own: it searches AutoEq as the listener types (350 ms
-  settle, `Features.correctionRequest` refusing a stale answer), marks the current preset, and loads a
-  tapped headphone's correction as bands, confirming first where the curve has bands; EqualizerAPO or
-  GraphicEQ text comes from the clipboard or a file (`fileImporter`, read on `Work.aside`, at most
-  64 KiB and one byte, so the boundary's `TooLarge` speaks for a larger one). The notice after a
-  load counts the bands and says what was fitted, passed over or held to the limits.
+- **The page is one column from the switch to the corrections** (`EqualiserView`,
+  `EqualiserView.swift`), the phones' shared design (`android.md`): *Equaliser* (the switch, its
+  status the curve's summary) and *Only for <output>* where the route is known (*Kept for this output
+  alone* or *Shared by every output*), the graph, the band
+  chips and *Add band*, the selected band's card, *Preamp*, *Presets* and *Corrections*. *Reset
+  curve* is in the toolbar's menu, confirmed: no bands, a 0 dB preamp, no name, the switch left as
+  it is. There are no modes.
+- **Every edit switches the equaliser on and clears the curve's name** (`edited`): a handle, a slider,
+  a typed value, a filter type, *Add band*, *Remove*, the preamp and *Fit*; a preset replaces the
+  curve, names it and switches it on, as a correction loaded does; only the switch turns it off.
+- **A curve with no bands shows the ten octave handles** (`EqualiserShown.curve` over
+  `ten_band_curve`), so its bands are made by the first band edit committed; a preamp edit leaves it
+  without bands.
+- **The graph** (`EqualiserGraph.swift`): log frequency 20 Hz to 20 kHz across, decibels up,
+  gridlines every 5 dB with 0 dB marked and the edges labelled, 100, 1k and 10k labelled among
+  fainter decade lines. Its height follows its width (`GraphFrame`, a `Layout` asking
+  `EqualiserGraphShape.height`: 16:10, held between 180 and 340 pt), inset by half a handle so the
+  edge handles draw whole. The span is ±15 dB widened in 5 dB steps to hold the response and the
+  handles, at most ±30 (a pass filter's floor is clipped), and frozen while a handle is held, as on
+  the desktop. The response is `response_curve` at 256 points and the stream's rate, asked by
+  `EqualiserResponse` on `Work.aside`: the latest curve asked wins and asks are at least 30 ms apart
+  while one is pending, and a curve asked that equals the one drawn clears what is pending. It is
+  followed by a view of its own (`ResponseTracing`), so the page's body reads no clock, and drawn by
+  `EqualiserTrace`, an equatable view, washed to the zero line.
+- **Each handle is a view with a drag of its own** (`EqualiserHandleView`): a numbered circle drawn
+  28 pt in a hit area of at least 44 pt (`EqualiserHandles.laid`; where two overlap the selected one
+  is on top, else the later, `EqualiserHandles.hit`), so a swipe that starts off a handle scrolls the
+  form and one that starts on it edits it. The press selects the band and is felt
+  (`sensoryFeedback`); past 4 pt (`EqualiserDrag.travelled`) the drag moves the band from where it
+  was grabbed, sideways for frequency and up and down for gain over the preamp (`EqualiserDrag.moved`:
+  tidied to 0.1, 1 or 10 Hz by decade and to 0.1 dB, held to `equaliser_limits()`, a drag past the
+  drawn span reaching the limit); a press that hardly moved only selects. There is no tap to add and
+  no pinch: Q is the card's Width. The held handle is drawn from the graph's own draft at the
+  display's rate and the page is told at most every 50 ms (`TellingPace`, the latest owed), so its
+  sections are not rebuilt per touch event. A drag the system cancels (a call, an alert) never
+  reaches `onEnded`; a `@GestureState` falling with the band still held drops the draft. VoiceOver
+  reads each handle as adjustable, labelled with its number, kind and frequency and valued with its
+  gain and Q: swiping steps the gain 0.5 dB (Q a sixth of an octave for a gainless kind,
+  `BandNudge.level`), activating selects, and Android's actions are offered by name: *Raise the
+  gain* and *Lower the gain* (0.5 dB, for a kind with gain) and *Raise the frequency* and *Lower the
+  frequency* (a third of an octave, `BandNudge.frequency`).
+- **What a gesture moves is a draft** (`EqualiserDraft`; `EqualiserEditingTests` hold it with the
+  handles, the drag, the selection, the placement, the axes and the pace): held while a handle or a
+  slider moves, released with the commit, given up when the committed curve arrives (or any curve
+  arrives with nothing held) or a second after the release where none did, so a refused commit
+  cannot linger; a cancelled drag drops it. The engine and the store hear the release, once.
+- **The band chips** (`BandChips`) are 44 pt capsules `1 … n` scrolling sideways, the chosen one in
+  the accent and scrolled to (gated on Reduce Motion), then *Add band*, a glass capsule: a peaking
+  band (Q 1, 0 dB) at the middle of the widest gap in octaves between the bands and the edges, among
+  equal gaps the one nearest 1 kHz, then the lower (707 Hz with the ten octave handles), 1 kHz on an
+  empty curve (`BandPlacement`, Android's rule), selected; off at
+  `bands_at_most`. The band shown is the one chosen while it exists, else the first
+  (`BandSelection`); *Remove* selects the band that took its place, or the last.
+- **The selected band's card** (`BandCard`, rows docked under the chips and identified by the band,
+  so a half-typed value never carries to another) is *Band N · <type>* (a menu of the eight kinds)
+  with *Remove*, then Gain (off for a kind without gain, reading *Not used by <type>*,
+  `EqualiserFilter.gainUnused`), Frequency and Width as `MeasuredSlider`s: a
+  system slider over a `BandAxis`, linear in decibels over ±12 dB or the band's own gain rounded out
+  to 6 dB, logarithmic in hertz and in Q, the axis frozen while dragged. The value is shown in its
+  unit and a tap on it asks for an exact one in an alert, Android's words: titled *Band N gain*
+  (*frequency*, *width*; `BandAxis.entering`), the range from the limits as its message (*From -24.0
+  dB to +24.0 dB*, `BandAxis.range`), a field and *Set* (`BandAxis.read`: the unit optional, `k` or
+  `kHz`, a decimal comma, a comma grouping thousands in hertz, U+2212 for minus; held to the limits
+  rather than the slider's span; text with no number refused). A slider tells the page
+  at most every 50 ms while dragged and commits on release, and a move with no drag (a hardware key)
+  commits once it has rested 400 ms; VoiceOver's adjust steps 0.5 dB, a semitone or a sixth of an
+  octave of Q and speaks the value in its unit.
+- **Preamp** is a section of one `MeasuredSlider`, *Level* (±12 dB shown, `preamp_at_most_db`
+  typed, its alert *Preamp level*), with *Fit* in its row and the note *Fit brings the queue's
+  loudest peak to full scale.* *Fit* asks `fitted_preamp` (through the room correction applied) on `Work.aside` at the stream's rate,
+  committed, then `fitted_preamp_to_the_queue`, committed only where the curve shown is still the
+  one fitted; off with no bands.
+- **Presets** are a chip row of the boundary's `equaliser_presets` scrolling sideways (`eq.md`'s *The
+  phones*; only the SF Symbol is iOS's, `EqualiserPreset.mark`), the chosen one in the accent and
+  scrolled to, its line beneath (*Your own sound, shaped on the graph above.* for a curve no preset
+  names).
+- **Corrections are rows opening pages** (`CorrectionsSection`), each with a status line: *Headphone
+  correction* (`HeadphoneCorrectionView`), *Measure with a microphone*
+  (`MicrophoneMeasurementView`), *Room correction* (`RoomCorrectionView`), *Listening test*
+  (`ListeningTestView`) and, while another output keeps a curve, *Curves for other outputs*
+  (`OtherOutputsView`), each a `Destination`. The status lines are Android's: *Search AutoEq or
+  paste a profile*, *Fit a measurement or a sweep toward a target*, *No response chosen* or *On ·
+  <name>* (*Off · <name>* with correction off, `RoomCorrectionRow.status`) and *A blind ABX test of
+  the curve or a setting*, also the summaries a search shows. A page owns the file importers it
+  needs, each on a button of its own (two on one view lose one).
+- **Headphone correction** searches AutoEq as the listener types (350 ms settle,
+  `Features.correctionRequest` refusing a stale answer), lists at most twenty headphones and counts
+  the rest (`HeadphoneMatches`), marks the one in use, and loads a tapped one as bands, confirming
+  first where the curve has bands; *Import a profile* takes EqualizerAPO or GraphicEQ text from the
+  clipboard or a file (`fileImporter`, read on `Work.aside`, at most 64 KiB and one byte, so the
+  boundary's `TooLarge` speaks for a larger one). The notice after a load counts the bands and says
+  what was fitted, passed over or held to the limits.
 - **Stored as text**: `PlaybackPreferencesStore` keeps the curve as `equaliser_text` output under
   `equaliser-curve` (`eq.md`'s *The phones*).
 - **A curve may be kept for one output** (`OutputRoute`: the session route's first output, by port
   `uid`, named by `portName`). *Only for <output>* on the equaliser page binds the curve playing to
   that output (`Library.bindEqualiser`): `equaliser-curve-for` and `equaliser-curve-name-for` map a
   port to its text and name, `equaliser-route-names` to its name, all in the `playback` suite. While
-  the output in use is bound, every edit (graph, inspector, AutoEq, import) is written to its curve,
+  the output in use is bound, every edit (the graph, the card, AutoEq, an import) is written to its curve,
   else to the shared `equaliser-curve`. `NowPlaying.reportRoute` hands each route to
   `Library.outputRouteChanged`, which sends the bound or shared curve where it differs from the one
-  playing (`followRoute`); unbinding, or forgetting the output in use under *Curves kept for other
-  outputs*, falls back to the shared curve at once. The switch stays one for every output, as on the
+  playing (`followRoute`); unbinding, or forgetting the output in use on *Curves for other
+  outputs* (swiped or from its menu), falls back to the shared curve at once. The switch stays one for every output, as on the
   desktop. The engine still gets one curve as its `Equalisation` fallback.
-- **A measurement of the listener's own is fitted from the equaliser page** (`MeasuredCorrectionSection`,
-  `MeasuredCorrection.swift`, after *Import a profile*): a *Fit toward* picker of the boundary's
-  built-in targets (`measurementOffers()`, read once, the recommended one chosen first), *Choose a
-  target file…* and *Fit a measurement…*, each its own `fileImporter` on its own button (two on one
-  view lose one). The file is read on `Work.aside` at most `bytesAtMost` and one byte, fitted by
+- **A measurement of the listener's own is fitted on its page** (`MicrophoneMeasurementView`,
+  `MeasuredCorrection.swift`), in Android's sections: *Target* holds a *Fit toward* picker of the
+  boundary's built-in targets (`measurementOffers()`, read once, the recommended one chosen first)
+  and *Choose a target file…*; *A measurement file* holds *Fit a measurement…*; *The microphone*
+  holds *Measure* (*Stop* while the sweep plays); *Microphone calibration* reads the file's name with
+  *Forget the calibration*, or *None, so the microphone is taken flat* with *Choose a calibration…*;
+  each importer its own `fileImporter` on its own button. Leaving the page stops a measurement. The file is read on `Work.aside` at most `bytesAtMost` and one byte, fitted by
   `fitMeasurement` on `Work.aside`, and its curve adopted as an imported profile is (`Features.adopt`:
   the equaliser on, the curve in use, bound or shared) with a notice of `Measurement.told`: bands,
   target, the error before and after, lines passed over, values held to the limits. The decisions
   (`MeasurementAim`, `MeasurementView`, `Measurement.profileName`, `Measurement.told`) are
   `ResonateLogic`'s (`MeasurementTests`); `MeasuredCorrectionState` only reads files and calls the
-  boundary, and refuses a second fit while one runs. **The room is measured from the same section**
-  (*Measure your room*, `MeasuredCorrectionState.measure`, `Sweeping.swift`; `eq.md`'s *A
-  measurement of your own*): it asks `Microphone.allowed()` (refused: the section says so and offers
-  *Open Settings*, `MeasurementView.denied`), pauses a playing engine as Listen does and runs
+  boundary, and refuses a second fit while one runs. **The room is measured from the same page**
+  (*Measure*, `MeasuredCorrectionState.measure`, `Sweeping.swift`; `eq.md`'s *A
+  measurement of your own*): it asks `Microphone.allowed()` (refused: the page says so and offers
+  *Allow the microphone*, opening Settings, `MeasurementView.denied`), pauses a playing engine as Listen does and runs
   `Microphone.sweep`, which sets the session to `.playAndRecord` and `.measurement` through
   `NowPlaying.beginListening`, reads the input's rate (`OpenSweep.inputRate`), asks
   `measurement_sweep(rate)` for that rate (the tap cannot be at another rate than the hardware's, so
@@ -1708,12 +1792,13 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   never passes Resonate's RemoteIO engine; the recording is `recorded_frames` long, waited for with
   three seconds of grace (`Microphone.filled`, shared with Listen), then the engine is closed and the
   session given back. *Stop* cancels the task, which ends the wait with `CancellationError`. The
-  samples go to `fit_recorded_sweep` on `Work.aside` with the aim and the optional *Microphone
-  calibration…* file (`MeasurementCalibration`, held in `MeasurementView` until forgotten), the curve
+  samples go to `fit_recorded_sweep` on `Work.aside` with the aim and the optional calibration
+  file (`MeasurementCalibration`, held in `MeasurementView` until forgotten), the curve
   is adopted as a fitted measurement is, named `Measured`. The state (`sounded`, `heard`,
   `turnedAway`, `finished`) is `ResonateLogic`'s (`MeasurementTests`); the engine and session are
   built and checked by `ios/check-build.py` but not run on this host (`FEATURES.md`).
-- **Room correction** is the equaliser page's last section (`RoomCorrection.swift`): choosing an
+- **Room correction is a page** (`RoomCorrectionView`, `RoomCorrection.swift`, its sections *The
+  response* and *The speakers*): choosing an
   audio or SOFA file reads it in `roomCorrectionChunkBytes()` chunks on `Work.aside` and stages it
   through `beginRoomCorrection`, `stageRoomCorrection` and `finishRoomCorrection` (a failure calls
   `abandonRoomCorrection`), never held whole, then switches it on; the switch, the response's channels, rate and length
@@ -1721,13 +1806,14 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   speaker's file (`RoomCorrectionState.left`), then *Choose the right speaker's response…* the
   right's (or *Cancel*), each its own `fileImporter` on its own button, and keeps both, read whole
   up to 64 MiB, through `keep_binaural_room_correction`; the name is `ResonateLogic`'s `RoomPair.name` (`RoomPairTests`).
-  One response serves every output. The section ends in a `Stepper` each for the speaker angle,
+  One response serves every output. Once a response is chosen *The speakers* holds a `Stepper` each for the speaker angle,
   elevation and the head turned (`RoomCorrectionState.speak(at:)`, `raise(to:)`, `turn(to:)`, bounds
   from `speakerLimits()`, kept in `playback` as `speaker-angle`, `speaker-elevation` and `head-yaw`,
   sent at start before the response is read;
-  `eq.md`), not built or run on this host (no xtool): the Swift is held by the boundary's tests alone.
-- **The listening test tests a setting as well as the equaliser** (`ListeningTest.swift`,
-  `ListeningTestState`, `eq.md`'s *The phones*): a segmented picker of `ListeningTesting`
+  `eq.md`), built by `ios/check-build.py` on this host and never run here: the boundary's tests hold what it sends.
+- **The listening test is a page and tests a setting as well as the equaliser** (`ListeningTestView`, `ListeningTest.swift`,
+  `ListeningTestState`, `eq.md`'s *The phones*; its sections Android's *What is tested*, *Against*
+  and *Trials*): a segmented picker of `ListeningTesting`
   (*Equaliser*, *Restoration*, *Resampler*, *Dither*, `ResonateLogic`'s) chooses what is tested, and
   choosing a setting asks `settingTestByDefault(kind:preferences:)` for the `TestedSetting` to begin
   from (A as the preferences have it, B their opposite), shown as *A is …* with menu pickers for B
@@ -1736,7 +1822,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   *Measuring…* (restoration) or *Starting…* while it runs, and a refusal is the boundary's sentence on
   the notice (`library.report`). The words, labels and levels sentence (`TestLevels`) are
   `ListeningTestWords`' (`ListeningTestWordsTests`); the footer is the running test's
-  `howItWorks`. The test ends when the page is left, as before.
+  `howItWorks`. The test ends when its page is left.
 
 ## Siri
 

@@ -235,7 +235,9 @@ struct ServedFoundRows: View {
     let found: ServedFound
 
     var body: some View {
-        Text(found.summary).font(.footnote).foregroundStyle(.secondary).themedRows()
+        Section {
+            Text(found.summary).font(.footnote).foregroundStyle(.secondary)
+        }
         if !found.artists.isEmpty {
             Section("Artists") {
                 ForEach(found.artists, id: \.uri) { artist in
@@ -244,7 +246,6 @@ struct ServedFoundRows: View {
                     }
                     .servedActions(artist.uri)
                 }
-                .themedRows()
             }
         }
         if !found.albums.isEmpty {
@@ -255,7 +256,6 @@ struct ServedFoundRows: View {
                     }
                     .servedActions(album.uri)
                 }
-                .themedRows()
             }
         }
         if !found.songs.isEmpty {
@@ -264,7 +264,6 @@ struct ServedFoundRows: View {
                 ForEach(Array(found.songs.enumerated()), id: \.element.uri) { index, song in
                     ServedSongRow(song: song) { library.playServed(uris, at: index, shuffle: library.shuffled) }
                 }
-                .themedRows()
             }
         }
     }
@@ -293,16 +292,17 @@ struct ServerView: View {
         let service = choice.service
         let scheme = service?.scheme ?? ""
         let title = service?.title ?? "Server"
-        List {
+        ThemedList {
             if choice.choosing {
-                Picker("Service", selection: Binding(get: { scheme }, set: { features.chooseServed($0) })) {
-                    ForEach(choice.services, id: \.scheme) { offered in
-                        Text(offered.title).tag(offered.scheme)
+                Section {
+                    Picker("Service", selection: Binding(get: { scheme }, set: { features.chooseServed($0) })) {
+                        ForEach(choice.services, id: \.scheme) { offered in
+                            Text(offered.title).tag(offered.scheme)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .themedRows()
             }
             if asked.isEmpty {
                 firstRows(scheme: scheme, title: title)
@@ -310,8 +310,6 @@ struct ServerView: View {
                 foundRows(scheme: scheme, title: title)
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .navigationTitle(choice.choosing ? "Server" : title)
         .searchable(text: $typed, prompt: "Search \(title)")
         .onSubmit(of: .search) { asked = typed.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -326,13 +324,12 @@ struct ServerView: View {
     private func firstRows(scheme: String, title: String) -> some View {
         if let failure {
             ReadFailure(text: failure) { Task { await loadFirst(scheme) } }
-                .themedRows()
         } else if let first, first.isEmpty {
-            Text("Search \(title) for artists, albums and songs.").foregroundStyle(.secondary).themedRows()
+            Text("Search \(title) for artists, albums and songs.").foregroundStyle(.secondary)
         } else if let first {
             ServedFoundRows(found: first)
         } else {
-            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity).themedRows()
+            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity)
         }
     }
 
@@ -340,13 +337,12 @@ struct ServerView: View {
     private func foundRows(scheme: String, title: String) -> some View {
         if let searchFailure {
             ReadFailure(text: searchFailure) { Task { await search(scheme) } }
-                .themedRows()
         } else if let found, found.isEmpty {
-            Text("\(title) found nothing for those words.").foregroundStyle(.secondary).themedRows()
+            Text("\(title) found nothing for those words.").foregroundStyle(.secondary)
         } else if let found {
             ServedFoundRows(found: found)
         } else {
-            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity).themedRows()
+            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity)
         }
     }
 

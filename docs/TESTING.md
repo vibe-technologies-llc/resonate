@@ -71,6 +71,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   change, the mode change's pane fade, each under Reduce Motion, in the one column and in the two
   columns turned on its side, and the defects only a device shows (a dropped frame in a handover,
   the cover's decode landing late)
+- [S · blocked: iPhone] The Settings pages and the equaliser page are proved by their rules in
+  tests and a clean build, never run on an iPhone: a swipe that starts off a handle scrolling the
+  form while one that starts on it drags the band, overlapping octave handles taken by the one on
+  top, the band card fitting under the graph on one screen, the alert asking for an exact
+  value, a settings stack kept by an earlier build reopening, and VoiceOver on the handles and the
+  sliders
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from

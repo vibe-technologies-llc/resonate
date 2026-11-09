@@ -1,11 +1,5 @@
 [
   {
-    "file": "EqualiserGraph.swift",
-    "rule": "gesture without an action or a trait",
-    "line": "DragGesture(minimumDistance: 0, coordinateSpace: .local)",
-    "count": 1
-  },
-  {
     "file": "LyricsPane.swift",
     "rule": "gesture without an action or a trait",
     "line": ".simultaneousGesture(SpatialTapGesture().onEnded { tap in",

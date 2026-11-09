@@ -22,278 +22,120 @@ extension EqualiserPreset {
     }
 }
 
-struct EqualiserPresetGrid: View {
-    let presets: [EqualiserPreset]
-    let chosen: String?
-    let choose: (EqualiserPreset) -> Void
-    @ScaledMetric private var narrowest: CGFloat = 112
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: narrowest), spacing: 8)], spacing: 8) {
-            ForEach(presets, id: \.name) { preset in
-                let isChosen = preset.name == chosen
-                Button {
-                    choose(preset)
-                } label: {
-                    Label(preset.name, systemImage: preset.mark)
-                        .font(.subheadline.weight(.medium))
-                        .titleLines()
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 10)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
-                        .background(isChosen ? Color.worn : Color.primary.opacity(0.08), in: .capsule)
-                        .contentShape(.capsule)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint(preset.detail)
-                .accessibilityAddTraits(isChosen ? .isSelected : [])
-            }
-        }
-        .padding(.vertical, 6)
-    }
-}
-
-struct EqualiserSliders: View {
-    let curve: EqualiserCurve
-    let limits: EqualiserLimits
-    let change: (Int, Float) -> Void
-    let open: (Int) -> Void
-
-    var body: some View {
-        ForEach(Array(curve.bands.enumerated()), id: \.offset) { index, band in
-            if band.filter.usesGain {
-                BandGainSlider(band: band, limits: limits) { change(index, $0) }
-            } else {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(EqualiserUnits.hertz(band.frequencyHz))
-                        Text(band.filter.label).font(.footnote).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Edit") { open(index) }
-                }
-            }
-        }
-    }
-}
-
-struct BandGainSlider: View {
-    let band: EqualiserBand
-    let limits: EqualiserLimits
-    let commit: (Float) -> Void
-    @State private var editing: Float?
-    private static let shownAtLeastDb: Float = 12
-
-    var body: some View {
-        let hertz = EqualiserUnits.hertz(band.frequencyHz)
-        let range = EqualiserUnits.range(of: band.frequencyHz)
-        let reach = min(limits.gainAtMostDb, max(Self.shownAtLeastDb, abs(band.gainDb)))
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(range).font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(EqualiserUnits.decibels(editing ?? band.gainDb))
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.worn)
-            }
-            Text(band.filter == .peaking ? hertz : "\(hertz) · \(band.filter.label)")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            CommittingSlider(
-                title: "\(hertz) \(range)",
-                value: band.gainDb,
-                range: -reach...reach,
-                step: EqualiserUnits.gainStep,
-                editing: $editing,
-                spoken: { String(format: "%+.1f decibels", Double($0)) },
-                commit: commit
-            )
-        }
-    }
-}
-
-
 struct EqualiserGraph: View {
-    let given: EqualiserCurve
-    let response: [Float]
+    static let space = "equaliser-graph"
+
+    let curve: EqualiserCurve
+    let response: EqualiserResponse
     let limits: EqualiserLimits
-    @Binding var selected: Int?
-    @Binding var holding: Bool
+    let selected: Int?
+    let choose: (Int) -> Void
     let edit: (EqualiserCurve) -> Void
     let commit: (EqualiserCurve) -> Void
-    let add: (EqualiserBand) -> Void
     let discard: () -> Void
 
-    private static let reach: CGFloat = 32
-    private static let tapTravel: CGFloat = 8
-    private static let handleSize: CGFloat = 26
-    private static let handleShade = 0.15
-    private static let handleShadeReach: CGFloat = 1
-    private static let handleShadeDrop: CGFloat = 1
-    private static let smallestPinch: CGFloat = 0.05
-    private static let toldEvery: Duration = .milliseconds(50)
-
-    private struct Held {
+    private struct Held: Equatable {
         let band: Int
-        let offset: CGSize
+        let start: CGPoint
         let span: Float
-        var moved = false
     }
 
-    private struct Pinched {
-        let band: Int
-        let q: Float
-    }
-
-    private enum Touch {
-        case band(Held)
-        case empty(CGPoint)
-    }
-
-    @State private var touch: Touch?
-    @State private var pinched: Pinched?
+    @State private var held: Held?
+    @State private var moving: EqualiserCurve?
+    @State private var pace = TellingPace()
+    @State private var telling: Task<Void, Never>?
     @State private var grabs = 0
     @State private var releases = 0
-    @GestureState private var dragged = false
-    @GestureState private var pinchHeld = false
-    @State private var moving: EqualiserCurve?
-    @State private var toldAt = ContinuousClock.now
-    @State private var telling: Task<Void, Never>?
-
-    init(
-        curve: EqualiserCurve,
-        response: [Float],
-        limits: EqualiserLimits,
-        selected: Binding<Int?>,
-        holding: Binding<Bool>,
-        edit: @escaping (EqualiserCurve) -> Void,
-        commit: @escaping (EqualiserCurve) -> Void,
-        add: @escaping (EqualiserBand) -> Void,
-        discard: @escaping () -> Void
-    ) {
-        given = curve
-        self.response = response
-        self.limits = limits
-        _selected = selected
-        _holding = holding
-        self.edit = edit
-        self.commit = commit
-        self.add = add
-        self.discard = discard
-    }
-
-    private var curve: EqualiserCurve { moving ?? given }
 
     var body: some View {
+        let drawn = moving ?? curve
+        let decibels = response.decibels
         GeometryReader { geometry in
-            let scale = EqualiserScale(size: geometry.size, span: frozenSpan ?? currentSpan)
+            let span = held?.span ?? EqualiserScale.span(around: decibels, handles: drawn.bands.map { drawn.level(of: $0) })
+            let scale = EqualiserScale(size: geometry.size, span: span)
             ZStack(alignment: .topLeading) {
                 EqualiserGrid(scale: scale)
                     .equatable()
-                Canvas { context, _ in drawResponse(in: &context, scale: scale) }
-                    .accessibilityHidden(true)
-                ForEach(curve.bands.indices, id: \.self) { index in
-                    handle(index, scale: scale)
+                EqualiserTrace(scale: scale, decibels: decibels)
+                    .equatable()
+                ForEach(EqualiserHandles.laid(drawn, on: scale, selected: selected), id: \.band) { handle in
+                    EqualiserHandleView(
+                        handle: handle,
+                        band: drawn.bands[handle.band],
+                        chosen: handle.band == selected,
+                        held: held?.band == handle.band,
+                        grab: { grab(handle, span: scale.span) },
+                        move: { move(handle.band, by: $0, on: scale) },
+                        release: { release(handle.band, by: $0, on: scale) },
+                        lose: { lose(handle.band) },
+                        choose: { choose(handle.band) },
+                        nudge: { nudged in kept(drawn.replacing(handle.band, with: nudged)) },
+                        limits: limits
+                    )
+                    .zIndex(Double(handle.layer))
                 }
             }
-            .contentShape(Rectangle())
-            .gesture(dragging(scale))
-            .simultaneousGesture(pinching)
+            .coordinateSpace(.named(Self.space))
         }
-        .onChange(of: dragged) { _, now in
-            if !now { dragEnded() }
-        }
-        .onChange(of: pinchHeld) { _, now in
-            if !now { pinchEnded() }
-        }
+        .padding(EqualiserHandles.drawnEdge / 2)
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
         .sensoryFeedback(.selection, trigger: releases)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Equaliser curve")
-        .accessibilityAction(named: "Add a band") { addAt(hertz: 1000, decibels: 0) }
     }
 
-    private var currentSpan: Float {
-        EqualiserScale.span(around: response, handles: curve.bands.map { curve.level(of: $0) })
+    private func grab(_ handle: EqualiserHandle, span: Float) {
+        guard held?.band != handle.band else { return }
+        held = Held(band: handle.band, start: handle.centre, span: span)
+        grabs += 1
+        choose(handle.band)
     }
 
-    private var frozenSpan: Float? {
-        if case .band(let held) = touch { return held.span }
-        return nil
-    }
-
-    private func drawResponse(in context: inout GraphicsContext, scale: EqualiserScale) {
-        guard response.count > 1 else { return }
-        context.fill(scale.washed(response), with: .color(Color.worn.opacity(0.18)))
-        context.stroke(
-            scale.traced(response),
-            with: .color(Color.worn),
-            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+    private func placed(_ band: Int, by translation: CGSize, on scale: EqualiserScale) -> EqualiserCurve? {
+        guard let held, held.band == band, curve.bands.indices.contains(band) else { return nil }
+        let moved = EqualiserDrag.moved(
+            curve.bands[band], from: held.start, by: translation, on: scale, preamp: curve.preampDb, limits: limits
         )
+        return curve.replacing(band, with: moved)
     }
 
-    private func handle(_ index: Int, scale: EqualiserScale) -> some View {
-        let band = curve.bands[index]
-        let chosen = selected == index
-        return Text("\(index + 1)")
-            .font(.caption2.weight(.bold).monospacedDigit())
-            .foregroundStyle(chosen ? Color.wornInk : Color.worn)
-            .frame(width: Self.handleSize, height: Self.handleSize)
-            .background(Circle().fill(chosen ? Color.worn : Color(.systemBackground)))
-            .overlay(Circle().strokeBorder(Color.worn, lineWidth: 2))
-            .background(Circle().fill(Color.black.opacity(Self.handleShade)).padding(-Self.handleShadeReach).offset(y: Self.handleShadeDrop))
-            .scaleEffect(heldBand == index ? 1.25 : 1)
-            .motion(.snappy(duration: 0.15), value: heldBand == index)
-            .position(x: scale.x(band.frequencyHz), y: scale.y(curve.level(of: band)))
-            .allowsHitTesting(false)
-            .accessibilityElement()
-            .accessibilityLabel("Band \(index + 1), \(band.filter.label) at \(EqualiserUnits.hertz(band.frequencyHz))")
-            .accessibilityValue(
-                band.filter.usesGain
-                    ? "\(EqualiserUnits.decibels(band.gainDb)), \(EqualiserUnits.q(band.q))"
-                    : EqualiserUnits.q(band.q)
-            )
-            .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
-            .accessibilityAction { selected = index }
-            .accessibilityAdjustableAction { direction in
-                nudge(index, by: direction == .increment ? EqualiserUnits.gainStep : -EqualiserUnits.gainStep)
-            }
-    }
-
-    private var heldBand: Int? {
-        if case .band(let held) = touch { return held.band }
-        return pinched?.band
-    }
-
-    private func nudge(_ index: Int, by step: Float) {
-        guard curve.bands.indices.contains(index) else { return }
-        var band = curve.bands[index]
-        if band.filter.usesGain {
-            band.gainDb = min(max(band.gainDb + step, -limits.gainAtMostDb), limits.gainAtMostDb)
-        } else {
-            let factor = step > 0 ? EqualiserUnits.qNotch : 1 / EqualiserUnits.qNotch
-            band.q = min(max(band.q * factor, limits.qAtLeast), limits.qAtMost)
-        }
-        selected = index
-        kept(curve.replacing(index, with: band))
-    }
-
-    private func told(_ next: EqualiserCurve) {
+    private func move(_ band: Int, by translation: CGSize, on scale: EqualiserScale) {
+        guard moving != nil || EqualiserDrag.travelled(translation), let next = placed(band, by: translation, on: scale) else { return }
         moving = next
-        let now = ContinuousClock.now
-        if toldAt.duration(to: now) >= Self.toldEvery {
-            toldAt = now
+        tell(next)
+    }
+
+    private func release(_ band: Int, by translation: CGSize, on scale: EqualiserScale) {
+        guard held?.band == band else { return }
+        releases += 1
+        let next = moving == nil ? nil : placed(band, by: translation, on: scale)
+        held = nil
+        if let next {
+            kept(next)
+        } else {
+            settled()
+        }
+    }
+
+    private func lose(_ band: Int) {
+        guard held?.band == band else { return }
+        held = nil
+        let dropped = moving != nil
+        settled()
+        if dropped { discard() }
+    }
+
+    private func tell(_ next: EqualiserCurve) {
+        guard let wait = pace.ask(at: .now) else {
             edit(next)
             return
         }
         guard telling == nil else { return }
         telling = Task {
-            try? await Task.sleep(for: Self.toldEvery)
+            try? await Task.sleep(for: wait)
             telling = nil
-            guard let moving else { return }
-            toldAt = .now
+            guard !Task.isCancelled, let moving else { return }
+            pace.told(at: .now)
             edit(moving)
         }
     }
@@ -302,236 +144,99 @@ struct EqualiserGraph: View {
         telling?.cancel()
         telling = nil
         moving = nil
+        pace.forget()
     }
 
     private func kept(_ next: EqualiserCurve) {
         settled()
         commit(next)
     }
-
-    private func pinchEnded() {
-        guard pinched != nil else { return }
-        pinched = nil
-        holding = touch != nil
-        settled()
-        discard()
-    }
-
-    private func dragEnded() {
-        guard let ended = touch else { return }
-        touch = nil
-        holding = pinched != nil
-        if case .band(let held) = ended, held.moved, pinched == nil {
-            settled()
-            discard()
-        }
-    }
-
-    private func dragging(_ scale: EqualiserScale) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .updating($dragged) { _, state, _ in state = true }
-            .onChanged { value in
-                if touch == nil { touch = touched(at: value.startLocation, scale: scale) }
-                guard pinched == nil, case .band(var held) = touch else { return }
-                let travelled = hypot(value.translation.width, value.translation.height)
-                guard held.moved || travelled > 2 else { return }
-                held.moved = true
-                touch = .band(held)
-                told(placed(held, at: value.location, scale: scale))
-            }
-            .onEnded { value in
-                defer {
-                    touch = nil
-                    holding = pinched != nil
-                }
-                switch touch {
-                case .band(let held):
-                    releases += 1
-                    if held.moved, pinched == nil { kept(placed(held, at: value.location, scale: scale)) }
-                case .empty(let start):
-                    let travelled = hypot(value.location.x - start.x, value.location.y - start.y)
-                    guard pinched == nil, travelled < Self.tapTravel else { return }
-                    addAt(hertz: scale.hertz(atX: start.x), decibels: scale.decibels(atY: start.y) - curve.preampDb)
-                case nil:
-                    return
-                }
-            }
-    }
-
-    private var pinching: some Gesture {
-        MagnifyGesture()
-            .updating($pinchHeld) { _, state, _ in state = true }
-            .onChanged { value in
-                if pinched == nil {
-                    guard let band = heldBand ?? selected, curve.bands.indices.contains(band) else { return }
-                    pinched = Pinched(band: band, q: curve.bands[band].q)
-                    holding = true
-                    grabs += 1
-                }
-                guard let pinched else { return }
-                told(narrowed(pinched, by: value.magnification))
-            }
-            .onEnded { value in
-                guard let ended = pinched else { return }
-                pinched = nil
-                holding = touch != nil
-                releases += 1
-                kept(narrowed(ended, by: value.magnification))
-            }
-    }
-
-    private func placed(_ held: Held, at location: CGPoint, scale: EqualiserScale) -> EqualiserCurve {
-        guard curve.bands.indices.contains(held.band) else { return curve }
-        let pointed = CGPoint(x: location.x + held.offset.width, y: location.y + held.offset.height)
-        return curve.replacing(held.band, with: moved(curve.bands[held.band], to: pointed, scale: scale))
-    }
-
-    private func narrowed(_ pinched: Pinched, by magnification: CGFloat) -> EqualiserCurve {
-        guard curve.bands.indices.contains(pinched.band) else { return curve }
-        var band = curve.bands[pinched.band]
-        let widened = pinched.q / Float(max(magnification, Self.smallestPinch))
-        band.q = EqualiserUnits.tidy(q: min(max(widened, limits.qAtLeast), limits.qAtMost))
-        return curve.replacing(pinched.band, with: band)
-    }
-
-    private func touched(at point: CGPoint, scale: EqualiserScale) -> Touch {
-        let nearest = curve.bands.indices
-            .map { index -> (Int, CGPoint) in
-                let band = curve.bands[index]
-                return (index, CGPoint(x: scale.x(band.frequencyHz), y: scale.y(curve.level(of: band))))
-            }
-            .min { hypot($0.1.x - point.x, $0.1.y - point.y) < hypot($1.1.x - point.x, $1.1.y - point.y) }
-        guard let (index, centre) = nearest, hypot(centre.x - point.x, centre.y - point.y) <= Self.reach else {
-            return .empty(point)
-        }
-        selected = index
-        holding = true
-        grabs += 1
-        return .band(Held(
-            band: index,
-            offset: CGSize(width: centre.x - point.x, height: centre.y - point.y),
-            span: scale.span
-        ))
-    }
-
-    private func moved(_ band: EqualiserBand, to point: CGPoint, scale: EqualiserScale) -> EqualiserBand {
-        var next = band
-        let hertz = EqualiserUnits.tidy(hertz: scale.hertz(atX: point.x))
-        next.frequencyHz = min(max(hertz, limits.lowestHz), limits.highestHz)
-        if band.filter.usesGain {
-            let gain = EqualiserUnits.tidy(decibels: scale.decibels(atY: point.y) - curve.preampDb)
-            next.gainDb = min(max(gain, -limits.gainAtMostDb), limits.gainAtMostDb)
-        }
-        return next
-    }
-
-    private func addAt(hertz: Float, decibels: Float) {
-        guard curve.bands.count < Int(limits.bandsAtMost) else { return }
-        add(EqualiserBand(
-            filter: .peaking,
-            frequencyHz: min(max(EqualiserUnits.tidy(hertz: hertz), limits.lowestHz), limits.highestHz),
-            gainDb: min(max(EqualiserUnits.tidy(decibels: decibels), -limits.gainAtMostDb), limits.gainAtMostDb),
-            q: EqualiserUnits.addedQ
-        ))
-    }
 }
 
-struct BandInspector: View {
+private struct EqualiserHandleView: View {
+    private static let shade = 0.15
+
+    let handle: EqualiserHandle
     let band: EqualiserBand
-    let number: Int
+    let chosen: Bool
+    let held: Bool
+    let grab: () -> Void
+    let move: (CGSize) -> Void
+    let release: (CGSize) -> Void
+    let lose: () -> Void
+    let choose: () -> Void
+    let nudge: (EqualiserBand) -> Void
     let limits: EqualiserLimits
-    let change: (EqualiserBand) -> Void
-    let delete: () -> Void
+    @GestureState private var pressing = false
 
     var body: some View {
-        Section("Band \(number)") {
-            Picker("Type", selection: Binding(get: { band.filter }, set: { filter in
-                var next = band
-                next.filter = filter
-                change(next)
-            })) {
-                ForEach(EqualiserFilter.every, id: \.self) { filter in
-                    Text(filter.label).tag(filter)
+        Text("\(handle.band + 1)")
+            .font(.caption2.weight(.bold).monospacedDigit())
+            .foregroundStyle(chosen ? Color.wornInk : Color.worn)
+            .frame(width: EqualiserHandles.drawnEdge, height: EqualiserHandles.drawnEdge)
+            .background(Circle().fill(chosen ? Color.worn : Color(.systemBackground)))
+            .overlay(Circle().strokeBorder(Color.worn, lineWidth: 2))
+            .background(Circle().fill(Color.black.opacity(Self.shade)).padding(-1).offset(y: 1))
+            .scaleEffect(held ? 1.25 : 1)
+            .motion(.snappy(duration: 0.15), value: held)
+            .frame(width: handle.reach.width, height: handle.reach.height)
+            .contentShape(.rect)
+            .accessibilityElement()
+            .accessibilityLabel("Band \(handle.band + 1), \(band.filter.label) at \(EqualiserUnits.hertz(band.frequencyHz))")
+            .accessibilityValue(
+                band.filter.usesGain
+                    ? "\(EqualiserUnits.decibels(band.gainDb)), \(EqualiserUnits.q(band.q))"
+                    : EqualiserUnits.q(band.q)
+            )
+            .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { choose() }
+            .accessibilityAdjustableAction { direction in
+                nudge(BandNudge.level(band, up: direction == .increment, limits: limits))
+            }
+            .accessibilityActions {
+                if band.filter.usesGain {
+                    Button("Raise the gain") { nudge(BandNudge.level(band, up: true, limits: limits)) }
+                    Button("Lower the gain") { nudge(BandNudge.level(band, up: false, limits: limits)) }
                 }
+                Button("Raise the frequency") { nudge(BandNudge.frequency(band, up: true, limits: limits)) }
+                Button("Lower the frequency") { nudge(BandNudge.frequency(band, up: false, limits: limits)) }
             }
-            BandValueRow(
-                title: "Frequency",
-                unit: "Hz",
-                value: band.frequencyHz,
-                range: limits.lowestHz...limits.highestHz,
-                stepped: { value, up in EqualiserUnits.tidy(hertz: up ? value * EqualiserUnits.semitone : value / EqualiserUnits.semitone) }
-            ) { hertz in
-                var next = band
-                next.frequencyHz = hertz
-                change(next)
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named(EqualiserGraph.space))
+                    .updating($pressing) { _, state, _ in state = true }
+                    .onChanged { value in
+                        grab()
+                        move(value.translation)
+                    }
+                    .onEnded { value in release(value.translation) }
+            )
+            .onChange(of: pressing) { _, now in
+                if !now { lose() }
             }
-            if band.filter.usesGain {
-                BandValueRow(
-                    title: "Gain",
-                    unit: "dB",
-                    value: band.gainDb,
-                    range: -limits.gainAtMostDb...limits.gainAtMostDb,
-                    stepped: { value, up in EqualiserUnits.tidy(decibels: value + (up ? EqualiserUnits.gainStep : -EqualiserUnits.gainStep)) }
-                ) { gain in
-                    var next = band
-                    next.gainDb = gain
-                    change(next)
-                }
-            }
-            BandValueRow(
-                title: "Q",
-                unit: "",
-                value: band.q,
-                range: limits.qAtLeast...limits.qAtMost,
-                stepped: { value, up in EqualiserUnits.tidy(q: up ? value * EqualiserUnits.qNotch : value / EqualiserUnits.qNotch) }
-            ) { q in
-                var next = band
-                next.q = q
-                change(next)
-            }
-            Button("Delete band", systemImage: "trash", role: .destructive, action: delete)
-        }
+            .position(handle.centre)
     }
 }
 
-struct BandValueRow: View {
-    let title: String
-    let unit: String
-    let value: Float
-    let range: ClosedRange<Float>
-    let stepped: (Float, Bool) -> Float
-    let commit: (Float) -> Void
+struct EqualiserTrace: View, Equatable {
+    let scale: EqualiserScale
+    let decibels: [Float]
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
-            TextField(
-                title,
-                value: Binding(get: { Double(value) }, set: { typed in held(Float(typed)) }),
-                format: .number.precision(.fractionLength(0...2))
+        let tint = Color.worn
+        Canvas { context, _ in
+            guard decibels.count > 1 else { return }
+            context.fill(scale.washed(decibels), with: .color(tint.opacity(0.18)))
+            context.stroke(
+                scale.traced(decibels),
+                with: .color(tint),
+                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
             )
-            .keyboardType(.numbersAndPunctuation)
-            .multilineTextAlignment(.trailing)
-            .monospacedDigit()
-            .frame(maxWidth: 96)
-            if !unit.isEmpty {
-                Text(unit).foregroundStyle(.secondary)
-            }
-            Stepper(title) {
-                held(stepped(value, true))
-            } onDecrement: {
-                held(stepped(value, false))
-            }
-            .labelsHidden()
         }
+        .accessibilityHidden(true)
     }
 
-    private func held(_ chosen: Float) {
-        guard chosen.isFinite else { return }
-        let bounded = min(max(chosen, range.lowerBound), range.upperBound)
-        guard bounded != value else { return }
-        commit(bounded)
+    nonisolated static func == (shown: EqualiserTrace, other: EqualiserTrace) -> Bool {
+        shown.scale == other.scale && shown.decibels == other.decibels
     }
 }
 

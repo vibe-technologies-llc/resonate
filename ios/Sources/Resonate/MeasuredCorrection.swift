@@ -125,30 +125,35 @@ final class MeasuredCorrectionState {
     }
 }
 
-struct MeasuredCorrectionSection: View {
+struct MicrophoneMeasurementView: View {
     private static let documentTag = "\u{0}document"
     private static let fileTypes: [UTType] = [.plainText, .text, .commaSeparatedText, .data]
 
     @Environment(Library.self) private var library
+    @Environment(\.openURL) private var openURL
     @State private var choosingMeasurement = false
     @State private var choosingTarget = false
     @State private var choosingCalibration = false
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let measured = library.features.measured
         let view = measured.view
-        Section {
-            Picker("Fit toward", selection: Binding(get: { Self.tag(of: view.aim) }, set: { Self.choose($0, view, measured) })) {
-                ForEach(view.offers.targets, id: \.name) { target in
-                    Text(target.label).tag(target.name)
+        ThemedForm {
+            Section {
+                Picker(selection: Binding(get: { Self.tag(of: view.aim) }, set: { Self.choose($0, measured) })) {
+                    ForEach(view.offers.targets, id: \.name) { target in
+                        Text(target.label).tag(target.name)
+                    }
+                    if case .document(let name, _) = view.aim {
+                        Text(name).tag(Self.documentTag)
+                    }
+                } label: {
+                    ToolRow(title: "Fit toward", detail: "The response the bands aim for", symbol: "scope")
                 }
-                if case .document(let name, _) = view.aim {
-                    Text(name).tag(Self.documentTag)
+                .disabled(view.fitting)
+                Button { choosingTarget = true } label: {
+                    ToolRow(title: "Choose a target file…", detail: "A response of your own to aim for", symbol: "doc.text")
                 }
-            }
-            .disabled(view.fitting)
-            Button("Choose a target file…", systemImage: "doc.text") { choosingTarget = true }
                 .disabled(view.fitting)
                 .fileImporter(isPresented: $choosingTarget, allowedContentTypes: Self.fileTypes) { result in
                     switch result {
@@ -156,7 +161,13 @@ struct MeasuredCorrectionSection: View {
                     case .failure(let failure): library.report(failure)
                     }
                 }
-            Button(view.fitting ? "Fitting…" : "Fit a measurement…", systemImage: "waveform.path.ecg") { choosingMeasurement = true }
+            } header: {
+                Text("Target")
+            }
+            Section {
+                Button { choosingMeasurement = true } label: {
+                    ToolRow(title: "Fit a measurement…", detail: "AutoEq's CSV or REW's exported text", symbol: "waveform.path.ecg")
+                }
                 .disabled(view.fitting || view.aim == nil)
                 .fileImporter(isPresented: $choosingMeasurement, allowedContentTypes: Self.fileTypes) { result in
                     switch result {
@@ -164,37 +175,62 @@ struct MeasuredCorrectionSection: View {
                     case .failure(let failure): library.report(failure)
                     }
                 }
-            Button(view.sounding ? "Measuring…" : "Measure your room", systemImage: "mic") { measured.measure() }
-                .disabled(view.fitting || view.aim == nil)
-            if view.sounding {
-                Button("Stop", systemImage: "stop.fill", role: .cancel) { measured.stopMeasuring() }
+            } header: {
+                Text("A measurement file")
+            } footer: {
+                if let said = view.said { Text(said) }
             }
-            if let calibration = view.calibration {
-                Button("Forget the calibration · \(calibration.name)", systemImage: "xmark.circle") { measured.forgetCalibration() }
-                    .disabled(view.fitting)
-            } else {
-                Button("Microphone calibration…", systemImage: "doc.text") { choosingCalibration = true }
-                    .disabled(view.fitting)
-                    .fileImporter(isPresented: $choosingCalibration, allowedContentTypes: Self.fileTypes) { result in
-                        switch result {
-                        case .success(let url): measured.calibrate(url)
-                        case .failure(let failure): library.report(failure)
-                        }
+            Section {
+                if view.sounding {
+                    HStack(spacing: 12) {
+                        ProgressView().accessibilityHidden(true)
+                        Text("Measuring…")
+                        Spacer(minLength: 0)
+                        Button("Stop", role: .cancel) { measured.stopMeasuring() }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
                     }
-            }
-            if view.denied {
-                Button("Resonate needs the microphone to hear the sweep. Open Settings", systemImage: "mic.slash") {
-                    if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
+                } else {
+                    Button { measured.measure() } label: {
+                        ToolRow(title: view.fitting ? "Fitting…" : "Measure", detail: "Pauses the music and plays a sweep through the speaker", symbol: "mic")
+                    }
+                    .disabled(view.fitting || view.aim == nil)
                 }
+                if view.denied {
+                    Button {
+                        if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
+                    } label: {
+                        ToolRow(title: "Allow the microphone", detail: "Resonate needs it to hear the sweep. Open Settings", symbol: "mic.slash")
+                    }
+                }
+            } header: {
+                Text("The microphone")
+            } footer: {
+                Text("Hold the iPhone where your ears would be and keep the room quiet while the sweep plays.")
             }
-            if view.fitting {
-                ProgressView().accessibilityLabel("Fitting").frame(maxWidth: .infinity)
+            Section {
+                if let calibration = view.calibration {
+                    Text(calibration.name)
+                    Button("Forget the calibration", systemImage: "xmark.circle") { measured.forgetCalibration() }
+                        .disabled(view.fitting)
+                } else {
+                    Text("None, so the microphone is taken flat")
+                        .foregroundStyle(.secondary)
+                    Button("Choose a calibration…", systemImage: "doc.text") { choosingCalibration = true }
+                        .disabled(view.fitting)
+                        .fileImporter(isPresented: $choosingCalibration, allowedContentTypes: Self.fileTypes) { result in
+                            switch result {
+                            case .success(let url): measured.calibrate(url)
+                            case .failure(let failure): library.report(failure)
+                            }
+                        }
+                }
+            } header: {
+                Text("Microphone calibration")
             }
-        } header: {
-            Text("Measured correction")
-        } footer: {
-            Text(view.said ?? "Fit a few bands to your own frequency-response measurement, as AutoEq's CSV or REW's exported text, toward a target. Measure your room pauses the music, plays a sweep through the speaker and fits what the microphone hears; the microphone is taken flat unless you give it a calibration file.")
         }
+        .navigationTitle("Measure with a microphone")
+        .onDisappear { measured.stopMeasuring() }
     }
 
     private static func tag(of aim: MeasurementAim?) -> String {
@@ -205,7 +241,7 @@ struct MeasuredCorrectionSection: View {
         }
     }
 
-    private static func choose(_ tag: String, _ view: MeasurementView, _ measured: MeasuredCorrectionState) {
+    private static func choose(_ tag: String, _ measured: MeasuredCorrectionState) {
         guard tag != documentTag else { return }
         measured.aim(at: .builtIn(name: tag))
     }

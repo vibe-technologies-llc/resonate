@@ -3,19 +3,33 @@ import ResonateNative
 import SwiftUI
 
 struct ToolRow: View {
+    @ScaledMetric(relativeTo: .body) private var iconColumn: CGFloat = 28
     let title: String
     let detail: String
     let symbol: String
+    var ink: Color?
+    var detailLines = 2
 
     var body: some View {
-        Label {
+        HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.body.weight(.medium))
+                .foregroundStyle(ink.map(AnyShapeStyle.init) ?? AnyShapeStyle(.tint))
+                .frame(width: iconColumn)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    .foregroundStyle(ink ?? Color.primary)
+                    .titleLines(2)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .titleLines(detailLines)
+                }
             }
-        } icon: {
-            Image(systemName: symbol).foregroundStyle(.tint).accessibilityHidden(true)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -106,12 +120,7 @@ struct FoldersView: View {
     @State private var organising: MusicFolder?
 
     var body: some View {
-        ThemedList {
-            Section {
-                Text("Music is read through the folders you grant. Songs you put in Resonate's folder in the Files app are read from On this iPhone.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+        ThemedForm {
             Section {
                 ForEach(library.folderList) { folder in
                     FolderRow(
@@ -124,12 +133,18 @@ struct FoldersView: View {
                     .swipeActions {
                         if folder.id != Folders.local {
                             Button("Remove access", role: .destructive) { removing = folder }
+                                .tint(.red)
                         }
                     }
                 }
+            } footer: {
+                Text("Music is read through the folders you grant. Songs you put in Resonate's folder in the Files app are read from On this iPhone.")
             }
             Section {
-                Button("Add music folder", systemImage: "folder.badge.plus") { navigation.choosingFolder = true }
+                Button { navigation.choosingFolder = true } label: {
+                    ToolRow(title: "Add music folder", detail: "Grant Resonate a folder in Files", symbol: "folder.badge.plus")
+                }
+                RescanRow()
             }
         }
         .navigationTitle("Music folders")
@@ -144,6 +159,32 @@ struct FoldersView: View {
             Button("Remove access", role: .destructive) { library.removeFolder(folder) }
         } message: { _ in
             Text("Your music files stay where they are. Its songs are hidden until you add the folder again.")
+        }
+    }
+}
+
+private struct RescanRow: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let readable = library.folderList.contains(where: \.readable)
+        if library.scanning {
+            HStack(spacing: 14) {
+                ToolRow(title: "Reading your music…", detail: "\(counted(library.scanned, "song")) so far", symbol: "arrow.clockwise")
+                Spacer(minLength: 0)
+                Button("Stop") { library.stopScanning() }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+            }
+        } else {
+            Button { library.rescan() } label: {
+                ToolRow(
+                    title: "Rescan library",
+                    detail: readable ? "Find new and changed music in your folders" : "Add a music folder first",
+                    symbol: "arrow.clockwise"
+                )
+            }
+            .disabled(!readable)
         }
     }
 }

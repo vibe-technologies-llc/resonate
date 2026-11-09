@@ -23,6 +23,10 @@ extension EqualiserFilter {
         }
     }
 
+    public var gainUnused: String {
+        "Not used by \(label.lowercased())"
+    }
+
     public var usesGain: Bool {
         switch self {
         case .peaking, .lowShelf, .highShelf: true
@@ -58,6 +62,7 @@ extension EqualiserCurve {
 public enum EqualiserUnits {
     public static let semitone = Float(pow(2.0, 1.0 / 12.0))
     public static let qNotch = Float(pow(2.0, 1.0 / 6.0))
+    public static let thirdOctave = Float(pow(2.0, 1.0 / 3.0))
     public static let gainStep: Float = 0.5
     public static let addedQ: Float = 1.0
 
