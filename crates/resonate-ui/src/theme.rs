@@ -990,7 +990,8 @@ const LISTEN_WIDTH: f32 = 460.0;
 
 const ORDER_WIDTH: f32 = 264.0;
 
-const WRAPPED_WIDTH: f32 = 620.0;
+const WRAPPED_WIDTH: f32 = 640.0;
+const WRAPPED_STAGE: f32 = 380.0;
 const LISTEN_COVER: f32 = 112.0;
 const PAIRING_TILE: f32 = 176.0;
 const STANDING_MARK: f32 = 40.0;
@@ -1177,6 +1178,7 @@ measures! {
     listen_width => LISTEN_WIDTH,
     order_width => ORDER_WIDTH,
     wrapped_width => WRAPPED_WIDTH,
+    wrapped_stage => WRAPPED_STAGE,
     listen_cover => LISTEN_COVER,
     pairing_tile => PAIRING_TILE,
     standing_mark => STANDING_MARK,

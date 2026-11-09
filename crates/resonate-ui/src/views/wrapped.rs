@@ -1,8 +1,8 @@
 use std::{env, fs, path::PathBuf, sync::Arc, time::SystemTime};
 
 use gpui::{
-    BoxShadow, Context, Div, FontWeight, Role, SharedString, Stateful, div, point, prelude::*, px,
-    relative, rgb, rgba,
+    Background, BoxShadow, Context, Div, FontWeight, Role, SharedString, Stateful, div,
+    linear_color_stop, linear_gradient, point, prelude::*, px, relative, rgb,
 };
 use resonate_core::{
     Calendar,
@@ -12,6 +12,7 @@ use resonate_library::{HistoryKept, Library};
 
 use crate::{
     ResonateApp, clipboard, fonts,
+    icons::Icon,
     models::Notice,
     motion, theme, toast,
     views::{
@@ -24,9 +25,21 @@ use crate::{
     wrapped_card::{self, CardColours},
 };
 
-const DECK_STANDS_BELOW_THE_TOP: f32 = 0.12;
+const DECK_HEIGHT_AT_MOST: f32 = 0.88;
 
-const DECK_HEIGHT_AT_MOST: f32 = 0.84;
+const PROGRESS_THICKNESS: f32 = 3.0;
+
+const WASH_OF_THE_DECK: u8 = 0x2a;
+
+const WASH_REACHES: f32 = 0.55;
+
+const ACTIONS_PARTED_BY: f32 = 16.0;
+
+const RANK_WIDTH: f32 = 20.0;
+
+const TALLIES_STAND_APART: f32 = 8.0;
+
+const FIRST_ROW_WASH: u8 = 0x1f;
 
 const NOTHING_PLAYED: &str = "Nothing has been played yet, so there is no year to review";
 
@@ -219,13 +232,29 @@ impl RootView {
         };
         let slide = deck.slides.get(deck.at).cloned();
 
+        let stage = div()
+            .flex()
+            .flex_col()
+            .justify_center()
+            .h(px(theme::wrapped_stage()))
+            .flex_shrink(1.0)
+            .min_h(px(0.0))
+            .when_some(slide, |stage, slide| {
+                stage.child(motion::faded_in(
+                    slide_drawn(&slide, &deck.review),
+                    ("wrapped-slide", deck.at),
+                    motion::HANDS_OVER,
+                ))
+            });
+
         let card = div()
             .id("wrapped-sheet")
             .dialog(REVIEW_NAME)
             .track_focus(&self.sheet_panels.holding(sheets::WRAPPED_PANEL, cx))
+            .relative()
             .flex()
             .flex_col()
-            .gap_4()
+            .gap_5()
             .w(px(theme::wrapped_width()))
             .max_h(relative(DECK_HEIGHT_AT_MOST))
             .p_6()
@@ -240,48 +269,58 @@ impl RootView {
                 spread_radius: px(0.0),
                 inset: false,
             }])
-            .child(self.wrapped_steps(deck, cx))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .flex_shrink(1.0)
-                    .min_h(px(0.0))
-                    .when_some(slide, |body, slide| {
-                        body.child(motion::faded_in(
-                            slide_drawn(&slide, &deck.review),
-                            ("wrapped-slide", deck.at),
-                            motion::HANDS_OVER,
-                        ))
-                    }),
+                    .absolute()
+                    .inset_0()
+                    .rounded_xl()
+                    .bg(the_deck_ground()),
             )
+            .child(self.wrapped_head(deck, cx))
+            .child(stage)
             .child(kit::rule())
             .child(self.wrapped_foot(deck, cx));
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_start()
-            .justify_center()
-            .pt(relative(DECK_STANDS_BELOW_THE_TOP))
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "wrapped-sheet-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "wrapped-sheet-arrives"))
     }
 
-    fn wrapped_steps(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
-        let last = deck.slides.len().saturating_sub(1);
-        let back = self.a_turn(-1, "wrapped-back", "Back", BACK_HINT, deck.at > 0, cx);
-        let next = self.a_turn(1, "wrapped-next", "Next", NEXT_HINT, deck.at < last, cx);
+    fn wrapped_head(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
+        let count = deck.slides.len();
+        let reading = format!("{} of {count}", deck.at + 1);
+
+        let mut progress = div()
+            .id("wrapped-progress")
+            .read_plainly(&reading)
+            .flex()
+            .flex_1()
+            .items_center()
+            .gap_1();
+        for at in 0..count {
+            let colour = if at <= deck.at {
+                theme::accent()
+            } else {
+                theme::soft_edge()
+            };
+            progress = progress.child(
+                div()
+                    .flex_1()
+                    .h(px(PROGRESS_THICKNESS))
+                    .rounded_full()
+                    .bg(rgb(colour)),
+            );
+        }
 
         div()
             .flex()
             .items_center()
-            .justify_between()
-            .child(back)
-            .child(kit::figure(format!("{} of {}", deck.at + 1, last + 1)))
-            .child(next)
+            .gap_4()
+            .child(progress)
+            .child(kit::figure(reading))
+            .child(self.in_the_pane_ring(
+                kit::icon_button("wrapped-close", Icon::Close, CLOSE_HINT),
+                |this, _, cx| this.close_wrapped(cx),
+                cx,
+            ))
     }
 
     fn a_turn(
@@ -293,12 +332,17 @@ impl RootView {
         takes: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let tone = if slides > 0 {
+            Tone::Primary
+        } else {
+            Tone::Ghost
+        };
         if !takes {
-            return kit::button_when(kit::Press::Greyed, id, None, label, saying, Tone::Ghost);
+            return kit::button_when(kit::Press::Greyed, id, None, label, saying, tone);
         }
 
         self.in_the_pane_ring(
-            kit::button(id, None, label, saying, Tone::Ghost),
+            kit::button(id, None, label, saying, tone),
             move |this, _, cx| {
                 this.turn_the_slide(slides, cx);
             },
@@ -307,6 +351,9 @@ impl RootView {
     }
 
     fn wrapped_foot(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
+        let last = deck.slides.len().saturating_sub(1);
+        let holds_anything = deck.review.holds_anything();
+
         let mut years = div().flex().flex_1().items_center();
         if deck.years.len() > 1 {
             let mut offered = kit::segmented();
@@ -326,7 +373,17 @@ impl RootView {
             }
             years = years.child(offered);
         }
-        let holds_anything = deck.review.holds_anything();
+
+        let back = self.a_turn(-1, "wrapped-back", "Back", BACK_HINT, deck.at > 0, cx);
+        let onward = if deck.at < last {
+            self.a_turn(1, "wrapped-next", "Next", NEXT_HINT, true, cx)
+        } else {
+            self.in_the_pane_ring(
+                kit::button("wrapped-done", None, "Done", CLOSE_HINT, Tone::Primary),
+                |this, _, cx| this.close_wrapped(cx),
+                cx,
+            )
+        };
 
         div()
             .flex()
@@ -341,17 +398,29 @@ impl RootView {
                     cx,
                 ))
                 .child(self.in_the_pane_ring(
-                    kit::button("wrapped-save", None, "Save card", SAVE_HINT, Tone::Outlined),
+                    kit::button("wrapped-save", None, "Save card", SAVE_HINT, Tone::Ghost),
                     |this, _, cx| this.save_the_card(cx),
                     cx,
                 ))
+                .child(
+                    div()
+                        .w(px(1.0))
+                        .h(px(ACTIONS_PARTED_BY))
+                        .mx_1()
+                        .bg(rgb(theme::soft_edge())),
+                )
             })
-            .child(self.in_the_pane_ring(
-                kit::button("wrapped-close", None, "Close", CLOSE_HINT, Tone::Ghost),
-                |this, _, cx| this.close_wrapped(cx),
-                cx,
-            ))
+            .child(back)
+            .child(onward)
     }
+}
+
+fn the_deck_ground() -> Background {
+    linear_gradient(
+        160.0,
+        linear_color_stop(theme::tinted(theme::accent(), WASH_OF_THE_DECK), 0.0),
+        linear_color_stop(theme::tinted(theme::accent(), 0x00), WASH_REACHES),
+    )
 }
 
 fn named_file(path: &std::path::Path) -> String {
@@ -377,7 +446,8 @@ fn slide_drawn(slide: &Slide, review: &YearReview) -> Stateful<Div> {
         .gap_3()
         .min_h(px(0.0))
         .overflow_y_scroll()
-        .child(kit::eyebrow(slide.eyebrow.clone()))
+        .when(says_little, |body| body.items_center().text_center())
+        .child(kit::eyebrow(slide.eyebrow.clone()).text_color(rgb(theme::accent())))
         .child(
             div()
                 .id("wrapped-headline")
@@ -398,7 +468,10 @@ fn slide_drawn(slide: &Slide, review: &YearReview) -> Stateful<Div> {
                     .child(SharedString::from(detail)),
             )
         })
-        .when(tallied, |body| body.child(tallies_drawn(review)))
+        .when(tallied, |body| {
+            body.child(div().h(px(TALLIES_STAND_APART)))
+                .child(tallies_drawn(review))
+        })
         .when(!slide.rows.is_empty(), |body| {
             body.child(rows_drawn(&slide.rows))
         })
@@ -426,8 +499,11 @@ fn tallies_drawn(review: &YearReview) -> Stateful<Div> {
                 .read_plainly(&format!("{named}: {reading}"))
                 .flex_1()
                 .min_w(px(0.0))
+                .items_center()
                 .gap_1()
                 .p_3()
+                .bg(rgb(theme::raised()))
+                .border_color(rgb(theme::soft_edge()))
                 .child(kit::eyebrow(named))
                 .child(
                     kit::figure(reading)
@@ -447,7 +523,7 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
         .spoken_as(Role::List)
         .flex()
         .flex_col()
-        .gap_1p5();
+        .gap_0p5();
     for (at, row) in rows.iter().enumerate() {
         let said = row.by.as_ref().map_or_else(
             || format!("{}, {}", row.name, row.figure),
@@ -462,7 +538,25 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(kit::figure((at + 1).to_string()))
+                .px_2()
+                .py_1p5()
+                .rounded_lg()
+                .when(at == 0, |row| {
+                    row.bg(theme::tinted(theme::accent(), FIRST_ROW_WASH))
+                })
+                .child(
+                    div()
+                        .w(px(RANK_WIDTH))
+                        .flex_none()
+                        .text_size(px(theme::text_base()))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(rgb(if at == 0 {
+                            theme::accent()
+                        } else {
+                            theme::faint()
+                        }))
+                        .child(SharedString::from((at + 1).to_string())),
+                )
                 .child(
                     div()
                         .flex()
