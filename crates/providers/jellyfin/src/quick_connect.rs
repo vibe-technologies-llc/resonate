@@ -155,7 +155,7 @@ impl QuickConnect {
         approving: &Approving,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Option<SignedIn>> {
-        let asking = self.jellyfin.clone().as_device(&approving.device);
+        let asking = self.jellyfin.clone().issued_to(&approving.device);
         let until = approving.began + self.lapses_after;
         loop {
             if cancelled() {
@@ -220,11 +220,12 @@ impl QuickConnect {
 
     fn denied_where_refused(&self, error: Error) -> Error {
         match error {
-            Error::Refused { status, .. } if matches!(status, UNAUTHORIZED | FORBIDDEN) => {
-                Error::AuthorizationDenied {
-                    provider: self.jellyfin.source.clone(),
-                }
-            }
+            Error::Refused {
+                status: UNAUTHORIZED | FORBIDDEN,
+                ..
+            } => Error::AuthorizationDenied {
+                provider: self.jellyfin.source.clone(),
+            },
             error => error,
         }
     }

@@ -187,7 +187,7 @@ impl Jellyfin {
         }
     }
 
-    fn as_device(mut self, device: &str) -> Self {
+    fn issued_to(mut self, device: &str) -> Self {
         self.device = Arc::from(device);
         self
     }

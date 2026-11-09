@@ -268,6 +268,9 @@ pub enum SettingKey {
     Jellyfin,
     JellyfinUser,
     JellyfinPassword,
+    JellyfinToken,
+    JellyfinUserId,
+    JellyfinDevice,
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
@@ -299,7 +302,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 127] = [
+    pub const ALL: [Self; 130] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -399,6 +402,9 @@ impl SettingKey {
         Self::Jellyfin,
         Self::JellyfinUser,
         Self::JellyfinPassword,
+        Self::JellyfinToken,
+        Self::JellyfinUserId,
+        Self::JellyfinDevice,
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
@@ -537,6 +543,9 @@ pub enum Setting {
     Jellyfin(String),
     JellyfinUser(String),
     JellyfinPassword(String),
+    JellyfinToken(String),
+    JellyfinUserId(String),
+    JellyfinDevice(String),
     TidalClientId(String),
     TidalClientSecret(String),
     TidalRefreshToken(String),
@@ -675,6 +684,9 @@ impl Setting {
             Self::Jellyfin(_) => SettingKey::Jellyfin,
             Self::JellyfinUser(_) => SettingKey::JellyfinUser,
             Self::JellyfinPassword(_) => SettingKey::JellyfinPassword,
+            Self::JellyfinToken(_) => SettingKey::JellyfinToken,
+            Self::JellyfinUserId(_) => SettingKey::JellyfinUserId,
+            Self::JellyfinDevice(_) => SettingKey::JellyfinDevice,
             Self::TidalClientId(_) => SettingKey::TidalClientId,
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
@@ -729,6 +741,9 @@ pub struct Online {
     pub jellyfin: String,
     pub jellyfin_user: String,
     pub jellyfin_password: String,
+    pub jellyfin_token: String,
+    pub jellyfin_user_id: String,
+    pub jellyfin_device: String,
     pub tidal_client_id: String,
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
@@ -819,6 +834,9 @@ impl fmt::Debug for Online {
             jellyfin,
             jellyfin_user,
             jellyfin_password,
+            jellyfin_token,
+            jellyfin_user_id,
+            jellyfin_device,
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
@@ -855,6 +873,9 @@ impl fmt::Debug for Online {
             .field("jellyfin", jellyfin)
             .field("jellyfin_user", jellyfin_user)
             .field("jellyfin_password", &withheld(jellyfin_password))
+            .field("jellyfin_token", &withheld(jellyfin_token))
+            .field("jellyfin_user_id", jellyfin_user_id)
+            .field("jellyfin_device", jellyfin_device)
             .field("tidal_client_id", tidal_client_id)
             .field("tidal_client_secret", &withheld(tidal_client_secret))
             .field("tidal_refresh_token", &withheld(tidal_refresh_token))

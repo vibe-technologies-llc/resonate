@@ -1486,6 +1486,16 @@ pub enum Sub {
     Tidal,
 
     #[command(
+        about = "Sign in to the Jellyfin server jellyfin names with Quick Connect: print a code to \
+                 approve in a Jellyfin app already signed in, wait for it and keep the session in \
+                 the settings file in place of the password"
+    )]
+    Jellyfin {
+        #[arg(long, help = "Forget the kept session instead")]
+        forget: bool,
+    },
+
+    #[command(
         about = "Sign in to Spotify with an app you registered at developer.spotify.com: print \
                  the address to approve it at, wait for the approval and keep the refresh token \
                  in the settings file. Needs spotify-client-id set, and the app listing \

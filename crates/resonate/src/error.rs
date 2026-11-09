@@ -104,6 +104,9 @@ pub enum ConfigKey {
     Jellyfin,
     JellyfinUser,
     JellyfinPassword,
+    JellyfinToken,
+    JellyfinUserId,
+    JellyfinDevice,
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
@@ -196,7 +199,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 132] = [
+    pub const ALL: [Self; 135] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -291,6 +294,9 @@ impl ConfigKey {
         Self::Jellyfin,
         Self::JellyfinUser,
         Self::JellyfinPassword,
+        Self::JellyfinToken,
+        Self::JellyfinUserId,
+        Self::JellyfinDevice,
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
@@ -427,6 +433,9 @@ impl ConfigKey {
             Self::Jellyfin => "jellyfin",
             Self::JellyfinUser => "jellyfin-user",
             Self::JellyfinPassword => "jellyfin-password",
+            Self::JellyfinToken => "jellyfin-token",
+            Self::JellyfinUserId => "jellyfin-user-id",
+            Self::JellyfinDevice => "jellyfin-device",
             Self::TidalClientId => "tidal-client-id",
             Self::TidalClientSecret => "tidal-client-secret",
             Self::TidalRefreshToken => "tidal-refresh-token",
@@ -923,6 +932,20 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error("the TIDAL sign-in was cancelled before it was approved")]
     SignInCancelled,
+
+    #[cfg(feature = "online")]
+    #[error("jellyfin is not set in the settings, and Quick Connect needs the server it names")]
+    NoJellyfinServer,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "this server has Quick Connect off (or is Emby); sign in with jellyfin-user and jellyfin-password"
+    )]
+    QuickConnectOff,
+
+    #[cfg(feature = "online")]
+    #[error("the Jellyfin sign-in was cancelled before the code was approved")]
+    JellyfinSignInCancelled,
 
     #[cfg(feature = "online")]
     #[error(

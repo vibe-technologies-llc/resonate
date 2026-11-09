@@ -240,6 +240,9 @@ pub struct Config {
     pub jellyfin: Option<String>,
     pub jellyfin_user: Option<String>,
     pub jellyfin_password: Option<String>,
+    pub jellyfin_token: Option<String>,
+    pub jellyfin_user_id: Option<String>,
+    pub jellyfin_device: Option<String>,
     pub tidal_client_id: Option<String>,
     pub tidal_client_secret: Option<String>,
     pub tidal_refresh_token: Option<String>,
@@ -389,6 +392,9 @@ impl fmt::Debug for Config {
             jellyfin,
             jellyfin_user,
             jellyfin_password,
+            jellyfin_token,
+            jellyfin_user_id,
+            jellyfin_device,
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
@@ -524,6 +530,9 @@ impl fmt::Debug for Config {
             .field("jellyfin", jellyfin)
             .field("jellyfin_user", jellyfin_user)
             .field("jellyfin_password", &withheld(jellyfin_password.as_ref()))
+            .field("jellyfin_token", &withheld(jellyfin_token.as_ref()))
+            .field("jellyfin_user_id", jellyfin_user_id)
+            .field("jellyfin_device", jellyfin_device)
             .field("tidal_client_id", tidal_client_id)
             .field(
                 "tidal_client_secret",
@@ -1241,6 +1250,9 @@ impl Config {
             ConfigKey::JellyfinPassword => {
                 config.jellyfin_password = given(at.string(value)?);
             }
+            ConfigKey::JellyfinToken => config.jellyfin_token = given(at.string(value)?),
+            ConfigKey::JellyfinUserId => config.jellyfin_user_id = given(at.string(value)?),
+            ConfigKey::JellyfinDevice => config.jellyfin_device = given(at.string(value)?),
             ConfigKey::TidalClientId => config.tidal_client_id = given(at.string(value)?),
             ConfigKey::TidalClientSecret => {
                 config.tidal_client_secret = given(at.string(value)?);

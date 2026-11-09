@@ -19,6 +19,8 @@ mod followed;
 mod gaming;
 mod info;
 mod input;
+#[cfg(feature = "online")]
+mod jellyfin;
 mod kinship;
 mod lastfm;
 mod lasting;
@@ -364,6 +366,12 @@ fn run() -> Result<()> {
                 providers::sign_in_to_tidal(&config, &settings)
             })
         }
+        #[cfg(feature = "online")]
+        Some(Sub::Jellyfin { forget }) => {
+            jellyfin::sign_in(&config, &settings_path(&cli)?, *forget)
+        }
+        #[cfg(not(feature = "online"))]
+        Some(Sub::Jellyfin { .. }) => Err(Error::NoSignIn),
         Some(Sub::Spotify(args)) => {
             let settings = settings_path(&cli)?;
             reloading::delivering(&settings, Some(Reloadable::Spotify), || {
@@ -3220,6 +3228,9 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 jellyfin: config.jellyfin.clone().unwrap_or_default(),
                 jellyfin_user: config.jellyfin_user.clone().unwrap_or_default(),
                 jellyfin_password: config.jellyfin_password.clone().unwrap_or_default(),
+                jellyfin_token: config.jellyfin_token.clone().unwrap_or_default(),
+                jellyfin_user_id: config.jellyfin_user_id.clone().unwrap_or_default(),
+                jellyfin_device: config.jellyfin_device.clone().unwrap_or_default(),
                 tidal_client_id: config.tidal_client_id.clone().unwrap_or_default(),
                 tidal_client_secret: config.tidal_client_secret.clone().unwrap_or_default(),
                 tidal_refresh_token: config.tidal_refresh_token.clone().unwrap_or_default(),

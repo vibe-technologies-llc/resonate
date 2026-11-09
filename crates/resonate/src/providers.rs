@@ -143,7 +143,7 @@ fn jellyfin_of(made: &Made, server: &JellyfinServer) -> Arc<Jellyfin> {
             url: server.url.clone(),
             user: server.user.clone(),
             password: server.password.clone(),
-            kept: None,
+            kept: server.kept.clone(),
         })
     })
 }
@@ -281,6 +281,11 @@ impl Accounts {
                 config.jellyfin.as_deref(),
                 config.jellyfin_user.as_deref(),
                 config.jellyfin_password.as_deref(),
+                [
+                    config.jellyfin_token.as_deref(),
+                    config.jellyfin_user_id.as_deref(),
+                    config.jellyfin_device.as_deref(),
+                ],
             ),
             tidal: tidal(
                 config.tidal_client_id.as_deref(),
@@ -316,6 +321,11 @@ impl Accounts {
                 Some(&online.jellyfin),
                 Some(&online.jellyfin_user),
                 Some(&online.jellyfin_password),
+                [
+                    Some(&online.jellyfin_token),
+                    Some(&online.jellyfin_user_id),
+                    Some(&online.jellyfin_device),
+                ],
             ),
             tidal: tidal(
                 Some(&online.tidal_client_id),
@@ -370,6 +380,7 @@ struct JellyfinServer {
     url: String,
     user: String,
     password: String,
+    kept: Option<resonate_jellyfin::KeptSession>,
 }
 
 #[cfg(feature = "online")]
@@ -379,6 +390,7 @@ impl std::fmt::Debug for JellyfinServer {
             .field("url", &self.url)
             .field("user", &self.user)
             .field("password", &"<withheld>")
+            .field("kept", &self.kept)
             .finish()
     }
 }
@@ -388,11 +400,31 @@ fn jellyfin(
     url: Option<&str>,
     user: Option<&str>,
     password: Option<&str>,
+    [token, user_id, device]: [Option<&str>; 3],
 ) -> Option<JellyfinServer> {
+    let url = given(url)?;
+    let kept =
+        given(token)
+            .zip(given(user_id))
+            .zip(given(device))
+            .map(|((token, user), device)| resonate_jellyfin::KeptSession {
+                token,
+                user,
+                device,
+            });
+    if kept.is_some() {
+        return Some(JellyfinServer {
+            url,
+            user: given(user).unwrap_or_default(),
+            password: String::new(),
+            kept,
+        });
+    }
     Some(JellyfinServer {
-        url: given(url)?,
+        url,
         user: given(user)?,
         password: given(password)?,
+        kept: None,
     })
 }
 
@@ -806,6 +838,35 @@ mod tests {
             ..whole
         };
         assert!(!schemes(&offline).contains(&"jellyfin".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_jellyfin_account_is_ready_with_a_password_or_a_whole_kept_session() {
+        let ready = |config: &Config| Accounts::of(config).jellyfin.is_some();
+        let address = Config {
+            jellyfin: Some("http://music.local:8096".to_owned()),
+            ..Config::default()
+        };
+        let kept = Config {
+            jellyfin_token: Some("token".to_owned()),
+            jellyfin_user_id: Some("0a1b".to_owned()),
+            jellyfin_device: Some("device".to_owned()),
+            ..address.clone()
+        };
+        let half_kept = Config {
+            jellyfin_device: None,
+            ..kept.clone()
+        };
+
+        assert!(!ready(&address));
+        assert!(ready(&kept));
+        assert!(!ready(&half_kept));
+        assert!(
+            Accounts::of(&kept)
+                .jellyfin
+                .is_some_and(|server| server.kept.is_some())
+        );
     }
 
     #[cfg(feature = "online")]

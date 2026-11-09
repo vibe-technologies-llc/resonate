@@ -331,6 +331,17 @@ String. The Jellyfin or Emby account. Default: none.
 .B jellyfin-password
 String, secret. The Jellyfin or Emby account's password, sent only to sign in. Default: none.
 .TP
+.B jellyfin-token
+String, secret. The access token a Quick Connect sign-in (resonate jellyfin, or the
+Accounts settings) was issued; with jellyfin-user-id and jellyfin-device it stands in place of
+jellyfin-password, and typing a password lets it go. Default: none.
+.TP
+.B jellyfin-user-id
+String. The Jellyfin user the kept token signs in as. Default: none.
+.TP
+.B jellyfin-device
+String. The device id the kept token was issued to. Default: none.
+.TP
 .B tidal-client-id
 String. The client TIDAL's sign-in needs. Default: none.
 .TP
