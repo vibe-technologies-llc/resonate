@@ -20,23 +20,8 @@ use crate::{
         root::RootView,
         settings::{Rows, action},
     },
+    words,
 };
-
-const ACCOUNT_NOTE: &str = "Register an app at developer.spotify.com and give its client ID here, \
-                            with http://127.0.0.1:43879/spotify among the app's redirect URIs. \
-                            The sign-in happens in your browser and only a refresh token is kept, \
-                            in the settings file. Spotify lets an app in development mode read \
-                            only the playlists the account owns or collaborates on, so a playlist \
-                            it merely follows is read from its public page: the first hundred \
-                            songs at most, and not at all where it is private.";
-const SIGNED_IN_NOTE: &str = "Follow keeps the liked songs and every playlist in step, each a \
-                              playlist here, read again every six hours; Move copies them once \
-                              and follows nothing. A song the library lacks is wanted, found by \
-                              its ISRC or a strict search, and one neither names is left out.";
-const OFFLINE: &str = "Spotify is signed in to only while Online is on";
-const NO_CLIENT: &str = "Give the client ID of your Spotify app first";
-const SIGNED_IN: &str = "Signed in to Spotify";
-const NO_ACCOUNT: &str = "Sign in to Spotify again: it no longer knows this account";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SpotifySigning {
@@ -63,17 +48,17 @@ impl Default for SpotifyState {
     }
 }
 
-const fn turned_away(failure: SpotifySignInFailure) -> &'static str {
+fn turned_away(failure: SpotifySignInFailure) -> &'static str {
     match failure {
         SpotifySignInFailure::NoPlaceToComeBack => {
-            "The sign-in could not listen for its answer: is another sign-in open?"
+            words::settings_spotify::the_sign_in_could_not_listen()
         }
-        SpotifySignInFailure::Lapsed => "The Spotify sign-in was not approved in time",
-        SpotifySignInFailure::Denied => "Spotify was told not to sign in",
-        SpotifySignInFailure::Refused => {
-            "Spotify refused the sign-in: is the redirect listed on the app?"
+        SpotifySignInFailure::Lapsed => words::settings_spotify::the_spotify_sign_in_was_not(),
+        SpotifySignInFailure::Denied => words::settings_spotify::spotify_was_told_not_to_sign(),
+        SpotifySignInFailure::Refused => words::settings_spotify::spotify_refused_the_sign_in_is(),
+        SpotifySignInFailure::Unreached => {
+            words::settings_spotify::spotify_could_not_be_reached_to()
         }
-        SpotifySignInFailure::Unreached => "Spotify could not be reached to sign in",
     }
 }
 
@@ -83,7 +68,11 @@ pub(crate) fn field(
     cx: &mut Context<RootView>,
 ) -> Entity<Field> {
     let field = cx.new(|cx| {
-        let mut field = Field::new("The client ID of your app, then press enter", window, cx);
+        let mut field = Field::new(
+            words::settings_spotify::the_client_id_of_your_app(),
+            window,
+            cx,
+        );
         field.hold(online.spotify_client_id.clone(), cx);
         field
     });
@@ -104,9 +93,9 @@ impl RootView {
             global.online.spotify_client_id = given.clone();
         });
         let said = if given.is_empty() {
-            "No Spotify app is named: no account is offered or asked"
+            words::settings_spotify::no_spotify_app_is_named_no()
         } else {
-            "Kept for signing in to Spotify"
+            words::settings_spotify::kept_for_signing_in_to_spotify()
         };
         self.store(&Setting::SpotifyClientId(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -173,12 +162,18 @@ impl RootView {
     pub(crate) fn sign_in_to_spotify(&mut self, cx: &mut Context<Self>) {
         let app = cx.global::<ResonateApp>();
         let Some(signs_in) = app.spotify.clone().filter(|_| app.online.enabled) else {
-            self.report(Notice::Trouble(OFFLINE.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_spotify::offline().to_owned()),
+                cx,
+            );
             return;
         };
         let client_id = app.online.spotify_client_id.trim().to_owned();
         if client_id.is_empty() {
-            self.report(Notice::Trouble(NO_CLIENT.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_spotify::no_client().to_owned()),
+                cx,
+            );
             return;
         }
 
@@ -231,7 +226,10 @@ impl RootView {
                     global.online.spotify_refresh_token = token.clone();
                 });
                 self.store(&Setting::SpotifyRefreshToken(token), cx);
-                self.report(Notice::Done(SIGNED_IN.to_owned()), cx);
+                self.report(
+                    Notice::Done(words::settings_spotify::signed_in().to_owned()),
+                    cx,
+                );
             }
             Ok(None) => {}
             Err(failure) => {
@@ -265,14 +263,16 @@ impl RootView {
                         .update(cx, |library, cx| library.reload_playlists(cx));
                     toast::tell(
                         Notice::Done(
-                            "Signed out of Spotify: the playlists keep their rows and no longer \
-                             follow it"
+                            words::settings_spotify::signed_out_of_spotify_the_playlists()
                                 .to_owned(),
                         ),
                         cx,
                     );
                 }
-                Err(error) => toast::tell(toast::could_not("let the account go", &error), cx),
+                Err(error) => toast::tell(
+                    toast::could_not(words::settings_spotify::let_the_account_go(), &error),
+                    cx,
+                ),
             });
         })
         .detach();
@@ -283,7 +283,10 @@ impl RootView {
             return;
         }
         let Some((library, reference)) = self.library.read(cx).follows_links() else {
-            self.report(Notice::Trouble(OFFLINE.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_spotify::offline().to_owned()),
+                cx,
+            );
             return;
         };
         self.spotify_state.reading = true;
@@ -301,7 +304,10 @@ impl RootView {
                     Err(Error::Refused {
                         op: LookupOp::SpotifyAccount,
                         ..
-                    }) => this.report(Notice::Trouble(NO_ACCOUNT.to_owned()), cx),
+                    }) => this.report(
+                        Notice::Trouble(words::settings_spotify::no_account().to_owned()),
+                        cx,
+                    ),
                     followed => this.followed_the_account(followed, upkeep, cx),
                 }
                 cx.notify();
@@ -330,7 +336,7 @@ impl RootView {
         let reading = self.spotify_state.reading;
 
         let body = kit::rows().child(kit::field(
-            "Client ID",
+            words::settings_spotify::client_id(),
             self.text_field(
                 "spotify-client-id",
                 &self.spotify_client,
@@ -345,9 +351,9 @@ impl RootView {
                         .child(self.spotify_button(
                             "spotify-follow",
                             if reading {
-                                "Reading the account…"
+                                words::settings_spotify::reading_the_account()
                             } else {
-                                "Follow the account"
+                                words::settings_spotify::follow_the_account()
                             },
                             Icon::Link,
                             !reachable || reading,
@@ -356,7 +362,7 @@ impl RootView {
                         ))
                         .child(self.spotify_button(
                             "spotify-move",
-                            "Move to Resonate once",
+                            words::settings_spotify::move_to_resonate_once(),
                             Icon::Download,
                             !reachable || reading,
                             |this, _, cx| this.read_the_spotify_account(Upkeep::Once, cx),
@@ -364,21 +370,21 @@ impl RootView {
                         ))
                         .child(self.spotify_button(
                             "spotify-sign-out",
-                            "Sign out of Spotify",
+                            words::settings_spotify::sign_out_of_spotify(),
                             Icon::Close,
                             false,
                             |this, _, cx| this.sign_out_of_spotify(cx),
                             cx,
                         )),
                 )
-                .note(SIGNED_IN_NOTE)
-                .note(ACCOUNT_NOTE);
+                .note(words::settings_spotify::signed_in_note())
+                .note(words::settings_spotify::account_note());
         }
 
         let signing: Div = match self.spotify_state.shown.clone() {
             SpotifySigning::Idle => kit::action_row().child(self.spotify_button(
                 "spotify-sign-in",
-                "Sign in to Spotify",
+                words::settings_spotify::sign_in_to_spotify(),
                 Icon::Link,
                 !reachable || !client_given,
                 |this, _, cx| this.sign_in_to_spotify(cx),
@@ -386,7 +392,7 @@ impl RootView {
             )),
             SpotifySigning::Asking => kit::action_row().child(self.spotify_button(
                 "spotify-sign-in",
-                "Opening the sign-in…",
+                words::settings_spotify::opening_the_sign_in(),
                 Icon::Link,
                 true,
                 |_, _, _| {},
@@ -395,7 +401,7 @@ impl RootView {
             SpotifySigning::Waiting(address) => kit::action_row()
                 .child(self.spotify_button(
                     "spotify-open-page",
-                    "Open the page again",
+                    words::settings_spotify::open_the_page_again(),
                     Icon::Globe,
                     false,
                     move |_, _, cx| cx.open_url(&address),
@@ -403,13 +409,14 @@ impl RootView {
                 ))
                 .child(self.spotify_button(
                     "spotify-stop-sign-in",
-                    "Stop",
+                    words::settings_spotify::stop(),
                     Icon::Stop,
                     false,
                     |this, _, cx| this.stop_signing_in_to_spotify(cx),
                     cx,
                 )),
         };
-        body.child(signing).note(ACCOUNT_NOTE)
+        body.child(signing)
+            .note(words::settings_spotify::account_note())
     }
 }

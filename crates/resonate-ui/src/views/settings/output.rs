@@ -18,77 +18,22 @@ use crate::{
         settings::{Choice, Rows, note, switch_row},
         spoken,
     },
+    words,
 };
 
 const SECONDS_A_MINUTE: u64 = 60;
 
-const NO_SINKS: &str = concat!("No sinks are present in ", sound_system!(), ".");
-
-const BLUETOOTH_NOTE: &str = concat!(
-    "Experimental, and only for a device ",
-    sound_system!(),
-    " names as Bluetooth. It spends the headphones' battery to keep their radio up through a \
-     pause."
-);
-
-const DEVICE_NOTE: &str = "A device chosen here is played through whatever the desktop routes \
-                           other sound to; following the system default moves with the \
-                           desktop's own choice.";
-
-const RENDERERS_NOTE: &str = "Looking asks the local network every minute for UPnP and DLNA \
-                              renderers (a streamer, a networked amplifier) and browses it for \
-                              Google Cast receivers (a Chromecast, a smart speaker), and lists \
-                              each one beside the devices above. Off, nothing is sent to the \
-                              network.";
-
-const FLAC_RENDERERS_NOTE: &str = "A renderer switched on here is sent FLAC at 176.4 and 192 kHz as \
-                                   well, which one that states no rates is otherwise not. Switch \
-                                   it on only if it decodes them: a renderer that cannot play a \
-                                   stream goes silent rather than saying so. Read when the \
-                                   renderer is next found, so from the next start.";
-
-const NO_RENDERERS_TO_NAME: &str = "No UPnP renderer is listed. Look for renderers on the \
-                                    network above, and each one found can be named here.";
-
-const NOT_ON_THE_NETWORK: &str = "Not on the network now";
-
-const AWAY: &str = "The device named in the settings file is not in the graph, so the system \
-                    default is playing until it appears.";
-
-const DOP_WARNING: &str = "A DAC that does not decode DoP plays it as full-scale white noise. \
-                           Turn it on only for hardware you know takes it.";
-
-const UNADVERTISED: &str = "Advertises no format of its own";
-
-const ROUTED: &str = concat!("Whatever ", sound_system!(), " routes to at the time");
-
-const ROUTED_NOW: &str = concat!("Whatever ", sound_system!(), " routes to, which is");
-
-const UNPLUGGED: &str = "Unplugged";
-
-const DEFAULT: &str = "Default";
-
-const IN_USE: &str = "In use";
-
-const CONVERTS: &str = "Converts";
-
-const FOLLOW: &str = "Follow the system default";
-
-const ON_THE_HARDWARE: &str = "Volume on the hardware";
-
-const IN_SOFTWARE: &str = "Volume in software";
-
 const OR: &str = ", ";
 
 fn known_as(sink: &SinkInfo) -> String {
-    format!("The graph knows it as {}", sink.name)
+    words::settings_output::known_as(sink.name.to_string())
 }
 
 fn sink_spoken(routed: &[String], formats: &[String]) -> String {
     let takes = if formats.is_empty() {
-        UNADVERTISED.to_owned()
+        words::settings_output::unadvertised().to_owned()
     } else {
-        format!("Takes {}", formats.join(", "))
+        words::settings_output::takes(formats.join(", "))
     };
 
     routed
@@ -101,8 +46,8 @@ fn sink_spoken(routed: &[String], formats: &[String]) -> String {
 
 fn routes_to(sinks: &[SinkInfo]) -> String {
     sinks.iter().find(|sink| sink.is_default).map_or_else(
-        || ROUTED.to_owned(),
-        |sink| format!("{ROUTED_NOW} {} now", sink.description),
+        || words::settings_output::routed(sound_system!()),
+        |sink| words::settings_output::routed_now(&sink.description, sound_system!()),
     )
 }
 
@@ -133,8 +78,10 @@ fn unplugged(sink: &SinkInfo) -> bool {
 fn volume_of(sink: &SinkInfo) -> Option<String> {
     match sink.port.as_ref()?.hardware_volume {
         HardwareVolume::Unsaid => None,
-        HardwareVolume::Yes | HardwareVolume::Always => Some(ON_THE_HARDWARE.to_owned()),
-        HardwareVolume::No => Some(IN_SOFTWARE.to_owned()),
+        HardwareVolume::Yes | HardwareVolume::Always => {
+            Some(words::settings_output::on_the_hardware().to_owned())
+        }
+        HardwareVolume::No => Some(words::settings_output::in_software().to_owned()),
     }
 }
 
@@ -158,7 +105,7 @@ fn rates_of(sink: &SinkInfo) -> Option<String> {
         .map(SampleRate::kilohertz)
         .collect();
 
-    (!offered.is_empty()).then(|| format!("{} kHz", offered.join(OR)))
+    (!offered.is_empty()).then(|| words::settings_output::kilohertz(offered.join(OR)))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,26 +133,20 @@ impl Choice for SourceRate {
 
     fn label(self) -> &'static str {
         match self {
-            Self::MatchTheFile => "Match the file",
-            Self::FollowTheGraph => "Follow the graph",
+            Self::MatchTheFile => words::settings_output::match_the_file(),
+            Self::FollowTheGraph => words::settings_output::follow_the_graph(),
         }
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::new_static(match self {
+        match self {
             Self::MatchTheFile => {
-                "The stream opens at the file's own rate wherever the device takes it, so a \
-                 44.1 kHz album reaches a DAC untouched rather than resampled to 48 kHz."
+                SharedString::new_static(words::settings_output::the_stream_opens_at_the_files())
             }
-            Self::FollowTheGraph => {
-                concat!(
-                    "The stream opens at the rate ",
-                    sound_system!(),
-                    " is already running at, and a file at any other rate is resampled here, \
-                     with the filter chosen under Processing."
-                )
-            }
-        })
+            Self::FollowTheGraph => SharedString::from(
+                words::settings_output::following_the_graph_meaning(sound_system!()),
+            ),
+        }
     }
 }
 
@@ -234,22 +175,15 @@ impl Choice for GraphRate {
 
     fn label(self) -> &'static str {
         match self {
-            Self::AskToSwitch => "Ask the graph to switch",
-            Self::LeaveItToTheDaemon => "Leave it to the daemon",
+            Self::AskToSwitch => words::settings_output::ask_the_graph_to_switch(),
+            Self::LeaveItToTheDaemon => words::settings_output::leave_it_to_the_daemon(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::AskToSwitch => {
-                "The stream asks PipeWire to run the whole graph at its rate while it plays, so \
-                 nothing between here and the device resamples it. Other sounds playing at the \
-                 same time are resampled to match instead."
-            }
-            Self::LeaveItToTheDaemon => {
-                "PipeWire keeps the rate it chose, and anything it cannot take as it stands is \
-                 converted, here or by the daemon."
-            }
+            Self::AskToSwitch => words::settings_output::the_stream_asks_pipewire_to_run(),
+            Self::LeaveItToTheDaemon => words::settings_output::pipewire_keeps_the_rate_it_chose(),
         })
     }
 }
@@ -267,9 +201,9 @@ impl Choice for BufferDepth {
 
     fn label(self) -> &'static str {
         match self.0.as_millis() {
-            100 => "100 ms",
-            250 => "250 ms",
-            500 => "500 ms",
+            100 => words::settings_output::n_100_ms(),
+            250 => words::settings_output::n_250_ms(),
+            500 => words::settings_output::n_500_ms(),
             _ => "1 s",
         }
     }
@@ -280,25 +214,18 @@ impl Choice for BufferDepth {
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self.0.as_millis() {
-            100 => {
-                "A volume or equaliser change is heard almost at once, but a busy machine has \
-                 the least room before the sound breaks up."
-            }
-            250 => "Quick to answer, with room for a moment's load on the machine.",
-            500 => {
-                "Room for a busy machine or a slow disc without a break in the sound; a volume \
-                 change is still heard within half a second."
-            }
-            _ => {
-                "The most room for a busy machine or a network share, at the cost of up to a \
-                 second before a volume or equaliser change is heard."
-            }
+            100 => words::settings_output::a_volume_or_equaliser_change_is(),
+            250 => words::settings_output::quick_to_answer_with_room_for(),
+            500 => words::settings_output::room_for_a_busy_machine_or(),
+            _ => words::settings_output::the_most_room_for_a_busy(),
         })
     }
 }
 
 fn in_milliseconds(held: Duration) -> SharedString {
-    SharedString::from(format!("{} ms", held.as_millis()))
+    SharedString::from(words::settings_output::milliseconds(
+        held.as_millis().to_string(),
+    ))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -315,9 +242,9 @@ impl Choice for LeadIn {
 
     fn label(self) -> &'static str {
         match self.0.as_millis() {
-            250 => "250 ms",
-            500 => "500 ms",
-            750 => "750 ms",
+            250 => words::settings_output::n_250_ms(),
+            500 => words::settings_output::n_500_ms(),
+            750 => words::settings_output::n_750_ms(),
             1_000 => "1 s",
             _ => "1.5 s",
         }
@@ -328,11 +255,7 @@ impl Choice for LeadIn {
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::from(format!(
-            "A stream that starts after the link has slept opens on {} of silence before the \
-             track. Raise it if the first words are still cut, lower it if the wait is felt.",
-            self.label()
-        ))
+        SharedString::from(words::settings_output::lead_in_meaning(self.label()))
     }
 }
 
@@ -349,28 +272,24 @@ impl Choice for KeptAwake {
 
     fn label(self) -> &'static str {
         match self.0.as_secs() {
-            60 => "1 min",
-            300 => "5 min",
-            900 => "15 min",
-            _ => "1 hour",
+            60 => words::settings_output::n_1_min(),
+            300 => words::settings_output::n_5_min(),
+            900 => words::settings_output::n_15_min(),
+            _ => words::settings_output::n_1_hour(),
         }
     }
 
     fn in_force(self) -> SharedString {
         let seconds = self.0.as_secs();
         SharedString::from(if seconds.is_multiple_of(SECONDS_A_MINUTE) {
-            format!("{} min", seconds / SECONDS_A_MINUTE)
+            words::settings_output::minutes(seconds / SECONDS_A_MINUTE)
         } else {
-            format!("{seconds} s")
+            words::settings_output::seconds(seconds)
         })
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::from(format!(
-            "A pause keeps the headphones fed with silence for {}, so playing again is heard at \
-             once; after that they are let go to sleep and save their battery.",
-            self.label()
-        ))
+        SharedString::from(words::settings_output::kept_awake_meaning(self.label()))
     }
 }
 
@@ -381,7 +300,7 @@ struct Lying {
 }
 
 fn held_by_another(zone: &str) -> String {
-    format!("Held bit-perfect by {zone}")
+    words::settings_output::held_by_another(zone)
 }
 
 impl RootView {
@@ -392,8 +311,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "bluetooth-wake",
                 switch_row(
-                    "Keep Bluetooth headphones from cutting the start",
-                    "Off, a paused Bluetooth device is let go and wakes on the music",
+                    words::settings_output::keep_bluetooth_headphones_from_cutting_the(),
+                    words::settings_output::off_a_paused_bluetooth_device_is(),
                     wake.on,
                     "bluetooth-wake",
                 ),
@@ -411,7 +330,7 @@ impl RootView {
             ))
             .when(wake.on, |body| {
                 body.child(kit::field(
-                    "Lead-in",
+                    words::settings_output::lead_in(),
                     self.choices(
                         "bluetooth-lead",
                         LeadIn(wake.lead),
@@ -430,7 +349,7 @@ impl RootView {
                     ),
                 ))
                 .child(kit::field(
-                    "Kept awake through a pause",
+                    words::settings_output::kept_awake_through_a_pause(),
                     self.choices(
                         "bluetooth-awake",
                         KeptAwake(wake.awake_for),
@@ -449,7 +368,7 @@ impl RootView {
                     ),
                 ))
             })
-            .note(BLUETOOTH_NOTE)
+            .note(words::settings_output::bluetooth_note(sound_system!()))
     }
 
     pub(super) fn device_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -490,23 +409,29 @@ impl RootView {
             .as_ref()
             .map(|renderers| renderers.looking());
         listed
-            .when(sinks.is_empty(), |body| body.child(note(NO_SINKS)))
-            .when(away, |body| body.child(note(AWAY)))
+            .when(sinks.is_empty(), |body| {
+                body.child(note(words::settings_output::no_sinks(sound_system!())))
+            })
+            .when(away, |body| {
+                body.child(note(words::settings_output::away()))
+            })
             .when_some(looking, |body, looking| {
                 body.child(self.in_the_ring(
                     "renderers",
                     switch_row(
-                        "Look for renderers on the network",
-                        "Off, only this computer's own devices are listed",
+                        words::settings_output::look_for_renderers_on_the_network(),
+                        words::settings_output::off_only_this_computers_own_devices(),
                         looking,
                         "renderers",
                     ),
                     move |this, _, cx| this.look_for_renderers(!looking, cx),
                     cx,
                 ))
-                .note(RENDERERS_NOTE)
+                .note(words::settings_output::renderers_note())
             })
-            .when(!sinks.is_empty() && !away, |body| body.note(DEVICE_NOTE))
+            .when(!sinks.is_empty() && !away, |body| {
+                body.note(words::settings_output::device_note())
+            })
     }
 
     pub(super) fn flac_renderers_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -534,9 +459,9 @@ impl RootView {
             body = body.child(self.vouching_row(name.clone(), name.as_str().to_owned(), true, cx));
         }
         body.when(named.is_empty() && !self.a_renderer_is_listed(cx), |body| {
-            body.child(note(NO_RENDERERS_TO_NAME))
+            body.child(note(words::settings_output::no_renderers_to_name()))
         })
-        .note(FLAC_RENDERERS_NOTE)
+        .note(words::settings_output::flac_renderers_note())
     }
 
     fn a_renderer_is_listed(&self, cx: &Context<Self>) -> bool {
@@ -558,7 +483,7 @@ impl RootView {
         let under = if self.a_renderer_is_listed_as(&name, cx) {
             name.as_str().to_owned()
         } else {
-            NOT_ON_THE_NETWORK.to_owned()
+            words::settings_output::not_on_the_network().to_owned()
         };
 
         self.in_the_ring_at(
@@ -620,12 +545,17 @@ impl RootView {
     ) -> Stateful<Div> {
         self.in_the_ring(
             "follow-the-default",
-            kit::choice_row("follow-the-default", FOLLOW, || routes_to.clone(), chosen)
-                .child(kit::level_with_the_choice(kit::radio(chosen)))
-                .child(
-                    described(kit::choice_name(FOLLOW, true))
-                        .child(kit::details([kit::detail(routes_to)])),
-                ),
+            kit::choice_row(
+                "follow-the-default",
+                words::settings_output::follow(),
+                || routes_to.clone(),
+                chosen,
+            )
+            .child(kit::level_with_the_choice(kit::radio(chosen)))
+            .child(
+                described(kit::choice_name(words::settings_output::follow(), true))
+                    .child(kit::details([kit::detail(routes_to)])),
+            ),
             |this, _, cx| {
                 this.route_to(None, cx);
             },
@@ -655,18 +585,19 @@ impl RootView {
         let verdict = source.map(|spec| {
             if exact {
                 kit::badge(
-                    format!("Takes {} as is", format::quality(spec)),
+                    words::settings_output::takes_as_is(format::quality(spec)),
                     theme::bit_perfect(),
                 )
             } else {
-                kit::badge(CONVERTS, theme::converted())
+                kit::badge(words::settings_output::converts(), theme::converted())
             }
         });
 
         let states: Vec<Div> = [
-            sink.is_default.then(|| kit::badge(DEFAULT, theme::faint())),
-            unplugged.then(|| kit::badge(UNPLUGGED, theme::faint())),
-            playing.then(|| kit::badge(IN_USE, theme::accent())),
+            sink.is_default
+                .then(|| kit::badge(words::settings_output::default(), theme::faint())),
+            unplugged.then(|| kit::badge(words::settings_output::unplugged(), theme::faint())),
+            playing.then(|| kit::badge(words::settings_output::in_use(), theme::accent())),
             held_by
                 .as_ref()
                 .map(|zone| kit::badge(held_by_another(zone), theme::faint())),
@@ -686,7 +617,7 @@ impl RootView {
         let saying = if spoken::listening() {
             let said = sink_spoken(&routed, &formats);
             match held_by.as_ref() {
-                Some(zone) => format!("{said}, held bit-perfect by {zone}"),
+                Some(zone) => words::settings_output::said_and_held_by(&said, zone.as_str()),
                 None => said,
             }
         } else {
@@ -694,7 +625,7 @@ impl RootView {
         };
 
         let takes = if formats.is_empty() {
-            kit::details([kit::detail(UNADVERTISED)])
+            kit::details([kit::detail(words::settings_output::unadvertised())])
         } else {
             kit::details(formats.into_iter().map(kit::figure))
         };
@@ -796,8 +727,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "device-volume",
                 switch_row(
-                    "Turn the device's own volume",
-                    "Scale the samples when this is off",
+                    words::settings_output::turn_the_devices_own_volume(),
+                    words::settings_output::scale_the_samples_when_this_is(),
                     handed,
                     "device-volume",
                 ),
@@ -809,10 +740,9 @@ impl RootView {
             ))
             .when_some(turns_its_own, |body, turns_its_own| {
                 body.note(if turns_its_own {
-                    "The device playing now has a volume of its own."
+                    words::settings_output::the_device_playing_now_has_a()
                 } else {
-                    "The device playing now has no volume of its own, so the stream still turns \
-                     it."
+                    words::settings_output::the_device_playing_now_has_no()
                 })
             })
     }
@@ -824,8 +754,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "dop",
                 switch_row(
-                    "Hand DSD to the device as DoP",
-                    "Decimate it to PCM when this is off",
+                    words::settings_output::hand_dsd_to_the_device_as(),
+                    words::settings_output::decimate_it_to_pcm_when_this(),
                     marked,
                     "dop",
                 ),
@@ -836,7 +766,7 @@ impl RootView {
                 cx,
             ))
             .child(self.dsd_level_switch(cx))
-            .note(DOP_WARNING)
+            .note(words::settings_output::dop_warning())
     }
 
     fn dsd_level_switch(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -845,8 +775,8 @@ impl RootView {
         self.in_the_ring(
             "dsd-like-pcm",
             switch_row(
-                "Decimate DSD to the level of PCM",
-                "Off, a DSD master plays some 6 dB quieter than the same music in PCM",
+                words::settings_output::decimate_dsd_to_the_level_of(),
+                words::settings_output::off_a_dsd_master_plays_some(),
                 raised,
                 "dsd-like-pcm",
             ),

@@ -27,93 +27,42 @@ use crate::{
         settings::{Armed, Choice, Rows, action, note, progress, reading, switch_row},
         spoken::Spoken as _,
     },
+    words,
 };
 
 const FOLDER_GROUP: &str = "folder";
 
-const VAULT_NOT_MADE: &str = "That folder could not be made a vault";
-
-const NO_MUSIC_FOLDER: &str = "No primary folder is chosen. Press the circle beside a folder to \
-                               make it the one new songs are kept in.";
-
-const PRIMARY_NOTE: &str = "The primary folder is where songs dragged onto the window are copied, \
-                            with their covers and lyrics, each checked against its original. It \
-                            is scanned like the others, so what lands in it joins the library.";
-
-const MAKE_PRIMARY_HINT: &str = "Make this the primary folder: the one new songs are kept in";
-
-const PRIMARY_HINT: &str = "The primary folder, where new songs are kept. Press to choose none.";
-
-const PRIMARY_BADGE: &str = "Primary";
-
-const CLEAR_PRIMARY_HINT: &str = "Choose no primary folder. The folder is left alone.";
-
 const FILE_DROPPED_ID: &str = "file-dropped";
-
-const MUSIC_FOLDER_GONE: &str = "This folder is not there now. If it is on a drive, mount it \
-                                 before adding songs.";
-
-const IN_THE_VAULT: &str = "That folder is inside the vault, which keeps its own objects. Choose \
-                            a folder outside it.";
-
-const NOT_A_FOLDER: &str = "That is not a folder";
-
-const NO_FOLDER_PICKER: &str = "Couldn't open the folder picker; type the folder instead";
-
-const FORGET_HINT: &str = "Forget this folder and every track scanned from it. The files are left \
-                           alone.";
-
-const FORGET_ASKED: &str = "Press again to forget this folder, its tracks, and the plays, \
-                            favourites and details kept for them.";
-
-const FORGET_ASKED_LABEL: &str = "Press again to forget";
-
-const NO_FOLDERS: &str = "No folders yet. Add one and Resonate will scan it; press its circle to \
-                          make it the primary folder.";
-
-const FOLDERS_NOTE: &str = "Everything under these folders is read into the library and followed \
-                            while the window is open. The files are only read: nothing in them \
-                            changes unless Tagging or Organising below is applied.";
-
-const FILES_NOTE: &str = "Rescan reads what was added or changed since the last scan. Read every \
-                          file again re-reads each file whatever its size and time say: names, \
-                          lengths, cue sheets, covers and the search index. Plays, favourites and \
-                          playlists are kept.";
-
-const RESUMING_NOTE: &str = "The queue comes back paused on the row it was playing, so nothing \
-                             starts on its own. Files named on the command line are queued \
-                             instead of what was kept.";
 
 impl Choice for HistoryKept {
     const ALL: &'static [Self] = &Self::OFFERED;
 
     fn label(self) -> &'static str {
         match self.span().map(|span| span.as_secs() / SECONDS_A_DAY) {
-            None => "Forever",
-            Some(1_826) => "Five years",
-            Some(730) => "Two years",
-            Some(365) => "A year",
-            Some(182) => "Six months",
-            Some(_) => "A while",
+            None => words::settings_library::forever(),
+            Some(1_826) => words::settings_library::five_years(),
+            Some(730) => words::settings_library::two_years(),
+            Some(365) => words::settings_library::a_year(),
+            Some(182) => words::settings_library::six_months(),
+            Some(_) => words::settings_library::a_while(),
         }
     }
 
     fn in_force(self) -> SharedString {
         match self {
             Self::Forever => SharedString::new_static(self.label()),
-            Self::Days(days) => SharedString::from(format!("{days} days")),
+            Self::Days(days) => SharedString::from(words::settings_library::days_kept(days.get())),
         }
     }
 
     fn meaning(self) -> SharedString {
         match self {
-            Self::Forever => SharedString::new_static(
-                "Every listen is kept, so the statistics can reach back to the first one.",
+            Self::Forever => {
+                SharedString::new_static(words::settings_library::every_listen_is_kept_so_the())
+            }
+            Self::Days(days) => SharedString::from(
+                words::settings_library::listens_older_than_forgotten(days.get()),
             ),
-            Self::Days(days) => SharedString::from(format!(
-                "Listens older than {days} days are forgotten as the library opens, once \
-                 ListenBrainz has been told of them."
-            )),
         }
     }
 }
@@ -128,57 +77,7 @@ fn forgets_listens(now: HistoryKept, asked: HistoryKept) -> bool {
     }
 }
 
-const LOOKUP_UNDER_WAY: &str = "The lookup so far";
-
-const LAST_LOOKUP: &str = "The last lookup";
-
-const DETAILS_NOTE: &str = "Look up asks MusicBrainz about the albums and artists not asked \
-                            lately, which a scan does on its own when Online allows it. Refresh \
-                            all asks about everything again. Look for missing covers asks the \
-                            archive again for every album with no picture. Speed up once lets \
-                            this lookup study the songs on every core but one with no rest \
-                            between them, until it ends; MusicBrainz is still asked at its own \
-                            pace.";
-
-const TEMPLATE_LABEL: &str = "Where each track is filed";
-
-const ORGANISING_NOTE: &str = "Each / is a folder under the music folder the track was scanned \
-                               from. Preview lists what would move; only Apply moves anything, \
-                               and the catalog follows the files.";
-
-const MOVED_UNDER_THE_PREVIEW: &str = "The catalog moved since the last preview, so it was taken \
-                                       down. Preview again to see what would happen now.";
-
-const PREVIEW_FIRST: &str = "Preview first, so what would move is on screen before anything does.";
-
-const ASK_AGAIN_TO_MOVE: &str = "Press it again to move the files. Nothing is copied — every \
-                                 track is renamed where it stands.";
-
-const ASK_AGAIN_TO_PUT_THE_TAGS_BACK: &str = "Press it again to put back what the last run \
-                                              wrote into every file it wrote: each field as it \
-                                              read before, a cover it added taken out and the \
-                                              rating it changed restored.";
-
-const ASK_AGAIN_TO_PUT_BACK: &str = "Press it again to put every file the last run moved back \
-                                     where it stood. Putting it back twice files them again.";
-
-const TAGGING_NOTE: &str = "Writes what a lookup answered for back into the files themselves, so \
-                            another player reads the same names. Only fields the catalog was told \
-                            about are touched, and a cover goes in only where the file carries \
-                            none.";
-
-const PREVIEW_TAGS_FIRST: &str = "Preview first, so what would be written is on screen before \
-                                  anything is.";
-
-const ASK_AGAIN_TO_WRITE: &str = "Press it again to write the files. Each one is read back \
-                                  afterwards, and what does not read back is not followed.";
-
-const NOTHING_TO_TAG: &str = "Nothing to write. Every scanned file already says what the catalog \
-                              was told about it.";
-
 const WRITES_SHOWN: usize = 12;
-
-const COVER_ART: &str = "cover art";
 
 impl RootView {
     pub(super) fn folders_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -192,7 +91,9 @@ impl RootView {
         let apart = primary.clone().filter(|primary| !roots.contains(primary));
         let nothing_listed = roots.is_empty() && apart.is_none();
 
-        let mut listed = kit::rows().when(nothing_listed, |body| body.child(note(NO_FOLDERS)));
+        let mut listed = kit::rows().when(nothing_listed, |body| {
+            body.child(note(words::settings_library::no_folders()))
+        });
         for root in &roots {
             listed = listed.child(self.folder(root, primary.as_deref(), cx));
         }
@@ -218,14 +119,16 @@ impl RootView {
                 body.child(note(SharedString::from(waiting_line(&waiting))))
             })
             .when(primary.is_none() && !roots.is_empty(), |body| {
-                body.child(note(NO_MUSIC_FOLDER))
+                body.child(note(words::settings_library::no_music_folder()))
             })
-            .when(gone, |body| body.child(note(MUSIC_FOLDER_GONE)))
+            .when(gone, |body| {
+                body.child(note(words::settings_library::music_folder_gone()))
+            })
             .child(self.in_the_ring(
                 FILE_DROPPED_ID,
                 switch_row(
-                    "File dropped songs by the layout",
-                    "Off, they keep the names and folders they came with",
+                    words::settings_library::file_dropped_songs_by_the_layout(),
+                    words::settings_library::off_they_keep_the_names_and(),
                     filed,
                     FILE_DROPPED_ID,
                 ),
@@ -235,8 +138,10 @@ impl RootView {
                 },
                 cx,
             ))
-            .when(!nothing_listed, |body| body.note(FOLDERS_NOTE))
-            .note(PRIMARY_NOTE)
+            .when(!nothing_listed, |body| {
+                body.note(words::settings_library::folders_note())
+            })
+            .note(words::settings_library::primary_note())
     }
 
     pub(crate) fn root_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -257,9 +162,8 @@ impl RootView {
             let _ = this.update_in(cx, |this, window, cx| {
                 if !there {
                     this.report(
-                        Notice::Trouble(format!(
-                            "{} is not a folder",
-                            resonate_core::path_text::shown(&folder)
+                        Notice::Trouble(words::settings_library::folder_is_not_a_folder(
+                            resonate_core::path_text::shown(&folder),
                         )),
                         cx,
                     );
@@ -281,7 +185,7 @@ impl RootView {
         let choosing = path.clone();
 
         let id: ElementId = (ElementId::Path(Arc::from(root)), "primary").into();
-        let named = format!("primary {}", resonate_core::path_text::shown(root));
+        let named = format!("primary-{}", resonate_core::path_text::shown(root));
         let choice = self.in_the_ring_at(
             named,
             self.folder_choice(&path, chosen, id),
@@ -300,7 +204,7 @@ impl RootView {
             Press::Takes,
             id,
             Icon::Close,
-            CLEAR_PRIMARY_HINT,
+            words::settings_library::clear_primary_hint(),
             FOLDER_GROUP,
         );
 
@@ -314,10 +218,13 @@ impl RootView {
                     .gap_3()
                     .child(kit::level_with_the_choice(kit::radio(true)))
                     .child(folder_name(folder))
-                    .child(kit::badge(PRIMARY_BADGE, theme::accent())),
+                    .child(kit::badge(
+                        words::settings_library::primary_badge(),
+                        theme::accent(),
+                    )),
             )
             .child(self.in_the_ring_at(
-                format!("clear primary {}", resonate_core::path_text::shown(folder)),
+                format!("clear-primary-{}", resonate_core::path_text::shown(folder)),
                 clear,
                 |this, _, cx| this.forget_the_music_folder(cx),
                 cx,
@@ -337,14 +244,17 @@ impl RootView {
             .rounded_md()
             .cursor_pointer()
             .names(if chosen {
-                PRIMARY_HINT
+                words::settings_library::primary_hint()
             } else {
-                MAKE_PRIMARY_HINT
+                words::settings_library::make_primary_hint()
             })
             .child(kit::level_with_the_choice(kit::radio(chosen)))
             .child(folder_name(folder))
             .when(chosen, |row| {
-                row.child(kit::badge(PRIMARY_BADGE, theme::accent()))
+                row.child(kit::badge(
+                    words::settings_library::primary_badge(),
+                    theme::accent(),
+                ))
             })
     }
 
@@ -366,7 +276,10 @@ impl RootView {
                 if there {
                     this.set_the_music_folder(root, cx);
                 } else {
-                    this.report(Notice::Trouble(NOT_A_FOLDER.to_owned()), cx);
+                    this.report(
+                        Notice::Trouble(words::settings_library::not_a_folder().to_owned()),
+                        cx,
+                    );
                 }
             });
         })
@@ -375,7 +288,7 @@ impl RootView {
 
     fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Div {
         let id = (ElementId::Path(Arc::from(root.as_path())), "forget");
-        let named = format!("forget {}", resonate_core::path_text::shown(&root));
+        let named = format!("forget-{}", resonate_core::path_text::shown(&root));
         let asked = self.folder_armed() == Some(&root);
 
         div()
@@ -388,7 +301,7 @@ impl RootView {
                     div()
                         .text_size(px(theme::text_xs()))
                         .text_color(rgb(theme::failure()))
-                        .child(FORGET_ASKED_LABEL),
+                        .child(words::settings_library::forget_asked_label()),
                 )
             })
             .child(self.root_in_the_ring(
@@ -397,7 +310,11 @@ impl RootView {
                     Press::Takes,
                     id,
                     Icon::Discard,
-                    if asked { FORGET_ASKED } else { FORGET_HINT },
+                    if asked {
+                        words::settings_library::forget_asked()
+                    } else {
+                        words::settings_library::forget_hint()
+                    },
                     FOLDER_GROUP,
                 ),
                 root,
@@ -450,7 +367,7 @@ impl RootView {
     fn add_folder(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "add-folder",
-            "Add folder…",
+            words::settings_library::add_folder(),
             Icon::Plus,
             false,
             |this, _, cx| this.choose_music_folder(cx),
@@ -483,7 +400,7 @@ impl RootView {
                         .child(note(counted(stats))),
                 )
             })
-            .note(FILES_NOTE)
+            .note(words::settings_library::files_note())
     }
 
     pub(super) fn looking_up_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -526,9 +443,9 @@ impl RootView {
                             .flex_col()
                             .gap_1p5()
                             .child(kit::row_name(if enriching {
-                                LOOKUP_UNDER_WAY
+                                words::settings_library::lookup_under_way()
                             } else {
-                                LAST_LOOKUP
+                                words::settings_library::last_lookup()
                             }))
                             .children(
                                 lines
@@ -539,16 +456,16 @@ impl RootView {
                 },
             )
             .when_some(ending, |body, ending| body.child(note(ending)))
-            .note(DETAILS_NOTE)
+            .note(words::settings_library::details_note())
     }
 
     fn rescan(&self, busy: bool, scanning: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "rescan",
             if scanning {
-                "Scanning…"
+                words::settings_library::scanning()
             } else {
-                "Rescan folders"
+                words::settings_library::rescan_folders()
             },
             Icon::Search,
             busy,
@@ -563,7 +480,7 @@ impl RootView {
     fn read_everything_again(&self, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "read-everything-again",
-            "Read every file again",
+            words::settings_library::read_every_file_again(),
             Icon::Redo,
             busy,
             |this, _, cx| {
@@ -578,7 +495,7 @@ impl RootView {
     fn look_for_missing_covers(&self, held_back: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "look-for-missing-covers",
-            "Look for missing covers",
+            words::settings_library::look_for_missing_covers(),
             Icon::Albums,
             held_back,
             |this, _, cx| {
@@ -593,7 +510,11 @@ impl RootView {
     fn stop_scan(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "stop-scan",
-            if stopping { "Stopping…" } else { "Stop" },
+            if stopping {
+                words::settings_library::stopping()
+            } else {
+                words::settings_library::stop()
+            },
             Icon::Stop,
             stopping,
             |this, _, cx| {
@@ -608,9 +529,9 @@ impl RootView {
         action(
             "look-up",
             if enriching {
-                "Looking up…"
+                words::settings_library::looking_up()
             } else {
-                "Look up"
+                words::settings_library::look_up()
             },
             Icon::Globe,
             held_back,
@@ -631,7 +552,11 @@ impl RootView {
     ) -> Stateful<Div> {
         action(
             "hurry-lookup",
-            if hurried { "Sped up" } else { "Speed up once" },
+            if hurried {
+                words::settings_library::sped_up()
+            } else {
+                words::settings_library::speed_up_once()
+            },
             Icon::Next,
             held_back,
             |this, _, cx| {
@@ -646,7 +571,7 @@ impl RootView {
     fn refresh_all(&self, held_back: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "refresh-all",
-            "Refresh all",
+            words::settings_library::refresh_all(),
             Icon::Redo,
             held_back,
             |this, _, cx| {
@@ -661,7 +586,11 @@ impl RootView {
     fn stop_lookup(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "stop-lookup",
-            if stopping { "Stopping…" } else { "Stop" },
+            if stopping {
+                words::settings_library::stopping()
+            } else {
+                words::settings_library::stop()
+            },
             Icon::Stop,
             stopping,
             |this, _, cx| {
@@ -678,7 +607,7 @@ impl RootView {
             files: false,
             directories: true,
             multiple: true,
-            prompt: Some(SharedString::new_static("Add")),
+            prompt: Some(SharedString::new_static(words::settings_library::add())),
         });
 
         cx.spawn(async move |this, cx| {
@@ -688,7 +617,10 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the folder picker could not be opened");
                     let reported = this.update(cx, |_, cx| {
-                        toast::tell(Notice::Trouble(NO_FOLDER_PICKER.to_owned()), cx);
+                        toast::tell(
+                            Notice::Trouble(words::settings_library::no_folder_picker().to_owned()),
+                            cx,
+                        );
                     });
                     let _ = reported;
                     return;
@@ -726,17 +658,14 @@ fn waiting_line(waiting: &[crate::RootWaiting]) -> String {
         .iter()
         .map(|waiting| match waiting {
             crate::RootWaiting::ToAdd(root) => {
-                format!("{} to add", resonate_core::path_text::shown(root))
+                words::settings_library::folder_to_add(resonate_core::path_text::shown(root))
             }
             crate::RootWaiting::ToForget(root) => {
-                format!("{} to forget", resonate_core::path_text::shown(root))
+                words::settings_library::folder_to_forget(resonate_core::path_text::shown(root))
             }
         })
         .collect();
-    format!(
-        "Waiting for the pass under way to finish: {}",
-        named.join(", ")
-    )
+    words::settings_library::waiting_for_the_pass(named.join(", "))
 }
 
 fn lookup_lines(stats: &EnrichStats) -> Vec<(&'static str, String)> {
@@ -754,11 +683,10 @@ fn lookup_lines(stats: &EnrichStats) -> Vec<(&'static str, String)> {
 
 fn lookup_ending(summary: &EnrichSummary) -> Option<String> {
     match (summary.stopped_by, summary.cancelled) {
-        (Some(op), _) => Some(format!(
-            "The last lookup ended early: MusicBrainz couldn't be reached while looking up {}",
-            op.asked_for()
-        )),
-        (None, true) => Some("The last lookup was stopped early".to_owned()),
+        (Some(op), _) => Some(words::settings_library::lookup_ended_early(op.asked_for())),
+        (None, true) => {
+            Some(words::settings_library::the_last_lookup_was_stopped_early().to_owned())
+        }
         (None, false) => None,
     }
 }
@@ -786,17 +714,17 @@ fn broken_down(failed: Failures) -> String {
 }
 
 fn counted(stats: ScanStats) -> String {
-    format!(
-        "discovered {} · read {} · added {} · updated {} · moved {} · removed {} · failed {}{}",
-        stats.discovered,
-        stats.processed,
+    let said = words::settings_library::scan_counted(
         stats.added,
-        stats.updated,
-        stats.moved,
-        stats.removed,
+        stats.discovered,
         stats.failed.total(),
-        broken_down(stats.failed)
-    )
+        stats.moved,
+        stats.processed,
+        stats.removed,
+        stats.updated,
+    );
+
+    said + &broken_down(stats.failed)
 }
 
 impl RootView {
@@ -807,15 +735,15 @@ impl RootView {
             .child(self.in_the_ring(
                 "resume-the-queue",
                 switch_row(
-                    "Carry the queue over",
-                    "Off, every run opens on an empty queue",
+                    words::settings_library::carry_the_queue_over(),
+                    words::settings_library::off_every_run_opens_on_an(),
                     keeps,
                     "resume-the-queue",
                 ),
                 move |this, _, cx| this.set_resume(!keeps, cx),
                 cx,
             ))
-            .note(RESUMING_NOTE)
+            .note(words::settings_library::resuming_note())
     }
 
     pub(super) fn history_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -824,17 +752,15 @@ impl RootView {
 
         kit::rows()
             .child(kit::field(
-                "Keep what was listened to",
+                words::settings_library::keep_what_was_listened_to(),
                 self.choices("history-kept", kept, cx, |this, kept: HistoryKept, cx| {
                     this.ask_to_keep_the_history(kept, cx)
                 }),
             ))
             .when_some(armed, |body, armed| {
-                body.child(note(format!(
-                    "Press {} again to forget every listen older than that now, for good. \
-                     Listens ListenBrainz has not been told of yet are kept until it has.",
-                    armed.label()
-                )))
+                body.child(note(
+                    words::settings_library::press_again_to_forget_listens(armed.label()),
+                ))
             })
     }
 
@@ -870,8 +796,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             "skip-repeats-queue",
             switch_row(
-                "A skip repeats the queue",
-                "Off, a skip goes on repeating the track it lands on",
+                words::settings_library::a_skip_repeats_the_queue(),
+                words::settings_library::off_a_skip_goes_on_repeating(),
                 repeats_the_queue,
                 "skip-repeats-queue",
             ),
@@ -888,7 +814,7 @@ impl RootView {
         let spreads = smart.style == ShuffleStyle::Smart;
 
         let rows = kit::rows().child(kit::field(
-            "How shuffle orders the queue",
+            words::settings_library::how_shuffle_orders_the_queue(),
             self.choices("shuffle-style", smart.style, cx, move |this, style, cx| {
                 this.shuffle_as(SmartShuffle { style, ..smart }, cx);
             }),
@@ -899,8 +825,8 @@ impl RootView {
         rows.child(self.in_the_ring(
             "shuffle-spreads-artists",
             switch_row(
-                "Spread each artist apart",
-                "Songs by one artist are heard across the queue rather than in a cluster",
+                words::settings_library::spread_each_artist_apart(),
+                words::settings_library::songs_by_one_artist_are_heard(),
                 smart.spreads_artists,
                 "shuffle-spreads-artists",
             ),
@@ -918,8 +844,8 @@ impl RootView {
         .child(self.in_the_ring(
             "shuffle-spreads-albums",
             switch_row(
-                "Spread each album apart",
-                "Songs from one album are kept apart too, within an artist as well",
+                words::settings_library::spread_each_album_apart(),
+                words::settings_library::songs_from_one_album_are_kept(),
                 smart.spreads_albums,
                 "shuffle-spreads-albums",
             ),
@@ -937,8 +863,8 @@ impl RootView {
         .child(self.in_the_ring(
             "shuffle-fresh-first",
             switch_row(
-                "Songs heard this week come last",
-                "What you have not heard lately is played before what you have",
+                words::settings_library::songs_heard_this_week_come_last(),
+                words::settings_library::what_you_have_not_heard_lately(),
                 smart.fresh_first,
                 "shuffle-fresh-first",
             ),
@@ -989,8 +915,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             "previous-restarts",
             switch_row(
-                "Previous restarts the song",
-                "Off, previous always goes back a track",
+                words::settings_library::previous_restarts_the_song(),
+                words::settings_library::off_previous_always_goes_back_a(),
                 restarts,
                 "previous-restarts",
             ),
@@ -1036,7 +962,7 @@ impl RootView {
         kit::rows()
             .child(
                 kit::field(
-                    TEMPLATE_LABEL,
+                    words::settings_library::template_label(),
                     self.text_field(
                         "organise-as",
                         &self.organising,
@@ -1063,15 +989,22 @@ impl RootView {
                     }),
             )
             .when(!previewed && !organising, |body| {
-                body.child(note(unplanned(planned, PREVIEW_FIRST)))
+                body.child(note(unplanned(
+                    planned,
+                    words::settings_library::preview_first(),
+                )))
             })
-            .when(armed, |body| body.child(note(ASK_AGAIN_TO_MOVE)))
-            .when(walking_back, |body| body.child(note(ASK_AGAIN_TO_PUT_BACK)))
+            .when(armed, |body| {
+                body.child(note(words::settings_library::ask_again_to_move()))
+            })
+            .when(walking_back, |body| {
+                body.child(note(words::settings_library::ask_again_to_put_back()))
+            })
             .when(organising, |body| {
                 body.child(note(going(stats.unwrap_or_default(), moving)))
             })
             .when_some(told, |body, told| body.child(note(told)))
-            .note(ORGANISING_NOTE)
+            .note(words::settings_library::organising_note())
     }
 
     fn preview_the_filing(
@@ -1083,9 +1016,9 @@ impl RootView {
         action(
             "preview-the-filing",
             if previewing {
-                "Previewing…"
+                words::settings_library::previewing()
             } else {
-                "Preview"
+                words::settings_library::preview()
             },
             Icon::Search,
             held_back,
@@ -1105,11 +1038,11 @@ impl RootView {
         action(
             "file-the-tracks",
             if moving {
-                "Moving…"
+                words::settings_library::moving()
             } else if armed {
-                "Press again to move the files"
+                words::settings_library::press_again_to_move_the_files()
             } else {
-                "Apply"
+                words::settings_library::apply()
             },
             Icon::Tidy,
             held_back,
@@ -1128,7 +1061,11 @@ impl RootView {
     fn stop_filing(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "stop-filing",
-            if stopping { "Stopping…" } else { "Stop" },
+            if stopping {
+                words::settings_library::stopping()
+            } else {
+                words::settings_library::stop()
+            },
             Icon::Stop,
             stopping,
             |this, _, cx| {
@@ -1149,9 +1086,9 @@ impl RootView {
         action(
             "put-the-filing-back",
             if armed {
-                "Press again to put them back"
+                words::settings_library::press_again_to_put_them_back()
             } else {
-                "Put the last run back"
+                words::settings_library::put_the_last_run_back()
             },
             Icon::Undo,
             held_back,
@@ -1183,7 +1120,10 @@ impl RootView {
             Ok(layout) => self
                 .library
                 .update(cx, |library, cx| library.organise(layout, pass, cx)),
-            Err(error) => self.report(toast::could_not("file the tracks that way", &error), cx),
+            Err(error) => self.report(
+                toast::could_not(words::settings_library::file_the_tracks_that_way(), &error),
+                cx,
+            ),
         }
         cx.notify();
     }
@@ -1196,7 +1136,10 @@ impl RootView {
                 self.set_organise_as(given, cx);
                 self.leave_organising(window, cx);
             }
-            Err(error) => self.report(toast::could_not("use that layout", &error), cx),
+            Err(error) => self.report(
+                toast::could_not(words::settings_library::use_that_layout(), &error),
+                cx,
+            ),
         }
         cx.notify();
     }
@@ -1209,7 +1152,10 @@ impl RootView {
 
         match Layout::read(&given) {
             Ok(_) => self.set_organise_as(given, cx),
-            Err(error) => self.report(toast::could_not("use that layout", &error), cx),
+            Err(error) => self.report(
+                toast::could_not(words::settings_library::use_that_layout(), &error),
+                cx,
+            ),
         }
         cx.notify();
     }
@@ -1253,11 +1199,18 @@ impl RootView {
                     }),
             )
             .when(!previewed && !tagging, |body| {
-                body.child(note(unplanned(planned, PREVIEW_TAGS_FIRST)))
+                body.child(note(unplanned(
+                    planned,
+                    words::settings_library::preview_tags_first(),
+                )))
             })
-            .when(armed, |body| body.child(note(ASK_AGAIN_TO_WRITE)))
+            .when(armed, |body| {
+                body.child(note(words::settings_library::ask_again_to_write()))
+            })
             .when(walking_back, |body| {
-                body.child(note(ASK_AGAIN_TO_PUT_THE_TAGS_BACK))
+                body.child(note(
+                    words::settings_library::ask_again_to_put_the_tags_back(),
+                ))
             })
             .when(tagging, |body| {
                 body.child(note(so_far(stats.unwrap_or_default(), writing)))
@@ -1266,7 +1219,7 @@ impl RootView {
                 body.when_some(listed, |body, listed| body.children(listed))
                     .child(note(told))
             })
-            .note(TAGGING_NOTE)
+            .note(words::settings_library::tagging_note())
     }
 
     fn put_the_tags_back(
@@ -1278,9 +1231,9 @@ impl RootView {
         action(
             "put-the-tags-back",
             if armed {
-                "Press again to put them back"
+                words::settings_library::press_again_to_put_them_back()
             } else {
-                "Put the last run back"
+                words::settings_library::put_the_last_run_back()
             },
             Icon::Undo,
             held_back,
@@ -1308,9 +1261,9 @@ impl RootView {
         action(
             "preview-the-tags",
             if previewing {
-                "Previewing…"
+                words::settings_library::previewing()
             } else {
-                "Preview"
+                words::settings_library::preview()
             },
             Icon::Search,
             held_back,
@@ -1330,11 +1283,11 @@ impl RootView {
         action(
             "write-the-tags",
             if writing {
-                "Writing…"
+                words::settings_library::writing()
             } else if armed {
-                "Press again to write the files"
+                words::settings_library::press_again_to_write_the_files()
             } else {
-                "Apply"
+                words::settings_library::apply()
             },
             Icon::Tidy,
             held_back,
@@ -1353,7 +1306,11 @@ impl RootView {
     fn stop_tagging(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "stop-tagging",
-            if stopping { "Stopping…" } else { "Stop" },
+            if stopping {
+                words::settings_library::stopping()
+            } else {
+                words::settings_library::stop()
+            },
             Icon::Stop,
             stopping,
             |this, _, cx| {
@@ -1394,7 +1351,7 @@ fn listed(summary: &RetagSummary) -> Option<Vec<gpui::AnyElement>> {
         .checked_sub(WRITES_SHOWN)
         .filter(|rest| *rest > 0)
     {
-        listing.push(note(format!("and {rest} more")).into_any_element());
+        listing.push(note(words::settings_library::and_more(rest)).into_any_element());
     }
 
     Some(listing)
@@ -1414,22 +1371,22 @@ fn write_row(write: &Written) -> Div {
 fn fields_of(write: &Written) -> String {
     let mut named: Vec<&str> = write.edits.iter().map(|edit| edit.field.as_str()).collect();
     if write.picture.is_some() {
-        named.push(COVER_ART);
+        named.push(words::settings_library::cover_art());
     }
 
     named.join(", ")
 }
 
 fn so_far(stats: RetagStats, writing: bool) -> String {
-    let counted = format!(
-        "already said {} · passed over {} · walked {}",
-        stats.unchanged, stats.passed_over, stats.walked
-    );
-
     if writing {
-        format!("written {} · {counted}", stats.written)
+        words::settings_library::retag_written_so_far(
+            stats.passed_over,
+            stats.unchanged,
+            stats.walked,
+            stats.written,
+        )
     } else {
-        counted
+        words::settings_library::retag_so_far(stats.passed_over, stats.unchanged, stats.walked)
     }
 }
 
@@ -1437,7 +1394,7 @@ fn written(summary: &RetagSummary) -> String {
     let stats = summary.stats;
     let retagging = &summary.retagging;
     if retagging.writes.is_empty() && retagging.passed_over.is_empty() && stats.unchanged == 0 {
-        return NOTHING_TO_TAG.to_owned();
+        return words::settings_library::nothing_to_tag().to_owned();
     }
 
     let fields: u64 = retagging
@@ -1455,41 +1412,46 @@ fn written(summary: &RetagSummary) -> String {
         .iter()
         .filter(|write| write.popularity.is_some())
         .count();
-    let told = format!(
-        "would write {} · fields {fields} · pictures {pictures} · ratings {ratings} · already said \
-         {} · passed over {} · nothing has been written",
-        retagging.writes.len(),
+    let told = words::settings_library::retag_previewed(
+        fields,
+        stats.passed_over,
+        pictures,
+        ratings,
         stats.unchanged,
-        stats.passed_over
+        retagging.writes.len(),
     );
 
     stopped_early(told, summary.cancelled)
 }
 
 fn going(stats: OrganiseStats, moving: bool) -> String {
-    let counted = format!(
-        "in place {} · unidentified {} · collided {} · failed {}",
-        stats.unchanged, stats.unidentified, stats.collided, stats.failed
-    );
-
     if moving {
-        format!("moved {} · {counted}", stats.moved)
+        words::settings_library::organise_moved_so_far(
+            stats.collided,
+            stats.failed,
+            stats.moved,
+            stats.unchanged,
+            stats.unidentified,
+        )
     } else {
-        counted
+        words::settings_library::organise_so_far(
+            stats.collided,
+            stats.failed,
+            stats.unchanged,
+            stats.unidentified,
+        )
     }
 }
 
 fn filed(summary: &OrganiseSummary) -> String {
     let stats = summary.stats;
-    let told = format!(
-        "would move {} · in place {} · unidentified {} · collided {} · failed {} · folders to \
-         empty {} · nothing has moved",
+    let told = words::settings_library::organise_previewed(
+        stats.collided,
+        stats.failed,
+        summary.plan.folders.len(),
         summary.plan.files_moving(),
         stats.unchanged,
         stats.unidentified,
-        stats.collided,
-        stats.failed,
-        summary.plan.folders.len()
     );
 
     stopped_early(told, summary.cancelled)
@@ -1497,34 +1459,11 @@ fn filed(summary: &OrganiseSummary) -> String {
 
 fn stopped_early(told: String, cancelled: bool) -> String {
     if cancelled {
-        format!("{told} · stopped before it finished")
+        words::settings_library::stopped_before_it_finished(told)
     } else {
         told
     }
 }
-
-const VAULT_NOTE: &str = "Decodes every scanned track the vault does not hold, throws its tags \
-                          and its pictures away, keeps the smallest bit-exact copy it can make \
-                          and points the catalog at it. The files it read are left exactly where \
-                          they are.";
-
-const NO_VAULT: &str = "No vault is open. Choose the folder it should keep what it imports in; an \
-                        empty folder becomes one.";
-
-const VAULT_AT_THE_NEXT_START: &str = "Opened from the next start, and what is imported from then \
-                                       on is kept there.";
-
-const IN_THE_LIBRARY: &str = "That folder is inside a library folder, which would scan the \
-                              vault's objects as songs. Choose a folder outside every one.";
-
-const PREVIEW_IMPORT_FIRST: &str = "Preview first, so what would be kept is on screen before \
-                                    anything is.";
-
-const ASK_AGAIN_TO_KEEP: &str = "Press it again to keep the tracks. Nothing the vault reads is \
-                                 moved, renamed or written to.";
-
-const NOTHING_TO_KEEP: &str = "Nothing to import. The vault already holds every scanned track it \
-                               can.";
 
 impl RootView {
     pub(super) fn vault_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -1559,15 +1498,20 @@ impl RootView {
                     .when(importing, |row| row.child(self.stop_keeping(stopping, cx))),
             )
             .when(!previewed && !importing, |body| {
-                body.child(note(unplanned(planned, PREVIEW_IMPORT_FIRST)))
+                body.child(note(unplanned(
+                    planned,
+                    words::settings_library::preview_import_first(),
+                )))
             })
-            .when(armed, |body| body.child(note(ASK_AGAIN_TO_KEEP)))
+            .when(armed, |body| {
+                body.child(note(words::settings_library::ask_again_to_keep()))
+            })
             .when(importing && keeping, |body| {
                 body.child(progress(kept_so_far(stats.unwrap_or_default())))
             })
             .when_some(listed, |body, listed| body.children(listed))
             .when_some(told, |body, told| body.child(note(told)))
-            .note(VAULT_NOTE)
+            .note(words::settings_library::vault_note())
     }
 
     fn naming_a_vault(&self, cx: &mut Context<Self>) -> Rows {
@@ -1576,11 +1520,11 @@ impl RootView {
         kit::rows()
             .child(match &named {
                 Some(folder) => div().child(folder_row(folder)),
-                None => div().child(note(NO_VAULT)),
+                None => div().child(note(words::settings_library::no_vault())),
             })
             .child(kit::action_row().child(action(
                 "choose-vault-folder",
-                "Choose folder…",
+                words::settings_library::choose_folder(),
                 Icon::Folder,
                 false,
                 |this, _, cx| this.pick_a_folder(cx, Self::name_the_vault),
@@ -1588,7 +1532,7 @@ impl RootView {
                 cx,
             )))
             .when(named.is_some(), |body| {
-                body.child(note(VAULT_AT_THE_NEXT_START))
+                body.child(note(words::settings_library::vault_at_the_next_start()))
             })
     }
 
@@ -1615,7 +1559,10 @@ impl RootView {
                 }
                 Err(error) => {
                     tracing::warn!(%error, "the folder chosen for the vault could not be made one");
-                    this.report(Notice::Trouble(VAULT_NOT_MADE.to_owned()), cx);
+                    this.report(
+                        Notice::Trouble(words::settings_library::vault_not_made().to_owned()),
+                        cx,
+                    );
                 }
             });
         });
@@ -1630,9 +1577,9 @@ impl RootView {
         action(
             "preview-the-import",
             if previewing {
-                "Previewing…"
+                words::settings_library::previewing()
             } else {
-                "Preview"
+                words::settings_library::preview()
             },
             Icon::Search,
             held_back,
@@ -1652,11 +1599,11 @@ impl RootView {
         action(
             "keep-the-tracks",
             if keeping {
-                "Keeping…"
+                words::settings_library::keeping()
             } else if armed {
-                "Press again to keep the tracks"
+                words::settings_library::press_again_to_keep_the_tracks()
             } else {
-                "Apply"
+                words::settings_library::apply()
             },
             Icon::Tidy,
             held_back,
@@ -1675,7 +1622,11 @@ impl RootView {
     fn stop_keeping(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "stop-keeping",
-            if stopping { "Stopping…" } else { "Stop" },
+            if stopping {
+                words::settings_library::stopping()
+            } else {
+                words::settings_library::stop()
+            },
             Icon::Close,
             stopping,
             |this, _, cx| {
@@ -1710,7 +1661,7 @@ fn kept_so_far(stats: ImportStats) -> f32 {
 fn wanted_rows(summary: &ImportSummary) -> Vec<gpui::AnyElement> {
     let wanted = &summary.plan.wanted;
     if wanted.is_empty() {
-        return vec![note(NOTHING_TO_KEEP).into_any_element()];
+        return vec![note(words::settings_library::nothing_to_keep()).into_any_element()];
     }
 
     let mut listed: Vec<gpui::AnyElement> = wanted
@@ -1738,14 +1689,19 @@ fn wanted_rows(summary: &ImportSummary) -> Vec<gpui::AnyElement> {
         .collect();
 
     if wanted.len() > WRITES_SHOWN {
-        listed.push(note(format!("and {} more", wanted.len() - WRITES_SHOWN)).into_any_element());
+        listed.push(
+            note(words::settings_library::and_more(
+                wanted.len() - WRITES_SHOWN,
+            ))
+            .into_any_element(),
+        );
     }
     listed
 }
 
 fn kept_as(asked: &Wanted) -> String {
     if asked.renewing {
-        format!("{} again", asked.form.as_str())
+        words::settings_library::kept_again(asked.form.as_str())
     } else {
         asked.form.as_str().to_owned()
     }
@@ -1760,20 +1716,10 @@ fn named_file(path: &Path) -> String {
 
 fn vaulted(summary: &ImportSummary) -> String {
     stopped_early(
-        format!(
-            "would keep {} · nothing has been written",
-            summary.stats.walked
-        ),
+        words::settings_library::vault_previewed(summary.stats.walked),
         summary.cancelled,
     )
 }
-
-const NO_INBOX: &str = "No inbox is named, so nothing can fill a want. Choose the folder the \
-                        files arrive in.";
-
-const INBOX_NOTE: &str = "A file directly inside it named by the recording's MusicBrainz id, the \
-                          track's or the ISRC fills the want it names. The folder is read and \
-                          never written to.";
 
 impl RootView {
     pub(crate) fn file_what_is_dropped(&self, filed: bool, cx: &mut Context<Self>) {
@@ -1794,7 +1740,7 @@ impl RootView {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some(SharedString::new_static("Choose")),
+            prompt: Some(SharedString::new_static(words::settings_library::choose())),
         });
 
         cx.spawn(async move |this, cx| {
@@ -1804,7 +1750,10 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the folder picker could not be opened");
                     let reported = this.update(cx, |_, cx| {
-                        toast::tell(Notice::Trouble(NO_FOLDER_PICKER.to_owned()), cx);
+                        toast::tell(
+                            Notice::Trouble(words::settings_library::no_folder_picker().to_owned()),
+                            cx,
+                        );
                     });
                     let _ = reported;
                     return;
@@ -1872,7 +1821,7 @@ impl RootView {
         kit::rows()
             .child(match &inbox {
                 Some(folder) => div().child(folder_row(folder)),
-                None => div().child(note(NO_INBOX)),
+                None => div().child(note(words::settings_library::no_inbox())),
             })
             .child(
                 kit::action_row()
@@ -1881,13 +1830,15 @@ impl RootView {
                     .when(polling, |row| row.child(self.stop_polling(stopping, cx))),
             )
             .when_some(told, |body, told| body.child(note(told)))
-            .when(inbox.is_some(), |body| body.note(INBOX_NOTE))
+            .when(inbox.is_some(), |body| {
+                body.note(words::settings_library::inbox_note())
+            })
     }
 
     fn choose_inbox(&self, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "choose-inbox",
-            "Choose folder…",
+            words::settings_library::choose_folder(),
             Icon::Folder,
             busy,
             |this, _, cx| this.choose_inbox_folder(cx),
@@ -1899,7 +1850,11 @@ impl RootView {
     fn poll_now(&self, held_back: bool, polling: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "poll-now",
-            if polling { "Polling…" } else { "Poll now" },
+            if polling {
+                words::settings_library::polling()
+            } else {
+                words::settings_library::poll_now()
+            },
             Icon::Search,
             held_back,
             |this, _, cx| {
@@ -1913,7 +1868,11 @@ impl RootView {
     fn stop_polling(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "stop-polling",
-            if stopping { "Stopping…" } else { "Stop" },
+            if stopping {
+                words::settings_library::stopping()
+            } else {
+                words::settings_library::stop()
+            },
             Icon::Stop,
             stopping,
             |this, _, cx| {
@@ -1994,11 +1953,11 @@ fn folder_row(folder: &Path) -> Div {
 
 fn unusable_as_the_music_folder(folder: &Path, vault: Option<&Path>) -> Option<&'static str> {
     if !folder.is_dir() {
-        return Some(NOT_A_FOLDER);
+        return Some(words::settings_library::not_a_folder());
     }
     vault
         .filter(|vault| folder.starts_with(vault))
-        .map(|_| IN_THE_VAULT)
+        .map(|_| words::settings_library::in_the_vault())
 }
 
 fn unusable_as_the_vault(
@@ -2007,26 +1966,30 @@ fn unusable_as_the_vault(
     music: Option<&Path>,
 ) -> Option<&'static str> {
     if !folder.is_dir() {
-        return Some(NOT_A_FOLDER);
+        return Some(words::settings_library::not_a_folder());
     }
     roots
         .iter()
         .map(PathBuf::as_path)
         .chain(music)
         .any(|held| folder.starts_with(held))
-        .then_some(IN_THE_LIBRARY)
+        .then_some(words::settings_library::in_the_library())
 }
 
 fn asked_of_the_inbox(stats: PollStats) -> String {
-    format!(
-        "asked {} · kept {} · not kept {} · nothing {} · refused {} · late {}",
-        stats.asked, stats.kept, stats.unkept, stats.nothing, stats.refused, stats.late
+    words::settings_library::inbox_asked(
+        stats.asked,
+        stats.kept,
+        stats.late,
+        stats.nothing,
+        stats.refused,
+        stats.unkept,
     )
 }
 
-const fn unplanned(planned: Planned, first: &'static str) -> &'static str {
+fn unplanned(planned: Planned, first: &'static str) -> &'static str {
     match planned {
-        Planned::Outdated => MOVED_UNDER_THE_PREVIEW,
+        Planned::Outdated => words::settings_library::moved_under_the_preview(),
         Planned::Not | Planned::Shown(_) => first,
     }
 }
@@ -2036,24 +1999,17 @@ impl Choice for ShuffleStyle {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Random => "Random",
-            Self::Smart => "Smart",
-            Self::Albums => "By album",
+            Self::Random => words::settings_library::random(),
+            Self::Smart => words::settings_library::smart(),
+            Self::Albums => words::settings_library::by_album(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Random => "Every song in the queue in any order, as a die would have it.",
-            Self::Smart => {
-                "Every song in the queue, laid out so the same artist or album does not come \
-                 round again soon, as the switches below say. A song the library does not hold \
-                 is placed at random."
-            }
-            Self::Albums => {
-                "Whole albums one after another, each in its own order, the albums in any order. \
-                 Turned on mid-album, the album playing plays on first."
-            }
+            Self::Random => words::settings_library::every_song_in_the_queue_in(),
+            Self::Smart => words::settings_library::every_song_in_the_queue_laid(),
+            Self::Albums => words::settings_library::whole_albums_one_after_another_each(),
         })
     }
 }
@@ -2082,9 +2038,9 @@ mod tests {
 
         assert_eq!(unnamed, None);
         assert_eq!(beside, None);
-        assert_eq!(within, Some(IN_THE_VAULT));
-        assert_eq!(itself, Some(IN_THE_VAULT));
-        assert_eq!(missing, Some(NOT_A_FOLDER));
+        assert_eq!(within, Some(words::settings_library::in_the_vault()));
+        assert_eq!(itself, Some(words::settings_library::in_the_vault()));
+        assert_eq!(missing, Some(words::settings_library::not_a_folder()));
     }
 
     #[test]
@@ -2109,10 +2065,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&held);
 
         assert_eq!(outside, None);
-        assert_eq!(within_a_root, Some(IN_THE_LIBRARY));
-        assert_eq!(the_root, Some(IN_THE_LIBRARY));
-        assert_eq!(within_the_music, Some(IN_THE_LIBRARY));
-        assert_eq!(missing, Some(NOT_A_FOLDER));
+        assert_eq!(
+            within_a_root,
+            Some(words::settings_library::in_the_library())
+        );
+        assert_eq!(the_root, Some(words::settings_library::in_the_library()));
+        assert_eq!(
+            within_the_music,
+            Some(words::settings_library::in_the_library())
+        );
+        assert_eq!(missing, Some(words::settings_library::not_a_folder()));
     }
 
     #[test]

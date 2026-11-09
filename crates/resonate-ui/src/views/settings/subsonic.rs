@@ -11,23 +11,8 @@ use crate::{
         root::RootView,
         settings::Rows,
     },
+    words,
 };
-
-const SUBSONIC_NOTE: &str = "A Subsonic server of your own — Navidrome, Airsonic, Gonic — is \
-                             asked for every track marked wanted, by the recording's \
-                             MusicBrainz id or its ISRC and never by a title, and what it holds \
-                             is kept in the vault. Asked as soon as all three are given, and \
-                             only while Online is on; the password is sent as a salted token, \
-                             never as it was typed.";
-
-const JELLYFIN_NOTE: &str = "A Jellyfin or Emby server of your own is browsed and played where \
-                             it is, in the Services pane, with nothing downloaded. Asked as soon \
-                             as all three are given, and only while Online is on; the password \
-                             is sent to sign in and the token it answers with is what every \
-                             later request carries.";
-
-const NOT_A_SERVER: &str = "A server's address starts with http:// or https://, as \
-                            http://music.local:4533";
 
 pub(super) fn reads_as_a_server(given: &str) -> bool {
     let lowered = given.to_ascii_lowercase();
@@ -39,7 +24,7 @@ pub(super) fn reads_as_a_server(given: &str) -> bool {
 }
 
 pub(super) fn not_a_server() -> Notice {
-    Notice::Trouble(NOT_A_SERVER.to_owned())
+    Notice::Trouble(words::settings_subsonic::not_a_server().to_owned())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,17 +36,17 @@ pub(crate) enum Service {
 impl Service {
     pub(crate) const ALL: [Self; 2] = [Self::Subsonic, Self::Jellyfin];
 
-    const fn name(self) -> &'static str {
+    fn name(self) -> &'static str {
         match self {
             Self::Subsonic => "Subsonic",
             Self::Jellyfin => "Jellyfin",
         }
     }
 
-    const fn note(self) -> &'static str {
+    fn note(self) -> &'static str {
         match self {
-            Self::Subsonic => SUBSONIC_NOTE,
-            Self::Jellyfin => JELLYFIN_NOTE,
+            Self::Subsonic => words::settings_subsonic::subsonic_note(),
+            Self::Jellyfin => words::settings_subsonic::jellyfin_note(),
         }
     }
 }
@@ -76,24 +61,24 @@ pub(crate) enum Account {
 impl Account {
     pub(crate) const ALL: [Self; 3] = [Self::Server, Self::User, Self::Password];
 
-    const fn placeholder(self, service: Service) -> &'static str {
+    fn placeholder(self, service: Service) -> &'static str {
         match (service, self) {
             (Service::Subsonic, Self::Server) => {
-                "The server's address, as http://music.local:4533, then press enter"
+                words::settings_subsonic::the_servers_address_as_http_music()
             }
             (Service::Jellyfin, Self::Server) => {
-                "The server's address, as http://music.local:8096, then press enter"
+                words::settings_subsonic::the_servers_address_as_http_music_2()
             }
-            (_, Self::User) => "The name you sign in with, then press enter",
-            (_, Self::Password) => "Its password, then press enter",
+            (_, Self::User) => words::settings_subsonic::the_name_you_sign_in_with(),
+            (_, Self::Password) => words::settings_subsonic::its_password_then_press_enter(),
         }
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Server => "Server",
-            Self::User => "User",
-            Self::Password => "Password",
+            Self::Server => words::settings_subsonic::server(),
+            Self::User => words::settings_subsonic::user(),
+            Self::Password => words::settings_subsonic::password(),
         }
     }
 
@@ -207,9 +192,9 @@ impl RootView {
         });
 
         let said = if given.is_empty() {
-            format!("The {} server is no longer asked", service.name())
+            words::settings_subsonic::server_no_longer_asked(service.name())
         } else {
-            format!("The {} server is asked from now on", service.name())
+            words::settings_subsonic::server_asked_from_now_on(service.name())
         };
         self.store(&account.setting(service, given), cx);
         self.report(Notice::Done(said), cx);

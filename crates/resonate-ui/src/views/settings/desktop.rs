@@ -10,28 +10,8 @@ use crate::{
         root::RootView,
         settings::{Choice, Rows, switch_row},
     },
+    words,
 };
-
-const NOTIFICATIONS_NOTE: &str = "A popup is never raised while this window is the one in front, \
-                                  and a session running no notification server sees none either \
-                                  way. What the desktop draws on one — a cover, the transport \
-                                  buttons, how long it stays — is the server's own to decide.";
-
-const DISCORD_NOTE: &str = "Register an application in Discord's developer portal, name it what \
-                            the status should say, and paste its application id here. Discord \
-                            has to be running on this machine: it is told over its own local \
-                            socket and nothing else is asked.";
-
-const DISCORD_ART_NOTE: &str = "A cover is Discord fetching the album's front from the Cover Art \
-                                Archive by the release's MusicBrainz id, so only a track whose \
-                                tags or lookup named its release has one. Where none is known the \
-                                icon stands in — an asset key uploaded to your application, or an \
-                                image address. No picture on this machine is sent anywhere.";
-
-const NOT_AN_APPLICATION: &str =
-    "That is not a Discord application id; it is a run of 17 to 20 digits";
-
-const NOT_AN_ICON: &str = "An icon is one asset key or one image address, with no spaces";
 
 impl Choice for Shown {
     const ALL: &'static [Self] = &Self::ALL;
@@ -42,9 +22,9 @@ impl Choice for Shown {
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Application => "Discord says only that Resonate is running, and nothing of what.",
-            Self::Track => "Discord shows the title and the artist of what is playing.",
-            Self::Album => "Discord shows the title, the artist and the album it is on.",
+            Self::Application => words::settings_desktop::discord_says_only_that_resonate_is(),
+            Self::Track => words::settings_desktop::discord_shows_the_title_and_the(),
+            Self::Album => words::settings_desktop::discord_shows_the_title_the_artist(),
         })
     }
 }
@@ -58,13 +38,9 @@ impl Choice for Pictured {
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Cover => {
-                "The album's cover from the Cover Art Archive, which Discord fetches itself; \
-                 nothing on this machine is sent. An album the archive holds none for shows the \
-                 icon below."
-            }
-            Self::Icon => "The icon named below, whatever is playing.",
-            Self::Nothing => "No picture at all.",
+            Self::Cover => words::settings_desktop::the_albums_cover_from_the_cover(),
+            Self::Icon => words::settings_desktop::the_icon_named_below_whatever_is(),
+            Self::Nothing => words::settings_desktop::no_picture_at_all(),
         })
     }
 }
@@ -77,15 +53,15 @@ impl RootView {
             .child(self.in_the_ring(
                 "notify-on-a-track-change",
                 switch_row(
-                    "Tell the desktop when a track starts",
-                    "Off, nothing pops up when the track changes",
+                    words::settings_desktop::tell_the_desktop_when_a_track(),
+                    words::settings_desktop::off_nothing_pops_up_when_the(),
                     tells,
                     "notify-on-a-track-change",
                 ),
                 move |this, _, cx| this.set_notify(!tells, cx),
                 cx,
             ))
-            .note(NOTIFICATIONS_NOTE)
+            .note(words::settings_desktop::notifications_note())
     }
 
     pub(crate) fn set_notify(&mut self, notify: bool, cx: &mut Context<Self>) {
@@ -100,15 +76,20 @@ impl RootView {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let on = presence.enabled;
         let under = match (on, presence.app.is_some()) {
-            (false, _) => "Off, nothing reaches Discord",
-            (true, false) => "On, and waiting for an application id",
-            (true, true) => "Discord is told what is playing",
+            (false, _) => words::settings_desktop::off_nothing_reaches_discord(),
+            (true, false) => words::settings_desktop::on_and_waiting_for_an_application(),
+            (true, true) => words::settings_desktop::discord_is_told_what_is_playing(),
         };
 
         kit::rows()
             .child(self.in_the_ring(
                 "discord-on",
-                switch_row("Show what is playing on Discord", under, on, "discord-on"),
+                switch_row(
+                    words::settings_desktop::show_what_is_playing_on_discord(),
+                    under,
+                    on,
+                    "discord-on",
+                ),
                 move |this, _, cx| {
                     this.present(
                         |presence| presence.enabled = !on,
@@ -119,7 +100,7 @@ impl RootView {
                 cx,
             ))
             .child(kit::field(
-                "Application id",
+                words::settings_desktop::application_id(),
                 self.text_field(
                     "discord-app",
                     &self.discord_app,
@@ -127,7 +108,7 @@ impl RootView {
                     cx,
                 ),
             ))
-            .note(DISCORD_NOTE)
+            .note(words::settings_desktop::discord_note())
     }
 
     pub(super) fn discord_shows_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -137,7 +118,7 @@ impl RootView {
 
         kit::rows()
             .child(kit::field(
-                "Shows",
+                words::settings_desktop::shows(),
                 self.choices(
                     "discord-shows",
                     presence.shown,
@@ -152,7 +133,7 @@ impl RootView {
                 ),
             ))
             .child(kit::field(
-                "Picture",
+                words::settings_desktop::picture(),
                 self.choices(
                     "discord-art",
                     presence.pictured,
@@ -167,7 +148,7 @@ impl RootView {
                 ),
             ))
             .child(kit::field(
-                "Icon",
+                words::settings_desktop::icon(),
                 self.text_field(
                     "discord-icon",
                     &self.discord_icon,
@@ -178,8 +159,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "discord-progress",
                 switch_row(
-                    "Show how far into the track",
-                    "Off, no bar and no time is drawn",
+                    words::settings_desktop::show_how_far_into_the_track(),
+                    words::settings_desktop::off_no_bar_and_no_time(),
                     progress,
                     "discord-progress",
                 ),
@@ -195,8 +176,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "discord-paused",
                 switch_row(
-                    "Stay while paused",
-                    "Off, the status clears when the music pauses",
+                    words::settings_desktop::stay_while_paused(),
+                    words::settings_desktop::off_the_status_clears_when_the(),
                     while_paused,
                     "discord-paused",
                 ),
@@ -209,14 +190,17 @@ impl RootView {
                 },
                 cx,
             ))
-            .note(DISCORD_ART_NOTE)
+            .note(words::settings_desktop::discord_art_note())
     }
 
     pub(crate) fn discord_app_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let typed = self.discord_app.read(cx).text().trim().to_owned();
         let app = AppId::parse(&typed);
         if app.is_none() && !typed.is_empty() {
-            self.report(Notice::Trouble(NOT_AN_APPLICATION.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_desktop::not_an_application().to_owned()),
+                cx,
+            );
             return;
         }
         let held = app.map(|app| app.to_string()).unwrap_or_default();
@@ -225,9 +209,9 @@ impl RootView {
         self.present(|presence| presence.app = app, &Setting::DiscordApp(app), cx);
 
         let said = if app.is_some() {
-            "Discord is told under that application"
+            words::settings_desktop::discord_is_told_under_that_application()
         } else {
-            "Discord is told nothing until an application id is given"
+            words::settings_desktop::discord_is_told_nothing_until_an()
         };
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);
@@ -245,7 +229,10 @@ impl RootView {
         let typed = self.discord_icon.read(cx).text().trim().to_owned();
         let icon = resonate_core::Icon::parse(&typed);
         if icon.is_none() && !typed.is_empty() {
-            self.report(Notice::Trouble(NOT_AN_ICON.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_desktop::not_an_icon().to_owned()),
+                cx,
+            );
             return;
         }
         self.discord_icon
@@ -257,9 +244,9 @@ impl RootView {
         );
 
         let said = if icon.is_some() {
-            "Discord draws that icon where no cover is known"
+            words::settings_desktop::discord_draws_that_icon_where_no()
         } else {
-            "Discord draws no icon"
+            words::settings_desktop::discord_draws_no_icon()
         };
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);

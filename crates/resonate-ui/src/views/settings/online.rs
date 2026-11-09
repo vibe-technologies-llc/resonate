@@ -11,19 +11,8 @@ use crate::{
         root::RootView,
         settings::{Armed, Choice, Rows, action, note, switch_row},
     },
+    words,
 };
-
-const LOOKUPS_NOTE: &str = "MusicBrainz for what a release and an artist are, the Cover Art \
-                            Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and \
-                            Better Lyrics for lyrics. Nothing sent identifies you unless a contact is given below.";
-
-const MIRROR_NOTE: &str = "MusicBrainz's own export, a 7.5 GB download read into a copy of about 10 \
-                           GB kept here, compressed and indexed; the build wants some 50 GB of \
-                           room for about an hour. A lookup is answered from it in milliseconds, \
-                           before the network, and a synced device without a copy asks this one.";
-
-const MIRROR_ABSENT: &str = "No copy is held yet. Building one fetches the export and reads it, \
-                             which takes a while; lookups go on as before meanwhile.";
 
 const MIRROR_REDRAWN_EVERY: Duration = Duration::from_secs(1);
 
@@ -31,59 +20,25 @@ const BYTES_IN_A_GIGABYTE: f64 = 1_000_000_000.0;
 
 fn mirror_said(told: &MirrorTold) -> String {
     match told {
-        MirrorTold::Absent => MIRROR_ABSENT.to_owned(),
+        MirrorTold::Absent => words::settings_online::mirror_absent().to_owned(),
         MirrorTold::Building {
             doing,
             done: Some((read, of)),
-        } if *of > 0 => format!(
-            "Building: {doing}, {:.1} of {:.1} GB.",
-            *read as f64 / BYTES_IN_A_GIGABYTE,
-            *of as f64 / BYTES_IN_A_GIGABYTE
+        } if *of > 0 => words::settings_online::mirror_building_so_far(
+            doing.to_string(),
+            format!("{:.1}", *of as f64 / BYTES_IN_A_GIGABYTE),
+            format!("{:.1}", *read as f64 / BYTES_IN_A_GIGABYTE),
         ),
-        MirrorTold::Building { doing, .. } => format!("Building: {doing}."),
-        MirrorTold::Held { dump, bytes } => format!(
-            "The export of {dump} is held, {:.1} GB on disc.",
-            *bytes as f64 / BYTES_IN_A_GIGABYTE
+        MirrorTold::Building { doing, .. } => {
+            words::settings_online::mirror_building(doing.to_string())
+        }
+        MirrorTold::Held { dump, bytes } => words::settings_online::mirror_held(
+            dump.to_string(),
+            format!("{:.1}", *bytes as f64 / BYTES_IN_A_GIGABYTE),
         ),
-        MirrorTold::Failed(why) => format!("The last build failed: {why}."),
+        MirrorTold::Failed(why) => words::settings_online::mirror_failed(why.to_string()),
     }
 }
-
-const METERED_NOTE: &str = "A connection NetworkManager reports as metered, a phone's hotspot or \
-                            a capped plan, is the one these switches are about; one it cannot \
-                            tell is taken as not metered. A song played in place is neither \
-                            skipped nor held.";
-
-const WAITING_ON_THE_METER: &str = "The connection is metered: downloads wait for one that is \
-                                    not, and go on by themselves when it changes.";
-
-const NEXT_START_NOTE: &str = "Turned on for the next start; nothing is reached until then.";
-
-const KEY_NOTE: &str = "Used from the next start by the lookup, which names by ear what nothing \
-                        else could, and by the Analysis pane. Leave it empty to recognise nothing.";
-
-const TOKEN_NOTE: &str = "Used from the next start by Listen, which asks AudD beside Shazam. \
-                          Leave it empty to ask Shazam alone.";
-
-const SUBMITTING_NOTE: &str = "Followed as soon as it is given: every play counted from then on \
-                               is sent to ListenBrainz within a minute. Leave it empty to send \
-                               nothing.";
-
-const EARLIER_PLAYS_NOTE: &str = "Plays counted before the token was given are kept here and not \
-                                  sent unless asked: every one of them goes to ListenBrainz, a \
-                                  hundred at a time.";
-
-const EARLIER_PLAYS_ASKED: &str = "The earlier plays are on their way, a hundred a minute, oldest \
-                                   first.";
-
-const BY_SOUND_NOTE: &str = "A lookup that finds no name, recording id or ISRC to ask with, and \
-                             no AcoustID answer, sends Shazam the peaks of twelve seconds of the \
-                             track and asks MusicBrainz for what it names. The Analysis pane \
-                             recognises the same way.";
-
-const LISTENING_NOTE: &str = "Listen names a song playing on the desktop or into a microphone, \
-                              whether or not the library holds it. A microphone named in the \
-                              Listen sheet is kept here too.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HeardFrom {
@@ -105,21 +60,15 @@ impl Choice for HeardFrom {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Desktop => "The desktop",
-            Self::Microphone => "A microphone",
+            Self::Desktop => words::settings_online::the_desktop(),
+            Self::Microphone => words::settings_online::a_microphone(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Desktop => {
-                "Listen names what this machine is playing — a video, a stream, another player \
-                 — by recording the desktop's own output."
-            }
-            Self::Microphone => {
-                "Listen names what is playing in the room, heard through the microphone chosen \
-                 below."
-            }
+            Self::Desktop => words::settings_online::listen_names_what_this_machine_is(),
+            Self::Microphone => words::settings_online::listen_names_what_is_playing_in(),
         })
     }
 }
@@ -139,7 +88,7 @@ impl Choice for ClipLength {
             8 => "8 s",
             12 => "12 s",
             20 => "20 s",
-            _ => "Other",
+            _ => words::settings_online::other(),
         }
     }
 
@@ -149,17 +98,13 @@ impl Choice for ClipLength {
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self.0.as_secs() {
-            8 => "Quickest to answer; enough for a clear recording of a well-known song.",
-            12 => "Enough for most songs, even over a little noise.",
-            20 => "The best chance with a noisy room, a quiet passage or a rarer song.",
-            _ => "A length of your own, set in the settings file.",
+            8 => words::settings_online::quickest_to_answer_enough_for_a(),
+            12 => words::settings_online::enough_for_most_songs_even_over(),
+            20 => words::settings_online::the_best_chance_with_a_noisy(),
+            _ => words::settings_online::a_length_of_your_own_set(),
         })
     }
 }
-
-const CONTACT_NOTE: &str = "Sent in the User-Agent to MusicBrainz, the Cover Art Archive, \
-                            ListenBrainz and Wikimedia, which ask who is asking, from the next \
-                            request on. Leave it empty to send nothing.";
 
 impl RootView {
     pub(super) fn lookups_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -171,16 +116,18 @@ impl RootView {
             .child(self.in_the_ring(
                 "reference-lookups",
                 switch_row(
-                    "Reach the network",
-                    "Off, the library is what the files say",
+                    words::settings_online::reach_the_network(),
+                    words::settings_online::off_the_library_is_what_the(),
                     on,
                     "reference-lookups",
                 ),
                 move |this, _, cx| this.set_online(!on, cx),
                 cx,
             ))
-            .when(on && !reachable, |body| body.child(note(NEXT_START_NOTE)))
-            .note(LOOKUPS_NOTE);
+            .when(on && !reachable, |body| {
+                body.child(note(words::settings_online::next_start_note()))
+            })
+            .note(words::settings_online::lookups_note());
 
         self.mirror_rows(rows, cx)
     }
@@ -221,8 +168,8 @@ impl RootView {
         rows.child(self.in_the_ring(
             "musicbrainz-mirror",
             switch_row(
-                "Keep a copy of MusicBrainz here",
-                "Off, MusicBrainz is asked over the network or of a synced device",
+                words::settings_online::keep_a_copy_of_musicbrainz_here(),
+                words::settings_online::off_musicbrainz_is_asked_over_the(),
                 mirrors,
                 "musicbrainz-mirror",
             ),
@@ -241,9 +188,9 @@ impl RootView {
                             .child(action(
                                 "musicbrainz-mirror-build",
                                 if held {
-                                    "Build it again"
+                                    words::settings_online::build_it_again()
                                 } else {
-                                    "Build it now"
+                                    words::settings_online::build_it_now()
                                 },
                                 Icon::Download,
                                 building,
@@ -261,7 +208,7 @@ impl RootView {
                             .when(held, |row| {
                                 row.child(action(
                                     "musicbrainz-mirror-remove",
-                                    "Remove the copy",
+                                    words::settings_online::remove_the_copy(),
                                     Icon::Delete,
                                     building,
                                     |_, _, cx| {
@@ -279,7 +226,7 @@ impl RootView {
                     ),
             )
         })
-        .note(MIRROR_NOTE)
+        .note(words::settings_online::mirror_note())
     }
 
     pub(crate) fn set_musicbrainz_mirror(&mut self, mirrors: bool, cx: &mut Context<Self>) {
@@ -294,8 +241,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             "after-a-scan",
             switch_row(
-                "Ask as soon as a scan ends",
-                "Off, the reference is asked only when Enrich is pressed",
+                words::settings_online::ask_as_soon_as_a_scan(),
+                words::settings_online::off_the_reference_is_asked_only(),
                 after_scan,
                 "after-a-scan",
             ),
@@ -314,8 +261,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "enrich-on-metered",
                 switch_row(
-                    "Look things up on a metered connection",
-                    "Off, the reference is not asked while the connection is metered",
+                    words::settings_online::look_things_up_on_a_metered(),
+                    words::settings_online::off_the_reference_is_not_asked(),
                     enriches,
                     "enrich-on-metered",
                 ),
@@ -325,16 +272,18 @@ impl RootView {
             .child(self.in_the_ring(
                 "stall-downloads-on-metered",
                 switch_row(
-                    "Hold downloads while the connection is metered",
-                    "Off, a provider's downloads go on whatever the connection",
+                    words::settings_online::hold_downloads_while_the_connection_is(),
+                    words::settings_online::off_a_providers_downloads_go_on(),
                     stalls,
                     "stall-downloads-on-metered",
                 ),
                 move |this, _, cx| this.set_stall_downloads_on_metered(!stalls, cx),
                 cx,
             ))
-            .when(waiting, |body| body.child(note(WAITING_ON_THE_METER)))
-            .note(METERED_NOTE)
+            .when(waiting, |body| {
+                body.child(note(words::settings_online::waiting_on_the_meter()))
+            })
+            .note(words::settings_online::metered_note())
     }
 
     pub(crate) fn set_enrich_on_metered(&mut self, enriches: bool, cx: &mut Context<Self>) {
@@ -359,8 +308,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "studying-tracks",
                 switch_row(
-                    "Study every track as a lookup runs",
-                    "Off, a track is decoded only to be heard or named",
+                    words::settings_online::study_every_track_as_a_lookup(),
+                    words::settings_online::off_a_track_is_decoded_only(),
                     studies,
                     "studying-tracks",
                 ),
@@ -370,15 +319,15 @@ impl RootView {
             .child(self.in_the_ring(
                 "identifying-by-sound",
                 switch_row(
-                    "Name a track nothing else can by how it sounds",
-                    "Off, no track's sound is sent to Shazam",
+                    words::settings_online::name_a_track_nothing_else_can(),
+                    words::settings_online::off_no_tracks_sound_is_sent(),
                     by_sound,
                     "identifying-by-sound",
                 ),
                 move |this, _, cx| this.set_by_sound(!by_sound, cx),
                 cx,
             ))
-            .note(BY_SOUND_NOTE)
+            .note(words::settings_online::by_sound_note())
     }
 
     pub(crate) fn set_by_sound(&mut self, by_sound: bool, cx: &mut Context<Self>) {
@@ -400,8 +349,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "fetching-lyrics",
                 switch_row(
-                    "Fetch lyrics for every track as a lookup runs",
-                    "Off, words are asked for only as a track plays",
+                    words::settings_online::fetch_lyrics_for_every_track_as(),
+                    words::settings_online::off_words_are_asked_for_only(),
                     lyrics,
                     "fetching-lyrics",
                 ),
@@ -411,8 +360,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "lyrics-by-the-locale",
                 switch_row(
-                    "Choose a lyric sheet in the language the system is set to",
-                    "Off, of sheets in several languages the first by name is read",
+                    words::settings_online::choose_a_lyric_sheet_in_the(),
+                    words::settings_online::off_of_sheets_in_several_languages(),
                     by_the_locale,
                     "lyrics-by-the-locale",
                 ),
@@ -437,7 +386,7 @@ impl RootView {
                 |this, window, cx| this.leave_contact(window, cx),
                 cx,
             ))
-            .note(CONTACT_NOTE)
+            .note(words::settings_online::contact_note())
     }
 
     pub(super) fn recognition_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -452,7 +401,7 @@ impl RootView {
                         cx,
                     ),
                 )
-                .child(note(KEY_NOTE)),
+                .child(note(words::settings_online::key_note())),
             )
             .child(
                 kit::field(
@@ -464,7 +413,7 @@ impl RootView {
                         cx,
                     ),
                 )
-                .child(note(TOKEN_NOTE)),
+                .child(note(words::settings_online::token_note())),
             )
     }
 
@@ -475,7 +424,7 @@ impl RootView {
 
         kit::rows()
             .child(kit::field(
-                "User token",
+                words::settings_online::user_token(),
                 self.text_field(
                     "listenbrainz-token",
                     &self.listenbrainz,
@@ -492,9 +441,9 @@ impl RootView {
                         .child(kit::action_row().child(action(
                             "send-the-earlier-plays",
                             if armed {
-                                "Press again to send every earlier play"
+                                words::settings_online::press_again_to_send_every_earlier()
                             } else {
-                                "Send earlier plays"
+                                words::settings_online::send_earlier_plays()
                             },
                             Icon::Export,
                             asked,
@@ -510,13 +459,13 @@ impl RootView {
                             cx,
                         )))
                         .child(note(if asked {
-                            EARLIER_PLAYS_ASKED
+                            words::settings_online::earlier_plays_asked()
                         } else {
-                            EARLIER_PLAYS_NOTE
+                            words::settings_online::earlier_plays_note()
                         })),
                 )
             })
-            .note(SUBMITTING_NOTE)
+            .note(words::settings_online::submitting_note())
     }
 
     fn send_the_earlier_plays(&mut self, cx: &mut Context<Self>) {
@@ -534,7 +483,7 @@ impl RootView {
 
         kit::rows()
             .child(kit::field(
-                "Listen to",
+                words::settings_online::listen_to(),
                 self.choices("listen-from", from, cx, |this, from: HeardFrom, cx| {
                     let listening = match from {
                         HeardFrom::Desktop => Listening::Desktop,
@@ -544,12 +493,12 @@ impl RootView {
                 }),
             ))
             .child(kit::field(
-                "For",
+                words::settings_online::r#for(),
                 self.choices("listen-for", length, cx, |this, length: ClipLength, cx| {
                     this.listen_for(length.0, cx);
                 }),
             ))
-            .note(LISTENING_NOTE)
+            .note(words::settings_online::listening_note())
     }
 }
 

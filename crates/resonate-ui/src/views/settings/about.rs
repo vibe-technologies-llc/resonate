@@ -12,34 +12,12 @@ use crate::{
         root::RootView,
         settings::{Armed, Group, Rows, action, reading, switch_row},
     },
+    words,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const ASK_AGAIN: &str = "Press it again to take every key out of the settings file. The music \
-                         folders and the files themselves are left alone.";
-
-const PUT_BACK: &str = "Everything is back to what this build was made with.";
-
-const THIS_BUILD: &str = "The faces are the ones found on this machine when the window opened, \
-                          and the reference is what the lookups reach this run.";
-
-const PLACES: &str = "The settings file is the one --config named, or the usual one where it \
-                      named none; the catalog is the library every pane reads. Neither is \
-                      moved from here.";
-
 const LOOKED_AT_AGAIN_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
-
-const UPDATES: &str = "Asked at most once a day while the window is open, of the repository this \
-                       build was released from. The question names this build and its version, \
-                       nothing about you, and nothing is asked while Online is off.";
-
-const NOWHERE_TO_ASK: &str = "This build names no repository it was released from, or was built \
-                              without the online parts, so it never asks.";
-
-const START_AGAIN: &str = "Puts every setting on this page and the others back to what this \
-                           build starts with. The first press arms it and the second resets; \
-                           the music folders, the catalog and the files are left alone.";
 
 impl RootView {
     pub(super) fn build_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -48,26 +26,22 @@ impl RootView {
         let reference = self.library.read(cx).has_reference();
 
         kit::rows()
-            .child(reading("Version", VERSION))
-            .child(reading("Body face", faces.body))
-            .child(reading("Codes", faces.monospace))
+            .child(reading(words::settings_about::version(), VERSION))
+            .child(reading(words::settings_about::body_face(), faces.body))
+            .child(reading(words::settings_about::codes(), faces.monospace))
             .child(reading(
-                "Sinks",
-                match sinks {
-                    0 => "none in the graph".to_owned(),
-                    1 => "1 advertised".to_owned(),
-                    many => format!("{many} advertised"),
-                },
+                words::settings_about::sinks(),
+                words::settings_about::sinks_advertised(sinks),
             ))
             .child(reading(
-                "Reference",
+                words::settings_about::reference(),
                 if reference {
-                    "MusicBrainz, the Cover Art Archive, Commons, Apple Music, Deezer, LRCLIB and Better Lyrics"
+                    words::settings_about::musicbrainz_the_cover_art_archive_commons()
                 } else {
-                    "none this run — the feature is out of this build, or it started offline"
+                    words::settings_about::none_this_run_the_feature_is()
                 },
             ))
-            .note(THIS_BUILD)
+            .note(words::settings_about::this_build())
     }
 
     pub(super) fn updates_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -78,11 +52,11 @@ impl RootView {
         let mut rows = kit::rows().child(self.in_the_ring(
             "check-for-updates",
             switch_row(
-                "Check for updates",
+                words::settings_about::check_for_updates(),
                 if checks {
-                    "Tell me when a newer release is out"
+                    words::settings_about::tell_me_when_a_newer_release()
                 } else {
-                    "Off, nothing is asked"
+                    words::settings_about::off_nothing_is_asked()
                 },
                 checks,
                 "check-for-updates",
@@ -94,14 +68,14 @@ impl RootView {
             let page = newer.page.clone();
             let version = newer.version.clone();
             rows = rows.child(kit::row(
-                format!("Resonate {} is out", newer.version),
-                format!("This build is {VERSION}."),
+                words::settings_about::newer_is_out(newer.version.to_string()),
+                words::settings_about::this_build_is(VERSION),
                 gpui::div()
                     .flex()
                     .gap_2()
                     .child(action(
                         "open-the-release",
-                        "Open the release",
+                        words::settings_about::open_the_release(),
                         Icon::Globe,
                         false,
                         move |_, _, cx| cx.open_url(&page),
@@ -110,7 +84,7 @@ impl RootView {
                     ))
                     .child(action(
                         "dismiss-the-release",
-                        "Dismiss",
+                        words::settings_about::dismiss(),
                         Icon::Close,
                         false,
                         move |this, _, cx| this.dismiss_the_release(&version, cx),
@@ -119,7 +93,11 @@ impl RootView {
                     )),
             ));
         }
-        rows.note(if can_ask { UPDATES } else { NOWHERE_TO_ASK })
+        rows.note(if can_ask {
+            words::settings_about::updates()
+        } else {
+            words::settings_about::nowhere_to_ask()
+        })
     }
 
     pub(crate) fn check_for_updates(&mut self, checks: bool, cx: &mut Context<Self>) {
@@ -185,9 +163,8 @@ impl RootView {
 
         if let Some(newer) = self.newer.as_ref().filter(|_| !told_already) {
             toast::tell(
-                Notice::Noted(format!(
-                    "Resonate {} is out · Settings, About has it",
-                    newer.version
+                Notice::Noted(words::settings_about::newer_is_out_toast(
+                    newer.version.to_string(),
                 )),
                 cx,
             );
@@ -199,29 +176,35 @@ impl RootView {
         let places = cx.global::<ResonateApp>().places.clone();
 
         kit::rows()
-            .child(reading("Settings", places.config.display().to_string()))
-            .child(reading("Catalog", places.library.display().to_string()))
-            .note(PLACES)
+            .child(reading(
+                words::settings_about::settings(),
+                places.config.display().to_string(),
+            ))
+            .child(reading(
+                words::settings_about::catalog(),
+                places.library.display().to_string(),
+            ))
+            .note(words::settings_about::places())
     }
 
     pub(super) fn everything_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let armed = self.is_armed(&Armed::ResetEverything);
 
         kit::rows().child(kit::row(
-            "Every setting",
+            words::settings_about::every_setting(),
             if armed {
-                ASK_AGAIN
+                words::settings_about::ask_again()
             } else if self.reset_everything_landed {
-                PUT_BACK
+                words::settings_about::put_back()
             } else {
-                START_AGAIN
+                words::settings_about::start_again()
             },
             action(
                 "reset-everything",
                 if armed {
-                    "Press again to reset everything"
+                    words::settings_about::press_again_to_reset_everything()
                 } else {
-                    "Reset everything"
+                    words::settings_about::reset_everything()
                 },
                 Icon::Undo,
                 false,

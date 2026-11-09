@@ -37,6 +37,11 @@ the code that says the words.
 - **One area per subject, kept beside the code that says it**: `crates/resonate-ui/words/en/format.ftl`
   is `format.rs`'s. A literal that is a proper name (a theme's, a service's, a font family) or
   markup is not a word.
+- **An area's name is snake_case, so a file of the settings pane speaks through
+  `settings_<file>.ftl`** (`settings_pane.ftl` for its `mod.rs`): a hyphen in an area's name is
+  refused, and the prefix keeps the pane's areas apart from the window's own (`equaliser.ftl` beside
+  `settings_equaliser.ftl`). A message naming the sound system takes it as `$system`
+  (`sound_system!()`), and a sentence naming a speaker selects on `$speaker` (`left`, `right`).
 
 ## What is not translated
 

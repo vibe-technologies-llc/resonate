@@ -14,28 +14,14 @@ use crate::{
         settings::{Choice, Rows, find::Category, note, switch_row},
         spoken::Spoken,
     },
+    words,
 };
-
-const KEEPS_ITS_OWN: &str = "Each palette draws each accent in its own tones, and the ringed \
-                             swatch is whichever one the palette was built around.";
-
-const LANGUAGE_NOTE: &str = "A language chosen here is spoken from the next start.";
-
-const ITS_OWN: &str = "Whichever accent this palette was built around";
 
 const ITS_OWN_ID: &str = "accent-of-the-palette";
 
 const FOLLOW_SCHEME_ID: &str = "follow-the-desktop-scheme";
 
 const FOLLOW_TEXT_SIZE_ID: &str = "follow-the-desktop-text-size";
-
-const FOLLOW_SCHEME_NOTE: &str = "A palette with a light or dark counterpart is worn as the one the \
-                                  desktop asks for; choosing a palette below wears that palette \
-                                  alone.";
-
-const FOLLOW_TEXT_SIZE_NOTE: &str = "The nearest of the sizes below to the desktop's own text scale; \
-                                     choosing a size below wears that size alone, and it is the one \
-                                     worn when the desktop does not say.";
 
 const MINIMISE_ID: &str = "show-the-minimise-button";
 
@@ -56,10 +42,6 @@ const REMEMBER_WINDOW_SIZE_ID: &str = "remember-the-window-size";
 
 const REMEMBER_SETTINGS_CATEGORY_ID: &str = "remember-the-settings-category";
 
-const WINDOW_BUTTONS_NOTE: &str = "A button the compositor does not offer is left out whatever \
-                                   this says, and a window the compositor draws a titlebar for \
-                                   carries that titlebar's buttons rather than these.";
-
 impl Choice for TextSize {
     const ALL: &'static [Self] = &TextSize::ALL;
 
@@ -68,11 +50,10 @@ impl Choice for TextSize {
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::from(format!(
-            "Everything that holds text — the type, the rows, the sidebar and every control — \
-             is drawn at {:.0}% of the middling size.",
+        SharedString::from(words::settings_appearance::text_size_meaning(format!(
+            "{:.0}",
             self.scale() * 100.0
-        ))
+        )))
     }
 }
 
@@ -81,17 +62,17 @@ impl Choice for LanguageChoice {
 
     fn label(self) -> &'static str {
         match self {
-            Self::System => "Follow the system",
+            Self::System => words::settings_appearance::follow_the_system(),
             Self::Chosen(language) => language.endonym(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::System => {
-                "The first language the system lists that Resonate speaks, else English."
+            Self::System => words::settings_appearance::the_first_language_the_system_lists(),
+            Self::Chosen(_) => {
+                words::settings_appearance::spoken_whatever_language_the_system_lists()
             }
-            Self::Chosen(_) => "Spoken whatever language the system lists.",
         })
     }
 }
@@ -101,23 +82,17 @@ impl Choice for ScrollbarMode {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Shown => "Always",
-            Self::AutoHidden => "While scrolling",
-            Self::Hidden => "Never",
+            Self::Shown => words::settings_appearance::always(),
+            Self::AutoHidden => words::settings_appearance::while_scrolling(),
+            Self::Hidden => words::settings_appearance::never(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Shown => {
-                "Every list and pane that scrolls draws a bar down its edge that shows where the \
-                 view stands and can be dragged."
-            }
-            Self::AutoHidden => {
-                "A bar is drawn while its list is scrolling and for a moment after, and whenever \
-                 the pointer is over the edge it sits on, so it can still be taken hold of."
-            }
-            Self::Hidden => "No bar is drawn; a list still scrolls with the wheel and the keys.",
+            Self::Shown => words::settings_appearance::every_list_and_pane_that_scrolls(),
+            Self::AutoHidden => words::settings_appearance::a_bar_is_drawn_while_its(),
+            Self::Hidden => words::settings_appearance::no_bar_is_drawn_a_list(),
         })
     }
 }
@@ -127,26 +102,17 @@ impl Choice for SpectrumTilt {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Flat => "Flat",
-            Self::Pink => "3 dB an octave",
-            Self::Steep => "4.5 dB an octave",
+            Self::Flat => words::settings_appearance::flat(),
+            Self::Pink => words::settings_appearance::n_3_db_an_octave(),
+            Self::Steep => words::settings_appearance::n_4_5_db_an_octave(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Flat => {
-                "Each band is drawn at the level it reads: white noise stands level, and music \
-                 slopes down into the treble."
-            }
-            Self::Pink => {
-                "The treble is lifted 3 dB an octave about 1 kHz, so pink noise stands level and \
-                 a mastered record does not slope away."
-            }
-            Self::Steep => {
-                "The treble is lifted 4.5 dB an octave about 1 kHz, the slope a mastered record \
-                 tends to fall by, so it stands nearer level."
-            }
+            Self::Flat => words::settings_appearance::each_band_is_drawn_at_the(),
+            Self::Pink => words::settings_appearance::the_treble_is_lifted_3_db(),
+            Self::Steep => words::settings_appearance::the_treble_is_lifted_4_5(),
         })
     }
 }
@@ -156,16 +122,15 @@ impl Choice for SpectrumFloor {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Shallow => "−60 dB",
-            Self::Middling => "−78 dB",
-            Self::Deep => "−96 dB",
+            Self::Shallow => words::settings_appearance::n_60_db(),
+            Self::Middling => words::settings_appearance::n_78_db(),
+            Self::Deep => words::settings_appearance::n_96_db(),
         }
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::from(format!(
-            "A band quieter than {} dB rests on the floor; the plot runs from there to full scale.",
-            self.db()
+        SharedString::from(words::settings_appearance::floor_meaning(
+            self.db().to_string(),
         ))
     }
 }
@@ -175,16 +140,15 @@ impl Choice for SpectrumBands {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Thirds => "Thirds",
-            Self::Sixths => "Sixths",
-            Self::Twelfths => "Twelfths",
+            Self::Thirds => words::settings_appearance::thirds(),
+            Self::Sixths => words::settings_appearance::sixths(),
+            Self::Twelfths => words::settings_appearance::twelfths(),
         }
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::from(format!(
-            "Each octave is cut into {} bands, every band its loudest bin.",
-            self.per_octave()
+        SharedString::from(words::settings_appearance::bands_meaning(
+            self.per_octave().to_string(),
         ))
     }
 }
@@ -194,16 +158,15 @@ impl Choice for SpectrumFalls {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Slowly => "Slowly",
-            Self::Middling => "Middling",
-            Self::Quickly => "Quickly",
+            Self::Slowly => words::settings_appearance::slowly(),
+            Self::Middling => words::settings_appearance::middling(),
+            Self::Quickly => words::settings_appearance::quickly(),
         }
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::from(format!(
-            "A bar falls {} dB a second once its band quietens; its held peak lets go at half that.",
-            self.db_per_second()
+        SharedString::from(words::settings_appearance::falls_meaning(
+            self.db_per_second().to_string(),
         ))
     }
 }
@@ -231,25 +194,25 @@ impl RootView {
             .child(self.in_the_ring(
                 FOLLOW_SCHEME_ID,
                 switch_row(
-                    "Follow the desktop's light or dark setting",
-                    "Wear the light or dark counterpart of the palette as the desktop asks",
+                    words::settings_appearance::follow_the_desktops_light_or_dark(),
+                    words::settings_appearance::wear_the_light_or_dark_counterpart(),
                     following,
                     FOLLOW_SCHEME_ID,
                 ),
                 move |this, _, cx| this.follow_the_desktop_scheme(!following, cx),
                 cx,
             ))
-            .child(kit::field("Theme", shelf))
+            .child(kit::field(words::settings_appearance::theme(), shelf))
             .child(kit::field(
-                "Accent",
+                words::settings_appearance::accent(),
                 div()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(accents)
-                    .child(note(KEEPS_ITS_OWN)),
+                    .child(note(words::settings_appearance::keeps_its_own())),
             ))
-            .note(FOLLOW_SCHEME_NOTE)
+            .note(words::settings_appearance::follow_scheme_note())
     }
 
     fn palette(&self, palette: Theme, worn: Appearance, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -327,7 +290,7 @@ impl RootView {
         };
         let colour = theme::sample(shown).accent;
         let id = accent.map_or(ITS_OWN_ID, Accent::as_str);
-        let saying = accent.map_or(ITS_OWN, Accent::label);
+        let saying = accent.map_or(words::settings_appearance::its_own(), Accent::label);
 
         self.in_the_ring(
             saying,
@@ -349,8 +312,8 @@ impl RootView {
             .child(self.in_the_ring(
                 FOLLOW_TEXT_SIZE_ID,
                 switch_row(
-                    "Follow the desktop's text size",
-                    "Draw the text at the size nearest the desktop's own text scale",
+                    words::settings_appearance::follow_the_desktops_text_size(),
+                    words::settings_appearance::draw_the_text_at_the_size(),
                     following,
                     FOLLOW_TEXT_SIZE_ID,
                 ),
@@ -358,7 +321,7 @@ impl RootView {
                 cx,
             ))
             .child(kit::field(
-                "Text size",
+                words::settings_appearance::text_size(),
                 self.choices(
                     "text-size",
                     worn.text_size,
@@ -381,7 +344,7 @@ impl RootView {
                     },
                 ),
             ))
-            .note(FOLLOW_TEXT_SIZE_NOTE)
+            .note(words::settings_appearance::follow_text_size_note())
     }
 
     pub(crate) fn follow_the_desktop_scheme(&mut self, follows: bool, cx: &mut Context<Self>) {
@@ -422,8 +385,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             REDUCED_MOTION_ID,
             switch_row(
-                "Reduce motion",
-                "Things appear at once instead of sliding, fading or gliding into place",
+                words::settings_appearance::reduce_motion(),
+                words::settings_appearance::things_appear_at_once_instead_of(),
                 reduced,
                 REDUCED_MOTION_ID,
             ),
@@ -450,8 +413,8 @@ impl RootView {
             .child(self.in_the_ring(
                 MINIMISE_ID,
                 switch_row(
-                    "Show the minimise button",
-                    "Off, the window is put away only by the compositor's own gesture",
+                    words::settings_appearance::show_the_minimise_button(),
+                    words::settings_appearance::off_the_window_is_put_away(),
                     shown.minimise,
                     MINIMISE_ID,
                 ),
@@ -464,8 +427,8 @@ impl RootView {
             .child(self.in_the_ring(
                 MAXIMISE_ID,
                 switch_row(
-                    "Show the maximise button",
-                    "Off, a double press on the titlebar still fills the screen",
+                    words::settings_appearance::show_the_maximise_button(),
+                    words::settings_appearance::off_a_double_press_on_the(),
                     shown.maximise,
                     MAXIMISE_ID,
                 ),
@@ -475,7 +438,7 @@ impl RootView {
                 },
                 cx,
             ))
-            .note(WINDOW_BUTTONS_NOTE)
+            .note(words::settings_appearance::window_buttons_note())
     }
 
     pub(super) fn volume_wheel_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -484,8 +447,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             VOLUME_WHEEL_ID,
             switch_row(
-                "Turn the volume with the wheel",
-                "Over the volume slider, each notch moves it five per cent",
+                words::settings_appearance::turn_the_volume_with_the_wheel(),
+                words::settings_appearance::over_the_volume_slider_each_notch(),
                 wheeled,
                 VOLUME_WHEEL_ID,
             ),
@@ -501,7 +464,7 @@ impl RootView {
         let mode = cx.global::<ResonateApp>().scrollbars;
 
         kit::rows().child(kit::field(
-            "Draw scrollbars",
+            words::settings_appearance::draw_scrollbars(),
             self.choices("scrollbars", mode, cx, |this, mode: ScrollbarMode, cx| {
                 this.draw_scrollbars(mode, cx);
                 this.store(&Setting::Scrollbars(mode), cx);
@@ -514,7 +477,7 @@ impl RootView {
 
         kit::rows()
             .child(kit::field(
-                "Speak",
+                words::settings_appearance::speak(),
                 self.choices(
                     "language",
                     chosen,
@@ -525,7 +488,7 @@ impl RootView {
                     },
                 ),
             ))
-            .note(LANGUAGE_NOTE)
+            .note(words::settings_appearance::language_note())
     }
 
     pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -534,8 +497,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             MOUSE_NAVIGATION_ID,
             switch_row(
-                "Use the mouse back and forward buttons",
-                "Move through the album and artist pages opened in this window",
+                words::settings_appearance::use_the_mouse_back_and_forward(),
+                words::settings_appearance::move_through_the_album_and_artist(),
                 enabled,
                 MOUSE_NAVIGATION_ID,
             ),
@@ -566,8 +529,8 @@ impl RootView {
             .child(self.in_the_ring(
                 SUGGESTIONS_TAB_ID,
                 switch_row(
-                    "Show Suggestions",
-                    "The lists the catalog offers to make out of what it holds",
+                    words::settings_appearance::show_suggestions(),
+                    words::settings_appearance::the_lists_the_catalog_offers_to(),
                     shown.suggestions,
                     SUGGESTIONS_TAB_ID,
                 ),
@@ -580,8 +543,8 @@ impl RootView {
             .child(self.in_the_ring(
                 MISSING_TAB_ID,
                 switch_row(
-                    "Show Missing",
-                    "What the releases are short of, and what the artists put out elsewhere",
+                    words::settings_appearance::show_missing(),
+                    words::settings_appearance::what_the_releases_are_short_of(),
                     shown.missing,
                     MISSING_TAB_ID,
                 ),
@@ -594,8 +557,8 @@ impl RootView {
             .child(self.in_the_ring(
                 TAB_COUNTS_ID,
                 switch_row(
-                    "Show the counts",
-                    "The figure beside each tab: how many albums, tracks, plays and the rest",
+                    words::settings_appearance::show_the_counts(),
+                    words::settings_appearance::the_figure_beside_each_tab_how(),
                     shown.counts,
                     TAB_COUNTS_ID,
                 ),
@@ -620,7 +583,7 @@ impl RootView {
 
         kit::rows()
             .child(kit::field(
-                "Treble lifted",
+                words::settings_appearance::treble_lifted(),
                 self.choices("spectrum-tilt", spectral.tilt, cx, |this, tilt, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
                     this.read_the_spectrum(Spectral { tilt, ..held }, cx);
@@ -628,7 +591,7 @@ impl RootView {
                 }),
             ))
             .child(kit::field(
-                "Floor",
+                words::settings_appearance::floor(),
                 self.choices("spectrum-floor", spectral.floor, cx, |this, floor, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
                     this.read_the_spectrum(Spectral { floor, ..held }, cx);
@@ -636,7 +599,7 @@ impl RootView {
                 }),
             ))
             .child(kit::field(
-                "Bands an octave",
+                words::settings_appearance::bands_an_octave(),
                 self.choices("spectrum-bands", spectral.bands, cx, |this, bands, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
                     this.read_the_spectrum(Spectral { bands, ..held }, cx);
@@ -644,7 +607,7 @@ impl RootView {
                 }),
             ))
             .child(kit::field(
-                "Bars fall",
+                words::settings_appearance::bars_fall(),
                 self.choices("spectrum-falls", spectral.falls, cx, |this, falls, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
                     this.read_the_spectrum(Spectral { falls, ..held }, cx);
@@ -700,8 +663,8 @@ impl RootView {
             .child(self.in_the_ring(
                 REMEMBER_TAB_ID,
                 switch_row(
-                    "Remember the last tab",
-                    "Off, the window opens on Tracks",
+                    words::settings_appearance::remember_the_last_tab(),
+                    words::settings_appearance::off_the_window_opens_on_tracks(),
                     remember_tab,
                     REMEMBER_TAB_ID,
                 ),
@@ -711,8 +674,8 @@ impl RootView {
             .child(self.in_the_ring(
                 REMEMBER_WINDOW_SIZE_ID,
                 switch_row(
-                    "Remember the window size",
-                    "Off, the window opens at its built-in size",
+                    words::settings_appearance::remember_the_window_size(),
+                    words::settings_appearance::off_the_window_opens_at_its(),
                     remember_window_size,
                     REMEMBER_WINDOW_SIZE_ID,
                 ),
@@ -724,8 +687,8 @@ impl RootView {
             .child(self.in_the_ring(
                 REMEMBER_SETTINGS_CATEGORY_ID,
                 switch_row(
-                    "Remember the Settings category",
-                    "Off, Settings opens on Output",
+                    words::settings_appearance::remember_the_settings_category(),
+                    words::settings_appearance::off_settings_opens_on_output(),
                     remember_settings_category,
                     REMEMBER_SETTINGS_CATEGORY_ID,
                 ),

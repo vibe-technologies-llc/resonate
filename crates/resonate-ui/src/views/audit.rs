@@ -202,7 +202,24 @@ mod tests {
 mod words {
     use std::path::Path;
 
-    const PROPER: &[&str] = &["Resonate", "PipeWire", "Windows", "Shazam", "AudD"];
+    const PROPER: &[&str] = &[
+        "AcoustID",
+        "Android",
+        "AudD",
+        "AutoEq",
+        "Discord",
+        "Jellyfin",
+        "Last.fm",
+        "Linux",
+        "Lipshitz",
+        "ListenBrainz",
+        "PipeWire",
+        "Resonate",
+        "Shazam",
+        "Subsonic",
+        "Windows",
+        "YouTube Music",
+    ];
 
     const NOT_WORDS: &[&str] = &[
         "fonts.rs",
@@ -228,24 +245,6 @@ mod words {
         "views/root.rs",
         "views/search.rs",
         "views/served.rs",
-        "views/settings/about.rs",
-        "views/settings/abx.rs",
-        "views/settings/appearance.rs",
-        "views/settings/desktop.rs",
-        "views/settings/equaliser.rs",
-        "views/settings/filters.rs",
-        "views/settings/find.rs",
-        "views/settings/lastfm.rs",
-        "views/settings/library.rs",
-        "views/settings/mod.rs",
-        "views/settings/online.rs",
-        "views/settings/output.rs",
-        "views/settings/processing.rs",
-        "views/settings/spotify.rs",
-        "views/settings/subsonic.rs",
-        "views/settings/sync.rs",
-        "views/settings/tidal.rs",
-        "views/settings/youtube_music.rs",
         "views/sorting.rs",
         "views/transport.rs",
         "views/zones.rs",
