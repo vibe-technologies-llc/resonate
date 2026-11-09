@@ -1948,8 +1948,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `kit::stacked_row` and `kit::field` put a wide control (a long segmented choice, a field, a list, a
   grid) full width under them, `reading` a figure on the right. A pressable row
   (`kit::switch_row`, `kit::nav_row`, `kit::choice_row`, a folder) **bleeds** to its cell's edges
-  (`kit::Bleeds`: negative margins as deep as the cell's padding, the same padding inside, rounded),
-  so its hover wash and focus ring fill the row and stay clear of the card's rounded corners. A row
+  (`kit::Bleeds`: sideways margins as deep as the cell's padding, vertical ones 2 px
+  short of it, the same inside, rounded), so its hover wash, chosen wash and focus ring fill the
+  row, stay clear of the card's rounded corners and stop short of the hairline beside them. A row
   of buttons is a `kit::action_row`. **One framed text field**: `kit::framed_field(id, lit)` (the
   search height, `background`, a `soft_edge` border lit in the accent under the pointer or while it
   holds the caret) is every field's frame; `RootView::text_field(id, field, leave)` is every

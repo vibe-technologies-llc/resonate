@@ -948,7 +948,7 @@ fn told(name: impl Into<SharedString>, under: impl Into<SharedString>) -> Div {
 
 pub(crate) trait Bleeds: Styled + Sized {
     fn bleeds(self) -> Self {
-        self.mx_neg_3().my_neg_2p5().px_3().py_2p5().rounded_lg()
+        self.mx_neg_3().my_neg_2().px_3().py_2().rounded_lg()
     }
 }
 
