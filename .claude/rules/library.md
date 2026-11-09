@@ -1282,7 +1282,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   outgrew its room is laid while the copy is made, not after** (`outgrown_head`,
   `copied_with_head`): the copy is the new head followed by the audio from where the old head
   ended, read, for an Ogg head whose page count changed, renumbered and sealed again
-  (`ogg::renumbered`), so the audio moves once and `staged_into` finds a head that already holds
+  (`ogg::renumbered`: only the pages of the rewritten stream's serial, shifted from its first, up to its end-of-stream page, so an interleaved stream and a chained Ogg's later links keep their own numbers), so the audio moves once and `staged_into` finds a head that already holds
   (`a_copy_of_a_head_that_outgrew_its_room_is_made_with_the_grown_head_and_the_audio_whole`);
   `moved` (chunked, backwards where the head grew) remains for a head that outgrows the staged
   copy after all. Where the head has no layout (a file `Head` does not recognise) lofty writes as

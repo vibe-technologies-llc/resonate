@@ -12,6 +12,7 @@ const CHECKSUM_AT: usize = 22;
 const SEGMENT_COUNT_AT: usize = 26;
 const CONTINUED: u8 = 0x01;
 const FIRST_OF_STREAM: u8 = 0x02;
+const LAST_OF_STREAM: u8 = 0x04;
 const NO_PACKET_ENDS: u64 = u64::MAX;
 const LACING_FULL: usize = 255;
 const SEGMENTS_A_PAGE: usize = 32;
@@ -476,15 +477,40 @@ impl Paged {
     }
 }
 
-pub(crate) fn renumbered(tail: &mut [u8], first: u32) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Renumbering {
+    pub(crate) serial: u32,
+    pub(crate) from: u32,
+}
+
+pub(crate) fn renumbered(tail: &mut [u8], renumbering: Renumbering) {
     let mut at = 0;
-    let mut sequence = first;
+    let mut shift = None;
     while let Some(length) = page_length_at(tail, at) {
         let page = &mut tail[at..at + length];
-        page[SEQUENCE_AT..SEQUENCE_AT + 4].copy_from_slice(&sequence.to_le_bytes());
-        seal(page);
         at += length;
-        sequence = sequence.wrapping_add(1);
+        let serial = u32::from_le_bytes([
+            page[SERIAL_AT],
+            page[SERIAL_AT + 1],
+            page[SERIAL_AT + 2],
+            page[SERIAL_AT + 3],
+        ]);
+        if serial != renumbering.serial {
+            continue;
+        }
+        let sequence = u32::from_le_bytes([
+            page[SEQUENCE_AT],
+            page[SEQUENCE_AT + 1],
+            page[SEQUENCE_AT + 2],
+            page[SEQUENCE_AT + 3],
+        ]);
+        let by = *shift.get_or_insert(renumbering.from.wrapping_sub(sequence));
+        page[SEQUENCE_AT..SEQUENCE_AT + 4]
+            .copy_from_slice(&sequence.wrapping_add(by).to_le_bytes());
+        seal(page);
+        if page[FLAGS_AT] & LAST_OF_STREAM != 0 {
+            return;
+        }
     }
 }
 
@@ -644,7 +670,7 @@ mod tests {
                 0,
                 960 * u64::from(sequence),
                 7,
-                sequence,
+                sequence + 2,
                 &[10],
                 &[3; 10],
             ));
@@ -652,7 +678,7 @@ mod tests {
         tail.extend_from_slice(b"not a page");
         let trailing = b"not a page".len();
 
-        renumbered(&mut tail, 9);
+        renumbered(&mut tail, Renumbering { serial: 7, from: 9 });
 
         let mut expected = Vec::new();
         for sequence in 0..3_u32 {
@@ -668,5 +694,38 @@ mod tests {
         expected.extend_from_slice(b"not a page");
         assert_eq!(tail, expected);
         assert_eq!(tail.len() - trailing, 3 * (FIXED_HEADER_BYTES + 1 + 10));
+    }
+
+    #[test]
+    fn renumbering_leaves_another_streams_pages_and_the_next_link_as_they_were() {
+        let first_link = [
+            page(0, 960, 7, 2, &[10], &[3; 10]),
+            page(0, 0, 8, 5, &[10], &[4; 10]),
+            page(LAST_OF_STREAM, 1_920, 7, 3, &[10], &[3; 10]),
+        ];
+        let next_link = [
+            page(FIRST_OF_STREAM, 0, 7, 0, &[10], &[5; 10]),
+            page(0, 960, 9, 1, &[10], &[6; 10]),
+        ];
+        let mut tail: Vec<u8> = first_link
+            .iter()
+            .chain(&next_link)
+            .flatten()
+            .copied()
+            .collect();
+
+        renumbered(&mut tail, Renumbering { serial: 7, from: 4 });
+
+        let expected: Vec<u8> = [
+            page(0, 960, 7, 4, &[10], &[3; 10]),
+            page(0, 0, 8, 5, &[10], &[4; 10]),
+            page(LAST_OF_STREAM, 1_920, 7, 5, &[10], &[3; 10]),
+        ]
+        .iter()
+        .chain(&next_link)
+        .flatten()
+        .copied()
+        .collect();
+        assert_eq!(tail, expected);
     }
 }

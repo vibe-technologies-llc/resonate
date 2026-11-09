@@ -51,7 +51,7 @@ pub(crate) enum Room {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Rebuilt {
     pub(crate) head: Vec<u8>,
-    pub(crate) renumbered_from: Option<u32>,
+    pub(crate) renumbered_from: Option<ogg::Renumbering>,
 }
 
 impl Rebuilt {
@@ -199,7 +199,11 @@ fn ogg_rebuilt(layout: Layout, standing: u64, written: &[u8], room: Room) -> Opt
         head,
         renumbered_from: (pages != usize::try_from(layout.pages).ok()?)
             .then(|| u32::try_from(pages).ok())
-            .flatten(),
+            .flatten()
+            .map(|from| ogg::Renumbering {
+                serial: parsed.serial,
+                from,
+            }),
     })
 }
 
@@ -601,10 +605,13 @@ mod tests {
             comment_length_of(&rebuilt.head),
             7_100 + PADDING_LEFT_FOR_THE_NEXT_EDIT as usize
         );
-        assert_eq!(rebuilt.renumbered_from, Some(3));
+        assert_eq!(
+            rebuilt.renumbered_from.map(|renumbering| renumbering.from),
+            Some(3)
+        );
         assert_eq!(
             head.rebuilt(&opus_head(100), Room::Generous)
-                .map(|rebuilt| rebuilt.renumbered_from),
+                .map(|rebuilt| rebuilt.renumbered_from.map(|renumbering| renumbering.from)),
             Some(Some(3)),
         );
     }

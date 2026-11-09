@@ -14,14 +14,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   the old one to its readers, and `taken.still_stands` guards only against another writer; first
   find whether a tag write can reach the song playing at all (neither `audio.md` nor `library.md`
   says), then keep the lengthening for a file nothing holds open or take the staged copy
-- [S · 0.7.1] Adding a picture to a chained Ogg file renumbers the later links' pages:
-  `ogg::renumbered` rewrites the sequence number and checksum of every consecutive page after the
-  header with no look at the serial, from `laid_head` and `copied_with_head` whenever the header's
-  page count changes (a cover added to the comment header), so a second link, whose pages restart at
-  0, and any stream interleaved with the first, take the first's counter and a libogg-based player
-  reports a hole at each link; the vault's renumbering keeps to `renumbering.serial`, and
-  `ogg::chain` and the decoder's link following say chained Opus and Vorbis are read
-
 ## Mobile
 - [S · 0.7.1] Deleting or folding songs on a phone leaves dead rows in the live queue and then
   stops the queue from being kept: `drop_from_queue_in` sends one `Command::Remove` per run of gone
