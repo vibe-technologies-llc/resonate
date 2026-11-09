@@ -66,6 +66,8 @@ mod table;
 #[cfg(feature = "sync")]
 mod together;
 mod trashing;
+#[cfg(feature = "online")]
+mod updates;
 mod vault;
 mod vocabulary;
 mod wanting;
@@ -475,6 +477,10 @@ fn run() -> Result<()> {
         Some(Sub::Stats { window, top }) => {
             stats::print(&open_library(&cli, &config)?, *window, top.get())
         }
+        #[cfg(feature = "online")]
+        Some(Sub::Update) => updates::run(&config),
+        #[cfg(not(feature = "online"))]
+        Some(Sub::Update) => Err(Error::NoUpdates),
         Some(Sub::Wrapped { year, summary }) => wrapped::print(
             &open_library(&cli, &config)?,
             *year,
@@ -999,6 +1005,7 @@ const fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::StreamLink => "a look for where a track streams",
         LookupOp::FollowLink => "what a link names",
         LookupOp::ShareFile => "a public file upload",
+        LookupOp::LatestRelease => "the latest release of Resonate",
         LookupOp::SpotifyAccount => "a sign-in to the Spotify account",
     }
 }
@@ -1602,6 +1609,16 @@ fn tell_the_players_where_files_went(summary: &OrganiseSummary) {
 #[cfg(all(feature = "ui", feature = "online"))]
 fn mirroring(config: &Config) -> Option<Arc<dyn resonate_ui::Mirroring>> {
     Some(musicbrainz::Mirroring::of(config))
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+fn updates_checked(config: &Config) -> Option<Arc<dyn resonate_ui::Updates>> {
+    updates::checking(config)
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+const fn updates_checked(_config: &Config) -> Option<Arc<dyn resonate_ui::Updates>> {
+    None
 }
 
 #[cfg(all(feature = "ui", not(feature = "online")))]
@@ -3273,6 +3290,9 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             together: None,
             reads_as_a_code: sync::code_reader(),
             launcher: Arc::new(launcher::Icons::start()),
+            updates: updates_checked(&config),
+            check_for_updates: config.checks_for_updates(),
+            update_dismissed: config.update_dismissed.clone(),
         },
         config.appearance_where_the_desktop_asks(desktop.more_contrast),
         resonate_ui::Bus {

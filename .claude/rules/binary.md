@@ -451,6 +451,20 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   - `--search WORDS` lists recordings by score.
 
   A build without `online` is `NoMirror`.
+- **`check-for-updates` (on) asks whether a newer release is out, at most once a day**
+  (`updates.rs`, online alone): the window's `Updates` seam (`updates::checking`, present only
+  where the build names a repository, `online.md`'s *The latest release*) answers from
+  `latest-release` in the data folder (`checked <unix seconds>`, then `latest` and `page` where a
+  release was heard) until `ASKED_AGAIN_AFTER` (a day) has passed or the clock went back before it,
+  then asks in the background and writes what it heard; a failed ask keeps what was heard before
+  and writes nothing, and with the window's Online off nothing is asked. Only a version
+  `outdates_this_build` is offered. The file is a cache: unreadable, it is asked again, so it needs
+  no migration (`the_releases_are_asked_at_most_once_a_day`,
+  `nothing_is_asked_while_offline_and_a_failed_ask_keeps_what_was_heard`). `update-dismissed` is the
+  version the window's notice was dismissed for, written by the window; a later one is told again.
+  `resonate update` asks now whatever the day, writes the same file and prints this build's version
+  beside the latest (its page where newer); `online = false` is `OnlineOff`, a build without `online`
+  `NoUpdates`.
 - `enrich-after-scan` off leaves the reference to `enrich`, the Library card's *Look up*. `study` off starts no study pool from a lookup. `fetch-lyrics` off asks LRCLIB
   only as a track plays. `identify-by-sound`: `online::fingerprinters` always puts `ByEar` behind
   the AcoustID printer; it answers only while the switch is on (an `Arc<AtomicBool>` shared with it,

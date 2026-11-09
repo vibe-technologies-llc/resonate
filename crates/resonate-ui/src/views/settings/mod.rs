@@ -640,6 +640,7 @@ impl RootView {
             Group::Tabs => self.tabs_group(cx),
             Group::WindowState => self.window_state_group(cx),
             Group::Build => self.build_group(cx),
+            Group::Updates => self.updates_group(cx),
             Group::Places => self.places_group(cx),
             Group::Everything => self.everything_group(cx),
         };
@@ -755,6 +756,7 @@ impl RootView {
             Group::MinimumLength => self.set_minimum_length(Default::default(), cx),
             Group::Device => self.look_for_renderers(false, cx),
             Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
+            Group::Updates => self.put_the_updates_back(cx),
             Group::Discord => self.put_discord_back(cx),
             Group::Syncing => self.set_sync(Synchronised::default().enabled, cx),
             Group::SyncConnection => self.put_the_connection_back(cx),
@@ -827,6 +829,7 @@ impl RootView {
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
         let previous_restarts = self.player.read(cx).state().previous_restarts;
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
+        let check_for_updates = cx.global::<ResonateApp>().check_for_updates;
         let renderers = cx
             .global::<ResonateApp>()
             .renderers
@@ -943,6 +946,7 @@ impl RootView {
             skip_under_repeat,
             previous_restarts,
             notify,
+            check_for_updates,
             renderers,
             window_buttons,
             scroll_volume,

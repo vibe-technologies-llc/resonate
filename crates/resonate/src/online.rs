@@ -22,8 +22,8 @@ use resonate_online::OnlineLyrics;
 #[cfg(feature = "online")]
 use resonate_online::{
     AcoustId, Application, Audd, AutoEq, ByEar, Client, Identity, Introduction, LastFm,
-    ListenBrainz, Online, Session, Shazam, SpotifyAccount, SpotifyGrant, SpotifyGrants,
-    SpotifySignIn,
+    ListenBrainz, Online, Releases, Repository, Session, Shazam, SpotifyAccount, SpotifyGrant,
+    SpotifyGrants, SpotifySignIn, Version,
 };
 
 #[cfg(feature = "online")]
@@ -322,6 +322,46 @@ pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
 #[cfg(not(feature = "online"))]
 pub fn signed_in_to_spotify(_config: &Config) -> Result<String> {
     Err(Error::NoSignIn)
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Released {
+    pub version: String,
+    pub page: String,
+}
+
+#[cfg(feature = "online")]
+fn released_from() -> Option<Repository> {
+    option_env!("RESONATE_RELEASES").and_then(Repository::named)
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+pub fn names_where_it_was_released() -> bool {
+    released_from().is_some()
+}
+
+#[cfg(feature = "online")]
+pub fn latest_release(config: &Config, asking: Asking) -> Result<Option<Released>> {
+    if !config.online_enabled() {
+        return Err(Error::OnlineOff);
+    }
+    let repository = released_from().ok_or(Error::NoReleasesNamed)?;
+    let latest = Releases::of(client_for(config, asking), repository)
+        .latest()
+        .map_err(|source| Error::LatestRelease(Box::new(source)))?;
+    Ok(latest.map(|release| Released {
+        version: release.version.to_string(),
+        page: release.page,
+    }))
+}
+
+#[cfg(feature = "online")]
+pub fn outdates_this_build(version: &str) -> bool {
+    match (Version::read(version), Version::of_this_build()) {
+        (Some(released), Some(built)) => released > built,
+        _ => false,
+    }
 }
 
 #[cfg(feature = "online")]

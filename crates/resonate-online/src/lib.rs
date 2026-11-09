@@ -17,6 +17,7 @@ mod lyrics;
 mod musicbrainz;
 mod query;
 mod reference;
+mod releases;
 mod shared;
 mod shazam;
 mod soundcloud;
@@ -48,6 +49,7 @@ pub use crate::{
     listenbrainz::ListenBrainz,
     lyrics::{OnlineLyrics, source_of as lyric_source_of},
     reference::Online,
+    releases::{Release, Releases, Repository, Version},
     shazam::Shazam,
     spotify_account::{
         SPOTIFY_REDIRECT, SpotifyAccount, SpotifyAuthorizing, SpotifyEndpoints, SpotifyGrant,

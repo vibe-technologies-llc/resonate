@@ -459,6 +459,7 @@ pub enum LookupOp {
     FollowLink,
     SpotifyAccount,
     ShareFile,
+    LatestRelease,
 }
 
 impl LookupOp {
@@ -489,6 +490,7 @@ impl LookupOp {
             Self::StreamLink => "a look for where a track streams",
             Self::SpotifyAccount => "a sign-in to the Spotify account",
             Self::FollowLink => "what a link names",
+            Self::LatestRelease => "the latest release of Resonate",
         }
     }
 }

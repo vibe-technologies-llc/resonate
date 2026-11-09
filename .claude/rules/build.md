@@ -37,7 +37,7 @@ paths:
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
   `tag`, empty builds artifacts only; `contents: write`). The `release` job holds the tag to
   `v` plus Cargo's version and the recipes' versions, and creates the GitHub release as a draft
-  (pre-release when the tag has `-rc`, `-beta` or `-alpha`). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
+  (pre-release when the tag has `-rc`, `-beta` or `-alpha`). The workflow sets `RESONATE_RELEASES` to `github.repository` for every job, so each release asset names the repository it asks about newer releases (`online.md`'s *The latest release*). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
   `git archive` of the tag, the `packaging/release/` recipes), `windows-zip` (`windows-latest`, a matrix of

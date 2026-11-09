@@ -467,6 +467,9 @@ impl Driven {
                 together: None,
                 reads_as_a_code: None,
                 launcher: unseen,
+                updates: None,
+                check_for_updates: false,
+                update_dismissed: None,
                 sourcing: Sourcing {
                     inbox: None,
                     register,

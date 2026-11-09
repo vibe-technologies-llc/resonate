@@ -199,6 +199,8 @@ pub struct Config {
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
+    pub check_for_updates: Option<bool>,
+    pub update_dismissed: Option<String>,
     pub minimise_button: Option<bool>,
     pub maximise_button: Option<bool>,
     pub scroll_volume: Option<bool>,
@@ -342,6 +344,8 @@ impl fmt::Debug for Config {
             history_kept,
             organise_as,
             notify,
+            check_for_updates,
+            update_dismissed,
             minimise_button,
             maximise_button,
             scroll_volume,
@@ -471,6 +475,8 @@ impl fmt::Debug for Config {
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("notify", notify)
+            .field("check_for_updates", check_for_updates)
+            .field("update_dismissed", update_dismissed)
             .field("minimise_button", minimise_button)
             .field("maximise_button", maximise_button)
             .field("scroll_volume", scroll_volume)
@@ -753,6 +759,11 @@ impl Config {
 
     pub fn notifies(&self) -> bool {
         self.notify.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn checks_for_updates(&self) -> bool {
+        self.check_for_updates.unwrap_or(true)
     }
 
     #[cfg(feature = "ui")]
@@ -1228,6 +1239,8 @@ impl Config {
                 });
             }
             ConfigKey::Notify => config.notify = Some(at.boolean(value)?),
+            ConfigKey::CheckForUpdates => config.check_for_updates = Some(at.boolean(value)?),
+            ConfigKey::UpdateDismissed => config.update_dismissed = given(at.string(value)?),
             ConfigKey::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
             ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
             ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),

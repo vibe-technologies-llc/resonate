@@ -230,6 +230,8 @@ pub enum SettingKey {
     PreviousRestarts,
     OrganiseAs,
     Notify,
+    CheckForUpdates,
+    UpdateDismissed,
     MinimiseButton,
     MaximiseButton,
     ScrollVolume,
@@ -293,7 +295,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 121] = [
+    pub const ALL: [Self; 123] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -355,6 +357,8 @@ impl SettingKey {
         Self::PreviousRestarts,
         Self::OrganiseAs,
         Self::Notify,
+        Self::CheckForUpdates,
+        Self::UpdateDismissed,
         Self::MinimiseButton,
         Self::MaximiseButton,
         Self::ScrollVolume,
@@ -487,6 +491,8 @@ pub enum Setting {
     PreviousRestarts(PreviousRestarts),
     OrganiseAs(String),
     Notify(bool),
+    CheckForUpdates(bool),
+    UpdateDismissed(String),
     MinimiseButton(bool),
     MaximiseButton(bool),
     ScrollVolume(bool),
@@ -619,6 +625,8 @@ impl Setting {
             Self::PreviousRestarts(_) => SettingKey::PreviousRestarts,
             Self::OrganiseAs(_) => SettingKey::OrganiseAs,
             Self::Notify(_) => SettingKey::Notify,
+            Self::CheckForUpdates(_) => SettingKey::CheckForUpdates,
+            Self::UpdateDismissed(_) => SettingKey::UpdateDismissed,
             Self::MinimiseButton(_) => SettingKey::MinimiseButton,
             Self::MaximiseButton(_) => SettingKey::MaximiseButton,
             Self::ScrollVolume(_) => SettingKey::ScrollVolume,
@@ -1109,6 +1117,9 @@ pub struct Stored {
     pub together: Option<Arc<dyn crate::Together>>,
     pub reads_as_a_code: Option<fn(&str) -> bool>,
     pub launcher: Arc<dyn Launcher>,
+    pub updates: Option<Arc<dyn Updates>>,
+    pub check_for_updates: bool,
+    pub update_dismissed: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -1274,6 +1285,16 @@ pub enum RemoteShown {
 pub struct Continuing {
     pub cuts: Vec<Cut>,
     pub at: Frames,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Newer {
+    pub version: String,
+    pub page: String,
+}
+
+pub trait Updates: Send + Sync {
+    fn newer(&self, reaching: bool) -> Option<Newer>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

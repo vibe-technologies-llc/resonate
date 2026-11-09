@@ -422,6 +422,17 @@ is not set, otherwise false.
 .B notify
 Boolean. Raise a desktop notification when the track changes. Default: true.
 .TP
+.B check-for-updates
+Boolean. Ask the repository this build was released from, at most once a day while the window is
+open, whether a newer release of Resonate is out, saying nothing but this build's name and version.
+Nothing is asked while
+.B online
+is false, and a build that names no repository asks nothing. Default: true.
+.TP
+.B update-dismissed
+String. The version whose notice was dismissed in the window, so it is not shown again; a later
+release is still told. Written by the window. Default: none.
+.TP
 .B minimise-button
 Boolean. Draw the window's minimise button. Default: true.
 .TP

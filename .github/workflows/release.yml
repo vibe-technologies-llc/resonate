@@ -15,6 +15,7 @@ permissions:
 
 env:
   RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+  RESONATE_RELEASES: ${{ github.repository }}
 
 jobs:
   release:

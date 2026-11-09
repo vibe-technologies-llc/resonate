@@ -25,6 +25,7 @@ pub(crate) const LYRICS_BY_THE_LOCALE: bool = false;
 pub(crate) const RESUME: bool = true;
 pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
 pub(crate) const NOTIFY: bool = true;
+pub(crate) const CHECK_FOR_UPDATES: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
 pub(crate) const MOUSE_NAVIGATION: bool = true;
@@ -72,6 +73,7 @@ pub(crate) struct Standing {
     pub(crate) skip_under_repeat: SkipUnderRepeat,
     pub(crate) previous_restarts: PreviousRestarts,
     pub(crate) notify: bool,
+    pub(crate) check_for_updates: bool,
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
     pub(crate) mouse_navigation: bool,
@@ -127,6 +129,7 @@ impl Standing {
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
             notify: NOTIFY,
+            check_for_updates: CHECK_FOR_UPDATES,
             renderers: false,
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
@@ -202,6 +205,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
         Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
         Group::Notifications => standing.notify != NOTIFY,
+        Group::Updates => standing.check_for_updates != CHECK_FOR_UPDATES,
         Group::Discord => {
             let (worn, off) = (&standing.presence, &Presence::OFF);
             worn.enabled != off.enabled || worn.app != off.app
