@@ -1257,7 +1257,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Held` fails `landed_in_place` tries `insert::lengthened` through a `Shifting` (`Fallocate`:
   ext4, XFS and F2FS by `fstatfs`, the block size from `fstatvfs`; a test double stands in
   elsewhere), only where nothing but the head changes and the head is no larger than
-  `MOST_BYTES_WRITTEN_IN_PLACE`. `FALLOC_FL_INSERT_RANGE` opens whole blocks at offset zero, the
+  `MOST_BYTES_WRITTEN_IN_PLACE`, and only where no other handle holds the file open (`Shifting::read_elsewhere`: on Linux every readable `/proc/<pid>/fd` is looked at for the file's device and inode, this process's other handles included, so a decoder playing the track, ours or another player's, is never handed bytes shifted under it; such a track takes the copy, a new inode its readers never see, `a_track_another_handle_reads_is_held_open_elsewhere_and_one_alone_is_not`). `FALLOC_FL_INSERT_RANGE` opens whole blocks at offset zero, the
   head is rebuilt to exactly the old length plus them (`Blocks`; an Ogg head only where its page
   count stays) and written over the old head and the inserted room, so the audio behind it never
   moves. The order is the crash safety: journal written and synced, range inserted and

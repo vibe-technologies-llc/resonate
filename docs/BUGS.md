@@ -3,17 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Tags in the files
-- [M · 0.7.1] A tag write that outgrows its head lengthens the file under a decoder that has it
-  open: `Saving::lengthened_in_place` and `insert::lengthened` open whole filesystem blocks at
-  offset 0 of the live inode with `FALLOC_FL_INSERT_RANGE` (ext4, XFS, F2FS; FLAC, MP3 and Ogg heads),
-  so every byte behind the head moves forward by the inserted length, and a decoder reading the
-  playing track from its own handle takes its next refill from `shifted` bytes earlier (repeated
-  audio, lost frame sync, FLAC CRC errors, a seek table and first-frame offset cached at open now
-  wrong) until the track is opened again; the staged-copy landing renames a new inode and leaves
-  the old one to its readers, and `taken.still_stands` guards only against another writer; first
-  find whether a tag write can reach the song playing at all (neither `audio.md` nor `library.md`
-  says), then keep the lengthening for a file nothing holds open or take the staged copy
 ## Mobile
 - [S · 0.7.1] Deleting or folding songs on a phone leaves dead rows in the live queue and then
   stops the queue from being kept: `drop_from_queue_in` sends one `Command::Remove` per run of gone

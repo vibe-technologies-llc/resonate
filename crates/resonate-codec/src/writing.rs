@@ -1214,6 +1214,10 @@ impl Saving<'_> {
                 location: location.clone(),
             });
         }
+        if shifting.read_elsewhere(file) {
+            tracing::debug!(path = %path.display(), "a track another reader holds open is not lengthened under it, so its tags land on a copy");
+            return Ok(false);
+        }
 
         let stood = file.metadata().map_err(|source| Error::Io {
             location: location.clone(),

@@ -6,6 +6,7 @@ use crate::journal::{Change, Undo};
 
 pub(crate) trait Shifting {
     fn block_of(&self, file: &File) -> Option<u64>;
+    fn read_elsewhere(&self, file: &File) -> bool;
     fn inserted(&self, file: &File, bytes: u64) -> io::Result<()>;
     fn collapsed(&self, file: &File, bytes: u64) -> io::Result<()>;
 }
@@ -14,11 +15,49 @@ pub(crate) struct Fallocate;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod fallocating {
-    use std::{fs::File, io};
+    use std::{
+        fs::{self, File},
+        io,
+        os::{fd::AsRawFd as _, unix::fs::MetadataExt as _},
+        process,
+    };
 
     use rustix::fs::{FallocateFlags, fallocate, fstatfs, fstatvfs};
 
     use super::{Fallocate, Shifting};
+
+    const PROCESSES: &str = "/proc";
+    const HANDLES: &str = "fd";
+
+    pub(crate) fn held_open_elsewhere(file: &File) -> bool {
+        let Ok(ours) = file.metadata() else {
+            return true;
+        };
+        let Ok(processes) = fs::read_dir(PROCESSES) else {
+            return true;
+        };
+        let me = process::id().to_string();
+        let own_handle = file.as_raw_fd().to_string();
+
+        processes.flatten().any(|process| {
+            let named = process.file_name();
+            let Some(named) = named.to_str() else {
+                return false;
+            };
+            if !named.bytes().all(|byte| byte.is_ascii_digit()) {
+                return false;
+            }
+            let Ok(handles) = fs::read_dir(process.path().join(HANDLES)) else {
+                return false;
+            };
+            handles.flatten().any(|handle| {
+                let ours_alone = named == me && handle.file_name().to_str() == Some(&own_handle);
+                !ours_alone
+                    && fs::metadata(handle.path())
+                        .is_ok_and(|held| held.dev() == ours.dev() && held.ino() == ours.ino())
+            })
+        })
+    }
 
     const EXT_MAGIC: u64 = 0xEF53;
     const XFS_MAGIC: u64 = 0x5846_5342;
@@ -33,6 +72,10 @@ mod fallocating {
                 return None;
             }
             Some(fstatvfs(file).ok()?.f_bsize).filter(|block| *block > 0)
+        }
+
+        fn read_elsewhere(&self, file: &File) -> bool {
+            held_open_elsewhere(file)
         }
 
         fn inserted(&self, file: &File, bytes: u64) -> io::Result<()> {
@@ -51,6 +94,10 @@ mod fallocating {
 impl Shifting for Fallocate {
     fn block_of(&self, _: &File) -> Option<u64> {
         None
+    }
+
+    fn read_elsewhere(&self, _: &File) -> bool {
+        true
     }
 
     fn inserted(&self, _: &File, _: u64) -> io::Result<()> {
@@ -148,6 +195,10 @@ impl Shifting for Copying {
         Some(self.block)
     }
 
+    fn read_elsewhere(&self, _: &File) -> bool {
+        false
+    }
+
     fn inserted(&self, file: &File, bytes: u64) -> io::Result<()> {
         Self::moved(file, 0, bytes)?;
         file.write_all_at(
@@ -168,6 +219,10 @@ pub(crate) struct Refusing;
 impl Shifting for Refusing {
     fn block_of(&self, _: &File) -> Option<u64> {
         Some(4096)
+    }
+
+    fn read_elsewhere(&self, _: &File) -> bool {
+        false
     }
 
     fn inserted(&self, _: &File, _: u64) -> io::Result<()> {
@@ -234,6 +289,23 @@ mod tests {
         let mut grown = grown_head.clone();
         grown.extend_from_slice(&standing[head..]);
         (grown_head, grown)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_track_another_handle_reads_is_held_open_elsewhere_and_one_alone_is_not() {
+        let track = Scratch::holding("held", &counted(64));
+        let writing = track.opened();
+
+        let alone = fallocating::held_open_elsewhere(&writing);
+        let reader = File::open(&track.0).expect("a reader");
+        let while_read = fallocating::held_open_elsewhere(&writing);
+        drop(reader);
+        let after = fallocating::held_open_elsewhere(&writing);
+
+        assert!(!alone);
+        assert!(while_read);
+        assert!(!after);
     }
 
     #[test]
