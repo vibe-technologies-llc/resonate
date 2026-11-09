@@ -667,7 +667,7 @@ pub struct RootView {
     pub(crate) subsonic: [Entity<Field>; 3],
     pub(crate) jellyfin: [Entity<Field>; 3],
     pub(crate) tidal: [Entity<Field>; 6],
-    pub(crate) lastfm: [Entity<Field>; 4],
+    pub(crate) lastfm: [Entity<Field>; 2],
     pub(crate) spotify_client: Entity<Field>,
     pub(crate) spotify_state: SpotifyState,
     pub(crate) youtube_music: [Entity<Field>; 2],

@@ -404,10 +404,10 @@ fn run() -> Result<()> {
         }) => musicbrainz::run(&config, *build, from.as_deref(), *remove, search.as_deref()),
         #[cfg(not(feature = "online"))]
         Some(Sub::Musicbrainz { .. }) => Err(Error::NoMirror),
-        Some(Sub::Lastfm { user, forget }) => {
+        Some(Sub::Lastfm { forget }) => {
             let settings = settings_path(&cli)?;
             reloading::delivering(&settings, Some(Reloadable::Submission), || {
-                lastfm::sign_in(&config, &settings, user.as_deref(), *forget)
+                lastfm::sign_in(&config, &settings, *forget)
             })
         }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),

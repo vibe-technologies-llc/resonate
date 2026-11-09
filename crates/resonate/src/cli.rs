@@ -1510,22 +1510,14 @@ pub enum Sub {
     Ytmusic(YtmusicArgs),
 
     #[command(
-        about = "Sign in to Last.fm so what is heard is scrobbled there: read the account's \
-                 password from standard input, keep the session key in the settings file and \
-                 nothing of the password. Needs lastfm-key and lastfm-secret, an API account's"
+        about = "Sign in to Last.fm so what is heard is scrobbled there: print the page to allow \
+                 Resonate on, open it where a browser can, wait for the allowing and keep the \
+                 session key in the settings file. Needs lastfm-key and lastfm-secret, an API \
+                 account's"
     )]
     Lastfm {
         #[arg(
             long,
-            value_name = "NAME",
-            required_unless_present = "forget",
-            help = "The Last.fm account to sign in"
-        )]
-        user: Option<String>,
-
-        #[arg(
-            long,
-            conflicts_with = "user",
             help = "Forget the session key, so nothing more is scrobbled to Last.fm"
         )]
         forget: bool,

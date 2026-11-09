@@ -163,8 +163,8 @@ pub use crate::{
     },
     scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary, disc_in_folder},
     scrobble::{
-        Billed, LOVES_TOLD_AT_ONCE, LastfmSession, LastfmSignIn, ListeningService, Love, Loved,
-        LovedNames, LovesTold, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Scrobblers,
+        Billed, LOVES_TOLD_AT_ONCE, LastfmApproval, LastfmSession, LastfmSignIn, ListeningService,
+        Love, Loved, LovedNames, LovesTold, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Scrobblers,
         SignsInToSpotify, SpotifyApproval, SpotifySignInFailure, Submitted, TokenHeld,
         refused_for_good,
     },

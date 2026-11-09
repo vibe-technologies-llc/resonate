@@ -976,19 +976,12 @@ pub enum Error {
     NoLastfmApplication,
 
     #[cfg(feature = "online")]
-    #[error("no Last.fm account was named to sign in")]
-    NoLastfmUser,
-
-    #[cfg(feature = "online")]
-    #[error("Last.fm turned down the name and password")]
+    #[error("Last.fm turned down the API key and secret")]
     LastfmRefused,
 
     #[cfg(feature = "online")]
-    #[error("the password could not be read from standard input")]
-    ReadPassword {
-        #[source]
-        source: io::Error,
-    },
+    #[error("the Last.fm sign-in ended before Resonate was allowed, so nothing was kept")]
+    LastfmSignInEnded,
 
     #[cfg(not(feature = "mcp"))]
     #[error(
