@@ -17,7 +17,7 @@ use resonate_core::{
 };
 use resonate_engine::{
     AnalysisError, Applied, BandGains, Command, DspError, Impulse, Loudest, NodeName,
-    PairedReadError, Player, Sources, Watch, Watching, binaural_wave, read_binaural_pair,
+    PairedReadError, Player, Sources, Speaker, Watch, Watching, binaural_wave, read_binaural_pair,
     read_impulse,
 };
 use resonate_eq::{Binding, BuiltIn, Device, MEASURERS_BEST_FIRST, ProfileName};
@@ -49,29 +49,12 @@ use crate::{
         },
         spoken::Spoken as _,
     },
+    words,
 };
-
-const BOUND_TO_NOTE: &str = "Each device plays through what is bound to it here — nothing, a \
-                             curve of its own drawn under Bands, or a kept profile — and a \
-                             device bound to nothing takes what every other device does.";
-
-const THE_CURVE: &str = "Equaliser curve";
-
-const FIT_TOWARD_HINT: &str = "What a measurement is fitted toward";
-
-const A_FILE_AS_THE_TARGET: &str = "A file…";
-
-const HEARD_THROUGH_HINT: &str = "What hears the sweep: the desktop measures the path to the \
-                                  output and no room, a microphone measures the room";
-
-const DESKTOP_HEARD: &str = "The desktop";
-
-const DEFAULT_MICROPHONE_HEARD: &str = "The default microphone";
 
 const DRAG_TOLD_EVERY: Duration = Duration::from_millis(50);
 const CURVE_ASPECT: f32 = 2.6;
 
-const NO_FILE_PICKER: &str = "Couldn't open the file picker";
 const CURVE_MARKED_AT_HZ: [f64; 3] = [100.0, 1_000.0, 10_000.0];
 const LEVEL_MARKED_EVERY_DB: f32 = 5.0;
 const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
@@ -80,66 +63,7 @@ const CHOSEN_HANDLE_RADIUS: f32 = 6.5;
 const HANDLE_BORDER: f32 = 2.0;
 const CHANNEL_SWATCH: f32 = 12.0;
 
-const NOT_BIT_PERFECT: &str = "On, the samples reaching the device are not the file's own: the \
-                               playback bar reads converted rather than bit-perfect, and a DSD \
-                               stream packed as DoP is left untouched.";
-
-const NOTHING_BOUND: &str = "Nothing is bound to this device, so nothing is applied. Press the \
-                             curve to give it a curve of its own, bind a kept profile above, \
-                             import an EqualizerAPO file, or fetch the correction measured for \
-                             what is plugged in.";
-
-const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to move it, scroll \
-                              over one to change its Q, and right-press it to take it out.";
-
-const NO_MEASURING: &str = "This build cannot play a sweep and hear it";
-
-const UNCALIBRATED: &str = "None chosen: the fit corrects the microphone too";
-
-const AUTOEQ_NOTE: &str = "Who measured each result and on which rig is said beside it; a \
-                           correction used is fetched once and kept here as an ordinary profile.";
-
-const MEASURERS_NOTE: &str = "Where several measured one device, the measurer named here is \
-                              taken before the fixed ranking, in the search and in what is \
-                              suggested for what is plugged in.";
-
-const MEASURE_NOTE: &str = "Plays a sweep of eight seconds through the output in use, straight to \
-                            the device and past the equaliser, and records it for two more; Stop \
-                            ends it and keeps nothing. Keep the room quiet. The response is fitted \
-                            toward the target above and kept as the profile named, measured when \
-                            none is. The microphone's own response is corrected too unless you \
-                            choose its calibration, a measurement file taken off what is heard.";
-
-const OWN_MEASUREMENT_NOTE: &str = "Choose a frequency-response measurement of your own — \
-                                    AutoEq's CSV, REW's exported text, or two columns of \
-                                    frequency and decibels — and a target to fit it toward. \
-                                    Both are set level across the middle of the spectrum and \
-                                    smoothed to a sixth of an octave, and up to ten bands, \
-                                    shelves among them, are fitted to what lies between them \
-                                    and kept here as a profile with its preamp.";
-
-const FOLLOWS_THE_DEFAULT: &str = "follows the default";
-const NOT_PLUGGED_IN: &str = "A device not plugged in now";
 const BOUND_TO_NOTHING: &str = "nothing";
-const ITS_OWN_CURVE: &str = "own curve";
-const BAND_KEYS_HINT: &str = concat!(
-    "Choose this band on the curve. ",
-    keyed!(
-        "A semitone lower or higher",
-        key!(band_lower),
-        key!(band_higher)
-    ),
-    ". ",
-    keyed!(
-        "Half a decibel quieter or louder",
-        key!(band_quieter),
-        key!(band_louder)
-    ),
-    ". ",
-    keyed!("Narrower or wider", key!(band_narrower), key!(band_wider))
-);
-const EVERY_OTHER_DEVICE: &str = "Every other device";
-
 impl RootView {
     pub(super) fn equalising_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let on = self.equaliser.read(cx).bindings().enabled;
@@ -149,11 +73,11 @@ impl RootView {
             .child(self.in_the_ring(
                 "equaliser",
                 switch_row(
-                    "Apply the equaliser",
+                    words::settings_equaliser::apply_the_equaliser(),
                     if bound {
-                        "Off, the samples reach the device as the file wrote them"
+                        words::settings_equaliser::off_the_samples_reach_the_device()
                     } else {
-                        "Nothing is bound to any device yet: press the curve below to shape one"
+                        words::settings_equaliser::nothing_is_bound_to_any_device()
                     },
                     on,
                     "equaliser",
@@ -161,7 +85,7 @@ impl RootView {
                 move |this, _, cx| this.switch_the_equaliser(!on, cx),
                 cx,
             ))
-            .note(NOT_BIT_PERFECT)
+            .note(words::settings_equaliser::not_bit_perfect())
     }
 
     pub(super) fn bound_to_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -175,17 +99,25 @@ impl RootView {
         let kept = self.equaliser.read(cx).kept().to_vec();
         let away = unplugged(self.equaliser.read(cx).bindings(), &devices);
 
-        let mut listed =
-            kit::rows().child(self.binding_row(None, EVERY_OTHER_DEVICE.to_owned(), &kept, cx));
+        let mut listed = kit::rows().child(self.binding_row(
+            None,
+            words::settings_equaliser::every_other_device().to_owned(),
+            &kept,
+            cx,
+        ));
         for (name, description) in devices {
             listed = listed.child(self.binding_row(Some(name), description, &kept, cx));
         }
         for name in away {
-            listed =
-                listed.child(self.binding_row(Some(name), NOT_PLUGGED_IN.to_owned(), &kept, cx));
+            listed = listed.child(self.binding_row(
+                Some(name),
+                words::settings_equaliser::not_plugged_in().to_owned(),
+                &kept,
+                cx,
+            ));
         }
 
-        listed.note(BOUND_TO_NOTE)
+        listed.note(words::settings_equaliser::bound_to_note())
     }
 
     fn binding_row(
@@ -198,7 +130,7 @@ impl RootView {
         let bindings = self.equaliser.read(cx).bindings().clone();
         let named = bindings.named(sink.as_ref()).cloned();
         let under = sink.as_ref().map_or_else(
-            || "the binding a device that names none of its own falls back to".to_owned(),
+            || words::settings_equaliser::the_binding_a_device_that_names().to_owned(),
             |sink| sink.as_str().to_owned(),
         );
 
@@ -207,7 +139,7 @@ impl RootView {
                 sink.clone(),
                 None,
                 if sink.is_some() && bindings.fallback.is_some() {
-                    FOLLOWS_THE_DEFAULT.to_owned()
+                    words::settings_equaliser::follows_the_default().to_owned()
                 } else {
                     BOUND_TO_NOTHING.to_owned()
                 },
@@ -217,7 +149,7 @@ impl RootView {
             .child(self.bound_option(
                 sink.clone(),
                 Some(Binding::Own),
-                ITS_OWN_CURVE.to_owned(),
+                words::settings_equaliser::its_own_curve().to_owned(),
                 named == Some(Binding::Own),
                 cx,
             ));
@@ -289,12 +221,12 @@ impl RootView {
             return kit::rows()
                 .child(curve)
                 .child(self.band_actions(false, cx))
-                .note(NOTHING_BOUND);
+                .note(words::settings_equaliser::nothing_bound());
         };
 
         let mut listed = kit::rows().child(curve).child(kit::row(
             shown.spoken(),
-            format!("Reaches {peak:+.2} dB before the preamp"),
+            words::settings_equaliser::reaches_before_the_preamp(format!("{peak:+.2}")),
             self.preamp_cell(preamp, cx),
         ));
         for (row, band) in bands.iter().enumerate() {
@@ -303,7 +235,7 @@ impl RootView {
 
         listed
             .child(self.band_actions(true, cx))
-            .note(SHAPED_BY_HAND)
+            .note(words::settings_equaliser::shaped_by_hand())
     }
 
     fn curve(
@@ -320,7 +252,9 @@ impl RootView {
         div()
             .id("equaliser-curve")
             .debug_selector(|| "equaliser-curve".to_owned())
-            .pictured_as(THE_CURVE, || curve_said(&handles.bands, widest))
+            .pictured_as(words::settings_equaliser::the_curve(), || {
+                curve_said(&handles.bands, widest)
+            })
             .relative()
             .w_full()
             .aspect_ratio(CURVE_ASPECT)
@@ -375,9 +309,8 @@ impl RootView {
                 kit::button(
                     "fit-the-preamp",
                     None,
-                    "Fit",
-                    "Set the preamp from the curve's own peak, then from what the songs in the queue \
-                     peak at through it, so the loudest of them reaches full scale and no further",
+                    words::settings_equaliser::fit(),
+                    words::settings_equaliser::set_the_preamp_from_the_curves(),
                     Tone::Ghost,
                 ),
                 |this, _, cx| this.fit_the_preamp(cx),
@@ -413,7 +346,7 @@ impl RootView {
                 kit::icon_button(
                     gpui::SharedString::from(format!("drop-band-{row}")),
                     Icon::Discard,
-                    "Take this band out",
+                    words::settings_equaliser::take_this_band_out(),
                 ),
                 move |this, _, cx| this.drop_a_band(row, cx),
                 cx,
@@ -443,7 +376,14 @@ impl RootView {
                     kit::figure(format!("{}", row + 1))
                         .when(chosen, |figure| figure.text_color(rgb(theme::accent()))),
                 )
-                .names(BAND_KEYS_HINT),
+                .names(words::settings_equaliser::band_keys_hint(
+                    key!(band_higher),
+                    key!(band_louder),
+                    key!(band_lower),
+                    key!(band_narrower),
+                    key!(band_quieter),
+                    key!(band_wider),
+                )),
             move |this, _, cx| this.choose_a_band(row, cx),
             cx,
         )
@@ -477,7 +417,7 @@ impl RootView {
             kit::pick(
                 gpui::SharedString::from(format!("band-kind-{row}")),
                 kind.label(),
-                "What shape this band gives the curve",
+                words::settings_equaliser::what_shape_this_band_gives_the(),
             ),
             move |this, _, cx| this.shape_a_band(row, cx),
             cx,
@@ -586,7 +526,7 @@ impl RootView {
         kit::action_row()
             .child(action(
                 "add-a-band",
-                "Add a band",
+                words::settings_equaliser::add_a_band(),
                 Icon::Plus,
                 false,
                 |this, _, cx| this.add_a_band(cx),
@@ -595,7 +535,7 @@ impl RootView {
             ))
             .child(action(
                 "import-a-profile",
-                "Import…",
+                words::settings_equaliser::import(),
                 Icon::Import,
                 false,
                 |this, window, cx| this.import_a_profile(window, cx),
@@ -605,7 +545,7 @@ impl RootView {
             .when(showing, |row| {
                 row.child(action(
                     "export-a-profile",
-                    "Export…",
+                    words::settings_equaliser::export(),
                     Icon::Export,
                     false,
                     |this, window, cx| this.export_a_profile(window, cx),
@@ -616,7 +556,7 @@ impl RootView {
             .when(showing && own, |row| {
                 row.child(action(
                     "keep-the-curve",
-                    "Keep as a profile",
+                    words::settings_equaliser::keep_as_a_profile(),
                     Icon::Plus,
                     false,
                     |this, _, cx| this.keep_the_curve(cx),
@@ -628,9 +568,9 @@ impl RootView {
                 row.child(action(
                     "discard-the-curve",
                     if armed {
-                        "Press again to discard"
+                        words::settings_equaliser::press_again_to_discard()
                     } else {
-                        "Discard"
+                        words::settings_equaliser::discard()
                     },
                     Icon::Discard,
                     false,
@@ -670,7 +610,7 @@ impl RootView {
             })
             .when(!reachable, |body| {
                 body.child(note(
-                    "Nothing is reached: turn Online on, or this build carries no network.",
+                    words::settings_equaliser::nothing_is_reached_turn_online_on(),
                 ))
             })
             .when(reachable, |body| {
@@ -680,14 +620,16 @@ impl RootView {
                     |this, window, cx| this.let_go_of_the_field(window, cx),
                     cx,
                 ))
-                .when(looking, |held| held.child(note("Asking AutoEq…")))
+                .when(looking, |held| {
+                    held.child(note(words::settings_equaliser::asking_autoeq()))
+                })
             });
         if reachable {
             for device in &found {
                 listed = listed.child(self.measured_row(device, cx));
             }
         }
-        listed.note(AUTOEQ_NOTE)
+        listed.note(words::settings_equaliser::autoeq_note())
     }
 
     pub(super) fn measurers_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -702,7 +644,7 @@ impl RootView {
             .when_some(in_use, |body, (name, description)| {
                 body.child(self.measurer_choice_for(name, &description, cx))
             })
-            .note(MEASURERS_NOTE)
+            .note(words::settings_equaliser::measurers_note())
     }
 
     pub(super) fn own_measurement_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -715,7 +657,11 @@ impl RootView {
             Goal::File(_) => goal.spoken(),
         };
         let target = self.in_the_pane_ring_at(
-            kit::pick("fit-target", aimed_at, FIT_TOWARD_HINT),
+            kit::pick(
+                "fit-target",
+                aimed_at,
+                words::settings_equaliser::fit_toward_hint(),
+            ),
             move |this, at, cx| {
                 let menu = fit_toward_menu(at, &this.equaliser.read(cx).goal().clone());
                 this.open_a_menu(menu, cx);
@@ -724,13 +670,17 @@ impl RootView {
         );
 
         kit::rows()
-            .child(kit::row("Fit toward", FIT_TOWARD_HINT, target))
+            .child(kit::row(
+                words::settings_equaliser::fit_toward(),
+                words::settings_equaliser::fit_toward_hint(),
+                target,
+            ))
             .child(kit::action_row().child(action(
                 "fit-a-measurement",
                 if fitting {
-                    "Fitting…"
+                    words::settings_equaliser::fitting()
                 } else {
-                    "Fit a measurement…"
+                    words::settings_equaliser::fit_a_measurement()
                 },
                 Icon::Import,
                 fitting,
@@ -738,7 +688,7 @@ impl RootView {
                 self,
                 cx,
             )))
-            .note(OWN_MEASUREMENT_NOTE)
+            .note(words::settings_equaliser::own_measurement_note())
     }
 
     pub(super) fn room_measurement_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -752,15 +702,21 @@ impl RootView {
         let measuring = self.equaliser.read(cx).is_measuring_the_room();
 
         let heard_through = match &from {
-            Listening::Desktop => DESKTOP_HEARD.to_owned(),
-            Listening::Microphone(None) => DEFAULT_MICROPHONE_HEARD.to_owned(),
+            Listening::Desktop => words::settings_equaliser::desktop_heard().to_owned(),
+            Listening::Microphone(None) => {
+                words::settings_equaliser::default_microphone_heard().to_owned()
+            }
             Listening::Microphone(Some(node)) => microphones
                 .iter()
                 .find(|(name, _)| *name == node.to_string())
                 .map_or_else(|| node.to_string(), |(_, described)| described.clone()),
         };
         let sources = self.in_the_pane_ring_at(
-            kit::pick("measure-from", heard_through, HEARD_THROUGH_HINT),
+            kit::pick(
+                "measure-from",
+                heard_through,
+                words::settings_equaliser::heard_through_hint(),
+            ),
             move |this, at, cx| {
                 let listen = this.listen.read(cx);
                 let menu = heard_through_menu(at, listen.from(), listen.microphones());
@@ -775,14 +731,20 @@ impl RootView {
             .map(|name| name.to_string_lossy().into_owned());
 
         kit::rows()
-            .child(kit::row("Heard through", HEARD_THROUGH_HINT, sources))
+            .child(kit::row(
+                words::settings_equaliser::heard_through(),
+                words::settings_equaliser::heard_through_hint(),
+                sources,
+            ))
             .child(kit::stacked_row(
-                "Microphone calibration",
-                named.clone().unwrap_or_else(|| UNCALIBRATED.to_owned()),
+                words::settings_equaliser::microphone_calibration(),
+                named
+                    .clone()
+                    .unwrap_or_else(|| words::settings_equaliser::uncalibrated().to_owned()),
                 kit::action_row()
                     .child(action(
                         "measure-calibration",
-                        "Choose a calibration…",
+                        words::settings_equaliser::choose_a_calibration(),
                         Icon::Import,
                         measuring,
                         |this, _, cx| this.choose_a_calibration(cx),
@@ -792,7 +754,7 @@ impl RootView {
                     .when(named.is_some(), |row| {
                         row.child(action(
                             "measure-calibration-forget",
-                            "Remove",
+                            words::settings_equaliser::remove(),
                             Icon::Close,
                             measuring,
                             |this, _, cx| this.calibrate_with(None, cx),
@@ -802,7 +764,7 @@ impl RootView {
                     }),
             ))
             .child(kit::field(
-                "Keep as",
+                words::settings_equaliser::keep_as(),
                 self.text_field(
                     "measure-profile-name",
                     &self.measured_as,
@@ -814,7 +776,11 @@ impl RootView {
                 kit::action_row()
                     .child(action(
                         "measure-the-room",
-                        if measuring { "Measuring…" } else { "Measure" },
+                        if measuring {
+                            words::settings_equaliser::measuring()
+                        } else {
+                            words::settings_equaliser::measure()
+                        },
                         Icon::Listen,
                         measuring,
                         |this, _, cx| this.measure_the_room(cx),
@@ -824,7 +790,7 @@ impl RootView {
                     .when(measuring, |row| {
                         row.child(action(
                             "stop-measuring",
-                            "Stop",
+                            words::settings_equaliser::stop(),
                             Icon::Stop,
                             false,
                             |this, _, cx| this.stop_measuring_the_room(cx),
@@ -833,7 +799,7 @@ impl RootView {
                         ))
                     }),
             )
-            .note(MEASURE_NOTE)
+            .note(words::settings_equaliser::measure_note())
     }
 
     pub(crate) fn calibrate_with(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
@@ -846,7 +812,7 @@ impl RootView {
 
     fn choose_a_calibration(&self, cx: &mut Context<Self>) {
         self.pick_a_file(
-            "Calibrate with",
+            words::settings_equaliser::calibrate_with(),
             |this, file, cx| this.calibrate_with(Some(file), cx),
             cx,
         );
@@ -862,7 +828,10 @@ impl RootView {
 
     fn measure_the_room(&mut self, cx: &mut Context<Self>) {
         let Some(rig) = cx.global::<ResonateApp>().measures.clone() else {
-            toast::tell(Notice::Trouble(NO_MEASURING.to_owned()), cx);
+            toast::tell(
+                Notice::Trouble(words::settings_equaliser::no_measuring().to_owned()),
+                cx,
+            );
             return;
         };
         let through = self
@@ -879,7 +848,10 @@ impl RootView {
                 Ok(name) => Some(name),
                 Err(error) => {
                     toast::tell(
-                        toast::eq_could_not("keep a profile under that name", &error),
+                        toast::eq_could_not(
+                            words::settings_equaliser::keep_a_profile_under_that_name(),
+                            &error,
+                        ),
                         cx,
                     );
                     return;
@@ -932,11 +904,17 @@ impl RootView {
                 Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
-                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::settings_equaliser::no_file_picker().to_owned()),
+                        cx,
+                    );
                 }
                 Err(error) => {
                     tracing::error!(%error, "the file picker could not be opened");
-                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::settings_equaliser::no_file_picker().to_owned()),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -946,7 +924,7 @@ impl RootView {
 
     fn choose_a_measurement(&self, cx: &mut Context<Self>) {
         self.pick_a_file(
-            "Fit",
+            words::settings_equaliser::fit(),
             |this, file, cx| {
                 this.equaliser
                     .update(cx, |model, cx| model.fit_a_measurement(file, cx));
@@ -958,7 +936,7 @@ impl RootView {
 
     fn choose_a_target(&self, cx: &mut Context<Self>) {
         self.pick_a_file(
-            "Choose",
+            words::settings_equaliser::choose(),
             |this, file, cx| this.aim_at(Goal::File(file), cx),
             cx,
         );
@@ -969,9 +947,8 @@ impl RootView {
         let choices = self.measurer_pick(
             MeasurerPick {
                 id: "measurer",
-                unset: "Best ranked",
-                saying: "Whose correction to prefer where several measured a device. Best \
-                         ranked leaves it to the fixed ranking.",
+                unset: words::settings_equaliser::best_ranked(),
+                saying: words::settings_equaliser::whose_correction_to_prefer_where_several(),
                 preferred,
             },
             |this, measurer, cx| this.prefer_a_measurer(measurer, cx),
@@ -979,8 +956,8 @@ impl RootView {
         );
 
         kit::row(
-            "For every device",
-            "Best ranked leaves it to the fixed ranking",
+            words::settings_equaliser::for_every_device(),
+            words::settings_equaliser::best_ranked_leaves_it_to_the(),
             choices,
         )
     }
@@ -999,9 +976,8 @@ impl RootView {
         let choices = self.measurer_pick(
             MeasurerPick {
                 id: "device-measurer",
-                unset: "As for the rest",
-                saying: "Whose correction to prefer for this device. As for the rest takes the \
-                         one chosen for every device, else the fixed ranking.",
+                unset: words::settings_equaliser::as_for_the_rest(),
+                saying: words::settings_equaliser::whose_correction_to_prefer_for_this(),
                 preferred,
             },
             move |this, measurer, cx| this.prefer_a_measurer_for(sink.clone(), measurer, cx),
@@ -1009,8 +985,8 @@ impl RootView {
         );
 
         kit::row(
-            format!("For {description}"),
-            "As for the rest takes the one chosen for every device",
+            words::settings_equaliser::for_the_device(description),
+            words::settings_equaliser::as_for_the_rest_takes_the(),
             choices,
         )
     }
@@ -1104,8 +1080,8 @@ impl RootView {
                 kit::button(
                     gpui::SharedString::from(id),
                     Some(Icon::Import),
-                    "Use this",
-                    "Fetch this measurement and keep it here as a profile",
+                    words::settings_equaliser::use_this(),
+                    words::settings_equaliser::fetch_this_measurement_and_keep_it(),
                     Tone::Outlined,
                 ),
                 move |this, _, cx| this.fetch_a_correction(taken.clone(), label.clone(), cx),
@@ -1125,16 +1101,18 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_2()
-            .child(kit::named("What is plugged in", description.to_owned()))
+            .child(kit::named(
+                words::settings_equaliser::what_is_plugged_in(),
+                description.to_owned(),
+            ))
             .when(reachable && !knows, |body| {
                 body.child(kit::action_row().child(self.in_the_ring(
                     "read-the-catalogue",
                     kit::button(
                         "read-the-catalogue",
                         Some(Icon::Globe),
-                        "Look it up",
-                        "Read AutoEq's list of measured devices and weigh this device's own name \
-                         against it",
+                        words::settings_equaliser::look_it_up(),
+                        words::settings_equaliser::read_autoeqs_list_of_measured_devices(),
                         Tone::Outlined,
                     ),
                     |this, _, cx| this.read_the_catalogue(cx),
@@ -1143,8 +1121,7 @@ impl RootView {
             })
             .when(knows && suggested.is_none(), |body| {
                 body.child(note(
-                    "Nothing measured answers to that name clearly enough to be worth guessing \
-                     at. Search above if you know what is plugged in.",
+                    words::settings_equaliser::nothing_measured_answers_to_that_name(),
                 ))
             })
             .when_some(suggested.cloned(), |body, device| {
@@ -1212,7 +1189,7 @@ fn fit_toward_menu(at: Point<Pixels>, goal: &Goal) -> Menu {
     }
 
     menu.apart().chooses(
-        A_FILE_AS_THE_TARGET,
+        words::settings_equaliser::a_file_as_the_target(),
         matches!(goal, Goal::File(_)),
         |this, _, cx| this.choose_a_target(cx),
     )
@@ -1233,12 +1210,12 @@ fn heard_through_menu(
     };
     let mut menu = Menu::at(at)
         .chooses(
-            DESKTOP_HEARD,
+            words::settings_equaliser::desktop_heard(),
             *from == Listening::Desktop,
             hears(Listening::Desktop),
         )
         .chooses(
-            DEFAULT_MICROPHONE_HEARD,
+            words::settings_equaliser::default_microphone_heard(),
             *from == Listening::Microphone(None),
             hears(Listening::Microphone(None)),
         );
@@ -1251,10 +1228,7 @@ fn heard_through_menu(
 }
 
 fn curve_said(bands: &[Band], widest: f32) -> String {
-    let drawn = format!(
-        "Gain against frequency, drawn within {widest:.0} dB either side of flat, shaped by {}",
-        crate::format::counted(bands.len(), "band", "bands")
-    );
+    let drawn = words::settings_equaliser::curve_drawn(bands.len(), format!("{widest:.0}"));
     if bands.is_empty() {
         return drawn;
     }
@@ -1271,19 +1245,19 @@ fn curve_said(bands: &[Band], widest: f32) -> String {
 fn band_said(band: Band) -> String {
     let hertz = band.frequency.hertz();
     let at = match hertz >= HERTZ_A_KILOHERTZ {
-        true => format!("{} kHz", trimmed(hertz / HERTZ_A_KILOHERTZ)),
-        false => format!("{} Hz", trimmed(hertz)),
+        true => words::settings_equaliser::kilohertz(trimmed(hertz / HERTZ_A_KILOHERTZ)),
+        false => words::settings_equaliser::hertz(trimmed(hertz)),
     };
     let gain = match band.kind.uses_gain() {
-        true => format!(", {:+.1} dB", band.gain.decibels()),
+        true => words::settings_equaliser::band_gain(format!("{:+.1}", band.gain.decibels())),
         false => String::new(),
     };
     let off = match band.on {
         true => "",
-        false => ", off",
+        false => words::settings_equaliser::off(),
     };
 
-    format!("{} at {at}{gain}{off}", band.kind.label().to_lowercase())
+    words::settings_equaliser::band_said(at, gain, band.kind.label().to_lowercase(), off)
 }
 
 fn trimmed(number: f64) -> String {
@@ -1399,20 +1373,20 @@ fn ink_of(on: TracedOn, nth: usize) -> u32 {
     }
 }
 
-const fn spoken_channel(on: TracedOn) -> &'static str {
+fn spoken_channel(on: TracedOn) -> &'static str {
     match on {
-        TracedOn::EveryChannel => "Every channel",
-        TracedOn::EveryOtherChannel => "Every other channel",
+        TracedOn::EveryChannel => words::settings_equaliser::every_channel(),
+        TracedOn::EveryOtherChannel => words::settings_equaliser::every_other_channel(),
         TracedOn::Channel(channel) => match channel {
-            0 => "Left",
-            1 => "Right",
-            2 => "Centre",
-            3 => "Subwoofer",
-            4 => "Rear left",
-            5 => "Rear right",
-            6 => "Side left",
-            7 => "Side right",
-            _ => "A channel",
+            0 => words::settings_equaliser::left(),
+            1 => words::settings_equaliser::right(),
+            2 => words::settings_equaliser::centre(),
+            3 => words::settings_equaliser::subwoofer(),
+            4 => words::settings_equaliser::rear_left(),
+            5 => words::settings_equaliser::rear_right(),
+            6 => words::settings_equaliser::side_left(),
+            7 => words::settings_equaliser::side_right(),
+            _ => words::settings_equaliser::a_channel(),
         },
     }
 }
@@ -1940,7 +1914,7 @@ impl RootView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Import".into()),
+            prompt: Some(words::settings_equaliser::import_2().into()),
         });
 
         cx.spawn(async move |this, cx| {
@@ -1955,11 +1929,17 @@ impl RootView {
                 Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
-                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::settings_equaliser::no_file_picker().to_owned()),
+                        cx,
+                    );
                 }
                 Err(error) => {
                     tracing::error!(%error, "the file picker could not be opened");
-                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::settings_equaliser::no_file_picker().to_owned()),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -1985,11 +1965,17 @@ impl RootView {
                 Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
-                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::settings_equaliser::no_file_picker().to_owned()),
+                        cx,
+                    );
                 }
                 Err(error) => {
                     tracing::error!(%error, "the file picker could not be opened");
-                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::settings_equaliser::no_file_picker().to_owned()),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -2045,7 +2031,7 @@ impl RootView {
         let called = match (described, owner) {
             (Some(description), _) => description,
             (None, Some(owner)) => owner.as_str().to_owned(),
-            (None, None) => EVERY_OTHER_DEVICE.to_owned(),
+            (None, None) => words::settings_equaliser::every_other_device().to_owned(),
         };
         self.equaliser
             .update(cx, |model, cx| model.keep_as_a_profile(&called, cx));
@@ -2098,42 +2084,13 @@ impl RootView {
     }
 }
 
-const ROOM_NOTE: &str = "The response is convolved with every stream after the equaliser, at the \
-                         stream's own rate, a partition of 1 024 frames behind. It is read again \
-                         from the file at every start, so a new measurement written over it is \
-                         heard from then on. A four-channel file is read as a two-by-two \
-                         (binaural) response, in the order left-to-left, left-to-right, \
-                         right-to-left, right-to-right; two stereo files, one for each speaker, \
-                         are joined into one. A SOFA set of head-related responses is read as \
-                         the same, from the measurements nearest the speaker angle, blended where several lie close; a \
-                         netCDF file of that shape reads as well, and so does a set of \
-                         speakers measured at each ear.";
-
-const SPEAKER_NOTE: &str = "How far to either side of the front the speakers stand, from 5 to 90 \
-                            degrees, for a SOFA set. Changing it reads the set again.";
-
-const ELEVATION_NOTE: &str = "How far above the level of the ears the speakers stand (below, when \
-                              negative), from -30 to 60 degrees. Where the set's measurements \
-                              surround that direction, the response is interpolated between the \
-                              corners of the triangle that holds it.";
-
-const YAW_NOTE: &str = "How far your head is turned from the front, from -90 to 90 degrees, to \
-                        the left when positive. The speakers are looked up that many degrees \
-                        round the other way, and in a set of speakers measured at several head \
-                        orientations the view nearest the turn is read.";
-
 const HEAD_YAWS: [i16; 5] = [-45, -20, 0, 20, 45];
 
 const SPEAKER_ANGLES: [u8; 5] = [20, 30, 45, 60, 90];
 
 const SPEAKER_ELEVATIONS: [i16; 5] = [0, 10, 20, 30, 45];
 
-const BINAURAL_NOTE: &str = "A two-by-two (binaural) response: each speaker's response is heard at \
-                             both ears, so a stereo stream is convolved four ways.";
-
 const BINAURAL_FILE: &str = "binaural-response.wav";
-
-const NO_ROOM: &str = "Nothing is corrected.";
 
 impl RootView {
     fn room_is_crossed(&self) -> bool {
@@ -2181,16 +2138,16 @@ impl RootView {
         kit::rows()
             .child(match &held {
                 Some(file) => note(file.display().to_string()),
-                None => note(NO_ROOM),
+                None => note(words::settings_equaliser::no_room()),
             })
             .when(held.is_some() && self.room_is_crossed(), |body| {
-                body.child(note(BINAURAL_NOTE))
+                body.child(note(words::settings_equaliser::binaural_note()))
             })
             .child(
                 kit::action_row()
                     .child(action(
                         "choose-a-response",
-                        "Choose a response…",
+                        words::settings_equaliser::choose_a_response(),
                         Icon::Folder,
                         false,
                         |this, _, cx| this.choose_a_response(cx),
@@ -2199,7 +2156,7 @@ impl RootView {
                     ))
                     .child(action(
                         "choose-a-speaker-pair",
-                        "Choose a pair…",
+                        words::settings_equaliser::choose_a_pair(),
                         Icon::Folder,
                         false,
                         |this, _, cx| this.choose_a_speaker_pair(cx),
@@ -2209,7 +2166,7 @@ impl RootView {
                     .when(held.is_some(), |row| {
                         row.child(action(
                             "stop-correcting",
-                            "Stop correcting",
+                            words::settings_equaliser::stop_correcting(),
                             Icon::Close,
                             false,
                             |this, _, cx| this.correct_the_room(None, cx),
@@ -2218,7 +2175,7 @@ impl RootView {
                         ))
                     }),
             )
-            .note(ROOM_NOTE)
+            .note(words::settings_equaliser::room_note())
     }
 
     pub(super) fn speakers_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -2236,34 +2193,41 @@ impl RootView {
                 continue;
             };
             let id = SharedString::from(format!("speaker-angle-{degrees}"));
-            presets = presets.child(self.in_the_ring_at(
-                id.to_string(),
-                kit::segment(id, format!("{degrees}°"), held == angle).names(format!(
-                    "Speakers {degrees} degrees either side of the front"
-                )),
-                move |this, _, cx| this.set_the_speaker_angle(angle, cx),
-                cx,
-            ));
+            presets = presets.child(
+                self.in_the_ring_at(
+                    id.to_string(),
+                    kit::segment(id, format!("{degrees}°"), held == angle)
+                        .names(words::settings_equaliser::speakers_either_side(degrees)),
+                    move |this, _, cx| this.set_the_speaker_angle(angle, cx),
+                    cx,
+                ),
+            );
         }
         let stepper = self.degrees_stepper(
             "speaker-angle",
             format!("{held}°"),
-            ("Bring the speakers a degree closer", |this, cx| {
-                let held = cx.global::<ResonateApp>().speaker_angle.degrees();
-                if let Ok(angle) = SpeakerAngle::from_degrees(held.saturating_sub(1)) {
-                    this.set_the_speaker_angle(angle, cx);
-                }
-            }),
-            ("Put the speakers a degree further apart", |this, cx| {
-                let held = cx.global::<ResonateApp>().speaker_angle.degrees();
-                if let Ok(angle) = SpeakerAngle::from_degrees(held.saturating_add(1)) {
-                    this.set_the_speaker_angle(angle, cx);
-                }
-            }),
+            (
+                words::settings_equaliser::bring_the_speakers_a_degree_closer(),
+                |this, cx| {
+                    let held = cx.global::<ResonateApp>().speaker_angle.degrees();
+                    if let Ok(angle) = SpeakerAngle::from_degrees(held.saturating_sub(1)) {
+                        this.set_the_speaker_angle(angle, cx);
+                    }
+                },
+            ),
+            (
+                words::settings_equaliser::put_the_speakers_a_degree_further(),
+                |this, cx| {
+                    let held = cx.global::<ResonateApp>().speaker_angle.degrees();
+                    if let Ok(angle) = SpeakerAngle::from_degrees(held.saturating_add(1)) {
+                        this.set_the_speaker_angle(angle, cx);
+                    }
+                },
+            ),
             cx,
         );
         kit::field(
-            "Speaker angle",
+            words::settings_equaliser::speaker_angle(),
             div()
                 .flex()
                 .flex_wrap()
@@ -2272,7 +2236,7 @@ impl RootView {
                 .child(stepper)
                 .child(presets),
         )
-        .child(note(SPEAKER_NOTE))
+        .child(note(words::settings_equaliser::speaker_note()))
     }
 
     fn speaker_elevation_field(&mut self, cx: &mut Context<Self>) -> Div {
@@ -2287,7 +2251,7 @@ impl RootView {
                 self.in_the_ring_at(
                     id.to_string(),
                     kit::segment(id, format!("{degrees}°"), held == elevation)
-                        .names(format!("Speakers {degrees} degrees above the ears")),
+                        .names(words::settings_equaliser::speakers_above_the_ears(degrees)),
                     move |this, _, cx| this.set_the_speaker_elevation(elevation, cx),
                     cx,
                 ),
@@ -2296,22 +2260,28 @@ impl RootView {
         let stepper = self.degrees_stepper(
             "speaker-elevation",
             format!("{held}°"),
-            ("Lower the speakers a degree", |this, cx| {
-                let held = i16::from(cx.global::<ResonateApp>().speaker_elevation.degrees());
-                if let Ok(elevation) = SpeakerElevation::from_degrees(held - 1) {
-                    this.set_the_speaker_elevation(elevation, cx);
-                }
-            }),
-            ("Raise the speakers a degree", |this, cx| {
-                let held = i16::from(cx.global::<ResonateApp>().speaker_elevation.degrees());
-                if let Ok(elevation) = SpeakerElevation::from_degrees(held + 1) {
-                    this.set_the_speaker_elevation(elevation, cx);
-                }
-            }),
+            (
+                words::settings_equaliser::lower_the_speakers_a_degree(),
+                |this, cx| {
+                    let held = i16::from(cx.global::<ResonateApp>().speaker_elevation.degrees());
+                    if let Ok(elevation) = SpeakerElevation::from_degrees(held - 1) {
+                        this.set_the_speaker_elevation(elevation, cx);
+                    }
+                },
+            ),
+            (
+                words::settings_equaliser::raise_the_speakers_a_degree(),
+                |this, cx| {
+                    let held = i16::from(cx.global::<ResonateApp>().speaker_elevation.degrees());
+                    if let Ok(elevation) = SpeakerElevation::from_degrees(held + 1) {
+                        this.set_the_speaker_elevation(elevation, cx);
+                    }
+                },
+            ),
             cx,
         );
         kit::field(
-            "Speaker elevation",
+            words::settings_equaliser::speaker_elevation(),
             div()
                 .flex()
                 .flex_wrap()
@@ -2320,7 +2290,7 @@ impl RootView {
                 .child(stepper)
                 .child(presets),
         )
-        .child(note(ELEVATION_NOTE))
+        .child(note(words::settings_equaliser::elevation_note()))
     }
 
     fn head_yaw_field(&mut self, cx: &mut Context<Self>) -> Div {
@@ -2335,7 +2305,7 @@ impl RootView {
                 self.in_the_ring_at(
                     id.to_string(),
                     kit::segment(id, format!("{degrees}°"), held == yaw)
-                        .names(format!("Head turned {degrees} degrees")),
+                        .names(words::settings_equaliser::head_turned_by(degrees)),
                     move |this, _, cx| this.set_the_head_yaw(yaw, cx),
                     cx,
                 ),
@@ -2344,22 +2314,28 @@ impl RootView {
         let stepper = self.degrees_stepper(
             "head-yaw",
             format!("{held}°"),
-            ("Turn the head a degree to the right", |this, cx| {
-                let held = i16::from(cx.global::<ResonateApp>().head_yaw.degrees());
-                if let Ok(yaw) = HeadYaw::from_degrees(held - 1) {
-                    this.set_the_head_yaw(yaw, cx);
-                }
-            }),
-            ("Turn the head a degree to the left", |this, cx| {
-                let held = i16::from(cx.global::<ResonateApp>().head_yaw.degrees());
-                if let Ok(yaw) = HeadYaw::from_degrees(held + 1) {
-                    this.set_the_head_yaw(yaw, cx);
-                }
-            }),
+            (
+                words::settings_equaliser::turn_the_head_a_degree_to(),
+                |this, cx| {
+                    let held = i16::from(cx.global::<ResonateApp>().head_yaw.degrees());
+                    if let Ok(yaw) = HeadYaw::from_degrees(held - 1) {
+                        this.set_the_head_yaw(yaw, cx);
+                    }
+                },
+            ),
+            (
+                words::settings_equaliser::turn_the_head_a_degree_to_2(),
+                |this, cx| {
+                    let held = i16::from(cx.global::<ResonateApp>().head_yaw.degrees());
+                    if let Ok(yaw) = HeadYaw::from_degrees(held + 1) {
+                        this.set_the_head_yaw(yaw, cx);
+                    }
+                },
+            ),
             cx,
         );
         kit::field(
-            "Head turned",
+            words::settings_equaliser::head_turned(),
             div()
                 .flex()
                 .flex_wrap()
@@ -2368,7 +2344,7 @@ impl RootView {
                 .child(stepper)
                 .child(presets),
         )
-        .child(note(YAW_NOTE))
+        .child(note(words::settings_equaliser::yaw_note()))
     }
 
     fn degrees_stepper(
@@ -2443,7 +2419,7 @@ impl RootView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some(SharedString::new_static("Choose")),
+            prompt: Some(SharedString::new_static(words::settings_equaliser::choose())),
         });
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(chosen))) = picked.await else {
@@ -2459,7 +2435,7 @@ impl RootView {
     }
 
     fn choose_a_speaker_pair(&self, cx: &mut Context<Self>) {
-        let left = cx.prompt_for_paths(speaker_options("Left speaker"));
+        let left = cx.prompt_for_paths(speaker_options(words::settings_equaliser::left_speaker()));
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(chosen))) = left.await else {
                 return;
@@ -2468,7 +2444,7 @@ impl RootView {
                 return;
             };
             let Ok(right) = this.update(cx, |_, cx| {
-                cx.prompt_for_paths(speaker_options("Right speaker"))
+                cx.prompt_for_paths(speaker_options(words::settings_equaliser::right_speaker()))
             }) else {
                 return;
             };
@@ -2509,7 +2485,7 @@ impl RootView {
             let wave = binaural_wave(&whole).map_err(|error| pair_refusal(&error))?;
             write_beside(&assembling, &wave).map_err(|error| {
                 tracing::warn!(%error, "the assembled binaural response could not be kept");
-                KEPT_NOT.to_owned()
+                words::settings_equaliser::kept_not().to_owned()
             })
         });
         self.reading_the_room = cx.spawn(async move |this, cx| {
@@ -2545,13 +2521,22 @@ impl RootView {
                     });
                     this.send(Command::SetConvolution(Some(Arc::new(impulse))), cx);
                     this.store(&Setting::Convolution(Some(file)), cx);
-                    this.report(Notice::Done(CORRECTING.to_owned()), cx);
+                    this.report(
+                        Notice::Done(words::settings_equaliser::correcting().to_owned()),
+                        cx,
+                    );
                     cx.notify();
                 }
-                Ok(None) => this.report(Notice::Trouble(NO_TAPS.to_owned()), cx),
+                Ok(None) => this.report(
+                    Notice::Trouble(words::settings_equaliser::no_taps().to_owned()),
+                    cx,
+                ),
                 Err(error) => {
                     tracing::warn!(%error, "a room's response could not be read");
-                    this.report(Notice::Trouble(UNREAD.to_owned()), cx);
+                    this.report(
+                        Notice::Trouble(words::settings_equaliser::unread().to_owned()),
+                        cx,
+                    );
                 }
             });
         });
@@ -2640,14 +2625,8 @@ fn fitted_through_the_chain(
 }
 
 fn fitted_to(songs: usize) -> String {
-    match songs {
-        0 => "The preamp is fitted to the room correction".to_owned(),
-        1 => "The preamp is fitted to the one song measured".to_owned(),
-        songs => format!("The preamp is fitted to the {songs} songs measured"),
-    }
+    words::settings_equaliser::preamp_fitted_to(songs)
 }
-
-const KEPT_NOT: &str = "The pair could not be kept as one response";
 
 fn speaker_options(label: &'static str) -> PathPromptOptions {
     PathPromptOptions {
@@ -2664,35 +2643,38 @@ fn write_beside(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&staged, target)
 }
 
-fn pair_refusal(error: &PairedReadError) -> String {
-    match error {
-        PairedReadError::Read { speaker, .. } => {
-            format!("The {speaker} speaker's file could not be read as a response")
-        }
-        PairedReadError::Empty { speaker } => {
-            format!("The {speaker} speaker's file holds no response to convolve with")
-        }
-        PairedReadError::Pair(DspError::SpeakerNotStereo { speaker, .. }) => {
-            format!("The {speaker} speaker's file is not stereo")
-        }
-        PairedReadError::Pair(DspError::SpeakerAlreadyCrossed { speaker }) => {
-            format!("The {speaker} speaker's file is already a two-by-two response")
-        }
-        PairedReadError::Pair(DspError::SpeakerRatesDiffer { .. }) => {
-            "The two files are at different sample rates".to_owned()
-        }
-        PairedReadError::Pair(DspError::SpeakerLengthsDiffer { .. }) => {
-            "The two files are of different lengths".to_owned()
-        }
-        PairedReadError::Pair(_) => {
-            "The two files could not be joined into one response".to_owned()
-        }
+fn side(speaker: Speaker) -> &'static str {
+    match speaker {
+        Speaker::Left => "left",
+        Speaker::Right => "right",
     }
 }
 
-const CORRECTING: &str = "The room is corrected from now on";
-const NO_TAPS: &str = "That file holds no response to convolve with";
-const UNREAD: &str = "That file could not be read as a response";
+fn pair_refusal(error: &PairedReadError) -> String {
+    match error {
+        PairedReadError::Read { speaker, .. } => {
+            words::settings_equaliser::speaker_unread(side(*speaker))
+        }
+        PairedReadError::Empty { speaker } => {
+            words::settings_equaliser::speaker_empty(side(*speaker))
+        }
+        PairedReadError::Pair(DspError::SpeakerNotStereo { speaker, .. }) => {
+            words::settings_equaliser::speaker_not_stereo(side(*speaker))
+        }
+        PairedReadError::Pair(DspError::SpeakerAlreadyCrossed { speaker }) => {
+            words::settings_equaliser::speaker_already_crossed(side(*speaker))
+        }
+        PairedReadError::Pair(DspError::SpeakerRatesDiffer { .. }) => {
+            words::settings_equaliser::the_two_files_are_at_different().to_owned()
+        }
+        PairedReadError::Pair(DspError::SpeakerLengthsDiffer { .. }) => {
+            words::settings_equaliser::the_two_files_are_of_different().to_owned()
+        }
+        PairedReadError::Pair(_) => {
+            words::settings_equaliser::the_two_files_could_not_be().to_owned()
+        }
+    }
+}
 
 fn unplugged(bindings: &crate::Bindings, devices: &[(NodeName, String)]) -> Vec<NodeName> {
     bindings
@@ -2790,12 +2772,14 @@ mod tests {
         let plot = crate::views::spoken::node_of(
             &div()
                 .id("equaliser-curve")
-                .pictured_as(THE_CURVE, || curve_said(&[band], 6.0)),
+                .pictured_as(words::settings_equaliser::the_curve(), || {
+                    curve_said(&[band], 6.0)
+                }),
         )
         .expect("a heard plot is a node");
 
         assert_eq!(plot.role(), gpui::Role::Image);
-        assert_eq!(plot.label(), Some(THE_CURVE));
+        assert_eq!(plot.label(), Some(words::settings_equaliser::the_curve()));
         assert!(
             plot.description()
                 .is_some_and(|said| said.ends_with("1, peak at 1 kHz, +3.0 dB"))

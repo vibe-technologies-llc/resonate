@@ -24,17 +24,8 @@ use crate::{
             switch_row,
         },
     },
+    words,
 };
-
-const SIGN_IN_NOTE: &str = "Sign in to TIDAL asks TIDAL for a code to approve in a browser \
-                            with the client id above, then keeps the refresh token it hands \
-                            back — nothing is typed into this window but the client.";
-
-const NO_CLIENT: &str = "Give the client id above first";
-
-const OFFLINE: &str = "TIDAL is signed in to only while Online is on";
-
-const SIGNED_IN: &str = "Signed in to TIDAL — it is asked from now on";
 
 #[derive(Clone, Debug, Default)]
 pub(crate) enum TidalSigning {
@@ -62,14 +53,16 @@ impl Default for SigningIn {
 
 fn turned_away(error: &Error) -> &'static str {
     match error {
-        Error::AuthorizationLapsed { .. } => "The TIDAL code lapsed before it was approved",
-        Error::AuthorizationDenied { .. } => "TIDAL was told not to sign in",
-        Error::Unwelcome { .. } => "TIDAL refused the client id",
-        Error::Io { .. } | Error::Unaddressable { .. } | Error::Busy { .. } => {
-            "TIDAL could not be reached"
+        Error::AuthorizationLapsed { .. } => {
+            words::settings_tidal::the_tidal_code_lapsed_before_it()
         }
-        Error::Refused { .. } => "TIDAL refused the sign-in",
-        Error::Untrusted { .. } => "TIDAL's certificate is not one this build trusts",
+        Error::AuthorizationDenied { .. } => words::settings_tidal::tidal_was_told_not_to_sign(),
+        Error::Unwelcome { .. } => words::settings_tidal::tidal_refused_the_client_id(),
+        Error::Io { .. } | Error::Unaddressable { .. } | Error::Busy { .. } => {
+            words::settings_tidal::tidal_could_not_be_reached()
+        }
+        Error::Refused { .. } => words::settings_tidal::tidal_refused_the_sign_in(),
+        Error::Untrusted { .. } => words::settings_tidal::tidals_certificate_is_not_one_this(),
         Error::StillArriving { .. }
         | Error::Unreadable { .. }
         | Error::TurnedAway { .. }
@@ -79,25 +72,11 @@ fn turned_away(error: &Error) -> &'static str {
         | Error::NotOffered { .. }
         | Error::ToolFailed { .. }
         | Error::ToolNotRun { .. }
-        | Error::NotAnExtension => "TIDAL answered something this build cannot read",
+        | Error::NotAnExtension => {
+            words::settings_tidal::tidal_answered_something_this_build_cannot()
+        }
     }
 }
-
-const TIDAL_NOTE: &str = "Where a TIDAL client id and refresh token are set, your own \
-                          subscription is asked for every track marked wanted, by the TIDAL \
-                          track MusicBrainz links the recording to or by its ISRC and never by a \
-                          title. Only the whole track in lossless FLAC is taken — never a \
-                          preview, a lossy stream or an encrypted one — and it is downloaded, \
-                          repacked as a FLAC file and kept in the vault, or the music folder \
-                          where no vault is open. The client id and secret are those of the \
-                          application the refresh token was issued to. The hosted hifi-api \
-                          service is used where no custom server is given; a hifi-api server \
-                          you run can replace it. Both use the same ISRC and whole-track checks. \
-                          Monochrome's hosted service is asked too, by ISRC alone, for the whole \
-                          FLAC; a Monochrome server you name can replace it. The hosted services \
-                          are asked unless Ask the hosted services is turned off; a server you name \
-                          is asked either way. Asked as soon as they are given, and only while \
-                          Online is on.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TidalAccount {
@@ -123,25 +102,27 @@ impl TidalAccount {
         !matches!(self, Self::HifiSecret)
     }
 
-    const fn placeholder(self) -> &'static str {
+    fn placeholder(self) -> &'static str {
         match self {
-            Self::ClientId => "The client id the token was issued to, then press enter",
-            Self::ClientSecret => "Its client secret, if it has one, then press enter",
-            Self::RefreshToken => "A refresh token for your account, then press enter",
-            Self::HifiApi => "Custom hifi-api server address; blank uses the hosted service",
-            Self::HifiSecret => "A key your Resonate server lists, then press enter",
-            Self::Monochrome => "Custom Monochrome server address; blank uses tracks.monochrome.st",
+            Self::ClientId => words::settings_tidal::the_client_id_the_token_was(),
+            Self::ClientSecret => words::settings_tidal::its_client_secret_if_it_has(),
+            Self::RefreshToken => words::settings_tidal::a_refresh_token_for_your_account(),
+            Self::HifiApi => words::settings_tidal::custom_hifi_api_server_address_blank(),
+            Self::HifiSecret => words::settings_tidal::a_key_your_resonate_server_lists(),
+            Self::Monochrome => {
+                words::settings_tidal::custom_monochrome_server_address_blank_uses()
+            }
         }
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::ClientId => "Client id",
-            Self::ClientSecret => "Client secret",
-            Self::RefreshToken => "Refresh token",
-            Self::HifiApi => "hifi-api server",
-            Self::HifiSecret => "Key",
-            Self::Monochrome => "Monochrome server",
+            Self::ClientId => words::settings_tidal::client_id(),
+            Self::ClientSecret => words::settings_tidal::client_secret(),
+            Self::RefreshToken => words::settings_tidal::refresh_token(),
+            Self::HifiApi => words::settings_tidal::hifi_api_server(),
+            Self::HifiSecret => words::settings_tidal::key(),
+            Self::Monochrome => words::settings_tidal::monochrome_server(),
         }
     }
 
@@ -244,18 +225,26 @@ impl RootView {
         });
 
         let said = match (account, given.is_empty()) {
-            (TidalAccount::HifiApi, true) => "The hosted hifi-api service is asked from now on",
-            (TidalAccount::HifiApi, false) => "The custom hifi-api server is asked from now on",
-            (TidalAccount::HifiSecret, true) => "The Resonate server is no longer asked",
-            (TidalAccount::HifiSecret, false) => "The Resonate server is asked with the key",
+            (TidalAccount::HifiApi, true) => {
+                words::settings_tidal::the_hosted_hifi_api_service_is()
+            }
+            (TidalAccount::HifiApi, false) => {
+                words::settings_tidal::the_custom_hifi_api_server_is()
+            }
+            (TidalAccount::HifiSecret, true) => {
+                words::settings_tidal::the_resonate_server_is_no_longer()
+            }
+            (TidalAccount::HifiSecret, false) => {
+                words::settings_tidal::the_resonate_server_is_asked_with()
+            }
             (TidalAccount::Monochrome, true) => {
-                "The hosted Monochrome service is asked from now on"
+                words::settings_tidal::the_hosted_monochrome_service_is_asked()
             }
             (TidalAccount::Monochrome, false) => {
-                "The custom Monochrome server is asked from now on"
+                words::settings_tidal::the_custom_monochrome_server_is_asked()
             }
-            (_, true) => "TIDAL is no longer asked",
-            (_, false) => "TIDAL is asked from now on",
+            (_, true) => words::settings_tidal::tidal_is_no_longer_asked(),
+            (_, false) => words::settings_tidal::tidal_is_asked_from_now_on(),
         };
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -361,11 +350,17 @@ impl RootView {
     fn sign_in_to_tidal(&mut self, cx: &mut Context<Self>) {
         let app = cx.global::<ResonateApp>();
         let Some(signs_in) = app.signs_in.clone().filter(|_| app.online.enabled) else {
-            self.report(Notice::Trouble(OFFLINE.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_tidal::offline().to_owned()),
+                cx,
+            );
             return;
         };
         let Some(client) = self.client_for_tidal(cx) else {
-            self.report(Notice::Trouble(NO_CLIENT.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_tidal::no_client().to_owned()),
+                cx,
+            );
             return;
         };
 
@@ -428,7 +423,10 @@ impl RootView {
                     account.hold(&mut global.online, token.clone());
                 });
                 self.store(&account.setting(token), cx);
-                self.report(Notice::Done(SIGNED_IN.to_owned()), cx);
+                self.report(
+                    Notice::Done(words::settings_tidal::signed_in().to_owned()),
+                    cx,
+                );
                 self.the_sources_moved(cx);
             }
             Ok(None) => {}
@@ -458,14 +456,16 @@ impl RootView {
                 .flex_col()
                 .gap_2()
                 .child(kit::action_row().child(self.sign_in_button(
-                    "Sign in to TIDAL",
+                    words::settings_tidal::sign_in_to_tidal(),
                     held_back,
                     cx,
                 )))
-                .child(note(SIGN_IN_NOTE)),
-            TidalSigning::Asking => {
-                kit::action_row().child(self.sign_in_button("Asking TIDAL…", true, cx))
-            }
+                .child(note(words::settings_tidal::sign_in_note())),
+            TidalSigning::Asking => kit::action_row().child(self.sign_in_button(
+                words::settings_tidal::asking_tidal(),
+                true,
+                cx,
+            )),
             TidalSigning::Waiting(authorizing) => {
                 let opened = authorizing.verify_at.clone();
                 div()
@@ -473,7 +473,7 @@ impl RootView {
                     .flex_col()
                     .gap_2()
                     .child(kit::field(
-                        "Code",
+                        words::settings_tidal::code(),
                         kit::figure(authorizing.user_code.clone()),
                     ))
                     .child(
@@ -481,12 +481,10 @@ impl RootView {
                             .child(self.open_the_tidal_page(opened, cx))
                             .child(self.stop_signing_in(cx)),
                     )
-                    .child(note(format!(
-                        "Open {} and approve the code {}; this waits until TIDAL answers, for \
-                         {} minutes at most.",
-                        authorizing.verify_at,
-                        authorizing.user_code,
+                    .child(note(words::settings_tidal::approve_the_code(
+                        authorizing.user_code.to_string(),
                         authorizing.lasts.as_secs().div_ceil(60),
+                        authorizing.verify_at.to_string(),
                     )))
             }
         }
@@ -512,7 +510,7 @@ impl RootView {
     fn open_the_tidal_page(&self, page: String, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "tidal-open-page",
-            "Open the page",
+            words::settings_tidal::open_the_page(),
             Icon::Globe,
             false,
             move |_, _, cx| cx.open_url(&page),
@@ -524,7 +522,7 @@ impl RootView {
     fn stop_signing_in(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         action(
             "tidal-stop-sign-in",
-            "Stop",
+            words::settings_tidal::stop(),
             Icon::Stop,
             false,
             |this, _, cx| this.stop_signing_in_to_tidal(cx),
@@ -553,8 +551,8 @@ impl RootView {
         body.child(self.in_the_ring(
             "hosted-services",
             switch_row(
-                "Ask the hosted services",
-                "Off, hifi-api and Monochrome are asked only at a server named above",
+                words::settings_tidal::ask_the_hosted_services(),
+                words::settings_tidal::off_hifi_api_and_monochrome_are(),
                 allowed,
                 "hosted-services",
             ),
@@ -562,7 +560,7 @@ impl RootView {
             cx,
         ))
         .child(self.signing_in_to_tidal(cx))
-        .note(TIDAL_NOTE)
+        .note(words::settings_tidal::tidal_note())
     }
 
     pub(super) fn resonate_key_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -577,11 +575,9 @@ impl RootView {
                     cx,
                 ),
             ))
-            .note(SharedString::from(format!(
-                "Wanted songs are asked of {RESONATE_HOST} with this key, as a bearer token over \
-                 https, and nowhere else. Asked as soon as it is given, and only while Online \
-                 is on."
-            )))
+            .note(SharedString::from(
+                words::settings_tidal::resonate_key_note(RESONATE_HOST),
+            ))
     }
 
     fn set_hosted_services(&mut self, allowed: bool, cx: &mut Context<Self>) {

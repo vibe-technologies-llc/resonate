@@ -2090,8 +2090,8 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   as a `note`; `detail` stays the hover for figures such as the filter's taps. A list/button-row group
   (devices, music folders, scan, bindings, About's readbacks) ends in a `note` of its own, always the
   one `note` builder at `text_sm`. *Lossy sources* = *Artificially enhance lossy files*, with the
-  `EXPERIMENTAL` badge `Group::is_experimental` puts in a header; its options say in words what they
-  take or add, and `LOSSY_ONLY` says that a repaired file is no longer bit-perfect.
+  *Experimental* badge `Group::is_experimental` puts in a header; its options say in words what they
+  take or add, and its note (`lossy-only`) says that a repaired file is no longer bit-perfect.
 - **A palette is shown, not named.** `kit::preview` = a strip of four bands (sidebar, panes, what it
   raises above them, the accent that would be worn) under the palette's name in a card with an accent
   border when worn. An accent is a round `kit::dot_swatch` with a check in `theme::ink_over`'s ink.

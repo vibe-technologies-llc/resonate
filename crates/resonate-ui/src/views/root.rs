@@ -79,10 +79,9 @@ use crate::{
         search::{self, SearchShows, TopEntry, TopRun},
         served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
-            Account, Armed, Category, CheckingYoutubeMusic, FILTER_PLACEHOLDER, Fitting, HeldBand,
-            LastfmAccount, LastfmSigning, Page, Plotted, SHARED_NAME_PLACEHOLDER,
-            SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER, Service,
-            SigningIn, SpotifyState, TidalAccount, YoutubeMusicField, spotify,
+            Account, Armed, Category, CheckingYoutubeMusic, Fitting, HeldBand, LastfmAccount,
+            LastfmSigning, Page, Plotted, Service, SigningIn, SpotifyState, TidalAccount,
+            YoutubeMusicField, spotify,
         },
         sharing,
         sheets::{self, MAGNIFIER_PANEL},
@@ -1104,7 +1103,11 @@ impl RootView {
 
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let sync_server = cx.new(|cx| {
-            let mut field = Field::new(SYNC_SERVER_PLACEHOLDER, window, cx);
+            let mut field = Field::new(
+                crate::words::settings_sync::sync_server_placeholder(),
+                window,
+                cx,
+            );
             field.hold(synchronised.server.clone(), cx);
             field
         });
@@ -1117,7 +1120,11 @@ impl RootView {
         )
         .detach();
         let sync_device = cx.new(|cx| {
-            let mut field = Field::new(SYNC_DEVICE_PLACEHOLDER, window, cx);
+            let mut field = Field::new(
+                crate::words::settings_sync::sync_device_placeholder(),
+                window,
+                cx,
+            );
             field.hold(synchronised.device.clone(), cx);
             field
         });
@@ -1130,7 +1137,11 @@ impl RootView {
         )
         .detach();
         let shared_name = cx.new(|cx| {
-            let mut field = Field::new(SHARED_NAME_PLACEHOLDER, window, cx);
+            let mut field = Field::new(
+                crate::words::settings_sync::shared_name_placeholder(),
+                window,
+                cx,
+            );
             field.hold(synchronised.shared_name.clone(), cx);
             field
         });
@@ -1142,7 +1153,13 @@ impl RootView {
             },
         )
         .detach();
-        let sync_code = cx.new(|cx| Field::new(SYNC_CODE_PLACEHOLDER, window, cx));
+        let sync_code = cx.new(|cx| {
+            Field::new(
+                crate::words::settings_sync::sync_code_placeholder(),
+                window,
+                cx,
+            )
+        });
         cx.subscribe_in(&sync_code, window, |this, _, _: &Submitted, window, cx| {
             this.sync_code_given(window, cx);
         })
@@ -1193,7 +1210,13 @@ impl RootView {
         })
         .detach();
 
-        let finding = cx.new(|cx| Field::new(FILTER_PLACEHOLDER, window, cx));
+        let finding = cx.new(|cx| {
+            Field::new(
+                crate::words::settings_pane::filter_placeholder(),
+                window,
+                cx,
+            )
+        });
         cx.subscribe_in(&finding, window, |this, _, _: &Submitted, window, cx| {
             this.leave_filter(window, cx);
         })

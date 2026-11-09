@@ -26,71 +26,13 @@ use crate::{
         root::RootView,
         settings::{Choice, Rows, action, note, reading},
     },
+    words,
 };
 
 const SHORT_TEST: usize = TRIALS_BY_DEFAULT / 2;
 const LONG_TEST: usize = TRIALS_BY_DEFAULT * 2;
 
 const AUDITION_BEGUN_WITHIN: Duration = Duration::from_secs(10);
-
-const NOTHING_TO_TEST: &str = "Nothing is bound to the device in use, so there is no chain to \
-                               test. Shape a curve under Bands first.";
-
-const NOT_LEVELLABLE: &str = "The chain cannot be level-matched to its bypass, so it is not \
-                              tested";
-
-const NOT_PLAYING: &str = "Play a song first: the test is heard on one playing, and a DSD stream \
-                           sent as it is cannot be switched within";
-
-const ALIKE: &str = "A and B would sound the same on this stream, so there is nothing to tell \
-                     apart";
-
-const NOT_MEASURED: &str = "A and B could not be measured against each other, so the test cannot \
-                            level them";
-
-const TOO_FAR_APART: &str = "A and B play too far apart in loudness to be matched, so the test \
-                             cannot level them";
-
-const TRIALS_REFUSED: &str = "The listening test takes between one and a hundred trials";
-
-const MEASURING: &str = "Measuring…";
-const STARTING: &str = "Starting…";
-
-macro_rules! how_it_works {
-    ($lead:literal) => {
-        concat!(
-            $lead,
-            " X is one of the two, drawn afresh for every trial: hear A, B and X as often as you \
-             like on the song playing, then say which X was. A change is heard a few moments \
-             after you press, within the audio already buffered."
-        )
-    };
-}
-
-const HOW_THE_EQUALISER_IS_TESTED: &str = how_it_works!(
-    "A is the equaliser as set, B is the signal with it bypassed. Each is lowered, never raised, \
-     until their loudness across 20 Hz to 16 kHz agrees to 0.1 dB, so the louder one cannot give \
-     itself away. The room correction stays on in both."
-);
-
-const HOW_RESTORATION_IS_TESTED: &str = how_it_works!(
-    "A is lossy restoration as set, B the setting you choose. Restoration changes how loud a \
-     song plays, so the song is first measured through both, which takes a moment, and the \
-     louder is lowered, never raised, until the two agree. A lossless file is touched by \
-     neither."
-);
-
-const HOW_THE_RESAMPLER_IS_TESTED: &str = how_it_works!(
-    "A is the resampler as set, B the quality and phase you choose. Both play at one level. The \
-     resampler works only where the song's rate has to be changed to the device's; where it \
-     does not, the two sound alike and the test is refused."
-);
-
-const HOW_DITHER_IS_TESTED: &str = how_it_works!(
-    "A is the dither as set, B the kind and shaping you choose. Both play at one level. Dither \
-     works only where the bits are cut down to the device's depth; where they are not, the two \
-     sound alike and the test is refused."
-);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Testing {
@@ -110,19 +52,19 @@ impl Choice for Testing {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Equaliser => "Equaliser",
-            Self::Restoration => "Restoration",
-            Self::Resampler => "Resampler",
-            Self::Dither => "Dither",
+            Self::Equaliser => words::settings_abx::equaliser(),
+            Self::Restoration => words::settings_abx::restoration(),
+            Self::Resampler => words::settings_abx::resampler(),
+            Self::Dither => words::settings_abx::dither(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Equaliser => HOW_THE_EQUALISER_IS_TESTED,
-            Self::Restoration => HOW_RESTORATION_IS_TESTED,
-            Self::Resampler => HOW_THE_RESAMPLER_IS_TESTED,
-            Self::Dither => HOW_DITHER_IS_TESTED,
+            Self::Equaliser => words::settings_abx::a_is_the_equaliser_as_set(),
+            Self::Restoration => words::settings_abx::a_is_lossy_restoration_as_set(),
+            Self::Resampler => words::settings_abx::a_is_the_resampler_as_set(),
+            Self::Dither => words::settings_abx::a_is_the_dither_as_set(),
         })
     }
 }
@@ -228,7 +170,7 @@ impl Measuring {
     fn idle() -> Self {
         Self {
             stop: None,
-            what: STARTING,
+            what: words::settings_abx::starting(),
             _landing: Task::ready(()),
         }
     }
@@ -343,18 +285,17 @@ impl ListeningTest {
     fn levels_said(&self) -> String {
         match &self.subject {
             Subject::Equaliser { arms, .. } => {
-                format!("Levels matched to {:.3} dB", arms.residual_db())
+                words::settings_abx::levels_matched_to(format!("{:.3}", arms.residual_db()))
             }
             Subject::Setting { contest, .. } if contest.is_flat_in_level() => {
-                "Both play at one level".to_owned()
+                words::settings_abx::both_play_at_one_level().to_owned()
             }
             Subject::Setting { lowered, .. } if lowered.by.is_none() => {
-                "Measured through both, the two play at one level".to_owned()
+                words::settings_abx::measured_through_both_the_two_play().to_owned()
             }
-            Subject::Setting { lowered, .. } => format!(
-                "{} lowered by {:.2} dB to match the other",
+            Subject::Setting { lowered, .. } => words::settings_abx::lowered_to_match(
                 arm_named(lowered.arm),
-                f64::from(lowered.by.millibels().abs()) / 100.0
+                format!("{:.2}", f64::from(lowered.by.millibels().abs()) / 100.0),
             ),
         }
     }
@@ -362,23 +303,22 @@ impl ListeningTest {
     fn standing(&self) -> String {
         let score = self.session.score();
         if score.answered == 0 {
-            return format!("Trial 1 of {}", self.session.planned());
+            return words::settings_abx::trial_of(self.session.planned(), 1);
         }
         let trial = if self.session.is_finished() {
-            "Finished".to_owned()
+            words::settings_abx::finished().to_owned()
         } else {
-            format!("Trial {} of {}", score.answered + 1, self.session.planned())
+            words::settings_abx::trial_of(self.session.planned(), score.answered + 1)
         };
         format!("{trial} — {}", scored(score))
     }
 }
 
 fn scored(score: Score) -> String {
-    format!(
-        "{} of {} right, chance of that by guessing {:.1}%",
-        score.right,
+    words::settings_abx::scored(
         score.answered,
-        score.p_value() * 100.0
+        format!("{:.1}", score.p_value() * 100.0),
+        score.right,
     )
 }
 
@@ -395,10 +335,10 @@ fn verdicts_in_a_line(session: &Session) -> String {
 
 pub(crate) fn refusal(error: &Error) -> String {
     match error {
-        Error::NothingToAudition => NOT_PLAYING.to_owned(),
-        Error::ArmsAlike => ALIKE.to_owned(),
-        Error::LevelsUnmeasured => NOT_MEASURED.to_owned(),
-        Error::LevelsTooFarApart { .. } => TOO_FAR_APART.to_owned(),
+        Error::NothingToAudition => words::settings_abx::not_playing().to_owned(),
+        Error::ArmsAlike => words::settings_abx::alike().to_owned(),
+        Error::LevelsUnmeasured => words::settings_abx::not_measured().to_owned(),
+        Error::LevelsTooFarApart { .. } => words::settings_abx::too_far_apart().to_owned(),
         other => toast::would_not_do(CommandKind::Audition, other.cause()),
     }
 }
@@ -466,9 +406,9 @@ impl RootView {
             .child(note(format!(
                 "{levels}. {}",
                 match heard {
-                    Some(Arm::A) => "Hearing A",
-                    Some(Arm::B) => "Hearing B",
-                    None => "Hearing nothing chosen yet",
+                    Some(Arm::A) => words::settings_abx::hearing_a(),
+                    Some(Arm::B) => words::settings_abx::hearing_b(),
+                    None => words::settings_abx::hearing_nothing_chosen_yet(),
                 }
             )));
 
@@ -479,16 +419,16 @@ impl RootView {
             && !finished
         {
             body = body.child(note(match last {
-                Verdict::Right => "The last one was right",
-                Verdict::Wrong => "The last one was wrong",
+                Verdict::Right => words::settings_abx::the_last_one_was_right(),
+                Verdict::Wrong => words::settings_abx::the_last_one_was_wrong(),
             }));
         }
 
         if finished {
             body = body.child(note(if significant {
-                "That is unlikely to be luck: you can hear this."
+                words::settings_abx::that_is_unlikely_to_be_luck()
             } else {
-                "That could well be luck: no difference was shown."
+                words::settings_abx::that_could_well_be_luck_no()
             }));
         } else {
             body = body
@@ -496,7 +436,7 @@ impl RootView {
                     kit::action_row()
                         .child(action(
                             "abx-hear-a",
-                            "Hear A",
+                            words::settings_abx::hear_a(),
                             Icon::Play,
                             false,
                             |this, _, cx| this.hear_in_the_test(Hear::A, cx),
@@ -505,7 +445,7 @@ impl RootView {
                         ))
                         .child(action(
                             "abx-hear-b",
-                            "Hear B",
+                            words::settings_abx::hear_b(),
                             Icon::Play,
                             false,
                             |this, _, cx| this.hear_in_the_test(Hear::B, cx),
@@ -514,7 +454,7 @@ impl RootView {
                         ))
                         .child(action(
                             "abx-hear-x",
-                            "Hear X",
+                            words::settings_abx::hear_x(),
                             Icon::Play,
                             false,
                             |this, _, cx| this.hear_in_the_test(Hear::X, cx),
@@ -526,7 +466,7 @@ impl RootView {
                     kit::action_row()
                         .child(action(
                             "abx-x-is-a",
-                            "X is A",
+                            words::settings_abx::x_is_a(),
                             Icon::Check,
                             false,
                             |this, _, cx| this.answer_the_test(Arm::A, cx),
@@ -535,7 +475,7 @@ impl RootView {
                         ))
                         .child(action(
                             "abx-x-is-b",
-                            "X is B",
+                            words::settings_abx::x_is_b(),
                             Icon::Check,
                             false,
                             |this, _, cx| this.answer_the_test(Arm::B, cx),
@@ -547,7 +487,11 @@ impl RootView {
 
         body.child(kit::action_row().child(action(
             "abx-end",
-            if finished { "Done" } else { "End the test" },
+            if finished {
+                words::settings_abx::done()
+            } else {
+                words::settings_abx::end_the_test()
+            },
             Icon::Stop,
             false,
             |this, _, cx| this.end_the_listening_test(cx),
@@ -591,7 +535,7 @@ impl RootView {
                     ))
                     .child(action(
                         "abx-stop-measuring",
-                        "Stop",
+                        words::settings_abx::stop(),
                         Icon::Stop,
                         false,
                         |this, _, cx| this.stop_measuring(cx),
@@ -608,7 +552,7 @@ impl RootView {
                     LONG_TEST => "abx-long",
                     _ => "abx-default",
                 },
-                format!("Begin {trials} trials"),
+                words::settings_abx::begin_trials(trials),
                 Icon::Play,
                 false,
                 move |this, _, cx| this.begin_a_listening_test(trials, cx),
@@ -631,7 +575,7 @@ impl RootView {
             Testing::Equaliser => column,
             Testing::Restoration => column.child(self.against_row(
                 "abx-against-restoration",
-                "B is",
+                words::settings_abx::b_is(),
                 chosen.restoration_against(set),
                 cx,
                 |this, value, cx| {
@@ -642,7 +586,7 @@ impl RootView {
             Testing::Resampler => column
                 .child(self.against_row(
                     "abx-against-quality",
-                    "B's quality",
+                    words::settings_abx::bs_quality(),
                     chosen.quality_against(set),
                     cx,
                     |this, value, cx| {
@@ -652,7 +596,7 @@ impl RootView {
                 ))
                 .child(self.against_row(
                     "abx-against-phase",
-                    "B's phase",
+                    words::settings_abx::bs_phase(),
                     chosen.phase_against(set),
                     cx,
                     |this, value, cx| {
@@ -663,7 +607,7 @@ impl RootView {
             Testing::Dither => column
                 .child(self.against_row(
                     "abx-against-dither",
-                    "B's dither",
+                    words::settings_abx::bs_dither(),
                     chosen.dither_against(set),
                     cx,
                     |this, value, cx| {
@@ -673,7 +617,7 @@ impl RootView {
                 ))
                 .child(self.against_row(
                     "abx-against-shaping",
-                    "B's noise shaping",
+                    words::settings_abx::bs_noise_shaping(),
                     chosen.shaping_against(set),
                     cx,
                     |this, value, cx| {
@@ -734,11 +678,17 @@ impl RootView {
             .map(|profile| Arc::new(profile.clone()).at_rate(rate));
 
         let (Some(sink), Some(chain)) = (sink, chain) else {
-            self.report(Notice::Trouble(NOTHING_TO_TEST.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_abx::nothing_to_test().to_owned()),
+                cx,
+            );
             return;
         };
         let Some(test) = ListeningTest::of_the_equaliser(trials, &chain, rate, sink) else {
-            self.report(Notice::Trouble(NOT_LEVELLABLE.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_abx::not_levellable().to_owned()),
+                cx,
+            );
             return;
         };
         self.audition = Some(test);
@@ -756,7 +706,10 @@ impl RootView {
             return;
         };
         let Ok(session) = Session::new(trials, clock_seed()) else {
-            self.report(Notice::Trouble(TRIALS_REFUSED.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_abx::trials_refused().to_owned()),
+                cx,
+            );
             return;
         };
 
@@ -784,9 +737,9 @@ impl RootView {
         });
 
         let what = if contest.is_flat_in_level() {
-            STARTING
+            words::settings_abx::starting()
         } else {
-            MEASURING
+            words::settings_abx::measuring()
         };
         self.test_setup.measuring = Measuring::under(stop, what, landing);
         cx.notify();
@@ -1064,7 +1017,7 @@ mod tests {
 
         assert_eq!(
             driven.read(|_, cx| toast::showing_text(cx)).as_deref(),
-            Some(NOT_PLAYING)
+            Some(words::settings_abx::not_playing())
         );
         assert!(driven.read(|root, _| root.audition.is_none()));
 
@@ -1093,7 +1046,8 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let watched = Arc::clone(&stop);
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.test_setup.measuring = Measuring::under(stop, MEASURING, Task::ready(()));
+            root.test_setup.measuring =
+                Measuring::under(stop, words::settings_abx::measuring(), Task::ready(()));
             cx.notify();
         });
         driven.scroll("settings", 6000.0);

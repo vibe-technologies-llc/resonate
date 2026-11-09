@@ -12,16 +12,12 @@ use crate::{
         root::RootView,
         settings::{Rows, action, note},
     },
+    words,
 };
 
 const EXTENSION_CELL: f32 = 84.0;
 
 const LISTS_THE_HIDDEN: &str = "is:hidden";
-
-const NOTHING_HIDDEN: &str = "Nothing is hidden. A song hidden from its menu waits here, with its \
-                              plays, favourite and playlists kept, until it is shown again.";
-
-const SHOW_AGAIN: &str = "Show again";
 
 impl RootView {
     pub(super) fn music_extensions_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -41,11 +37,11 @@ impl RootView {
                     extension,
                     kit::checkbox(id, format!(".{extension}"), included)
                         .w(theme::width(EXTENSION_CELL))
-                        .names(format!(
-                            "{} .{extension} {} the library",
-                            if included { "Exclude" } else { "Include" },
-                            if included { "from" } else { "in" },
-                        )),
+                        .names(if included {
+                            words::settings_filters::exclude_extension(extension.to_string())
+                        } else {
+                            words::settings_filters::include_extension(extension.to_string())
+                        }),
                     move |this, _, cx| {
                         let extensions = cx
                             .global::<ResonateApp>()
@@ -60,15 +56,15 @@ impl RootView {
         }
         kit::rows()
             .child(kit::stacked_row(
-                format!("{selected} of {} included", AUDIO_EXTENSIONS.len()),
-                "Choose the formats to include in your library",
+                words::settings_filters::included_of(AUDIO_EXTENSIONS.len(), selected),
+                words::settings_filters::choose_the_formats_to_include_in(),
                 choices,
             ))
             .child(
                 kit::action_row()
                     .child(action(
                         "music-extensions-all",
-                        "Select all",
+                        words::settings_filters::select_all(),
                         Icon::Check,
                         extensions == MusicExtensions::default(),
                         |this, _, cx| this.set_music_extensions(MusicExtensions::default(), cx),
@@ -77,7 +73,7 @@ impl RootView {
                     ))
                     .child(action(
                         "music-extensions-clear",
-                        "Clear selection",
+                        words::settings_filters::clear_selection(),
                         Icon::Close,
                         selected == 0,
                         |this, _, cx| {
@@ -91,23 +87,21 @@ impl RootView {
                         cx,
                     )),
             )
-            .note("Changes apply to library listings immediately. Excluded files stay on disk and in the catalog.")
+            .note(words::settings_filters::changes_apply_to_library_listings_immediately())
     }
 
     pub(super) fn hidden_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let hidden = self.library.read(cx).hidden();
         if hidden.counted == 0 {
-            return kit::rows().child(note(NOTHING_HIDDEN));
+            return kit::rows().child(note(words::settings_filters::nothing_hidden()));
         }
 
         let shown = hidden.tracks.len() as u64;
         let counted = hidden.counted;
-        let mut listed = kit::rows().child(note(match counted {
-            1 => "1 song is hidden.".to_owned(),
-            counted if shown < counted => {
-                format!("{counted} songs are hidden; the first {shown} by title are listed.")
-            }
-            counted => format!("{counted} songs are hidden."),
+        let mut listed = kit::rows().child(note(if shown < counted {
+            words::settings_filters::songs_hidden_and_listed(counted, shown)
+        } else {
+            words::settings_filters::songs_hidden(counted)
         }));
         for track in &hidden.tracks {
             let id = track.id;
@@ -115,8 +109,8 @@ impl RootView {
             let control = kit::button(
                 SharedString::from(format!("show-hidden-{}", id.get())),
                 Some(Icon::Undo),
-                SHOW_AGAIN,
-                format!("Show {} in the library again", track.title),
+                words::settings_filters::show_again(),
+                words::settings_filters::show_in_the_library_again(&track.title),
                 kit::Tone::Ghost,
             );
             listed = listed.child(kit::row(
@@ -138,7 +132,7 @@ impl RootView {
             kit::action_row()
                 .child(action(
                     "show-every-hidden",
-                    "Show them all again",
+                    words::settings_filters::show_them_all_again(),
                     Icon::Undo,
                     false,
                     |this, _, cx| {
@@ -150,7 +144,7 @@ impl RootView {
                 ))
                 .child(action(
                     "list-the-hidden",
-                    "List them in Tracks",
+                    words::settings_filters::list_them_in_tracks(),
                     Icon::Search,
                     false,
                     |this, window, cx| {
@@ -179,9 +173,17 @@ impl RootView {
     }
 
     pub(super) fn minimum_length_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        kit::rows().child(kit::field("Minimum length in seconds", self.text_field("minimum-length", &self.minimum_length,
-            |this, window, cx| this.leave_minimum_length(window, cx), cx)))
-            .note("Enter a value from 0 to 600 seconds (10 minutes), then press Enter to apply. Zero includes every length; a positive minimum excludes tracks whose length is unknown.")
+        kit::rows()
+            .child(kit::field(
+                words::settings_filters::minimum_length_in_seconds(),
+                self.text_field(
+                    "minimum-length",
+                    &self.minimum_length,
+                    |this, window, cx| this.leave_minimum_length(window, cx),
+                    cx,
+                ),
+            ))
+            .note(words::settings_filters::enter_a_value_from_0_to())
     }
 
     fn leave_minimum_length(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -211,7 +213,9 @@ impl RootView {
             .and_then(MinimumLength::new);
         let Some(length) = parsed else {
             self.report(
-                Notice::Trouble("Enter a minimum length between 0 and 600 seconds".to_owned()),
+                Notice::Trouble(
+                    words::settings_filters::enter_a_minimum_length_between_0().to_owned(),
+                ),
                 cx,
             );
             return;
