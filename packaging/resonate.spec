@@ -25,6 +25,7 @@ BuildRequires:  wayland-devel
 Requires:       pipewire >= 0.3.50
 Requires:       vulkan-loader
 Suggests:       yt-dlp
+Suggests:       deno
 
 %description
 Resonate plays music through PipeWire with a native Wayland interface.

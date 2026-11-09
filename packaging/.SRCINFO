@@ -22,6 +22,7 @@ pkgbase = resonate-player-git
 	depends = freetype2
 	depends = vulkan-icd-loader
 	optdepends = yt-dlp: keeping songs from YouTube Music
+	optdepends = deno: a JavaScript runtime yt-dlp needs for YouTube Music
 	provides = resonate
 	conflicts = resonate
 	conflicts = resonate-git

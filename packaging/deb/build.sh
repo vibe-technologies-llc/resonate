@@ -85,7 +85,7 @@ build_player() {
     write_control resonate sound "${libraries:+$libraries, }pipewire (>= 0.3.50), libvulkan1" \
         'High-fidelity music player with native PipeWire output' \
         'Resonate plays music through PipeWire with a native Wayland interface. Built for x86-64-v3 processors.' \
-        yt-dlp
+        'yt-dlp, deno'
     seal resonate
 }
 
