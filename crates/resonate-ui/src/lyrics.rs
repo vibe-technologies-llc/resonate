@@ -12,7 +12,7 @@ use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
 use resonate_library::LyricsAhead;
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
-use crate::{models::Scale, theme, views::kit};
+use crate::{models::Scale, theme, views::kit, words};
 
 pub(crate) fn near_the_words(
     pointer: Point<Pixels>,
@@ -118,20 +118,17 @@ pub enum Reading {
 impl Reading {
     pub const ALL: [Self; 2] = [Self::InPlay, Self::Whole];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::InPlay => "In play",
-            Self::Whole => "Whole set",
+            Self::InPlay => words::lyrics::in_play(),
+            Self::Whole => words::lyrics::whole_set(),
         }
     }
 
-    pub const fn about(self) -> &'static str {
+    pub fn about(self) -> &'static str {
         match self {
-            Self::InPlay => {
-                "The line being sung and the two coming after it. Hold the pointer over the pane \
-                 to open it out to the whole set."
-            }
-            Self::Whole => "Every line, scrolling with the track",
+            Self::InPlay => words::lyrics::in_play_about(),
+            Self::Whole => words::lyrics::whole_set_about(),
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::{
         root::RootView,
         spoken::{Spoken as _, Urgency, listening},
     },
+    words,
 };
 
 const ANNOUNCED_AT_MOST_EVERY: Duration = Duration::from_secs(5);
@@ -62,15 +63,14 @@ impl RootView {
         let library = self.library.read(cx);
         if let Some(stats) = library.stats() {
             return Some(match stats.discovered {
-                0 => SharedString::new_static("Scanning the library"),
-                found => SharedString::from(format!(
-                    "Scanning the library: {} of {found} files",
-                    stats.processed
-                )),
+                0 => SharedString::new_static(words::announcing::scanning()),
+                found => {
+                    SharedString::from(words::announcing::scanning_counted(found, stats.processed))
+                }
             });
         }
         if library.is_enriching() {
-            return Some(SharedString::new_static("Looking up details online"));
+            return Some(SharedString::new_static(words::announcing::looking_up()));
         }
         if let Some(left) = library.keeps_left() {
             return Some(downloads::keeping_said(left));

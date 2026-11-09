@@ -28,7 +28,7 @@ use resonate_listen::Listening;
 use resonate_providers::Providers;
 use resonate_words::LanguageChoice;
 
-use crate::{Launcher, Notice, Result, equaliser::Curve};
+use crate::{Launcher, Notice, Result, equaliser::Curve, words};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsCategory {
@@ -758,7 +758,7 @@ pub struct TidalSignIn {
 
 impl fmt::Debug for TidalSignIn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TidalSignIn")
+        f.debug_struct(stringify!(TidalSignIn))
             .field("client_id", &self.client_id)
             .field("client_secret", &withheld(&self.client_secret))
             .field("refresh_token", &withheld(&self.refresh_token))
@@ -774,7 +774,7 @@ pub struct SpotifySignIn {
 
 impl fmt::Debug for SpotifySignIn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SpotifySignIn")
+        f.debug_struct(stringify!(SpotifySignIn))
             .field("client_id", &self.client_id)
             .field("refresh_token", &withheld(&self.refresh_token))
             .finish()
@@ -839,7 +839,7 @@ impl fmt::Debug for Online {
             youtube_music_keep_order,
         } = self;
 
-        f.debug_struct("Online")
+        f.debug_struct(stringify!(Online))
             .field("enabled", enabled)
             .field("after_scan", after_scan)
             .field("enrich_on_metered", enrich_on_metered)
@@ -907,8 +907,6 @@ pub enum YoutubeMusicConnection {
 
 pub type ChecksYoutubeMusic = Arc<dyn Fn(&Online) -> Option<YoutubeMusicConnection> + Send + Sync>;
 
-const TOKEN_NOT_KEPT: &str = "TIDAL's new sign-in couldn't be saved — sign in to TIDAL again once the settings file can be written";
-
 #[derive(Clone)]
 pub struct Sourcing {
     pub inbox: Option<PathBuf>,
@@ -918,7 +916,8 @@ pub struct Sourcing {
 
 impl Sourcing {
     pub(crate) fn unkept_notice(&self) -> Option<Notice> {
-        (self.unkept)().then(|| Notice::Trouble(TOKEN_NOT_KEPT.to_owned()))
+        (self.unkept)()
+            .then(|| Notice::Trouble(words::settings_file::tidal_token_not_kept().to_owned()))
     }
 
     pub fn providers(&self, online: &Online, asking: Asking) -> Providers {

@@ -16,6 +16,7 @@ use crate::{
         root::VOLUME_STEP,
         spoken::{self, Reading, Spoken},
     },
+    words,
 };
 
 const RAIL_GROUP: &str = "rail";
@@ -41,10 +42,10 @@ impl Handle {
         }
     }
 
-    const fn spoken(self) -> &'static str {
+    fn spoken(self) -> &'static str {
         match self {
-            Self::Seek => "Position",
-            Self::Volume => "Volume",
+            Self::Seek => words::slider::position(),
+            Self::Volume => words::slider::volume(),
         }
     }
 

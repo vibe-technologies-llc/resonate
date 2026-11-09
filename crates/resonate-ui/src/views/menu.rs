@@ -978,7 +978,7 @@ impl Menu {
             }
             menu.does(
                 Icon::Search,
-                better::FIND_A_BETTER_VERSION,
+                better::find_a_better_version(),
                 move |this, _, cx| this.look_for_a_better_version(track.clone(), at, cx),
             )
         })

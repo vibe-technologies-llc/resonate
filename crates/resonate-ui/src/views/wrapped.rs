@@ -13,6 +13,7 @@ use resonate_library::{HistoryKept, Library};
 use crate::{
     ResonateApp, clipboard, fonts,
     icons::Icon,
+    keys,
     models::Notice,
     motion, theme, toast,
     views::{
@@ -22,6 +23,7 @@ use crate::{
         sheets,
         spoken::{Placed, Spoken},
     },
+    words,
     wrapped_card::{self, CardColours},
 };
 
@@ -41,25 +43,17 @@ const TALLIES_STAND_APART: f32 = 8.0;
 
 const FIRST_ROW_WASH: u8 = 0x1f;
 
-const NOTHING_PLAYED: &str = "Nothing has been played yet, so there is no year to review";
+fn back_hint() -> String {
+    keys::keyed(words::wrapped::slide_before(), &[key!(seek_back)])
+}
 
-const BACK_HINT: &str = keyed!("The slide before", key!(seek_back));
+fn next_hint() -> String {
+    keys::keyed(words::wrapped::slide_after(), &[key!(seek)])
+}
 
-const NEXT_HINT: &str = keyed!("The next slide", key!(seek));
-
-const CLOSE_HINT: &str = keyed!("Close", key!(leave));
-
-const COPY_HINT: &str = "Copy the year as a few lines of text";
-
-const SAVE_HINT: &str = "Save a card of the year as a picture";
-
-const YEAR_HINT: &str = "Review this year";
-
-const COPIED: &str = "Copied your year";
-
-const CARD_FAILED: &str = "Couldn't draw the card";
-
-const NO_FILE_PICKER: &str = "No file picker could be opened";
+fn close_hint() -> String {
+    keys::keyed(words::wrapped::close(), &[key!(leave)])
+}
 
 const LAST_RESORT_FOLDER: &str = ".";
 
@@ -145,10 +139,16 @@ impl RootView {
             let taken = this.update(cx, |this, cx| {
                 match answer {
                     Ok(Some(deck)) => this.wrapped = Some(deck),
-                    Ok(None) => toast::tell(Notice::Noted(NOTHING_PLAYED.to_owned()), cx),
+                    Ok(None) => toast::tell(
+                        Notice::Noted(words::wrapped::nothing_played().to_owned()),
+                        cx,
+                    ),
                     Err(error) => {
                         tracing::error!(%error, "the year could not be read");
-                        toast::tell(toast::could_not("read your year", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::wrapped::read_your_year(), &error),
+                            cx,
+                        );
                     }
                 }
                 cx.notify();
@@ -163,7 +163,7 @@ impl RootView {
         };
 
         clipboard::copy(deck.review.summary(), cx);
-        toast::tell(Notice::Done(COPIED.to_owned()), cx);
+        toast::tell(Notice::Done(words::wrapped::copied().to_owned()), cx);
     }
 
     fn save_the_card(&self, cx: &mut Context<Self>) {
@@ -190,7 +190,10 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
                     let told = this.update(cx, |_, cx| {
-                        toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                        toast::tell(
+                            Notice::Trouble(words::wrapped::no_file_picker().to_owned()),
+                            cx,
+                        );
                     });
                     let _ = told;
                     return;
@@ -215,8 +218,8 @@ impl RootView {
             let told = this.update(cx, |_, cx| {
                 toast::tell(
                     match written {
-                        Some(()) => Notice::Done(format!("Saved {}", named_file(&chosen))),
-                        None => Notice::Trouble(CARD_FAILED.to_owned()),
+                        Some(()) => Notice::Done(words::wrapped::saved(named_file(&chosen))),
+                        None => Notice::Trouble(words::wrapped::card_failed().to_owned()),
                     },
                     cx,
                 );
@@ -286,7 +289,7 @@ impl RootView {
 
     fn wrapped_head(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
         let count = deck.slides.len();
-        let reading = format!("{} of {count}", deck.at + 1);
+        let reading = words::wrapped::slide_of(count, deck.at + 1);
 
         let mut progress = div()
             .id("wrapped-progress")
@@ -317,7 +320,7 @@ impl RootView {
             .child(progress)
             .child(kit::figure(reading))
             .child(self.in_the_pane_ring(
-                kit::icon_button("wrapped-close", Icon::Close, CLOSE_HINT),
+                kit::icon_button("wrapped-close", Icon::Close, close_hint()),
                 |this, _, cx| this.close_wrapped(cx),
                 cx,
             ))
@@ -328,7 +331,7 @@ impl RootView {
         slides: isize,
         id: &'static str,
         label: &'static str,
-        saying: &'static str,
+        saying: String,
         takes: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
@@ -365,7 +368,7 @@ impl RootView {
                             SharedString::from(year.to_string()),
                             year == deck.review.year,
                         )
-                        .names(YEAR_HINT),
+                        .names(words::wrapped::year_hint()),
                         move |this, _, cx| this.read_wrapped(Some(year), cx),
                         cx,
                     ),
@@ -374,12 +377,32 @@ impl RootView {
             years = years.child(offered);
         }
 
-        let back = self.a_turn(-1, "wrapped-back", "Back", BACK_HINT, deck.at > 0, cx);
+        let back = self.a_turn(
+            -1,
+            "wrapped-back",
+            words::wrapped::back(),
+            back_hint(),
+            deck.at > 0,
+            cx,
+        );
         let onward = if deck.at < last {
-            self.a_turn(1, "wrapped-next", "Next", NEXT_HINT, true, cx)
+            self.a_turn(
+                1,
+                "wrapped-next",
+                words::wrapped::next(),
+                next_hint(),
+                true,
+                cx,
+            )
         } else {
             self.in_the_pane_ring(
-                kit::button("wrapped-done", None, "Done", CLOSE_HINT, Tone::Primary),
+                kit::button(
+                    "wrapped-done",
+                    None,
+                    words::wrapped::done(),
+                    close_hint(),
+                    Tone::Primary,
+                ),
                 |this, _, cx| this.close_wrapped(cx),
                 cx,
             )
@@ -393,12 +416,24 @@ impl RootView {
             .child(years)
             .when(holds_anything, |foot| {
                 foot.child(self.in_the_pane_ring(
-                    kit::button("wrapped-copy", None, "Copy", COPY_HINT, Tone::Ghost),
+                    kit::button(
+                        "wrapped-copy",
+                        None,
+                        words::wrapped::copy(),
+                        words::wrapped::copy_hint(),
+                        Tone::Ghost,
+                    ),
                     |this, _, cx| this.copy_the_year(cx),
                     cx,
                 ))
                 .child(self.in_the_pane_ring(
-                    kit::button("wrapped-save", None, "Save card", SAVE_HINT, Tone::Ghost),
+                    kit::button(
+                        "wrapped-save",
+                        None,
+                        words::wrapped::save_card(),
+                        words::wrapped::save_hint(),
+                        Tone::Ghost,
+                    ),
                     |this, _, cx| this.save_the_card(cx),
                     cx,
                 ))
@@ -482,11 +517,11 @@ fn slide_drawn(slide: &Slide, review: &YearReview) -> Stateful<Div> {
 
 fn tallies_drawn(review: &YearReview) -> Stateful<Div> {
     let tallies = [
-        ("Plays", review.plays),
-        ("Songs", review.songs),
-        ("Artists", review.artists),
-        ("Albums", review.albums),
-        ("Days", u64::from(review.rhythm.days_heard)),
+        (words::wrapped::plays(), review.plays),
+        (words::wrapped::songs(), review.songs),
+        (words::wrapped::artists(), review.artists),
+        (words::wrapped::albums(), review.albums),
+        (words::wrapped::days(), u64::from(review.rhythm.days_heard)),
     ];
 
     let mut drawn = div().id("wrapped-tallies").flex().w_full().gap_2();

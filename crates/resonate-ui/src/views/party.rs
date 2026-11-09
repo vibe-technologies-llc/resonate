@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::{
-    Notice, ResonateApp, clipboard, format,
+    Notice, ResonateApp, clipboard,
     icons::{self, Icon},
     theme,
     together::{PartyReached, PartySeen, PartyStanding, SharedPerson},
@@ -16,69 +16,10 @@ use crate::{
         settings::sync::scanned,
         spoken::Spoken as _,
     },
+    words,
 };
 
 const PANE_REDRAWN_EVERY: Duration = Duration::from_millis(500);
-
-const BEGIN_HINT: &str = "Begin a party others can join by a link";
-
-const LEAVE_HINT: &str = "Leave the party; your own queue comes back";
-
-const END_HINT: &str = "End the party for everyone";
-
-const COPY_HINT: &str = "Copy the link people join by";
-
-const TURN_OUT_HINT: &str = "Take this person out of the party";
-
-const PLAY_NEXT_HINT: &str = "Play this next, for everyone";
-
-const DISMISS_HINT: &str = "Pass over this request";
-
-const WELCOME_TITLE: &str = "Listen together";
-
-const WELCOME: &str = "Friends anywhere hear the same song at the same moment.";
-
-const BEGIN: &str = "Start a listening party";
-
-const JOINING: &str = "Have a link? Paste it into the search field to join.";
-
-const WHAT_HAPPENS: [(Icon, &str, &str); 3] = [
-    (
-        Icon::Play,
-        "You play",
-        "Whatever you queue is what the party hears.",
-    ),
-    (
-        Icon::Share,
-        "They join",
-        "Send the link or show the code. No account is needed.",
-    ),
-    (
-        Icon::Party,
-        "Everyone hears it",
-        "Each from their own copy or service. No sound passes between you.",
-    ),
-];
-
-const NO_SERVICE: &str = "Parties need the sync server";
-
-const NO_SERVICE_MORE: &str =
-    "This build has none, or Online is off in the settings. Turn it on to listen together.";
-
-const SUGGESTING: &str = "Add a song to your queue as you always do, and the host is asked to \
-                          play it.";
-
-const INVITING: &str = "Scan this with a phone or send the link. Anyone holding it can join.";
-
-const NOTHING_YET: &str = "Nothing playing yet";
-
-const HOST_PLAYS: &str = "Play something and everyone hears it.";
-
-const HOSTING: &str = "You're hosting";
-
-const A_NAMELESS_PERSON: &str = "Someone";
-
-const YOU: &str = "You";
 
 const QR_SIDE: f32 = 168.0;
 
@@ -95,35 +36,53 @@ const COLUMN_AT_LEAST: f32 = 320.0;
 fn reach_said(reach: PartyReached) -> Option<&'static str> {
     match reach {
         PartyReached::Here => None,
-        PartyReached::Connecting => Some("Reaching the server…"),
-        PartyReached::Reconnecting => Some("Lost the server; trying again…"),
-        PartyReached::Ended => Some("The party is over."),
-        PartyReached::NoSuchParty => Some("That party has ended, or was never begun."),
-        PartyReached::TurnedAway => Some("The server turned that link away."),
-        PartyReached::ServerTooOld => Some("The server is too old to hold parties."),
+        PartyReached::Connecting => Some(words::party::reaching_the_server()),
+        PartyReached::Reconnecting => Some(words::party::reconnecting()),
+        PartyReached::Ended => Some(words::party::ended()),
+        PartyReached::NoSuchParty => Some(words::party::no_such_party()),
+        PartyReached::TurnedAway => Some(words::party::turned_away()),
+        PartyReached::ServerTooOld => Some(words::party::server_too_old()),
     }
 }
 
 fn standing_said(standing: PartyStanding) -> &'static str {
     match standing {
-        PartyStanding::WaitingForTheHost => "Waiting for the host to play something",
-        PartyStanding::Finding => "Looking for this song",
-        PartyStanding::NotHeld => "You don't have this song, so you sit it out",
-        PartyStanding::CannotStartMidSong => {
-            "This song can't start part way through here, so you join at the next"
-        }
-        PartyStanding::SatOut => "Paused here; press play to rejoin",
-        PartyStanding::HostPaused => "The host has paused",
-        PartyStanding::InStep => "In step with the host",
+        PartyStanding::WaitingForTheHost => words::party::waiting_for_the_host(),
+        PartyStanding::Finding => words::party::finding(),
+        PartyStanding::NotHeld => words::party::not_held(),
+        PartyStanding::CannotStartMidSong => words::party::cannot_start_mid_song(),
+        PartyStanding::SatOut => words::party::sat_out(),
+        PartyStanding::HostPaused => words::party::host_paused(),
+        PartyStanding::InStep => words::party::in_step(),
     }
+}
+
+fn what_happens() -> [(Icon, &'static str, &'static str); 3] {
+    [
+        (
+            Icon::Play,
+            words::party::you_play(),
+            words::party::you_play_more(),
+        ),
+        (
+            Icon::Share,
+            words::party::they_join(),
+            words::party::they_join_more(),
+        ),
+        (
+            Icon::Party,
+            words::party::everyone_hears(),
+            words::party::everyone_hears_more(),
+        ),
+    ]
 }
 
 fn person_said(person: &SharedPerson) -> SharedString {
     if person.me {
-        return SharedString::new_static(YOU);
+        return SharedString::new_static(words::party::you());
     }
     if person.name.is_empty() {
-        return SharedString::new_static(A_NAMELESS_PERSON);
+        return SharedString::new_static(words::party::a_nameless_person());
     }
 
     SharedString::from(person.name.clone())
@@ -253,7 +212,11 @@ impl RootView {
         let heading = self.party_heading(seen.as_ref(), cx);
 
         let body: AnyElement = match (together.is_some(), &seen) {
-            (false, _) => kit::empty(Icon::Party, NO_SERVICE, Some(NO_SERVICE_MORE)),
+            (false, _) => kit::empty(
+                Icon::Party,
+                words::party::no_service(),
+                Some(words::party::no_service_more()),
+            ),
             (true, None) => self.party_page(self.nobody_here(cx), cx),
             (true, Some(seen)) => self.party_page(self.at_the_party(seen, cx), cx),
         };
@@ -278,8 +241,8 @@ impl RootView {
 
     fn party_heading(&self, seen: Option<&PartySeen>, cx: &mut Context<Self>) -> Div {
         let under = match seen {
-            None => "Hear the same song at the same moment as your friends".to_owned(),
-            Some(seen) => format::counted(seen.people.len(), "person here", "people here"),
+            None => words::party::about().to_owned(),
+            Some(seen) => words::party::people_here(seen.people.len()),
         };
         let leaving = seen.map(|seen| {
             self.in_the_pane_ring(
@@ -287,11 +250,15 @@ impl RootView {
                     "party-leave",
                     None,
                     if seen.hosting {
-                        "End the party"
+                        words::party::end_the_party()
                     } else {
-                        "Leave"
+                        words::party::leave()
                     },
-                    if seen.hosting { END_HINT } else { LEAVE_HINT },
+                    if seen.hosting {
+                        words::party::end_hint()
+                    } else {
+                        words::party::leave_hint()
+                    },
                     Tone::Destructive,
                 ),
                 |this, _, cx| this.leave_the_party(cx),
@@ -308,7 +275,7 @@ impl RootView {
                         .flex_1()
                         .min_w(px(theme::heading_name()))
                         .gap_1()
-                        .child(kit::title("Listening Party"))
+                        .child(kit::title(words::party::listening_party()))
                         .child(kit::subtitle(under)),
                 )
                 .child(kit::actions().children(leaving)),
@@ -326,15 +293,15 @@ impl RootView {
             .child(
                 div()
                     .id("party-welcome")
-                    .headed(2, WELCOME_TITLE)
+                    .headed(2, words::party::welcome_title())
                     .pt_2()
                     .text_size(px(theme::text_title()))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text()))
-                    .child(WELCOME_TITLE),
+                    .child(words::party::welcome_title()),
             )
             .child(
-                said(WELCOME)
+                said(words::party::welcome())
                     .text_size(px(theme::text_base()))
                     .text_center(),
             );
@@ -342,8 +309,8 @@ impl RootView {
             kit::button(
                 "party-begin",
                 Some(Icon::Party),
-                BEGIN,
-                BEGIN_HINT,
+                words::party::begin(),
+                words::party::begin_hint(),
                 Tone::Primary,
             ),
             |this, _, cx| this.begin_a_party(cx),
@@ -362,7 +329,7 @@ impl RootView {
                 div()
                     .text_size(px(theme::text_sm()))
                     .text_color(rgb(theme::faint()))
-                    .child(JOINING),
+                    .child(words::party::joining()),
             );
 
         div()
@@ -391,7 +358,7 @@ impl RootView {
                             .flex_wrap()
                             .gap_3()
                             .w_full()
-                            .children(WHAT_HAPPENS.map(step_card)),
+                            .children(what_happens().map(step_card)),
                     )
                     .child(joining),
             )
@@ -475,16 +442,16 @@ impl RootView {
             .unwrap_or_else(no_art);
         let (title, artist) = seen.song.clone().unwrap_or_else(|| {
             (
-                NOTHING_YET.to_owned(),
+                words::party::nothing_yet().to_owned(),
                 if seen.hosting {
-                    HOST_PLAYS.to_owned()
+                    words::party::host_plays().to_owned()
                 } else {
                     standing_said(PartyStanding::WaitingForTheHost).to_owned()
                 },
             )
         });
         let (shade, standing) = if seen.hosting {
-            (theme::done(), HOSTING)
+            (theme::done(), words::party::hosting())
         } else {
             (standing_shade(seen.standing), standing_said(seen.standing))
         };
@@ -497,7 +464,7 @@ impl RootView {
                     .flex_1()
                     .gap_1()
                     .min_w(px(0.0))
-                    .child(kit::eyebrow("Now playing"))
+                    .child(kit::eyebrow(words::party::now_playing()))
                     .child(
                         div()
                             .text_size(px(theme::text_lg()))
@@ -526,9 +493,8 @@ impl RootView {
                             )
                             .when_some(seen.round_trip, |line, round_trip| {
                                 line.child(
-                                    kit::figure(SharedString::from(format!(
-                                        "{} ms round trip",
-                                        round_trip.as_millis().max(1)
+                                    kit::figure(SharedString::from(words::party::round_trip(
+                                        round_trip.as_millis().max(1).to_string(),
                                     )))
                                     .text_color(rgb(theme::faint())),
                                 )
@@ -536,7 +502,7 @@ impl RootView {
                     )
                     .when(!seen.hosting, |column| {
                         column.child(
-                            said(SUGGESTING)
+                            said(words::party::suggesting())
                                 .pt_1()
                                 .text_size(px(theme::text_xs()))
                                 .text_color(rgb(theme::faint())),
@@ -549,7 +515,7 @@ impl RootView {
     fn party_invitation(&self, link: &str, cx: &mut Context<Self>) -> Div {
         let copied = link.to_owned();
 
-        card("Invite people").child(
+        card(words::party::invite_people()).child(
             div()
                 .flex()
                 .flex_wrap()
@@ -564,7 +530,7 @@ impl RootView {
                         .flex_1()
                         .gap_3()
                         .min_w(px(STEP_AT_LEAST))
-                        .child(said(INVITING))
+                        .child(said(words::party::inviting()))
                         .child(
                             div()
                                 .px_2p5()
@@ -580,11 +546,17 @@ impl RootView {
                                 ),
                         )
                         .child(div().flex().child(self.in_the_pane_ring(
-                            kit::button("party-copy", None, "Copy link", COPY_HINT, Tone::Outlined),
+                            kit::button(
+                                "party-copy",
+                                None,
+                                words::party::copy_link(),
+                                words::party::copy_hint(),
+                                Tone::Outlined,
+                            ),
                             move |this, _, cx| {
                                 clipboard::copy(copied.clone(), cx);
                                 this.report(
-                                    Notice::Done("The party's link is on the clipboard".to_owned()),
+                                    Notice::Done(words::party::link_copied().to_owned()),
                                     cx,
                                 );
                             },
@@ -620,7 +592,11 @@ impl RootView {
                     )
                     .when(seen.hosting && !person.me, |row| {
                         row.child(self.in_the_pane_ring(
-                            kit::icon_button(("party-turn-out", at), Icon::Close, TURN_OUT_HINT),
+                            kit::icon_button(
+                                ("party-turn-out", at),
+                                Icon::Close,
+                                words::party::turn_out_hint(),
+                            ),
                             move |this, _, cx| this.turn_out_of_the_party(id, cx),
                             cx,
                         ))
@@ -628,7 +604,7 @@ impl RootView {
             );
         }
 
-        card("Here").child(people)
+        card(words::party::here()).child(people)
     }
 
     fn party_requests(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
@@ -646,22 +622,26 @@ impl RootView {
                         kit::button(
                             ("party-play-next", at),
                             Some(Icon::QueueNext),
-                            "Play next",
-                            PLAY_NEXT_HINT,
+                            words::party::play_next(),
+                            words::party::play_next_hint(),
                             Tone::Outlined,
                         ),
                         move |this, _, cx| this.play_a_request_next(at, cx),
                         cx,
                     ))
                     .child(self.in_the_pane_ring(
-                        kit::icon_button(("party-dismiss", at), Icon::Close, DISMISS_HINT),
+                        kit::icon_button(
+                            ("party-dismiss", at),
+                            Icon::Close,
+                            words::party::dismiss_hint(),
+                        ),
                         move |this, _, cx| this.dismiss_a_request(at, cx),
                         cx,
                     )),
             );
         }
 
-        card("Asked for").child(asked)
+        card(words::party::asked_for()).child(asked)
     }
 
     fn begin_a_party(&mut self, cx: &mut Context<Self>) {
@@ -683,7 +663,10 @@ impl RootView {
             let worked = running.await;
             let told = this.update(cx, |this, cx| {
                 if !worked {
-                    this.report(Notice::Trouble("Couldn't begin a party".to_owned()), cx);
+                    this.report(
+                        Notice::Trouble(words::party::could_not_begin().to_owned()),
+                        cx,
+                    );
                 }
                 cx.notify();
             });
@@ -720,7 +703,7 @@ impl RootView {
             let told = this.update(cx, |this, cx| {
                 if !worked {
                     this.report(
-                        Notice::Trouble("You don't have that song to play".to_owned()),
+                        Notice::Trouble(words::party::not_held_to_play().to_owned()),
                         cx,
                     );
                 }

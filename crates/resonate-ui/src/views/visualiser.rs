@@ -12,6 +12,7 @@ use smallvec::SmallVec;
 use crate::{
     PlayerModel, ResonateApp,
     icons::Icon,
+    keys,
     spectrum::{self, CEILING_DB, Column, MARKED_EVERY_DB, Spectrum, height_within, rising_edge},
     stereo::{self, Heard, Meter, Metered, Stereo},
     theme,
@@ -24,76 +25,52 @@ use crate::{
         spoken::Spoken as _,
         transport::Playing,
     },
+    words,
 };
 
-const HOLD_HINT: &str = keyed!("Hold the picture still", key!(hold_the_picture));
+fn hold_hint() -> String {
+    keys::keyed(words::visualiser::hold(), &[key!(hold_the_picture)])
+}
 
-const RESUME_HINT: &str = keyed!("Set the picture moving again", key!(hold_the_picture));
-
-const NOTHING_PLAYING: &str = "Nothing playing";
-
-const PLAY_TO_DRAW: &str = "Play a track and the visualiser draws what is heard.";
-
-const MARKED: &str = "Nothing to draw";
-
-const MARKED_MORE: &str = "A DSD stream sent as DoP carries markers rather than samples. Turn DoP \
-                           off under Output and the pane draws the stream decimated to PCM.";
-
-const READS_HINT_BEFORE_SPECTRUM: &str = "What reaches the device — after the equaliser, the volume and the \
-                                          dither — drawn as it is heard rather than as it is decoded. The \
-                                          spectrum is ";
-
-const READS_HINT_AFTER_SPECTRUM: &str =
-    ", falling back slowly with each band's peak held above it.";
-
-const SCOPE_HINT: &str = "The waveform, left over right, held still on a rising edge of the mid, \
-                          or of the side where that is the louder";
-
-const STEREO_HINT: &str = "Where the sound stands between the speakers: a goniometer, mid up and \
-                           side across, beside each channel's level and how alike the two are";
-
-const LEVEL_HINT: &str = "Each channel's loudness over the last moment, its true peak held above it: read between \
-     the samples, so an over a DAC's reconstruction would make shows past full scale";
-
-const CORRELATION_HINT: &str = "How alike the two channels are: +1 the same sound in each, 0 \
-                                unrelated, below 0 out of phase";
+fn resume_hint() -> String {
+    keys::keyed(
+        words::visualiser::resume_moving(),
+        &[key!(hold_the_picture)],
+    )
+}
 
 fn band_width(bands: SpectrumBands) -> &'static str {
     match bands {
-        SpectrumBands::Thirds => "third-octave",
-        SpectrumBands::Sixths => "sixth-octave",
-        SpectrumBands::Twelfths => "twelfth-octave",
+        SpectrumBands::Thirds => words::visualiser::third_octave(),
+        SpectrumBands::Sixths => words::visualiser::sixth_octave(),
+        SpectrumBands::Twelfths => words::visualiser::twelfth_octave(),
+    }
+}
+
+fn band_width_opening(bands: SpectrumBands) -> &'static str {
+    match bands {
+        SpectrumBands::Thirds => words::visualiser::third_octave_opening(),
+        SpectrumBands::Sixths => words::visualiser::sixth_octave_opening(),
+        SpectrumBands::Twelfths => words::visualiser::twelfth_octave_opening(),
     }
 }
 
 fn tilt_clause(tilt: SpectrumTilt) -> String {
+    let tilted_by = format!("{}", tilt.db_per_octave());
+
     match tilt {
-        SpectrumTilt::Flat => "each drawn at the level it reads".to_owned(),
-        SpectrumTilt::Pink => format!(
-            "tilted up {} dB an octave about 1 kHz so that pink noise stands level",
-            tilt.db_per_octave()
-        ),
-        SpectrumTilt::Steep => format!(
-            "tilted up {} dB an octave about 1 kHz",
-            tilt.db_per_octave()
-        ),
+        SpectrumTilt::Flat => words::visualiser::untilted().to_owned(),
+        SpectrumTilt::Pink => words::visualiser::tilted_pink(tilted_by),
+        SpectrumTilt::Steep => words::visualiser::tilted(tilted_by),
     }
 }
 
 fn reads_hint(spectral: Spectral) -> String {
-    format!(
-        "{READS_HINT_BEFORE_SPECTRUM}{} bands, {}{READS_HINT_AFTER_SPECTRUM}",
-        band_width(spectral.bands),
-        tilt_clause(spectral.tilt)
-    )
+    words::visualiser::reads_hint(tilt_clause(spectral.tilt), band_width(spectral.bands))
 }
 
 fn spectrum_hint(spectral: Spectral) -> String {
-    let width = band_width(spectral.bands);
-    let mut hint =
-        format!("{width} bands from 20 Hz to what the rate carries, with each band's peak held");
-    hint[..1].make_ascii_uppercase();
-    hint
+    words::visualiser::spectrum_hint(band_width_opening(spectral.bands))
 }
 
 const DRAWN_BEFORE_ANYTHING_IS_HEARD: SampleRate = SampleRate::HZ_48000;
@@ -138,19 +115,19 @@ pub(crate) enum Showing {
 impl Showing {
     const ALL: [Self; 3] = [Self::Spectrum, Self::Scope, Self::Stereo];
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Spectrum => "Spectrum",
-            Self::Scope => "Scope",
-            Self::Stereo => "Stereo",
+            Self::Spectrum => words::visualiser::spectrum(),
+            Self::Scope => words::visualiser::scope(),
+            Self::Stereo => words::visualiser::stereo(),
         }
     }
 
     fn about(self, spectral: Spectral) -> String {
         match self {
             Self::Spectrum => spectrum_hint(spectral),
-            Self::Scope => SCOPE_HINT.to_owned(),
-            Self::Stereo => STEREO_HINT.to_owned(),
+            Self::Scope => words::visualiser::scope_hint().to_owned(),
+            Self::Stereo => words::visualiser::stereo_hint().to_owned(),
         }
     }
 }
@@ -229,13 +206,13 @@ impl Visualiser {
     fn readback(&self) -> SharedString {
         let rate = self.spectrum.rate().kilohertz();
         match self.showing {
-            Showing::Spectrum => format!("{}-point · {rate} kHz", self.spectrum.points()),
-            Showing::Scope => format!("{} ms · {rate} kHz", SCOPE_SPAN.as_millis()),
-            Showing::Stereo => format!(
-                "{} ms · {rate} kHz",
+            Showing::Spectrum => words::visualiser::points_read(self.spectrum.points(), rate),
+            Showing::Scope => words::visualiser::span_read(SCOPE_SPAN.as_millis() as u64, rate),
+            Showing::Stereo => words::visualiser::span_read(
                 Frames(self.spectrum.points() as u64)
                     .to_duration(self.spectrum.rate())
-                    .as_millis()
+                    .as_millis() as u64,
+                rate,
             ),
         }
         .into()
@@ -537,10 +514,12 @@ fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
 }
 
 fn stereo_readings(metered: Metered) -> Div {
-    let level = |channel: &str, meter: Meter| format!("{channel} {:.1} dBTP", meter.peak_db);
+    let level = |channel: &str, meter: Meter| {
+        words::visualiser::true_peak(channel, format!("{:.1}", meter.peak_db))
+    };
     let correlation = metered.correlation.map_or_else(
-        || "correlation —".to_owned(),
-        |held| format!("correlation {held:+.2}"),
+        || words::visualiser::correlation_unknown().to_owned(),
+        |held| words::visualiser::correlation(format!("{held:+.2}")),
     );
 
     div()
@@ -552,17 +531,17 @@ fn stereo_readings(metered: Metered) -> Div {
         .child(
             div()
                 .id("stereo-levels")
-                .names(LEVEL_HINT)
+                .names(words::visualiser::level_hint())
                 .child(kit::figure(format!(
                     "{} · {}",
-                    level("L", metered.left),
-                    level("R", metered.right)
+                    level(words::visualiser::left_channel(), metered.left),
+                    level(words::visualiser::right_channel(), metered.right)
                 ))),
         )
         .child(
             div()
                 .id("stereo-correlation")
-                .names(CORRELATION_HINT)
+                .names(words::visualiser::correlation_hint())
                 .child(kit::figure(correlation)),
         )
 }
@@ -742,13 +721,21 @@ impl RootView {
         let digest = model.digest();
         let tapped = model.tap();
         if state.current.is_none() {
-            return kit::empty(Icon::Visualiser, NOTHING_PLAYING, Some(PLAY_TO_DRAW));
+            return kit::empty(
+                Icon::Visualiser,
+                words::visualiser::nothing_playing(),
+                Some(words::visualiser::play_to_draw()),
+            );
         }
 
         let playing = self.playing(&state, digest.as_deref(), cx);
         let heading = self.visualiser_heading(&playing, cx);
         let body = match tapped {
-            Tapped::Markers => kit::empty(Icon::Visualiser, MARKED, Some(MARKED_MORE)),
+            Tapped::Markers => kit::empty(
+                Icon::Visualiser,
+                words::visualiser::marked(),
+                Some(words::visualiser::marked_more()),
+            ),
             Tapped::Nothing | Tapped::Samples(_) => div()
                 .flex()
                 .flex_col()
@@ -803,8 +790,12 @@ impl RootView {
                                 kit::button(
                                     "visualiser-hold",
                                     Some(if held { Icon::Play } else { Icon::Pause }),
-                                    if held { "Resume" } else { "Pause" },
-                                    if held { RESUME_HINT } else { HOLD_HINT },
+                                    if held {
+                                        words::visualiser::resume()
+                                    } else {
+                                        words::visualiser::pause()
+                                    },
+                                    if held { resume_hint() } else { hold_hint() },
                                     Tone::Ghost,
                                 )
                                 .thrown(held),

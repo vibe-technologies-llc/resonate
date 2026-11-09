@@ -10,12 +10,14 @@ use crate::{
     models::Notice,
     served::{ServedSong, Serves},
     views::{menu::Menu, root::RootView},
+    words,
 };
 
-pub(crate) const FIND_A_BETTER_VERSION: &str = "Find a higher quality version";
-const LOOKING: &str = "Looking for a higher quality version";
-const NONE_FOUND: &str = "No higher quality version found";
 const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(3);
+
+pub(crate) fn find_a_better_version() -> &'static str {
+    words::better::find_a_better_version()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Quality {
@@ -118,10 +120,10 @@ pub(crate) struct ServedVersion {
 
 impl ServedVersion {
     fn label(&self) -> String {
-        let codec = served_codec(&self.song).map_or("lossless", Codec::as_str);
+        let codec = served_codec(&self.song).map_or(words::better::lossless(), Codec::as_str);
         match self.song.album.as_deref().filter(|album| !album.is_empty()) {
-            Some(album) => format!("Play the {codec} version on {} ({album})", self.service),
-            None => format!("Play the {codec} version on {}", self.service),
+            Some(album) => words::better::play_served_on_album(album, codec, &self.service),
+            None => words::better::play_served(codec, &self.service),
         }
     }
 }
@@ -164,11 +166,7 @@ fn asked_of(services: &[Arc<dyn Serves>], words: &str, sought: &Sought) -> Vec<S
 fn versions_menu(at: Point<Pixels>, held: Vec<Track>, served: Vec<ServedVersion>) -> Menu {
     let mut menu = Menu::at(at);
     for copy in held {
-        let label = format!(
-            "Play the {} {} copy",
-            copy.codec.as_str(),
-            format::quality(copy.spec)
-        );
+        let label = words::better::play_held(copy.codec.as_str(), format::quality(copy.spec));
         let playing: Arc<[Track]> = Arc::from([copy]);
         menu = menu.does(Icon::Play, label, move |this, _, cx| {
             this.play(&playing, 0, cx);
@@ -202,13 +200,13 @@ impl RootView {
 
         if sought.lossless || services.is_empty() {
             match held.is_empty() {
-                true => self.report(Notice::Noted(NONE_FOUND.to_owned()), cx),
+                true => self.report(Notice::Noted(words::better::none_found().to_owned()), cx),
                 false => self.open_a_menu(versions_menu(at, held, Vec::new()), cx),
             }
             return;
         }
 
-        self.report(Notice::Noted(LOOKING.to_owned()), cx);
+        self.report(Notice::Noted(words::better::looking().to_owned()), cx);
         let words = Sought::words(&track);
         let asking = cx
             .background_executor()
@@ -217,7 +215,7 @@ impl RootView {
             let served = asking.await;
             let _ = this.update(cx, |this, cx| {
                 if held.is_empty() && served.is_empty() {
-                    this.report(Notice::Noted(NONE_FOUND.to_owned()), cx);
+                    this.report(Notice::Noted(words::better::none_found().to_owned()), cx);
                 } else {
                     this.open_a_menu(versions_menu(at, held, served), cx);
                 }

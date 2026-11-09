@@ -391,7 +391,7 @@ is never named.
   without a monospace look, and `kit::figure` (body face, `text_xs`, muted) is the one way to draw
   one. JetBrains Mono (`theme::mono`) is drawn only through `kit::code`, for a string read character
   by character: the sync pairing code, the inspector's MusicBrainz ids, ISRC, barcode and catalogue
-  number (`inspector::CODES`) and a container's box kinds. Neither face is embedded, so **the drawn family is
+  number (`inspector::codes`) and a container's box kinds. Neither face is embedded, so **the drawn family is
   settled once against the machine**: `fonts::settle` walks a ladder per face (Inter, Adwaita Sans,
   Cantarell, ...; JetBrains Mono, Adwaita Mono, ...) against `cx.text_system().all_font_names()` at
   start; neither ladder offers a family the other does (test); a machine with none keeps the wanted
@@ -698,10 +698,12 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   is over both). `set_pane` and `show_everything` empty it; the pointer leaving the window empties it
   via `pointer_watch`.
 - **A hint names its key one way, and the key is the one bound.** `keys.rs` is `key!` (`key!(play_pause)`
-  = `space`); `app::bindings` binds through the same `key!`. `keyed!` writes the wording: what the key
-  does, an em dash, the ways (last two joined by *or*): `Louder — the wheel or ctrl-up`; a hint saying
-  more joins such sentences with full stops, a described state first. Both are `concat!`, so hints stay
-  `&'static str` (`every_key_a_hint_names_is_a_key_something_is_bound_to`).
+  = `space`); `app::bindings` binds through the same `key!`. `keys::keyed(what, &[ways])` writes the
+  wording through `keys.ftl`: what the key does, an em dash, the ways (last two joined by *or*):
+  `Louder — the wheel or ctrl-up`; a hint saying more joins such sentences with full stops, a
+  described state first. The key names are not translated; the words around them are
+  (`every_key_a_hint_names_is_a_key_something_is_bound_to`). The `concat!` macro `keyed!` it replaces
+  stays only while views not yet moved to their catalogs still name it.
 - **A control names itself through one seam, and the seam lets go.** `hint::Names` is the only place a
   tooltip is attached (a test walks the crate's sources): gpui's plain `tooltip`, never
   `hoverable_tooltip` (neither press nor scroll takes that one down). `hint::asking` is one atomic

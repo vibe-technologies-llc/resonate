@@ -28,56 +28,8 @@ use crate::{
         spoken::{self, Spoken as _},
         transport::Playing,
     },
+    words,
 };
-
-const NOTHING_PLAYING: &str = "Nothing playing";
-
-const NOTHING_PLAYING_MORE: &str = "Play a track and the pane decodes it from end to end: its \
-                                    waveform, its spectrum, whether its lossless claim holds and \
-                                    what its audio is.";
-
-const FAILED: &str = "This track couldn't be decoded";
-
-const FAILED_MORE: &str = "The file may be truncated or damaged. The log says where the decoder \
-                           stopped.";
-
-const ANALYSING: &str = "Decoding the whole track…";
-
-const READS_HINT: &str = "The whole track decoded once, off the audio thread. A lossy encode \
-                          throws away what lies above a fixed frequency, so a lossless file made \
-                          from one shows a wall in its spectrum where the encoder cut; an \
-                          upsample shows the wall where the lower rate ended; padded bits are \
-                          low bits that never move.";
-
-const TAKE_THE_NAME: &str = "Take this name";
-
-const NOTHING_TO_TAKE: &str = "The catalog holds no recognition of this track to take a name from";
-
-const TAKE_THE_NAME_HINT: &str = "Write the title, the artist and the recording the audio was \
-                                  heard as into the catalog in place of what the file names. The \
-                                  file itself is left as it is.";
-
-const WAVEFORM: &str = "Waveform";
-
-const SPECTROGRAM: &str = "Spectrogram";
-
-const AVERAGE_SPECTRUM: &str = "Average spectrum";
-
-const NO_CUTOFF: &str = "No cutoff was found";
-
-const WAVEFORM_HINT: &str = "Press anywhere on the waveform to play from there";
-
-const NO_SERVICE: &str = "No recognition service is set. An AcoustID key under Settings › Online \
-                          lets the pane say what the audio is, and the lookup names tracks the \
-                          catalog could not.";
-
-const NO_PRINT: &str = "This stream could not be fingerprinted.";
-
-const REFUSED: &str = "The recognition service refused or could not be reached.";
-
-const ASKING: &str = "Asking what the audio is…";
-
-const UNHEARD: &str = "Nothing the service holds sounds like this.";
 
 const WAVEFORM_HEIGHT: f32 = 168.0;
 const SPECTROGRAM_HEIGHT: f32 = 220.0;
@@ -95,13 +47,13 @@ const HEARD_SHOWN: usize = 5;
 const HALF: f32 = 0.5;
 const HZ_A_KILOHERTZ: f32 = 1_000.0;
 
-const fn verdict_name(verdict: Verdict) -> &'static str {
+fn verdict_name(verdict: Verdict) -> &'static str {
     match verdict {
-        Verdict::Genuine => "Genuine",
-        Verdict::Suspect => "Suspect",
-        Verdict::Fake => "Fake",
-        Verdict::Lossy => "Lossy",
-        Verdict::NotJudged => "Not judged",
+        Verdict::Genuine => words::analysis::genuine(),
+        Verdict::Suspect => words::analysis::suspect(),
+        Verdict::Fake => words::analysis::fake(),
+        Verdict::Lossy => words::analysis::lossy(),
+        Verdict::NotJudged => words::analysis::not_judged(),
     }
 }
 
@@ -121,10 +73,18 @@ impl RootView {
         let state = model.state().clone();
         let digest = model.digest();
         if state.current.is_none() {
-            return kit::empty(Icon::Analysis, NOTHING_PLAYING, Some(NOTHING_PLAYING_MORE));
+            return kit::empty(
+                Icon::Analysis,
+                words::analysis::nothing_playing(),
+                Some(words::analysis::nothing_playing_more()),
+            );
         }
         let Some(row) = self.queued_row(&state, cx) else {
-            return kit::empty(Icon::Analysis, NOTHING_PLAYING, Some(NOTHING_PLAYING_MORE));
+            return kit::empty(
+                Icon::Analysis,
+                words::analysis::nothing_playing(),
+                Some(words::analysis::nothing_playing_more()),
+            );
         };
         let played = state.current.map_or(0.0, |track| {
             format::progress(track.position, track.duration)
@@ -148,8 +108,8 @@ impl RootView {
         let readback = match &studying {
             Studying::Done(drawn) => Some(read_back(&drawn.analysis)),
             Studying::Running(watch) => Some(watch.share().map_or_else(
-                || "Decoding".to_owned(),
-                |share| format!("Decoding · {:.0} %", share * 100.0),
+                || words::analysis::decoding().to_owned(),
+                |share| words::analysis::decoding_share(format!("{:.0}", share * 100.0)),
             )),
             Studying::Idle | Studying::Failed => None,
         };
@@ -162,9 +122,13 @@ impl RootView {
                 .items_center()
                 .justify_center()
                 .text_color(rgb(theme::muted()))
-                .child(ANALYSING)
+                .child(words::analysis::analysing())
                 .into_any_element(),
-            Studying::Failed => kit::trouble(Icon::Analysis, FAILED, Some(FAILED_MORE)),
+            Studying::Failed => kit::trouble(
+                Icon::Analysis,
+                words::analysis::failed(),
+                Some(words::analysis::failed_more()),
+            ),
             Studying::Done(drawn) => self.analysed(&drawn, played, &hearing, recognises, cx),
         };
 
@@ -183,7 +147,10 @@ impl RootView {
                 .child(
                     kit::actions()
                         .children(readback.map(kit::figure))
-                        .child(hint::explains("analysis-reads", READS_HINT)),
+                        .child(hint::explains(
+                            "analysis-reads",
+                            words::analysis::reads_hint(),
+                        )),
                 ),
         )
     }
@@ -207,8 +174,8 @@ impl RootView {
                 kit::button(
                     "take-the-heard-name",
                     Some(Icon::Check),
-                    TAKE_THE_NAME,
-                    TAKE_THE_NAME_HINT,
+                    words::analysis::take_the_name(),
+                    words::analysis::take_the_name_hint(),
                     kit::Tone::Outlined,
                 ),
                 |this, _, cx| this.take_the_heard_name(cx),
@@ -235,16 +202,16 @@ impl RootView {
             .children(leading)
             .child(verdict_card(analysis))
             .child(
-                card(WAVEFORM).child(
+                card(words::analysis::waveform()).child(
                     div()
                         .id("analysis-waveform")
-                        .pictured_as(WAVEFORM, || {
+                        .pictured_as(words::analysis::waveform(), || {
                             waveform_said(&analysis.study.levels, &analysis.study.loudness)
                         })
                         .relative()
                         .h(px(WAVEFORM_HEIGHT + LABEL_ROOM))
                         .cursor_pointer()
-                        .names(WAVEFORM_HINT)
+                        .names(words::analysis::waveform_hint())
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -299,12 +266,12 @@ impl RootView {
                     Ok(Some((track, heard))) => {
                         this.library
                             .update(cx, |library, cx| library.renamed(track, cx));
-                        Notice::Done(format!("The track is now {}", billed(&heard)))
+                        Notice::Done(words::analysis::renamed(billed(&heard)))
                     }
-                    Ok(None) => Notice::Trouble(NOTHING_TO_TAKE.to_owned()),
+                    Ok(None) => Notice::Trouble(words::analysis::nothing_to_take().to_owned()),
                     Err(error) => {
                         tracing::warn!(%error, "the name the audio was heard as was not taken");
-                        toast::could_not("rename the track", &error)
+                        toast::could_not(words::analysis::rename_the_track(), &error)
                     }
                 };
                 this.report(notice, cx);
@@ -329,14 +296,13 @@ impl Hearing {
 
 fn read_back(analysis: &Analysis) -> String {
     let examined = &analysis.study.examined;
-    let depth = examined
-        .declared_bits
-        .map_or_else(String::new, |bits| format!(" · {bits}-bit"));
-    format!(
-        "{}{depth} · {} kHz",
-        examined.codec,
-        examined.rate.kilohertz()
-    )
+    let codec = examined.codec.to_string();
+    let rate = examined.rate.kilohertz();
+
+    match examined.declared_bits {
+        Some(bits) => words::analysis::read_back_with_depth(bits, codec, rate),
+        None => words::analysis::read_back(codec, rate),
+    }
 }
 
 fn verdict_card(analysis: &Analysis) -> Div {
@@ -445,11 +411,11 @@ impl Severity {
         }
     }
 
-    const fn word(self) -> &'static str {
+    fn word(self) -> &'static str {
         match self {
-            Self::Fault => "Fault",
-            Self::Caution => "Caution",
-            Self::Aside => "Note",
+            Self::Fault => words::analysis::fault(),
+            Self::Caution => words::analysis::caution(),
+            Self::Aside => words::analysis::note(),
         }
     }
 }
@@ -598,7 +564,7 @@ fn spectrogram_card(
 
     let mut plot = div()
         .id("analysis-spectrogram")
-        .pictured_as(SPECTROGRAM, || {
+        .pictured_as(words::analysis::spectrogram(), || {
             spectrogram_said(
                 &analysis.study.judgement,
                 nyquist,
@@ -644,43 +610,53 @@ fn spectrogram_card(
         );
     }
 
-    card(SPECTROGRAM).child(plot)
+    card(words::analysis::spectrogram()).child(plot)
 }
 
 fn cutoff_said(judgement: &Judgement) -> String {
     let wall = match judgement.cutoff {
-        Some(cutoff) => format!(
-            "The sound falls away near {:.1} kHz, {:.0} dB down",
-            cutoff.hz as f32 / HZ_A_KILOHERTZ,
-            cutoff.drop_db.abs()
+        Some(cutoff) => words::analysis::falls_away(
+            format!("{:.0}", cutoff.drop_db.abs()),
+            format!("{:.1}", cutoff.hz as f32 / HZ_A_KILOHERTZ),
         ),
-        None => NO_CUTOFF.to_owned(),
+        None => words::analysis::no_cutoff().to_owned(),
     };
 
     format!("{wall}. {}", judgement.verdict.told())
 }
 
 fn spectrogram_said(judgement: &Judgement, nyquist_hz: u32, heard: Duration) -> String {
-    format!(
-        "{}. Frequency up to {:.1} kHz over {}",
+    words::analysis::spectrogram_said(
         cutoff_said(judgement),
-        nyquist_hz as f32 / HZ_A_KILOHERTZ,
-        format::spanned(heard)
+        format!("{:.1}", nyquist_hz as f32 / HZ_A_KILOHERTZ),
+        format::spanned(heard),
     )
 }
 
 fn spectrum_said(judgement: &Judgement, spectrum: &Spectrum) -> String {
     let nyquist = spectrum.nyquist_hz();
-    let level = |from: f32, to: f32, named: &str| {
+    let level = |from: f32, to: f32, named: fn(String) -> String| {
         spectrum
             .band_db(from, to.min(nyquist))
-            .map(|db| format!("{db:.0} dB {named}"))
+            .map(|db| named(format!("{db:.0}")))
     };
     let averages: Vec<String> = [
-        level(0.0, 1_000.0, "under 1 kHz"),
-        level(1_000.0, 4_000.0, "from 1 to 4 kHz"),
-        level(4_000.0, 10_000.0, "from 4 to 10 kHz"),
-        level(10_000.0, nyquist, "above 10 kHz"),
+        level(0.0, 1_000.0, words::analysis::level_under_one_kilohertz),
+        level(
+            1_000.0,
+            4_000.0,
+            words::analysis::level_from_one_to_four_kilohertz,
+        ),
+        level(
+            4_000.0,
+            10_000.0,
+            words::analysis::level_from_four_to_ten_kilohertz,
+        ),
+        level(
+            10_000.0,
+            nyquist,
+            words::analysis::level_above_ten_kilohertz,
+        ),
     ]
     .into_iter()
     .flatten()
@@ -688,31 +664,31 @@ fn spectrum_said(judgement: &Judgement, spectrum: &Spectrum) -> String {
 
     match averages.is_empty() {
         true => cutoff_said(judgement),
-        false => format!(
-            "{}. Average level {}",
-            cutoff_said(judgement),
-            averages.join(", ")
-        ),
+        false => words::analysis::spectrum_said(cutoff_said(judgement), averages.join(", ")),
     }
 }
 
 fn waveform_said(levels: &Levels, loudness: &Loudness) -> String {
     let values: Vec<String> = [
-        decibels(levels.peak).map(|peak| format!("peak {peak}")),
+        decibels(levels.peak).map(words::analysis::waveform_peak),
         loudness
             .integrated
-            .map(|lufs| format!("loudness {lufs:.1} LUFS")),
+            .map(|lufs| words::analysis::waveform_loudness(format!("{lufs:.1}"))),
         loudness
             .dynamic_range
-            .map(|dr| format!("dynamic range DR{dr}")),
+            .map(words::analysis::waveform_dynamic_range),
     ]
     .into_iter()
     .flatten()
     .collect();
 
     match values.is_empty() {
-        true => WAVEFORM_HINT.to_owned(),
-        false => format!("{WAVEFORM_HINT}; {}", values.join(", ")),
+        true => words::analysis::waveform_hint().to_owned(),
+        false => format!(
+            "{}; {}",
+            words::analysis::waveform_hint(),
+            values.join(", ")
+        ),
     }
 }
 
@@ -725,7 +701,7 @@ fn spectrum_card(drawn: &Drawn) -> Div {
 
     let mut plot = div()
         .id("analysis-spectrum")
-        .pictured_as(AVERAGE_SPECTRUM, || {
+        .pictured_as(words::analysis::average_spectrum(), || {
             spectrum_said(&analysis.study.judgement, &analysis.study.spectrum)
         })
         .relative()
@@ -751,15 +727,18 @@ fn spectrum_card(drawn: &Drawn) -> Div {
         );
     if let Some(cutoff) = analysis.study.judgement.cutoff {
         plot = plot.child(
-            axis_label(format!("{:.1} kHz", cutoff.hz as f32 / HZ_A_KILOHERTZ))
-                .absolute()
-                .top_0()
-                .right_1()
-                .text_color(rgb(colour)),
+            axis_label(words::analysis::kilohertz(format!(
+                "{:.1}",
+                cutoff.hz as f32 / HZ_A_KILOHERTZ
+            )))
+            .absolute()
+            .top_0()
+            .right_1()
+            .text_color(rgb(colour)),
         );
     }
 
-    card(AVERAGE_SPECTRUM).child(plot)
+    card(words::analysis::average_spectrum()).child(plot)
 }
 
 fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas<()> {
@@ -822,11 +801,12 @@ fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas
 }
 
 fn true_peak(level: f32) -> Option<String> {
-    (level > 0.0).then(|| format!("{:+.2} dBTP", 20.0 * level.log10()))
+    (level > 0.0)
+        .then(|| words::analysis::true_peak_reading(format!("{:+.2}", 20.0 * level.log10())))
 }
 
 fn decibels(level: f32) -> Option<String> {
-    (level > 0.0).then(|| format!("{:+.2} dBFS", 20.0 * level.log10()))
+    (level > 0.0).then(|| words::analysis::decibels(format!("{:+.2}", 20.0 * level.log10())))
 }
 
 fn levels_card(analysis: &Analysis) -> Div {
@@ -835,109 +815,128 @@ fn levels_card(analysis: &Analysis) -> Div {
     let stereo = levels
         .stereo
         .map(|stereo| match (stereo.identical, stereo.correlation) {
-            (true, _) => "Identical".to_owned(),
+            (true, _) => words::analysis::identical().to_owned(),
             (false, Some(correlation)) => format!("{correlation:+.2}"),
-            (false, None) => "Silent".to_owned(),
+            (false, None) => words::analysis::silent().to_owned(),
         });
     let rows: Vec<(&'static str, Option<Cow<'_, str>>)> = vec![
-        ("Peak", decibels(levels.peak).map(Cow::Owned)),
+        (
+            words::analysis::peak(),
+            decibels(levels.peak).map(Cow::Owned),
+        ),
         ("RMS", decibels(levels.rms).map(Cow::Owned)),
         (
-            "True peak",
+            words::analysis::true_peak(),
             true_peak(study.loudness.true_peak).map(Cow::Owned),
         ),
         (
-            "Loudness",
+            words::analysis::loudness(),
             study
                 .loudness
                 .integrated
-                .map(|lufs| Cow::Owned(format!("{lufs:.1} LUFS"))),
+                .map(|lufs| Cow::Owned(words::analysis::lufs(format!("{lufs:.1}")))),
         ),
         (
-            "Loudness range",
+            words::analysis::loudness_range(),
             study
                 .loudness
                 .range
-                .map(|lu| Cow::Owned(format!("{lu:.1} LU"))),
+                .map(|lu| Cow::Owned(words::analysis::loudness_units(format!("{lu:.1}")))),
         ),
         (
-            "Momentary max",
+            words::analysis::momentary_max(),
             study
                 .loudness
                 .momentary_max
-                .map(|lufs| Cow::Owned(format!("{lufs:.1} LUFS"))),
+                .map(|lufs| Cow::Owned(words::analysis::lufs(format!("{lufs:.1}")))),
         ),
         (
-            "Short-term max",
+            words::analysis::short_term_max(),
             study
                 .loudness
                 .short_term_max
-                .map(|lufs| Cow::Owned(format!("{lufs:.1} LUFS"))),
+                .map(|lufs| Cow::Owned(words::analysis::lufs(format!("{lufs:.1}")))),
         ),
         (
-            "Dynamic range",
+            words::analysis::dynamic_range(),
             study
                 .loudness
                 .dynamic_range
                 .map(|dr| Cow::Owned(format!("DR{dr}"))),
         ),
         (
-            "Clipped",
-            Some(Cow::Owned(format!(
-                "{} in {} runs",
-                levels.clipped, levels.clipped_runs
+            words::analysis::clipped(),
+            Some(Cow::Owned(words::analysis::clipped_in_runs(
+                levels.clipped_runs,
+                levels.clipped,
             ))),
         ),
-        ("DC offset", decibels(levels.dc).map(Cow::Owned)),
-        ("Channel correlation", stereo.map(Cow::Owned)),
+        (
+            words::analysis::dc_offset(),
+            decibels(levels.dc).map(Cow::Owned),
+        ),
+        (
+            words::analysis::channel_correlation(),
+            stereo.map(Cow::Owned),
+        ),
     ];
-    fields(card("Levels"), rows)
+    fields(card(words::analysis::levels()), rows)
 }
 
 fn source_card(analysis: &Analysis) -> Div {
     let study = &analysis.study;
     let examined = &study.examined;
     let rows: Vec<(&'static str, Option<Cow<'_, str>>)> = vec![
-        ("Codec", Some(Cow::Owned(examined.codec.to_string()))),
         (
-            "Declared depth",
-            examined
-                .declared_bits
-                .map(|bits| Cow::Owned(format!("{bits} bits"))),
+            words::analysis::codec(),
+            Some(Cow::Owned(examined.codec.to_string())),
         ),
         (
-            "Bits in use",
+            words::analysis::declared_depth(),
+            examined
+                .declared_bits
+                .map(|bits| Cow::Owned(words::analysis::bits(bits))),
+        ),
+        (
+            words::analysis::bits_in_use(),
             study
                 .levels
                 .bits_in_use
-                .map(|bits| Cow::Owned(format!("{bits} bits"))),
+                .map(|bits| Cow::Owned(words::analysis::bits(bits))),
         ),
         (
-            "Rate",
-            Some(Cow::Owned(format!("{} kHz", examined.rate.kilohertz()))),
+            words::analysis::rate(),
+            Some(Cow::Owned(words::analysis::kilohertz(
+                examined.rate.kilohertz(),
+            ))),
         ),
         (
-            "Content ends",
+            words::analysis::content_ends(),
             study
                 .judgement
                 .cutoff
                 .map(|cutoff| cutoff.hz)
                 .or(study.judgement.extent_hz)
-                .map(|hz| Cow::Owned(format!("{:.1} kHz", hz as f32 / HZ_A_KILOHERTZ))),
+                .map(|hz| {
+                    Cow::Owned(words::analysis::kilohertz(format!(
+                        "{:.1}",
+                        hz as f32 / HZ_A_KILOHERTZ
+                    )))
+                }),
         ),
         (
-            "Heard",
+            words::analysis::heard(),
             Some(Cow::Owned(format::spanned(study.spectrum.heard()))),
         ),
         (
-            "Fingerprint",
+            words::analysis::fingerprint(),
             study
                 .print
                 .as_ref()
-                .map(|print| Cow::Owned(format!("{} characters", print.encoded().len()))),
+                .map(|print| Cow::Owned(words::analysis::characters(print.encoded().len()))),
         ),
     ];
-    fields(card("Source"), rows)
+    fields(card(words::analysis::source()), rows)
 }
 
 fn heard_card(hearing: &Hearing, recognises: bool) -> Div {
@@ -947,13 +946,19 @@ fn heard_card(hearing: &Hearing, recognises: bool) -> Div {
             .text_color(rgb(theme::muted()))
             .child(text)
     };
-    let panel = card("Recognition");
+    let panel = card(words::analysis::recognition());
     match hearing {
-        Hearing::Unasked | Hearing::Asking if recognises => panel.child(said(ASKING)),
-        Hearing::Unasked | Hearing::Asking | Hearing::Unserved => panel.child(said(NO_SERVICE)),
-        Hearing::Unprinted => panel.child(said(NO_PRINT)),
-        Hearing::Refused => panel.child(said(REFUSED)),
-        Hearing::Heard { matches, .. } if matches.is_empty() => panel.child(said(UNHEARD)),
+        Hearing::Unasked | Hearing::Asking if recognises => {
+            panel.child(said(words::analysis::asking()))
+        }
+        Hearing::Unasked | Hearing::Asking | Hearing::Unserved => {
+            panel.child(said(words::analysis::no_service()))
+        }
+        Hearing::Unprinted => panel.child(said(words::analysis::no_print())),
+        Hearing::Refused => panel.child(said(words::analysis::refused())),
+        Hearing::Heard { matches, .. } if matches.is_empty() => {
+            panel.child(said(words::analysis::unheard()))
+        }
         Hearing::Heard { matches, agreement } => panel
             .children(agreement.map(|agreement| agreed(agreement, matches.first())))
             .children(matches.iter().take(HEARD_SHOWN).map(heard_row)),
@@ -962,30 +967,22 @@ fn heard_card(hearing: &Hearing, recognises: bool) -> Div {
 
 fn agreed(agreement: Agreement, top: Option<&HeardAs>) -> Div {
     let (text, colour) = match agreement {
-        Agreement::Agrees => (
-            "The audio is the song the file names.".to_owned(),
-            theme::lossless(),
-        ),
+        Agreement::Agrees => (words::analysis::agrees().to_owned(), theme::lossless()),
         Agreement::Disagrees => (
             top.map_or_else(
-                || "The audio is another song than the file names.".to_owned(),
-                |top| {
-                    format!(
-                        "The audio is another song than the file names: {}",
-                        billed(top)
-                    )
-                },
+                || words::analysis::disagrees().to_owned(),
+                |top| words::analysis::disagrees_with(billed(top)),
             ),
             theme::failure(),
         ),
         Agreement::Unnamed => (
             top.map_or_else(
-                || "The file names nothing.".to_owned(),
-                |top| format!("The file names nothing; the audio is {}", billed(top)),
+                || words::analysis::unnamed().to_owned(),
+                |top| words::analysis::unnamed_heard(billed(top)),
             ),
             theme::converted(),
         ),
-        Agreement::Unheard => (UNHEARD.to_owned(), theme::faint()),
+        Agreement::Unheard => (words::analysis::unheard().to_owned(), theme::faint()),
     };
 
     div().pb_1().text_color(rgb(colour)).child(text)
@@ -993,7 +990,7 @@ fn agreed(agreement: Agreement, top: Option<&HeardAs>) -> Div {
 
 fn billed(heard: &HeardAs) -> String {
     match heard.artist.as_deref() {
-        Some(artist) => format!("{} by {artist}", heard.title),
+        Some(artist) => words::analysis::billed(artist, &heard.title),
         None => heard.title.clone(),
     }
 }
