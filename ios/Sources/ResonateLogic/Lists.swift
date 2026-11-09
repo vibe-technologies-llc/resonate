@@ -163,9 +163,29 @@ public enum FilterChip: Identifiable, Sendable {
     case album(String)
     case order(TrackOrder, descending: Bool)
 
-    public static let orderNames: [(TrackOrder, String)] = [
-        (.title, "Title"), (.album, "Album"), (.artist, "Artist"), (.duration, "Duration"), (.added, "Added"), (.plays, "Plays"), (.played, "Last played"),
-    ]
+    public static var orderNames: [(TrackOrder, String)] {
+        [
+            (.title, said("filter.order.title")),
+            (.album, said("filter.order.album")),
+            (.artist, said("filter.order.artist")),
+            (.duration, said("filter.order.duration")),
+            (.added, said("filter.order.added")),
+            (.plays, said("filter.order.plays")),
+            (.played, said("filter.order.played")),
+        ]
+    }
+
+    static func sortedBy(_ order: TrackOrder) -> String {
+        switch order {
+        case .title: said("filter.chip.sorted.title")
+        case .album: said("filter.chip.sorted.album")
+        case .artist: said("filter.chip.sorted.artist")
+        case .duration: said("filter.chip.sorted.duration")
+        case .added: said("filter.chip.sorted.added")
+        case .plays: said("filter.chip.sorted.plays")
+        case .played: said("filter.chip.sorted.played")
+        }
+    }
 
     public static func of(_ filter: TrackFilter) -> [FilterChip] {
         var chips: [FilterChip] = []
@@ -185,16 +205,16 @@ public enum FilterChip: Identifiable, Sendable {
 
     public var label: String {
         switch self {
-        case .favourites: "Favourites"
-        case .unplayed: "Unplayed"
-        case .played: "Played"
-        case .hiRes: "Hi-res"
-        case .depth(let bits): "\(bits)-bit or more"
-        case .genre(let genre): "Genre: \(genre)"
-        case .artist(let artist): "Artist: \(artist)"
-        case .album(let album): "Album: \(album)"
+        case .favourites: said("filter.chip.favourites")
+        case .unplayed: said("filter.chip.unplayed")
+        case .played: said("filter.chip.played")
+        case .hiRes: said("filter.chip.hi-res")
+        case .depth(let bits): said("filter.chip.depth", Int(bits))
+        case .genre(let genre): said("filter.chip.genre", genre)
+        case .artist(let artist): said("filter.chip.artist", artist)
+        case .album(let album): said("filter.chip.album", album)
         case .order(let order, let descending):
-            "Sorted by \(Self.orderNames.first { $0.0 == order }?.1.lowercased() ?? "title")\(descending ? ", descending" : "")"
+            descending ? said("order.descending", Self.sortedBy(order)) : Self.sortedBy(order)
         }
     }
 
@@ -220,8 +240,16 @@ public enum FilterChip: Identifiable, Sendable {
 public enum NotInYourLibrary {
     public static let songsShownFirst = 20
 
-    public static func heading(_ count: Int, _ noun: String) -> String {
-        "Not in your library · \(counted(count, noun))"
+    public enum Lacked: Sendable {
+        case release
+        case song
+    }
+
+    public static func heading(_ count: Int, _ lacked: Lacked) -> String {
+        switch lacked {
+        case .release: said("not-in-library.heading.releases", count)
+        case .song: said("not-in-library.heading.songs", count)
+        }
     }
 
     public static func shown(_ songs: [SearchSong], all: Bool) -> [SearchSong] {

@@ -1418,7 +1418,7 @@ enum BackdropPipeline {
                 return nil
             }
             let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.label = "Backdrop"
+            descriptor.label = "backdrop"
             descriptor.vertexFunction = vertex
             descriptor.fragmentFunction = fragment
             descriptor.colorAttachments[0].pixelFormat = pixelFormat

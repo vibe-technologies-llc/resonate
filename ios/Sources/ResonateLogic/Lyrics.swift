@@ -9,7 +9,7 @@ public enum LyricPace {
     public static let lineSyncedTick: TimeInterval = 0.05
     public static let drawsBeyondPanes: CGFloat = 1
     public static let drawsWithin: CGFloat = 320
-    public static let endOfLyrics = "END OF LYRICS"
+    public static var endOfLyrics: String { said("lyrics.end") }
     public static let endTracking: CGFloat = 1.4
 
     public static let turn: TimeInterval = 0.42

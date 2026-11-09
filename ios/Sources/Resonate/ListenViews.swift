@@ -23,7 +23,7 @@ struct ListenSheet: View {
                 }
                 Section {
                     Toggle(
-                        "Keep listening",
+                        "listen.keep",
                         isOn: Binding(get: { listening.keepsListening }, set: { listening.keepListening($0) })
                     )
                     if let note = followingNote(listening.following) {
@@ -33,10 +33,10 @@ struct ListenSheet: View {
                             .symbolEffect(.variableColor.iterative, isActive: listening.following == .listening && !reduceMotion)
                     }
                 } footer: {
-                    Text("Listens for the next song every \(Listening.followedEverySeconds) seconds while this stays open. Resonate pauses while it listens, so the microphone hears the room.")
+                    Text(said("listen.keep.footer", Listening.followedEverySeconds))
                 }
                 if !earlier.isEmpty {
-                    Section("Heard earlier") {
+                    Section("listen.earlier") {
                         ForEach(earlier, id: \.key) { song in
                             Button { find(song) } label: { HeardRow(song: song) }
                                 .buttonStyle(.plain)
@@ -44,18 +44,18 @@ struct ListenSheet: View {
                     }
                 }
                 Section {
-                    SecureField("AudD token (optional)", text: $token)
+                    SecureField("listen.audd.token", text: $token)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Button("Save token") { listening.saveAuddToken(token) }
+                    Button("listen.audd.save") { listening.saveAuddToken(token) }
                         .disabled(token == listening.auddToken)
                 } header: {
-                    Text("Recognition")
+                    Text("listen.recognition")
                 } footer: {
-                    Text("Listening sends Shazam a signature of what was heard, never the sound itself. With an AudD token, AudD is sent the clip when Shazam does not know the song.")
+                    Text("listen.recognition.footer")
                 }
             }
-            .navigationTitle("Listen")
+            .navigationTitle("listen.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -80,8 +80,8 @@ struct ListenSheet: View {
     private func followingNote(_ following: ListenFollowing) -> String? {
         switch following {
         case .off: nil
-        case .waiting: "Listening for the next song every \(Listening.followedEverySeconds) seconds"
-        case .listening: "Listening for the next song…"
+        case .waiting: said("listen.following.waiting", Listening.followedEverySeconds)
+        case .listening: said("listen.following.listening")
         }
     }
 
@@ -131,15 +131,15 @@ struct ListenStageView: View {
                     label: { EmptyView() },
                     currentValueLabel: { EmptyView() }
                 )
-                .accessibilityLabel("Listening")
+                .accessibilityLabel("listen.recording.spoken")
             case .asking:
-                ProgressView().accessibilityLabel("Asking who it is")
+                ProgressView().accessibilityLabel("listen.asking.spoken")
             case .found(let song):
                 actions(song)
             case .offline:
-                Button("Open Settings", action: openSettings).buttonStyle(.glass)
+                Button("listen.open-settings", action: openSettings).buttonStyle(.glass)
             case .denied:
-                Button("Allow in Settings") {
+                Button("listen.allow") {
                     if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
                 }
                 .buttonStyle(.glass)
@@ -157,7 +157,7 @@ struct ListenStageView: View {
 
     private func spoken(_ stage: ListenStage) -> String? {
         switch stage {
-        case .found(let song): "Heard \(song.title)" + (song.artist.isEmpty ? "" : ", by \(song.artist)")
+        case .found(let song): song.artist.isEmpty ? said("listen.heard.spoken", song.title) : said("listen.heard.spoken.by", song.title, song.artist)
         case .unknown, .silent, .unreached, .offline, .denied, .failed: note(stage)
         case .idle, .recording, .asking: nil
         }
@@ -165,13 +165,13 @@ struct ListenStageView: View {
 
     private func actions(_ song: HeardSong) -> some View {
         HStack(spacing: 12) {
-            Button { find(song) } label: { Label("Find it", systemImage: "magnifyingglass") }
+            Button { find(song) } label: { Label("listen.find", systemImage: "magnifyingglass") }
                 .buttonStyle(.glassProminent)
             if let link = URL(string: song.link), !song.link.isEmpty {
-                Button { openURL(link) } label: { Label("Open", systemImage: "arrow.up.forward.app") }
+                Button { openURL(link) } label: { Label("listen.open", systemImage: "arrow.up.forward.app") }
                     .buttonStyle(.glass)
             }
-            Button { listening.listen() } label: { Label("Listen again", systemImage: "ear") }
+            Button { listening.listen() } label: { Label("listen.again", systemImage: "ear") }
                 .buttonStyle(.glass)
         }
         .labelStyle(.titleAndIcon)
@@ -180,16 +180,16 @@ struct ListenStageView: View {
 
     private func note(_ stage: ListenStage) -> String? {
         switch stage {
-        case .idle: "Hear what is sounding and name it."
-        case .recording(1, _): "Listening for \(Int(Listening.clipSeconds)) seconds…"
-        case .recording(let nth, _): "Nothing named yet, so listening again (\(nth) of \(Listening.triesOnAMiss))…"
-        case .asking: "Asking who it is…"
+        case .idle: said("listen.note.idle")
+        case .recording(1, _): said("listen.note.recording", Int(Listening.clipSeconds))
+        case .recording(let nth, _): said("listen.note.again", nth, Listening.triesOnAMiss)
+        case .asking: said("listen.note.asking")
         case .found: nil
-        case .unknown: "Nothing that was heard is a song the services know."
-        case .silent: "Nothing reached the microphone. Is anything playing?"
-        case .unreached(let service): "\(service) could not be reached. Is this iPhone online?"
-        case .offline: "Online features are off in Settings, so nothing can name what is heard."
-        case .denied: "Resonate may not use the microphone. Allow it in the Settings app to listen."
+        case .unknown: said("listen.note.unknown")
+        case .silent: said("listen.note.silent")
+        case .unreached(let service): said("listen.note.unreached", service)
+        case .offline: said("listen.note.offline")
+        case .denied: said("listen.note.denied")
         case .failed(let reason): reason
         }
     }
@@ -215,8 +215,8 @@ struct ListenControl: View {
         }
         .buttonStyle(.plain)
         .glassEffect(busy ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .circle)
-        .accessibilityLabel(busy ? "Stop listening" : "Listen")
-        .accessibilityHint(busy ? "" : "Records a few seconds from the microphone and names the song")
+        .accessibilityLabel(said(busy ? "listen.control.stop" : "listen.control.listen"))
+        .accessibilityHint(busy ? "" : said("listen.control.hint"))
     }
 }
 
@@ -252,7 +252,7 @@ struct HeardCard: View {
                 if let detail = detail {
                     Text(detail).font(.subheadline).foregroundStyle(.secondary)
                 }
-                Text("Named by \(song.by)")
+                Text(said("listen.named-by", song.by))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -293,6 +293,6 @@ struct HeardRow: View {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
         }
         .contentShape(.rect)
-        .accessibilityHint("Searches for this song")
+        .accessibilityHint("listen.heard-row.hint")
     }
 }

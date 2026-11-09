@@ -130,10 +130,10 @@ public enum BandMeasure: String, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
-        case .gain: "Gain"
-        case .frequency: "Frequency"
-        case .width: "Width"
-        case .preamp: "Level"
+        case .gain: said("equaliser.measure.gain")
+        case .frequency: said("equaliser.measure.frequency")
+        case .width: said("equaliser.measure.width")
+        case .preamp: said("equaliser.measure.level")
         }
     }
 }
@@ -216,22 +216,27 @@ public struct BandAxis: Equatable, Sendable {
 
     public func spoken(_ value: Float) -> String {
         switch measure {
-        case .gain, .preamp: String(format: "%+.1f decibels", Double(value))
+        case .gain, .preamp: said("units.decibels", String(format: "%+.1f", Double(value)))
         case .frequency:
             value >= 1_000
-                ? String(format: "%.2f kilohertz", Double(value / 1_000))
-                : String(format: value >= 100 ? "%.0f hertz" : "%.1f hertz", Double(value))
+                ? said("units.kilohertz", String(format: "%.2f", Double(value / 1_000)))
+                : said("units.hertz", String(format: value >= 100 ? "%.0f" : "%.1f", Double(value)))
         case .width: String(format: "Q %.2f", Double(value))
         }
     }
 
     public var range: String {
-        "From \(written(least)) to \(written(most))"
+        said("equaliser.measure.range", written(least), written(most))
     }
 
     public func entering(band number: Int?) -> String {
-        guard let number else { return "Preamp level" }
-        return "Band \(number) \(measure.title.lowercased())"
+        guard let number else { return said("equaliser.entering.preamp") }
+        return switch measure {
+        case .gain: said("equaliser.entering.gain", number)
+        case .frequency: said("equaliser.entering.frequency", number)
+        case .width: said("equaliser.entering.width", number)
+        case .preamp: said("equaliser.entering.level", number)
+        }
     }
 
     public func typing(_ value: Float) -> String {

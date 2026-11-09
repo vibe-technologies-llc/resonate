@@ -18,13 +18,13 @@ public struct ErasureLeftovers: Equatable, Sendable {
     public var sentences: [String] {
         var told: [String] = []
         if songs > 0 {
-            told.append("\(counted(songs, "song")) could not be deleted and stay in their folders, which Resonate keeps.")
+            told.append(said("erasure.left.songs", songs))
         }
         if files > 0 {
-            told.append("\(counted(files, "file")) of the app's own could not be deleted.")
+            told.append(said("erasure.left.files", files))
         }
         if secrets > 0 {
-            told.append("\(counted(secrets, "saved key")) could not be deleted.")
+            told.append(said("erasure.left.keys", secrets))
         }
         return told
     }

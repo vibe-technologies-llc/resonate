@@ -26,15 +26,15 @@ struct LyricsPane: View {
         Group {
             if track?.isServed == true {
                 ContentUnavailableView(
-                    "No words for a streamed song",
+                    "lyrics.streamed.title",
                     systemImage: "quote.bubble",
-                    description: Text("Lyrics are kept for the songs in your library.")
+                    description: Text("lyrics.streamed.description")
                 )
             } else if track == nil {
                 ContentUnavailableView(
-                    "Nothing playing",
+                    "lyrics.nothing-playing.title",
                     systemImage: "quote.bubble",
-                    description: Text("Play a song to follow its words.")
+                    description: Text("lyrics.nothing-playing.description")
                 )
             } else if let sheet, !sheet.lines.isEmpty {
                 if let stage {
@@ -44,12 +44,12 @@ struct LyricsPane: View {
                 }
             } else if let track, sheet == nil, !features.lyricsLoading, features.lyricsUnread == track.id {
                 ContentUnavailableView {
-                    Label("Lyrics could not be read", systemImage: "exclamationmark.bubble")
+                    Label("lyrics.unread", systemImage: "exclamationmark.bubble")
                 } actions: {
-                    Button("Try again", systemImage: "arrow.clockwise") { features.loadLyrics(track.id) }
+                    Button("common.try-again", systemImage: "arrow.clockwise") { features.loadLyrics(track.id) }
                         .buttonStyle(.glass)
                     if let addLyrics {
-                        Button("Add lyrics…", systemImage: "text.badge.plus", action: addLyrics)
+                        Button("lyrics.add", systemImage: "text.badge.plus", action: addLyrics)
                             .buttonStyle(.glass)
                     }
                 }
@@ -57,16 +57,12 @@ struct LyricsPane: View {
                 looking
             } else {
                 ContentUnavailableView {
-                    Label("No lyrics", systemImage: "quote.bubble")
+                    Label("lyrics.none.title", systemImage: "quote.bubble")
                 } description: {
-                    Text(
-                        features.online
-                            ? "No lyrics found for this song"
-                            : "No saved lyrics. Enable online features to look them up, or add an LRC beside the song."
-                    )
+                    Text(said(features.online ? "lyrics.none.online" : "lyrics.none.offline"))
                 } actions: {
                     if let addLyrics {
-                        Button("Add lyrics…", systemImage: "text.badge.plus", action: addLyrics)
+                        Button("lyrics.add", systemImage: "text.badge.plus", action: addLyrics)
                             .buttonStyle(.glass)
                     }
                 }
@@ -93,7 +89,7 @@ struct LyricsPane: View {
 
     @ViewBuilder private var looking: some View {
         if lookedLong {
-            ProgressView { Text("Looking for lyrics…") }
+            ProgressView { Text("lyrics.looking") }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             Color.clear
@@ -173,13 +169,13 @@ private struct LyricFollowing: View {
             Button {
                 stage.followAgain(at: Date.now.timeIntervalSinceReferenceDate)
             } label: {
-                Label("Follow", systemImage: "quote.bubble")
+                Label("lyrics.follow", systemImage: "quote.bubble")
             }
             .buttonStyle(.glass)
             .controlSize(compact ? .small : .regular)
             .padding(.bottom, compact ? 6 : 12)
             .transition(.opacity)
-            .accessibilityHint("Scrolls back to the words being sung")
+            .accessibilityHint("lyrics.follow.hint")
         }
     }
 
@@ -207,22 +203,22 @@ struct LyricAttribution: View {
         .foregroundStyle(.secondary)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(sheet.origin.isEmpty ? spokenTiming : "\(spokenTiming), from \(sheet.origin)")
+        .accessibilityLabel(sheet.origin.isEmpty ? spokenTiming : said("lyrics.timing.from", spokenTiming, sheet.origin))
     }
 
     private var timing: String {
         switch sheet.detail {
-        case .words: "WORD-SYNCED"
-        case .lines: "SYNCED"
-        case .unsynced: "UNSYNCED"
+        case .words: said("lyrics.timing.words.badge")
+        case .lines: said("lyrics.timing.lines.badge")
+        case .unsynced: said("lyrics.timing.unsynced.badge")
         }
     }
 
     private var spokenTiming: String {
         switch sheet.detail {
-        case .words: "Lyrics timed word by word"
-        case .lines: "Lyrics timed line by line"
-        case .unsynced: "Lyrics without timing"
+        case .words: said("lyrics.timing.words")
+        case .lines: said("lyrics.timing.lines")
+        case .unsynced: said("lyrics.timing.unsynced")
         }
     }
 }

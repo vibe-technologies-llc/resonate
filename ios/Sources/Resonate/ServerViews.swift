@@ -41,22 +41,22 @@ struct ServedActions: ViewModifier {
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .leading) {
-                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                Button("served.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                     library.playServedNext(expanding: uri)
                 }
                 .tint(.blue)
-                Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                Button("served.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                     library.addServedToQueue(expanding: uri)
                 }
                 .tint(.indigo)
             }
             .contextMenu {
-                Button("Play", systemImage: "play") { library.playServed(expanding: uri, shuffled: false) }
-                Button("Shuffle", systemImage: "shuffle") { library.playServed(expanding: uri, shuffled: true) }
-                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                Button("common.play", systemImage: "play") { library.playServed(expanding: uri, shuffled: false) }
+                Button("common.shuffle", systemImage: "shuffle") { library.playServed(expanding: uri, shuffled: true) }
+                Button("served.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                     library.playServedNext(expanding: uri)
                 }
-                Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                Button("served.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                     library.addServedToQueue(expanding: uri)
                 }
             }
@@ -225,8 +225,13 @@ struct ServedStar: View {
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: tapped)
-        .accessibilityLabel(starred ? "Remove \(title) from favourites" : "Add \(title) to favourites")
-        .accessibilityInputLabels(["Favourite", "Star", "Add to favourites", "Remove from favourites"])
+        .accessibilityLabel(said(starred ? "served.star.remove" : "served.star.add", title))
+        .accessibilityInputLabels([
+            said("served.star.input.favourite"),
+            said("served.star.input.star"),
+            said("served.star.input.add"),
+            said("served.star.input.remove"),
+        ])
     }
 }
 
@@ -239,7 +244,7 @@ struct ServedFoundRows: View {
             Text(found.summary).font(.footnote).foregroundStyle(.secondary)
         }
         if !found.artists.isEmpty {
-            Section("Artists") {
+            Section("served.found.artists") {
                 ForEach(found.artists, id: \.uri) { artist in
                     NavigationLink(value: Destination.served(ServedPlace(artist))) {
                         ServedRow(uri: artist.uri, cover: artist.cover, title: artist.shownName, detail: artist.line, circle: true)
@@ -249,7 +254,7 @@ struct ServedFoundRows: View {
             }
         }
         if !found.albums.isEmpty {
-            Section("Albums") {
+            Section("served.found.albums") {
                 ForEach(found.albums, id: \.uri) { album in
                     NavigationLink(value: Destination.served(ServedPlace(album))) {
                         ServedRow(uri: album.uri, cover: album.cover, title: album.shownName, detail: album.line)
@@ -259,7 +264,7 @@ struct ServedFoundRows: View {
             }
         }
         if !found.songs.isEmpty {
-            Section("Songs") {
+            Section("served.found.songs") {
                 let uris = found.songs.map(\.uri)
                 ForEach(Array(found.songs.enumerated()), id: \.element.uri) { index, song in
                     ServedSongRow(song: song) { library.playServed(uris, at: index, shuffle: library.shuffled) }
@@ -291,11 +296,11 @@ struct ServerView: View {
         let choice = features.served
         let service = choice.service
         let scheme = service?.scheme ?? ""
-        let title = service?.title ?? "Server"
+        let title = service?.title ?? said("server.title")
         ThemedList {
             if choice.choosing {
                 Section {
-                    Picker("Service", selection: Binding(get: { scheme }, set: { features.chooseServed($0) })) {
+                    Picker("server.service", selection: Binding(get: { scheme }, set: { features.chooseServed($0) })) {
                         ForEach(choice.services, id: \.scheme) { offered in
                             Text(offered.title).tag(offered.scheme)
                         }
@@ -310,8 +315,8 @@ struct ServerView: View {
                 foundRows(scheme: scheme, title: title)
             }
         }
-        .navigationTitle(choice.choosing ? "Server" : title)
-        .searchable(text: $typed, prompt: "Search \(title)")
+        .navigationTitle(choice.choosing ? said("server.title") : title)
+        .searchable(text: $typed, prompt: said("server.search", title))
         .onSubmit(of: .search) { asked = typed.trimmingCharacters(in: .whitespacesAndNewlines) }
         .onChange(of: typed) { _, now in
             if now.isEmpty { asked = "" }
@@ -325,11 +330,11 @@ struct ServerView: View {
         if let failure {
             ReadFailure(text: failure) { Task { await loadFirst(scheme) } }
         } else if let first, first.isEmpty {
-            Text("Search \(title) for artists, albums and songs.").foregroundStyle(.secondary)
+            Text(said("server.search.empty", title)).foregroundStyle(.secondary)
         } else if let first {
             ServedFoundRows(found: first)
         } else {
-            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity)
+            ProgressView().accessibilityLabel("common.loading").frame(maxWidth: .infinity)
         }
     }
 
@@ -338,11 +343,11 @@ struct ServerView: View {
         if let searchFailure {
             ReadFailure(text: searchFailure) { Task { await search(scheme) } }
         } else if let found, found.isEmpty {
-            Text("\(title) found nothing for those words.").foregroundStyle(.secondary)
+            Text(said("server.search.none", title)).foregroundStyle(.secondary)
         } else if let found {
             ServedFoundRows(found: found)
         } else {
-            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity)
+            ProgressView().accessibilityLabel("common.loading").frame(maxWidth: .infinity)
         }
     }
 
@@ -413,17 +418,17 @@ struct ServedHeader: View {
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                Text(circle ? "Artist" : place.artist)
+                Text(circle ? said("served.artist") : place.artist)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Text(summary).font(.footnote).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                CollectionAction(title: "Play", symbol: "play.fill", prominent: true) {
+                CollectionAction(title: said("common.play"), symbol: "play.fill", prominent: true) {
                     acted += 1
                     play()
                 }
-                CollectionAction(title: "Shuffle", symbol: "shuffle", prominent: false) {
+                CollectionAction(title: said("common.shuffle"), symbol: "shuffle", prominent: false) {
                     acted += 1
                     shuffle()
                 }
@@ -451,7 +456,7 @@ struct ServedArtistPage: View {
         List {
             ServedHeader(
                 place: place,
-                summary: counted(albums.count, "album"),
+                summary: said("counted.albums", albums.count),
                 playable: !albums.isEmpty,
                 play: { library.playServed(expanding: place.uri, shuffled: false) },
                 shuffle: { library.playServed(expanding: place.uri, shuffled: true) }
@@ -459,10 +464,10 @@ struct ServedArtistPage: View {
             if let failure {
                 ReadFailure(text: failure) { Task { await load() } }
             } else if read, albums.isEmpty {
-                Text("No albums are listed for this artist.").foregroundStyle(.secondary)
+                Text("served.artist.no-albums").foregroundStyle(.secondary)
             }
             if !albums.isEmpty {
-                Section("Albums") {
+                Section("served.artist.albums") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 14) {
                             ForEach(albums, id: \.uri) { album in
@@ -472,7 +477,7 @@ struct ServedArtistPage: View {
                                         Text(album.shownName)
                                             .font(.subheadline.weight(.medium))
                                             .titleLines()
-                                        Text(album.year.map(String.init) ?? album.songs.map { counted(Int($0), "song") } ?? "")
+                                        Text(album.year.map(String.init) ?? album.songs.map { said("counted.songs", Int($0)) } ?? "")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -531,7 +536,7 @@ struct ServedAlbumPage: View {
             if let failure {
                 ReadFailure(text: failure) { Task { await load() } }
             } else if read, songs.isEmpty {
-                Text("No songs are listed for this album.").foregroundStyle(.secondary)
+                Text("served.album.no-songs").foregroundStyle(.secondary)
             }
             let uris = songs.map(\.uri)
             ForEach(Array(songs.enumerated()), id: \.element.uri) { index, song in
@@ -568,11 +573,11 @@ struct ServedMenu: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            Menu("More", systemImage: "ellipsis") {
-                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+            Menu("common.more", systemImage: "ellipsis") {
+                Button("served.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                     library.playServedNext(expanding: uri)
                 }
-                Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                Button("served.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                     library.addServedToQueue(expanding: uri)
                 }
             }

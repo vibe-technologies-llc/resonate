@@ -78,17 +78,17 @@ extension SearchOrder {
 
     public var label: String {
         switch self {
-        case .relevance: "Relevance"
-        case .album: "Album"
-        case .title: "Title"
-        case .artist: "Artist"
-        case .added: "Date added"
-        case .duration: "Duration"
-        case .plays: "Plays"
-        case .played: "Last played"
-        case .favourites: "Favourites"
-        case .playsThisMonth: "Plays this month"
-        case .format: "Format"
+        case .relevance: said("search.order.relevance")
+        case .album: said("search.order.album")
+        case .title: said("search.order.title")
+        case .artist: said("search.order.artist")
+        case .added: said("search.order.added")
+        case .duration: said("search.order.duration")
+        case .plays: said("search.order.plays")
+        case .played: said("search.order.played")
+        case .favourites: said("search.order.favourites")
+        case .playsThisMonth: said("search.order.plays-this-month")
+        case .format: said("search.order.format")
         }
     }
 }
@@ -96,8 +96,9 @@ extension SearchOrder {
 extension SavedSearch {
     public var reading: String {
         let natural = searchOrderReadsDescending(order: order)
-        let direction = descending == natural ? "" : descending ? ", descending" : ", ascending"
-        let limit = rows.map { " · first \($0)" } ?? ""
-        return order.label + direction + limit
+        let directed = descending == natural
+            ? order.label
+            : said(descending ? "order.descending" : "order.ascending", order.label)
+        return rows.map { said("saved-search.reading.first", directed, Int($0)) } ?? directed
     }
 }

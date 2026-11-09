@@ -38,7 +38,7 @@ public enum WrappedDeckPlace {
     }
 
     public static func said(at place: Int, of count: Int) -> String {
-        "\(place + 1) of \(count)"
+        ResonateLogic.said("wrapped.deck.place", place + 1, count)
     }
 
     public static func labelledEvery(bars: Int, accessibilityText: Bool) -> Int {

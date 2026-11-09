@@ -5,17 +5,17 @@ public enum TagName: CaseIterable, Hashable, Sendable {
 
     public var label: String {
         switch self {
-        case .title: "Title"
-        case .artist: "Artist"
-        case .album: "Album"
-        case .albumArtist: "Album artist"
-        case .genre: "Genre"
-        case .date: "Year or date"
-        case .trackNumber: "Track"
-        case .trackTotal: "of"
-        case .discNumber: "Disc"
-        case .discTotal: "of"
-        case .composer: "Composer"
+        case .title: said("tags.field.title")
+        case .artist: said("tags.field.artist")
+        case .album: said("tags.field.album")
+        case .albumArtist: said("tags.field.album-artist")
+        case .genre: said("tags.field.genre")
+        case .date: said("tags.field.date")
+        case .trackNumber: said("tags.field.track")
+        case .trackTotal: said("tags.field.of")
+        case .discNumber: said("tags.field.disc")
+        case .discTotal: said("tags.field.of")
+        case .composer: said("tags.field.composer")
         }
     }
 

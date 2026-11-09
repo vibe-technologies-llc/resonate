@@ -40,7 +40,7 @@ struct QRCodeImage: View {
         .frame(width: edge, height: edge)
         .background(Color.white, in: .rect(cornerRadius: Self.corner))
         .accessibilityElement()
-        .accessibilityLabel("QR code of this link")
+        .accessibilityLabel("together.link.qr-code.label")
         .task(id: text) {
             let asked = text
             let image = try? await Work.aside { QRCodes.drawn(asked) }
@@ -82,15 +82,15 @@ struct InvitationLinkSection: View {
 
     @ViewBuilder
     private var actions: some View {
-        Button(copies > 0 ? "Copied" : "Copy", systemImage: "doc.on.doc") {
+        Button(said(copies > 0 ? "together.link.copied" : "common.copy"), systemImage: "doc.on.doc") {
             UIPasteboard.general.string = link
             copies += 1
         }
-        .announced(copies > 0 ? "Copied" : nil)
+        .announced(copies > 0 ? said("together.link.copied") : nil)
         ShareLink(item: link) {
-            Label("Share", systemImage: "square.and.arrow.up")
+            Label("common.share", systemImage: "square.and.arrow.up")
         }
-        Button(showingCode ? "Hide QR" : "QR code", systemImage: "qrcode") {
+        Button(said(showingCode ? "together.link.hide-qr-code" : "together.link.qr-code"), systemImage: "qrcode") {
             withAnimation(reduceMotion ? nil : Arrival.animation) { showingCode.toggle() }
         }
     }
@@ -121,7 +121,7 @@ struct SharedPlaylistSheet: View {
                 } else if let gate = together.sharingGate {
                     Section {
                         Text(gate).announced(gate)
-                        Button("Open sync settings", systemImage: "arrow.triangle.2.circlepath") {
+                        Button("together.open-sync-settings", systemImage: "arrow.triangle.2.circlepath") {
                             dismiss()
                             navigation.tab = .settings
                             navigation.paths[.settings] = [.sync]
@@ -129,8 +129,8 @@ struct SharedPlaylistSheet: View {
                     }
                 } else {
                     Section {
-                        Text("Other people can follow this playlist or edit it with you. They get a link, and the songs stay on each person's own device.")
-                        Button("Share this playlist", systemImage: "person.2") {
+                        Text("together.share.explained")
+                        Button("together.share", systemImage: "person.2") {
                             run { await together.share(id) }
                         }
                         .disabled(asking)
@@ -166,12 +166,12 @@ struct SharedPlaylistSheet: View {
         notHeldSection(list.notHeld)
         Section {
             if list.mayEdit {
-                Button(presses.asks(.reset) ? TogetherWords.pressAgain : "Make new links", systemImage: "arrow.clockwise") {
+                Button(presses.asks(.reset) ? TogetherWords.pressAgain : said("together.links.renew"), systemImage: "arrow.clockwise") {
                     press(.reset) { await library.features.together.reset(id, removing: nil) }
                 }
                 .disabled(asking)
             }
-            Button(presses.asks(.leave) ? TogetherWords.pressAgain : "Leave", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+            Button(presses.asks(.leave) ? TogetherWords.pressAgain : said("together.leave"), systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                 press(.leave) {
                     let problem = await library.features.together.leaveList(id)
                     if problem == nil { dismiss() }
@@ -181,20 +181,20 @@ struct SharedPlaylistSheet: View {
             .disabled(asking)
         } footer: {
             if list.mayEdit {
-                Text("New links stop the old ones working. Everyone still here moves across by themselves.")
+                Text("together.links.renew.footer")
             }
         }
     }
 
     private func peopleSection(_ list: SharedPlaylist) -> some View {
-        Section("People") {
+        Section("together.people") {
             ForEach(list.people, id: \.id) { person in
                 HStack {
                     Text(TogetherWords.person(person)).titleLines()
                     Spacer()
                     if list.mayEdit, !person.isMe {
                         let removing = SharedAct.remove(person.id)
-                        Button(presses.asks(removing) ? TogetherWords.pressAgain : "Remove", role: .destructive) {
+                        Button(presses.asks(removing) ? TogetherWords.pressAgain : said("common.remove"), role: .destructive) {
                             press(removing) { await library.features.together.reset(id, removing: person.id) }
                         }
                         .buttonStyle(.bordered)
@@ -209,7 +209,7 @@ struct SharedPlaylistSheet: View {
     private func notHeldSection(_ titles: [String]) -> some View {
         if !titles.isEmpty {
             let lines = SharedPlaylistWords.notHeld(titles)
-            Section("Songs you don't have") {
+            Section("together.not-held") {
                 ForEach(Array(lines.named.enumerated()), id: \.offset) { _, title in
                     Text(title).titleLines()
                 }
@@ -249,7 +249,7 @@ struct PartyView: View {
                 }
                 if PartyWords.isOver(party.connection) {
                     Section {
-                        Button("Close", systemImage: "xmark") { together.leaveParty() }
+                        Button("common.close", systemImage: "xmark") { together.leaveParty() }
                     }
                 } else if party.hosting {
                     hostSections(party, together)
@@ -260,7 +260,7 @@ struct PartyView: View {
                 beginSections(together)
             }
         }
-        .navigationTitle("Listening party")
+        .navigationTitle("party.title")
         .task(id: phase == .active) {
             guard phase == .active else { return }
             await together.followParty()
@@ -270,13 +270,13 @@ struct PartyView: View {
     @ViewBuilder
     private func beginSections(_ together: TogetherState) -> some View {
         Section {
-            Text("Listen with other people, in step. They join by a link and hear what you play, each from their own copy.")
+            Text("party.explained")
             if let gate = together.partyGate {
                 Text(gate).foregroundStyle(.secondary).announced(gate)
             } else {
-                Button("Begin a party", systemImage: "person.2.wave.2") { together.beginParty() }
+                Button("party.begin", systemImage: "person.2.wave.2") { together.beginParty() }
                     .disabled(together.joining)
-                Button("Paste a link", systemImage: "doc.on.clipboard") {
+                Button("party.paste-link", systemImage: "doc.on.clipboard") {
                     together.accept(UIPasteboard.general.string ?? "")
                 }
                 .disabled(together.joining)
@@ -284,23 +284,23 @@ struct PartyView: View {
         }
         if together.joining {
             Section {
-                ProgressView("Reaching the server…")
+                ProgressView("party.reaching")
             }
         }
     }
 
     @ViewBuilder
     private func hostSections(_ party: ListeningParty, _ together: TogetherState) -> some View {
-        InvitationLinkSection(title: "People join by this link", link: party.link)
+        InvitationLinkSection(title: said("party.link"), link: party.link)
         peopleSection(party, together)
         if !party.requests.isEmpty {
-            Section("Asked for") {
+            Section("party.requests") {
                 ForEach(Array(party.requests.enumerated()), id: \.offset) { at, request in
                     VStack(alignment: .leading, spacing: 8) {
                         PartySongLines(song: request)
                         HStack(spacing: 12) {
-                            Button("Play next") { together.playNext(at) }
-                            Button("Pass") { together.passOver(at) }
+                            Button("party.requests.play-next") { together.playNext(at) }
+                            Button("party.requests.pass") { together.passOver(at) }
                         }
                         .buttonStyle(.bordered)
                     }
@@ -308,14 +308,14 @@ struct PartyView: View {
             }
         }
         Section {
-            Button("End the party", systemImage: "stop.circle", role: .destructive) { together.leaveParty() }
+            Button("party.end", systemImage: "stop.circle", role: .destructive) { together.leaveParty() }
         }
     }
 
     @ViewBuilder
     private func guestSections(_ party: ListeningParty, _ together: TogetherState) -> some View {
         let following = PartyWords.following(party.following)
-        Section("Now") {
+        Section("party.now") {
             if let song = party.song {
                 PartySongLines(song: song)
             }
@@ -323,7 +323,7 @@ struct PartyView: View {
         }
         peopleSection(party, together)
         Section {
-            Button("Leave", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { together.leaveParty() }
+            Button("party.leave", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { together.leaveParty() }
         } footer: {
             Text(PartyWords.guestAsks)
         }
@@ -336,13 +336,13 @@ struct PartyView: View {
                     Text(TogetherWords.person(person)).titleLines()
                     Spacer()
                     if party.hosting, !person.isMe {
-                        Button("Remove", role: .destructive) { together.turnOut(person) }
+                        Button("common.remove", role: .destructive) { together.turnOut(person) }
                             .buttonStyle(.bordered)
                     }
                 }
             }
         } header: {
-            Text("People")
+            Text("together.people")
         } footer: {
             if let said = PartyWords.roundTrip(party.roundTripMs) {
                 Text(said)

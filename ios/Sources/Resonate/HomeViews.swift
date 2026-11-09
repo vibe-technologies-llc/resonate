@@ -21,9 +21,9 @@ struct HomeView: View {
         ThemedList {
             if empty {
                 ContentUnavailableView(
-                    "Your library is empty",
+                    "home.empty",
                     systemImage: "music.note.house",
-                    description: Text("Add a music folder in Settings to fill your home with mixes, albums and artists.")
+                    description: Text("home.empty.detail")
                 )
                 .listRowBackground(Color.clear)
             } else {
@@ -41,14 +41,14 @@ struct HomeView: View {
                     Section {
                         AlbumShelf(albums: recent, query: "")
                     } header: {
-                        SeeAllPageHeader(title: "Recently added", more: true, page: .albums)
+                        SeeAllPageHeader(title: said("collections.order.added"), more: true, page: .albums)
                     }
                 }
             }
             HomeDevices()
-            Section("Listen together") {
+            Section("home.together") {
                 NavigationLink(value: Destination.party) {
-                    ToolRow(title: "Listening party", detail: "Start or join a party with other people", symbol: "person.2.wave.2")
+                    ToolRow(title: said("tools.party"), detail: said("home.party.detail"), symbol: "person.2.wave.2")
                 }
             }
             Section {
@@ -56,20 +56,20 @@ struct HomeView: View {
                     Button {
                         naming = true
                     } label: {
-                        Label("New playlist", systemImage: "plus")
+                        Label("playlists.new", systemImage: "plus")
                     }
                 } else {
                     PlaylistShelf(playlists: Array(playlists.prefix(Self.shelved)))
                 }
             } header: {
-                SeeAllPageHeader(title: "Your playlists", more: !playlists.isEmpty, page: .playlists)
+                SeeAllPageHeader(title: said("home.playlists"), more: !playlists.isEmpty, page: .playlists)
             }
             if !empty {
                 if !listenedTo.isEmpty {
                     Section {
                         ArtistShelf(artists: listenedTo, query: "")
                     } header: {
-                        SeeAllPageHeader(title: "Artists", more: true, page: .artists)
+                        SeeAllPageHeader(title: said("library.artists"), more: true, page: .artists)
                     }
                 }
                 HomeListeningSections()
@@ -99,8 +99,8 @@ struct HomeView: View {
             wentToBackground = false
         }
         .background { CatalogReading { await loadShelves() } }
-        .alert("Create playlist", isPresented: $naming) {
-            PlaylistNameField(confirm: "Create") { features.createPlaylist($0) }
+        .alert("playlists.create", isPresented: $naming) {
+            PlaylistNameField(confirm: said("common.create")) { features.createPlaylist($0) }
         }
     }
 
@@ -124,12 +124,12 @@ private struct HomeDevices: View {
     var body: some View {
         let features = library.features
         let devices = features.syncStatus?.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) } ?? []
-        Section("Your devices") {
+        Section("playlist.devices") {
             ForEach(devices, id: \.id) { device in
                 KnownDeviceEntry(known: device)
             }
             NavigationLink(value: Destination.sync) {
-                ToolRow(title: "Remote control", detail: "Pair devices and control their playback", symbol: "appletvremote")
+                ToolRow(title: said("home.remote"), detail: said("home.remote.detail"), symbol: "appletvremote")
             }
             if !features.syncHandoffs.isEmpty {
                 HandoffRows()
@@ -146,8 +146,8 @@ private struct ShuffleAllCard: View {
             library.shuffle(library.allTracks)
         } label: {
             ShortcutCard(
-                title: "Shuffle all",
-                detail: counted(library.catalogCount, "song"),
+                title: said("home.shuffle-all"),
+                detail: said("counted.songs", library.catalogCount),
                 symbol: "shuffle",
                 from: .indigo,
                 to: .blue
@@ -182,7 +182,7 @@ private struct HomeMixes: View {
             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             .listRowSeparator(.hidden)
         } header: {
-            SeeAllPageHeader(title: "Made for you", more: true, page: .suggestions)
+            SeeAllPageHeader(title: said("home.made-for-you"), more: true, page: .suggestions)
         }
         .background {
             CatalogReading {

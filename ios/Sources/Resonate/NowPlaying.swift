@@ -304,7 +304,7 @@ final class NowPlaying {
         }
         commands.nextTrackCommand.isEnabled = available.next
         commands.likeCommand.isActive = shown?.track.favourite ?? false
-        commands.likeCommand.localizedTitle = shown?.track.favourite == true ? "Remove from favourites" : "Add to favourites"
+        commands.likeCommand.localizedTitle = said(shown?.track.favourite == true ? "favourite.remove" : "favourite.add")
         commands.changeShuffleModeCommand.currentShuffleType = shown?.shuffle == true ? .items : .off
         commands.changeRepeatModeCommand.currentRepeatType = Self.repeatType(of: RepeatMode(engineValue: shown?.repeatMode ?? 0))
     }

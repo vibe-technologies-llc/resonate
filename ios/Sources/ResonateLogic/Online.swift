@@ -9,7 +9,6 @@ public enum OnlineMode: String, CaseIterable, Sendable {
 
 public struct OnlineAsked: Hashable, Sendable {
     public static let settle: Duration = .milliseconds(450)
-    public static let prompt = "Song, album, artist or shared link"
     private static let linkPrefixes = ["http://", "https://", "spotify:"]
 
     public let text: String

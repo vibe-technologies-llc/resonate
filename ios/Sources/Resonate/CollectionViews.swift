@@ -10,19 +10,19 @@ enum LibraryPage {
 
     var title: String {
         switch self {
-        case .home: "Your library"
-        case .playlists: "Playlists"
-        case .albums: "Albums"
-        case .artists: "Artists"
+        case .home: said("library.title")
+        case .playlists: said("library.playlists")
+        case .albums: said("library.albums")
+        case .artists: said("library.artists")
         }
     }
 
     var searchPrompt: String {
         switch self {
-        case .home: "Search your library"
-        case .playlists: "Search playlists"
-        case .albums: "Search albums"
-        case .artists: "Search artists"
+        case .home: said("library.search.prompt")
+        case .playlists: said("library.playlists.search.prompt")
+        case .albums: said("library.albums.search.prompt")
+        case .artists: said("library.artists.search.prompt")
         }
     }
 }
@@ -40,7 +40,7 @@ struct SeeAllPageHeader: View {
             Spacer()
             if more {
                 NavigationLink(value: page) {
-                    Text("See all")
+                    Text("library.see-all")
                         .font(.subheadline)
                         .textCase(nil)
                         .frame(minWidth: 44)
@@ -48,7 +48,7 @@ struct SeeAllPageHeader: View {
                         .contentShape(.rect)
                         .padding(.vertical, -Self.reachBeyondTheLine)
                 }
-                .accessibilityLabel("See all \(title.lowercased())")
+                .accessibilityLabel(said("library.see-all.titled", title.lowercased()))
             }
         }
     }
@@ -107,39 +107,39 @@ struct LibraryView: View {
             }
             if page == .home, folded.isEmpty {
                 NavigationLink(value: Destination.wanted) {
-                    ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
+                    ToolRow(title: said("tools.saved-for-later"), detail: said("tools.saved-for-later.detail"), symbol: "bookmark")
                 }
             }
             if page == .home, folded.isEmpty || !playlists.isEmpty {
                 Section {
                     if playlists.isEmpty {
-                        Text("No playlists").foregroundStyle(.secondary)
+                        Text("library.playlists.none").foregroundStyle(.secondary)
                     } else {
                         PlaylistShelf(playlists: Array(playlists.prefix(Self.shelved)))
                     }
                 } header: {
-                    SeeAllPageHeader(title: "Playlists", more: true, page: .playlists)
+                    SeeAllPageHeader(title: said("library.playlists"), more: true, page: .playlists)
                 }
             }
             if page == .home, !albumHits.isEmpty {
                 Section {
                     AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: lighting)
                 } header: {
-                    SeeAllPageHeader(title: "Albums", more: true, page: .albums)
+                    SeeAllPageHeader(title: said("library.albums"), more: true, page: .albums)
                 }
             }
             if page == .home, !artistHits.isEmpty {
                 Section {
                     ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: lighting)
                 } header: {
-                    SeeAllPageHeader(title: "Artists", more: true, page: .artists)
+                    SeeAllPageHeader(title: said("library.artists"), more: true, page: .artists)
                 }
             }
             if page == .home, albumHits.isEmpty, artistHits.isEmpty, asked.isEmpty {
-                Text("Add a music folder in Settings to see your albums and artists here.").foregroundStyle(.secondary)
+                Text("library.empty.albums-and-artists").foregroundStyle(.secondary)
             }
             if page == .playlists {
-                Section("Playlists") {
+                Section("library.playlists") {
                     ForEach(playlists, id: \.id) { playlist in
                         NavigationLink(value: Destination.playlist(playlist.id)) {
                             PlaylistShelfRow(playlist: playlist)
@@ -147,16 +147,16 @@ struct LibraryView: View {
                         .collectionActions(.playlist(playlist.id))
                     }
                     if playlists.isEmpty {
-                        Text(folded.isEmpty ? "No playlists" : "No playlists match “\(asked)”").foregroundStyle(.secondary)
+                        Text(folded.isEmpty ? said("library.playlists.none") : said("library.playlists.none-matching", asked)).foregroundStyle(.secondary)
                     }
                 }
             }
             if page == .albums {
                 Section {
                     if albumHits.isEmpty, asked.isEmpty {
-                        Text("Add a music folder in Settings to see your albums here.").foregroundStyle(.secondary)
+                        Text("library.empty.albums").foregroundStyle(.secondary)
                     } else if albumHits.isEmpty, answered {
-                        Text("No albums match “\(asked)”").foregroundStyle(.secondary)
+                        Text(said("library.albums.none-matching", asked)).foregroundStyle(.secondary)
                     }
                     ForEach(albumHits, id: \.key) { album in
                         NavigationLink(value: album.destination) {
@@ -173,9 +173,9 @@ struct LibraryView: View {
             if page == .artists {
                 Section {
                     if artistHits.isEmpty, asked.isEmpty {
-                        Text("Add a music folder in Settings to see your artists here.").foregroundStyle(.secondary)
+                        Text("library.empty.artists").foregroundStyle(.secondary)
                     } else if artistHits.isEmpty, answered {
-                        Text("No artists match “\(asked)”").foregroundStyle(.secondary)
+                        Text(said("library.artists.none-matching", asked)).foregroundStyle(.secondary)
                     }
                     ForEach(artistHits, id: \.name) { artist in
                         NavigationLink(value: artist.destination) {
@@ -202,23 +202,23 @@ struct LibraryView: View {
             if page == .playlists {
                 if !library.features.playlists.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") {
+                        Button("playlists.undo", systemImage: "arrow.uturn.backward") {
                             library.features.undoPlaylistEdit()
                         }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu("New playlist", systemImage: "plus") {
-                        Button("Create playlist", systemImage: "plus") { naming = true }
-                        Button("Import playlist file", systemImage: "square.and.arrow.down") { importing = true }
-                        Button("Paste a link", systemImage: "doc.on.clipboard") {
+                    Menu("playlists.new", systemImage: "plus") {
+                        Button("playlists.create", systemImage: "plus") { naming = true }
+                        Button("playlists.import-file", systemImage: "square.and.arrow.down") { importing = true }
+                        Button("playlists.paste-link", systemImage: "doc.on.clipboard") {
                             library.features.together.accept(UIPasteboard.general.string ?? "")
                         }
                     }
                 }
                 if !library.features.followedProfiles.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Menu("Followed profiles", systemImage: "person.2") {
+                        Menu("playlists.followed-profiles", systemImage: "person.2") {
                             Section(FollowedProfileWords.stopFollowingHeading) {
                                 ForEach(library.features.followedProfiles, id: \.link) { profile in
                                     Button(FollowedProfileWords.followed(profile)) { unfollowing = profile.link }
@@ -248,12 +248,12 @@ struct LibraryView: View {
             titleVisibility: .visible,
             presenting: unfollowing
         ) { link in
-            Button("Stop following", role: .destructive) { library.features.unfollowProfile(link) }
+            Button("playlists.stop-following", role: .destructive) { library.features.unfollowProfile(link) }
         } message: { _ in
             Text(FollowedProfileWords.stoppingExplained)
         }
-        .alert("Create playlist", isPresented: $naming) {
-            PlaylistNameField(confirm: "Create") { library.features.createPlaylist($0) }
+        .alert("playlists.create", isPresented: $naming) {
+            PlaylistNameField(confirm: said("common.create")) { library.features.createPlaylist($0) }
         }
     }
 }
@@ -267,8 +267,8 @@ struct FavouritesRow: View {
             FavouritesArtwork()
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Favourites").font(.body.weight(.medium))
-                Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
+                Text("favourites.title").font(.body.weight(.medium))
+                Text(said("counted.songs", count)).font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .contentShape(.rect)
@@ -386,8 +386,8 @@ struct FavouritesCard: View {
 
     var body: some View {
         ShortcutCard(
-            title: "Favourites",
-            detail: counted(library.favouriteTracks.count, "song"),
+            title: said("favourites.title"),
+            detail: said("counted.songs", library.favouriteTracks.count),
             symbol: "heart.fill",
             from: .pink,
             to: .purple
@@ -400,8 +400,8 @@ private struct AllSongsCard: View {
 
     var body: some View {
         ShortcutCard(
-            title: "All songs",
-            detail: counted(library.catalogCount, "song"),
+            title: said("library.all-songs"),
+            detail: said("counted.songs", library.catalogCount),
             symbol: "music.note",
             from: .orange,
             to: .red
@@ -415,12 +415,12 @@ struct PlaylistShelfRow: View {
     let playlist: MusicPlaylist
 
     var body: some View {
-        let kind = SharedPlaylistWords.kind(shared: library.features.together.shared(playlist.id)?.mayEdit, followed: playlist.followed) ?? "Playlist"
+        let kind = SharedPlaylistWords.kind(shared: library.features.together.shared(playlist.id)?.mayEdit, followed: playlist.followed) ?? said("playlist.kind")
         HStack(spacing: 14) {
             PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text(playlist.name).font(.body.weight(.medium)).titleLines()
-                Text("\(kind) · \(counted(Int(playlist.songs), "song"))").font(.subheadline).foregroundStyle(.secondary)
+                Text("\(kind) · \(said("counted.songs", Int(playlist.songs)))").font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
@@ -442,7 +442,7 @@ struct PlaylistShelf: View {
                             Text(playlist.name)
                                 .font(.subheadline.weight(.medium))
                                 .titleLines()
-                            Text(counted(Int(playlist.songs), "song"))
+                            Text(said("counted.songs", Int(playlist.songs)))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .titleLines()
@@ -463,15 +463,15 @@ struct PlaylistShelf: View {
 
 struct PlaylistNameField: View {
     var initial = ""
-    var confirm = "Save"
+    var confirm = said("common.save")
     let save: (String) -> Void
     @State private var name = ""
 
     var body: some View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        TextField("Playlist name", text: $name)
+        TextField("playlists.name", text: $name)
             .onAppear { name = initial }
-        Button("Cancel", role: .cancel) {}
+        Button("common.cancel", role: .cancel) {}
         Button(confirm) { save(trimmed) }
             .disabled(trimmed.isEmpty)
     }
@@ -535,8 +535,8 @@ enum PlaylistCovers {
 
 func collectionSummary(_ tracks: [Track]) -> String {
     let minutes = tracks.reduce(UInt64(0)) { $0 + $1.durationMs } / 60_000
-    let length = minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
-    return "\(counted(tracks.count, "song")) · \(length)"
+    let length = minutes >= 60 ? said("collection.length.hours", Int(minutes / 60), Int(minutes % 60)) : said("collection.length.minutes", Int(minutes))
+    return "\(said("counted.songs", tracks.count)) · \(length)"
 }
 
 enum CoverOutline {
@@ -637,11 +637,11 @@ struct CollectionHeader<Artwork: View>: View {
                 }
             }
             HStack(spacing: 12) {
-                CollectionAction(title: "Play", symbol: "play.fill", prominent: true) {
+                CollectionAction(title: said("common.play"), symbol: "play.fill", prominent: true) {
                     acted += 1
                     library.play(tracks, at: 0)
                 }
-                CollectionAction(title: "Shuffle", symbol: "shuffle", prominent: false) {
+                CollectionAction(title: said("common.shuffle"), symbol: "shuffle", prominent: false) {
                     acted += 1
                     library.shuffle(tracks)
                 }
@@ -722,24 +722,24 @@ struct CollectionMenu: View {
     @State private var queued = 0
 
     var body: some View {
-        Menu("More", systemImage: "ellipsis") {
+        Menu("common.more", systemImage: "ellipsis") {
             CollectionQueueActions(tracks: tracks, choosingPlaylist: $choosingPlaylist, queued: $queued)
             if let artist, !artist.isEmpty {
                 Section {
-                    Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
+                    Button("song.go-to-artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
                 }
             }
             if editsTags {
                 Section {
-                    Button("Edit album tags", systemImage: "pencil") { navigation.editTags(tracks) }
+                    Button("album.edit-tags", systemImage: "pencil") { navigation.editTags(tracks) }
                 }
             }
             if let keeping {
                 Section {
                     if library.features.playlists.contains(where: { $0.search == keeping }) {
-                        Button("Kept as a playlist", systemImage: "checkmark") {}.disabled(true)
+                        Button("mix.kept-as-playlist", systemImage: "checkmark") {}.disabled(true)
                     } else {
-                        Button("Keep as a playlist that fills itself", systemImage: "bookmark") { keep(keeping) }
+                        Button("mix.keep-as-playlist", systemImage: "bookmark") { keep(keeping) }
                     }
                 }
             }
@@ -757,7 +757,7 @@ extension CollectionMenu {
             if let problem {
                 library.fail(problem)
             } else {
-                library.notice("Kept \(name) among your playlists")
+                library.notice(said("mix.kept", name))
             }
         }
     }
@@ -771,17 +771,17 @@ struct CollectionQueueActions: View {
 
     var body: some View {
         Section {
-            Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+            Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                 queued += 1
                 library.playNext(tracks)
             }
-            Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+            Button("song.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                 queued += 1
                 library.addToQueue(tracks)
             }
         }
         Section {
-            Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+            Button("song.add-to-playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
         }
     }
 }
@@ -794,7 +794,7 @@ struct ReadFailure: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(text, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
-            Button("Try again", action: retry)
+            Button("common.try-again", action: retry)
         }
     }
 }
@@ -831,7 +831,7 @@ struct AlbumView: View {
             if let failure {
                 ReadFailure(text: failure) { Task { await load() } }
             } else if read, tracks.isEmpty {
-                Text("No songs from this album are in your library yet.").foregroundStyle(.secondary)
+                Text("album.empty").foregroundStyle(.secondary)
             }
             ForEach(discs) { disc in
                 Section {
@@ -849,7 +849,7 @@ struct AlbumView: View {
                     }
                 } header: {
                     if discs.count > 1 {
-                        Text("Disc \(disc.number)")
+                        Text(said("album.disc", Int(disc.number)))
                     }
                 }
             }
@@ -952,20 +952,20 @@ struct NotHeldSongRow: View {
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing) {
-            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+            Button("song.save-for-later", systemImage: "bookmark") { features.saveWanted([song]) }
                 .tint(.indigo)
         }
         .contextMenu {
-            Button("Download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
+            Button("song.download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
                 .disabled(!standing.startsOnTap)
-            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+            Button("song.save-for-later", systemImage: "bookmark") { features.saveWanted([song]) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityValue("Not in your library")
-        .accessibilityHint(standing.startsOnTap ? "Downloads the song" : "")
+        .accessibilityValue("song.not-in-library")
+        .accessibilityHint(standing.startsOnTap ? said("song.download.hint") : "")
         .accessibilityActions {
             if standing.cancellable {
-                Button("Cancel download") { downloads.cancel(song) }
+                Button("song.download.cancel") { downloads.cancel(song) }
             }
         }
     }
@@ -994,22 +994,22 @@ struct ArtistView: View {
     }
 
     var body: some View {
-        let shownName = name.isEmpty ? "Unknown artist" : name
+        let shownName = name.isEmpty ? said("artist.unknown") : name
         List {
             CollectionHeader(
                 title: shownName,
-                subtitle: "Artist",
+                subtitle: said("artist.subtitle"),
                 tracks: tracks,
-                summary: "\(counted(albums.count, "album")) · \(counted(tracks.count, "song"))",
+                summary: "\(said("counted.albums", albums.count)) · \(said("counted.songs", tracks.count))",
                 circle: true
             )
             if let failure {
                 ReadFailure(text: failure) { Task { await load() } }
             } else if read, tracks.isEmpty {
-                Text("No music by this artist is in your library yet.").foregroundStyle(.secondary)
+                Text("artist.empty").foregroundStyle(.secondary)
             }
             if !albums.isEmpty {
-                Section("Albums") {
+                Section("library.albums") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 14) {
                             ForEach(albums, id: \.key) { album in
@@ -1020,7 +1020,7 @@ struct ArtistView: View {
                                         Text(album.shownTitle)
                                             .font(.subheadline.weight(.medium))
                                             .titleLines()
-                                        Text(album.year.map(String.init) ?? counted(Int(album.songs), "song"))
+                                        Text(album.year.map(String.init) ?? said("counted.songs", Int(album.songs)))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -1039,7 +1039,7 @@ struct ArtistView: View {
                 .listRowBackground(Color.clear)
             }
             if !releasesLacked.isEmpty {
-                Section(NotInYourLibrary.heading(releasesLacked.count, "release")) {
+                Section(NotInYourLibrary.heading(releasesLacked.count, .release)) {
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(spacing: 14) {
                             ForEach(releasesLacked, id: \.group) { release in
@@ -1058,8 +1058,8 @@ struct ArtistView: View {
                                     }
                                     .frame(width: albumEdge)
                                     .accessibilityElement(children: .combine)
-                                    .accessibilityValue("Not in your library")
-                                    .accessibilityHint("Shows its songs to download")
+                                    .accessibilityValue("song.not-in-library")
+                                    .accessibilityHint("artist.lacked.release.hint")
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -1078,7 +1078,7 @@ struct ArtistView: View {
                         }
                     }
                 } header: {
-                    SeeAllHeader(title: seeingAll ? "Songs" : "Top songs", more: !seeingAll && tracks.count > top.count) {
+                    SeeAllHeader(title: seeingAll ? said("artist.songs") : said("artist.top-songs"), more: !seeingAll && tracks.count > top.count) {
                         seeingAll = true
                     }
                 }
@@ -1092,11 +1092,11 @@ struct ArtistView: View {
                             .listRowBackground(Color.clear)
                     }
                     if lacked.count < songsLacked.count {
-                        Button("Show all \(songsLacked.count) songs") { seeingAllLacked = true }
+                        Button(said("artist.lacked.show-all", songsLacked.count)) { seeingAllLacked = true }
                             .listRowBackground(Color.clear)
                     }
                 } header: {
-                    Text(NotInYourLibrary.heading(songsLacked.count, "song"))
+                    Text(NotInYourLibrary.heading(songsLacked.count, .song))
                 }
             }
         }
@@ -1271,7 +1271,7 @@ struct UnheldReleaseSheet: View {
                 DownloadProgress()
                 if !songs.isEmpty {
                     Section {
-                        Button("Download all \(songs.count) songs", systemImage: "arrow.down.circle") {
+                        Button(said("release.download-all", songs.count), systemImage: "arrow.down.circle") {
                             library.features.downloads.enqueue(songs)
                         }
                     }
@@ -1282,15 +1282,15 @@ struct UnheldReleaseSheet: View {
                     }
                 }
                 if failed {
-                    ReadFailure(text: "The songs could not be read.") { Task { await readSongs() } }
+                    ReadFailure(text: said("release.unread")) { Task { await readSongs() } }
                 } else if read, songs.isEmpty {
-                    Text("Nothing on this release is missing from your library.").foregroundStyle(.secondary)
+                    Text("release.nothing-missing").foregroundStyle(.secondary)
                 }
             }
-            .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
+            .overlay { if !read, !failed { ProgressView().accessibilityLabel("common.loading") } }
             .navigationTitle(release.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("common.done") { dismiss() } } }
             .task { await readSongs() }
         }
     }
@@ -1341,15 +1341,15 @@ struct FavouritesView: View {
         let favourites = library.favouriteTracks
         let shown = folded.isEmpty ? favourites : found
         List {
-            CollectionHeader(title: "Favourites", subtitle: "", tracks: favourites, outline: .rounded(FavouritesArtwork.corner)) {
+            CollectionHeader(title: said("favourites.title"), subtitle: "", tracks: favourites, outline: .rounded(FavouritesArtwork.corner)) {
                 FavouritesArtwork()
             }
             if favourites.isEmpty {
                 VStack(spacing: 12) {
-                    Text("Keep the songs you love together. Tap a heart on any song or on the player to add it here.")
+                    Text("favourites.empty")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
-                    Button("Browse songs") { navigation.showSongs() }.buttonStyle(.glass)
+                    Button("favourites.browse-songs") { navigation.showSongs() }.buttonStyle(.glass)
                 }
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)
@@ -1364,7 +1364,7 @@ struct FavouritesView: View {
             .themedRows()
         }
         .listStyle(.plain)
-        .searchable(text: $search, prompt: "Search favourites")
+        .searchable(text: $search, prompt: "favourites.search.prompt")
         .task(id: Asked(epoch: library.favouriteEpoch, folded: folded)) {
             guard !folded.isEmpty else { return }
             try? await Task.sleep(for: .milliseconds(150))
@@ -1382,7 +1382,7 @@ struct FavouritesView: View {
             found = matching
             foundFor = folded
         }
-        .navigationTitle("Favourites")
+        .navigationTitle("favourites.title")
         .toolbar { CollectionMenu(tracks: favourites) }
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -1417,24 +1417,24 @@ struct CollectionActions: ViewModifier {
         content
             .contextMenu {
                 Section {
-                    Button("Play", systemImage: "play.fill") { act { library.play($0, at: 0) } }
-                    Button("Shuffle", systemImage: "shuffle") { act { library.shuffle($0) } }
+                    Button("common.play", systemImage: "play.fill") { act { library.play($0, at: 0) } }
+                    Button("common.shuffle", systemImage: "shuffle") { act { library.shuffle($0) } }
                 }
                 Section {
-                    Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { act { library.playNext($0) } }
-                    Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
+                    Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") { act { library.playNext($0) } }
+                    Button("song.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
                 }
                 Section {
-                    Button("Add to playlist", systemImage: "text.badge.plus") { act { navigation.addToPlaylist($0) } }
+                    Button("song.add-to-playlist", systemImage: "text.badge.plus") { act { navigation.addToPlaylist($0) } }
                     if let artist, !artist.isEmpty {
-                        Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
+                        Button("song.go-to-artist", systemImage: "music.mic") { navigation.open(.artist(artist)) }
                     }
                 }
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { act { library.playNext($0) } }
+                Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") { act { library.playNext($0) } }
                     .tint(.indigo)
-                Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
+                Button("song.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
                     .tint(.orange)
             }
     }

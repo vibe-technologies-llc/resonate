@@ -12,12 +12,12 @@ public enum SettingsGroup: String, CaseIterable, Identifiable, Sendable {
 
     public var title: String {
         switch self {
-        case .sound: "Sound"
-        case .library: "Library"
-        case .online: "Online & services"
-        case .devices: "Devices"
-        case .appearance: "Appearance"
-        case .app: "App"
+        case .sound: said("settings.group.sound")
+        case .library: said("settings.group.library")
+        case .online: said("settings.group.online")
+        case .devices: said("settings.group.devices")
+        case .appearance: said("settings.group.appearance")
+        case .app: said("settings.group.app")
         }
     }
 }
@@ -114,63 +114,63 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
 
     public var title: String {
         switch self {
-        case .equaliser: "Equaliser"
-        case .headphoneCorrection: "Headphone correction"
-        case .microphoneMeasurement: "Measure with a microphone"
-        case .roomCorrection: "Room correction"
-        case .listeningTest: "Listening test"
-        case .otherOutputs: "Curves for other outputs"
-        case .processing: "Sound processing"
-        case .output: "Audio output"
-        case .sleepTimer: "Sleep timer"
-        case .folders: "Music folders"
-        case .enrichment: "Artwork and details"
-        case .online: "Online features"
-        case .providers: "Download sources"
-        case .server: "Server"
-        case .scrobbling: "Scrobbling"
+        case .equaliser: said("settings.equaliser.title")
+        case .headphoneCorrection: said("settings.headphone-correction.title")
+        case .microphoneMeasurement: said("settings.microphone-measurement.title")
+        case .roomCorrection: said("settings.room-correction.title")
+        case .listeningTest: said("settings.listening-test.title")
+        case .otherOutputs: said("settings.other-outputs.title")
+        case .processing: said("settings.processing.title")
+        case .output: said("settings.output.title")
+        case .sleepTimer: said("settings.sleep-timer.title")
+        case .folders: said("settings.folders.title")
+        case .enrichment: said("settings.enrichment.title")
+        case .online: said("settings.online.title")
+        case .providers: said("settings.providers.title")
+        case .server: said("settings.server.title")
+        case .scrobbling: said("settings.scrobbling.title")
         case .spotify: "Spotify"
-        case .sync: "Device sync"
-        case .syncSongs: "Songs to sync"
-        case .syncConnection: "Sync connection"
-        case .syncControl: "Driven by your other devices"
-        case .accent: "Accent colour"
-        case .background: "Background"
-        case .searchHistory: "Search history"
-        case .notices: "Notices"
+        case .sync: said("settings.sync.title")
+        case .syncSongs: said("settings.sync-songs.title")
+        case .syncConnection: said("settings.sync-connection.title")
+        case .syncControl: said("settings.sync-control.title")
+        case .accent: said("settings.accent.title")
+        case .background: said("settings.background.title")
+        case .searchHistory: said("settings.search-history.title")
+        case .notices: said("settings.notices.title")
         case .version: "Resonate"
-        case .erase: "Erase all data"
+        case .erase: said("settings.erase.title")
         }
     }
 
     public var summary: String {
         switch self {
-        case .equaliser: "Shape your sound"
-        case .headphoneCorrection: "Search AutoEq or paste a profile"
-        case .microphoneMeasurement: "Fit a measurement or a sweep toward a target"
-        case .roomCorrection: "No response chosen"
-        case .listeningTest: "A blind ABX test of the curve or a setting"
-        case .otherOutputs: "Curves kept for one output each"
-        case .processing: "ReplayGain, resampling and clip prevention"
-        case .output: "Choose a device and adjust buffering"
-        case .sleepTimer: "Pause playback after a while"
-        case .folders: "Where your music comes from"
-        case .enrichment: "Covers, portraits, lyrics and MusicBrainz details"
-        case .online: "MusicBrainz, artwork, lyrics, AutoEq and recognition"
-        case .providers: "Monochrome, hifi-api, Subsonic, Jellyfin and TIDAL"
-        case .server: "Browse and play from your connected server"
-        case .scrobbling: "ListenBrainz and Last.fm"
-        case .spotify: "Your playlists and liked songs, with an app you register"
-        case .sync: "Your music across your devices"
-        case .syncSongs: "Which songs follow you to this iPhone"
-        case .syncConnection: "How this iPhone reaches your devices"
-        case .syncControl: "What your other devices may do here"
-        case .accent: "The colour Resonate and its icon wear"
-        case .background: "The field behind every page"
-        case .searchHistory: "Recent searches"
-        case .notices: "What the library tells you"
-        case .version: "Version"
-        case .erase: "Start over on this iPhone"
+        case .equaliser: said("settings.equaliser.summary")
+        case .headphoneCorrection: said("settings.headphone-correction.summary")
+        case .microphoneMeasurement: said("settings.microphone-measurement.summary")
+        case .roomCorrection: said("settings.room-correction.summary")
+        case .listeningTest: said("settings.listening-test.summary")
+        case .otherOutputs: said("settings.other-outputs.summary")
+        case .processing: said("settings.processing.summary")
+        case .output: said("settings.output.summary")
+        case .sleepTimer: said("settings.sleep-timer.summary")
+        case .folders: said("settings.folders.summary")
+        case .enrichment: said("settings.enrichment.summary")
+        case .online: said("settings.online.summary")
+        case .providers: said("settings.providers.summary")
+        case .server: said("settings.server.summary")
+        case .scrobbling: said("settings.scrobbling.summary")
+        case .spotify: said("settings.spotify.summary")
+        case .sync: said("settings.sync.summary")
+        case .syncSongs: said("settings.sync-songs.summary")
+        case .syncConnection: said("settings.sync-connection.summary")
+        case .syncControl: said("settings.sync-control.summary")
+        case .accent: said("settings.accent.summary")
+        case .background: said("settings.background.summary")
+        case .searchHistory: said("settings.search-history.summary")
+        case .notices: said("settings.notices.summary")
+        case .version: said("settings.version.summary")
+        case .erase: said("settings.erase.summary")
         }
     }
 
@@ -208,57 +208,214 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
     public var inner: [String] {
         switch self {
         case .equaliser:
-            ["Presets", "Bands", "Add band", "Preamp", "Fit the preamp", "Parametric curve", "Only for this output", "Reset curve"]
+            [
+                said("settings.equaliser.inner.presets"),
+                said("settings.equaliser.inner.bands"),
+                said("settings.equaliser.inner.add-band"),
+                said("settings.equaliser.inner.preamp"),
+                said("settings.equaliser.inner.fit-the-preamp"),
+                said("settings.equaliser.inner.parametric-curve"),
+                said("settings.equaliser.inner.only-for-this-output"),
+                said("settings.equaliser.inner.reset-curve"),
+            ]
         case .headphoneCorrection:
-            ["AutoEq", "Headphone model", "Import a profile", "Paste a profile", "EqualizerAPO", "GraphicEQ"]
+            [
+                said("settings.headphone-correction.inner.autoeq"),
+                said("settings.headphone-correction.inner.headphone-model"),
+                said("settings.headphone-correction.inner.import-a-profile"),
+                said("settings.headphone-correction.inner.paste-a-profile"),
+                said("settings.headphone-correction.inner.equalizerapo"),
+                said("settings.headphone-correction.inner.graphiceq"),
+            ]
         case .microphoneMeasurement:
-            ["Microphone", "Measure your room", "Sweep", "Fit toward a target", "Harman", "Microphone calibration", "REW measurement"]
+            [
+                said("settings.microphone-measurement.inner.microphone"),
+                said("settings.microphone-measurement.inner.measure-your-room"),
+                said("settings.microphone-measurement.inner.sweep"),
+                said("settings.microphone-measurement.inner.fit-toward-a-target"),
+                said("settings.microphone-measurement.inner.harman"),
+                said("settings.microphone-measurement.inner.microphone-calibration"),
+                said("settings.microphone-measurement.inner.rew-measurement"),
+            ]
         case .roomCorrection:
-            ["Impulse response", "SOFA", "Binaural", "Speaker pair", "Speaker angle", "Speaker elevation", "Head turned", "Convolution"]
+            [
+                said("settings.room-correction.inner.impulse-response"),
+                "SOFA",
+                said("settings.room-correction.inner.binaural"),
+                said("settings.room-correction.inner.speaker-pair"),
+                said("settings.room-correction.inner.speaker-angle"),
+                said("settings.room-correction.inner.speaker-elevation"),
+                said("settings.room-correction.inner.head-turned"),
+                said("settings.room-correction.inner.convolution"),
+            ]
         case .listeningTest:
-            ["ABX", "Blind test", "Compare A and B", "Restoration", "Resampler", "Dither"]
+            [
+                "ABX",
+                said("settings.listening-test.inner.blind-test"),
+                said("settings.listening-test.inner.compare-a-and-b"),
+                said("settings.listening-test.inner.restoration"),
+                said("settings.listening-test.inner.resampler"),
+                said("settings.listening-test.inner.dither"),
+            ]
         case .otherOutputs:
-            ["Bound curves", "Forget a curve", "Curve for each output"]
+            [
+                said("settings.other-outputs.inner.bound-curves"),
+                said("settings.other-outputs.inner.forget-a-curve"),
+                said("settings.other-outputs.inner.curve-for-each-output"),
+            ]
         case .processing:
-            ["ReplayGain", "Resampling quality", "Filter phase", "True-peak clip prevention", "Crossfeed", "Stereo image", "Lossy restoration", "Player volume"]
+            [
+                said("settings.processing.inner.replaygain"),
+                said("settings.processing.inner.resampling-quality"),
+                said("settings.processing.inner.filter-phase"),
+                said("settings.processing.inner.true-peak-clip-prevention"),
+                said("settings.processing.inner.crossfeed"),
+                said("settings.processing.inner.stereo-image"),
+                said("settings.processing.inner.lossy-restoration"),
+                said("settings.processing.inner.player-volume"),
+            ]
         case .output:
-            ["Route", "Bluetooth", "AirPlay", "USB DAC", "Playback buffer", "Match the song's sample rate", "DSD loudness", "Latency", "Underruns"]
+            [
+                said("settings.output.inner.route"),
+                said("settings.output.inner.bluetooth"),
+                "AirPlay",
+                said("settings.output.inner.usb-dac"),
+                said("settings.output.inner.playback-buffer"),
+                said("settings.output.inner.match-the-song-s-sample-rate"),
+                said("settings.output.inner.dsd-loudness"),
+                said("settings.output.inner.latency"),
+                said("settings.output.inner.underruns"),
+            ]
         case .sleepTimer:
-            ["Pause", "Minutes", "End of the song", "End of the queue"]
+            [
+                said("settings.sleep-timer.inner.pause"),
+                said("settings.sleep-timer.inner.minutes"),
+                said("settings.sleep-timer.inner.end-of-the-song"),
+                said("settings.sleep-timer.inner.end-of-the-queue"),
+            ]
         case .folders:
-            ["Add music folder", "Rescan library", "Remove access", "Organise", "Files"]
+            [
+                said("settings.folders.inner.add-music-folder"),
+                said("settings.folders.inner.rescan-library"),
+                said("settings.folders.inner.remove-access"),
+                said("settings.folders.inner.organise"),
+                said("settings.folders.inner.files"),
+            ]
         case .enrichment:
-            ["Fetch artwork automatically", "Only on Wi-Fi", "Metered connection", "Look again for missing covers", "MusicBrainz", "Portraits", "Lyrics"]
+            [
+                said("settings.enrichment.inner.fetch-artwork-automatically"),
+                said("settings.enrichment.inner.only-on-wi-fi"),
+                said("settings.enrichment.inner.metered-connection"),
+                said("settings.enrichment.inner.look-again-for-missing-covers"),
+                said("settings.enrichment.inner.musicbrainz"),
+                said("settings.enrichment.inner.portraits"),
+                said("settings.enrichment.inner.lyrics"),
+            ]
         case .online:
-            ["Internet", "Offline", "Network"]
+            [
+                said("settings.online.inner.internet"),
+                said("settings.online.inner.offline"),
+                said("settings.online.inner.network"),
+            ]
         case .providers:
-            ["Download provider", "Server address", "Sign in with TIDAL", "Hosted services", "Wait on a metered connection"]
+            [
+                said("settings.providers.inner.download-provider"),
+                said("settings.providers.inner.server-address"),
+                said("settings.providers.inner.sign-in-with-tidal"),
+                said("settings.providers.inner.hosted-services"),
+                said("settings.providers.inner.wait-on-a-metered-connection"),
+            ]
         case .server:
-            ["Subsonic", "Navidrome", "Jellyfin", "Emby", "TIDAL", "Monochrome", "Browse", "Stream"]
+            [
+                "Subsonic",
+                said("settings.server.inner.navidrome"),
+                "Jellyfin",
+                said("settings.server.inner.emby"),
+                "TIDAL",
+                "Monochrome",
+                said("settings.server.inner.browse"),
+                said("settings.server.inner.stream"),
+            ]
         case .scrobbling:
-            ["ListenBrainz token", "Sign in to Last.fm", "Loves", "Listening history"]
+            [
+                said("settings.scrobbling.inner.listenbrainz-token"),
+                said("settings.scrobbling.inner.sign-in-to-last-fm"),
+                said("settings.scrobbling.inner.loves"),
+                said("settings.scrobbling.inner.listening-history"),
+            ]
         case .spotify:
-            ["Client ID", "Sign in to Spotify", "Follow the account", "Move to Resonate once"]
+            [
+                said("settings.spotify.inner.client-id"),
+                said("settings.spotify.inner.sign-in-to-spotify"),
+                said("settings.spotify.inner.follow-the-account"),
+                said("settings.spotify.inner.move-to-resonate-once"),
+            ]
         case .sync:
-            ["Pairing code", "Add a device", "Sync now", "Continue listening", "Remote control", "Transfers"]
+            [
+                said("settings.sync.inner.pairing-code"),
+                said("settings.sync.inner.add-a-device"),
+                said("settings.sync.inner.sync-now"),
+                said("settings.sync.inner.continue-listening"),
+                said("settings.sync.inner.remote-control"),
+                said("settings.sync.inner.transfers"),
+            ]
         case .syncSongs:
-            ["Favourites", "Kept playlists", "Everything", "Mobile data", "Folder for synced songs"]
+            [
+                said("settings.sync-songs.inner.favourites"),
+                said("settings.sync-songs.inner.kept-playlists"),
+                said("settings.sync-songs.inner.everything"),
+                said("settings.sync-songs.inner.mobile-data"),
+                said("settings.sync-songs.inner.folder-for-synced-songs"),
+            ]
         case .syncConnection:
-            ["Resonate server", "Your own server", "This network only", "Device name"]
+            [
+                said("settings.sync-connection.inner.resonate-server"),
+                said("settings.sync-connection.inner.your-own-server"),
+                said("settings.sync-connection.inner.this-network-only"),
+                said("settings.sync-connection.inner.device-name"),
+            ]
         case .syncControl:
-            ["Remote control", "Driven by other devices", "Play and pause from elsewhere"]
+            [
+                said("settings.sync-control.inner.remote-control"),
+                said("settings.sync-control.inner.driven-by-other-devices"),
+                said("settings.sync-control.inner.play-and-pause-from-elsewhere"),
+            ]
         case .accent:
-            ["Icon", "Tint", "Theme", "Colour"]
+            [
+                said("settings.accent.inner.icon"),
+                said("settings.accent.inner.tint"),
+                said("settings.accent.inner.theme"),
+                said("settings.accent.inner.colour"),
+            ]
         case .background:
-            ["Resonate background", "Flowing", "Strength", "Now Playing intensity", "Wallpaper"]
+            [
+                said("settings.background.inner.resonate-background"),
+                said("settings.background.inner.flowing"),
+                said("settings.background.inner.strength"),
+                said("settings.background.inner.now-playing-intensity"),
+                said("settings.background.inner.wallpaper"),
+            ]
         case .searchHistory:
-            ["Keep search history", "Recent searches", "Privacy"]
+            [
+                said("settings.search-history.inner.keep-search-history"),
+                said("settings.search-history.inner.recent-searches"),
+                said("settings.search-history.inner.privacy"),
+            ]
         case .notices:
-            ["Found new songs", "Hidden songs", "Songs kept from your devices", "Notifications"]
+            [
+                said("settings.notices.inner.found-new-songs"),
+                said("settings.notices.inner.hidden-songs"),
+                said("settings.notices.inner.songs-kept-from-your-devices"),
+                said("settings.notices.inner.notifications"),
+            ]
         case .version:
-            ["Version", "About"]
+            [said("settings.version.inner.version"), said("settings.version.inner.about")]
         case .erase:
-            ["Reset", "Delete everything", "Start over"]
+            [
+                said("settings.erase.inner.reset"),
+                said("settings.erase.inner.delete-everything"),
+                said("settings.erase.inner.start-over"),
+            ]
         }
     }
 

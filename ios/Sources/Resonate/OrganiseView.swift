@@ -24,38 +24,38 @@ struct OrganiseSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Layout", text: $layout)
+                    TextField("organise.layout", text: $layout)
                         .font(.body.monospaced())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     if layout != defaultOrganiseLayout() {
-                        Button("Use the usual layout") { layout = defaultOrganiseLayout() }
+                        Button("organise.layout.usual") { layout = defaultOrganiseLayout() }
                     }
                 } header: {
-                    Text("Layout")
+                    Text("organise.layout")
                 } footer: {
                     if let problem {
                         Text(problem).foregroundStyle(Color.failure).announced(problem)
                     } else {
-                        Text("Fields: {albumartist} {artist} {album} {title} {year} {disc} {track} {ext}. Slashes make folders; {disc} is written only for albums of more than one disc.")
+                        Text("organise.layout.fields")
                     }
                 }
                 if planning || waiting {
-                    Section { ProgressView().accessibilityLabel("Planning").frame(maxWidth: .infinity) }
+                    Section { ProgressView().accessibilityLabel("organise.planning").frame(maxWidth: .infinity) }
                 } else if let plan = current {
                     Section {
-                        LabeledContent("To move", value: counted(plan.moves.count, "song"))
-                        LabeledContent("Already in place", value: counted(Int(plan.unchanged), "song"))
+                        LabeledContent("organise.to-move", value: said("counted.songs", plan.moves.count))
+                        LabeledContent("organise.in-place", value: said("counted.songs", Int(plan.unchanged)))
                         if plan.taken > 0 {
-                            LabeledContent("Place taken", value: counted(Int(plan.taken), "song"))
+                            LabeledContent("organise.taken", value: said("counted.songs", Int(plan.taken)))
                         }
                         if plan.unplaced > 0 {
-                            LabeledContent("Not enough tags", value: counted(Int(plan.unplaced), "song"))
+                            LabeledContent("organise.unplaced", value: said("counted.songs", Int(plan.unplaced)))
                         }
                     } header: {
-                        Text("Preview")
+                        Text("organise.preview")
                     } footer: {
-                        Text("A song whose place another file holds, or that names nothing to file it by, stays where it is.")
+                        Text("organise.preview.footer")
                     }
                     if !plan.moves.isEmpty {
                         Section {
@@ -67,38 +67,38 @@ struct OrganiseSheet: View {
                                 .lineLimit(2)
                             }
                             if plan.moves.count > Self.listedAtMost {
-                                Text("and \(counted(plan.moves.count - Self.listedAtMost, "more song"))").foregroundStyle(.secondary)
+                                Text(said("organise.moves.more", plan.moves.count - Self.listedAtMost)).foregroundStyle(.secondary)
                             }
                         } header: {
-                            Text("Moves")
+                            Text("organise.moves")
                         }
                     }
                 }
             }
-            .navigationTitle("Organise \(folder.name)")
+            .navigationTitle(said("organise.title.named", folder.name))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(role: .close) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Organise") { confirming = true }
+                    Button("organise.title") { confirming = true }
                         .disabled(problem != nil || planning || (current?.moves.isEmpty ?? true) || library.features.organising)
                 }
             }
             .confirmationDialog(
-                "Move \(counted(current?.moves.count ?? 0, "song"))?",
+                said("organise.confirm.title", current?.moves.count ?? 0),
                 isPresented: $confirming,
                 titleVisibility: .visible
             ) {
-                Button("Organise") {
+                Button("organise.title") {
                     guard let plan = current else { return }
                     Self.settings.set(layout, forKey: Self.layoutKey)
                     library.features.organise(folder, plan.moves)
                     dismiss()
                 }
             } message: {
-                Text("The files move inside \(folder.name), each with its lyrics beside it. Favourites, plays and playlists follow them, and Library tools can put them back.")
+                Text(said("organise.confirm.message", folder.name))
             }
         }
         .task(id: layout) { await preview(problem == nil) }
@@ -131,6 +131,6 @@ struct OrganiseSheet: View {
     private func shown(_ uri: String) -> String {
         let prefix = library.folders.prefix(of: folder.id) + "/"
         let relative = uri.hasPrefix(prefix) ? String(uri.dropFirst(prefix.count)) : uri
-        return "from " + relative.split(separator: "/").map { $0.removingPercentEncoding ?? String($0) }.joined(separator: " / ")
+        return said("organise.move.from", relative.split(separator: "/").map { $0.removingPercentEncoding ?? String($0) }.joined(separator: " / "))
     }
 }
