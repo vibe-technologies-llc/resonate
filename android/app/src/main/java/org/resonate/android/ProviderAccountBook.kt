@@ -17,10 +17,16 @@ fun DownloadAccount.readiness(): Readiness =
     when (provider) {
         MusicProvider.MONOCHROME,
         MusicProvider.HIFI_API -> Readiness.READY
-        MusicProvider.SUBSONIC,
+        MusicProvider.SUBSONIC ->
+            when {
+                server.isBlank() -> Readiness.MISSING_SERVER
+                user.isBlank() || password.isEmpty() -> Readiness.MISSING_LOGIN
+                else -> Readiness.READY
+            }
         MusicProvider.JELLYFIN ->
             when {
                 server.isBlank() -> Readiness.MISSING_SERVER
+                holdsAQuickConnectSession() -> Readiness.READY
                 user.isBlank() || password.isEmpty() -> Readiness.MISSING_LOGIN
                 else -> Readiness.READY
             }
@@ -31,6 +37,12 @@ fun DownloadAccount.readiness(): Readiness =
                 else -> Readiness.READY
             }
     }
+
+fun DownloadAccount.holdsAQuickConnectSession(): Boolean =
+    token.isNotBlank() && userId.isNotBlank() && device.isNotBlank()
+
+fun DownloadAccount.withoutTheQuickConnectSession(): DownloadAccount =
+    copy(token = "", userId = "", device = "")
 
 data class KeptAccount(val id: Long, val on: Boolean, val account: DownloadAccount) {
     val asked: Boolean

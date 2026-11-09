@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.ProviderAccountBook
 import org.resonate.android.emptyAccount
+import org.resonate.android.holdsAQuickConnectSession
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.ui.Resonate
@@ -63,6 +64,7 @@ import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.withoutTheQuickConnectSession
 
 class ProviderAccountViewModel(
     private val resonate: Resonate,
@@ -79,6 +81,8 @@ class ProviderAccountViewModel(
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val authorization = features.tidalAuthorization
     val busy = features.tidalBusy
+    val jellyfinCode = features.jellyfinCode
+    val jellyfinBusy = features.jellyfinBusy
     var draft by
         mutableStateOf<DownloadAccount?>(
             if (id == ProviderAccountBook.UNSAVED) emptyAccount(provider) else null
@@ -96,8 +100,18 @@ class ProviderAccountViewModel(
                     identity = seen
                     val typed = draft
                     draft =
-                        if (typed == null || typed == followed) account
-                        else typed.copy(refreshToken = account.refreshToken)
+                        when {
+                            typed == null || typed == followed -> account
+                            account.holdsAQuickConnectSession() ->
+                                typed.copy(
+                                    user = account.user,
+                                    password = "",
+                                    token = account.token,
+                                    userId = account.userId,
+                                    device = account.device,
+                                )
+                            else -> typed.copy(refreshToken = account.refreshToken)
+                        }
                 }
                 followed = account
             }
@@ -109,8 +123,32 @@ class ProviderAccountViewModel(
     }
 
     fun save() {
-        draft?.let { features.saveProviderAccount(keptId.value, it.trimmed()) }
+        draft?.let { features.saveProviderAccount(keptId.value, lettingASessionGo(it.trimmed())) }
     }
+
+    private fun lettingASessionGo(account: DownloadAccount): DownloadAccount {
+        val before = stored.value
+        val moved = before != null && before.server.trim() != account.server.trim()
+        val typed = account.password.isNotEmpty()
+        return if (account.holdsAQuickConnectSession() && (moved || typed))
+            account.withoutTheQuickConnectSession()
+        else account
+    }
+
+    fun quickConnect() {
+        val account = draft?.trimmed() ?: return
+        resonate.attempt(viewModelScope) {
+            val key =
+                withContext(Dispatchers.IO) { features.keepProviderAccount(keptId.value, account) }
+            keptId.value = key
+            features.quickConnectJellyfin(key, account)
+        }
+    }
+
+    fun cancelQuickConnect() =
+        resonate.attempt(viewModelScope) { native ->
+            withContext(Dispatchers.IO) { native.cancelJellyfinQuickConnect() }
+        }
 
     fun remove() = features.removeProviderAccount(keptId.value)
 
@@ -188,6 +226,8 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
     val draft = model.draft
     val authorization by model.authorization.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
+    val jellyfinCode by model.jellyfinCode.collectAsStateWithLifecycle()
+    val jellyfinBusy by model.jellyfinBusy.collectAsStateWithLifecycle()
     val copy = rememberCopy()
     var removing by rememberSaveable { mutableStateOf(false) }
     val adding = kept == ProviderAccountBook.UNSAVED
@@ -227,6 +267,18 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
                         onOpen = { authorization?.verifyAt?.let(model::open) },
                         onCopy = { authorization?.userCode?.let { copy("TIDAL code", it) } },
                         onCancel = { model.cancelSignIn() },
+                    )
+                }
+            }
+            if (provider == MusicProvider.JELLYFIN && offersQuickConnect(account.server)) {
+                item(key = "jellyfin-quick-connect") {
+                    JellyfinQuickConnect(
+                        signedIn = stored?.holdsAQuickConnectSession() == true,
+                        canAsk = account.server.isNotBlank(),
+                        busy = jellyfinBusy,
+                        code = jellyfinCode,
+                        onSignIn = model::quickConnect,
+                        onCancel = { model.cancelQuickConnect() },
                     )
                 }
             }
@@ -335,6 +387,77 @@ private fun TidalSignIn(
                         Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Open TIDAL")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun offersQuickConnect(server: String): Boolean =
+    !server.trim().trimEnd('/').endsWith("/emby", ignoreCase = true)
+
+@Composable
+private fun JellyfinQuickConnect(
+    signedIn: Boolean,
+    canAsk: Boolean,
+    busy: Boolean,
+    code: String?,
+    onSignIn: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    SettingRow(
+        title = if (signedIn) "Signed in with Quick Connect" else "Quick Connect",
+        icon = if (signedIn) Icons.Rounded.CheckCircle else Icons.Rounded.Lock,
+        supporting =
+            if (signedIn) "No password is kept for this server"
+            else "Approve a code in a Jellyfin app you are signed in to, with no password typed here",
+        trailing = if (busy && code == null) ({ SmallLoading() }) else null,
+    )
+    if (!busy) {
+        ButtonRow {
+            FilledTonalButton(
+                onClick = onSignIn,
+                enabled = canAsk,
+                modifier = Modifier.testTag("jellyfin-quick-connect"),
+            ) {
+                Text(if (signedIn) "Sign in again" else "Sign in with Quick Connect")
+            }
+        }
+    }
+    if (code != null) {
+        Card(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = Sizes.gutter, vertical = 8.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            shape = MaterialTheme.shapes.extraLarge,
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ),
+        ) {
+            Column(Modifier.padding(vertical = 16.dp)) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SmallLoading()
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Approve this code in a Jellyfin app you are signed in to (Settings, " +
+                            "Quick Connect). This page carries on once you do.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                CodeText(code)
+                ButtonRow {
+                    TextButton(
+                        onClick = onCancel,
+                        modifier = Modifier.testTag("jellyfin-quick-connect-cancel"),
+                    ) {
+                        Text("Cancel")
                     }
                 }
             }

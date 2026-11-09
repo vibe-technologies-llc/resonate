@@ -147,6 +147,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val appearance = AppearanceStore(context.getSharedPreferences("appearance", Context.MODE_PRIVATE))
     val tidalAuthorization = MutableStateFlow<TidalAuthorization?>(null)
     val tidalBusy = MutableStateFlow(false)
+    val jellyfinCode = MutableStateFlow<String?>(null)
+    val jellyfinBusy = MutableStateFlow(false)
     private val artistRequest = AtomicLong()
     private val analysisRequest = AtomicLong()
     val corrections = MutableStateFlow<List<AutoEqDevice>>(emptyList())
@@ -1773,6 +1775,32 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
+    fun quickConnectJellyfin(id: Long, account: DownloadAccount) {
+        jellyfinBusy.value = true
+        work { native ->
+            try {
+                jellyfinCode.value = native.beginJellyfinQuickConnect(account.server).code
+                val session = native.finishJellyfinQuickConnect() ?: return@work
+                changeAccounts {
+                    it.saved(
+                        id,
+                        account.copy(
+                            user = session.name.ifBlank { account.user },
+                            password = "",
+                            token = session.token,
+                            userId = session.userId,
+                            device = session.device,
+                        ),
+                    )
+                }
+                library.notice("Signed in to Jellyfin as ${session.name}")
+            } finally {
+                jellyfinCode.value = null
+                jellyfinBusy.value = false
+            }
+        }
+    }
+
     private fun changeAccounts(edit: (ProviderAccountBook) -> ProviderAccountBook) {
         synchronized(accounts) { providerAccounts.value = accounts.change(edit) }
     }
@@ -2041,6 +2069,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         searching.value = false
         enriching.value = false
         tidalBusy.value = false
+        jellyfinBusy.value = false
+        jellyfinCode.value = null
         correctionBusy.value = false
         correctionApplying.value = false
     }
