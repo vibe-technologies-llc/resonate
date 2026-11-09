@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Resonate";
+"NSLocalNetworkUsageDescription" = "Resonate finds your other devices on this network and keeps them in step, sending songs directly between them, and plays to the streamers and amplifiers you choose on it.";
+"NSMicrophoneUsageDescription" = "Resonate listens for a few seconds when you ask it to name the song playing around you.";

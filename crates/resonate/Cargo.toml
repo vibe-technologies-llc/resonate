@@ -58,6 +58,7 @@ resonate-providers.workspace = true
 resonate-upnp.workspace = true
 resonate-ui = { workspace = true, optional = true }
 resonate-vault.workspace = true
+resonate-words.workspace = true
 resonate-ytmusic = { workspace = true, optional = true }
 thiserror.workspace = true
 toml_edit.workspace = true

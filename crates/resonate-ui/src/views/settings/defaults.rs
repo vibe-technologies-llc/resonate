@@ -12,6 +12,7 @@ use resonate_engine::{
 };
 use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
+use resonate_words::LanguageChoice;
 
 use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
@@ -35,6 +36,7 @@ pub(crate) const REDUCED_MOTION: bool = false;
 
 pub(crate) const FILE_DROPPED: bool = true;
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
+pub(crate) const LANGUAGE: LanguageChoice = LanguageChoice::System;
 pub(crate) const SPECTRAL: Spectral = Spectral {
     tilt: SpectrumTilt::Pink,
     floor: SpectrumFloor::Middling,
@@ -82,6 +84,7 @@ pub(crate) struct Standing {
     pub(crate) mouse_navigation: bool,
     pub(crate) reduced_motion: bool,
     pub(crate) scrollbars: ScrollbarMode,
+    pub(crate) language: LanguageChoice,
     pub(crate) spectral: Spectral,
     pub(crate) tabs: Tabs,
     pub(crate) remember_tab: bool,
@@ -140,6 +143,7 @@ impl Standing {
             mouse_navigation: MOUSE_NAVIGATION,
             reduced_motion: REDUCED_MOTION,
             scrollbars: SCROLLBARS,
+            language: LANGUAGE,
             spectral: SPECTRAL,
             tabs: TABS,
             remember_tab: REMEMBER_TAB,
@@ -266,6 +270,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::MouseNavigation => standing.mouse_navigation != MOUSE_NAVIGATION,
         Group::Motion => standing.reduced_motion != REDUCED_MOTION,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
+        Group::Language => standing.language != LANGUAGE,
         Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
         Group::WindowState => {

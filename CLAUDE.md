@@ -6,6 +6,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 |---|---|---|
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
+| `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language, adding one, the prose check |
 | `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
@@ -68,8 +69,9 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-six crates. `resonate-core` is the only universal dependency; `resonate-codec`,
-`resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
+Thirty-eight crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
+leaf every crate that says words reaches; `resonate-codec`, `resonate-dsp` and `resonate-pipewire`
+never depend on each other; `resonate-engine` joins them.
 
 ```
 resonate            bin: CLI, tracing, wiring
@@ -104,7 +106,8 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   ├── providers/ytmusic   resonate-ytmusic, songs kept from a YouTube Music account through yt-dlp  [`online`]
   ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec)
-  └── resonate-core       domain vocabulary
+  ├── resonate-core       domain vocabulary
+  └── resonate-words      the word catalogs, the language spoken  (`resonate-words-build` writes each crate's functions from its `.ftl`)
 
 resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers (UPnP and Google Cast), analysis, lyrics, library seams, online, providers and sync
 resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
@@ -176,6 +179,8 @@ Invariants the layering protects (the rules files have the rest):
   code derives, songs travel device to device, and a device names itself only inside the sealed
   records (`sync.md`). A shared playlist or a party has a key of its own, passed as a link; there
   are no accounts, and a typed name travels only sealed (`shared-playlists.md`, `party.md`).
+- **A word a listener reads comes out of a catalog**: a crate's `words/<tag>/*.ftl` through the
+  functions `resonate-words-build` writes, never a literal where it is drawn (`language.md`).
 - **Everything else is a crate behind its own seam**: tag writing through `TagSink`, the vault,
   lyrics, providers, studies, the equaliser's I/O, Discord.
 
@@ -186,7 +191,7 @@ Invariants the layering protects (the rules files have the rest):
   Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
   resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.
 
-- `python3 -m unittest discover -s ios`: the icon drawing, what declares the icons and the reading of
+- `python3 -m unittest discover -s ios`: the icon drawing, what declares the icons, the words (`test_strings.py`) and the reading of
   the build's output, on the host; `python3 ios/check-build.py`: a clean `xtool dev build` that fails
   on any warning; `python3 ios/test-logic.py`: the Swift logic's tests on the host (`ios.md`).
 

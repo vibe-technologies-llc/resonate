@@ -197,3 +197,114 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod words {
+    use std::path::Path;
+
+    const PROPER: &[&str] = &[];
+
+    const NOT_WORDS: &[&str] = &[];
+
+    const STILL_TO_MOVE: &[&str] = &[
+        "app.rs",
+        "downloads.rs",
+        "equaliser.rs",
+        "fonts.rs",
+        "icons.rs",
+        "keys.rs",
+        "launcher.rs",
+        "listening.rs",
+        "lyrics.rs",
+        "models.rs",
+        "serving.rs",
+        "settings.rs",
+        "system.rs",
+        "toast.rs",
+        "views/analysis.rs",
+        "views/announcing.rs",
+        "views/better.rs",
+        "views/browser.rs",
+        "views/chrome.rs",
+        "views/dropping.rs",
+        "views/favourites.rs",
+        "views/inspector.rs",
+        "views/listen.rs",
+        "views/listing.rs",
+        "views/lyrics.rs",
+        "views/matching.rs",
+        "views/menu.rs",
+        "views/missing.rs",
+        "views/party.rs",
+        "views/party_offer.rs",
+        "views/playlists.rs",
+        "views/queue.rs",
+        "views/remote.rs",
+        "views/reorder.rs",
+        "views/root.rs",
+        "views/search.rs",
+        "views/served.rs",
+        "views/settings/about.rs",
+        "views/settings/abx.rs",
+        "views/settings/appearance.rs",
+        "views/settings/desktop.rs",
+        "views/settings/equaliser.rs",
+        "views/settings/filters.rs",
+        "views/settings/find.rs",
+        "views/settings/lastfm.rs",
+        "views/settings/library.rs",
+        "views/settings/mod.rs",
+        "views/settings/online.rs",
+        "views/settings/output.rs",
+        "views/settings/processing.rs",
+        "views/settings/spotify.rs",
+        "views/settings/subsonic.rs",
+        "views/settings/sync.rs",
+        "views/settings/tidal.rs",
+        "views/settings/youtube_music.rs",
+        "views/sharing.rs",
+        "views/slider.rs",
+        "views/sorting.rs",
+        "views/statistics.rs",
+        "views/suggestions.rs",
+        "views/transport.rs",
+        "views/visualiser.rs",
+        "views/wrapped.rs",
+        "views/zones.rs",
+        "wrapped_card.rs",
+    ];
+
+    #[test]
+    fn every_word_the_window_shows_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let found =
+            resonate_words_build::prose_in(&root, PROPER).expect("the window's sources read");
+
+        let unmoved: Vec<String> = found
+            .iter()
+            .filter(|(path, _)| {
+                let path = path.to_string_lossy();
+                !STILL_TO_MOVE.contains(&path.as_ref()) && !NOT_WORDS.contains(&path.as_ref())
+            })
+            .flat_map(|(path, prose)| {
+                prose
+                    .iter()
+                    .map(move |said| format!("{}:{} {:?}", path.display(), said.line, said.text))
+            })
+            .collect();
+        let moved: Vec<&&str> = STILL_TO_MOVE
+            .iter()
+            .filter(|path| !found.keys().any(|found| found.to_string_lossy() == **path))
+            .collect();
+
+        assert!(
+            unmoved.is_empty(),
+            "words written in the code:\n{}",
+            unmoved.join("\n")
+        );
+        assert!(
+            moved.is_empty(),
+            "files whose words are all moved: {moved:?}"
+        );
+    }
+}

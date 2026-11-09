@@ -4,7 +4,7 @@ use resonate_core::{AppliedGain, Frames, MediaLocation, SampleFormat, SampleRate
 use resonate_engine::OutputMode;
 use smallvec::SmallVec;
 
-use crate::theme;
+use crate::{theme, words};
 
 const PARTS_HELD_INLINE: usize = 6;
 
@@ -33,10 +33,10 @@ fn whole_seconds(seconds: u64) -> String {
 
 pub fn depth(format: SampleFormat) -> &'static str {
     match format {
-        SampleFormat::S16 => "16-bit",
-        SampleFormat::S24 => "24-bit",
-        SampleFormat::S32 => "32-bit",
-        SampleFormat::F32 => "32-bit float",
+        SampleFormat::S16 => words::format::depth_16(),
+        SampleFormat::S24 => words::format::depth_24(),
+        SampleFormat::S32 => words::format::depth_32(),
+        SampleFormat::F32 => words::format::depth_32_float(),
     }
 }
 
@@ -47,7 +47,7 @@ pub fn stem(location: &MediaLocation) -> String {
 }
 
 pub fn quality(spec: StreamSpec) -> String {
-    format!("{} / {}", depth(spec.format), spec.rate)
+    words::format::quality(depth(spec.format), spec.rate.to_string())
 }
 
 pub fn spanned(played: Duration) -> String {
@@ -83,47 +83,40 @@ const A_YEAR: u64 = 365 * A_DAY;
 
 struct Span {
     seconds: u64,
-    one: &'static str,
-    many: &'static str,
-    brief: &'static str,
+    ago: fn(u64) -> String,
+    briefly: fn(u64) -> String,
 }
 
 const SPANS: [Span; 6] = [
     Span {
         seconds: A_YEAR,
-        one: "year",
-        many: "years",
-        brief: "y",
+        ago: words::format::years_ago,
+        briefly: words::format::years_briefly,
     },
     Span {
         seconds: A_MONTH,
-        one: "month",
-        many: "months",
-        brief: "mo",
+        ago: words::format::months_ago,
+        briefly: words::format::months_briefly,
     },
     Span {
         seconds: A_WEEK,
-        one: "week",
-        many: "weeks",
-        brief: "w",
+        ago: words::format::weeks_ago,
+        briefly: words::format::weeks_briefly,
     },
     Span {
         seconds: A_DAY,
-        one: "day",
-        many: "days",
-        brief: "d",
+        ago: words::format::days_ago,
+        briefly: words::format::days_briefly,
     },
     Span {
         seconds: AN_HOUR,
-        one: "hour",
-        many: "hours",
-        brief: "h",
+        ago: words::format::hours_ago,
+        briefly: words::format::hours_briefly,
     },
     Span {
         seconds: A_MINUTE,
-        one: "minute",
-        many: "minutes",
-        brief: "m",
+        ago: words::format::minutes_ago,
+        briefly: words::format::minutes_briefly,
     },
 ];
 
@@ -132,9 +125,9 @@ pub fn heard_for(span: Duration) -> String {
     let minutes = seconds / A_MINUTE;
 
     match seconds / AN_HOUR {
-        0 if minutes == 0 => format!("{seconds}s"),
-        0 => format!("{minutes}m"),
-        hours => format!("{hours}h {}m", minutes % MINUTES_AN_HOUR),
+        0 if minutes == 0 => words::format::heard_seconds(seconds),
+        0 => words::format::heard_minutes(minutes),
+        hours => words::format::heard_hours(hours, minutes % MINUTES_AN_HOUR),
     }
 }
 
@@ -147,14 +140,11 @@ pub fn since(when: SystemTime, now: SystemTime) -> String {
 
     for span in SPANS {
         if ago >= span.seconds {
-            return format!(
-                "{} ago",
-                counted((ago / span.seconds) as usize, span.one, span.many)
-            );
+            return (span.ago)(ago / span.seconds);
         }
     }
 
-    "just now".to_owned()
+    words::format::just_now().to_owned()
 }
 
 pub fn age(when: SystemTime, now: SystemTime) -> String {
@@ -162,46 +152,48 @@ pub fn age(when: SystemTime, now: SystemTime) -> String {
 
     for span in SPANS {
         if ago >= span.seconds {
-            return format!("{}{}", ago / span.seconds, span.brief);
+            return (span.briefly)(ago / span.seconds);
         }
     }
 
-    "now".to_owned()
+    words::format::now().to_owned()
 }
 
 pub fn applied(gain: AppliedGain) -> String {
     let landed = rounded(gain.applied().to_decibels().get());
+    let landed = format!("{landed:+.2}");
     match (gain.gain, gain.is_capped()) {
-        (None, false) => "none".to_owned(),
-        (None, true) => format!("{landed:+.2} dB, to keep the peak under full scale"),
-        (Some(_), false) => format!("{landed:+.2} dB"),
+        (None, false) => words::format::gain_none().to_owned(),
+        (None, true) => words::format::gain_kept_under_full_scale(landed),
+        (Some(_), false) => words::format::gain(landed),
         (Some(requested), true) => {
-            format!(
-                "{landed:+.2} dB, capped from {:+.2} dB",
-                rounded(requested.get())
-            )
+            words::format::gain_capped(landed, format!("{:+.2}", rounded(requested.get())))
         }
     }
 }
 
 pub fn headroom(gain: AppliedGain) -> String {
     gain.headroom().map_or_else(
-        || "unknown".to_owned(),
-        |margin| format!("{:+.2} dB", rounded(margin.get())),
+        || words::format::headroom_unknown().to_owned(),
+        |margin| words::format::headroom(format!("{:+.2}", rounded(margin.get()))),
     )
 }
 
 pub fn mode(mode: OutputMode) -> (&'static str, u32) {
     match mode {
-        OutputMode::BitPerfect => ("Bit-perfect", theme::bit_perfect()),
-        OutputMode::Repacked => ("Repacked", theme::repacked()),
-        OutputMode::Dithered => ("Dithered", theme::dithered()),
-        OutputMode::Converted => ("Converted", theme::converted()),
+        OutputMode::BitPerfect => (words::format::bit_perfect(), theme::bit_perfect()),
+        OutputMode::Repacked => (words::format::repacked(), theme::repacked()),
+        OutputMode::Dithered => (words::format::dithered(), theme::dithered()),
+        OutputMode::Converted => (words::format::converted(), theme::converted()),
     }
 }
 
 pub fn bytes(count: u64) -> String {
-    const UNITS: [&str; 3] = ["KiB", "MiB", "GiB"];
+    const UNITS: [fn(String) -> String; 3] = [
+        words::format::kibibytes,
+        words::format::mebibytes,
+        words::format::gibibytes,
+    ];
 
     let mut scaled = count as f64;
     let mut chosen = None;
@@ -214,8 +206,8 @@ pub fn bytes(count: u64) -> String {
     }
 
     match chosen {
-        Some(unit) => format!("{scaled:.1} {unit}"),
-        None => format!("{count} B"),
+        Some(unit) => unit(format!("{scaled:.1}")),
+        None => words::format::bytes(count),
     }
 }
 
@@ -272,13 +264,13 @@ mod tests {
 
     #[test]
     fn every_span_is_named_both_ways_and_no_two_read_alike() {
-        let mut brief: Vec<&str> = SPANS.iter().map(|span| span.brief).collect();
+        let mut brief: Vec<String> = SPANS.iter().map(|span| (span.briefly)(1)).collect();
         brief.sort_unstable();
         let held = brief.len();
         brief.dedup();
 
         assert_eq!(brief.len(), held, "two spans answer to one short name");
-        assert!(SPANS.iter().all(|span| !span.one.is_empty()));
+        assert!(SPANS.iter().all(|span| (span.ago)(1) != (span.ago)(2)));
     }
 
     #[test]

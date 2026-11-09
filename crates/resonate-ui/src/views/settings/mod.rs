@@ -637,6 +637,7 @@ impl RootView {
             Group::VolumeWheel => self.volume_wheel_group(cx),
             Group::MouseNavigation => self.mouse_navigation_group(cx),
             Group::Scrollbars => self.scrollbars_group(cx),
+            Group::Language => self.language_group(cx),
             Group::LiveSpectrum => self.live_spectrum_group(cx),
             Group::Tabs => self.tabs_group(cx),
             Group::WindowState => self.window_state_group(cx),
@@ -807,6 +808,7 @@ impl RootView {
             }
             Group::Motion => self.reduce_motion(defaults::REDUCED_MOTION, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
+            Group::Language => self.speak(defaults::LANGUAGE, cx),
             Group::LiveSpectrum => self.read_the_spectrum(defaults::SPECTRAL, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
             Group::WindowState => self.put_window_state_back(cx),
@@ -852,6 +854,7 @@ impl RootView {
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let reduced_motion = cx.global::<ResonateApp>().reduced_motion;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
+        let language = cx.global::<ResonateApp>().language;
         let spectral = cx.global::<ResonateApp>().spectral;
         let tabs = cx.global::<ResonateApp>().tabs;
         let remember_tab = cx.global::<ResonateApp>().remember_tab;
@@ -956,6 +959,7 @@ impl RootView {
             mouse_navigation,
             reduced_motion,
             scrollbars,
+            language,
             spectral,
             tabs,
             remember_tab,

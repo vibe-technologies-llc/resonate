@@ -376,7 +376,8 @@ final class Library {
         polling = Task { [weak self] in
             do {
                 async let opening = Work.inOrder {
-                    try MobilePlayer(folder: folder, documents: documents)
+                    _ = speakLanguages(tags: Locale.preferredLanguages)
+                    return try MobilePlayer(folder: folder, documents: documents)
                 }
                 async let routed = Work.inSession { OutputRoute.current }
                 let opened = try await opening

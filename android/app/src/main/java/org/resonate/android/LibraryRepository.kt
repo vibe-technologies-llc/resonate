@@ -2,6 +2,7 @@ package org.resonate.android
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -54,6 +55,11 @@ class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
     val current by lazy { CurrentActivity() }
     val resonate by lazy { Resonate(library, Playback(library) { current.controller }, current) }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        library.languagesChanged(newConfig)
+    }
 }
 
 data class Place(
@@ -233,6 +239,11 @@ class LibraryRepository(private val context: Context) {
         }
     }
 
+    fun languagesChanged(configuration: Configuration) {
+        if (!engine.isCompleted) return
+        scope.launch { SpokenLanguages.tell(configuration) }
+    }
+
     @Synchronized
     fun start() {
         if (started) return
@@ -269,6 +280,7 @@ class LibraryRepository(private val context: Context) {
                         },
                     )
                 opened = native
+                SpokenLanguages.tell(context.resources.configuration)
                 val store = preferencesStore()
                 native.rewriteDocumentsWith(DocumentRewrites(context))
                 native.watchOutputMixer(BitPerfectMixer(context))

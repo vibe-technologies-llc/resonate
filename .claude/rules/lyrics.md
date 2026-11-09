@@ -145,8 +145,9 @@ dependency (tested without a window).
   the track is no lyric (`a_text_file_that_reads_as_a_document_is_not_taken_for_words`); a `.txt`
   carrying stamps, and every `.lrc`, is read as always.
 - **Languages are the locale's, only where asked.** `Sidecar::choosing_by_the_locale` reads
-  `LANGUAGE`'s colon list (unless the locale is `C`/`POSIX`), then the first of `LC_ALL`,
-  `LC_MESSAGES`, `LANG`, each through `language_of`; weighed only while its `Arc<AtomicBool>` holds
+  `resonate_words::languages_the_listener_reads` (`language.md`: `LANGUAGE`'s list unless the locale
+  is `C`/`POSIX`, then the first of `LC_ALL`, `LC_MESSAGES`, `LANG`; on Windows the system's), each
+  through `language_of`; weighed only while its `Arc<AtomicBool>` holds
   (`lyrics-language-from-locale`, off by default; `Sidecar::default` and `Lyricists::local` hold one
   that never does). A Japanese reader gets `Song.ja.lrc` beside `Song.en.lrc`; else, and for a
   reader of neither, first in name order

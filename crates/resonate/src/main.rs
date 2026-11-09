@@ -240,6 +240,7 @@ fn run() -> Result<()> {
     #[cfg(windows)]
     name_the_process();
     let config = config::load(cli.config.as_deref())?;
+    resonate_words::speak(config.language_spoken());
 
     match &cli.command {
         Some(Sub::Sinks {
@@ -3265,6 +3266,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             mouse_navigation: config.navigates_with_mouse_buttons(),
             reduced_motion: config.reduces_motion_where_the_desktop_asks(desktop.reduces_motion),
             scrollbars: config.scrollbars(),
+            language: config.language(),
             spectral: config.spectral(),
             tabs: config.tabs(),
             remember_tab: config.remembers_tab(),

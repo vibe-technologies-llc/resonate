@@ -69,6 +69,10 @@ here, add it there.
   The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers, `resonate-upnp` and `resonate-cast`,
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
+- `resonate-words`: no workspace crate; `fluent-bundle`, `unic-langid`, `tracing`, and `sys-locale`
+  on Windows alone (`language.md`). `resonate-words-build` is a build dependency of each crate with
+  words (and a dev-dependency, for the prose check), with `fluent-syntax` and `thiserror` alone. Every
+  `only` line in the layering job admits `resonate-words`.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
   Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`), `jiff` (`Calendar`) and
   `parking_lot` (`Metering`, whose `Gate` a waiting thread sleeps on).

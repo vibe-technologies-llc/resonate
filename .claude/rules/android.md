@@ -20,6 +20,13 @@ Host binding generation reads ELF metadata and needs no PipeWire. `versionName` 
 `Cargo.toml`'s `version` read by Gradle, and `versionCode` is derived from it (a pre-release's
 candidate digit, 9 for a final), so a release is versioned in one place.
 
+**Every word the app shows is a resource** (`language.md`): `res/values/strings.xml`, `<plurals>` for
+a count, the launcher's name `@string/app_name`; `generateLocaleConfig` and `res/resources.properties`
+(`unqualifiedResLocale=en`) make the language the system's per-app setting, and `SpokenLanguages`
+tells the boundary the configuration's locales as the player opens and on every configuration change
+(`ResonateApplication.onConfigurationChanged`, once the engine is open). `WordsTest` refuses a prose
+literal in a file not on its `STILL_TO_MOVE` list.
+
 `MainActivity` is a `ComponentActivity` that draws edge to edge and sets `ResonateApp`; it keeps
 the `MediaController` connection (made again on start where none is, or the last one failed or was
 lost) and implements `ui.Host` (folder and room-response pickers,

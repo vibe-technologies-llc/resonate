@@ -14,7 +14,7 @@
     <application
         android:name=".ResonateApplication"
         android:allowBackup="false"
-        android:label="Resonate"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Resonate"

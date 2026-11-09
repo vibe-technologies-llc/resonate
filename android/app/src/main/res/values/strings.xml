@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_name">Resonate</string>
     <string name="notification_close">Close</string>
     <string name="notification_shuffle">Shuffle</string>
     <string name="notification_repeat">Repeat</string>

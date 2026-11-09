@@ -26,6 +26,7 @@ use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
+use resonate_words::LanguageChoice;
 
 use crate::{Launcher, Notice, Result, equaliser::Curve};
 
@@ -195,6 +196,7 @@ pub enum SettingKey {
     Theme,
     Accent,
     TextSize,
+    Language,
     FollowDesktopScheme,
     FollowDesktopTextSize,
     Online,
@@ -299,7 +301,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 127] = [
+    pub const ALL: [Self; 128] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -326,6 +328,7 @@ impl SettingKey {
         Self::Theme,
         Self::Accent,
         Self::TextSize,
+        Self::Language,
         Self::FollowDesktopScheme,
         Self::FollowDesktopTextSize,
         Self::Online,
@@ -456,6 +459,7 @@ pub enum Setting {
     Theme(Theme),
     Accent(Option<Accent>),
     TextSize(TextSize),
+    Language(LanguageChoice),
     FollowDesktopScheme(bool),
     FollowDesktopTextSize(bool),
     Online(bool),
@@ -600,6 +604,7 @@ impl Setting {
             Self::Theme(_) => SettingKey::Theme,
             Self::Accent(_) => SettingKey::Accent,
             Self::TextSize(_) => SettingKey::TextSize,
+            Self::Language(_) => SettingKey::Language,
             Self::FollowDesktopScheme(_) => SettingKey::FollowDesktopScheme,
             Self::FollowDesktopTextSize(_) => SettingKey::FollowDesktopTextSize,
             Self::Online(_) => SettingKey::Online,
@@ -1116,6 +1121,7 @@ pub struct Stored {
     pub mouse_navigation: bool,
     pub reduced_motion: bool,
     pub scrollbars: ScrollbarMode,
+    pub language: LanguageChoice,
     pub spectral: Spectral,
     pub tabs: Tabs,
     pub remember_tab: bool,

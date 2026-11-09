@@ -1,0 +1,15 @@
+[package]
+name = "resonate-words-build"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+fluent-syntax.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

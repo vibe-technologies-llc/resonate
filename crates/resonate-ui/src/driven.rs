@@ -450,6 +450,7 @@ impl Driven {
                 reduced_motion: false,
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
+                language: resonate_words::LanguageChoice::default(),
                 spectral: resonate_core::Spectral::default(),
                 tabs: Tabs::AS_BUILT,
                 remember_tab: false,

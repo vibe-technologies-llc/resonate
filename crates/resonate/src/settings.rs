@@ -205,6 +205,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             accent.map(|accent| accent.as_str().into()),
         ),
         Setting::TextSize(size) => (ConfigKey::TextSize, Some(size.as_str().into())),
+        Setting::Language(chosen) => (ConfigKey::Language, Some(chosen.as_str().into())),
         Setting::FollowDesktopScheme(follows) => {
             (ConfigKey::FollowDesktopScheme, Some((*follows).into()))
         }
@@ -502,6 +503,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Theme => ConfigKey::Theme,
         SettingKey::Accent => ConfigKey::Accent,
         SettingKey::TextSize => ConfigKey::TextSize,
+        SettingKey::Language => ConfigKey::Language,
         SettingKey::FollowDesktopScheme => ConfigKey::FollowDesktopScheme,
         SettingKey::FollowDesktopTextSize => ConfigKey::FollowDesktopTextSize,
         SettingKey::Online => ConfigKey::Online,

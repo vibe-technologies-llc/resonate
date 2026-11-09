@@ -27,6 +27,7 @@ let app: [Target] = [
 
 let package = Package(
     name: "Resonate",
+    defaultLocalization: "en",
     platforms: [.iOS(.v26)],
     products: onTheHost ? [] : [.library(name: "Resonate", targets: ["Resonate"])],
     targets: [

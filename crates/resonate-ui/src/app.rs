@@ -29,6 +29,7 @@ use resonate_library::{
 };
 use resonate_lyrics::Lyricists;
 use resonate_providers::SignsIn;
+use resonate_words::LanguageChoice;
 
 use crate::{
     AppIcon, Bindings, CaretBlink, Error, Launcher, Measurers, Notice, Result, RootView, Settings,
@@ -223,6 +224,7 @@ pub struct ResonateApp {
     pub reduced_motion: bool,
     pub caret: CaretBlink,
     pub scrollbars: ScrollbarMode,
+    pub language: LanguageChoice,
     pub spectral: Spectral,
     pub tabs: Tabs,
     pub remember_tab: bool,
@@ -1153,6 +1155,7 @@ pub fn run(
             reduced_motion: stored.reduced_motion,
             caret: stored.caret.clone(),
             scrollbars: stored.scrollbars,
+            language: stored.language,
             spectral: stored.spectral,
             tabs: stored.tabs,
             remember_tab: stored.remember_tab,

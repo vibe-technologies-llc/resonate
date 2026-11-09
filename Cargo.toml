@@ -36,7 +36,9 @@ members = [
     "crates/providers/ytmusic",
     "crates/resonate-ui",
     "crates/resonate-upnp",
-    "crates/resonate-vault"
+    "crates/resonate-vault",
+    "crates/resonate-words",
+    "crates/resonate-words-build"
 ]
 
 [workspace.package]
@@ -101,6 +103,10 @@ win-resource-builder = { version = "0.2.0", default-features = false }
 unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"] }
 encoding_rs = { version = "0.8.44", default-features = false, features = ["alloc"] }
 chardetng = { version = "1.0.0", default-features = false }
+fluent-bundle = { version = "0.16.0", default-features = false }
+fluent-syntax = { version = "0.12.0", default-features = false }
+unic-langid = { version = "0.9.6", default-features = false }
+sys-locale = { version = "0.3.2", default-features = false }
 jiff = {
     version = "0.2.40",
     default-features = false,
@@ -292,6 +298,8 @@ resonate-ytmusic = { version = "0.7.0", path = "crates/providers/ytmusic" }
 resonate-ui = { version = "0.7.0", path = "crates/resonate-ui" }
 resonate-upnp = { version = "0.7.0", path = "crates/resonate-upnp" }
 resonate-vault = { version = "0.7.0", path = "crates/resonate-vault" }
+resonate-words = { version = "0.7.0", path = "crates/resonate-words" }
+resonate-words-build = { version = "0.7.0", path = "crates/resonate-words-build" }
 
 [profile.dev]
 opt-level = 1

@@ -25,6 +25,19 @@ needs no older-platform branch. The host needs Swift 6.4, the xtool AppImage (1.
 (`ReservedRegion` and the Duo's inner screen drawn edge to edge are 27.1's; a 27.0 SDK fails the build), the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
 None of this is in CI: the SDK cannot be fetched without the listener's Apple ID.
 
+## Words
+
+Every word the app shows is said through `Resonate/en.lproj` (`language.md`): `Localizable.strings`
+keyed by dotted names, `Localizable.stringsdict` for a count, `InfoPlist.strings` for the name and
+the permission prompts. They are plain text, so no string-catalog compiler is needed on Linux;
+`xtool.yml`'s `resources` copies the folder to the bundle root, `Package.swift` sets
+`defaultLocalization: "en"` and `Info.plist` names `en` as `CFBundleDevelopmentRegion` and in
+`CFBundleLocalizations`. `Library` tells the boundary `Locale.preferredLanguages`
+(`speak_languages`) on the transport's lane just before the player opens; iOS ends an app whose
+language changes, so the next open tells it again. `test_strings.py` (`words.py`) refuses a prose
+literal in a file not on its `STILL_TO_MOVE` list, a dotted key the Swift names that the strings do
+not hold, and a prompt `InfoPlist.strings` says otherwise than `Info.plist`.
+
 ## Releasing for sideloading
 
 `python3 ios/release.py vX.Y.Z` (`release.md`) builds the native library, the app and its App

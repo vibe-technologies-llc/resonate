@@ -313,6 +313,7 @@ pub(crate) enum Group {
     DiscordShows,
     Colour,
     Layout,
+    Language,
     Motion,
     Scrollbars,
     LiveSpectrum,
@@ -328,7 +329,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 79] = [
+    pub(crate) const ALL: [Self; 80] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -396,6 +397,7 @@ impl Group {
         Self::DiscordShows,
         Self::Colour,
         Self::Layout,
+        Self::Language,
         Self::Motion,
         Self::Scrollbars,
         Self::LiveSpectrum,
@@ -1075,6 +1077,14 @@ impl Group {
                 also_called: "text size type scale larger largest smaller density follow desktop scaling",
                 keys: &[SettingKey::TextSize, SettingKey::FollowDesktopTextSize],
             },
+            Self::Language => Described {
+                category: Category::Appearance,
+                page: None,
+                title: "Language",
+                hint: LANGUAGE_HINT,
+                also_called: "language locale translation translated words english system tongue",
+                keys: &[SettingKey::Language],
+            },
             Self::Motion => Described {
                 category: Category::Appearance,
                 page: None,
@@ -1752,6 +1762,10 @@ pub(crate) const LIVE_SPECTRUM_HINT: &str = "How the visualiser's spectrum reads
      how far the treble is lifted so pink noise stands level, how quiet a band can be and still \
      show, how finely the octaves are cut, and how quickly a bar falls back once its band \
      quietens.";
+
+pub(crate) const LANGUAGE_HINT: &str = "The language the window, the terminal and the \
+     notifications speak: the system's, or one chosen here. A change is spoken from the next \
+     start.";
 
 pub(crate) const SCROLLBARS_HINT: &str = "When the lists and panes that scroll draw a bar \
      down their edge that shows where the view stands and can be dragged: always, only while \

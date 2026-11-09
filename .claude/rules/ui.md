@@ -895,8 +895,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`
   (`listing::heard`: one `theme::row_plays()`-wide cell for the tracks pane, both list panes and the
   playlists index); `how_often_and_how_lately` folds the date into it (*12 plays · 3d*, header HEARD,
-  `COUNTS_AS_HEARD`); `format::age` fits it from the `SPANS` table `format::since` reads
-  (`every_span_is_named_both_ways_and_no_two_read_alike`).
+  `COUNTS_AS_HEARD`); `format::age` fits it from the `SPANS` table `format::since` reads, each span
+  naming its two messages in `words/en/format.ftl` (`every_span_is_named_both_ways_and_no_two_read_alike`).
 - **A catalog listing marks the playing track by the row it resolves to, never the queue's id.** The
   tracks pane, Favourites and an opened suggestion compare against `RootView::playing_now`'s `track`,
   the library row `LibraryModel::track_of` weighs out of the queue row's location and span (a resumed

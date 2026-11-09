@@ -50,6 +50,12 @@ the service, `DownloadOp`'s says what the download could not be), never a debug 
 `downloads::failure_of` is the one reading of a provider's error into those variants, for a find, an
 opening and the TIDAL sign-in alike.
 
+**The sentence is said in the phone's language** (`language.md`): `speak_languages(tags)`
+(`language.rs`) takes the platform's preferred languages, settles on the first spoken here
+(`resonate_words::negotiated`, English otherwise), makes it the process's and answers its tag, so
+every sentence the boundary words afterwards (an error, a failure, a preset's name) is in it. It is
+a free function, called before the player opens and whenever the phone's languages move.
+
 **A measurement that will not fit says which file** (`measurement.rs`): `Error::Measurement { file,
 source }` carries `MeasuredFile::{Measurement, Target}` and the boxed `resonate_eq::Error`, and
 `failure::of_a_measurement` words each refusal (too large, no point, too few points, a span that

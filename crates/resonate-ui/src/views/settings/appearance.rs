@@ -3,6 +3,7 @@ use resonate_core::{
     Accent, Appearance, Following, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
     SpectrumFloor, SpectrumTilt, TextSize, Theme,
 };
+use resonate_words::LanguageChoice;
 
 use crate::{
     ResonateApp, Setting, SettingKey, Tabs, WindowButtons, WindowSize, theme,
@@ -17,6 +18,8 @@ use crate::{
 
 const KEEPS_ITS_OWN: &str = "Each palette draws each accent in its own tones, and the ringed \
                              swatch is whichever one the palette was built around.";
+
+const LANGUAGE_NOTE: &str = "A language chosen here is spoken from the next start.";
 
 const ITS_OWN: &str = "Whichever accent this palette was built around";
 
@@ -70,6 +73,26 @@ impl Choice for TextSize {
              is drawn at {:.0}% of the middling size.",
             self.scale() * 100.0
         ))
+    }
+}
+
+impl Choice for LanguageChoice {
+    const ALL: &'static [Self] = &LanguageChoice::ALL;
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::System => "Follow the system",
+            Self::Chosen(language) => language.endonym(),
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::System => {
+                "The first language the system lists that Resonate speaks, else English."
+            }
+            Self::Chosen(_) => "Spoken whatever language the system lists.",
+        })
     }
 }
 
@@ -486,6 +509,25 @@ impl RootView {
         ))
     }
 
+    pub(super) fn language_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let chosen = cx.global::<ResonateApp>().language;
+
+        kit::rows()
+            .child(kit::field(
+                "Speak",
+                self.choices(
+                    "language",
+                    chosen,
+                    cx,
+                    |this, chosen: LanguageChoice, cx| {
+                        this.speak(chosen, cx);
+                        this.store(&Setting::Language(chosen), cx);
+                    },
+                ),
+            ))
+            .note(LANGUAGE_NOTE)
+    }
+
     pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let enabled = cx.global::<ResonateApp>().mouse_navigation;
 
@@ -614,6 +656,11 @@ impl RootView {
     pub(crate) fn read_the_spectrum(&self, spectral: Spectral, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.spectral = spectral);
         self.visualiser.update(cx, |_, cx| cx.notify());
+        cx.notify();
+    }
+
+    pub(crate) fn speak(&self, chosen: LanguageChoice, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.language = chosen);
         cx.notify();
     }
 
