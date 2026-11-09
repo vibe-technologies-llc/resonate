@@ -38,6 +38,7 @@ struct EqualiserView: View {
                         )
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8))
+                    .listRowSeparator(.hidden)
                     BandChips(
                         count: shaped.bands.count,
                         selected: selected,
@@ -46,6 +47,7 @@ struct EqualiserView: View {
                         add: { add(to: shaped) }
                     )
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 16))
+                    .listRowSeparator(.hidden)
                     if let selected {
                         BandCard(
                             band: shaped.bands[selected],
@@ -209,7 +211,10 @@ private struct EqualiserSwitches: View {
 }
 
 struct BandChips: View {
+    private static let fadedOver: CGFloat = 48
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moreBeyond = false
     let count: Int
     let selected: Int?
     let full: Bool
@@ -227,6 +232,12 @@ struct BandChips: View {
                     }
                 }
                 .contentMargins(.horizontal, 16, for: .scrollContent)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1
+                } action: { _, more in
+                    moreBeyond = more
+                }
+                .mask { fadedTowardTheEnd }
                 .onChange(of: selected) { _, now in
                     guard let now else { return }
                     withAnimation(reduceMotion ? nil : .smooth) { proxy.scrollTo(now, anchor: .center) }
@@ -245,6 +256,14 @@ struct BandChips: View {
             }
             .buttonStyle(.plain)
             .disabled(full)
+        }
+    }
+
+    private var fadedTowardTheEnd: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: moreBeyond ? Self.fadedOver : 0)
         }
     }
 

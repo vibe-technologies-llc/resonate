@@ -2110,7 +2110,7 @@ final class Features {
         guard visualizersWatching || loudnessListeners > 0 else {
             visualization?.cancel()
             visualization = nil
-            heardLevel.hear(0)
+            heardLevel.hear(0, bands: .silence)
             return
         }
         guard visualization == nil else { return }
@@ -2137,7 +2137,7 @@ final class Features {
             var wait = visualizing ? paces.visualizing : paces.hearing
             do {
                 let heard = try await Work.aside { HeardSignal(try native.visualizer(enabled: true)) }
-                level.hear(heard.rms)
+                level.hear(heard.rms, bands: heard.bands)
                 if visualizing { await showing(heard.samples) }
             } catch {
                 wait = paces.retrying
@@ -2173,11 +2173,13 @@ final class TapWatch: Sendable {
 struct HeardSignal: Sendable {
     let samples: [Float]
     let rms: Float
+    let bands: HeardBands
 
     init(_ samples: [Float]) {
         self.samples = samples
         let power = samples.isEmpty ? 0 : samples.reduce(0) { $0 + $1 * $1 } / Float(samples.count)
         rms = power.squareRoot()
+        bands = HeardBands(heard: samples)
     }
 }
 

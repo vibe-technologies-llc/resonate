@@ -843,10 +843,11 @@ every route change (a pair of headphones at the same rate included), not from th
   shuffled), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
   *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
   `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
-  *Recently added* (`albums(order: .added)`), then *Your devices* (reachable paired devices opening
-  their remote controls directly, a *Remote control* link for pairing and sync, and available
-  handoffs), *Listen together* with *Listening party*, *Your playlists* (a *New playlist* button
-  where there are none), *Artists* (`artists(order: .plays)`) and *Your listening* (below). The album
+  *Recently added* (`albums(order: .added)`), then *Your playlists* (a *New playlist* button
+  where there are none), *Artists* (`artists(order: .plays)`), *Your listening* (below), and at the
+  foot *Your devices* (reachable paired devices opening their remote controls directly, a *Remote
+  control* link for pairing and sync, and available handoffs) and *Listen together* with *Listening
+  party*. The album
   and artist shelves read twelve each on `Work.onScreen`, keyed by `collectionGeneration` and
   `catalogEpoch`. An empty catalog shows the invitation to add a folder, devices, parties and
   playlists. Home's pages push onto its own stack.
@@ -1245,7 +1246,7 @@ in; it never opens on another colour first.
 - **Energy** is the RMS of the visualizer tap (`Features.heardLevel`, worked out off the main thread
   with the read, `HeardSignal`), with a 120 ms attack and a 600 ms
   release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
-  the drift slows to 18 %. The tap has two reference counts, `hearLoudness` (a backdrop) and
+  the drift slows to 18 %. The tap has two reference counts, `hearLoudness` (a backdrop or a now-playing indicator) and
   `visualize` (the visualizer page), so neither switches off the other's; the observed
   `Features.samples` is assigned only while a visualizer page holds it, the scene is in the foreground and a song is playing (`visualizersWatching`; otherwise it is emptied and the page says to play a song), so thirty reads a second
   invalidate nothing behind Now Playing. The tap's loop runs off the main actor (`Features.tap`, a
@@ -1256,6 +1257,17 @@ in; it never opens on another colour first.
   is asked again after 2 s, not at once.
 - **Reduce Motion** draws one still frame (time frozen, no energy, no fade) and redraws only when
   the palette changes.
+- **The now-playing indicator moves with the song** (`NowPlayingIndicator`, over the playing row's
+  cover or in place of its number): four bottom-aligned capsules, low to high frequency, read from
+  the same tap. The tap's loop splits each read into four bands (`HeardBands`, `ResonateLogic`: a
+  Hann window and a Goertzel power per bin over bins 1–2, 3–6, 7–20 and 21–90 of a 256-sample read,
+  scaled with the read's length) and keeps them beside the loudness (`HeardLevel.bands`). While the
+  scene is active, the song playing and Reduce Motion off, the indicator holds `hearLoudness` and
+  reads them every 50 ms into `PlayingBars`, which levels each band against a reference of its own
+  (its loudest, falling 0.15 dB a read, never under -60 dB, over a 24 dB span) so the bars move as
+  much at any volume and in any mix, and eases toward each read (70 % of the way up, 35 % down);
+  SwiftUI animates linearly between reads. Paused, or under Reduce Motion, the bars settle on a
+  still pattern (`PlayingBars.still`); silence lets them fall to rest. Held by `PlayingBarsTests`.
 - **Frame rate** follows what is moving (`BackdropView.rate`): 120 fps while playing, 60 paused,
   half that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
   an inactive or backgrounded scene, or a view out of its window, draws nothing. The glass over the
@@ -1737,7 +1749,11 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   arrives with nothing held) or a second after the release where none did, so a refused commit
   cannot linger; a cancelled drag drops it. The engine and the store hear the release, once.
 - **The band chips** (`BandChips`) are 44 pt capsules `1 … n` scrolling sideways, the chosen one in
-  the accent and scrolled to (gated on Reduce Motion), then *Add band*, a glass capsule: a peaking
+  the accent and scrolled to (gated on Reduce Motion), faded over their last 48 pt while more lie
+  past the edge (`fadedTowardTheEnd`, read from the scroll geometry), so a chip cut by the edge reads
+  as more to come rather than running under the button, as Android's do; neither the graph's row nor
+  the chips' draws a list separator, so no line runs between the graph, the chips and the card;
+  then *Add band*, a glass capsule: a peaking
   band (Q 1, 0 dB) at the middle of the widest gap in octaves between the bands and the edges, among
   equal gaps the one nearest 1 kHz, then the lower (707 Hz with the ten octave handles), 1 kHz on an
   empty curve (`BandPlacement`, Android's rule), selected; off at

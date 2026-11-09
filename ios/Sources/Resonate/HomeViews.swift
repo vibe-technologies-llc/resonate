@@ -45,12 +45,6 @@ struct HomeView: View {
                     }
                 }
             }
-            HomeDevices()
-            Section("home.together") {
-                NavigationLink(value: Destination.party) {
-                    ToolRow(title: said("tools.party"), detail: said("home.party.detail"), symbol: "person.2.wave.2")
-                }
-            }
             Section {
                 if playlists.isEmpty {
                     Button {
@@ -73,6 +67,12 @@ struct HomeView: View {
                     }
                 }
                 HomeListeningSections()
+            }
+            HomeDevices()
+            Section("home.together") {
+                NavigationLink(value: Destination.party) {
+                    ToolRow(title: said("tools.party"), detail: said("home.party.detail"), symbol: "person.2.wave.2")
+                }
             }
         }
         .listStyle(.insetGrouped)
@@ -129,7 +129,7 @@ private struct HomeDevices: View {
                 KnownDeviceEntry(known: device)
             }
             NavigationLink(value: Destination.sync) {
-                ToolRow(title: said("home.remote"), detail: said("home.remote.detail"), symbol: "appletvremote")
+                ToolRow(title: said("home.remote"), detail: said("home.remote.detail"), symbol: "appletvremote.gen4")
             }
             if !features.syncHandoffs.isEmpty {
                 HandoffRows()

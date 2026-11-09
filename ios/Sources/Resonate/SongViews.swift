@@ -481,6 +481,7 @@ struct PlayableTrack: View {
             ZStack {
                 if playingHere {
                     NowPlayingIndicator()
+                        .foregroundStyle(.tint)
                 } else {
                     Text("\(numbered)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -527,15 +528,50 @@ struct StandardTrackMenus: ViewModifier {
 }
 
 struct NowPlayingIndicator: View {
+    private static let heardEverySeconds = 0.05
+    private static let barWidthShare: CGFloat = 0.2
+    private static let gapShare: CGFloat = 0.14
+    private static let settlesOver = 0.3
+
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
+    @ScaledMetric(relativeTo: .callout) private var height: CGFloat = 14
+    @State private var bars = PlayingBars()
 
     var body: some View {
-        Image(systemName: "waveform")
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(.tint)
-            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: library.transport == .playing && !reduceMotion)
-            .accessibilityHidden(true)
+        let barWidth = height * Self.barWidthShare
+        HStack(alignment: .bottom, spacing: height * Self.gapShare) {
+            ForEach(bars.heights.indices, id: \.self) { index in
+                Capsule()
+                    .frame(width: barWidth, height: max(height * CGFloat(bars.heights[index]), barWidth))
+            }
+        }
+        .frame(height: height, alignment: .bottom)
+        .animation(motion, value: bars)
+        .accessibilityHidden(true)
+        .task(id: following) {
+            guard following else {
+                bars.rest()
+                return
+            }
+            let features = library.features
+            features.hearLoudness(true)
+            defer { features.hearLoudness(false) }
+            while !Task.isCancelled {
+                bars.hear(features.heardLevel.bands)
+                try? await Task.sleep(for: .seconds(Self.heardEverySeconds))
+            }
+        }
+    }
+
+    private var following: Bool {
+        phase == .active && library.transport == .playing && !reduceMotion
+    }
+
+    private var motion: Animation? {
+        guard !reduceMotion else { return nil }
+        return following ? .linear(duration: Self.heardEverySeconds) : .smooth(duration: Self.settlesOver)
     }
 }
 

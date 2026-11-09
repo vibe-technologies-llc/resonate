@@ -852,13 +852,19 @@ private struct MeshBackdrop: UIViewRepresentable {
 
 final class HeardLevel: Sendable {
     private let bits = Atomic<UInt32>(0)
+    private let spread = Mutex(HeardBands.silence)
 
     var rms: Float {
         Float(bitPattern: bits.load(ordering: .relaxed))
     }
 
-    func hear(_ rms: Float) {
+    var bands: HeardBands {
+        spread.withLock { $0 }
+    }
+
+    func hear(_ rms: Float, bands: HeardBands) {
         bits.store(rms.bitPattern, ordering: .relaxed)
+        spread.withLock { $0 = bands }
     }
 }
 
