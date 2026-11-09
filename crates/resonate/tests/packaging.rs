@@ -295,6 +295,29 @@ fn no_release_recipe_builds_a_debug_package() {
 }
 
 #[test]
+fn no_recipe_builds_the_player_beside_the_sign_in_windows_engine() {
+    for recipe in [
+        "PKGBUILD",
+        "release/PKGBUILD",
+        "resonate.spec",
+        DEB_SCRIPT,
+        "org.resonate.Resonate.yml",
+    ] {
+        let text = packaging(recipe);
+
+        assert!(
+            !text.contains("--workspace --bin resonate"),
+            "{recipe} builds the player with every member selected, which turns on resonate-signin's \
+             window feature in the library the player links"
+        );
+        assert!(
+            text.contains("--package resonate --bin resonate"),
+            "{recipe} does not build the player as a package of its own"
+        );
+    }
+}
+
+#[test]
 fn the_player_is_named_resonate_in_every_release_format() {
     assert!(
         packaging("resonate.spec")

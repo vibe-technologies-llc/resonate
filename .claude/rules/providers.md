@@ -883,6 +883,14 @@ dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-co
   `youtube.com` (`signed_in`; Google's cookies alone are no YouTube sign-in), writes the jar and
   exits `SIGNED_IN` (0). Closing the window first exits `CLOSED` (3); anything else `FAILED` (1).
   `Outcome::of` reads the status back.
+- **A domain cookie keeps its dot.** `cookie::Cookie::domain()` strips the leading dot wry's engines
+  hand over, which would write `youtube.com FALSE` (host-only) and make `yt-dlp` keep a rotated
+  `.youtube.com` value beside the stale one; `domain_cookie_of` dots the bare `youtube.com` and
+  `google.com` again, leaving a `__Host-` cookie and any subdomain's host-only
+  (`a_domain_the_engine_handed_over_undotted_is_dotted_again_unless_it_names_one_host`).
+- **The profile is owner-only before the window opens** (`0700`, `owner_only`): WebKit keeps the
+  whole Google session there in plain text, a superset of the jar
+  (`the_windows_profile_is_made_owner_only_before_the_window_opens`).
 - **The jar is Netscape's** (`netscape`: `#HttpOnly_` before an HttpOnly cookie, a session cookie
   expiring `0`), **written whole, owner-only**: `written` stages `<jar>.staged` under
   `writer::Held::taken_over` (a second sign-in writing is refused `WouldBlock`), `0600` on Unix

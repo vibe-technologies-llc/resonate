@@ -46,7 +46,7 @@ modules:
     buildsystem: simple
     build-commands:
       - cargo fetch --locked
-      - cargo build --locked --release --workspace --bin resonate
+      - cargo build --locked --release --package resonate --bin resonate
       - |
         set -eu
         generated=$(find target/release/build -name resonate.1 -printf '%h\n' -quit)

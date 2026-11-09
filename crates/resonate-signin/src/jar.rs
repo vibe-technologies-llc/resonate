@@ -25,6 +25,10 @@ const STAGED_SUFFIX: &str = ".staged";
 
 const SESSION_EXPIRES: u64 = 0;
 
+const HOST_ONLY_PREFIX: &str = "__Host-";
+
+const A_DOMAIN_COOKIE_BEGINS: char = '.';
+
 #[cfg(unix)]
 const OWNER_ONLY: u32 = 0o600;
 
@@ -89,6 +93,17 @@ impl fmt::Debug for Cookie {
 
 const fn said(yes: bool) -> &'static str {
     if yes { "TRUE" } else { "FALSE" }
+}
+
+pub fn domain_cookie_of(domain: &str, name: &str) -> String {
+    let named_by_a_kept_domain = KEPT_UNDER
+        .iter()
+        .any(|kept| domain.eq_ignore_ascii_case(kept));
+    if named_by_a_kept_domain && !name.starts_with(HOST_ONLY_PREFIX) {
+        format!("{A_DOMAIN_COOKIE_BEGINS}{domain}")
+    } else {
+        domain.to_owned()
+    }
 }
 
 pub fn kept(cookies: Vec<Cookie>) -> Vec<Cookie> {
@@ -224,6 +239,25 @@ mod tests {
             "# Netscape HTTP Cookie File\n\
              #HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t1900000000\tLOGIN_INFO\tabc\n\
              music.youtube.com\tFALSE\t/watch\tFALSE\t0\tPREF\tf6=8\n"
+        );
+    }
+
+    #[test]
+    fn a_domain_the_engine_handed_over_undotted_is_dotted_again_unless_it_names_one_host() {
+        assert_eq!(domain_cookie_of("youtube.com", "SAPISID"), ".youtube.com");
+        assert_eq!(domain_cookie_of("google.com", "SID"), ".google.com");
+        assert_eq!(domain_cookie_of(".youtube.com", "SAPISID"), ".youtube.com");
+        assert_eq!(
+            domain_cookie_of("youtube.com", "__Host-GAPS"),
+            "youtube.com"
+        );
+        assert_eq!(
+            domain_cookie_of("accounts.google.com", "LSID"),
+            "accounts.google.com"
+        );
+        assert_eq!(
+            domain_cookie_of("music.youtube.com", "PREF"),
+            "music.youtube.com"
         );
     }
 

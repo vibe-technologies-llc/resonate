@@ -29,7 +29,8 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   is `resonate-signin` (`optdepends` of the release player), the spec's subpackage
   `resonate-signin` is `Recommends`, and the DEB script's `signin` builds `resonate-signin`, the
   player's control `Recommends` it. Each depends on WebKitGTK 4.1; each builds it with `--package
-  resonate-signin` in a `cargo` run apart from the player's. The Windows zip and installer carry
+  resonate-signin` in a `cargo` run apart from the player's, which is `--package resonate --bin
+  resonate`, never `--workspace` (`dependencies.md`). The Windows zip and installer carry
   `resonate-signin.exe` beside `resonate.exe` (`SourceSignIn`, signed with it). The Flatpak, having
   no `yt-dlp`, carries none.
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment

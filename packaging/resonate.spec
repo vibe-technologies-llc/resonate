@@ -43,7 +43,7 @@ the account's cookies for Resonate, so no browser of the listener's is read.
 
 %build
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=%{rust_baseline}"
-cargo build --locked --release --workspace --bin resonate
+cargo build --locked --release --package resonate --bin resonate
 cargo build --locked --release --package resonate-signin
 
 %install

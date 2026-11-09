@@ -13,8 +13,8 @@ use tao::{
 use wry::{PageLoadEvent, WebContext, WebView, WebViewBuilder};
 
 use crate::{
-    CLOSED, Cookie, EngineOp, Error, FAILED, Result, SIGN_IN_PAGE, SIGNED_IN, is_youtube_music,
-    kept, signed_in, written,
+    CLOSED, Cookie, EngineOp, Error, FAILED, Result, SIGN_IN_PAGE, SIGNED_IN, domain_cookie_of,
+    is_youtube_music, kept, signed_in, written,
 };
 
 const TITLE: &str = "Sign in to YouTube Music";
@@ -130,7 +130,7 @@ fn looked(webview: &WebView, jar: &std::path::Path) -> Result<Looked> {
 
 fn cookie_of(held: &wry::cookie::Cookie<'static>) -> Option<Cookie> {
     Some(Cookie {
-        domain: held.domain()?.to_owned(),
+        domain: domain_cookie_of(held.domain()?, held.name()),
         path: held.path().unwrap_or("/").to_owned(),
         secure: held.secure().unwrap_or(false),
         http_only: held.http_only().unwrap_or(false),

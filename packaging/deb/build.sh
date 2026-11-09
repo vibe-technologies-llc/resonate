@@ -64,7 +64,7 @@ seal() {
 }
 
 build_player() {
-    cargo build --locked --release --workspace --bin resonate
+    cargo build --locked --release --package resonate --bin resonate
 
     local generated
     generated=$(find target/release/build -name resonate.1 -printf '%h\n' -quit)

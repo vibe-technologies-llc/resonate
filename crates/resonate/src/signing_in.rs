@@ -25,6 +25,9 @@ const PROFILE: &str = "youtube-music-sign-in";
 
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 
+#[cfg(unix)]
+const OWNER_ONLY: u32 = 0o700;
+
 static SIGNING_IN: Mutex<Vec<Child>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +82,7 @@ pub fn names_the_jar(setting: &str, kept: &Kept) -> bool {
 }
 
 pub fn sign_in(program: &Path, kept: &Kept) -> Result<()> {
+    owner_only(&kept.profile).map_err(|source| Error::YoutubeMusicSignInNotStarted { source })?;
     let child = Command::new(program)
         .arg("--jar")
         .arg(&kept.jar)
@@ -116,6 +120,23 @@ fn waited(id: u32) -> Result<std::process::ExitStatus> {
             Err(source) => return Err(Error::YoutubeMusicSignInNotStarted { source }),
         }
     }
+}
+
+fn owner_only(folder: &Path) -> io::Result<()> {
+    fs::create_dir_all(folder)?;
+    narrowed(folder)
+}
+
+#[cfg(unix)]
+fn narrowed(folder: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    fs::set_permissions(folder, fs::Permissions::from_mode(OWNER_ONLY))
+}
+
+#[cfg(not(unix))]
+const fn narrowed(_folder: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 pub fn stop_signing_in() {
@@ -284,6 +305,26 @@ mod tests {
             sign_in(&folder.join("gone"), &kept),
             Err(Error::YoutubeMusicSignInNotStarted { .. })
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_windows_profile_is_made_owner_only_before_the_window_opens() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let folder = scratch("profile");
+        let kept = Kept::under(&folder.join("data"));
+        fs::create_dir_all(&kept.profile).expect("a profile left open");
+        fs::set_permissions(&kept.profile, fs::Permissions::from_mode(0o755)).expect("opened");
+        let looking = a_program(
+            &folder,
+            "stat -c %a \"$4\" > \"$(dirname \"$4\")/mode-seen\"; exit 0",
+        );
+
+        sign_in(&looking, &kept).expect("signed in");
+
+        let seen = fs::read_to_string(folder.join("data").join("mode-seen")).expect("a mode seen");
+        assert_eq!(seen.trim(), "700");
     }
 
     #[test]

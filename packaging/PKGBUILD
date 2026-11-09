@@ -33,7 +33,7 @@ build() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=native"
-  cargo build --frozen --release --workspace --bin resonate
+  cargo build --frozen --release --package resonate --bin resonate
   cargo build --frozen --release --package resonate-signin
 }
 
