@@ -702,7 +702,7 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   played on to the moment asked), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
   answering a `RemoteAnswer`; `sync_control` takes the running sync's lock only to ask
   (`Sync::ask_to_control`, an `AskedToControl` whose `answer` waits outside it), so a status poll
-  never waits behind a command. Android's Devices page gives an online device a *Drive* button
+  never waits behind a command. Android's Device sync page gives an online device a *Drive* button
   opening `DrivenDevice` under its row (read every `DRIVEN_READ_EVERY_MS`, unwatched as it leaves): a
   `CommitSlider` to seek and the rows `DrivenWords.rowsShown` picks as the window's do, a press on one
   jumping, with up, down and remove buttons, *Show more of this queue* adding `DRIVEN_ROWS_MORE`

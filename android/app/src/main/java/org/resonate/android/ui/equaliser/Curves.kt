@@ -2,6 +2,9 @@ package org.resonate.android.ui.equaliser
 
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
@@ -87,22 +90,12 @@ fun tidyDb(decibels: Float): Float = (decibels * 10).roundToInt() / 10f
 
 fun tidyQ(q: Float): Float = (q * 100).roundToInt() / 100f
 
-fun quarterDb(decibels: Float): Float = (decibels * 4).roundToInt() / 4f
-
 fun hertzLabel(hertz: Float): String =
     when {
         hertz < 100f -> String.format(Locale.ROOT, "%.1f Hz", hertz)
         hertz < 1000f -> String.format(Locale.ROOT, "%.0f Hz", hertz)
         hertz < 10_000f -> String.format(Locale.ROOT, "%.2f kHz", hertz / 1000)
         else -> String.format(Locale.ROOT, "%.1f kHz", hertz / 1000)
-    }
-
-fun shortHertz(hertz: Float): String =
-    if (hertz < 1000f) hertz.roundToInt().toString()
-    else {
-        val kilohertz = (hertz / 100).roundToInt() / 10f
-        if (kilohertz % 1f == 0f) "${kilohertz.toInt()}k"
-        else String.format(Locale.ROOT, "%.1fk", kilohertz)
     }
 
 fun signedDb(decibels: Float): String {
@@ -189,7 +182,7 @@ fun EqualiserCurve.withAddedBand(hertz: Float, gainDb: Float, bounds: EqualiserB
                         EqualiserFilter.PEAKING,
                         tidyHertz(hertz.coerceIn(bounds.hertz)),
                         tidyDb(gainDb.coerceIn(bounds.gain)),
-                        1f,
+                        ADDED_BAND_Q,
                     )
         )
 
@@ -207,7 +200,49 @@ fun PlaybackPreferences.withCurve(curve: EqualiserCurve): PlaybackPreferences =
 
 fun PlaybackPreferences.reset(): PlaybackPreferences = copy(equaliser = flatCurve)
 
-fun sliderCap(band: EqualiserBand, bounds: EqualiserBounds): Float =
-    minOf(bounds.gainAtMostDb, maxOf(SLIDER_REACH_DB, abs(band.gainDb)))
+const val ADDED_BAND_HERTZ = 1000f
 
-const val SLIDER_REACH_DB = 12f
+const val ADDED_BAND_Q = 1f
+
+const val GAIN_STEP_DB = 0.5f
+
+const val HERTZ_STEP_OCTAVES = 1f / 3f
+
+private const val GAPS_ALIKE_WITHIN = 1e-6
+
+fun freeHertz(curve: EqualiserCurve, bounds: EqualiserBounds): Float {
+    val taken = curve.bands.map { ln(it.frequencyHz.coerceIn(bounds.hertz).toDouble()) }.sorted()
+    if (taken.isEmpty()) return ADDED_BAND_HERTZ.coerceIn(bounds.hertz)
+    val edges = listOf(ln(bounds.lowestHz.toDouble())) + taken + ln(bounds.highestHz.toDouble())
+    val gaps = edges.zipWithNext { low, high -> (high - low) to (low + high) / 2 }
+    val widest = gaps.maxOf { it.first }
+    val centre = ln(ADDED_BAND_HERTZ.toDouble())
+    val middles = gaps.filter { it.first >= widest - GAPS_ALIKE_WITHIN }.map { it.second }
+    val nearest = middles.minOf { abs(it - centre) }
+    val middle = middles.first { abs(it - centre) <= nearest + GAPS_ALIKE_WITHIN }
+    return tidyHertz(exp(middle).toFloat().coerceIn(bounds.hertz))
+}
+
+fun EqualiserCurve.withFreeBand(bounds: EqualiserBounds): EqualiserCurve? =
+    withAddedBand(freeHertz(this, bounds), 0f, bounds)
+
+fun EqualiserCurve.withNudgedGain(index: Int, by: Float, bounds: EqualiserBounds): EqualiserCurve {
+    val band = bands.getOrNull(index)?.takeIf { it.filter.usesGain } ?: return this
+    return withGain(index, band.gainDb + by, bounds)
+}
+
+fun EqualiserCurve.withNudgedHertz(
+    index: Int,
+    octaves: Float,
+    bounds: EqualiserBounds,
+): EqualiserCurve {
+    val band = bands.getOrNull(index) ?: return this
+    val moved = (band.frequencyHz * 2f.pow(octaves)).coerceIn(bounds.hertz)
+    return withBand(index, band.copy(frequencyHz = tidyHertz(moved)))
+}
+
+fun chosenBand(selected: Int?, count: Int): Int? =
+    if (count <= 0) null else (selected ?: 0).coerceIn(0, count - 1)
+
+fun chosenAfterRemoving(removed: Int, count: Int): Int? =
+    if (count <= 1) null else removed.coerceAtMost(count - 2)

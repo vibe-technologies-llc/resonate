@@ -1,14 +1,10 @@
 package org.resonate.android.ui.equaliser
 
-import android.content.ContentResolver
-import android.content.Context
-import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,33 +16,17 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.OutputRoute
 import org.resonate.android.RoomView
-import org.resonate.android.SweepRecorder
-import org.resonate.android.readUpTo
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
-import org.resonate.android.nativecore.ListeningTest
-import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.PlaybackPreferences
-import org.resonate.android.nativecore.TestArm
-import org.resonate.android.nativecore.TestHear
-import org.resonate.android.nativecore.TestedSetting
 import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
-import org.resonate.android.nativecore.fitMeasurement
-import org.resonate.android.nativecore.fitRecordedSweep
-import org.resonate.android.nativecore.listeningTestLengths
-import org.resonate.android.nativecore.measurementOffers
-import org.resonate.android.nativecore.measurementRateFor
-import org.resonate.android.nativecore.measurementSweep
-import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
-import org.resonate.android.nativecore.settingTestByDefault
 import org.resonate.android.ui.Resonate
 
 data class EqualiserInfo(
@@ -56,7 +36,6 @@ data class EqualiserInfo(
 )
 
 private const val RESPONSE_POINTS = 256u
-private const val MEASURED_PROFILE = "Measured"
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
@@ -89,14 +68,6 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
 
     val room: StateFlow<RoomView> = resonate.features.room.view
 
-    private val measuring = MutableStateFlow(MeasurementView.unread)
-
-    val measurement: StateFlow<MeasurementView> = measuring.asStateFlow()
-
-    private val testing = MutableStateFlow(ListeningTestView.unread)
-
-    val listening: StateFlow<ListeningTestView> = testing.asStateFlow()
-
     init {
         viewModelScope.launch {
             mutableInfo.value =
@@ -107,14 +78,6 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
                         equaliserPresets(),
                     )
                 }
-        }
-        viewModelScope.launch {
-            val offers = withContext(Dispatchers.Default) { measurementOffers() }
-            measuring.update { if (it.offers == null) MeasurementView.of(offers) else it }
-        }
-        viewModelScope.launch {
-            val lengths = withContext(Dispatchers.Default) { listeningTestLengths() }
-            testing.update { it.copy(lengths = lengths) }
         }
         viewModelScope.launch { stored.collect { if (!holding) draft.value = null } }
     }
@@ -182,189 +145,5 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         }
     }
 
-    fun importProfile(name: String, text: String, onApplied: () -> Unit) {
-        resonate.attempt(viewModelScope) { _ ->
-            val found =
-                withContext(Dispatchers.Default) {
-                    parseEqProfile(text.toByteArray(Charsets.UTF_8), name.trim())
-                }
-            commit(found.curve)
-            onApplied()
-        }
-    }
-
-    fun aimAt(aim: Aim) = measuring.update { it.aimed(aim) }
-
-    fun aimAtDocument(resolver: ContentResolver, uri: Uri) {
-        val offers = measuring.value.offers ?: return
-        resonate.attempt(viewModelScope) { _ ->
-            val read = withContext(Dispatchers.IO) { resolver.readUpTo(uri, offers.bytesAtMost) }
-            measuring.update { it.aimed(Aim.Document(read.name, read.bytes)) }
-        }
-    }
-
-    fun fitFrom(resolver: ContentResolver, uri: Uri) {
-        val view = measuring.value
-        val offers = view.offers ?: return
-        val aim = view.aim ?: return
-        if (view.fitting) return
-        measuring.update { it.begun() }
-        resonate.attempt(viewModelScope) { _ ->
-            try {
-                val read = withContext(Dispatchers.IO) { resolver.readUpTo(uri, offers.bytesAtMost) }
-                val fit =
-                    withContext(Dispatchers.Default) {
-                        fitMeasurement(read.bytes, aim.target(), profileNameFor(read.name))
-                    }
-                commit(fit.imported.curve)
-                measuring.update { it.finished(fitSentence(fit, aim.label(offers.targets))) }
-            } finally {
-                measuring.update { it.finished(null) }
-            }
-        }
-    }
-
-    fun calibrateFrom(resolver: ContentResolver, uri: Uri) {
-        val offers = measuring.value.offers ?: return
-        resonate.attempt(viewModelScope) { _ ->
-            val read = withContext(Dispatchers.IO) { resolver.readUpTo(uri, offers.bytesAtMost) }
-            measuring.update { it.calibratedBy(Calibration(read.name, read.bytes)) }
-        }
-    }
-
-    fun forgetCalibration() = measuring.update { it.calibratedBy(null) }
-
-    private var sweeping: Job? = null
-
-    fun measureRoom(context: Context) {
-        val view = measuring.value
-        val offers = view.offers ?: return
-        val aim = view.aim ?: return
-        if (view.fitting) return
-        measuring.update { it.sounded() }
-        sweeping =
-            resonate.attempt(viewModelScope) { native ->
-                try {
-                    if (!resonate.host.allowMicrophone()) {
-                        measuring.update { it.turnedAway() }
-                        return@attempt
-                    }
-                    library.pauseForRecording()
-                    val rate = withContext(Dispatchers.Default) { measurementRateFor(SweepRecorder.outputRate()) }
-                    val sweep = withContext(Dispatchers.Default) { measurementSweep(rate) }
-                    val recorded = SweepRecorder.measure(context, sweep)
-                    measuring.update { it.heard() }
-                    val fit =
-                        withContext(Dispatchers.Default) {
-                            fitRecordedSweep(
-                                recorded.toList(),
-                                sweep.rate,
-                                view.calibration?.bytes,
-                                aim.target(),
-                                MEASURED_PROFILE,
-                            )
-                        }
-                    commit(fit.imported.curve)
-                    measuring.update { it.finished(fitSentence(fit, aim.label(offers.targets))) }
-                } finally {
-                    measuring.update { it.finished(null) }
-                }
-            }
-    }
-
-    fun stopMeasuring() {
-        sweeping?.cancel()
-    }
-
-    fun chooseTesting(tested: Testing) {
-        val view = testing.value
-        if (view.run != null || view.beginning) return
-        val kind = tested.kind
-        val kept = preferences.value
-        val against = if (kind == null || kept == null) null else settingTestByDefault(kind, kept)
-        testing.update { it.testing(tested, against) }
-    }
-
-    fun against(setting: TestedSetting) {
-        testing.update { it.against(setting) }
-    }
-
-    fun beginTest(trials: UInt) {
-        val view = testing.value
-        if (view.run != null || view.beginning) return
-        val tested = view.testing
-        val curve = shown.value
-        val setting = view.against
-        val start: (MobilePlayer) -> ListeningTest =
-            when {
-                tested == Testing.Equaliser && curve != null -> { native ->
-                        native.beginListeningTest(curve, trials)
-                    }
-                tested != Testing.Equaliser && setting != null -> { native ->
-                        native.beginSettingTest(setting, trials)
-                    }
-                else -> return
-            }
-        testing.update { it.beginning() }
-        resonate.attempt(viewModelScope) { native ->
-            try {
-                val test = withContext(Dispatchers.Default) { start(native) }
-                testing.update { it.begun(test, tested) }
-            } finally {
-                testing.update { if (it.run == null) it.failedToBegin() else it }
-            }
-        }
-    }
-
-    fun hear(hear: TestHear) {
-        val test = testing.value.run?.test ?: return
-        resonate.attempt(viewModelScope) { native ->
-            native.hearInListeningTest(test, hear)
-            testing.update { it.stood(test.standing()) }
-        }
-    }
-
-    fun say(arm: TestArm) {
-        val test = testing.value.run?.test ?: return
-        resonate.attempt(viewModelScope) { _ ->
-            test.answer(arm)
-            testing.update { it.stood(test.standing()) }
-        }
-    }
-
-    fun endTest() {
-        val run = testing.value.run ?: return
-        testing.update { it.ended() }
-        library.request { native -> native.endListeningTest() }
-        run.test.close()
-    }
-
-    override fun onCleared() {
-        sweeping?.cancel()
-        endTest()
-    }
-
     fun bind(bound: Boolean) = library.bindEqualiser(bound)
-
-    fun forget(route: OutputRoute) = library.forgetEqualiser(route)
-
-    fun chooseRoomResponse() = resonate.host.chooseRoomResponse()
-
-    fun chooseRoomLeft(uri: Uri) = resonate.features.room.chooseLeft(uri)
-
-    fun chooseRoomRight(uri: Uri) = resonate.features.room.chooseRight(uri)
-
-    fun cancelRoomPair() = resonate.features.room.cancelPair()
-
-    fun turnRoom(on: Boolean) = resonate.features.room.turn(on)
-
-    fun forgetRoom() = resonate.features.room.forget()
-
-    val speakerLimits = resonate.features.room.limits
-
-    fun speakAt(angle: Int) = resonate.features.room.speakAt(angle)
-
-    fun raiseTo(elevation: Int) = resonate.features.room.raiseTo(elevation)
-
-    fun turnTo(yaw: Int) = resonate.features.room.turnTo(yaw)
 }

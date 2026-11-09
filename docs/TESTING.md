@@ -21,6 +21,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   Bluetooth device is attached here, so whether Android plays two Oboe streams asking two device ids
   (`setDeviceId`) on those two devices at once, rather than routing media to one, has not been heard
 
+- [S · blocked: hardware] Android's *Curves for other outputs* page (`OutputCurvesScreen`) has not
+  been seen: the emulator offers one output, so no other output keeps a curve and the equaliser
+  never shows the row; its arithmetic is held by `OutputCurvesTest` alone
+
 - [S · blocked: hardware] An iPhone following the song's rate (`follow-song-rate`) is not proved on
   a USB DAC: no device is attached here, so neither the route taking `preferredSampleRate` nor the
   gap of the RemoteIO reopen it causes has been heard

@@ -359,6 +359,21 @@ mini-player's room is not counted twice. A text field's value is Compose state (
 so with no banner shown the mini player's gap above equals the one below. The empty library's *Welcome* scrolls, so the banners
 arriving on a first scan never squeeze its buttons.
 
+**Settings is a page of navigation rows in six groups, the phones' shared root** (`SettingsScreen`,
+`SettingsCatalog.kt`): a search field, then *Sound* (Equaliser, Sound processing, Audio output),
+*Library* (Music folders, Library tools, Listening statistics, Made for you, Saved for later), *Online &
+services* (Online features, the root's one switch; Download sources; Server, only while serving;
+Scrobbling; Spotify), *Devices* (Device sync), *Appearance* (Appearance) and *App* (Playback
+notifications, with *Allow* while refused, and the version). Every row is an icon, its page's title and
+a one-line status, live where there is one to tell (the equaliser's *On · <curve>* or *Off*, the output
+in use, the theme and accent). Search folds accents and matches word starts across a row's title, line,
+group and the settings its page holds (`Setting.inner`, the one matched named in place of the line);
+the equaliser's pages (*Headphone correction*, *Measure with a microphone*, *Room correction*,
+*Listening test*, *Curves for other outputs* while one is kept) are rows only search lists
+(`Setting.onRoot` false, their line led by *Equaliser ·*), so *AutoEq*, *room*, *ABX* or *microphone*
+opens that page directly (`SettingsCatalogTest`). `UiSmokeTest` and `A11ySweepTest` find the list and
+its rows by `settings-list` and `setting-<name>`.
+
 **Banners** are three, all `LiveRegion`s: *Reading music folder*, *Syncing with your devices* or
 *Fetching songs from your devices* (progress; a fixed label with the changing count and the bar
 cleared from the semantics, so a count is never read again at every step) and the notice, which
@@ -496,28 +511,73 @@ each line's words by their UTF-16 ranges, the edges faded. A drag pauses followi
 and offers *Follow lyrics*; tapping a timed line seeks. Blur is dropped where animations are off
 (`ANIMATOR_DURATION_SCALE` zero) or TalkBack is exploring (`rememberCalm`). A pane with no lyrics scrolls its empty state (`NoLyrics`), since large text makes it taller than the room above the controls and an unscrolled column squeezes its last child, the button; `EmptyState` itself cannot scroll, as many callers put it in a `LazyColumn` item.
 
-The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
-to 32, through core's `Profile` and the engine's `Equalisation` fallback. The engine holds one curve at
-a time; which one is the route's business (below). Android opens on the boundary's nine named
-presets (`equaliser_presets`, handed over in `equaliserInfo`; `eq.md`'s *The phones*) and
-frequency sliders labelled by their audible range, with live signed gain values. Selecting a
-preset enables the equaliser and stores its name and curve through the existing preferences;
-boosted presets lower the preamp to leave headroom, except Bass only: it raises the three lowest
-octave bands, leaves every other band flat and the preamp at zero, so the rest is never lowered.
-Editing a band or the preamp clears that preset name. An empty flat curve shows ten octave sliders
-(31.25 Hz to 16 kHz, Q sqrt(2)), creating
-the bands only on a completed edit. An AutoEq or imported profile keeps its filters, frequencies,
-Q and preamp; its gain-bearing bands get sliders without being converted to the octave layout.
-Advanced exposes the interactive graph, accessible band selectors and per-band type, frequency,
-gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the player's
-`fitted_preamp` at the stream rate, through the room correction applied (`fittedPreamp`, off the main thread) and commits
-the answer as a preamp edit, clearing the preset name; it is off with no bands. Every edit of a band
-or the preamp (slider, graph, band editor, added or deleted band, fit) switches the equaliser on, as a
-preset does (`withCurve`); only the switch turns it off, and confirmed reset removes
-every band and returns the preamp to zero without changing that switch. An edit is shown at once as a
-draft over the stored curve; the draft goes once the repository has tried it, so a rejected curve falls
-back to the stored one, and a graph drag the gesture loses (cancelled, scrolled away) is released, not kept. The drawn response is the
-stage's arithmetic at the stream rate (48 kHz with nothing open, so the graph never reads empty);
+**The equaliser is one page, the curve drawn and shaped where it is drawn, the phones' shared page**
+(`EqualiserScreen`, `eq.md`'s *The phones*): the boundary's parametric curve, any number of bands up to
+32, through core's `Profile` and the engine's `Equalisation` fallback. The engine holds one curve at a
+time; which one is the route's business (below). From the top: *Equaliser* (the switch, its line the
+curve's name and *Every output* or the output keeping it, *Off · Original sound* when off) and *Only for
+<output>* while the route is known (`SwitchRow`s); the graph, always shown (`EqualiserGraph` in an
+`EqualiserCard`, its height 10/16 of its width held to 180 to 340 dp, `graphHeightDp`, the level labels
+in a gutter of their own, `GraphFrame.gutter`, so no handle covers them); the band chips `1 … n`
+(`BandChips`, a `LazyRow` keeping the chosen chip in view) with *Add band* fixed at its end; the chosen
+band's card docked under them (`BandCard`); *Preamp* (*Level*, its value, *Fit* and the note *Fit brings
+the queue's loudest peak to full scale.*); *Presets* (a `LazyRow` of `FilterChip`s opening on the chosen
+one, its line beneath, or *Your own sound, shaped on the graph above.*); *Corrections*, rows to the
+pages `Screen.HeadphoneCorrection`, `Measurement`, `RoomCorrection`, `ListeningTest` and, only while
+another output keeps a curve, `OutputCurves`, each with a line (room correction's `roomStatus`: *No
+response chosen*, *On · <name>*, *Off · <name>*). *Reset curve* is the top bar's overflow menu,
+confirmed (`ConfirmDialog`). Every page is a `SettingsList` of `SettingsParts.kt`'s rows, and each
+sub-page has its own ViewModel scoped to its entry, so a measurement or a listening test ends when its
+page is left. On the medium phone the graph and the band card fit one screen above the mini-player once
+the top bar has collapsed.
+
+**A drag that starts on a handle edits it; one that starts anywhere else scrolls the page**
+(`Graph.kt`). A handle's hit area is the 48 dp square around it (`GraphFrame.held`, the nearest where
+squares overlap, as the ten octave handles of a 411 dp phone do; `EqualiserScalesTest`). A press inside
+one consumes the gesture and chooses the band, and a move past 2 dp places it (`GraphFrame.placed`:
+sideways the frequency, up and down the gain, a gainless filter keeping its gain), shown as a draft
+(`hold`) with the drawn range frozen at the press; a press anywhere else consumes nothing, so the list
+scrolls, and nothing is added by a tap. Release commits; an up the gesture did not see (the synthetic
+cancel, which arrives consumed), a pointer gone or the gesture's coroutine cancelled releases the draft
+instead (`release`). **Every gesture has an accessibility equivalent**: each handle is a 48 dp
+semantics node (`band-handle-N`, *Band N*, its type, frequency and gain) whose click chooses it and
+whose custom actions *Raise the gain* and *Lower the gain* (`GAIN_STEP_DB`, half a decibel, for a
+filter that carries gain) and *Raise the frequency* and *Lower the frequency* (`HERTZ_STEP_OCTAVES`, a
+third of an octave) commit at once (`withNudgedGain`, `withNudgedHertz`), so TalkBack and Switch Access
+reach what a drag does; the chips, *Add band* and the card's sliders are the rest of the way in.
+
+**The band card is the exact way in** (`BandEditor.kt`, `Controls.kt`, `Entry.kt`): *Band N · <type
+▾>* (a menu of the eight filters) and *Remove*, wrapping under the title where the line is too narrow,
+then *Gain*, *Frequency* and *Width* as `MeasureControl`s: a label, the value as a `TextButton` and the
+shared `components.CommitSlider` with its 4 dp track (`centred` for gain and the preamp, filled from
+0 dB; frequency and Q on a log scale, `LogScale`), whose inactive part is `outline`, 3:1 against the
+card; *Gain* is off and reads *Not used by notch* (and so on) for a filter that carries none. Pressing
+a value opens `ExactEntry`: the value selected, its unit, its reach (*From -24.0 dB to +24.0 dB*), a ±
+button for a signed value, since a decimal keyboard need not offer a minus, and *Set* only while the
+text reads inside the bounds (`Measure.accepted`; `typedNumber` takes a sign, `dB` and either decimal
+mark, `typedHertz` also `Hz`, `kHz` and `k`; `EntryTest`). *Add band* puts a peaking band at 0 dB and
+Q 1 in the middle, on a log scale, of the widest gap between the bands and the 20 Hz and 20 kHz ends,
+the gap nearest 1 kHz and then the lower winning a tie (`freeHertz`: 1 kHz on an empty curve, 707 Hz
+beside the octave layout), appends it and chooses it; *Remove* chooses its neighbour
+(`chosenAfterRemoving`). A band is always chosen while the curve shows any (`chosenBand`), so the card
+stands from the first frame (`EqualiserCurvesTest`).
+
+Selecting one of the boundary's named presets (`equaliser_presets`, handed over in `equaliserInfo`;
+`eq.md`'s *The phones*) enables the equaliser and stores its name and curve through the existing
+preferences; boosted presets lower the preamp to leave headroom, except Bass only: it raises the three
+lowest octave bands, leaves every other band flat and the preamp at zero, so the rest is never lowered.
+Editing a band or the preamp clears that preset name. An empty flat curve shows ten octave handles and
+chips (31.25 Hz to 16 kHz, Q sqrt(2), `editable`), creating the bands only on a committed edit. An
+AutoEq or imported profile keeps its filters, frequencies, Q and preamp; its bands are the handles as
+they are, never converted to the octave layout. *Fit* beside the preamp's level sends the shown curve to
+the player's `fitted_preamp` at the stream rate, through the room correction applied (`fittedPreamp`,
+off the main thread) and commits the answer as a preamp edit, clearing the preset name; it is off with
+no bands. Every edit of a band or the preamp (a handle, the card, an accessibility action, an added or
+removed band, an exact value, *Fit*) switches the equaliser on, as a preset does (`withCurve`); only the
+switch turns it off, and confirmed *Reset curve* removes every band and returns the preamp to zero
+without changing that switch. An edit is shown at once as a draft over the stored curve; the draft goes
+once the repository has tried it, so a rejected curve falls back to the stored one. The drawn response is
+the stage's arithmetic at the stream rate (48 kHz with nothing open, so the graph never reads empty);
 the native boundary validates the whole curve before sending any commands, and sends only fields
 that changed. ReplayGain, true-peak clip
 prevention, resampling quality/phase and experimental lossy restoration use existing engine
@@ -544,31 +604,32 @@ reaches `LibraryRepository.outputRouteChanged` on the ordered worker, which send
 the shared one, where it differs from the one playing (`followRoute`), writing nothing.
 `PlaybackPreferencesStore` keeps a bound curve in `playback` beside the shared one:
 `equaliser-curve-for.<id>` (EqualizerAPO text), `equaliser-curve-name-for.<id>` and
-`equaliser-route-names.<id>`. While the output in use is bound every edit (sliders, graph, AutoEq,
-import, reset) writes its curve and the other choices still go to the shared keys
+`equaliser-route-names.<id>`. While the output in use is bound every edit (graph, band card, AutoEq,
+import, measurement, reset) writes its curve and the other choices still go to the shared keys
 (`write(preferences, route)`); an unreadable bound curve reads as the shared one. *Only for <output>*
-on the equaliser page (`OutputCurveSection`) binds the curve playing to that output or unbinds it,
-falling back to the shared curve at once; *Curves kept for other outputs* lists the rest, each *Forget*
-confirmed and told in a notice (Android's idiom, where iOS offers Undo). The equaliser switch and
+on the equaliser page binds the curve playing to that output or unbinds it, falling back to the shared
+curve at once; *Curves for other outputs* (`OutputCurvesScreen`, a Corrections row shown only while
+another output keeps one) lists the rest, each *Forget* confirmed and told in a notice (Android's idiom, where iOS offers Undo). The equaliser switch and
 room correction stay one for every output, as on the desktop and iOS
 (`OutputRoutesTest`, `OutputCurvesTest`, `PlaybackPreferencesTest`).
 
-**A measurement of the listener's own is fitted from the equaliser page** (`MeasurementSection`,
-`MeasurementAim.kt`, between *Import a profile* and *Headphone correction*): *Fit toward* chips for
-the boundary's built-in targets (`measurement_offers`, the recommended one chosen first) and *A
-file…*, which opens `ActivityResultContracts.OpenDocument` and reads the target through
-`ContentResolver.readUpTo` (`DocumentReads.kt`, at most the offers' `bytes_at_most` and one byte, so
-the boundary's refusal speaks for a larger one); *Fit a measurement…* opens the picker for the
-measurement itself. `EqualiserViewModel.fitFrom` reads on `Dispatchers.IO`, fits on
-`Dispatchers.Default` through `fit_measurement`, then commits the fitted curve as an import does
-(`commit`: it switches the equaliser on, binds to the output in use) and says `fitSentence`: the
-bands, the target, the error before and after and any lines passed over, also kept in the section
-under a progress bar while it runs. `MeasurementView` holds the offers, the aim (`Aim.BuiltIn` or
-`Aim.Document`), whether a fit is running and the last sentence; a second fit is refused while one
-runs, and a refusal reaches the status line as the boundary's sentence
-(`MeasurementAimTest`). The section does not show before the offers are read.
+**A measurement of the listener's own is fitted on *Measure with a microphone*** (`MeasurementScreen`,
+its own `MeasurementViewModel`, `MeasurementAim.kt`): *Fit toward* is a row opening a `ChoiceDialog`
+of the boundary's built-in targets (`measurement_offers`, the recommended one chosen first) and *A file
+of your own…* (`TargetChoice.File`), which opens `ActivityResultContracts.OpenDocument` and reads the
+target through `ContentResolver.readUpTo` (`DocumentReads.kt`, at most the offers' `bytes_at_most` and
+one byte, so the boundary's refusal speaks for a larger one); *A measurement file* holds *Fit a
+measurement…*, which opens the picker for the measurement itself. `MeasurementViewModel.fitFrom` reads
+on `Dispatchers.IO`, fits on `Dispatchers.Default` through `fit_measurement`, then commits the fitted
+curve as an import does (it switches the equaliser on, binds to the output in use) and says
+`fitSentence`: the bands, the target, the error before and after and any lines passed over, kept at the
+page's foot under a progress bar while it runs. `MeasurementView` holds the offers, the aim
+(`Aim.BuiltIn` or `Aim.Document`), whether a fit is running and the last sentence; a second fit is
+refused while one runs, and a refusal reaches the status line as the boundary's sentence
+(`MeasurementAimTest`). The page draws every row before the offers are read (*Reading the targets…*,
+the buttons off), so nothing shifts when they arrive.
 
-**The room is measured from the same section** (*Measure*, `EqualiserViewModel.measureRoom`,
+**The room is measured from the same page** (*The microphone*'s *Measure*, `MeasurementViewModel.measure`,
 `SweepRecorder.kt`; `eq.md`'s *A measurement of your own*): it asks `Host.allowMicrophone` (refused:
 the section says so and offers *Open Settings*, `MeasurementView.denied`), pauses a playing engine
 (`LibraryRepository.pauseForRecording`, which Listen shares), asks `measurement_rate_for` of
@@ -578,14 +639,15 @@ usage) while an `AudioRecord` (`UNPROCESSED` where `PROPERTY_SUPPORT_AUDIO_SOURC
 the phone has it, else `MIC`; float mono at the same rate) fills `recorded_frames` on the IO
 dispatcher, the sweep never passing the engine and so the equaliser and room correction in force.
 Both are released in `finally`, so *Stop* (which cancels the job; the read loop checks every tenth of
-a second) and a failure leave nothing open. The recording goes to `fit_recorded_sweep` on
-`Dispatchers.Default` with the aim and the optional *Microphone calibration…* file
-(`Calibration`, kept in `MeasurementView` until forgotten), and the fitted curve is committed as a
+a second), leaving the page (`onCleared` cancels it too) and a failure leave nothing open. The recording goes to `fit_recorded_sweep` on
+`Dispatchers.Default` with the aim and the optional *Microphone calibration* file (a row that
+chooses one, with a button that forgets it; `Calibration`, kept in `MeasurementView` until forgotten), and the fitted curve is committed as a
 fitted measurement is, named `Measured`, with `fitSentence`. A second *Measure* is refused while one
 runs (`MeasurementView.sounding`, `MeasurementAimTest`).
 
-**Room correction is the equaliser page's last section** (`RoomCorrectionSection`, `RoomCorrectionState.kt`):
-*Choose a response…* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
+**Room correction is a page of its own** (`RoomCorrectionScreen`, `RoomCorrectionViewModel`,
+`RoomCorrectionState.kt`): *Correct for the room* (a `SwitchRow`, off until a response is kept, its line
+the response's name and `describeRoom`), then *The response*: *Choose a response* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
 file is read in `room_correction_chunk_bytes()` chunks off the main thread and staged through
 `begin_room_correction`, `stage_room_correction` and `finish_room_correction` (a failure calls
 `abandon_room_correction`), never held whole, then switched on; the switch, the response's channels, rate and length and
@@ -593,28 +655,31 @@ file is read in `room_correction_chunk_bytes()` chunks off the main thread and s
 and `room-correction-name` live in the `playback` preferences, as iOS's suite; the kept response is
 applied at start (`initialize`), a missing file turning correction off with a notice. *Choose a
 pair* opens `ActivityResultContracts.OpenDocument` of audio for the left speaker's file, kept in
-`RoomView.left` (`RoomHalf`: its URI and display name) while the section shows it with *Choose the
+`RoomView.left` (`RoomHalf`: its URI and display name) while the page shows it with *Choose the
 right speaker's response* and *Cancel*; the right file chosen, both are read whole, up to 64 MiB and one byte, and
 kept through `keep_binaural_room_correction` (`RoomCorrectionState.chooseRight`, `eq.md`'s *Crossfeed
 and binaural responses*; `RoomPairNamesTest`). Choosing,
-applying, forgetting and restoring run one at a time under one mutex. **The section ends in the
-speaker angle, elevation and the head turned** (`SpeakerSetting`, `RoomView.angle`, `elevation` and
-`yaw`, bounds from `speaker_limits()`): each a stepper and the desktop's chips, sent as
+applying, forgetting and restoring run one at a time under one mutex. **The page ends in *The
+speakers*, shown only once a response is kept**: the speaker angle, elevation and the head turned
+(`SpeakerSetting`, a `SettingRow` with its reading and steppers, `RoomView.angle`, `elevation` and `yaw`,
+bounds from `speaker_limits()`), each with the desktop's chips beneath (`ANGLE_PRESETS`,
+`ELEVATION_PRESETS`, `YAW_PRESETS`), sent as
 `set_speaker_angle`, `set_speaker_elevation` and `set_head_yaw` (a set that will not read there
 leaves the trio standing and the failure on the banner) and kept in `playback` as `speaker-angle`,
 `speaker-elevation` and `head-yaw`, sent at start before the kept response is read (`eq.md`).
 
-**The listening test tests a setting as well as the equaliser** (`ListeningTestSection`,
-`ListeningTestView.kt`, after the room correction; `eq.md`'s *The phones*): `FilterChip`s choose
+**The listening test tests a setting as well as the equaliser** (`ListeningTestScreen`, its own
+`ListeningTestViewModel`, `ListeningTestView.kt`; `eq.md`'s *The listening test*): `FilterChip`s choose
 `Testing` (*Equaliser*, *Restoration*, *Resampler*, *Dither*) and, for a setting,
-`EqualiserViewModel.chooseTesting` asks `settingTestByDefault(kind, preferences)` for the
+`ListeningTestViewModel.chooseTesting` asks `settingTestByDefault(kind, preferences)` for the
 `TestedSetting` to begin from, drawn as *A is …* with chips for B (`Against`; the labels are
 Processing's `restorationChoices`, `qualityChoices` and `phaseChoices` and the section's
 `ditherChoices`, A left out of B's restoration and dither choices). `beginTest` calls
 `beginSettingTest` on `Dispatchers.Default` where a setting is chosen, the begin buttons reading
 *Measuring…* (restoration) or *Starting…* while it runs, and an engine refusal is `Resonate.attempt`'s
-banner carrying the boundary's sentence. The words are `ListeningTestView.kt`'s, the levels sentence
-from `TestLevels` (`ListeningTestViewTest`).
+banner carrying the boundary's sentence. The equaliser is tested on the stored curve, and the test
+ends when the page is left (`onCleared` calls `endTest`). The words are `ListeningTestView.kt`'s, the
+levels sentence from `TestLevels` (`ListeningTestViewTest`).
 
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation
 and the existing fade into a pause. Snapshot polling carries the remaining time; the UI keeps no
@@ -1146,9 +1211,13 @@ independent durable marks advanced only after success. Existing history is inclu
 asked; Last.fm password sign-in saves the returned session, never that password, into the saved
 accounts with the key and secret it was made under, leaving every other unsaved field as typed; the
 password field clears only once the sign-in succeeds, and *Sign out* saves the account without its
-session. *Headphone correction* searches as typing settles or on the keyboard's search, once per text;
-emptying the field clears the results, and applying one shows its own progress and says when AutoEq
-gave no profile. Favourites
+session. *Headphone correction* (`HeadphoneCorrectionScreen`) opens on the curve in use (read before
+its first frame, `currentOf`), searches AutoEq as typing settles or on the keyboard's search, once per
+text (offline, a card says so and the field is off); emptying the field clears the results, applying
+one is confirmed (`ConfirmDialog`), shows its own progress and says when AutoEq gave no profile.
+*Import a profile* follows on the same page, online or not: a name, the pasted text and *Apply
+profile*, which commits the parsed curve and says `importSentence` (the bands, the name, a GraphicEQ
+fit, and what was held, approximated or passed over). Favourites
 are told by `tell_loves(account)` (`loves.rs`), which both phones' 30 s scrobbling loop calls after
 the listens (the Scrobbling page says so; there is no send button, and a favourite taken back is
 unloved on each saved account). It is the desktop's `Library::tell_loves` over the document

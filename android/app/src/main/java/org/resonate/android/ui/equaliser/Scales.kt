@@ -52,39 +52,65 @@ object GraphScale {
 
 data class GraphPoint(val x: Float, val y: Float)
 
-class GraphFrame(val width: Float, val height: Float, val span: Float) {
+class GraphFrame(
+    val width: Float,
+    val height: Float,
+    val span: Float,
+    val inset: Float = 0f,
+    val gutter: Float = 0f,
+) {
+    val left: Float
+        get() = inset + gutter
+
+    val plotWidth: Float
+        get() = max(width - left - inset, 1f)
+
+    val plotHeight: Float
+        get() = max(height - 2 * inset, 1f)
+
     fun handle(curve: EqualiserCurve, index: Int): GraphPoint {
         val band = curve.bands[index]
         return GraphPoint(
-            GraphScale.x(band.frequencyHz, width),
-            GraphScale.y(level(band, curve.preampDb), height, span),
+            left + GraphScale.x(band.frequencyHz, plotWidth),
+            inset + GraphScale.y(level(band, curve.preampDb), plotHeight, span),
         )
     }
 
-    fun nearest(curve: EqualiserCurve, point: GraphPoint, reach: Float): Int? =
+    fun held(curve: EqualiserCurve, point: GraphPoint, reach: Float): Int? =
         curve.bands.indices
-            .map { index ->
-                val centre = handle(curve, index)
-                index to hypot(centre.x - point.x, centre.y - point.y)
+            .map { index -> index to handle(curve, index) }
+            .filter { (_, centre) ->
+                abs(centre.x - point.x) <= reach && abs(centre.y - point.y) <= reach
             }
-            .minByOrNull { it.second }
-            ?.takeIf { it.second <= reach }
+            .minByOrNull { (_, centre) -> hypot(centre.x - point.x, centre.y - point.y) }
             ?.first
 
-    fun placed(curve: EqualiserCurve, held: Int, point: GraphPoint, bounds: EqualiserBounds): EqualiserCurve {
+    fun placed(
+        curve: EqualiserCurve,
+        held: Int,
+        point: GraphPoint,
+        bounds: EqualiserBounds,
+    ): EqualiserCurve {
         val band = curve.bands.getOrNull(held) ?: return curve
-        val hertz = tidyHertz(GraphScale.hertzAt(point.x, width).coerceIn(bounds.hertz))
+        val hertz =
+            tidyHertz(GraphScale.hertzAt(point.x - left, plotWidth).coerceIn(bounds.hertz))
         val gain =
-            if (band.filter.usesGain)
-                tidyDb((GraphScale.dbAt(point.y, height, span) - curve.preampDb).coerceIn(bounds.gain))
-            else band.gainDb
+            if (band.filter.usesGain) {
+                val drawn = GraphScale.dbAt(point.y - inset, plotHeight, span)
+                tidyDb((drawn - curve.preampDb).coerceIn(bounds.gain))
+            } else band.gainDb
         return curve.withBand(held, band.copy(frequencyHz = hertz, gainDb = gain))
     }
-
-    fun added(curve: EqualiserCurve, point: GraphPoint): Pair<Float, Float> =
-        GraphScale.hertzAt(point.x, width) to
-            GraphScale.dbAt(point.y, height, span) - curve.preampDb
 }
+
+const val GRAPH_TALL_PER_WIDE = 10f / 16f
+
+const val GRAPH_LOWEST_DP = 180f
+
+const val GRAPH_HIGHEST_DP = 340f
+
+fun graphHeightDp(widthDp: Float): Float =
+    (widthDp * GRAPH_TALL_PER_WIDE).coerceIn(GRAPH_LOWEST_DP, GRAPH_HIGHEST_DP)
 
 class LogScale(least: Float, most: Float) {
     private val low = max(least, 1e-6f)
@@ -115,16 +141,3 @@ fun measured(name: String): Measured {
     val parts = name.split(" — ", limit = 2)
     return Measured(parts[0].trim(), parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() })
 }
-
-fun bankFits(count: Int, widthDp: Float, labelDp: Float): Boolean =
-    count > 0 && widthDp / count >= max(BANK_COLUMN_AT_LEAST_DP, labelDp + BANK_COLUMN_SPACE_DP)
-
-const val BANK_COLUMN_AT_LEAST_DP = 34f
-
-const val BANK_COLUMN_SPACE_DP = 4f
-
-fun bankCap(curve: EqualiserCurve, bounds: EqualiserBounds): Float =
-    minOf(
-        bounds.gainAtMostDb,
-        max(SLIDER_REACH_DB, curve.bands.filter { it.filter.usesGain }.maxOfOrNull { abs(it.gainDb) } ?: 0f),
-    )

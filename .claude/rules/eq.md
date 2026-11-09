@@ -26,7 +26,7 @@ paths:
   - "crates/resonate-engine/src/engine/arms.rs"
   - "ios/Sources/Resonate/ListeningTest.swift"
   - "ios/Sources/ResonateLogic/ListeningTestWords.swift"
-  - "android/app/src/main/java/org/resonate/android/ui/equaliser/ListeningTest*.kt"
+  - "android/app/src/main/java/org/resonate/android/ui/equaliser/*.kt"
   - "crates/resonate-ui/src/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/curve.rs"
@@ -38,7 +38,6 @@ paths:
   - "ios/Sources/Resonate/MeasuredCorrection.swift"
   - "ios/Sources/ResonateLogic/Measurement.swift"
   - "android/app/src/main/java/org/resonate/android/RoomCorrectionState.kt"
-  - "android/app/src/main/java/org/resonate/android/ui/equaliser/Measurement*.kt"
   - "ios/Sources/Resonate/EqualiserGraph.swift"
 ---
 
@@ -635,11 +634,10 @@ tested.
   test is `ListeningTestFinished`) and `standing()` is the whole `TestStanding` (planned, answered,
   right, finished, `chance_percent`, `significant`, the verdicts, the levels and the arm heard,
   none for X); `end_listening_test()` sends the preferences' own `Equalisation` back
-  (`PlaybackPreferences::equalisation`, the one `commands` builds). Both phones draw it in the
-  equaliser page after the room correction with the desktop's wording (Android `ListeningTestSection`,
-  iOS `ListeningTestSection`; the words are `ListeningTestView.kt` and `ListeningTestWords.swift`,
-  held by `ListeningTestViewTest` and `ListeningTestWordsTests`) and end it when the page is left or
-  the test is ended; an edit of the curve sends the real curve and so ends the comparison in all but
+  (`PlaybackPreferences::equalisation`, the one `commands` builds). Both phones draw it on the
+  equaliser's *Listening test* page with the desktop's wording (Android `ListeningTestScreen`; the
+  words are `ListeningTestView.kt` and `ListeningTestWords.swift`, held by `ListeningTestViewTest` and
+  `ListeningTestWordsTests`) and end it when that page is left or the test is ended; an edit of the curve sends the real curve and so ends the comparison in all but
   name. **A setting is tested through `begin_setting_test(setting, trials)`** (blocking: restoration
   is measured first, so a phone calls it off its main thread): a `TestedSetting` (`Restoration`
   of two `LossyRestoration`s, `Resampling` of two qualities and phases, `Dither` of two
@@ -656,7 +654,7 @@ tested.
   never change: `TestedDither::Shaped`) and B their opposite, so no front end keeps the rule. An
   engine refusal reads as the sentences above (`failure::of_a_player`, so `Error::Player` shows
   *A and B would sound the same…* where it showed only the cause). Both phones' *Listening test*
-  sections choose *Equaliser*, *Restoration*, *Resampler* or *Dither* (`Testing`, `ListeningTesting`),
+  pages choose *Equaliser*, *Restoration*, *Resampler* or *Dither* (`Testing`, `ListeningTesting`),
   show A and chips or a menu for B (A is left out of B's restoration and dither choices, which would
   render alike), call `begin_setting_test` off the main thread with *Measuring…* on the begin
   buttons for restoration and *Starting…* for the rest, and word the levels as the window does
@@ -714,9 +712,9 @@ tested.
   keep the 64 MiB whole-bytes call. `apply_room_correction(on)` sends `SetConvolution` with
   the kept response or none, answering its channels, rate and length; `kept_room_correction` answers the same description without sending anything, so a page shows the response with correction off; `forget_room_correction`
   clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
-  `playback` suite and applies the response at start, a missing file turning correction off with a notice (`RoomCorrectionState`, the equaliser page's
-  *Room correction* section, `fileImporter` of audio); Android keeps the same two keys in its
-  `playback` preferences and does the same (`RoomCorrectionState.kt`, `RoomCorrectionSection`, the
+  `playback` suite and applies the response at start, a missing file turning correction off with a notice (`RoomCorrectionState`, the equaliser's
+  *Room correction* page, `fileImporter` of audio); Android keeps the same two keys in its
+  `playback` preferences and does the same (`RoomCorrectionState.kt`, `RoomCorrectionScreen`, the
   system audio document picker).
 
 ## Crossfeed and binaural responses
@@ -767,8 +765,8 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   pair…* (left file, then right), which keeps `binaural-response.wav` beside the equaliser folder and
   corrects by it as by any chosen file; the phones' boundary has `keep_binaural_room_correction`
   (two byte strings and extensions, a refusal `Error::ImpulsePair`), which keeps the joined pair as
-  the one `room-correction.*` response. Each phone's *Room correction* section offers *Choose a
-  pair* (the left speaker's file, held while the section shows *Left speaker* with *Choose the right
+  the one `room-correction.*` response. Each phone's *Room correction* page offers *Choose a
+  pair* (the left speaker's file, held while the page shows *Left speaker* with *Choose the right
   speaker's response* and *Cancel*, then the right's), reads both as the single file is read, keeps
   them through it and switches correction on, naming the response *<left stem> and <right stem>*
   (`pairedRoomName`, `RoomPair.name`); a refusal is reported as the single file's is, and the pair
@@ -965,7 +963,8 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   (`SpeakerLimits`, the yaw's included), so neither phone keeps a number of its own. A phone still
   stages a set in chunks, so a large HDF5 set keeps as it does on the desktop; only the binaural
   pair's two files cross whole, up to `IMPULSE_BYTES_AT_MOST` (64 MiB). **Both phones' Room correction
-  sections offer the three**: Android a `SpeakerSetting` each (a `ListItem` with the reading and
+  pages offer the three, under *The speakers*, once a response is kept**: Android a `SpeakerSetting`
+  each (a `SettingRow` with the reading and
   `IconButton`s of `Icons.Rounded.Remove` and `Add` stepping a degree, then `FilterChip`s of the
   desktop's presets; the head's turn at -45, -20, 0, 20, 45), kept as `speaker-angle`,
   `speaker-elevation` and `head-yaw` in the `playback`
@@ -1436,7 +1435,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `SharedPreferences`.
 - **The named presets are one table both phones read**: `equaliser_presets` answers Flat, Bass
   boost, Bass only, Bass cut, Vocals, Warm, Bright, Treble cut, Rock and Electronic in that order
-  (an even ten, so the iPhone's two-column grid has no gap in its last row), each a name,
+  (ten, one row of chips on either phone's page), each a name,
   a line saying what it does and its curve: Flat the default curve (no bands, no name), the rest ten
   octave bands named for the preset. Boosted presets lower the preamp for headroom (the cuts, Bass cut and
   Treble cut, leave it at 0 dB), except Bass
@@ -1445,6 +1444,28 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   A phone keeps only each preset's icon, keyed by name. A curve is shown as a preset where its name
   is the preset's, or as Flat where it has no gain anywhere; editing a band or the preamp clears the
   name.
+- **Both phones draw one equaliser page** (Android's `EqualiserScreen`, `android.md`; iOS's,
+  `ios.md`): the *Equaliser* switch and *Only for <output>*; the graph, always shown, its height
+  following its width; the band chips `1 … n` scrolling sideways with *Add band* after them; the
+  chosen band's card docked under the chips (*Band N · <type ▾>*, *Remove*, then *Gain*, *Frequency*
+  and *Width* as thin-track sliders with their values, a value pressed for exact entry, *Gain* off
+  for a filter that carries none), so the graph and the card fit one screen; *Preamp* (its slider,
+  value and *Fit*, a one-line note); *Presets*, a chip row with the chosen preset's line beneath;
+  *Corrections*, rows opening pages, each with a status line: *Headphone correction* (AutoEq's search
+  and *Import a profile*, pasted EqualizerAPO or GraphicEQ text), *Measure with a microphone* (the
+  target, a measurement file, *Measure* and *Stop*, the microphone's calibration), *Room correction*
+  (the response, a speaker pair, then the speaker angle, elevation and head turned, shown only once a
+  response is kept), *Listening test* and, while another output keeps a curve, *Curves for other
+  outputs*; and *Reset curve* in the top bar's overflow, confirmed, leaving the switch alone. **A drag
+  that starts on a handle edits it** (up and down the gain, sideways the frequency) and one that starts
+  anywhere else scrolls the page; a handle's hit area is at least 48 dp (44 pt), each handle is moved
+  by accessibility actions too, nothing is added by a tap, and the drawn range is frozen while a
+  handle is held. An edit is a draft committed on release and a drag the gesture loses is dropped;
+  every edit switches the equaliser on and only the switch turns it off; the bounds are
+  `equaliser_limits`'s. An empty flat curve shows the ten octave handles, the bands made only by a
+  committed edit (below). A measurement or a listening test ends when its page is left. The Settings
+  root both phones open is grouped *Sound*, *Library*, *Online & services*, *Devices*, *Appearance*
+  and *App*, and its search opens the page holding a match, the equaliser's pages included.
 - **Ten octave bands are a layout, not the model**: `ten_band_curve(preamp, gains)` is ten peaking
   bands at `EQUALISER_CENTRES` (31.25 Hz to 16 kHz) with Q √2, a non-finite level flat, the rest
   held to the bounds; `ten_band_gains` answers the gains only for a curve of exactly that layout.

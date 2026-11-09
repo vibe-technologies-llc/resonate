@@ -480,7 +480,12 @@ The room correction reads a SOFA set at the speaker pair the boundary holds (`ro
 bounds; `eq.md`).
 
 The phones' curve, its bounds, the drawn response, imports and stored form are `eq.md`'s *The
-phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preferences.
+phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preferences. Both phones draw it
+as the one page `eq.md`'s *The phones* lays out (the graph with the chosen band's card docked under
+it, corrections on pages of their own), every call that page needs already on this boundary
+(`equaliser_limits`, `response_curve`, `parse_eq_profile`, `measurement_offers`, `fit_measurement`,
+`fit_recorded_sweep`, `fitted_preamp`, AutoEq's search and profile, room correction and the listening
+test).
 
 ## Output
 

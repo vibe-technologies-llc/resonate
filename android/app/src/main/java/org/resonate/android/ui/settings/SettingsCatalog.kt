@@ -7,9 +7,9 @@ enum class SettingsGroup(val title: String) {
     SOUND("Sound"),
     LIBRARY("Library"),
     ONLINE("Online & services"),
+    DEVICES("Devices"),
     APPEARANCE("Appearance"),
-    NOTIFICATIONS("Notifications"),
-    ABOUT("About"),
+    APP("App"),
 }
 
 enum class Setting(
@@ -17,18 +17,65 @@ enum class Setting(
     val title: String,
     val detail: String,
     val inner: List<String> = emptyList(),
+    val onRoot: Boolean = true,
 ) {
     EQUALISER(
         SettingsGroup.SOUND,
         "Equaliser",
         "Shape your sound",
-        listOf("Presets", "Bands", "Preamp", "Import a profile", "Room correction"),
+        listOf(
+            "Presets",
+            "Bands",
+            "Add band",
+            "Preamp",
+            "Fit the preamp",
+            "Reset curve",
+            "Parametric",
+            "Only for this output",
+        ),
     ),
     HEADPHONE_CORRECTION(
         SettingsGroup.SOUND,
         "Headphone correction",
-        "AutoEq profiles for your headphones",
-        listOf("AutoEq", "Headphone model"),
+        "AutoEq profiles and pasted EqualizerAPO text",
+        listOf("AutoEq", "Headphone model", "Import a profile", "EqualizerAPO", "GraphicEQ"),
+        onRoot = false,
+    ),
+    MEASUREMENT(
+        SettingsGroup.SOUND,
+        "Measure with a microphone",
+        "Fit a measurement or a sweep toward a target",
+        listOf("Microphone", "Sweep", "Measurement file", "Target curve", "Calibration", "REW"),
+        onRoot = false,
+    ),
+    ROOM_CORRECTION(
+        SettingsGroup.SOUND,
+        "Room correction",
+        "A measured response convolved on every output",
+        listOf(
+            "Impulse response",
+            "Convolution",
+            "SOFA",
+            "Binaural",
+            "Speaker angle",
+            "Speaker elevation",
+            "Head turned",
+        ),
+        onRoot = false,
+    ),
+    LISTENING_TEST(
+        SettingsGroup.SOUND,
+        "Listening test",
+        "A blind ABX test of the curve or a setting",
+        listOf("ABX", "Blind test", "Compare"),
+        onRoot = false,
+    ),
+    OUTPUT_CURVES(
+        SettingsGroup.SOUND,
+        "Curves for other outputs",
+        "Curves kept for one output",
+        listOf("Forget a curve", "Kept curve"),
+        onRoot = false,
     ),
     PROCESSING(
         SettingsGroup.SOUND,
@@ -139,8 +186,8 @@ enum class Setting(
         listOf("Client ID", "Sign in to Spotify", "Follow the account", "Move to Resonate once"),
     ),
     SYNC(
-        SettingsGroup.ONLINE,
-        "Devices",
+        SettingsGroup.DEVICES,
+        "Device sync",
         "Your music across your devices",
         listOf(
             "Device sync",
@@ -155,13 +202,14 @@ enum class Setting(
     ),
     APPEARANCE(
         SettingsGroup.APPEARANCE,
-        "Theme and accent colour",
+        "Appearance",
         "Light, dark and the colour Resonate wears",
         listOf(
             "Theme",
             "Light theme",
             "Dark theme",
             "System theme",
+            "Theme and accent colour",
             "Accent colour",
             "Wallpaper colours",
             "Mauve",
@@ -171,18 +219,20 @@ enum class Setting(
             "Amber",
             "Peach",
             "Red",
+            "Pitch black",
+            "High contrast",
             "Player background",
             "Player intensity",
             "Now Playing",
         ),
     ),
     NOTIFICATIONS(
-        SettingsGroup.NOTIFICATIONS,
+        SettingsGroup.APP,
         "Playback notifications",
         "Controls on the lock screen and in the shade",
         listOf("Permission", "Media controls"),
     ),
-    VERSION(SettingsGroup.ABOUT, "Version", "Resonate", listOf("About")),
+    VERSION(SettingsGroup.APP, "Version", "Resonate", listOf("About")),
 }
 
 data class SettingMatch(val setting: Setting, val shownDetail: String)
@@ -210,7 +260,7 @@ private fun List<String>.allWithin(index: Set<String>): Boolean = all { asked ->
 
 fun Setting.match(query: String): SettingMatch? {
     val asked = queryWords(query)
-    if (asked.isEmpty()) return SettingMatch(this, detail)
+    if (asked.isEmpty()) return if (onRoot) SettingMatch(this, detail) else null
     if (asked.allWithin(indexWords("$title $detail"))) return SettingMatch(this, detail)
     inner
         .firstOrNull { asked.allWithin(indexWords(it)) }

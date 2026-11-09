@@ -3,8 +3,12 @@ package org.resonate.android.ui.equaliser
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,25 +25,37 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
 
-private class Hold(val band: Int?, val span: Float, val start: Offset, val offset: Offset)
+private val HANDLE_RADIUS = 12.dp
+private val HANDLE_HALO = 20.dp
+private val HANDLE_TARGET = 48.dp
+private val GRAPH_INSET = 14.dp
+private val STILL_WITHIN = 2.dp
+private val LABEL_GAP = 8.dp
+private const val HALO_ALPHA = 0.18f
+private val WIDEST_LEVELS = listOf("+30", "\u221230")
 
 @Composable
 fun EqualiserGraph(
@@ -50,7 +66,6 @@ fun EqualiserGraph(
     onSelect: (Int) -> Unit,
     onEdit: (EqualiserCurve) -> Unit,
     onCommit: (EqualiserCurve) -> Unit,
-    onAdd: (hertz: Float, gainDb: Float) -> Unit,
     onRelease: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -61,108 +76,176 @@ fun EqualiserGraph(
     val select by rememberUpdatedState(onSelect)
     val edit by rememberUpdatedState(onEdit)
     val commit by rememberUpdatedState(onCommit)
-    val add by rememberUpdatedState(onAdd)
     val release by rememberUpdatedState(onRelease)
     val scheme = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val labels = MaterialTheme.typography.labelSmall.copy(color = scheme.onSurfaceVariant)
     val numbers = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
     val density = LocalDensity.current
-    val reach = with(density) { HANDLE_REACH.toPx() }
-    val tapTravel = with(density) { TAP_TRAVEL.toPx() }
-    val radius = with(density) { HANDLE_RADIUS.toPx() }
-    Canvas(
-        modifier
-            .fillMaxWidth()
-            .height(GRAPH_HEIGHT)
-            .testTag("equaliser-graph")
-            .semantics {
-                contentDescription = graphDescription(curve, selected)
-                customActions =
-                    listOf(
-                        CustomAccessibilityAction("Add band") {
-                            add(ADDED_BAND_HERTZ, ADDED_BAND_GAIN_DB)
-                            true
-                        }
-                    )
-            }
-            .pointerInput(bounds) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val frame = GraphFrame(size.width.toFloat(), size.height.toFloat(), latestSpan)
-                    val point = GraphPoint(down.position.x, down.position.y)
-                    val found = frame.nearest(latest, point, reach)
-                    val hold =
-                        if (found == null) Hold(null, latestSpan, down.position, Offset.Zero)
-                        else {
-                            val centre = frame.handle(latest, found)
-                            down.consume()
-                            select(found)
-                            Hold(found, latestSpan, down.position, Offset(centre.x, centre.y) - down.position)
-                        }
-                    frozen = hold.span
-                    var moved = false
-                    var abandoned = false
-                    var finished = false
-                    var last = down.position
-                    var placed: EqualiserCurve? = null
-                    try {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) {
-                                last = change.position
-                                break
-                            }
-                            if (hold.band != null) {
-                                last = change.position
-                                if (!moved && (change.position - hold.start).getDistance() > 2f) moved = true
-                                if (moved) {
-                                    val at = change.position + hold.offset
-                                    val next = frame.placed(latest, hold.band, GraphPoint(at.x, at.y), bounds)
+    val reach = with(density) { (HANDLE_TARGET / 2).toPx() }
+    val still = with(density) { STILL_WITHIN.toPx() }
+    val inset = with(density) { GRAPH_INSET.toPx() }
+    val target = with(density) { HANDLE_TARGET.toPx() }
+    val gutter =
+        remember(labels, density) {
+            WIDEST_LEVELS.maxOf { measurer.measure(it, labels).size.width } +
+                with(density) { LABEL_GAP.toPx() }
+        }
+    val chosenIndex = selected
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val height = graphHeightDp(maxWidth.value).dp
+        val frame =
+            GraphFrame(
+                constraints.maxWidth.toFloat(),
+                with(density) { height.toPx() },
+                span,
+                inset,
+                gutter,
+            )
+        Canvas(
+            Modifier.fillMaxWidth()
+                .height(height)
+                .testTag("equaliser-graph")
+                .semantics { contentDescription = graphDescription(curve, chosenIndex) }
+                .pointerInput(bounds, inset, gutter) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val grip =
+                            GraphFrame(
+                                size.width.toFloat(),
+                                size.height.toFloat(),
+                                latestSpan,
+                                inset,
+                                gutter,
+                            )
+                        val band =
+                            grip.held(latest, GraphPoint(down.position.x, down.position.y), reach)
+                                ?: return@awaitEachGesture
+                        val centre = grip.handle(latest, band)
+                        val offset = Offset(centre.x, centre.y) - down.position
+                        down.consume()
+                        select(band)
+                        frozen = grip.span
+                        var placed: EqualiserCurve? = null
+                        var finished = false
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    finished = !change.isConsumed
+                                    break
+                                }
+                                val moved = (change.position - down.position).getDistance() > still
+                                if (placed != null || moved) {
+                                    val at = change.position + offset
+                                    val next =
+                                        grip.placed(latest, band, GraphPoint(at.x, at.y), bounds)
                                     placed = next
                                     edit(next)
                                 }
                                 change.consume()
-                            } else {
-                                last = change.position
-                                if (change.isConsumed ||
-                                    (change.positionChange() != Offset.Zero &&
-                                        (change.position - hold.start).getDistance() > tapTravel)
-                                ) {
-                                    abandoned = true
-                                    break
-                                }
+                            }
+                        } finally {
+                            frozen = null
+                            val ending = placed
+                            if (ending != null) {
+                                if (finished) commit(ending) else release()
                             }
                         }
-                        finished = true
-                    } finally {
-                        frozen = null
-                        if (hold.band != null && moved) {
-                            val ending = placed
-                            if (finished && ending != null) commit(ending) else release()
-                        }
-                    }
-                    if (hold.band == null && !abandoned && (last - hold.start).getDistance() <= tapTravel) {
-                        val (hertz, gain) = frame.added(latest, GraphPoint(hold.start.x, hold.start.y))
-                        add(hertz, gain)
                     }
                 }
+        ) {
+            inset(frame.left, inset, inset, inset) {
+                drawGrid(span, scheme.outlineVariant, scheme.outline, measurer, labels)
+                drawResponse(response, span, scheme.primary)
             }
-    ) {
-        drawGrid(span, scheme.outlineVariant, scheme.outline, measurer, labels)
-        drawResponse(response, span, scheme.primary)
-        curve.bands.indices.forEach { index ->
-            val handle = GraphFrame(size.width, size.height, span).handle(curve, index)
-            val centre = Offset(handle.x, handle.y)
-            val chosen = index == selected
-            drawCircle(scheme.surface, radius, centre)
-            if (chosen) drawCircle(scheme.primary, radius, centre)
-            drawCircle(scheme.primary, radius, centre, style = Stroke(2.dp.toPx()))
-            val text = measurer.measure("${index + 1}", numbers.copy(color = if (chosen) scheme.onPrimary else scheme.primary))
-            drawText(text, topLeft = centre - Offset(text.size.width / 2f, text.size.height / 2f))
+            drawLevels(frame, measurer, labels)
+            curve.bands.indices.forEach { index ->
+                val handle = frame.handle(curve, index)
+                val centre = Offset(handle.x, handle.y)
+                val chosen = index == chosenIndex
+                val radius = HANDLE_RADIUS.toPx()
+                if (chosen) {
+                    drawCircle(scheme.primary.copy(alpha = HALO_ALPHA), HANDLE_HALO.toPx(), centre)
+                }
+                drawCircle(if (chosen) scheme.primary else scheme.surface, radius, centre)
+                drawCircle(scheme.primary, radius, centre, style = Stroke(2.dp.toPx()))
+                val text =
+                    measurer.measure(
+                        "${index + 1}",
+                        numbers.copy(color = if (chosen) scheme.onPrimary else scheme.primary),
+                    )
+                drawText(
+                    text,
+                    topLeft = centre - Offset(text.size.width / 2f, text.size.height / 2f),
+                )
+            }
+        }
+        curve.bands.forEachIndexed { index, band ->
+            val handle = frame.handle(curve, index)
+            Box(
+                Modifier.offset {
+                        IntOffset(
+                            (handle.x - target / 2).roundToInt(),
+                            (handle.y - target / 2).roundToInt(),
+                        )
+                    }
+                    .size(HANDLE_TARGET)
+                    .testTag("band-handle-$index")
+                    .semantics {
+                        contentDescription = "Band ${index + 1}"
+                        stateDescription = handleState(band)
+                        this.selected = index == chosenIndex
+                        onClick(label = "Edit band ${index + 1}") {
+                            select(index)
+                            true
+                        }
+                        customActions = handleActions(latest, index, bounds, commit, select)
+                    }
+            )
         }
     }
+}
+
+fun handleState(band: EqualiserBand): String {
+    val gain = if (band.filter.usesGain) ", ${signedDb(band.gainDb)}" else ""
+    return "${band.filter.label}, ${hertzLabel(band.frequencyHz)}$gain"
+}
+
+private fun handleActions(
+    curve: EqualiserCurve,
+    index: Int,
+    bounds: EqualiserBounds,
+    commit: (EqualiserCurve) -> Unit,
+    select: (Int) -> Unit,
+): List<CustomAccessibilityAction> {
+    val band = curve.bands.getOrNull(index) ?: return emptyList()
+    val edit: (EqualiserCurve) -> Boolean = { next ->
+        select(index)
+        commit(next)
+        true
+    }
+    val gains =
+        if (band.filter.usesGain)
+            listOf(
+                CustomAccessibilityAction("Raise the gain") {
+                    edit(curve.withNudgedGain(index, GAIN_STEP_DB, bounds))
+                },
+                CustomAccessibilityAction("Lower the gain") {
+                    edit(curve.withNudgedGain(index, -GAIN_STEP_DB, bounds))
+                },
+            )
+        else emptyList()
+    return gains +
+        listOf(
+            CustomAccessibilityAction("Raise the frequency") {
+                edit(curve.withNudgedHertz(index, HERTZ_STEP_OCTAVES, bounds))
+            },
+            CustomAccessibilityAction("Lower the frequency") {
+                edit(curve.withNudgedHertz(index, -HERTZ_STEP_OCTAVES, bounds))
+            },
+        )
 }
 
 private fun DrawScope.drawGrid(
@@ -181,19 +264,45 @@ private fun DrawScope.drawGrid(
         val x = GraphScale.x(hertz, size.width)
         drawLine(faint, Offset(x, 0f), Offset(x, size.height), thin * 1.5f)
         val text = measurer.measure(label, labels)
-        drawText(text, topLeft = Offset(x + 4.dp.toPx(), size.height - text.size.height - 2.dp.toPx()))
+        drawText(
+            text,
+            topLeft = Offset(x + 4.dp.toPx(), size.height - text.size.height - 2.dp.toPx()),
+        )
     }
     GraphScale.marks(span).forEach { level ->
         val y = GraphScale.y(level, size.height, span)
         val zero = abs(level) < 0.001f
-        drawLine(if (zero) marked else faint.copy(alpha = 0.5f), Offset(0f, y), Offset(size.width, y), if (zero) thin * 2 else thin)
-        if (zero || abs(level - span) < 0.001f || abs(level + span) < 0.001f) {
-            val text = measurer.measure(if (zero) "0 dB" else level.roundToInt().let { if (it > 0) "+$it" else "$it" }, labels)
-            val top = if (level >= span - 0.001f) y + 2.dp.toPx() else y - text.size.height - 2.dp.toPx()
-            drawText(text, topLeft = Offset(4.dp.toPx(), top))
-        }
+        drawLine(
+            if (zero) marked else faint.copy(alpha = 0.5f),
+            Offset(0f, y),
+            Offset(size.width, y),
+            if (zero) thin * 2 else thin,
+        )
     }
 }
+
+private fun DrawScope.drawLevels(frame: GraphFrame, measurer: TextMeasurer, labels: TextStyle) {
+    GraphScale.marks(frame.span)
+        .filter { abs(it) < 0.001f || abs(abs(it) - frame.span) < 0.001f }
+        .forEach { level ->
+            val text = measurer.measure(levelLabel(level), labels)
+            val y = frame.inset + GraphScale.y(level, frame.plotHeight, frame.span)
+            val right = frame.left - LABEL_GAP.toPx() / 2
+            drawText(
+                text,
+                topLeft = Offset(right - text.size.width, y - text.size.height / 2f),
+            )
+        }
+}
+
+fun levelLabel(level: Float): String =
+    level.roundToInt().let {
+        when {
+            it > 0 -> "+$it"
+            it < 0 -> "\u2212${-it}"
+            else -> "0"
+        }
+    }
 
 private fun DrawScope.drawResponse(response: List<Float>, span: Float, line: Color) {
     if (response.size < 2) return
@@ -228,19 +337,11 @@ private fun DrawScope.drawResponse(response: List<Float>, span: Float, line: Col
     )
 }
 
-private const val ADDED_BAND_HERTZ = 1000f
-private const val ADDED_BAND_GAIN_DB = 0f
-
 fun graphDescription(curve: EqualiserCurve, selected: Int?): String {
     val summary = "Equaliser response, ${curve.bands.size} bands."
     val band = selected?.let { curve.bands.getOrNull(it) }
-    if (selected == null || band == null) return "$summary Choose a band below to edit it."
+    if (selected == null || band == null) return "$summary Choose a band to edit it."
     val place = "Band ${selected + 1} of ${curve.bands.size} selected, ${hertzLabel(band.frequencyHz)}"
     val gain = if (band.filter.usesGain) ", ${signedDb(band.gainDb)}" else ""
     return "$summary $place$gain."
 }
-
-private val GRAPH_HEIGHT = 240.dp
-private val HANDLE_RADIUS = 13.dp
-private val HANDLE_REACH = 32.dp
-private val TAP_TRAVEL = 8.dp

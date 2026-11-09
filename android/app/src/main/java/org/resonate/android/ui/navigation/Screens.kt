@@ -48,6 +48,14 @@ sealed interface Screen : NavKey {
 
     @Serializable data object HeadphoneCorrection : Screen
 
+    @Serializable data object Measurement : Screen
+
+    @Serializable data object RoomCorrection : Screen
+
+    @Serializable data object ListeningTest : Screen
+
+    @Serializable data object OutputCurves : Screen
+
     @Serializable data object Processing : Screen
 
     @Serializable data object Output : Screen

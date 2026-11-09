@@ -2,7 +2,6 @@ package org.resonate.android.ui.equaliser
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -143,7 +142,7 @@ class EqualiserCurvesTest {
     }
 
     @Test
-    fun sliderNamesSayTheFrequencyAndWhatItSoundsLike() {
+    fun bandNamesSayTheFrequencyAndWhatItSoundsLike() {
         assertEquals("100 Hz Bass", bandName(imported.bands[0]))
         assertEquals("2.00 kHz Vocals", bandName(imported.bands[1]))
         assertEquals("31.3 Hz Sub-bass", bandName(EqualiserBand(EqualiserFilter.PEAKING, 31.25f, 0f, 1f)))
@@ -211,7 +210,6 @@ class EqualiserCurvesTest {
         assertEquals(1230f, tidyHertz(1234f))
         assertEquals(-1.3f, tidyDb(-1.26f))
         assertEquals(0.71f, tidyQ(0.7071f))
-        assertEquals(2.25f, quarterDb(2.3f))
     }
 
     @Test
@@ -220,10 +218,6 @@ class EqualiserCurvesTest {
         assertEquals("250 Hz", hertzLabel(250f))
         assertEquals("2.00 kHz", hertzLabel(2000f))
         assertEquals("16.0 kHz", hertzLabel(16_000f))
-        assertEquals("31", shortHertz(31.25f))
-        assertEquals("1k", shortHertz(1000f))
-        assertEquals("16k", shortHertz(16_000f))
-        assertEquals("1.5k", shortHertz(1500f))
         assertEquals("+3.0 dB", signedDb(3f))
         assertEquals("-4.5 dB", signedDb(-4.5f))
         assertEquals("0.0 dB", signedDb(-0.01f))
@@ -239,10 +233,60 @@ class EqualiserCurvesTest {
     }
 
     @Test
-    fun theSliderReachGrowsOnlyForALouderBand() {
-        assertEquals(12f, bankCap(imported, bounds))
-        assertEquals(18f, bankCap(imported.withGain(0, -18f, bounds), bounds))
-        assertNotEquals(30f, bankCap(imported.withGain(0, 30f, bounds), bounds))
+    fun anAddedBandGoesToTheMiddleOfTheWidestGapNearestAKilohertz() {
+        val lone = EqualiserCurve("", 0f, listOf(EqualiserBand(EqualiserFilter.PEAKING, 1000f, 0f, 1f)))
+
+        assertEquals(1000f, freeHertz(flatCurve, bounds))
+        assertEquals(707f, freeHertz(octaveCurve(octaveCentres), bounds))
+        assertEquals(141f, freeHertz(lone, bounds))
+        assertEquals(447f, freeHertz(imported, bounds))
+    }
+
+    @Test
+    fun addBandPlacesAFlatPeakAtAFreeFrequencyAfterTheOthers() {
+        val added = octaveCurve(octaveCentres).withFreeBand(bounds)
+
+        assertEquals(11, added?.bands?.size)
+        assertEquals(
+            EqualiserBand(EqualiserFilter.PEAKING, 707f, 0f, ADDED_BAND_Q),
+            added?.bands?.last(),
+        )
+        assertEquals(octaveCurve(octaveCentres).bands, added?.bands?.dropLast(1))
+
+        val full =
+            EqualiserCurve(
+                "",
+                0f,
+                List(bounds.bandsAtMost) { EqualiserBand(EqualiserFilter.PEAKING, 1000f, 0f, 1f) },
+            )
+
+        assertNull(full.withFreeBand(bounds))
+    }
+
+    @Test
+    fun aHandleIsNudgedByHalfADecibelOrAThirdOfAnOctaveWithinTheBounds() {
+        val raised = imported.withNudgedGain(0, GAIN_STEP_DB, bounds)
+        val lowered = imported.withNudgedHertz(0, -HERTZ_STEP_OCTAVES, bounds)
+        val loud = imported.withGain(0, 24f, bounds).withNudgedGain(0, GAIN_STEP_DB, bounds)
+        val low = imported.withNudgedHertz(0, -10f, bounds)
+
+        assertEquals(3.5f, raised.bands[0].gainDb)
+        assertEquals("", raised.name)
+        assertEquals(79.4f, lowered.bands[0].frequencyHz)
+        assertEquals(24f, loud.bands[0].gainDb)
+        assertEquals(20f, low.bands[0].frequencyHz)
+        assertEquals(imported, imported.withNudgedGain(1, GAIN_STEP_DB, bounds))
+    }
+
+    @Test
+    fun aBandIsAlwaysChosenWhileThereAreAnyAndRemovingOneChoosesItsNeighbour() {
+        assertEquals(0, chosenBand(null, 10))
+        assertEquals(3, chosenBand(3, 10))
+        assertEquals(9, chosenBand(14, 10))
+        assertNull(chosenBand(2, 0))
+        assertEquals(4, chosenAfterRemoving(4, 10))
+        assertEquals(8, chosenAfterRemoving(9, 10))
+        assertNull(chosenAfterRemoving(0, 1))
     }
 
     @Test

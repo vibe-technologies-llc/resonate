@@ -3,21 +3,26 @@ package org.resonate.android.ui.navigation
 import androidx.compose.runtime.Composable
 import org.resonate.android.ui.equaliser.EqualiserScreen
 import org.resonate.android.ui.equaliser.HeadphoneCorrectionScreen
+import org.resonate.android.ui.equaliser.ListeningTestScreen
+import org.resonate.android.ui.equaliser.MeasurementScreen
+import org.resonate.android.ui.equaliser.OutputCurvesScreen
+import org.resonate.android.ui.equaliser.RoomCorrectionScreen
 import org.resonate.android.ui.home.HomeScreen
 import org.resonate.android.ui.library.AlbumScreen
 import org.resonate.android.ui.library.ArtistScreen
 import org.resonate.android.ui.library.FavouritesScreen
 import org.resonate.android.ui.library.LibraryScreen
 import org.resonate.android.ui.library.MixScreen
-import org.resonate.android.ui.library.SuggestedScreen
 import org.resonate.android.ui.library.PlaylistScreen
+import org.resonate.android.ui.library.SuggestedScreen
 import org.resonate.android.ui.search.SearchScreen
+import org.resonate.android.ui.search.WantedScreen
 import org.resonate.android.ui.server.ServedAlbumScreen
 import org.resonate.android.ui.server.ServedArtistScreen
 import org.resonate.android.ui.server.ServerScreen
-import org.resonate.android.ui.search.WantedScreen
 import org.resonate.android.ui.settings.AppearanceScreen
 import org.resonate.android.ui.settings.FoldersScreen
+import org.resonate.android.ui.settings.IdenticalSongsScreen
 import org.resonate.android.ui.settings.LibraryToolsScreen
 import org.resonate.android.ui.settings.OrganiseScreen
 import org.resonate.android.ui.settings.OutputScreen
@@ -25,10 +30,9 @@ import org.resonate.android.ui.settings.ProcessingScreen
 import org.resonate.android.ui.settings.ProviderAccountScreen
 import org.resonate.android.ui.settings.ProvidersScreen
 import org.resonate.android.ui.settings.ScrobblingScreen
-import org.resonate.android.ui.settings.SpotifyScreen
 import org.resonate.android.ui.settings.SettingsScreen
+import org.resonate.android.ui.settings.SpotifyScreen
 import org.resonate.android.ui.settings.StatisticsScreen
-import org.resonate.android.ui.settings.IdenticalSongsScreen
 import org.resonate.android.ui.settings.SuggestionsScreen
 import org.resonate.android.ui.settings.SyncScreen
 import org.resonate.android.ui.together.PartyScreen
@@ -56,6 +60,10 @@ fun ScreenContent(screen: Screen) {
         Screen.Visualizer -> VisualizerScreen()
         Screen.Equaliser -> EqualiserScreen()
         Screen.HeadphoneCorrection -> HeadphoneCorrectionScreen()
+        Screen.Measurement -> MeasurementScreen()
+        Screen.RoomCorrection -> RoomCorrectionScreen()
+        Screen.ListeningTest -> ListeningTestScreen()
+        Screen.OutputCurves -> OutputCurvesScreen()
         Screen.Processing -> ProcessingScreen()
         Screen.Output -> OutputScreen()
         Screen.Folders -> FoldersScreen()

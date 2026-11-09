@@ -2,7 +2,6 @@ package org.resonate.android.ui.equaliser
 
 import kotlin.math.ln
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +24,8 @@ class EqualiserScalesTest {
     private val frame = GraphFrame(width = 360f, height = 240f, span = 15f)
 
     private val bounds = EqualiserBounds.unread
+
+    private fun curveOf(vararg bands: EqualiserBand) = EqualiserCurve("", 0f, bands.toList())
 
     private fun at(hertz: Float, decibels: Float) =
         GraphPoint(GraphScale.x(hertz, frame.width), GraphScale.y(decibels, frame.height, frame.span))
@@ -70,7 +71,7 @@ class EqualiserScalesTest {
     fun aHandleDraggedUpAndRightMovesItsBandAndKeepsItsFilterAndQ() {
         val start = at(100f, -1f)
 
-        val held = frame.nearest(imported, start, reach = 32f)
+        val held = frame.held(imported, start, reach = 24f)
         val moved = frame.placed(imported, 0, GraphPoint(start.x + 80f, start.y - 40f), bounds)
 
         assertEquals(0, held)
@@ -89,20 +90,66 @@ class EqualiserScalesTest {
 
         val moved = frame.placed(imported, 1, GraphPoint(start.x + 60f, start.y - 40f), bounds)
 
-        assertEquals(1, frame.nearest(imported, start, reach = 32f))
+        assertEquals(1, frame.held(imported, start, reach = 24f))
         assertTrue(moved.bands[1].frequencyHz > 2000f)
         assertEquals(0f, moved.bands[1].gainDb)
         assertEquals(imported.bands[0], moved.bands[0])
     }
 
     @Test
-    fun aDragBeginningAwayFromEveryHandleHoldsNone() {
-        assertNull(frame.nearest(imported, at(8000f, 10f), reach = 32f))
+    fun aDragBeginningAwayFromEveryHandleHoldsNoneSoThePageScrolls() {
+        assertNull(frame.held(imported, at(8000f, 10f), reach = 24f))
     }
 
     @Test
     fun aPressOnAHandleFindsItsBand() {
-        assertEquals(1, frame.nearest(imported, at(2000f, -4f), reach = 32f))
+        assertEquals(1, frame.held(imported, at(2000f, -4f), reach = 24f))
+    }
+
+    @Test
+    fun aHandleIsHeldAnywhereInTheSquareAroundItAndNowhereOutside() {
+        val centre = frame.handle(imported, 1)
+
+        assertEquals(1, frame.held(imported, GraphPoint(centre.x + 23f, centre.y - 23f), 24f))
+        assertEquals(1, frame.held(imported, GraphPoint(centre.x - 24f, centre.y + 24f), 24f))
+        assertNull(frame.held(imported, GraphPoint(centre.x + 25f, centre.y), 24f))
+        assertNull(frame.held(imported, GraphPoint(centre.x, centre.y - 25f), 24f))
+    }
+
+    @Test
+    fun handlesWhoseSquaresOverlapGoToTheNearer() {
+        val octaves = octaveCurve(octaveCentres)
+        val wide = GraphFrame(width = 380f, height = 240f, span = 15f)
+        val third = wide.handle(octaves, 2)
+        val fourth = wide.handle(octaves, 3)
+        val between = (third.x + fourth.x) / 2
+
+        assertTrue(fourth.x - third.x < 48f)
+        assertEquals(2, wide.held(octaves, GraphPoint(between - 1f, third.y), 24f))
+        assertEquals(3, wide.held(octaves, GraphPoint(between + 1f, third.y), 24f))
+    }
+
+    @Test
+    fun anInsetFrameDrawsAndHoldsInsideItsMargin() {
+        val inset = GraphFrame(width = 388f, height = 268f, span = 15f, inset = 14f)
+        val edge = curveOf(EqualiserBand(EqualiserFilter.PEAKING, 20f, 15f, 1f))
+        val top = curveOf(EqualiserBand(EqualiserFilter.PEAKING, 20_000f, -15f, 1f))
+
+        assertEquals(GraphPoint(14f, 14f), inset.handle(edge, 0))
+        assertEquals(GraphPoint(374f, 254f), inset.handle(top, 0))
+        assertEquals(0, inset.held(edge, GraphPoint(2f, 2f), 24f))
+
+        val placed = inset.placed(edge, 0, GraphPoint(14f + 120f, 14f + 120f), bounds)
+
+        assertEquals(200f, placed.bands[0].frequencyHz, 1f)
+        assertEquals(0f, placed.bands[0].gainDb, 0.05f)
+    }
+
+    @Test
+    fun theGraphIsSixteenByTenWithinItsBounds() {
+        assertEquals(237.5f, graphHeightDp(380f), 0.01f)
+        assertEquals(GRAPH_LOWEST_DP, graphHeightDp(200f))
+        assertEquals(GRAPH_HIGHEST_DP, graphHeightDp(808f))
     }
 
     @Test
@@ -111,14 +158,6 @@ class EqualiserScalesTest {
 
         assertEquals(20f, moved.bands[0].frequencyHz)
         assertEquals(24f, moved.bands[0].gainDb)
-    }
-
-    @Test
-    fun aTapAddsWhereItLands() {
-        val (hertz, gain) = frame.added(imported, at(1000f, 2f))
-
-        assertEquals(1000f, hertz, 1f)
-        assertEquals(6f, gain, 0.01f)
     }
 
     @Test
@@ -166,14 +205,5 @@ class EqualiserScalesTest {
             measured("Sennheiser HD 650 — Crinacle on GRAS 43AG-7"),
         )
         assertEquals(Measured("Unknown rig", null), measured("Unknown rig"))
-    }
-
-    @Test
-    fun verticalSlidersAreUsedOnlyWhereEveryColumnHasRoom() {
-        assertTrue(bankFits(10, 400f, 24f))
-        assertFalse(bankFits(10, 300f, 24f))
-        assertFalse(bankFits(10, 400f, 48f))
-        assertFalse(bankFits(0, 400f, 10f))
-        assertTrue(bankFits(2, 120f, 50f))
     }
 }

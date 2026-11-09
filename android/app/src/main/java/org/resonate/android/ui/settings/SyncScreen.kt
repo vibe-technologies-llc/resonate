@@ -191,7 +191,7 @@ fun SyncScreen() {
     var joinCode by rememberSaveable { mutableStateOf("") }
     val copy = rememberCopy()
     LaunchedEffect(Unit) { model.refreshFolders() }
-    Page("Devices") { padding ->
+    Page("Device sync") { padding ->
         val config = stored
         if (config == null) {
             Loading(padding)

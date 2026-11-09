@@ -16,17 +16,21 @@ import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Insights
-import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Speaker
+import androidx.compose.material.icons.rounded.SpeakerGroup
+import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,11 +39,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,12 +54,15 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TitleSize
+import org.resonate.android.ui.equaliser.keptForOthers
+import org.resonate.android.ui.equaliser.shownName
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
@@ -64,6 +71,9 @@ class SettingsViewModel(private val resonate: Resonate) : ViewModel() {
     val online = resonate.features.online
     val appearance = resonate.features.appearance.appearance
     val serving = resonate.features.served.serving
+    val preferences = resonate.library.preferences
+    val route = resonate.library.route
+    val bound = resonate.library.boundRoutes
 
     fun setOnline(enabled: Boolean) = resonate.features.setOnline(enabled)
 
@@ -75,6 +85,10 @@ private val Setting.icon: ImageVector
         when (this) {
             Setting.EQUALISER -> Icons.Rounded.Equalizer
             Setting.HEADPHONE_CORRECTION -> Icons.Rounded.Headphones
+            Setting.MEASUREMENT -> Icons.Rounded.Mic
+            Setting.ROOM_CORRECTION -> Icons.Rounded.SurroundSound
+            Setting.LISTENING_TEST -> Icons.Rounded.Hearing
+            Setting.OUTPUT_CURVES -> Icons.Rounded.SpeakerGroup
             Setting.PROCESSING -> Icons.Rounded.GraphicEq
             Setting.OUTPUT -> Icons.Rounded.Speaker
             Setting.FOLDERS -> Icons.Rounded.FolderOpen
@@ -98,6 +112,10 @@ private val Setting.destination: Screen?
         when (this) {
             Setting.EQUALISER -> Screen.Equaliser
             Setting.HEADPHONE_CORRECTION -> Screen.HeadphoneCorrection
+            Setting.MEASUREMENT -> Screen.Measurement
+            Setting.ROOM_CORRECTION -> Screen.RoomCorrection
+            Setting.LISTENING_TEST -> Screen.ListeningTest
+            Setting.OUTPUT_CURVES -> Screen.OutputCurves
             Setting.PROCESSING -> Screen.Processing
             Setting.OUTPUT -> Screen.Output
             Setting.FOLDERS -> Screen.Folders
@@ -115,6 +133,13 @@ private val Setting.destination: Screen?
             Setting.NOTIFICATIONS,
             Setting.VERSION -> null
         }
+
+fun equaliserStatus(preferences: PlaybackPreferences?): String =
+    when {
+        preferences == null -> Setting.EQUALISER.detail
+        preferences.equaliserEnabled -> "On · ${shownName(preferences.equaliser)}"
+        else -> "Off"
+    }
 
 private fun notificationsAllowed(context: Context) =
     NotificationManagerCompat.from(context).areNotificationsEnabled()
@@ -134,6 +159,10 @@ fun SettingsScreen() {
     val online by model.online.collectAsStateWithLifecycle()
     val appearance by model.appearance.collectAsStateWithLifecycle()
     val serving by model.serving.collectAsStateWithLifecycle()
+    val preferences by model.preferences.collectAsStateWithLifecycle()
+    val route by model.route.collectAsStateWithLifecycle()
+    val bound by model.bound.collectAsStateWithLifecycle()
+    val othersKept = keptForOthers(route, bound).isNotEmpty()
     var query by rememberSaveable { mutableStateOf("") }
     var notifications by remember { mutableStateOf(notificationsAllowed(context)) }
     val version = remember { versionOf(context) }
@@ -142,8 +171,14 @@ fun SettingsScreen() {
         onPauseOrDispose {}
     }
     val matches =
-        remember(query, serving) {
-            matchingSettings(query).filter { serving || it.setting != Setting.SERVER }
+        remember(query, serving, othersKept) {
+            matchingSettings(query).filter { match ->
+                when (match.setting) {
+                    Setting.SERVER -> serving
+                    Setting.OUTPUT_CURVES -> othersKept
+                    else -> true
+                }
+            }
         }
     Page("Settings", size = TitleSize.LARGE) { padding ->
         SettingsList(padding, Modifier.testTag("settings-list")) {
@@ -212,11 +247,30 @@ fun SettingsScreen() {
                                 icon = setting.icon,
                                 supporting = "Version $version",
                             )
+                        Setting.EQUALISER ->
+                            SettingRow(
+                                title = setting.title,
+                                icon = setting.icon,
+                                supporting = detail ?: equaliserStatus(preferences),
+                                modifier = Modifier.testTag("setting-equaliser"),
+                                onClick = { setting.destination?.let(navigator::open) },
+                            )
+                        Setting.OUTPUT ->
+                            SettingRow(
+                                title = setting.title,
+                                icon = setting.icon,
+                                supporting = detail ?: route?.name ?: setting.detail,
+                                modifier = Modifier.testTag("setting-output"),
+                                onClick = { setting.destination?.let(navigator::open) },
+                            )
                         else ->
                             SettingRow(
                                 title = setting.title,
                                 icon = setting.icon,
-                                supporting = detail ?: setting.detail,
+                                supporting =
+                                    (detail ?: setting.detail).let {
+                                        if (setting.onRoot) it else "Equaliser · $it"
+                                    },
                                 modifier = Modifier.testTag("setting-${setting.name.lowercase()}"),
                                 onClick = { setting.destination?.let(navigator::open) },
                             )
