@@ -739,7 +739,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `read_as`, `greyed_for_a_reader`, `chosen_among`, `pictured_as`, `linked_as`, `read_as_typed`,
   `focused_while`) is a no-op while it says no, so a frame with no reader formats
   and allocates nothing for one.
-  - **A control is named by its hint up to the keys**: `said_as` labels it with what precedes `keyed!`'s
+  - **A control is named by its hint up to the keys**: `said_as` labels it with what precedes a hint's
     em dash (`named_by`: *Play — space* is *Play*) and describes it by the whole hint where that says
     more; `named_as` takes a visible label and keeps the hint as the description. The kit names its
     own: `kit::button`/`button_when` and the marks are buttons (greyed = AccessKit's disabled, through
