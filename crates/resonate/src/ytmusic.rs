@@ -334,6 +334,7 @@ pub fn run(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::path::Path;
 
     use super::*;
