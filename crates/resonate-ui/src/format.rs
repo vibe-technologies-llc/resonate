@@ -66,13 +66,6 @@ pub fn counting_down(left: Duration) -> String {
     format!("{}:{:02}", seconds / A_MINUTE, seconds % A_MINUTE)
 }
 
-pub fn counted(count: usize, one: &str, many: &str) -> String {
-    match count {
-        1 => format!("1 {one}"),
-        count => format!("{count} {many}"),
-    }
-}
-
 const A_MINUTE: u64 = 60;
 const AN_HOUR: u64 = 60 * A_MINUTE;
 const MINUTES_AN_HOUR: u64 = AN_HOUR / A_MINUTE;

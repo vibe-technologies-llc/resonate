@@ -18,127 +18,30 @@ use crate::{
     models::Picture,
     motion, theme,
     views::{
-        browser::{self, OPEN_ARTIST_HINT},
+        browser,
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         mosaic::{self, Framed, Mosaic},
         pointed::{self, LitUnderThePointer as _},
-        reorder::{self, Carried, Chosen, LiftedTo, Listed, MOVING_HINT, Shift, Step},
+        reorder::{self, Carried, Chosen, LiftedTo, Listed, Shift, Step},
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sheets,
         sorting::{self, Ordered, Ordering as _},
         spoken::{self, Placed, Spoken},
     },
+    words,
 };
 
-const PICKER_LABEL: &str = "Add to a playlist";
-
-const SHARE_WITH_PEOPLE: &str = "Share with other people…";
-
-const PICK_HINT: &str = "Add to this playlist";
-
-const NEW_HINT: &str = "Start a playlist, and name it";
-
-const PLAY_HINT: &str = "Play this playlist in order from the top";
-
-const SHUFFLE_HINT: &str = "Play this playlist, shuffled";
-
-const NO_FILE_PICKER: &str = "Couldn't open the file picker";
-
-pub(crate) const NEXT_HINT: &str = "Hear this straight after the track playing";
-
-pub(crate) const QUEUE_HINT: &str =
-    "Queue this after what is already queued, ahead of the rest of what is playing";
-
-const PLAYLIST_NEXT_HINT: &str = "Hear this playlist straight after the track playing";
-
-const PLAYLIST_QUEUE_HINT: &str =
-    "Queue this playlist after what is already queued, ahead of the rest of what is playing";
-
-const RENAME_HINT: &str = "Give this playlist another name";
-
-const REFRESH_HINT: &str = "Read it again from its link now: a playlist kept in step takes the \
-     service's songs and order, one imported once only gains what it lacks, and songs you do not \
-     have are downloaded";
-
-const PIN_HINT: &str =
-    "Keep this playlist at the top of the list, whichever order it is read in, and in the sidebar";
-
-const UNPIN_HINT: &str = "Let this playlist sit where the order puts it";
-
-const DISCARD_HINT: &str = "Forget this playlist. The files stay where they are";
-
-const BACK_HINT: &str = "Back to every playlist";
-
-const IMPORT_HINT: &str = "Read playlists in from M3U, PLS or XSPF files";
-
-const TIDY_HINT: &str =
-    "Drop rows whose files are gone and repeated rows, keeping the first of each file";
-
-const SORT_HINT: &str = "Put every row in order at once, rather than moving them one at a time, or keep the list in that \
-     order. A row no scan has seen goes to the end, except under file name, which reads the path \
-     every row carries";
-
-const ONCE_HINT: &str = "Put the rows in order now, and leave a row added later at the end";
-
-const ALWAYS_HINT: &str = "Keep the list in that order, so a row added later lands where the order puts it rather than at \
-     the end";
-
-const NARROWED_HINT: &str = "A search is narrowing this playlist, so the rows beside one are not here for it to move \
-     between: clear the search to put them in order by hand again. Play, Play next, Add to queue \
-     and Drop shown take the rows shown; Sort, Tidy and Export take the playlist whole, however \
-     little of it a search has left on screen";
-
-pub(crate) const KEPT_HINT: &str = "This playlist is kept in order, so a row lands where the order puts it rather than where it \
-     is dropped. Press Sort to read it another way round, or to put it back in hand";
-
-const FILLS_ITSELF_HINT: &str = "This playlist is a search: it holds whatever the library matches now, so nothing in it is a \
-     row to move or drop. Press to change what it looks for";
-
-pub(crate) const SAVE_SEARCH_HINT: &str =
-    "Keep this search as a playlist that fills itself as the library grows";
-
 const LAST_RESORT_FOLDER: &str = "/";
-
-pub(crate) const ADD_HINT: &str = "Put this track in a playlist";
-
-pub(crate) const ADD_REACHED_HINT: &str = "Put every reached row in a playlist";
-
-const ADD_SONGS_HINT: &str = "Choose songs from the library to add to this playlist";
-
-pub(crate) const ADD_SONG_HINT: &str = "Add this track to the playlist";
-
-pub(crate) const FINISH_ADDING_HINT: &str = "Return to the playlist";
 
 const PLAYLIST_CELL: &str = "playlist-cell";
 
 const PLAY_ON_THE_ART: f32 = 36.0;
 
 const PLAY_MARK_ON_THE_ART: f32 = 0.45;
-
-const OPEN_HINT: &str = "Open this playlist";
-
-const MORE_HINT: &str = "Queue, rename, duplicate, export or discard this playlist";
-
-const DROP_SHOWN_HINT: &str = "Take every row shown here out of the playlist. The rows the search does not match stay, and \
-     the files stay where they are";
-
-const REMOVE_HINT: &str = "Take this row out of the playlist";
-
-const REMOVE_REACHED_HINT: &str = "Take every reached row out of the playlist";
-
-const UNDO_KEY: &str = concat!(
-    keyed!("Undo", key!(undo)),
-    ". Each press walks back one more edit"
-);
-
-const REDO_KEY: &str = concat!(
-    keyed!("Redo", key!(redo)),
-    ". Each press puts back one more edit"
-);
 
 pub(crate) const ROW_GROUP: &str = "listed-row";
 
@@ -164,12 +67,11 @@ impl Held {
     }
 
     fn asked_as(&self) -> SharedString {
-        match (self.taken_from.is_some(), self.rows.len()) {
-            (true, 1) => SharedString::new_static("Copy this track into"),
-            (true, held) => SharedString::from(format!("Copy {held} tracks into")),
-            (false, 1) => SharedString::new_static("Add this track to"),
-            (false, held) => SharedString::from(format!("Add {held} tracks to")),
-        }
+        let held = self.rows.len();
+        SharedString::from(match self.taken_from {
+            Some(_) => words::playlists::copy_into(held),
+            None => words::playlists::add_to(held),
+        })
     }
 }
 
@@ -282,12 +184,10 @@ pub(crate) enum PlaylistsDrawn {
 }
 
 impl PlaylistsDrawn {
-    const fn saying(self) -> &'static str {
+    fn saying(self) -> &'static str {
         match self {
-            Self::Grid => "Draw the playlists as a grid of covers, the way albums are",
-            Self::List => {
-                "Draw the playlists as a list, with how often and how lately each was played"
-            }
+            Self::Grid => words::playlists::grid_hint(),
+            Self::List => words::playlists::list_hint(),
         }
     }
 }
@@ -312,14 +212,22 @@ impl Naming {
     }
 }
 
-const SEARCH_ORDER_HINT: &str = "What this search puts its rows in order by";
-
 const CAPS: [Option<usize>; 4] = [None, Some(25), Some(50), Some(100)];
 
-const KEEPING: [(&str, bool, &str); 2] = [
-    ("Just once", false, ONCE_HINT),
-    ("From now on", true, ALWAYS_HINT),
-];
+fn keeping_choices() -> [(&'static str, bool, &'static str); 2] {
+    [
+        (
+            words::playlists::just_once(),
+            false,
+            words::playlists::once_hint(),
+        ),
+        (
+            words::playlists::from_now_on(),
+            true,
+            words::playlists::always_hint(),
+        ),
+    ]
+}
 
 fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> Option<usize> {
     let drawn = queued.rows.loaded_at().position(|at| at == loaded)?;
@@ -387,18 +295,14 @@ impl RootView {
             if narrowed {
                 empty(
                     Icon::Playlists,
-                    "No playlists match",
-                    Some(
-                        "No playlist is named that. A playlist answers a search by its name alone.",
-                    ),
+                    words::playlists::no_playlists_match(),
+                    Some(words::playlists::none_named_that()),
                 )
             } else {
                 kit::empty_offering(
                     Icon::Playlists,
-                    "No playlists yet",
-                    Some(
-                        "Start one here, read one in from another player, or press + on any track or queue row.",
-                    ),
+                    words::playlists::no_playlists_yet(),
+                    Some(words::playlists::how_to_start()),
                     self.first_playlist_offers(cx),
                 )
             }
@@ -449,8 +353,8 @@ impl RootView {
                 kit::button(
                     "first-playlist",
                     Some(Icon::Plus),
-                    "New playlist",
-                    NEW_HINT,
+                    words::playlists::new_playlist(),
+                    words::playlists::new_hint(),
                     Tone::Primary,
                 ),
                 |this, window, cx| {
@@ -462,8 +366,8 @@ impl RootView {
                 kit::button(
                     "first-import",
                     Some(Icon::Import),
-                    "Import",
-                    IMPORT_HINT,
+                    words::playlists::import(),
+                    words::playlists::import_hint(),
                     Tone::Outlined,
                 ),
                 |this, _, cx| this.import_playlists(cx),
@@ -550,8 +454,8 @@ impl RootView {
         };
 
         kit::segmented()
-            .child(choice(PlaylistsDrawn::Grid, "Grid", cx))
-            .child(choice(PlaylistsDrawn::List, "List", cx))
+            .child(choice(PlaylistsDrawn::Grid, words::playlists::grid(), cx))
+            .child(choice(PlaylistsDrawn::List, words::playlists::list(), cx))
     }
 
     fn playlists_heading(&self, any_saved: bool, cx: &mut Context<Self>) -> Div {
@@ -574,7 +478,11 @@ impl RootView {
                     .child(self.orders_a_listing("playlists-sort", Ordered::Playlists, cx))
             })
             .child(self.in_the_pane_ring(
-                kit::icon_button("import-playlists", Icon::Import, IMPORT_HINT),
+                kit::icon_button(
+                    "import-playlists",
+                    Icon::Import,
+                    words::playlists::import_hint(),
+                ),
                 |this, _, cx| this.import_playlists(cx),
                 cx,
             ))
@@ -583,8 +491,8 @@ impl RootView {
                     kit::button(
                         "new-playlist",
                         Some(Icon::Plus),
-                        "New playlist",
-                        NEW_HINT,
+                        words::playlists::new_playlist(),
+                        words::playlists::new_hint(),
                         Tone::Primary,
                     ),
                     |this, window, cx| {
@@ -604,12 +512,8 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::title("Playlists"))
-                            .child(kit::subtitle(format::counted(
-                                saved,
-                                "playlist",
-                                "playlists",
-                            ))),
+                            .child(kit::title(words::playlists::playlists()))
+                            .child(kit::subtitle(words::playlists::playlists_counted(saved))),
                     )
                     .child(actions),
             )
@@ -641,10 +545,10 @@ impl RootView {
 
     pub(crate) fn naming_row(&self, naming: Naming, cx: &mut Context<Self>) -> Div {
         let label = match naming {
-            Naming::New => "Name it",
-            Naming::Query(None) => "Name this search",
-            Naming::Query(Some(_)) => "Change this search",
-            Naming::Rename(_) => "Rename it",
+            Naming::New => words::playlists::name_it(),
+            Naming::Query(None) => words::playlists::name_this_search(),
+            Naming::Query(Some(_)) => words::playlists::change_this_search(),
+            Naming::Rename(_) => words::playlists::rename_it(),
         };
 
         div()
@@ -688,15 +592,21 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_2()
-            .child(sorting::shape("Order").child(self.in_the_pane_ring_at(
-                kit::pick("search-order", ordered_as, SEARCH_ORDER_HINT),
-                |this, at, cx| this.order_a_listing(Ordered::SavedSearch, at, cx),
-                cx,
-            )))
-            .child(sorting::shape("Rows").child(caps))
+            .child(
+                sorting::shape(words::playlists::order()).child(self.in_the_pane_ring_at(
+                    kit::pick(
+                        "search-order",
+                        ordered_as,
+                        words::playlists::search_order_hint(),
+                    ),
+                    |this, at, cx| this.order_a_listing(Ordered::SavedSearch, at, cx),
+                    cx,
+                )),
+            )
+            .child(sorting::shape(words::playlists::rows()).child(caps))
             .when_some(cap.filter(|_| !CAPS.contains(&cap)), |shape, held| {
                 shape.child(div().text_xs().text_color(rgb(theme::faint())).child(
-                    SharedString::from(format!("{held} rows is the cap, which is none of these.")),
+                    SharedString::from(words::playlists::cap_is_none_of_these(held)),
                 ))
             })
     }
@@ -827,21 +737,19 @@ impl RootView {
         match rows {
             Rows::Narrowed => empty(
                 Icon::Playlists,
-                "No songs match",
-                Some("Nothing in this playlist matches the search."),
+                words::playlists::no_songs_match(),
+                Some(words::playlists::nothing_here_matches()),
             ),
             Rows::Matched => kit::empty_offering(
                 Icon::Search,
-                "Nothing matches yet",
-                Some(
-                    "Nothing in the library matches this search. It fills itself as the library grows, or its search can be changed.",
-                ),
+                words::playlists::nothing_matches_yet(),
+                Some(words::playlists::nothing_matches_the_search_yet()),
                 self.in_the_pane_ring(
                     kit::button(
                         "revise-an-empty-search",
                         Some(Icon::Search),
-                        "Edit search",
-                        FILLS_ITSELF_HINT,
+                        words::playlists::edit_search(),
+                        words::playlists::fills_itself_hint(),
                         Tone::Outlined,
                     ),
                     move |this, window, cx| {
@@ -852,14 +760,14 @@ impl RootView {
             ),
             Rows::InHand | Rows::Kept => kit::empty_offering(
                 Icon::Playlists,
-                "This playlist is empty",
-                Some("Choose songs from the library, or press + on any track or queue row."),
+                words::playlists::this_playlist_is_empty(),
+                Some(words::playlists::how_to_fill()),
                 self.in_the_pane_ring(
                     kit::button(
                         "fill-an-empty-playlist",
                         Some(Icon::Plus),
-                        "Add songs",
-                        ADD_SONGS_HINT,
+                        words::playlists::add_songs(),
+                        words::playlists::add_songs_hint(),
                         Tone::Primary,
                     ),
                     move |this, _, cx| {
@@ -893,9 +801,10 @@ impl RootView {
         let history = named
             .as_ref()
             .map(|named| history_of(named, self.drawn_at()));
-        let playlist_name = named
-            .as_ref()
-            .map_or_else(|| format!("playlist {opened}"), |named| named.name.clone());
+        let playlist_name = named.as_ref().map_or_else(
+            || words::playlists::unnamed(opened.to_string()),
+            |named| named.name.clone(),
+        );
         let name = SharedString::from(playlist_name.clone());
         let under = named.as_ref().map_or_else(String::new, |named| {
             let mut parts: format::Parts<String> = smallvec![if narrowed {
@@ -904,9 +813,9 @@ impl RootView {
                 counted(named).to_string()
             }];
             match rows {
-                Rows::Matched => parts.push("fills itself from a search".to_owned()),
-                Rows::Kept => parts.push("kept in order".to_owned()),
-                Rows::Narrowed => parts.push("narrowed by the search".to_owned()),
+                Rows::Matched => parts.push(words::playlists::fills_itself().to_owned()),
+                Rows::Kept => parts.push(words::playlists::kept_in_order().to_owned()),
+                Rows::Narrowed => parts.push(words::playlists::narrowed_by_the_search().to_owned()),
                 Rows::InHand => {}
             }
             if let Some(source) = named.source.as_ref() {
@@ -918,8 +827,8 @@ impl RootView {
             parts.join(" · ")
         });
         let eyebrow = match rows {
-            Rows::Matched => "Saved search",
-            Rows::InHand | Rows::Kept | Rows::Narrowed => "Playlist",
+            Rows::Matched => words::playlists::saved_search(),
+            Rows::InHand | Rows::Kept | Rows::Narrowed => words::playlists::playlist(),
         };
 
         let normal = named.as_ref().is_none_or(|named| named.query.is_none());
@@ -932,8 +841,8 @@ impl RootView {
                     kit::button(
                         "play-playlist",
                         Some(Icon::Play),
-                        "Play",
-                        PLAY_HINT,
+                        words::playlists::play(),
+                        words::playlists::play_hint(),
                         Tone::Primary,
                     ),
                     move |this, _, cx| {
@@ -948,8 +857,8 @@ impl RootView {
                         kit::button(
                             "shuffle-playlist",
                             Some(Icon::Shuffle),
-                            "Shuffle",
-                            SHUFFLE_HINT,
+                            words::playlists::shuffle(),
+                            words::playlists::shuffle_hint(),
                             Tone::Outlined,
                         ),
                         move |this, _, cx| {
@@ -971,8 +880,8 @@ impl RootView {
                     kit::button(
                         "revise-search",
                         Some(Icon::Search),
-                        "Edit search",
-                        FILLS_ITSELF_HINT,
+                        words::playlists::edit_search(),
+                        words::playlists::fills_itself_hint(),
                         Tone::Ghost,
                     ),
                     move |this, window, cx| {
@@ -983,7 +892,11 @@ impl RootView {
             })
             .when(normal && naming.is_none(), |bar| {
                 bar.child(self.in_the_pane_ring(
-                    kit::icon_button("add-songs-to-playlist", Icon::Plus, ADD_SONGS_HINT),
+                    kit::icon_button(
+                        "add-songs-to-playlist",
+                        Icon::Plus,
+                        words::playlists::add_songs_hint(),
+                    ),
                     move |this, _, cx| {
                         this.add_songs_to_playlist(opened, cx);
                     },
@@ -997,8 +910,8 @@ impl RootView {
                         kit::button(
                             "drop-shown",
                             Some(Icon::Discard),
-                            "Drop shown",
-                            DROP_SHOWN_HINT,
+                            words::playlists::drop_shown(),
+                            words::playlists::drop_shown_hint(),
                             Tone::Ghost,
                         ),
                         move |this, _, cx| {
@@ -1011,7 +924,7 @@ impl RootView {
             )
             .when(normal && !entries.is_empty(), |bar| {
                 bar.child(self.in_the_pane_ring(
-                    kit::icon_button("tidy-playlist", Icon::Tidy, TIDY_HINT),
+                    kit::icon_button("tidy-playlist", Icon::Tidy, words::playlists::tidy_hint()),
                     move |this, _, cx| {
                         this.library
                             .update(cx, |library, cx| library.tidy_playlist(opened, cx));
@@ -1019,7 +932,7 @@ impl RootView {
                     cx,
                 ))
                 .child(self.in_the_pane_ring_at(
-                    kit::icon_button("sort-playlist", Icon::Sort, SORT_HINT),
+                    kit::icon_button("sort-playlist", Icon::Sort, words::playlists::sort_hint()),
                     move |this, at, cx| this.sort_a_playlist(opened, at, cx),
                     cx,
                 ))
@@ -1030,20 +943,13 @@ impl RootView {
                     let service = source.link.service();
                     let (label, saying, other) = match source.upkeep {
                         Upkeep::Once => (
-                            format!("Keep in step with {service}"),
-                            format!(
-                                "Imported once from {service}. Keep it in step: read the link \
-                                 again every six hours while the window is open, taking the \
-                                 songs and order {service} has and leaving out what it took out"
-                            ),
+                            words::playlists::keep_in_step(service),
+                            words::playlists::keep_in_step_hint(service),
                             Upkeep::InStep,
                         ),
                         Upkeep::InStep => (
-                            format!("In step with {service}"),
-                            format!(
-                                "Kept in step with {service}, read again every six hours. \
-                                 Press to leave it as it stands from now on"
-                            ),
+                            words::playlists::in_step(service),
+                            words::playlists::in_step_hint(service),
                             Upkeep::Once,
                         ),
                     };
@@ -1066,7 +972,11 @@ impl RootView {
                         cx,
                     ))
                     .child(self.in_the_pane_ring(
-                        kit::icon_button("refresh-playlist", Icon::Redo, REFRESH_HINT),
+                        kit::icon_button(
+                            "refresh-playlist",
+                            Icon::Redo,
+                            words::playlists::refresh_hint(),
+                        ),
                         move |this, _, cx| {
                             this.library
                                 .update(cx, |library, cx| library.refresh_playlist(opened, cx));
@@ -1078,8 +988,16 @@ impl RootView {
             .when(named.is_some(), |bar| {
                 bar.child(self.in_the_pane_ring(
                     match pinned {
-                        true => kit::lit_mark("pin-playlist", Icon::Pinned, UNPIN_HINT),
-                        false => kit::icon_button("pin-playlist", Icon::Pin, PIN_HINT),
+                        true => kit::lit_mark(
+                            "pin-playlist",
+                            Icon::Pinned,
+                            words::playlists::unpin_hint(),
+                        ),
+                        false => kit::icon_button(
+                            "pin-playlist",
+                            Icon::Pin,
+                            words::playlists::pin_hint(),
+                        ),
                     },
                     move |this, _, cx| {
                         this.library
@@ -1088,7 +1006,11 @@ impl RootView {
                     cx,
                 ))
                 .child(self.in_the_pane_ring_at(
-                    kit::icon_button("more-of-the-playlist", Icon::More, MORE_HINT),
+                    kit::icon_button(
+                        "more-of-the-playlist",
+                        Icon::More,
+                        words::playlists::more_hint(),
+                    ),
                     move |this, at, cx| {
                         this.open_a_menu(playlist_menu(at, opened, pinned, cx), cx);
                     },
@@ -1105,9 +1027,9 @@ impl RootView {
                 bar.child(hint::explains(
                     "playlist-moving",
                     match rows {
-                        Rows::InHand => MOVING_HINT,
-                        Rows::Narrowed => NARROWED_HINT,
-                        Rows::Kept | Rows::Matched => KEPT_HINT,
+                        Rows::InHand => reorder::moving_hint(),
+                        Rows::Narrowed => words::playlists::narrowed_hint().to_owned(),
+                        Rows::Kept | Rows::Matched => words::playlists::kept_hint().to_owned(),
                     },
                 ))
             });
@@ -1131,9 +1053,13 @@ impl RootView {
             )
             .child(
                 self.in_the_pane_ring(
-                    kit::icon_button("select-playlist-title", Icon::Rename, RENAME_HINT)
-                        .opacity(0.0)
-                        .group_hover("playlist-title", |mark| mark.opacity(1.0)),
+                    kit::icon_button(
+                        "select-playlist-title",
+                        Icon::Rename,
+                        words::playlists::rename_hint(),
+                    )
+                    .opacity(0.0)
+                    .group_hover("playlist-title", |mark| mark.opacity(1.0)),
                     move |this, window, cx| {
                         cx.stop_propagation();
                         this.name_a_playlist(Naming::Rename(opened), window, cx);
@@ -1173,7 +1099,11 @@ impl RootView {
 
         kit::heading()
             .child(div().flex().child(self.in_the_pane_ring(
-                kit::way_back("all-playlists", "Playlists", BACK_HINT),
+                kit::way_back(
+                    words::playlists::all_playlists(),
+                    words::playlists::playlists(),
+                    words::playlists::back_hint(),
+                ),
                 |this, _, cx| {
                     this.show_playlist(None, cx);
                 },
@@ -1189,7 +1119,7 @@ impl RootView {
     pub(crate) fn rows_in_order(&self, opened: PlaylistId, cx: &mut Context<Self>) -> Div {
         let keeping = self.keeping;
         let mut keeps = kit::segmented().w_full();
-        for (index, (label, wanted, saying)) in KEEPING.into_iter().enumerate() {
+        for (index, (label, wanted, saying)) in keeping_choices().into_iter().enumerate() {
             keeps = keeps.child(
                 self.in_the_pane_ring(
                     kit::segment(
@@ -1216,7 +1146,7 @@ impl RootView {
         )
         .child(kit::rule().mx_1())
         .child(
-            kit::field("Keep this order", keeps)
+            kit::field(words::playlists::keep_this_order(), keeps)
                 .flex_none()
                 .px_1()
                 .pb_1(),
@@ -1347,7 +1277,7 @@ impl RootView {
                 self.opens(
                     ("entry-artist", index),
                     drawn.artist,
-                    OPEN_ARTIST_HINT,
+                    words::browser::open_artist_hint(),
                     drawn.artist_id.map(Selection::Artist),
                     cx,
                 )
@@ -1386,9 +1316,9 @@ impl RootView {
                     .child(self.add_control(
                         ("entry-to-playlist", index),
                         if acts_on_one {
-                            ADD_HINT
+                            words::playlists::add_hint()
                         } else {
-                            ADD_REACHED_HINT
+                            words::playlists::add_reached_hint()
                         },
                         move || Held::out_of(opened, Arc::clone(&holding)),
                         cx,
@@ -1399,9 +1329,9 @@ impl RootView {
                                 ("drop-entry", index),
                                 Icon::Close,
                                 if acts_on_one {
-                                    REMOVE_HINT
+                                    words::playlists::remove_hint()
                                 } else {
-                                    REMOVE_REACHED_HINT
+                                    words::playlists::remove_reached_hint()
                                 },
                             ),
                             move |this, _, cx| {
@@ -1444,7 +1374,7 @@ impl RootView {
                 let put = Arc::clone(&menued);
 
                 Menu::at(at)
-                    .under(Icon::Play, menu::PLAY, "enter", {
+                    .under(Icon::Play, words::menu::play(), "enter", {
                         let rows = Arc::clone(&playing);
 
                         move |this, _, cx| {
@@ -1464,7 +1394,7 @@ impl RootView {
                     .when_some(edited.then_some(taken), |menu, taken| {
                         menu.under(
                             Icon::Discard,
-                            menu::REMOVE_ROW,
+                            words::menu::remove_row(),
                             "delete",
                             move |this, _, cx| this.drop_chosen(shift, &taken, cx),
                         )
@@ -1519,7 +1449,7 @@ impl RootView {
             .child(motion::lifted_in(
                 div()
                     .id("playlist-picker-panel")
-                    .dialog(PICKER_LABEL)
+                    .dialog(words::playlists::picker_label())
                     .track_focus(&self.sheet_panels.holding(sheets::PICKER_PANEL, cx))
                     .flex()
                     .flex_col()
@@ -1543,7 +1473,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .gap_0p5()
-                            .child(kit::eyebrow("Playlist"))
+                            .child(kit::eyebrow(words::playlists::playlist()))
                             .child(
                                 div()
                                     .text_size(px(theme::text_lg()))
@@ -1576,7 +1506,7 @@ impl RootView {
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(kit::eyebrow("Or a new one"))
+                            .child(kit::eyebrow(words::playlists::or_a_new_one()))
                             .child(self.name_field(cx)),
                     ),
                 "playlist-picker-arrives",
@@ -1589,7 +1519,7 @@ impl RootView {
             kit::button(
                 "undo-edit",
                 Some(Icon::Undo),
-                "Undo",
+                words::playlists::undo(),
                 puts_back(undoable),
                 Tone::Ghost,
             ),
@@ -1603,7 +1533,7 @@ impl RootView {
             kit::button(
                 "redo-edit",
                 Some(Icon::Redo),
-                "Redo",
+                words::playlists::redo(),
                 does_again(redoable),
                 Tone::Ghost,
             ),
@@ -1617,7 +1547,7 @@ impl RootView {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some(SharedString::new_static("Import")),
+            prompt: Some(SharedString::new_static(words::playlists::import())),
         });
 
         cx.spawn(async move |this, cx| {
@@ -1627,7 +1557,10 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
                     let reported = this.update(cx, |this, cx| {
-                        this.report(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                        this.report(
+                            Notice::Trouble(words::playlists::no_file_picker().to_owned()),
+                            cx,
+                        );
                     });
                     let _ = reported;
                     return;
@@ -1646,7 +1579,7 @@ impl RootView {
     pub(crate) fn export_playlist(&self, playlist: PlaylistId, cx: &mut Context<Self>) {
         let library = self.library.read(cx);
         let suggested = library.saved_playlist(playlist).map_or_else(
-            || format!("playlist {playlist}.m3u8"),
+            || format!("{}.m3u8", words::playlists::unnamed(playlist.to_string())),
             |named| format!("{}.m3u8", named.name),
         );
         let beside = library
@@ -1664,7 +1597,10 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
                     let reported = this.update(cx, |this, cx| {
-                        this.report(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                        this.report(
+                            Notice::Trouble(words::playlists::no_file_picker().to_owned()),
+                            cx,
+                        );
                     });
                     let _ = reported;
                     return;
@@ -1742,10 +1678,10 @@ impl RootView {
     }
 }
 
-const fn queueing_look(at: Placement) -> (Icon, &'static str) {
+fn queueing_look(at: Placement) -> (Icon, &'static str) {
     match at {
-        Placement::Next => (Icon::QueueNext, NEXT_HINT),
-        Placement::Queued | Placement::At(_) => (Icon::QueueLast, QUEUE_HINT),
+        Placement::Next => (Icon::QueueNext, words::playlists::next_hint()),
+        Placement::Queued | Placement::At(_) => (Icon::QueueLast, words::playlists::queue_hint()),
     }
 }
 
@@ -1811,12 +1747,16 @@ impl RootView {
                             })
                             .when_some(shared_as, |row, editable| {
                                 row.child(kit::badge(
-                                    if editable { "Shared" } else { "Followed" },
+                                    if editable {
+                                        words::playlists::shared()
+                                    } else {
+                                        words::playlists::followed()
+                                    },
                                     theme::accent(),
                                 ))
                             })
                             .when(pinned, |row| {
-                                row.child(kit::badge("Pinned", theme::accent()))
+                                row.child(kit::badge(words::playlists::pinned(), theme::accent()))
                             }),
                     )
                     .child(
@@ -1842,55 +1782,76 @@ impl RootView {
                         ),
                     )
                     .child(
-                        control("play-saved", id, Icon::Play, PLAY_HINT).on_click(cx.listener(
-                            move |this, _, _, cx| {
+                        control("play-saved", id, Icon::Play, words::playlists::play_hint())
+                            .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
                                 this.play_the_playlist(id, cx);
-                            },
-                        )),
+                            })),
                     )
                     .child(
-                        control("shuffle-saved", id, Icon::Shuffle, SHUFFLE_HINT).on_click(
-                            cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.shuffle_the_playlist(id, cx);
-                            }),
-                        ),
+                        control(
+                            "shuffle-saved",
+                            id,
+                            Icon::Shuffle,
+                            words::playlists::shuffle_hint(),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.shuffle_the_playlist(id, cx);
+                        })),
                     )
                     .child(
-                        control("next-saved", id, Icon::QueueNext, PLAYLIST_NEXT_HINT).on_click(
-                            cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.queue_the_playlist(id, Placement::Next, cx);
-                            }),
-                        ),
+                        control(
+                            "next-saved",
+                            id,
+                            Icon::QueueNext,
+                            words::playlists::playlist_next_hint(),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.queue_the_playlist(id, Placement::Next, cx);
+                        })),
                     )
                     .child(
-                        control("last-saved", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT).on_click(
-                            cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.queue_the_playlist(id, Placement::Queued, cx);
-                            }),
-                        ),
+                        control(
+                            "last-saved",
+                            id,
+                            Icon::QueueLast,
+                            words::playlists::playlist_queue_hint(),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.queue_the_playlist(id, Placement::Queued, cx);
+                        })),
                     )
                     .when(playlist.query.is_none(), |controls| {
                         controls.child(
-                            control("add-songs", id, Icon::Plus, ADD_SONGS_HINT).on_click(
-                                cx.listener(move |this, _, _, cx| {
+                            control(
+                                "add-songs",
+                                id,
+                                Icon::Plus,
+                                words::playlists::add_songs_hint(),
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     cx.stop_propagation();
                                     this.add_songs_to_playlist(id, cx);
-                                }),
-                            ),
+                                },
+                            )),
                         )
                     })
                     .child(
-                        control("drop-saved", id, Icon::Discard, DISCARD_HINT).on_click(
-                            cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.library
-                                    .update(cx, |library, cx| library.drop_playlist(id, cx));
-                            }),
-                        ),
+                        control(
+                            "drop-saved",
+                            id,
+                            Icon::Discard,
+                            words::playlists::discard_hint(),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.library
+                                .update(cx, |library, cx| library.drop_playlist(id, cx));
+                        })),
                     ),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -1939,12 +1900,12 @@ impl RootView {
             .iter()
             .find(|(shared, _)| *shared == playlist.id)
         {
-            Some((_, true)) => {
-                SharedString::from(format!("Shared · {}", about_a_cell(playlist, now)))
-            }
-            Some((_, false)) => {
-                SharedString::from(format!("Followed · {}", about_a_cell(playlist, now)))
-            }
+            Some((_, true)) => SharedString::from(words::playlists::shared_about(
+                about_a_cell(playlist, now).as_ref(),
+            )),
+            Some((_, false)) => SharedString::from(words::playlists::followed_about(
+                about_a_cell(playlist, now).as_ref(),
+            )),
             None => about_a_cell(playlist, now),
         };
         let cursor_only = self.stands_unchosen_on(Shift::Listing(Listed::Playlists), at);
@@ -1960,7 +1921,7 @@ impl RootView {
             .gap_2p5()
             .w(px(side))
             .cursor_pointer()
-            .names(OPEN_HINT)
+            .names(words::playlists::open_hint())
             .child(
                 div()
                     .relative()
@@ -2076,8 +2037,16 @@ impl RootView {
 
     fn pin_mark(&self, id: PlaylistId, pinned: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         let mark = match pinned {
-            true => kit::lit_mark(("pin-cell", id.get() as usize), Icon::Pinned, UNPIN_HINT),
-            false => kit::icon_button(("pin-cell", id.get() as usize), Icon::Pin, PIN_HINT),
+            true => kit::lit_mark(
+                ("pin-cell", id.get() as usize),
+                Icon::Pinned,
+                words::playlists::unpin_hint(),
+            ),
+            false => kit::icon_button(
+                ("pin-cell", id.get() as usize),
+                Icon::Pin,
+                words::playlists::pin_hint(),
+            ),
         };
 
         self.in_the_pane_ring(
@@ -2107,7 +2076,7 @@ impl RootView {
                 spread_radius: px(0.0),
                 inset: false,
             }])
-            .names(PLAY_HINT)
+            .names(words::playlists::play_hint())
             .child(icons::icon(
                 Icon::Play,
                 PLAY_ON_THE_ART * PLAY_MARK_ON_THE_ART,
@@ -2162,29 +2131,27 @@ impl RootView {
 
 fn kind_of(playlist: &Playlist) -> Option<(&'static str, u32)> {
     match (playlist.query.is_some(), playlist.kept.is_some()) {
-        (true, _) => Some(("Search", theme::repacked())),
-        (false, true) => Some(("Kept", theme::muted())),
+        (true, _) => Some((words::playlists::search(), theme::repacked())),
+        (false, true) => Some((words::playlists::kept(), theme::muted())),
         (false, false) => None,
     }
 }
 
 fn history_of(playlist: &Playlist, now: SystemTime) -> SharedString {
-    let made = format!("Made {}", format::since(playlist.created, now));
-    match playlist.played {
-        Some(played) => SharedString::from(format!(
-            "{made} · last played {}",
-            format::since(played, now)
-        )),
-        None => SharedString::from(format!("{made} · never played")),
-    }
+    let made = format::since(playlist.created, now);
+    SharedString::from(match playlist.played {
+        Some(played) => words::playlists::made_and_last_played(made, format::since(played, now)),
+        None => words::playlists::made_and_never_played(made),
+    })
 }
 
 fn about_a_cell(playlist: &Playlist, now: SystemTime) -> SharedString {
-    let tracks = format::counted(playlist.entries as usize, "track", "tracks");
+    let tracks = words::playlists::tracks(playlist.entries);
     match playlist.played {
-        Some(played) => {
-            SharedString::from(format!("{tracks} · played {}", format::since(played, now)))
-        }
+        Some(played) => SharedString::from(words::playlists::tracks_played(
+            format::since(played, now),
+            tracks,
+        )),
         None => match playlist.duration {
             Some(length) => SharedString::from(format!("{tracks} · {}", format::spanned(length))),
             None => SharedString::from(tracks),
@@ -2212,54 +2179,84 @@ fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu 
     let (play, next, last) = (playlists.clone(), playlists.clone(), playlists);
 
     Menu::at(at)
-        .does(Icon::Play, menu::PLAY, move |this, _, cx| {
+        .does(Icon::Play, words::menu::play(), move |this, _, cx| {
             this.queue_the_playlists(play.clone(), Placement::Queued, true, cx);
         })
-        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, _, cx| {
-            this.queue_the_playlists(next.clone(), Placement::Next, false, cx);
-        })
-        .does(Icon::QueueLast, menu::ADD_TO_QUEUE, move |this, _, cx| {
-            this.queue_the_playlists(last.clone(), Placement::Queued, false, cx);
-        })
+        .does(
+            Icon::QueueNext,
+            words::menu::play_next(),
+            move |this, _, cx| {
+                this.queue_the_playlists(next.clone(), Placement::Next, false, cx);
+            },
+        )
+        .does(
+            Icon::QueueLast,
+            words::menu::add_to_queue(),
+            move |this, _, cx| {
+                this.queue_the_playlists(last.clone(), Placement::Queued, false, cx);
+            },
+        )
 }
 
 pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {
     let menu = Menu::at(at)
-        .does(Icon::Play, menu::PLAY, move |this, _, cx| {
+        .does(Icon::Play, words::menu::play(), move |this, _, cx| {
             this.play_the_playlist(id, cx);
         })
-        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, _, cx| {
-            this.queue_the_playlist(id, Placement::Next, cx);
-        })
-        .does(Icon::QueueLast, menu::ADD_TO_QUEUE, move |this, _, cx| {
-            this.queue_the_playlist(id, Placement::Queued, cx);
-        })
+        .does(
+            Icon::QueueNext,
+            words::menu::play_next(),
+            move |this, _, cx| {
+                this.queue_the_playlist(id, Placement::Next, cx);
+            },
+        )
+        .does(
+            Icon::QueueLast,
+            words::menu::add_to_queue(),
+            move |this, _, cx| {
+                this.queue_the_playlist(id, Placement::Queued, cx);
+            },
+        )
         .apart()
         .does(pin_icon(pinned), pin_label(pinned), move |this, _, cx| {
             this.library
                 .update(cx, |library, cx| library.pin_playlist(id, !pinned, cx));
         })
-        .does(Icon::Rename, menu::RENAME, move |this, window, cx| {
-            this.name_a_playlist(Naming::Rename(id), window, cx);
-        })
-        .does(Icon::Playlists, menu::DUPLICATE, move |this, _, cx| {
-            this.library
-                .update(cx, |library, cx| library.duplicate_playlist(id, cx));
-        })
+        .does(
+            Icon::Rename,
+            words::menu::rename(),
+            move |this, window, cx| {
+                this.name_a_playlist(Naming::Rename(id), window, cx);
+            },
+        )
+        .does(
+            Icon::Playlists,
+            words::menu::duplicate(),
+            move |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.duplicate_playlist(id, cx));
+            },
+        )
         .apart()
-        .does(Icon::Share, SHARE_WITH_PEOPLE, move |this, _, cx| {
-            this.open_sharing(id, cx);
-        })
-        .does(Icon::Export, menu::EXPORT, move |this, _, cx| {
+        .does(
+            Icon::Share,
+            words::playlists::share_with_people(),
+            move |this, _, cx| {
+                this.open_sharing(id, cx);
+            },
+        )
+        .does(Icon::Export, words::menu::export(), move |this, _, cx| {
             this.export_playlist(id, cx);
         });
 
-    synced_entries(menu, id, cx)
-        .apart()
-        .does(Icon::Discard, menu::DISCARD, move |this, _, cx| {
+    synced_entries(menu, id, cx).apart().does(
+        Icon::Discard,
+        words::menu::discard(),
+        move |this, _, cx| {
             this.library
                 .update(cx, |library, cx| library.drop_playlist(id, cx));
-        })
+        },
+    )
 }
 
 fn synced_entries(menu: Menu, id: PlaylistId, cx: &App) -> Menu {
@@ -2277,27 +2274,27 @@ fn synced_entries(menu: Menu, id: PlaylistId, cx: &App) -> Menu {
             .filter(|device| device.online && !device.this)
         {
             let fetching = Arc::clone(&syncing);
-            let label = format!("Fetch {missing} missing songs from {}", device.name);
+            let label = words::playlists::fetch_missing(device.name.as_str(), missing);
             menu = menu.does(Icon::Download, label, move |this, _, cx| {
                 fetching.fetch_missing(id, &device.name);
                 this.report(
-                    Notice::Noted(format!("Songs are on their way from {}", device.name)),
+                    Notice::Noted(words::playlists::on_their_way(device.name.as_str())),
                     cx,
                 );
             });
         }
     }
     let label = if kept {
-        "Stop keeping its songs here"
+        words::playlists::stop_keeping_its_songs()
     } else {
-        "Keep its songs here"
+        words::playlists::keep_its_songs_here()
     };
     menu.does(Icon::Download, label, move |this, _, cx| {
         syncing.keep_songs_of(id, !kept);
         let said = if kept {
-            "Its songs are no longer fetched by themselves"
+            words::playlists::songs_no_longer_fetched()
         } else {
-            "Its songs are fetched from your other devices while they are online"
+            words::playlists::songs_fetched()
         };
         this.report(Notice::Done(said.to_owned()), cx);
     })
@@ -2310,17 +2307,17 @@ const fn pin_icon(pinned: bool) -> Icon {
     }
 }
 
-const fn pin_label(pinned: bool) -> &'static str {
+fn pin_label(pinned: bool) -> &'static str {
     match pinned {
-        true => menu::UNPIN,
-        false => menu::PIN,
+        true => words::menu::unpin(),
+        false => words::menu::pin(),
     }
 }
 
-const fn pin_hint(pinned: bool) -> &'static str {
+fn pin_hint(pinned: bool) -> &'static str {
     match pinned {
-        true => UNPIN_HINT,
-        false => PIN_HINT,
+        true => words::playlists::unpin_hint(),
+        false => words::playlists::pin_hint(),
     }
 }
 
@@ -2336,89 +2333,73 @@ fn control(
 fn came_from(source: &PlaylistSource) -> String {
     let service = source.link.service();
     match source.upkeep {
-        Upkeep::Once => format!("imported from {service}"),
-        Upkeep::InStep => format!("kept in step with {service}"),
+        Upkeep::Once => words::playlists::imported_from(service),
+        Upkeep::InStep => words::playlists::kept_in_step_with(service),
     }
 }
 
 fn puts_back(undoable: &Undoable) -> SharedString {
-    let name = &undoable.name;
+    let name = undoable.name.as_str();
     let doing = match undoable.edit {
-        Edit::Started => format!("Take {name} away again, as though it had never been started"),
-        Edit::Renamed => format!("Name it {name} again"),
-        Edit::Revised => format!("Put back the search {name} filled itself from"),
-        Edit::Discarded => format!("Put {name} back, with everything it held"),
-        Edit::Added | Edit::Copied | Edit::Imported => {
-            format!("Take back out of {name} what that edit put in")
-        }
+        Edit::Started => words::playlists::undo_started(name),
+        Edit::Renamed => words::playlists::undo_renamed(name),
+        Edit::Revised => words::playlists::undo_revised(name),
+        Edit::Discarded => words::playlists::undo_discarded(name),
+        Edit::Added | Edit::Copied | Edit::Imported => words::playlists::undo_added(name),
         Edit::Removed | Edit::Dropped | Edit::Tidied | Edit::Folded => {
-            format!("Put back in {name} what that edit took out")
+            words::playlists::undo_removed(name)
         }
-        Edit::Moved | Edit::Ordered | Edit::Kept => {
-            format!("Put the rows of {name} back in the order they were in")
-        }
-        Edit::Refreshed => {
-            format!("Put back the rows {name} held before it was refreshed from its link")
-        }
+        Edit::Moved | Edit::Ordered | Edit::Kept => words::playlists::undo_moved(name),
+        Edit::Refreshed => words::playlists::undo_refreshed(name),
     };
 
-    SharedString::from(format!(
-        "{doing}. {}{UNDO_KEY}. {}",
+    SharedString::from(words::playlists::puts_back(
+        undoable.behind,
+        doing,
+        key!(undo),
         made_by(undoable.made_by),
-        steps_behind(undoable.behind)
     ))
 }
 
 fn does_again(redoable: &Undoable) -> SharedString {
-    let name = &redoable.name;
+    let name = redoable.name.as_str();
     let doing = match redoable.edit {
-        Edit::Started => format!("Start {name} again, with everything it held"),
-        Edit::Renamed => format!("Name it {name} again"),
-        Edit::Revised => format!("Put back the search {name} was given"),
-        Edit::Discarded => format!("Take {name} away again, with everything it holds"),
-        Edit::Added | Edit::Copied | Edit::Imported => {
-            format!("Put back into {name} what that edit had put in")
-        }
+        Edit::Started => words::playlists::redo_started(name),
+        Edit::Renamed => words::playlists::redo_renamed(name),
+        Edit::Revised => words::playlists::redo_revised(name),
+        Edit::Discarded => words::playlists::redo_discarded(name),
+        Edit::Added | Edit::Copied | Edit::Imported => words::playlists::redo_added(name),
         Edit::Removed | Edit::Dropped | Edit::Tidied | Edit::Folded => {
-            format!("Take back out of {name} what that edit had taken out")
+            words::playlists::redo_removed(name)
         }
-        Edit::Moved | Edit::Ordered | Edit::Kept => {
-            format!("Put the rows of {name} back in the order that edit left them in")
-        }
-        Edit::Refreshed => format!("Refresh {name} from its link again, as it was refreshed"),
+        Edit::Moved | Edit::Ordered | Edit::Kept => words::playlists::redo_moved(name),
+        Edit::Refreshed => words::playlists::redo_refreshed(name),
     };
 
-    SharedString::from(format!(
-        "{doing}. {}{REDO_KEY}. {}",
+    SharedString::from(words::playlists::does_again(
+        redoable.behind,
+        doing,
+        key!(redo),
         made_by(redoable.made_by),
-        steps_behind(redoable.behind)
     ))
 }
 
-const fn made_by(maker: Maker) -> &'static str {
+fn made_by(maker: Maker) -> &'static str {
     match maker {
         Maker::ThisRun => "",
-        Maker::AModel => "A model made this edit, in a session beside the window. ",
-    }
-}
-
-fn steps_behind(steps: usize) -> String {
-    match steps {
-        0 => "It is the last one there is to walk".to_owned(),
-        1 => "One more step is behind it".to_owned(),
-        more => format!("{more} more steps are behind it"),
+        Maker::AModel => words::playlists::made_by_a_model(),
     }
 }
 
 fn capped(rows: Option<usize>) -> SharedString {
     match rows {
         Some(rows) => SharedString::from(rows.to_string()),
-        None => SharedString::new_static("No cap"),
+        None => SharedString::new_static(words::playlists::no_cap()),
     }
 }
 
 fn shown_of(shown: usize, playlist: &Playlist) -> SharedString {
-    SharedString::from(format!("{shown} of {} tracks", playlist.entries))
+    SharedString::from(words::playlists::shown_of(playlist.entries, shown))
 }
 
 fn picked(root: &RootView, playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
@@ -2427,7 +2408,7 @@ fn picked(root: &RootView, playlist: &Playlist, cx: &mut Context<RootView>) -> A
     let line = row(false)
         .id(("picker", id.get() as usize))
         .debug_selector(move || format!("picker-{}", id.get()))
-        .named_as(Role::Button, &playlist.name, PICK_HINT)
+        .named_as(Role::Button, &playlist.name, words::playlists::pick_hint())
         .px_3()
         .cursor_pointer()
         .hover(|row| row.bg(rgb(theme::hover())))
@@ -2463,7 +2444,7 @@ fn picked(root: &RootView, playlist: &Playlist, cx: &mut Context<RootView>) -> A
 }
 
 fn counted(playlist: &Playlist) -> SharedString {
-    let tracks = format::counted(playlist.entries as usize, "track", "tracks");
+    let tracks = words::playlists::tracks(playlist.entries);
 
     match playlist.duration {
         Some(played) => SharedString::from(format!("{tracks} · {}", format::spanned(played))),

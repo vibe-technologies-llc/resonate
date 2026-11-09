@@ -168,24 +168,6 @@ macro_rules! key {
     };
 }
 
-macro_rules! ways {
-    ($only:expr) => {
-        $only
-    };
-    ($one:expr, $other:expr) => {
-        concat!($one, " or ", $other)
-    };
-    ($first:expr, $($rest:expr),+) => {
-        concat!($first, ", ", ways!($($rest),+))
-    };
-}
-
-macro_rules! keyed {
-    ($what:literal, $($way:expr),+) => {
-        concat!($what, " — ", ways!($($way),+))
-    };
-}
-
 pub(crate) fn keyed(what: &str, ways: &[&str]) -> String {
     words::keys::keyed(ways_said(ways), what)
 }
@@ -278,19 +260,6 @@ mod tests {
                 "a hint names {named}, which nothing is bound to"
             );
         }
-    }
-
-    #[test]
-    fn a_hint_names_what_it_does_and_then_its_keys() {
-        assert_eq!(keyed!("Play", key!(play_pause)), "Play — space");
-        assert_eq!(
-            keyed!("Louder", "the wheel", key!(louder)),
-            "Louder — the wheel or ctrl-up"
-        );
-        assert_eq!(
-            keyed!("Reach further", "home", "end", "pageup"),
-            "Reach further — home, end or pageup"
-        );
     }
 
     #[test]

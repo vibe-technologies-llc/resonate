@@ -7,13 +7,11 @@ use gpui::{
 use resonate_library::{Missing, MissingTrack, UnheldRelease};
 
 use crate::{
-    MissingRow, Portrayed, Selection, format,
+    MissingRow, Portrayed, Selection,
     icons::Icon,
     theme,
     views::{
-        browser::{
-            OPEN_ALBUM_HINT, OPEN_ARTIST_HINT, Unheld, controls_place, portrait_frame, year_of,
-        },
+        browser::{Unheld, controls_place, portrait_frame, year_of},
         kit::{self, EndsInAnEllipsis as _, KeepsItsWidth, Tone},
         listing::{self, Pictured},
         reorder::{self, Listed, Shift},
@@ -21,24 +19,10 @@ use crate::{
         scrollbar::Scrollbars,
         spoken::{self, Spoken as _},
     },
+    words,
 };
 
-const NOTHING_MISSING: &str = "Nothing missing";
-
-const NOTHING_MATCHES: &str = "Nothing missing matches";
-
-const NOTHING_SHORT_MATCHES: &str = "No missing track or release matches this search.";
-
-const WHOLE: &str = "Every release the library knows of is whole.";
-
-const LOOK_IT_UP: &str =
-    "Look up the library from Settings › Online to learn what its releases are short of.";
-
 const HALF_BETWEEN_CARDS: f32 = 6.0;
-
-const DISMISS_RELEASE_HINT: &str = "Take this release off the Missing list";
-
-const BRING_BACK_HINT: &str = "List every track and release dismissed from here again";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Place {
@@ -90,28 +74,18 @@ impl RootView {
         let shows = self.missing_shows.within(tracks.len(), releases.len());
         let both = !tracks.is_empty() && !releases.is_empty();
         let summary = match shows {
-            MissingShows::Tracks => format!(
-                "{} missing from {}",
-                format::counted(counted.tracks as usize, "track", "tracks"),
-                format::counted(
-                    headings(&track_rows, |row| matches!(row, MissingRow::Album(_))),
-                    "album",
-                    "albums"
-                ),
+            MissingShows::Tracks => words::missing::tracks_missing_from_albums(
+                headings(&track_rows, |row| matches!(row, MissingRow::Album(_))),
+                counted.tracks,
             ),
-            MissingShows::Releases => format!(
-                "{} by {} not held",
-                format::counted(counted.releases as usize, "release", "releases"),
-                format::counted(
-                    headings(&release_rows, |row| matches!(row, MissingRow::Artist(_))),
-                    "artist",
-                    "artists"
-                ),
+            MissingShows::Releases => words::missing::releases_by_artists_not_held(
+                headings(&release_rows, |row| matches!(row, MissingRow::Artist(_))),
+                counted.releases,
             ),
         };
         let cut_short = match shows {
-            MissingShows::Tracks => listed_short(tracks.len(), counted.tracks, "tracks"),
-            MissingShows::Releases => listed_short(releases.len(), counted.releases, "releases"),
+            MissingShows::Tracks => listed_short(tracks.len(), counted.tracks, shows),
+            MissingShows::Releases => listed_short(releases.len(), counted.releases, shows),
         };
         let rows = match shows {
             MissingShows::Tracks => track_rows,
@@ -130,7 +104,7 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::title("Missing"))
+                            .child(kit::title(words::missing::missing()))
                             .when(!nothing, |column| column.child(kit::subtitle(summary)))
                             .when_some(cut_short, |column, said| {
                                 column.child(
@@ -160,12 +134,20 @@ impl RootView {
             .child(heading)
             .when(nothing, |pane| {
                 pane.child(if narrowed {
-                    empty(Icon::Missing, NOTHING_MATCHES, Some(NOTHING_SHORT_MATCHES))
+                    empty(
+                        Icon::Missing,
+                        words::missing::nothing_matches(),
+                        Some(words::missing::nothing_short_matches()),
+                    )
                 } else {
                     empty(
                         Icon::Missing,
-                        NOTHING_MISSING,
-                        Some(if can_enrich { LOOK_IT_UP } else { WHOLE }),
+                        words::missing::nothing_missing(),
+                        Some(if can_enrich {
+                            words::missing::look_it_up()
+                        } else {
+                            words::missing::whole()
+                        }),
                     )
                 })
             })
@@ -291,8 +273,8 @@ impl RootView {
                 kit::button(
                     "bring-back-dismissed",
                     Some(Icon::Undo),
-                    format!("Bring back {many} dismissed"),
-                    BRING_BACK_HINT,
+                    words::missing::bring_back(many),
+                    words::missing::bring_back_hint(),
                     Tone::Ghost,
                 ),
                 |this, _, cx| {
@@ -333,7 +315,7 @@ impl RootView {
                 kit::icon_button(
                     ("dismiss-release", index),
                     Icon::Close,
-                    DISMISS_RELEASE_HINT,
+                    words::missing::dismiss_release_hint(),
                 ),
                 move |this, _, cx| {
                     let release = mbid.clone();
@@ -365,8 +347,18 @@ impl RootView {
 
         div().flex().pt_1().child(
             kit::segmented()
-                .child(tab(MissingShows::Tracks, "Tracks", tracks, cx))
-                .child(tab(MissingShows::Releases, "Releases", releases, cx)),
+                .child(tab(
+                    MissingShows::Tracks,
+                    words::missing::tracks(),
+                    tracks,
+                    cx,
+                ))
+                .child(tab(
+                    MissingShows::Releases,
+                    words::missing::releases(),
+                    releases,
+                    cx,
+                )),
         )
     }
 
@@ -382,7 +374,7 @@ impl RootView {
             self.opens(
                 ("missing-album", index),
                 SharedString::from(track.album_title.clone()),
-                OPEN_ALBUM_HINT,
+                words::browser::open_album_hint(),
                 Some(Selection::Album(track.album)),
                 cx,
             )
@@ -419,7 +411,7 @@ impl RootView {
             self.opens(
                 ("unheld-artist", index),
                 SharedString::from(release.artist_name.clone()),
-                OPEN_ARTIST_HINT,
+                words::browser::open_artist_hint(),
                 Some(Selection::Artist(release.artist)),
                 cx,
             )
@@ -436,7 +428,7 @@ fn missing_from_album(index: usize, track: &MissingTrack, tracks: &[MissingTrack
         .take_while(|held| held.album == track.album)
         .count();
 
-    format!("{short} missing")
+    words::missing::missing_from_album(short)
 }
 
 fn unheld_by_artist(index: usize, release: &UnheldRelease, releases: &[UnheldRelease]) -> String {
@@ -445,7 +437,7 @@ fn unheld_by_artist(index: usize, release: &UnheldRelease, releases: &[UnheldRel
         .take_while(|other| other.artist == release.artist)
         .count();
 
-    format::counted(unheld, "release", "releases")
+    words::missing::releases_unheld(unheld)
 }
 
 fn album_said(index: usize, track: &MissingTrack, tracks: &[MissingTrack]) -> SharedString {
@@ -478,7 +470,7 @@ fn release_said(release: &UnheldRelease) -> SharedString {
 }
 
 fn disc_said(disc: u32) -> SharedString {
-    SharedString::from(format!("Disc {disc}"))
+    SharedString::from(words::missing::disc(disc))
 }
 
 fn headings(rows: &[MissingRow], heads: fn(&MissingRow) -> bool) -> usize {
@@ -570,12 +562,14 @@ fn in_a_card(listed: Stateful<Div>, place: Place) -> Div {
 fn disc_heading(disc: u32) -> Div {
     row(false)
         .child(listing::number_cell(SharedString::new_static("")))
-        .child(kit::eyebrow(format!("DISC {disc}")))
+        .child(kit::eyebrow(words::missing::disc_eyebrow(disc)))
 }
 
-fn listed_short(listed: usize, counted: u64, many: &str) -> Option<String> {
-    ((listed as u64) < counted)
-        .then(|| format!("{listed} of {counted} {many} listed; type to narrow to the rest"))
+fn listed_short(listed: usize, counted: u64, shows: MissingShows) -> Option<String> {
+    ((listed as u64) < counted).then(|| match shows {
+        MissingShows::Tracks => words::missing::tracks_listed_short(counted, listed),
+        MissingShows::Releases => words::missing::releases_listed_short(counted, listed),
+    })
 }
 
 #[cfg(test)]
@@ -585,9 +579,9 @@ mod tests {
 
     #[test]
     fn a_list_cut_short_of_its_count_says_so_and_a_whole_one_says_nothing() {
-        assert_eq!(listed_short(12, 12, "tracks"), None);
+        assert_eq!(listed_short(12, 12, MissingShows::Tracks), None);
         assert_eq!(
-            listed_short(5_000, 7_214, "tracks").as_deref(),
+            listed_short(5_000, 7_214, MissingShows::Tracks).as_deref(),
             Some("5000 of 7214 tracks listed; type to narrow to the rest")
         );
     }

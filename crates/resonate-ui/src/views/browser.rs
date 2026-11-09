@@ -33,10 +33,9 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, KeepsItsWidth, Press, Tone},
         listing::{self, Pictured},
-        matching,
         menu::{self, AtTheReach, Called, Menu},
         missing::MissingShows,
-        playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
+        playlists::{Held, Naming, ROW_GROUP},
         pointed::{self, LitUnderThePointer},
         reorder::{self, Chosen, Lifted, Listed, Shift},
         root::{
@@ -47,117 +46,19 @@ use crate::{
         sheets,
         sorting::{self, Ordered},
         spoken::{self, Spelt, Spoken},
-        transport::COVER_HINT,
     },
+    words,
 };
 
 const COVERS_AHEAD: usize = 48;
-const ADD_A_FOLDER: &str = "Add a music folder from Settings to scan one in.";
-
-const ADD_SONGS: &str = "Start your library";
-
-const ADD_SONGS_MORE: &str = "Choose the primary music folder: songs you drag onto the window are \
-                              copied into it, and what is already there is scanned.";
-
-const CHOOSE_PRIMARY_HINT: &str = "Open the folder dialogue and make the folder chosen the \
-                                   primary music folder";
-
-const DROP_SONGS_MORE: &str = "Drag songs onto the window, or put them in the primary music \
-                               folder, to fill the library.";
-const LIBRARY_UNREADABLE: &str = "The library couldn't be read";
-
-const LIBRARY_UNREADABLE_MORE: &str = "The log says what went wrong reading the catalog.";
-
-const NOTHING_HELD_MATCHES: &str = "Nothing in your library matches this search.";
-const SEVERAL: &str = "Various artists";
-const FORGET_THE_MATCH: &str = "Not this record";
-const OTHER_PRESSINGS: &str = "Other pressings";
-const OTHER_PRESSINGS_HINT: &str =
-    "List every pressing of this record MusicBrainz holds, and take the one these files are";
-const ASKING_FOR_PRESSINGS: &str = "Asking MusicBrainz for the pressings…";
-const NO_PRESSINGS: &str = "MusicBrainz named no pressings";
-const FIND_THE_RECORD: &str = "Find the record";
-const FIND_THE_RECORD_HINT: &str = "Ask MusicBrainz for the releases named like this album, and \
-                                    take the one these files are";
-const ASKING_FOR_RELEASES: &str = "Asking MusicBrainz for releases named like this…";
-const NO_RELEASES: &str = "MusicBrainz named no release like this";
-const TAKE_THE_PRESSING_HINT: &str = "Take this pressing for the album in place of the one in use";
-const PRESSING_IN_USE_HINT: &str = "The pressing the album is matched to now";
 const PRESSINGS_SHOWN: usize = 12;
-const FORGET_THE_MATCH_HINT: &str =
-    "The lookup took the wrong release: forget it, and never take it for this album again";
-const FORGET_THE_MATCH_ARMED: &str = "Press again to forget the match";
-const FORGET_THE_MATCH_ARMED_HINT: &str = "Takes away the release, its rows and what it linked, \
-     and the next lookup asks again without it";
-
-const WAY_BACK_HINT: &str = keyed!("Back to where this was opened from", key!(leave));
-
-const ORDER_HINT: &str = "Choose what this listing is put in order by";
-
-const PLAY_ALL_HINT: &str = "Play every track listed here in order, in place of the queue";
-
-const SHUFFLE_ALL_HINT: &str = "Play every track listed here, shuffled";
-
-pub(crate) const OPEN_ALBUM_HINT: &str = "See the tracks on this album";
-
-pub(crate) const OPEN_ARTIST_HINT: &str = "See every track by this artist";
-
-const INSTEAD_HINT: &str = "Search for the spelling the catalog holds instead";
-
-const SUNG_HINT: &str = "Search the lyrics for these words, in the order they were typed";
-
-const WANT_HINT: &str = "Mark this track wanted, so a provider can be asked for it";
-
-const UNWANT_HINT: &str = "Stop wanting this track";
-
-const DISMISS_MISSING_HINT: &str =
-    "Take this track off the Missing list, and stop wanting it if it was wanted";
-
-const WANT_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
-                               providers are asked for it. Right-click to choose the release";
-
-const FETCH_FOUND_HINT: &str = "Download this song: its release is added to the catalog and the \
-                                providers are asked for it now, the sidebar following how it goes";
 
 const ARTIST_FOUND_CELL_WIDENING: f32 = 1.8;
 
-const OPENING: &str = "Opening…";
-
-const OPEN_ARTIST_FOUND_HINT: &str =
-    "Open this artist to see their releases and download the songs you want";
-
-const NOT_IN_THE_LIBRARY: &str = "not in your library";
-
-const OPEN_ALBUM_NOT_HELD_HINT: &str = "Open this album to see its songs and download the ones you \
-                                        want";
-
-const GET_ALBUM_REST_HINT: &str = "Ask the providers for every missing track on this album";
-
-const NOT_HELD_HEADING: &str = "Not in your library";
-
-const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
-
 const RELEASES_OFFERED: usize = 10;
-const PLACE_ON: &str = "Place on a release…";
-const LOOK_IT_UP: &str = "Enrich this song";
-const READ_THE_REST: &str = "Read the rest";
-const READ_THE_REST_HINT: &str =
-    "Ask MusicBrainz for the releases past the first thousand this artist is credited on";
-const NOTHING_PLACES_IT: &str = "Nothing has identified this track, so it is on no release yet";
-
 const UNHELD_COVER: f32 = 0.45;
 
-const UNHELD_HINT: &str = "See what this artist has released that the library does not hold";
-
-const RECORD_HINT: &str = "About this record";
-
-const GENRES_HINT: &str = "Genres";
-
 const RECORD_LABEL: f32 = 112.0;
-
-pub(crate) const FAVOUR_HINT: &str = "Keep this among your favourites";
-
-pub(crate) const UNFAVOUR_HINT: &str = "Take this out of your favourites";
 
 pub(crate) const ROW_CONTROLS: usize = 4;
 
@@ -247,8 +148,8 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let saying = match already {
-            true => UNFAVOUR_HINT,
-            false => FAVOUR_HINT,
+            true => words::browser::unfavour_hint(),
+            false => words::browser::favour_hint(),
         };
         let mark = kit::star(id, already, SharedString::from(format!("{what:?}")), saying);
 
@@ -306,18 +207,18 @@ impl RootView {
                 self.nothing_matched(
                     Icon::Albums,
                     if unreadable {
-                        LIBRARY_UNREADABLE
+                        words::browser::library_unreadable()
                     } else if narrowed {
-                        "No albums match"
+                        words::browser::no_albums_match()
                     } else {
-                        "No albums yet"
+                        words::browser::no_albums_yet()
                     },
                     Some(if unreadable {
-                        LIBRARY_UNREADABLE_MORE
+                        words::browser::library_unreadable_more()
                     } else if narrowed {
-                        NOTHING_HELD_MATCHES
+                        words::browser::nothing_held_matches()
                     } else {
-                        ADD_A_FOLDER
+                        words::browser::add_a_folder()
                     }),
                     cx,
                 )
@@ -342,8 +243,8 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::title("Albums"))
-                            .child(kit::subtitle(format::counted(counted, "album", "albums"))),
+                            .child(kit::title(words::browser::albums()))
+                            .child(kit::subtitle(words::browser::albums_counted(counted))),
                     )
                     .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
                     .child(kit::actions().child(self.orders_a_listing(
@@ -482,12 +383,15 @@ impl RootView {
             .artist
             .clone()
             .map(SharedString::from)
-            .or_else(|| (album.artist_count > 1).then(|| SharedString::new_static(SEVERAL)))
+            .or_else(|| {
+                (album.artist_count > 1)
+                    .then(|| SharedString::new_static(words::browser::several()))
+            })
             .filter(|_| match caption {
                 Caption::ByArtist => true,
                 Caption::Beside(artist) => album.artist_id != Some(artist),
             });
-        let counted = format::counted(album.track_count as usize, "track", "tracks");
+        let counted = words::browser::tracks_counted(album.track_count);
         let beside = match (caption, artist.is_some(), album.year) {
             (Caption::Beside(_), false, Some(year)) => {
                 Some(SharedString::from(format!("{year} · {counted}")))
@@ -507,7 +411,7 @@ impl RootView {
                     self.opens(
                         ("album-artist", id.get() as usize),
                         listing::matched(artist, lit_artist),
-                        OPEN_ARTIST_HINT,
+                        words::browser::open_artist_hint(),
                         owner.map(Selection::Artist),
                         cx,
                     )
@@ -537,7 +441,7 @@ impl RootView {
             .gap_2p5()
             .w(px(side))
             .cursor_pointer()
-            .names(OPEN_ALBUM_HINT)
+            .names(words::browser::open_album_hint())
             .child(
                 div()
                     .relative()
@@ -646,14 +550,14 @@ impl RootView {
     fn add_songs(&mut self, cx: &mut Context<Self>) -> AnyElement {
         kit::empty_offering(
             Icon::Tracks,
-            ADD_SONGS,
-            Some(ADD_SONGS_MORE),
+            words::browser::add_songs(),
+            Some(words::browser::add_songs_more()),
             self.in_the_pane_ring(
                 kit::button(
                     "choose-the-primary-folder",
                     Some(Icon::Folder),
-                    "Set primary folder…",
-                    CHOOSE_PRIMARY_HINT,
+                    words::browser::set_primary_folder(),
+                    words::browser::choose_primary_hint(),
                     Tone::Primary,
                 ),
                 |this, _, cx| this.choose_the_primary_folder(cx),
@@ -685,8 +589,8 @@ impl RootView {
                 kit::button(
                     "search-instead",
                     Some(Icon::Search),
-                    format!("Did you mean {instead}?"),
-                    INSTEAD_HINT,
+                    words::browser::did_you_mean(instead.as_str()),
+                    words::browser::instead_hint(),
                     Tone::Outlined,
                 ),
                 move |this, window, cx| {
@@ -705,11 +609,8 @@ impl RootView {
             kit::button(
                 "search-the-lyrics",
                 Some(Icon::Lyrics),
-                format!(
-                    "Sung in {}",
-                    format::counted(sung.tracks as usize, "track", "tracks")
-                ),
-                SUNG_HINT,
+                words::browser::sung_in(sung.tracks),
+                words::browser::sung_hint(),
                 tone,
             ),
             move |this, window, cx| {
@@ -740,18 +641,18 @@ impl RootView {
                 self.nothing_matched(
                     Icon::Artists,
                     if unreadable {
-                        LIBRARY_UNREADABLE
+                        words::browser::library_unreadable()
                     } else if narrowed {
-                        "No artists match"
+                        words::browser::no_artists_match()
                     } else {
-                        "No artists yet"
+                        words::browser::no_artists_yet()
                     },
                     Some(if unreadable {
-                        LIBRARY_UNREADABLE_MORE
+                        words::browser::library_unreadable_more()
                     } else if narrowed {
-                        NOTHING_HELD_MATCHES
+                        words::browser::nothing_held_matches()
                     } else {
-                        ADD_A_FOLDER
+                        words::browser::add_a_folder()
                     }),
                     cx,
                 )
@@ -768,8 +669,8 @@ impl RootView {
                             .flex_1()
                             .min_w(px(theme::heading_name()))
                             .gap_1()
-                            .child(kit::title("Artists"))
-                            .child(kit::subtitle(format::counted(counted, "artist", "artists"))),
+                            .child(kit::title(words::browser::artists()))
+                            .child(kit::subtitle(words::browser::artists_counted(counted))),
                     )
                     .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
                     .child(
@@ -826,7 +727,7 @@ impl RootView {
                                             .group(ROW_GROUP)
                                             .cursor_pointer()
                                             .hover(|entry| entry.bg(rgb(theme::hover())))
-                                            .names(OPEN_ARTIST_HINT)
+                                            .names(words::browser::open_artist_hint())
                                             .child(this.artist_mark(artist, chosen, cx))
                                             .child(
                                                 div()
@@ -845,16 +746,8 @@ impl RootView {
                                             )
                                             .child(kit::figure(format!(
                                                 "{} · {}",
-                                                format::counted(
-                                                    artist.album_count as usize,
-                                                    "album",
-                                                    "albums"
-                                                ),
-                                                format::counted(
-                                                    artist.track_count as usize,
-                                                    "track",
-                                                    "tracks"
-                                                )
+                                                words::browser::albums_counted(artist.album_count),
+                                                words::browser::tracks_counted(artist.track_count)
                                             )))
                                             .child(this.favour_mark_under(
                                                 ("artist-favourite", index),
@@ -915,13 +808,17 @@ impl RootView {
             return if self.library.read(cx).unreadable() {
                 kit::trouble(
                     Icon::Tracks,
-                    LIBRARY_UNREADABLE,
-                    Some(LIBRARY_UNREADABLE_MORE),
+                    words::browser::library_unreadable(),
+                    Some(words::browser::library_unreadable_more()),
                 )
             } else if cx.global::<ResonateApp>().music_folder.is_none() {
                 self.add_songs(cx)
             } else {
-                empty(Icon::Tracks, "No tracks yet", Some(DROP_SONGS_MORE))
+                empty(
+                    Icon::Tracks,
+                    words::browser::no_tracks_yet(),
+                    Some(words::browser::drop_songs_more()),
+                )
             };
         }
         let playing = self.playing_now(cx).track;
@@ -931,9 +828,9 @@ impl RootView {
         let found_nothing = nothing.then(|| {
             self.nothing_beyond(cx).unwrap_or_else(|| {
                 let said = if unreadable {
-                    LIBRARY_UNREADABLE
+                    words::browser::library_unreadable()
                 } else {
-                    "No tracks match."
+                    words::browser::no_tracks_match()
                 };
                 self.nothing_matched(Icon::Tracks, said, None, cx)
             })
@@ -1172,7 +1069,7 @@ impl RootView {
                         SharedString::from(track.artist.clone().unwrap_or_default()),
                         lit_artist,
                     ),
-                    OPEN_ARTIST_HINT,
+                    words::browser::open_artist_hint(),
                     track.artist_id.map(Selection::Artist),
                     cx,
                 )
@@ -1211,7 +1108,7 @@ impl RootView {
                                     kit::icon_button(
                                         ("add-song-to-playlist", index),
                                         Icon::Plus,
-                                        ADD_SONG_HINT,
+                                        words::playlists::add_song_hint(),
                                     ),
                                     move |this, _, cx| {
                                         cx.stop_propagation();
@@ -1277,9 +1174,9 @@ impl RootView {
                 let track_id = track.id;
                 let hidden = track.hidden;
                 let (icon, hiding) = if hidden {
-                    (Icon::Undo, menu::SHOW_EACH)
+                    (Icon::Undo, words::menu::show_each())
                 } else {
-                    (Icon::Discard, menu::HIDE_EACH)
+                    (Icon::Discard, words::menu::hide_each())
                 };
                 let favourite = this
                     .library
@@ -1327,22 +1224,26 @@ impl RootView {
                     .offers_the_file(&track.location, names)
                     .when_some(placeable, |menu, track| {
                         menu.apart()
-                            .nests(Icon::Globe, menu::IDENTIFY, move |menu| {
-                                menu.does(Icon::Globe, LOOK_IT_UP, move |this, _, cx| {
-                                    this.library.update(cx, |library, cx| {
-                                        library.look_up_a_track(track, cx)
-                                    });
-                                })
+                            .nests(Icon::Globe, words::menu::identify(), move |menu| {
+                                menu.does(
+                                    Icon::Globe,
+                                    words::browser::look_it_up(),
+                                    move |this, _, cx| {
+                                        this.library.update(cx, |library, cx| {
+                                            library.look_up_a_track(track, cx)
+                                        });
+                                    },
+                                )
                                 .does(
                                     Icon::Rename,
-                                    matching::MATCH_THE_SONG,
+                                    words::matching::match_the_song(),
                                     move |this, window, cx| {
                                         this.ask_to_match(track, matched.clone(), window, cx);
                                     },
                                 )
                                 .does(
                                     Icon::Disc,
-                                    PLACE_ON,
+                                    words::browser::place_on(),
                                     move |this, _, cx| {
                                         this.offer_releases_to_place_on(track, at, cx);
                                     },
@@ -1351,26 +1252,34 @@ impl RootView {
                     })
                     .apart()
                     .when_some(in_the_queue, |menu, (location, span)| {
-                        menu.does(Icon::Discard, menu::TAKE_OUT, move |this, _, cx| {
-                            this.take_out_of_the_queue(&location, span, cx);
-                        })
+                        menu.does(
+                            Icon::Discard,
+                            words::menu::take_out(),
+                            move |this, _, cx| {
+                                this.take_out_of_the_queue(&location, span, cx);
+                            },
+                        )
                     })
-                    .nests(Icon::Delete, menu::REMOVE, move |menu| {
+                    .nests(Icon::Delete, words::menu::remove(), move |menu| {
                         menu.does(icon, hiding, move |this, _, cx| {
                             this.library.update(cx, |library, cx| {
                                 library.hide_track(track_id, !hidden, cx);
                             });
                         })
                         .when_some(delivered, |menu, delivered| {
-                            menu.does(Icon::Close, menu::FORGET_DELIVERY, move |this, _, cx| {
-                                this.library.update(cx, |library, cx| {
-                                    library.forget_delivered(&delivered, cx);
-                                });
-                            })
+                            menu.does(
+                                Icon::Close,
+                                words::menu::forget_delivery(),
+                                move |this, _, cx| {
+                                    this.library.update(cx, |library, cx| {
+                                        library.forget_delivered(&delivered, cx);
+                                    });
+                                },
+                            )
                         })
                         .does(
                             Icon::Delete,
-                            menu::DELETE_FROM_DISK,
+                            words::menu::delete_from_disk(),
                             move |this, _, cx| {
                                 this.ask_to_delete(deleting.clone(), cx);
                             },
@@ -1548,7 +1457,7 @@ impl RootView {
                             kit::icon_button(
                                 ("dismiss-missing", release_track.get()),
                                 Icon::Close,
-                                DISMISS_MISSING_HINT,
+                                words::browser::dismiss_missing_hint(),
                             ),
                             move |this, _, cx| {
                                 cx.stop_propagation();
@@ -1567,7 +1476,7 @@ impl RootView {
             .when_some(download, |row, release_track| {
                 row.cursor_pointer()
                     .hover(|row| row.bg(rgb(theme::hover())))
-                    .names(WANT_HINT)
+                    .names(words::browser::want_hint())
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.library
                             .update(cx, |library, cx| library.want(release_track, cx));
@@ -1586,20 +1495,20 @@ impl RootView {
             Some(Performer::Held(artist)) => self.opens(
                 id,
                 label,
-                OPEN_ARTIST_HINT,
+                words::browser::open_artist_hint(),
                 Some(Selection::Artist(artist)),
                 cx,
             ),
             Some(Performer::Elsewhere(found)) => self.pressed_to(
                 id,
                 label,
-                OPEN_ARTIST_FOUND_HINT,
+                words::browser::open_artist_found_hint(),
                 Some(move |this: &mut Self, cx: &mut Context<Self>| {
                     this.open_artist_found(found.clone(), cx);
                 }),
                 cx,
             ),
-            None => self.opens(id, label, OPEN_ARTIST_HINT, None, cx),
+            None => self.opens(id, label, words::browser::open_artist_hint(), None, cx),
         }
     }
 
@@ -1614,8 +1523,10 @@ impl RootView {
             .unheld_row(index, Unheld::found(found, fetching), cx)
             .debug_selector(move || format!("found-{index}"));
         let hint = match fetching {
-            None => FETCH_FOUND_HINT,
-            Some(fetching) if fetching.can_be_asked_again() => FETCH_FOUND_AGAIN_HINT,
+            None => words::browser::fetch_found_hint(),
+            Some(fetching) if fetching.can_be_asked_again() => {
+                words::browser::fetch_found_again_hint()
+            }
             Some(_) => return row,
         };
 
@@ -1631,17 +1542,18 @@ impl RootView {
     }
 
     fn songs_not_held_heading(rows: usize) -> Div {
-        run_heading(SharedString::from(format!(
-            "Not in your library · {} · press one to download it",
-            format::counted(rows, "song", "songs")
-        )))
+        run_heading(SharedString::from(words::browser::songs_not_held(rows)))
     }
 
     fn want_mark(&self, asks: Asks, cx: &mut Context<Self>) -> Stateful<Div> {
         match asks {
             Asks::Row(release_track) => match self.library.read(cx).wanted(release_track) {
                 Some(want) => self.in_the_pane_ring(
-                    kit::icon_button(("unwant", release_track.get()), Icon::Wanted, UNWANT_HINT),
+                    kit::icon_button(
+                        ("unwant", release_track.get()),
+                        Icon::Wanted,
+                        words::browser::unwant_hint(),
+                    ),
                     move |this, _, cx| {
                         cx.stop_propagation();
                         this.library
@@ -1650,7 +1562,11 @@ impl RootView {
                     cx,
                 ),
                 None => self.in_the_pane_ring(
-                    kit::icon_button(("want", release_track.get()), Icon::Want, WANT_HINT),
+                    kit::icon_button(
+                        ("want", release_track.get()),
+                        Icon::Want,
+                        words::browser::want_hint(),
+                    ),
                     move |this, _, cx| {
                         cx.stop_propagation();
                         this.library
@@ -1679,7 +1595,7 @@ impl RootView {
                     kit::icon_button(
                         listing::keyed_by("want-found", &found.recording),
                         Icon::Want,
-                        WANT_FOUND_HINT,
+                        words::browser::want_found_hint(),
                     ),
                     move |this, _, cx| {
                         cx.stop_propagation();
@@ -1707,8 +1623,8 @@ impl RootView {
         };
 
         kit::segmented()
-            .child(choice(ArtistsDrawn::List, "List", cx))
-            .child(choice(ArtistsDrawn::Grid, "Grid", cx))
+            .child(choice(ArtistsDrawn::List, words::browser::list(), cx))
+            .child(choice(ArtistsDrawn::Grid, words::browser::grid(), cx))
     }
 
     fn artist_grid(&mut self, artists: &Arc<[Artist]>, cx: &mut Context<Self>) -> Div {
@@ -1828,7 +1744,7 @@ impl RootView {
             .gap_2p5()
             .w(px(side))
             .cursor_pointer()
-            .names(OPEN_ARTIST_HINT)
+            .names(words::browser::open_artist_hint())
             .child(
                 div()
                     .relative()
@@ -1883,8 +1799,8 @@ impl RootView {
                             .text_color(rgb(theme::muted()))
                             .child(format!(
                                 "{} · {}",
-                                format::counted(artist.album_count as usize, "album", "albums"),
-                                format::counted(artist.track_count as usize, "track", "tracks")
+                                words::browser::albums_counted(artist.album_count),
+                                words::browser::tracks_counted(artist.track_count)
                             )),
                     ),
             )
@@ -1964,12 +1880,12 @@ impl RootView {
         let adding_to = self.adding_songs_to;
         let target = adding_to.and_then(|id| library.saved_playlist(id));
         let title = target.map_or_else(
-            || "All tracks".to_owned(),
-            |playlist| format!("Add songs to {}", playlist.name),
+            || words::browser::all_tracks().to_owned(),
+            |playlist| words::browser::add_songs_to(playlist.name.as_str()),
         );
         let under = target.map_or_else(
             || summary(library.listed(), None),
-            |playlist| format!("Choose tracks to add to {}", playlist.name),
+            |playlist| words::browser::choose_tracks_to_add_to(playlist.name.as_str()),
         );
 
         let sung = self.sung_offer(Tone::Ghost, cx);
@@ -1979,8 +1895,8 @@ impl RootView {
                     kit::button(
                         "finish-adding-songs",
                         Some(Icon::Back),
-                        "Done",
-                        FINISH_ADDING_HINT,
+                        words::browser::done(),
+                        words::playlists::finish_adding_hint(),
                         Tone::Ghost,
                     ),
                     |this, _, cx| this.finish_adding_songs(cx),
@@ -1994,8 +1910,8 @@ impl RootView {
                             kit::button(
                                 "save-search",
                                 Some(Icon::Search),
-                                "Save this search",
-                                SAVE_SEARCH_HINT,
+                                words::browser::save_this_search(),
+                                words::playlists::save_search_hint(),
                                 Tone::Ghost,
                             ),
                             |this, window, cx| {
@@ -2019,7 +1935,7 @@ impl RootView {
                         .min_w(px(theme::heading_name()))
                         .gap_1()
                         .when(adding_to.is_some(), |column| {
-                            column.child(kit::eyebrow("Add songs"))
+                            column.child(kit::eyebrow(words::browser::add_songs_label()))
                         })
                         .child(kit::title(title))
                         .child(kit::subtitle(under)),
@@ -2031,9 +1947,10 @@ impl RootView {
     fn album_page_heading(&self, id: AlbumId, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let album = library.album_of(id);
-        let title = SharedString::from(
-            album.map_or_else(|| format!("album {id}"), |album| album.title.clone()),
-        );
+        let title = SharedString::from(album.map_or_else(
+            || words::browser::unnamed_album(id.to_string()),
+            |album| album.title.clone(),
+        ));
         let owner = album.and_then(|album| {
             album
                 .artist_id
@@ -2049,10 +1966,10 @@ impl RootView {
         let cover = self.in_the_pane_ring(
             self.cover_sized(Pictured::Album(id), Drawn::OnThePage, self.hero_side(), cx)
                 .id("magnify-scoped-cover")
-                .said_as(Role::Button, COVER_HINT)
+                .said_as(Role::Button, words::transport::cover_hint())
                 .cursor_pointer()
                 .hover(|cover| cover.opacity(kit::LIT))
-                .names(COVER_HINT),
+                .names(words::transport::cover_hint()),
             move |this, _, cx| this.magnify(Magnified::Album(id), cx),
             cx,
         );
@@ -2067,7 +1984,7 @@ impl RootView {
 
                 album_menu_ending(album_menu(at, id), id, owner).does(
                     Icon::Albums,
-                    menu::MAGNIFY,
+                    words::menu::magnify(),
                     move |this, _, cx| this.magnify(Magnified::Album(id), cx),
                 )
             },
@@ -2083,7 +2000,7 @@ impl RootView {
             .gap_1()
             .child(kit::measures_its_width(self.hero_width.clone()))
             .child(kit::measures_its_height(self.hero_height.clone()))
-            .child(kit::eyebrow("Album"))
+            .child(kit::eyebrow(words::browser::album()))
             .child(kit::hero_title(title, self.hero_width.get()))
             .when_some(owner, |column, (artist, name)| {
                 column.child(
@@ -2097,7 +2014,7 @@ impl RootView {
                             self.opens(
                                 "scoped-owner",
                                 name,
-                                OPEN_ARTIST_HINT,
+                                words::browser::open_artist_hint(),
                                 Some(Selection::Artist(artist)),
                                 cx,
                             )
@@ -2113,7 +2030,7 @@ impl RootView {
                             kit::icon_button(
                                 "download-album-missing",
                                 Icon::Download,
-                                GET_ALBUM_REST_HINT,
+                                words::browser::get_album_rest_hint(),
                             ),
                             move |this, _, cx| {
                                 this.library
@@ -2124,7 +2041,11 @@ impl RootView {
                     })
                     .when_some(record, |row, _| {
                         row.child(self.in_the_pane_ring_at(
-                            kit::icon_button("album-record", Icon::Info, RECORD_HINT),
+                            kit::icon_button(
+                                "album-record",
+                                Icon::Info,
+                                words::browser::record_hint(),
+                            ),
                             move |this, at, cx| this.show_the_record(id, at, cx),
                             cx,
                         ))
@@ -2184,7 +2105,7 @@ impl RootView {
             .gap_1()
             .child(kit::measures_its_width(self.hero_width.clone()))
             .child(kit::measures_its_height(self.hero_height.clone()))
-            .child(kit::eyebrow("Artist"))
+            .child(kit::eyebrow(words::browser::artist()))
             .child(kit::hero_title(
                 SharedString::from(name),
                 self.hero_width.get(),
@@ -2207,7 +2128,11 @@ impl RootView {
                 )
                 .when(!genres.is_empty(), |row| {
                     row.child(self.in_the_pane_ring_at(
-                        kit::icon_button("artist-genres", Icon::Info, GENRES_HINT),
+                        kit::icon_button(
+                            "artist-genres",
+                            Icon::Info,
+                            words::browser::genres_hint(),
+                        ),
                         move |this, at, cx| this.show_the_artist(id, at, cx),
                         cx,
                     ))
@@ -2218,16 +2143,12 @@ impl RootView {
                             "unheld-releases",
                             Some(Icon::Missing),
                             match unread {
-                                0 => format!(
-                                    "{} not held",
-                                    format::counted(unheld, "release", "releases")
-                                ),
-                                unread => format!(
-                                    "{} not held, {unread} more unread",
-                                    format::counted(unheld, "release", "releases")
-                                ),
+                                0 => words::browser::releases_not_held(unheld),
+                                unread => {
+                                    words::browser::releases_not_held_more_unread(unheld, unread)
+                                }
                             },
-                            UNHELD_HINT,
+                            words::browser::unheld_hint(),
                             Tone::Ghost,
                         ),
                         |this, _, cx| {
@@ -2241,8 +2162,8 @@ impl RootView {
                             kit::button(
                                 "read-the-rest",
                                 Some(Icon::Import),
-                                READ_THE_REST,
-                                READ_THE_REST_HINT,
+                                words::browser::read_the_rest(),
+                                words::browser::read_the_rest_hint(),
                                 Tone::Ghost,
                             ),
                             move |this, _, cx| {
@@ -2283,8 +2204,18 @@ impl RootView {
             };
 
         kit::segmented()
-            .child(tab(ArtistShows::Records, "Albums", records, cx))
-            .child(tab(ArtistShows::Tracks, "Tracks", tracks, cx))
+            .child(tab(
+                ArtistShows::Records,
+                words::browser::albums(),
+                records,
+                cx,
+            ))
+            .child(tab(
+                ArtistShows::Tracks,
+                words::browser::tracks(),
+                tracks,
+                cx,
+            ))
     }
 
     fn show_of_the_artist(&mut self, shows: ArtistShows, cx: &mut Context<Self>) {
@@ -2301,7 +2232,11 @@ impl RootView {
             .unwrap_or_else(|| SharedString::new_static(self.in_front(cx).label()));
 
         div().flex().child(self.in_the_pane_ring(
-            kit::way_back("way-back", label, WAY_BACK_HINT),
+            kit::way_back(
+                "way-back",
+                label,
+                words::browser::way_back_hint(key!(leave)),
+            ),
             |this, _, cx| this.step_back(cx),
             cx,
         ))
@@ -2428,16 +2363,16 @@ impl RootView {
     ) -> Div {
         let (label, hint, waiting, none) = match asking {
             Asking::Group(_) => (
-                OTHER_PRESSINGS,
-                OTHER_PRESSINGS_HINT,
-                ASKING_FOR_PRESSINGS,
-                NO_PRESSINGS,
+                words::browser::other_pressings(),
+                words::browser::other_pressings_hint(),
+                words::browser::asking_for_pressings(),
+                words::browser::no_pressings(),
             ),
             Asking::Search => (
-                FIND_THE_RECORD,
-                FIND_THE_RECORD_HINT,
-                ASKING_FOR_RELEASES,
-                NO_RELEASES,
+                words::browser::find_the_record(),
+                words::browser::find_the_record_hint(),
+                words::browser::asking_for_releases(),
+                words::browser::no_releases(),
             ),
         };
         let listed = match pressings {
@@ -2471,15 +2406,15 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_0p5()
-            .child(kit::eyebrow(format!("Pressings · {}", listed.len())));
+            .child(kit::eyebrow(words::browser::pressings(listed.len())));
         for (at, pressing) in listed.iter().take(PRESSINGS_SHOWN).enumerate() {
             let in_use = current.as_ref() == Some(&pressing.id);
             let chosen = pressing.id.clone();
             let line = pressing_line(pressing);
             let hint = if in_use {
-                PRESSING_IN_USE_HINT
+                words::browser::pressing_in_use_hint()
             } else {
-                TAKE_THE_PRESSING_HINT
+                words::browser::take_the_pressing_hint()
             };
             let row = div()
                 .id(("pressing", at))
@@ -2493,7 +2428,7 @@ impl RootView {
                 .names(hint)
                 .child(kit::figure(line.clone()).truncate().ends_in_an_ellipsis())
                 .when(in_use, |row| {
-                    row.child(kit::badge("In use", theme::accent()))
+                    row.child(kit::badge(words::browser::in_use(), theme::accent()))
                 });
             column = column.child(match in_use {
                 true => row.named_as(Role::ListItem, &line, hint).chosen(true),
@@ -2514,9 +2449,8 @@ impl RootView {
             });
         }
         if listed.len() > PRESSINGS_SHOWN {
-            column = column.child(pressing_note(&format!(
-                "and {} more",
-                listed.len() - PRESSINGS_SHOWN
+            column = column.child(pressing_note(&words::browser::and_more(
+                listed.len() - PRESSINGS_SHOWN,
             )));
         }
         column
@@ -2530,8 +2464,14 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let (label, hint) = match forgetting {
-            true => (FORGET_THE_MATCH_ARMED, FORGET_THE_MATCH_ARMED_HINT),
-            false => (FORGET_THE_MATCH, FORGET_THE_MATCH_HINT),
+            true => (
+                words::browser::forget_the_match_armed(),
+                words::browser::forget_the_match_armed_hint(),
+            ),
+            false => (
+                words::browser::forget_the_match(),
+                words::browser::forget_the_match_hint(),
+            ),
         };
 
         self.in_the_pane_ring(
@@ -2604,8 +2544,8 @@ impl RootView {
             kit::button(
                 "play-all",
                 Some(Icon::Play),
-                "Play",
-                PLAY_ALL_HINT,
+                words::browser::play(),
+                words::browser::play_all_hint(),
                 Tone::Primary,
             ),
             |this, window, cx| {
@@ -2623,8 +2563,8 @@ impl RootView {
             kit::button(
                 "shuffle-all",
                 Some(Icon::Shuffle),
-                "Shuffle",
-                SHUFFLE_ALL_HINT,
+                words::browser::shuffle(),
+                words::browser::shuffle_all_hint(),
                 Tone::Outlined,
             ),
             |this, window, cx| {
@@ -2753,7 +2693,9 @@ impl RootView {
             Some(fetching) => div()
                 .text_color(rgb(fetching_colour(fetching)))
                 .child(fetching.saying()),
-            None if opening => div().text_color(rgb(theme::accent())).child(OPENING),
+            None if opening => div()
+                .text_color(rgb(theme::accent()))
+                .child(words::browser::opening()),
             None => div()
                 .text_color(rgb(theme::faint()))
                 .child(SharedString::from(album.caption)),
@@ -2762,7 +2704,7 @@ impl RootView {
 
         let cell = div()
             .id(listing::keyed_by("album-not-held", &group))
-            .listed_as(|| spoken::song(album.title, Some(NOT_IN_THE_LIBRARY)))
+            .listed_as(|| spoken::song(album.title, Some(words::browser::not_in_the_library())))
             .group(CELL_GROUP)
             .flex()
             .flex_none()
@@ -2812,7 +2754,7 @@ impl RootView {
         }
 
         cell.cursor_pointer()
-            .names(OPEN_ALBUM_NOT_HELD_HINT)
+            .names(words::browser::open_album_not_held_hint())
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.open_album_not_held(group.clone(), cx);
             }))
@@ -2963,7 +2905,7 @@ impl RootView {
             .gap_2p5()
             .w(px(side))
             .cursor_pointer()
-            .names(OPEN_ARTIST_HINT)
+            .names(words::browser::open_artist_hint())
             .child(
                 div()
                     .relative()
@@ -3036,7 +2978,7 @@ impl RootView {
             .gap_2p5()
             .w(px(side * ARTIST_FOUND_CELL_WIDENING))
             .cursor_pointer()
-            .names(OPEN_ARTIST_FOUND_HINT)
+            .names(words::browser::open_artist_found_hint())
             .child(
                 kit::avatar(&found.name, false)
                     .size(px(side))
@@ -3062,7 +3004,7 @@ impl RootView {
                     div()
                         .text_size(px(theme::text_xs()))
                         .text_color(rgb(theme::accent()))
-                        .child(OPENING),
+                        .child(words::browser::opening()),
                 )
             })
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -3077,7 +3019,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         self.in_the_pane_ring_at(
-            kit::icon_button(named, Icon::Sort, ORDER_HINT),
+            kit::icon_button(named, Icon::Sort, words::browser::order_hint()),
             move |this, at, cx| this.order_a_listing(ordered, at, cx),
             cx,
         )
@@ -3138,10 +3080,10 @@ impl RootView {
     }
 }
 
-const fn saying(drawn: ArtistsDrawn) -> &'static str {
+fn saying(drawn: ArtistsDrawn) -> &'static str {
     match drawn {
-        ArtistsDrawn::List => "Draw the artists as a list, a small portrait beside each name",
-        ArtistsDrawn::Grid => "Draw the artists as a grid of large portraits, the way albums are",
+        ArtistsDrawn::List => words::browser::artists_list_hint(),
+        ArtistsDrawn::Grid => words::browser::artists_grid_hint(),
     }
 }
 
@@ -3171,15 +3113,25 @@ enum Caption {
 
 fn album_menu(at: Point<Pixels>, album: AlbumId) -> Menu {
     Menu::at(at)
-        .does(Icon::Play, menu::PLAY, move |this, window, cx| {
+        .does(Icon::Play, words::menu::play(), move |this, window, cx| {
             this.plays_everything_in(Selection::Album(album), Placement::Queued, true, window, cx);
         })
-        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
-            this.plays_everything_in(Selection::Album(album), Placement::Next, false, window, cx);
-        })
+        .does(
+            Icon::QueueNext,
+            words::menu::play_next(),
+            move |this, window, cx| {
+                this.plays_everything_in(
+                    Selection::Album(album),
+                    Placement::Next,
+                    false,
+                    window,
+                    cx,
+                );
+            },
+        )
         .does(
             Icon::QueueLast,
-            menu::ADD_TO_QUEUE,
+            words::menu::add_to_queue(),
             move |this, window, cx| {
                 this.plays_everything_in(
                     Selection::Album(album),
@@ -3194,13 +3146,21 @@ fn album_menu(at: Point<Pixels>, album: AlbumId) -> Menu {
 
 fn album_menu_ending(menu: Menu, album: AlbumId, owner: Option<ArtistId>) -> Menu {
     menu.apart()
-        .does(Icon::Albums, menu::OPEN_ALBUM, move |this, _, cx| {
-            this.opened(Selection::Album(album), cx);
-        })
+        .does(
+            Icon::Albums,
+            words::menu::open_album(),
+            move |this, _, cx| {
+                this.opened(Selection::Album(album), cx);
+            },
+        )
         .when_some(owner, |menu, owner| {
-            menu.does(Icon::Artists, menu::SHOW_THE_ARTIST, move |this, _, cx| {
-                this.opened(Selection::Artist(owner), cx);
-            })
+            menu.does(
+                Icon::Artists,
+                words::menu::show_the_artist(),
+                move |this, _, cx| {
+                    this.opened(Selection::Artist(owner), cx);
+                },
+            )
         })
 }
 
@@ -3223,7 +3183,7 @@ fn artist_menu_among(
 
 fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
     Menu::at(at)
-        .does(Icon::Play, menu::PLAY, move |this, window, cx| {
+        .does(Icon::Play, words::menu::play(), move |this, window, cx| {
             this.plays_everything_in(
                 Selection::Artist(artist),
                 Placement::Queued,
@@ -3232,18 +3192,22 @@ fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
                 cx,
             );
         })
-        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
-            this.plays_everything_in(
-                Selection::Artist(artist),
-                Placement::Next,
-                false,
-                window,
-                cx,
-            );
-        })
+        .does(
+            Icon::QueueNext,
+            words::menu::play_next(),
+            move |this, window, cx| {
+                this.plays_everything_in(
+                    Selection::Artist(artist),
+                    Placement::Next,
+                    false,
+                    window,
+                    cx,
+                );
+            },
+        )
         .does(
             Icon::QueueLast,
-            menu::ADD_TO_QUEUE,
+            words::menu::add_to_queue(),
             move |this, window, cx| {
                 this.plays_everything_in(
                     Selection::Artist(artist),
@@ -3257,10 +3221,13 @@ fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
 }
 
 fn artist_menu_ending(menu: Menu, artist: ArtistId) -> Menu {
-    menu.apart()
-        .does(Icon::Artists, menu::OPEN_ARTIST, move |this, _, cx| {
+    menu.apart().does(
+        Icon::Artists,
+        words::menu::open_artist(),
+        move |this, _, cx| {
             this.opened(Selection::Artist(artist), cx);
-        })
+        },
+    )
 }
 
 fn artist_menu_favoured(at: Point<Pixels>, artist: ArtistId, favourite: bool) -> Menu {
@@ -3368,13 +3335,13 @@ fn pressing_line(pressing: &GroupRelease) -> String {
         pressing
             .date
             .clone()
-            .unwrap_or_else(|| "undated".to_owned()),
+            .unwrap_or_else(|| words::browser::undated().to_owned()),
     );
     if let Some(country) = &pressing.country {
         parts.push(country.clone());
     }
     if let Some(tracks) = pressing.track_count {
-        parts.push(format!("{tracks} tracks"));
+        parts.push(words::browser::pressing_tracks(tracks));
     }
     parts.join(" · ")
 }
@@ -3405,10 +3372,9 @@ fn not_held_heading(albums: usize, under_the_held: bool) -> Div {
         .text_size(px(theme::text_xs()))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::muted()))
-        .child(SharedString::from(format!(
-            "{NOT_HELD_HEADING} · {}",
-            format::counted(albums, "release", "releases")
-        )))
+        .child(SharedString::from(
+            words::browser::releases_not_in_your_library(albums),
+        ))
 }
 
 struct UnheldAlbum<'a> {
@@ -3532,8 +3498,8 @@ fn disc_heading(disc: u32, media: &[HeldMedium]) -> Div {
         .find(|medium| medium.position == disc)
         .and_then(|medium| medium.title.clone().or_else(|| medium.format.clone()));
     let spelt = match named {
-        Some(named) => format!("Disc {disc} · {named}"),
-        None => format!("Disc {disc}"),
+        Some(named) => words::browser::disc_named(disc, named),
+        None => words::browser::disc(disc),
     };
 
     run_heading(SharedString::from(spelt))
@@ -3560,7 +3526,7 @@ fn pressings(media: &[HeldMedium]) -> Option<String> {
         .iter()
         .any(|medium| medium.format.as_deref() != Some(format))
     {
-        return Some(format!("{} discs", media.len()));
+        return Some(words::browser::discs(media.len()));
     }
 
     Some(match media.len() {
@@ -3641,10 +3607,16 @@ impl RootView {
                 {
                     this.open_a_menu(releases_to_place_on(at, track, recordings), cx);
                 }
-                Ok(_) => this.report(Notice::Trouble(NOTHING_PLACES_IT.to_owned()), cx),
+                Ok(_) => this.report(
+                    Notice::Trouble(words::browser::nothing_places_it().to_owned()),
+                    cx,
+                ),
                 Err(error) => {
                     tracing::warn!(%error, "the releases a track is on could not be read");
-                    this.report(toast::could_not("find the releases it is on", &error), cx);
+                    this.report(
+                        toast::could_not(words::browser::find_the_releases_it_is_on(), &error),
+                        cx,
+                    );
                 }
             });
         })
@@ -3669,43 +3641,43 @@ fn record_of(release: &ReleaseDetail) -> Option<Record> {
     let mut facts = Vec::new();
     if let Some(date) = release.date.clone() {
         facts.push(Fact {
-            label: "Released",
+            label: words::browser::released(),
             value: date,
         });
     }
     if let Some(format) = pressings(&release.media) {
         facts.push(Fact {
-            label: "Format",
+            label: words::browser::format(),
             value: format,
         });
     }
     if let Some(label) = release.label.clone() {
         facts.push(Fact {
-            label: "Label",
+            label: words::browser::label(),
             value: label,
         });
     }
     if let Some(number) = release.catalog_number.clone() {
         facts.push(Fact {
-            label: "Catalogue number",
+            label: words::browser::catalogue_number(),
             value: number,
         });
     }
     if let Some(barcode) = release.barcode.clone() {
         facts.push(Fact {
-            label: "Barcode",
+            label: words::browser::barcode(),
             value: barcode,
         });
     }
     if let Some(country) = release.country.clone() {
         facts.push(Fact {
-            label: "Country",
+            label: words::browser::country(),
             value: country,
         });
     }
     if let Some(kind) = release.kind.clone() {
         facts.push(Fact {
-            label: "Kind",
+            label: words::browser::kind(),
             value: kind,
         });
     }
@@ -3814,7 +3786,7 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
 }
 
 fn record_card(root: &RootView, record: &Record, cx: &mut Context<RootView>) -> Stateful<Div> {
-    let mut card = detail_card("About this record");
+    let mut card = detail_card(words::browser::about_this_record());
     for fact in &record.facts {
         card = card.child(fact_row(fact));
     }
@@ -3837,7 +3809,7 @@ fn genre_card(genres: &[String]) -> Stateful<Div> {
     for genre in genres {
         tags = tags.child(kit::tag(genre.clone()));
     }
-    detail_card("Genres").child(tags)
+    detail_card(words::browser::genres()).child(tags)
 }
 
 fn service_names(links: &[Link]) -> Vec<HeardOn> {
@@ -3873,7 +3845,7 @@ fn heard_on(
         .items_center()
         .text_size(px(theme::text_sm()))
         .text_color(rgb(theme::faint()))
-        .child("On\u{a0}");
+        .child(words::browser::on_services());
     for (at, heard) in services.into_iter().take(SERVICES_SHOWN).enumerate() {
         if at > 0 {
             line = line.child(div().px_1().child("·"));
@@ -3939,7 +3911,7 @@ fn record_services(root: &RootView, services: &[HeardOn], cx: &mut Context<RootV
                 .flex_none()
                 .text_size(px(theme::text_sm()))
                 .text_color(rgb(theme::faint()))
-                .child("On"),
+                .child(words::browser::on()),
         )
         .child(links)
 }
@@ -3951,7 +3923,7 @@ fn service_link(
     cx: &mut Context<RootView>,
 ) -> Stateful<Div> {
     let url = heard.url;
-    let hint = format!("Open on {}", heard.name);
+    let hint = words::browser::open_on(heard.name);
 
     let link = div()
         .id(id.clone())
@@ -4011,7 +3983,7 @@ fn years_of(begin: Option<&str>, end: Option<&str>) -> Option<String> {
 fn unheld_said(title: &str, artist: &str) -> SharedString {
     spoken::joined([
         spoken::song(title, Some(artist)).as_ref(),
-        NOT_IN_THE_LIBRARY,
+        words::browser::not_in_the_library(),
     ])
 }
 
@@ -4030,19 +4002,19 @@ fn artist_named(library: &LibraryModel, id: ArtistId) -> String {
                 .find(|artist| artist.id == id)
                 .map(|artist| artist.name.clone())
         })
-        .unwrap_or_else(|| format!("artist {id}"))
+        .unwrap_or_else(|| words::browser::unnamed_artist(id.to_string()))
 }
 
 fn held_by_the_artist(totals: ArtistTotals, now: SystemTime) -> String {
     let mut parts: format::Parts<String> = smallvec![
-        format::counted(totals.albums as usize, "album", "albums"),
-        format::counted(totals.tracks as usize, "track", "tracks"),
+        words::browser::albums_counted(totals.albums),
+        words::browser::tracks_counted(totals.tracks),
     ];
     if let Some(length) = totals.length {
         parts.push(format::spanned(length));
     }
     if totals.plays > 0 {
-        parts.push(format::counted(totals.plays as usize, "play", "plays"));
+        parts.push(words::browser::plays_counted(totals.plays));
     }
     if let Some(played) = totals.played {
         parts.push(format::since(played, now));
@@ -4054,7 +4026,7 @@ fn held_by_the_artist(totals: ArtistTotals, now: SystemTime) -> String {
 fn summary(listed: Measured, year: Option<i32>) -> String {
     let rows = listed.rows as usize;
     let lossless = listed.lossless as usize;
-    let mut parts: format::Parts<String> = smallvec![format::counted(rows, "track", "tracks")];
+    let mut parts: format::Parts<String> = smallvec![words::browser::tracks_counted(rows)];
 
     if let Some(year) = year {
         parts.insert(0, year.to_string());
@@ -4063,9 +4035,9 @@ fn summary(listed: Measured, year: Option<i32>) -> String {
         parts.push(format::spanned(total));
     }
     if lossless > 0 && lossless == rows {
-        parts.push("all lossless".to_owned());
+        parts.push(words::browser::all_lossless().to_owned());
     } else if lossless > 0 {
-        parts.push(format!("{lossless} lossless"));
+        parts.push(words::browser::lossless(lossless));
     }
 
     parts.join(" · ")
@@ -4105,9 +4077,9 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
                 Icon::Favourite
             },
             if favoured {
-                menu::UNFAVOUR
+                words::menu::unfavour()
             } else {
-                menu::FAVOUR
+                words::menu::favour()
             },
             move |this, _, cx| {
                 this.library.update(cx, |library, cx| {
@@ -4121,13 +4093,13 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
         .shares_each(sharing)
         .offers_the_files(paths)
         .apart()
-        .nests(Icon::Delete, menu::REMOVE, move |menu| {
+        .nests(Icon::Delete, words::menu::remove(), move |menu| {
             menu.does(
                 if hidden { Icon::Undo } else { Icon::Discard },
                 if hidden {
-                    menu::SHOW_EACH
+                    words::menu::show_each()
                 } else {
-                    menu::HIDE_EACH
+                    words::menu::hide_each()
                 },
                 move |this, _, cx| {
                     this.library.update(cx, |library, cx| {
@@ -4135,9 +4107,13 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
                     });
                 },
             )
-            .does(Icon::Delete, menu::DELETE_FROM_DISK, move |this, _, cx| {
-                this.ask_to_delete(deleting.clone(), cx);
-            })
+            .does(
+                Icon::Delete,
+                words::menu::delete_from_disk(),
+                move |this, _, cx| {
+                    this.ask_to_delete(deleting.clone(), cx);
+                },
+            )
         })
 }
 
@@ -4187,15 +4163,19 @@ fn chosen_artists_menu(
     let (play, next, last) = (scopes.clone(), scopes.clone(), scopes);
 
     Menu::at(at)
-        .does(Icon::Play, menu::PLAY, move |this, window, cx| {
+        .does(Icon::Play, words::menu::play(), move |this, window, cx| {
             this.plays_everything_in_each(play.clone(), Placement::Queued, true, window, cx);
         })
-        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
-            this.plays_everything_in_each(next.clone(), Placement::Next, false, window, cx);
-        })
+        .does(
+            Icon::QueueNext,
+            words::menu::play_next(),
+            move |this, window, cx| {
+                this.plays_everything_in_each(next.clone(), Placement::Next, false, window, cx);
+            },
+        )
         .does(
             Icon::QueueLast,
-            menu::ADD_TO_QUEUE,
+            words::menu::add_to_queue(),
             move |this, window, cx| {
                 this.plays_everything_in_each(last.clone(), Placement::Queued, false, window, cx);
             },
@@ -4208,9 +4188,9 @@ fn chosen_artists_menu(
                 Icon::Favourite
             },
             if favoured {
-                menu::UNFAVOUR
+                words::menu::unfavour()
             } else {
-                menu::FAVOUR
+                words::menu::favour()
             },
             move |this, _, cx| {
                 this.library.update(cx, |library, cx| {
@@ -4234,15 +4214,19 @@ fn chosen_albums_menu(
     let (play, next, last) = (scopes.clone(), scopes.clone(), scopes);
 
     Menu::at(at)
-        .does(Icon::Play, menu::PLAY, move |this, window, cx| {
+        .does(Icon::Play, words::menu::play(), move |this, window, cx| {
             this.plays_everything_in_each(play.clone(), Placement::Queued, true, window, cx);
         })
-        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
-            this.plays_everything_in_each(next.clone(), Placement::Next, false, window, cx);
-        })
+        .does(
+            Icon::QueueNext,
+            words::menu::play_next(),
+            move |this, window, cx| {
+                this.plays_everything_in_each(next.clone(), Placement::Next, false, window, cx);
+            },
+        )
         .does(
             Icon::QueueLast,
-            menu::ADD_TO_QUEUE,
+            words::menu::add_to_queue(),
             move |this, window, cx| {
                 this.plays_everything_in_each(last.clone(), Placement::Queued, false, window, cx);
             },
@@ -4255,9 +4239,9 @@ fn chosen_albums_menu(
                 Icon::Favourite
             },
             if favoured {
-                menu::UNFAVOUR
+                words::menu::unfavour()
             } else {
-                menu::FAVOUR
+                words::menu::favour()
             },
             move |this, _, cx| {
                 this.library.update(cx, |library, cx| {
@@ -4292,7 +4276,7 @@ fn shelf(
 ) -> Div {
     let drawn = cells.len();
     let eyebrow = if held > drawn {
-        format!("{named} · {drawn} shown")
+        words::browser::shown(drawn, named)
     } else {
         named
     };

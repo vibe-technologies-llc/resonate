@@ -35,13 +35,13 @@ mod tests {
         "chrome.rs | button | .on_click(move |_, window, _| control.act(window))",
         "dropping.rs | if stopping { | button.on_click(cx.listener(|this, _, _, cx| this.stop_copying(cx)))",
         "hint.rs | div() | .on_click(|_, _, cx| cx.stop_propagation())",
-        "playlists.rs | .child( | control(\"drop-saved\", id, Icon::Discard, DISCARD_HINT).on_click(",
-        "playlists.rs | .child( | control(\"last-saved\", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT).on_click(",
-        "playlists.rs | .child( | control(\"next-saved\", id, Icon::QueueNext, PLAYLIST_NEXT_HINT).on_click(",
         "playlists.rs | .child( | control(\"pin-saved\", id, pin_icon(pinned), pin_hint(pinned)).on_click(",
-        "playlists.rs | .child( | control(\"play-saved\", id, Icon::Play, PLAY_HINT).on_click(cx.listener(",
-        "playlists.rs | .child( | control(\"shuffle-saved\", id, Icon::Shuffle, SHUFFLE_HINT).on_click(",
-        "playlists.rs | controls.child( | control(\"add-songs\", id, Icon::Plus, ADD_SONGS_HINT).on_click(",
+        "playlists.rs | control( | .on_click(cx.listener(",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control(\"play-saved\", id, Icon::Play, words::playlists::play_hint()) | .on_click(cx.listener(move |this, _, _, cx| {",
         "playlists.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
         "playlists.rs | div() | .on_click(cx.listener(move |this, _, window, cx| {",
         "playlists.rs | div() | .on_click(cx.listener(|this, _, window, cx| this.stop_naming(window, cx)))",
@@ -207,7 +207,9 @@ mod words {
         "Android",
         "AudD",
         "AutoEq",
+        "Clean",
         "Discord",
+        "Explicit",
         "Jellyfin",
         "Last.fm",
         "Linux",
@@ -228,27 +230,7 @@ mod words {
         "wrapped_card/markup.rs",
     ];
 
-    const STILL_TO_MOVE: &[&str] = &[
-        "keys.rs",
-        "serving.rs",
-        "views/browser.rs",
-        "views/chrome.rs",
-        "views/dropping.rs",
-        "views/favourites.rs",
-        "views/listing.rs",
-        "views/matching.rs",
-        "views/menu.rs",
-        "views/missing.rs",
-        "views/playlists.rs",
-        "views/queue.rs",
-        "views/reorder.rs",
-        "views/root.rs",
-        "views/search.rs",
-        "views/served.rs",
-        "views/sorting.rs",
-        "views/transport.rs",
-        "views/zones.rs",
-    ];
+    const STILL_TO_MOVE: &[&str] = &[];
 
     #[test]
     fn every_word_the_window_shows_is_said_through_its_catalog() {

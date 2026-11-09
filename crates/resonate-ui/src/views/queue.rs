@@ -19,18 +19,19 @@ use crate::{
     models::queued_rows,
     theme,
     views::{
-        browser::{OPEN_ARTIST_HINT, ROW_CONTROLS},
+        browser::ROW_CONTROLS,
         hint,
         kit::{self, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
         menu::{self, Called, Menu},
-        playlists::{self, Held, ROW_GROUP},
-        reorder::{self, Carried, Chosen, LiftedTo, MOVING_HINT, Shift, Step},
+        playlists::{Held, ROW_GROUP},
+        reorder::{self, Carried, Chosen, LiftedTo, Shift, Step},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
         sorting::{self, Ordered},
         spoken::{self, Placed, Spoken},
     },
+    words,
 };
 
 #[derive(Default)]
@@ -210,18 +211,6 @@ fn queued_cut(item: &QueueItem) -> Cut {
 
 const HANDOFFS_OFFERED: usize = 2;
 
-const REMOVE_HINT: &str = "Take this row out of the queue";
-
-const REMOVE_REACHED_HINT: &str = "Take every reached row out of the queue";
-
-const QUEUED_HINT: &str = "Put every queued row in a playlist";
-
-const CLEAR_HINT: &str = "Take every row out of the queue and stop";
-
-const PUT_BACK_HINT: &str = "Put the rows last taken out of the queue back where they were";
-
-const TAKE_AGAIN_HINT: &str = "Take the rows last put back out of the queue again";
-
 const KEPT_GESTURES: usize = 16;
 
 const HEARD_FADED: f32 = 0.55;
@@ -244,12 +233,12 @@ impl Part {
         }
     }
 
-    const fn named(self) -> &'static str {
+    fn named(self) -> &'static str {
         match self {
-            Self::Heard => "History",
-            Self::Playing => "Now playing",
-            Self::Next => "Playing next",
-            Self::Rest => "Continue playing",
+            Self::Heard => words::queue::history(),
+            Self::Playing => words::queue::now_playing(),
+            Self::Next => words::queue::playing_next(),
+            Self::Rest => words::queue::continue_playing(),
         }
     }
 
@@ -554,8 +543,8 @@ impl RootView {
         if queue.is_empty() {
             let nothing = empty(
                 Icon::Queue,
-                "The queue is empty.",
-                Some("Play something from Albums or Tracks, or add rows with the queue marks."),
+                words::queue::empty(),
+                Some(words::queue::how_to_fill()),
             );
             let heading = self
                 .holds_what_was_taken_out(&queue)
@@ -730,7 +719,7 @@ impl RootView {
                                             this.opens(
                                                 ("queue-artist", index),
                                                 drawn.artist,
-                                                OPEN_ARTIST_HINT,
+                                                words::browser::open_artist_hint(),
                                                 drawn.artist_id.map(Selection::Artist),
                                                 cx,
                                             )
@@ -769,9 +758,9 @@ impl RootView {
                                                 .child(this.add_control(
                                                     ("queue-to-playlist", index),
                                                     if acting_on.is_one_row() {
-                                                        playlists::ADD_HINT
+                                                        words::playlists::add_hint()
                                                     } else {
-                                                        playlists::ADD_REACHED_HINT
+                                                        words::playlists::add_reached_hint()
                                                     },
                                                     move || Held::of(Arc::clone(&holding)),
                                                     cx,
@@ -781,9 +770,9 @@ impl RootView {
                                                         ("remove", index),
                                                         Icon::Close,
                                                         if acting_on.is_one_row() {
-                                                            REMOVE_HINT
+                                                            words::queue::remove_hint()
                                                         } else {
-                                                            REMOVE_REACHED_HINT
+                                                            words::queue::remove_reached_hint()
                                                         },
                                                     ),
                                                     move |this, _, cx| {
@@ -821,7 +810,7 @@ impl RootView {
                                             Menu::at(at)
                                                 .under(
                                                     Icon::Play,
-                                                    menu::PLAY,
+                                                    words::menu::play(),
                                                     "enter",
                                                     move |this, _, cx| {
                                                         this.send_by_position(
@@ -842,7 +831,7 @@ impl RootView {
                                                 .apart()
                                                 .under(
                                                     Icon::Discard,
-                                                    menu::TAKE_OUT,
+                                                    words::menu::take_out(),
                                                     "delete",
                                                     move |this, _, cx| {
                                                         this.drop_rows(Shift::Queue, taken, cx);
@@ -938,21 +927,20 @@ impl RootView {
     fn queue_heading(&mut self, queue: &QueueRows, cx: &mut Context<Self>) -> Div {
         let position = self.player.read(cx).state().queue_position;
         let total = self.queue_length(cx);
-        let mut under: format::Parts<String> =
-            smallvec![format::counted(queue.len(), "track", "tracks")];
+        let mut under: format::Parts<String> = smallvec![words::queue::tracks(queue.len())];
         if let Some((total, unmeasured)) = total.filter(|(total, _)| !total.is_zero()) {
             under.push(if unmeasured > 0 {
-                format!("at least {}", format::spanned(total))
+                words::queue::at_least(format::spanned(total))
             } else {
                 format::spanned(total)
             });
         }
         if let Some(position) = position {
-            under.push(format!("on row {}", position + 1));
+            under.push(words::queue::on_row(position + 1));
         }
         let waiting = waiting_to_play(self.player.read(cx).queued().next, position);
         if waiting > 0 {
-            under.push(format!("{waiting} to play next"));
+            under.push(words::queue::waiting(waiting));
         }
 
         let taken_out = self.took_out.offered(queue);
@@ -974,11 +962,8 @@ impl RootView {
                     kit::button(
                         ("continue-from", at),
                         Some(Icon::Play),
-                        format!("Continue from {}", handed.device),
-                        format!(
-                            "Play the {} songs {} was playing, from the one it was on",
-                            handed.songs, handed.device
-                        ),
+                        words::queue::continue_from(handed.device.as_str()),
+                        words::queue::continue_from_hint(handed.device.as_str(), handed.songs),
                         Tone::Ghost,
                     ),
                     move |this, _, cx| this.continue_from(&device, cx),
@@ -996,21 +981,21 @@ impl RootView {
                         .flex_1()
                         .min_w(px(theme::heading_name()))
                         .gap_1()
-                        .child(kit::title("Queue"))
+                        .child(kit::title(words::queue::queue()))
                         .child(kit::subtitle(under.join(" · "))),
                 )
                 .child(
                     kit::actions()
                         .children(continuing)
-                        .child(hint::explains("queue-moving", MOVING_HINT))
+                        .child(hint::explains("queue-moving", reorder::moving_hint()))
                         .when(queued, |bar| {
                             bar.child(self.orders_a_listing("order-queue", Ordered::Queue, cx))
                                 .child(self.in_the_pane_ring(
                                     kit::button(
                                         "clear-queue",
                                         Some(Icon::Discard),
-                                        "Clear",
-                                        CLEAR_HINT,
+                                        words::queue::clear(),
+                                        words::queue::clear_hint(),
                                         Tone::Ghost,
                                     ),
                                     |this, _, cx| {
@@ -1026,8 +1011,8 @@ impl RootView {
                                     kit::button(
                                         "queue-to-playlist-all",
                                         Some(Icon::Plus),
-                                        "Save as a playlist",
-                                        QUEUED_HINT,
+                                        words::queue::save_as_a_playlist(),
+                                        words::queue::queued_hint(),
                                         Tone::Outlined,
                                     ),
                                     |this, window, cx| {
@@ -1048,7 +1033,7 @@ impl RootView {
                                 kit::button(
                                     "put-the-queue-back",
                                     Some(Icon::Undo),
-                                    "Put back",
+                                    words::queue::put_back(),
                                     puts_back(taken_out),
                                     Tone::Ghost,
                                 ),
@@ -1063,7 +1048,7 @@ impl RootView {
                                 kit::button(
                                     "take-the-queue-out-again",
                                     Some(Icon::Redo),
-                                    "Take out again",
+                                    words::queue::take_out_again(),
                                     takes_out_again(put_back),
                                     Tone::Ghost,
                                 ),
@@ -1374,32 +1359,19 @@ fn runs_of(rows: &[usize]) -> Vec<Span> {
 }
 
 pub(crate) fn took_out(rows: usize) -> Notice {
-    Notice::Done(format!(
-        "Took {} out of the queue",
-        format::counted(rows, "track", "tracks")
-    ))
+    Notice::Done(words::queue::took_out(rows))
 }
 
 fn puts_back(offer: Option<Offer>) -> SharedString {
     let behind = offer.map_or(0, |offer| offer.behind);
-    let more = match behind {
-        0 => "It is the last one there is to put back",
-        1 => "One more gesture is behind it",
-        _ => "More gestures are behind it",
-    };
 
-    SharedString::from(format!("{PUT_BACK_HINT}. {more}"))
+    SharedString::from(words::queue::puts_back(behind))
 }
 
 fn takes_out_again(offer: Option<Offer>) -> SharedString {
     let behind = offer.map_or(0, |offer| offer.behind);
-    let more = match behind {
-        0 => "It is the last one there is to take out again",
-        1 => "One more put back is behind it",
-        _ => "More put backs are behind it",
-    };
 
-    SharedString::from(format!("{TAKE_AGAIN_HINT}. {more}"))
+    SharedString::from(words::queue::takes_out_again(behind))
 }
 
 #[cfg(test)]

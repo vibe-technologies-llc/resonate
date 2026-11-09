@@ -16,7 +16,6 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::OPEN_ALBUM_HINT,
         kit::{self, EndsInAnEllipsis, Tone},
         plot,
         root::RootView,
@@ -68,7 +67,7 @@ impl RootView {
                         px(theme::text_xl()),
                         cx,
                     ),
-                    OPEN_ALBUM_HINT,
+                    words::browser::open_album_hint(),
                     playing.cover.album.map(Selection::Album),
                     cx,
                 ),

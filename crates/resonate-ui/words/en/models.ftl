@@ -127,7 +127,10 @@ took-rows-out = { $count ->
     [one] Took { $count } row out
    *[other] Took { $count } rows out
 }
-wrote-rows = Wrote { $count } rows to { $path } as { $format }
+wrote-rows = { $count ->
+        [one] Wrote { $count } row to { $path } as { $format }
+       *[other] Wrote { $count } rows to { $path } as { $format }
+    }
 moved-rows-into-that-order = { $count ->
     [one] Moved { $count } row into that order
    *[other] Moved { $count } rows into that order
