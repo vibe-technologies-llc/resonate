@@ -24,6 +24,7 @@ use crate::{
         root::RootView,
         settings::Category,
     },
+    words,
 };
 
 const DRAG_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
@@ -37,33 +38,6 @@ const NAMES_SHOWN: usize = 6;
 const CARD_WIDTH: f32 = 480.0;
 
 const ABOVE_A_TOAST: f32 = 56.0;
-
-const NO_FOLDER_TITLE: &str = "Choose a music folder first";
-
-const NO_FOLDER_SAYS: &str = "Songs dropped here are copied into your primary music folder. Set \
-                              one in Settings under Library.";
-
-const FOLDER_GONE_TITLE: &str = "The music folder isn't there";
-
-const FOLDER_GONE_SAYS: &str = "If it is on a drive, mount it, then drop again.";
-
-const NOTHING_TITLE: &str = "Nothing here the library reads";
-
-const NOTHING_SAYS: &str = "Audio files, cue sheets and folders holding them are copied, \
-                            with the covers and lyrics beside them; anything else is left where \
-                            it is.";
-
-const BUSY_TITLE: &str = "Still copying";
-
-const BUSY_SAYS: &str = "Drop again once the songs being copied have landed.";
-
-const READY_SAYS: &str = "Copied as they are into";
-
-const READY_TO_FILE_SAYS: &str = "Copied and filed by your layout into";
-
-const WEIGHING_TITLE: &str = "Looking at what is dragged…";
-
-const WEIGHING_SAYS: &str = "Drop when it says what would be copied.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Incoming {
@@ -196,24 +170,21 @@ pub(crate) fn told_of(summary: &TakeInSummary, into: &Path) -> Notice {
         || into.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let files = |count: u64| format::counted(count as usize, "file", "files");
-    let already = match stats.held {
-        0 => String::new(),
-        held => format!(" · {held} already there"),
-    };
 
     if summary.cancelled {
-        return Notice::Noted(format!("Stopped after copying {}", files(stats.copied)));
+        return Notice::Noted(words::dropping::stopped_after_copying(stats.copied));
     }
     if stats.copied > 0 {
-        return Notice::Done(format!(
-            "Copied {} ({}) into {folder}{already}",
-            files(stats.copied),
-            format::bytes(stats.bytes)
-        ));
+        let copied = format::bytes(stats.bytes);
+        return Notice::Done(match stats.held {
+            0 => words::dropping::copied_into(copied, stats.copied, folder),
+            held => {
+                words::dropping::copied_into_beside_some_there(copied, stats.copied, folder, held)
+            }
+        });
     }
     if stats.held > 0 && stats.passed == 0 {
-        return Notice::Noted(format!("Already in {folder}, so nothing was copied"));
+        return Notice::Noted(words::dropping::already_in(folder));
     }
 
     let why = summary
@@ -221,7 +192,20 @@ pub(crate) fn told_of(summary: &TakeInSummary, into: &Path) -> Notice {
         .iter()
         .find(|passed| passed.why.is_a_refusal())
         .map_or(TakenPassing::NotAudio, |passed| passed.why);
-    Notice::Trouble(format!("Nothing was copied — a file {}", why.as_str()))
+    Notice::Trouble(nothing_copied(why).to_owned())
+}
+
+fn nothing_copied(why: TakenPassing) -> &'static str {
+    match why {
+        TakenPassing::SourceGone => words::dropping::nothing_copied_source_gone(),
+        TakenPassing::Unreadable => words::dropping::nothing_copied_unreadable(),
+        TakenPassing::NotAudio => words::dropping::nothing_copied_not_audio(),
+        TakenPassing::NothingInside => words::dropping::nothing_copied_nothing_inside(),
+        TakenPassing::AlreadyThere => words::dropping::nothing_copied_already_there(),
+        TakenPassing::AlreadyHeld => words::dropping::nothing_copied_already_held(),
+        TakenPassing::Unwritable => words::dropping::nothing_copied_unwritable(),
+        TakenPassing::Unverified => words::dropping::nothing_copied_unverified(),
+    }
 }
 
 fn songs_landed(summary: &TakeInSummary) -> Vec<PathBuf> {
@@ -242,16 +226,12 @@ fn name_of(path: &Path) -> SharedString {
 
 fn what_becomes_of(looks: Looks) -> (Icon, &'static str, bool) {
     match looks {
-        Looks::Audio => (Icon::Check, "copied", true),
-        Looks::Sheet => (Icon::Check, "cue sheet, copied", true),
-        Looks::Companion => (Icon::Check, "beside a song, copied with it", true),
-        Looks::Folder => (
-            Icon::Folder,
-            "folder, its audio, covers and lyrics are copied",
-            true,
-        ),
-        Looks::Other => (Icon::Close, "not audio, left out", false),
-        Looks::Gone => (Icon::Close, "not there", false),
+        Looks::Audio => (Icon::Check, words::dropping::looks_audio(), true),
+        Looks::Sheet => (Icon::Check, words::dropping::looks_sheet(), true),
+        Looks::Companion => (Icon::Check, words::dropping::looks_companion(), true),
+        Looks::Folder => (Icon::Folder, words::dropping::looks_folder(), true),
+        Looks::Other => (Icon::Close, words::dropping::looks_other(), false),
+        Looks::Gone => (Icon::Close, words::dropping::looks_gone(), false),
     }
 }
 
@@ -384,17 +364,28 @@ impl RootView {
     fn land_the_drop(&mut self, verdict: Verdict, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         match verdict {
             Verdict::NoFolder => {
-                self.report(Notice::Trouble(NO_FOLDER_TITLE.to_owned()), cx);
+                self.report(
+                    Notice::Trouble(words::dropping::no_folder_title().to_owned()),
+                    cx,
+                );
                 self.set_pane(crate::Pane::Settings, cx);
                 self.show_settings(Category::Library, cx);
             }
             Verdict::FolderGone => {
-                self.report(Notice::Trouble(FOLDER_GONE_TITLE.to_owned()), cx);
+                self.report(
+                    Notice::Trouble(words::dropping::folder_gone_title().to_owned()),
+                    cx,
+                );
             }
             Verdict::NothingToTake => {
-                self.report(Notice::Trouble(NOTHING_TITLE.to_owned()), cx);
+                self.report(
+                    Notice::Trouble(words::dropping::nothing_title().to_owned()),
+                    cx,
+                );
             }
-            Verdict::Busy => self.report(Notice::Noted(BUSY_TITLE.to_owned()), cx),
+            Verdict::Busy => {
+                self.report(Notice::Noted(words::dropping::busy_title().to_owned()), cx)
+            }
             Verdict::Weighing => {}
             Verdict::Ready { .. } => self.copy_into_the_music_folder(paths, cx),
         }
@@ -412,7 +403,10 @@ impl RootView {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "dropped songs could not be copied");
-                self.report(toast::could_not("copy the songs", &error), cx);
+                self.report(
+                    toast::could_not(words::dropping::copy_the_songs(), &error),
+                    cx,
+                );
                 return;
             }
         };
@@ -444,7 +438,10 @@ impl RootView {
                     Ok(summary) => this.took_in(&summary, &into, cx),
                     Err(error) => {
                         tracing::error!(%error, "the copy of dropped songs failed");
-                        this.report(toast::could_not("finish copying the songs", &error), cx);
+                        this.report(
+                            toast::could_not(words::dropping::finish_copying_the_songs(), &error),
+                            cx,
+                        );
                     }
                 }
                 cx.notify();
@@ -496,9 +493,9 @@ impl RootView {
         );
         let weighed = incoming.weighed.unwrap_or_default();
         let ready_says = if cx.global::<ResonateApp>().file_dropped {
-            READY_TO_FILE_SAYS
+            words::dropping::ready_to_file_says()
         } else {
-            READY_SAYS
+            words::dropping::ready_says()
         };
         let ink = if verdict.is_trouble() {
             theme::failure()
@@ -508,37 +505,33 @@ impl RootView {
 
         let (title, says) = match verdict {
             Verdict::Ready { taken, skipped } => (
-                SharedString::from(format!(
-                    "Drop to add {}",
-                    format::counted(taken, "item", "items")
-                )),
+                SharedString::from(words::dropping::drop_to_add(taken)),
                 match skipped {
                     0 => SharedString::new_static(ready_says),
-                    _ => SharedString::from(format!(
-                        "{ready_says} · {} left out",
-                        format::counted(skipped, "item", "items")
-                    )),
+                    _ => {
+                        SharedString::from(words::dropping::ready_and_left_out(skipped, ready_says))
+                    }
                 },
             ),
             Verdict::NoFolder => (
-                SharedString::new_static(NO_FOLDER_TITLE),
-                SharedString::new_static(NO_FOLDER_SAYS),
+                SharedString::new_static(words::dropping::no_folder_title()),
+                SharedString::new_static(words::dropping::no_folder_says()),
             ),
             Verdict::FolderGone => (
-                SharedString::new_static(FOLDER_GONE_TITLE),
-                SharedString::new_static(FOLDER_GONE_SAYS),
+                SharedString::new_static(words::dropping::folder_gone_title()),
+                SharedString::new_static(words::dropping::folder_gone_says()),
             ),
             Verdict::NothingToTake => (
-                SharedString::new_static(NOTHING_TITLE),
-                SharedString::new_static(NOTHING_SAYS),
+                SharedString::new_static(words::dropping::nothing_title()),
+                SharedString::new_static(words::dropping::nothing_says()),
             ),
             Verdict::Busy => (
-                SharedString::new_static(BUSY_TITLE),
-                SharedString::new_static(BUSY_SAYS),
+                SharedString::new_static(words::dropping::busy_title()),
+                SharedString::new_static(words::dropping::busy_says()),
             ),
             Verdict::Weighing => (
-                SharedString::new_static(WEIGHING_TITLE),
-                SharedString::new_static(WEIGHING_SAYS),
+                SharedString::new_static(words::dropping::weighing_title()),
+                SharedString::new_static(words::dropping::weighing_says()),
             ),
         };
 
@@ -601,7 +594,7 @@ impl RootView {
             })
             .child(names)
             .when(hidden > 0, |card| {
-                card.child(kit::figure(format!("and {hidden} more")))
+                card.child(kit::figure(words::dropping::and_more(hidden)))
             });
 
         Some(
@@ -630,13 +623,13 @@ impl RootView {
             found => (stats.bytes as f32 / found as f32).clamp(0.0, 1.0),
         };
         let says = if stopping {
-            SharedString::new_static("Stopping…")
+            SharedString::new_static(words::dropping::stopping())
         } else {
-            SharedString::from(format!(
-                "Copying {reached} of {} · {} of {}",
-                stats.found,
+            SharedString::from(words::dropping::copying(
                 format::bytes(stats.bytes),
-                format::bytes(stats.bytes_found)
+                stats.found,
+                reached,
+                format::bytes(stats.bytes_found),
             ))
         };
         let into = name_of(&taking.into);
@@ -696,7 +689,7 @@ impl RootView {
     }
 
     fn stop_button(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
-        let button = kit::icon_button("stop-copying", Icon::Stop, "Stop copying");
+        let button = kit::icon_button("stop-copying", Icon::Stop, words::dropping::stop_copying());
         if stopping {
             return button;
         }

@@ -16,7 +16,6 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::OPEN_ALBUM_HINT,
         kit::{self, EndsInAnEllipsis, Tone},
         plot,
         root::RootView,
@@ -24,6 +23,7 @@ use crate::{
         spoken::Spoken as _,
         transport::{Heard, copied_on_a_right_click},
     },
+    words,
 };
 
 const GRAPH_COLUMNS: usize = 240;
@@ -70,7 +70,7 @@ impl RootView {
                         px(theme::text_xl()),
                         cx,
                     ),
-                    OPEN_ALBUM_HINT,
+                    words::browser::open_album_hint(),
                     playing.cover.album.map(Selection::Album),
                     cx,
                 ),

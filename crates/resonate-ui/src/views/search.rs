@@ -10,7 +10,7 @@ use resonate_library::{
 };
 
 use crate::{
-    Beyond, LibraryModel, Notice, Selection, format,
+    Beyond, LibraryModel, Notice, Selection,
     icons::Icon,
     theme, toast,
     views::{
@@ -18,7 +18,7 @@ use crate::{
         hint::Names,
         kit::{self, Found as _, Tone},
         listing,
-        playlists::{Naming, SAVE_SEARCH_HINT},
+        playlists::Naming,
         pointed::LitUnderThePointer,
         reorder::{self, Listed, Shift, Step},
         root::{Pane, RootView},
@@ -26,6 +26,7 @@ use crate::{
         sorting::Ordered,
         spoken::Spoken as _,
     },
+    words,
 };
 
 pub(crate) const SONGS_AT_THE_TOP: usize = 5;
@@ -36,68 +37,12 @@ const STRIP_AT_MOST: usize = 24;
 
 const ARTIST_AT_THE_TOP: f32 = 72.0;
 
-const ARTISTS_NOT_HELD: &str = "Artists not in your library";
-
-const ALBUMS_NOT_HELD: &str = "Albums not in your library";
-
-const NOTHING_MATCHES: &str = "No matches";
-
-const NOTHING_HELD_MATCHES: &str =
-    "Nothing in your library matches these words. Check the spelling, or try fewer words.";
-
-const LOOKING_BEYOND: &str = "Nothing in your library matches, so MusicBrainz is being asked for songs, albums and artists beyond it.";
-
-const UNREACHED_MORE: &str = "Nothing in your library matches, and nothing could be looked up beyond it. Try again once the connection is back.";
-
-const ASKING: &str = "Asking MusicBrainz…";
-
-const UNREACHED: &str = "MusicBrainz can't be reached";
-
-const AS_TYPED_HINT: &str =
-    "The words were read as a title by an artist; search for them just as they were typed";
-
-const ASK_AGAIN_HINT: &str = "Ask MusicBrainz for these words again";
-
-const PRESS_TO_DOWNLOAD: &str = "Press a song to download it";
-
-const LOOKING_THE_SONG_UP: &str = "Looking up the song that link names…";
-
-const LOOKING_THE_ALBUM_UP: &str = "Looking up the album that link names…";
-
-const ONLINE_TO_FOLLOW_A_LINK: &str = "Turn Online on in Settings to download what a link names";
-
-const NO_SONG_AT_THE_LINK: &str = "No service could tell which song that link names";
-
-const NO_ALBUM_AT_THE_LINK: &str = "No service could tell which album that link names";
-
-const LOOKING_THE_ARTIST_UP: &str = "Looking up the artist that link names…";
-
-const NO_ARTIST_AT_THE_LINK: &str = "No service could tell which artist that link names";
-
-const FOLLOWING_THE_LINK: &str = "look up what that link names";
-
-const LOOKING_THE_PLAYLIST_UP: &str = "Looking up every song that playlist holds…";
-
-const NO_PLAYLIST_AT_THE_LINK: &str = "No service could read the playlist that link names";
-
-const FILLING_THE_PLAYLIST: &str = "make the playlist that link names";
-
-const LOOKING_THE_PROFILE_UP: &str = "Reading every playlist that profile holds…";
-
-const NO_PROFILE_AT_THE_LINK: &str = "That profile is private or holds no playlist";
-
 fn profile_told(name: &str, service: &str, kept: usize, wanted: usize) -> String {
-    let mut told = format!(
-        "Keeping {} of {name} in step with {service}",
-        format::counted(kept, "playlist", "playlists")
-    );
-    if wanted > 0 {
-        told.push_str(&format!(
-            " · downloading {}",
-            format::counted(wanted, "song", "songs")
-        ));
+    let told = words::search::keeping_in_step(kept, name, service);
+    match wanted {
+        0 => told,
+        wanted => words::search::downloading_songs(wanted, told),
     }
-    told
 }
 
 fn playlist_told(
@@ -111,30 +56,16 @@ fn playlist_told(
             started: true,
             added,
             ..
-        }) => format!(
-            "Made “{name}” of {}",
-            format::counted(added, "song", "songs")
-        ),
-        Some(FilledFromTheLink { added: 0, .. }) => {
-            format!("“{name}” already holds every song you have")
-        }
-        Some(FilledFromTheLink { added, .. }) => format!(
-            "Added {} to “{name}”",
-            format::counted(added, "song", "songs")
-        ),
-        None => format!("Nothing “{name}” holds is in your library yet"),
+        }) => words::search::made_of(added, name),
+        Some(FilledFromTheLink { added: 0, .. }) => words::search::already_holds_every_song(name),
+        Some(FilledFromTheLink { added, .. }) => words::search::added_to(added, name),
+        None => words::search::nothing_held_yet(name),
     };
     if wanted > 0 {
-        told.push_str(&format!(
-            " · downloading {}; Refresh on the playlist takes them in once they arrive",
-            format::counted(wanted, "more", "more")
-        ));
+        told = words::search::downloading_more(wanted, told);
     }
     if unnamed > 0 {
-        told.push_str(&format!(
-            " · {} no service could name",
-            format::counted(unnamed, "song", "songs")
-        ));
+        told = words::search::unnamed(unnamed, told);
     }
     told
 }
@@ -284,27 +215,27 @@ struct Told {
 }
 
 impl Told {
-    const fn of(link: &FollowedLink) -> Self {
+    fn of(link: &FollowedLink) -> Self {
         match link {
             FollowedLink::Song(_) => Self {
-                looking: LOOKING_THE_SONG_UP,
-                nothing: NO_SONG_AT_THE_LINK,
+                looking: words::search::looking_the_song_up(),
+                nothing: words::search::no_song_at_the_link(),
             },
             FollowedLink::Album(_) => Self {
-                looking: LOOKING_THE_ALBUM_UP,
-                nothing: NO_ALBUM_AT_THE_LINK,
+                looking: words::search::looking_the_album_up(),
+                nothing: words::search::no_album_at_the_link(),
             },
             FollowedLink::Artist(_) => Self {
-                looking: LOOKING_THE_ARTIST_UP,
-                nothing: NO_ARTIST_AT_THE_LINK,
+                looking: words::search::looking_the_artist_up(),
+                nothing: words::search::no_artist_at_the_link(),
             },
             FollowedLink::Playlist(_) => Self {
-                looking: LOOKING_THE_PLAYLIST_UP,
-                nothing: NO_PLAYLIST_AT_THE_LINK,
+                looking: words::search::looking_the_playlist_up(),
+                nothing: words::search::no_playlist_at_the_link(),
             },
             FollowedLink::Profile(_) => Self {
-                looking: LOOKING_THE_PROFILE_UP,
-                nothing: NO_PROFILE_AT_THE_LINK,
+                looking: words::search::looking_the_profile_up(),
+                nothing: words::search::no_profile_at_the_link(),
             },
         }
     }
@@ -361,21 +292,21 @@ impl SearchShows {
         }
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Top => "Top results",
-            Self::Songs => "Songs",
-            Self::Albums => "Albums",
-            Self::Artists => "Artists",
+            Self::Top => words::search::top_results(),
+            Self::Songs => words::search::songs(),
+            Self::Albums => words::search::albums(),
+            Self::Artists => words::search::artists(),
         }
     }
 
-    const fn saying(self) -> &'static str {
+    fn saying(self) -> &'static str {
         match self {
-            Self::Top => "The best of each kind of match, on one page",
-            Self::Songs => "Every song that matches, in your library and beyond it",
-            Self::Albums => "Every album that matches, in your library and beyond it",
-            Self::Artists => "Every artist that matches, in your library and beyond it",
+            Self::Top => words::search::top_results_hint(),
+            Self::Songs => words::search::songs_hint(),
+            Self::Albums => words::search::albums_hint(),
+            Self::Artists => words::search::artists_hint(),
         }
     }
 
@@ -406,12 +337,12 @@ impl Section {
         }
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Songs => "Songs",
-            Self::Found => "Not in your library",
-            Self::Albums => "Albums",
-            Self::Artists => "Artists",
+            Self::Songs => words::search::songs(),
+            Self::Found => words::search::not_in_your_library(),
+            Self::Albums => words::search::albums(),
+            Self::Artists => words::search::artists(),
         }
     }
 
@@ -432,12 +363,12 @@ impl Section {
         }
     }
 
-    const fn see_all(self) -> &'static str {
+    fn see_all(self) -> &'static str {
         match self {
-            Self::Songs => "See every matching song",
-            Self::Found => "See every matching song, in your library and beyond it",
-            Self::Albums => "See every matching album",
-            Self::Artists => "See every matching artist",
+            Self::Songs => words::search::see_every_song(),
+            Self::Found => words::search::see_every_song_beyond(),
+            Self::Albums => words::search::see_every_album(),
+            Self::Artists => words::search::see_every_artist(),
         }
     }
 }
@@ -472,20 +403,14 @@ impl Matched {
 
     fn in_the_library(self) -> String {
         if self.held() == 0 {
-            return "Nothing in your library".to_owned();
+            return words::search::nothing_in_your_library().to_owned();
         }
 
-        [
-            (self.songs, "song", "songs"),
-            (self.albums, "album", "albums"),
-            (self.artists, "artist", "artists"),
-        ]
-        .into_iter()
-        .filter(|(count, _, _)| *count > 0)
-        .map(|(count, one, many)| format::counted(count, one, many))
-        .collect::<Vec<_>>()
-        .join(" · ")
-            + " in your library"
+        words::search::in_your_library(counts([
+            (self.songs, words::search::songs_counted),
+            (self.albums, words::search::albums_counted),
+            (self.artists, words::search::artists_counted),
+        ]))
     }
 
     fn songs_found(self) -> usize {
@@ -498,26 +423,19 @@ impl Matched {
     }
 
     fn beyond(self) -> Option<String> {
-        let found = [
-            (self.songs_found(), "song", "songs"),
-            (self.albums_found, "album", "albums"),
-            (self.artists_found, "artist", "artists"),
-        ]
-        .into_iter()
-        .filter(|(count, _, _)| *count > 0)
-        .map(|(count, one, many)| format::counted(count, one, many))
-        .collect::<Vec<_>>()
-        .join(" · ");
+        let found = counts([
+            (self.songs_found(), words::search::songs_counted),
+            (self.albums_found, words::search::albums_counted),
+            (self.artists_found, words::search::artists_counted),
+        ]);
 
         Some(match self.elsewhere? {
-            Beyond::Elsewhere(_) => format!("{found} not in it"),
-            Beyond::Refining(_) => {
-                format!("{found} not in it so far, asking MusicBrainz for the rest…")
-            }
-            Beyond::Asking if found.is_empty() => "asking MusicBrainz for more…".to_owned(),
-            Beyond::Asking => format!("{found} not in it so far, asking MusicBrainz for more…"),
-            Beyond::Unreached(_) if found.is_empty() => UNREACHED.to_owned(),
-            Beyond::Unreached(_) => format!("{found} not in it so far; {UNREACHED}"),
+            Beyond::Elsewhere(_) => words::search::not_in_it(found),
+            Beyond::Refining(_) => words::search::not_in_it_asking_for_the_rest(found),
+            Beyond::Asking if found.is_empty() => words::search::asking_for_more().to_owned(),
+            Beyond::Asking => words::search::not_in_it_asking_for_more(found),
+            Beyond::Unreached(_) if found.is_empty() => words::search::unreached().to_owned(),
+            Beyond::Unreached(_) => words::search::not_in_it_unreached(found),
         })
     }
 
@@ -537,6 +455,17 @@ impl Matched {
             count.to_string()
         }))
     }
+}
+
+type SaysTheCount = fn(usize) -> String;
+
+fn counts<const KINDS: usize>(kinds: [(usize, SaysTheCount); KINDS]) -> String {
+    kinds
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, said)| said(count))
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 impl RootView {
@@ -567,7 +496,10 @@ impl RootView {
             return;
         };
         let Some((library, reference)) = self.library.read(cx).follows_links() else {
-            toast::tell(Notice::Noted(ONLINE_TO_FOLLOW_A_LINK.to_owned()), cx);
+            toast::tell(
+                Notice::Noted(words::search::online_to_follow_a_link().to_owned()),
+                cx,
+            );
             return;
         };
         let told = Told::of(&link);
@@ -625,7 +557,7 @@ impl RootView {
                     title, missing: 0, ..
                 },
             ) => toast::tell(
-                Notice::Done(format!("“{title}” is already in your library")),
+                Notice::Done(words::search::already_in_your_library(title.as_str())),
                 cx,
             ),
             Ok(Linked::Found(found)) => {
@@ -654,7 +586,10 @@ impl RootView {
             Ok(Linked::Unnamed) => {
                 toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);
             }
-            Err(error) => toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx),
+            Err(error) => toast::tell(
+                toast::could_not(words::search::following_the_link(), &error),
+                cx,
+            ),
         }
     }
 
@@ -672,7 +607,10 @@ impl RootView {
                 return;
             }
             Err(error) => {
-                toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx);
+                toast::tell(
+                    toast::could_not(words::search::following_the_link(), &error),
+                    cx,
+                );
                 return;
             }
         };
@@ -715,7 +653,10 @@ impl RootView {
                         cx,
                     );
                 }
-                Err(error) => toast::tell(toast::could_not(FILLING_THE_PLAYLIST, &error), cx),
+                Err(error) => toast::tell(
+                    toast::could_not(words::search::filling_the_playlist(), &error),
+                    cx,
+                ),
             });
         })
         .detach();
@@ -735,7 +676,10 @@ impl RootView {
                 return;
             }
             Err(error) => {
-                toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx);
+                toast::tell(
+                    toast::could_not(words::search::following_the_link(), &error),
+                    cx,
+                );
                 return;
             }
         };
@@ -777,16 +721,18 @@ impl RootView {
                         .update(cx, |library, cx| library.reload_playlists(cx));
                     self.set_pane(Pane::Playlists, cx);
                     toast::tell(
-                        Notice::Done(format!(
-                            "Moved {} of {} to Resonate, following none of them",
-                            format::counted(kept, "playlist", "playlists"),
-                            moved.name
-                        )),
+                        Notice::Done(words::search::moved_to_resonate(kept, moved.name.as_str())),
                         cx,
                     );
                 }
-                Ok(None) => toast::tell(Notice::Trouble(NO_PROFILE_AT_THE_LINK.to_owned()), cx),
-                Err(error) => toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx),
+                Ok(None) => toast::tell(
+                    Notice::Trouble(words::search::no_profile_at_the_link().to_owned()),
+                    cx,
+                ),
+                Err(error) => toast::tell(
+                    toast::could_not(words::search::following_the_link(), &error),
+                    cx,
+                ),
             },
         }
     }
@@ -810,7 +756,7 @@ impl RootView {
 
         let meant = library
             .meant()
-            .map(|meant| format!("Read as “{}” by {}", meant.title, meant.artist));
+            .map(|meant| words::search::read_as(meant.artist.as_str(), meant.title.as_str()));
         let summary = match matched.beyond() {
             Some(beyond) => format!("{} · {beyond}", matched.in_the_library()),
             None => matched.in_the_library(),
@@ -820,8 +766,8 @@ impl RootView {
                 kit::button(
                     "search-as-typed",
                     None,
-                    "Search the words as typed",
-                    AS_TYPED_HINT,
+                    words::search::search_as_typed(),
+                    words::search::as_typed_hint(),
                     Tone::Ghost,
                 ),
                 |this, _, cx| {
@@ -839,8 +785,8 @@ impl RootView {
                 kit::button(
                     "save-search",
                     Some(Icon::Search),
-                    "Save this search",
-                    SAVE_SEARCH_HINT,
+                    words::search::save_this_search(),
+                    words::playlists::save_search_hint(),
                     Tone::Ghost,
                 ),
                 |this, window, cx| {
@@ -876,8 +822,10 @@ impl RootView {
                                 .flex_1()
                                 .min_w(px(theme::heading_name()))
                                 .gap_1()
-                                .child(kit::eyebrow("Search"))
-                                .child(kit::title(SharedString::from(format!("“{query}”"))))
+                                .child(kit::eyebrow(words::search::search()))
+                                .child(kit::title(SharedString::from(words::search::query(
+                                    query.as_str(),
+                                ))))
                                 .when_some(meant, |column, meant| {
                                     column.child(
                                         div()
@@ -1004,14 +952,16 @@ impl RootView {
             && albums_found.is_empty()
         {
             let nothing = match matched.elsewhere {
-                Some(Beyond::Asking | Beyond::Refining(_)) => {
-                    kit::empty(Icon::Search, ASKING, Some(LOOKING_BEYOND))
-                }
+                Some(Beyond::Asking | Beyond::Refining(_)) => kit::empty(
+                    Icon::Search,
+                    words::search::asking(),
+                    Some(words::search::looking_beyond()),
+                ),
                 Some(Beyond::Unreached(_)) => Self::unreached(),
                 Some(Beyond::Elsewhere(_)) | None => self.nothing_matched(
                     Icon::Search,
-                    NOTHING_MATCHES,
-                    Some(NOTHING_HELD_MATCHES),
+                    words::search::nothing_matches(),
+                    Some(words::search::nothing_held_matches()),
                     cx,
                 ),
             };
@@ -1058,9 +1008,9 @@ impl RootView {
 
         if let Some(beyond) = matched.elsewhere {
             let said = match beyond {
-                Beyond::Elsewhere(_) => PRESS_TO_DOWNLOAD,
-                Beyond::Refining(_) | Beyond::Asking => ASKING,
-                Beyond::Unreached(_) => UNREACHED,
+                Beyond::Elsewhere(_) => words::search::press_to_download(),
+                Beyond::Refining(_) | Beyond::Asking => words::search::asking(),
+                Beyond::Unreached(_) => words::search::unreached(),
             };
             let mut rows = div().flex().flex_col();
             for (index, song) in found.iter().enumerate().take(FOUND_AT_THE_TOP) {
@@ -1142,7 +1092,7 @@ impl RootView {
                 kit::button(
                     gpui::ElementId::from(SharedString::from(format!("see-all-{}", section.id()))),
                     None,
-                    format!("See all {held}"),
+                    words::search::see_all(held),
                     section.see_all(),
                     Tone::Ghost,
                 ),
@@ -1200,7 +1150,7 @@ impl RootView {
             })
             .collect();
 
-        self.found_strip(ARTISTS_NOT_HELD, STRIP, cells, cx)
+        self.found_strip(words::search::artists_not_held(), STRIP, cells, cx)
     }
 
     pub(crate) fn albums_found_strip(
@@ -1224,7 +1174,7 @@ impl RootView {
             })
             .collect();
 
-        self.found_strip(ALBUMS_NOT_HELD, STRIP, cells, cx)
+        self.found_strip(words::search::albums_not_held(), STRIP, cells, cx)
     }
 
     fn at_the_top(
@@ -1316,8 +1266,8 @@ impl RootView {
             kit::button(
                 "ask-elsewhere-again",
                 Some(Icon::Search),
-                "Try again",
-                ASK_AGAIN_HINT,
+                words::search::try_again(),
+                words::search::ask_again_hint(),
                 Tone::Ghost,
             ),
             |this, _, cx| {
@@ -1331,16 +1281,22 @@ impl RootView {
     pub(crate) fn nothing_beyond(&self, cx: &App) -> Option<AnyElement> {
         self.search_in_front(cx)?;
         match self.library.read(cx).elsewhere()? {
-            Beyond::Asking | Beyond::Refining(_) => {
-                Some(kit::empty(Icon::Search, ASKING, Some(LOOKING_BEYOND)))
-            }
+            Beyond::Asking | Beyond::Refining(_) => Some(kit::empty(
+                Icon::Search,
+                words::search::asking(),
+                Some(words::search::looking_beyond()),
+            )),
             Beyond::Unreached(_) => Some(Self::unreached()),
             Beyond::Elsewhere(_) => None,
         }
     }
 
     pub(crate) fn unreached() -> AnyElement {
-        kit::trouble(Icon::Search, UNREACHED, Some(UNREACHED_MORE))
+        kit::trouble(
+            Icon::Search,
+            words::search::unreached(),
+            Some(words::search::unreached_more()),
+        )
     }
 }
 

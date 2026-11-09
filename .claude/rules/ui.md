@@ -698,10 +698,13 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   is over both). `set_pane` and `show_everything` empty it; the pointer leaving the window empties it
   via `pointer_watch`.
 - **A hint names its key one way, and the key is the one bound.** `keys.rs` is `key!` (`key!(play_pause)`
-  = `space`); `app::bindings` binds through the same `key!`. `keyed!` writes the wording: what the key
-  does, an em dash, the ways (last two joined by *or*): `Louder — the wheel or ctrl-up`; a hint saying
-  more joins such sentences with full stops, a described state first. Both are `concat!`, so hints stay
-  `&'static str` (`every_key_a_hint_names_is_a_key_something_is_bound_to`).
+  = `space`); `app::bindings` binds through the same `key!`. The wording is what the key does, an em
+  dash, the ways (last two joined by *or*): `Louder — the wheel or ctrl-up`; a hint saying more joins
+  such sentences with full stops, a described state first. A hint from a catalog takes each key as a
+  variable (`play-hint = Play — { $keys }`, said as `words::transport::play_hint(key!(play_pause))`),
+  so the key stays the bound one and the words around it translate; `keyed!` is the same shape in
+  `concat!` for a hint still written in code
+  (`every_key_a_hint_names_is_a_key_something_is_bound_to`).
 - **A control names itself through one seam, and the seam lets go.** `hint::Names` is the only place a
   tooltip is attached (a test walks the crate's sources): gpui's plain `tooltip`, never
   `hoverable_tooltip` (neither press nor scroll takes that one down). `hint::asking` is one atomic
@@ -1390,7 +1393,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   artist is scoped. `LibraryModel::tracks` = the first; `LibraryModel::listing` = what the tracks pane,
   heading, summary, *Play*, *Shuffle* draw from, so sidebar counts hold however deep the listener goes.
   A scoped album hero draws the owner on its own line via `RootView::opens`; the scoped cover has
-  `COVER_HINT` and `RootView::magnify` (a portrait does not: `Magnified` is an album or a file).
+  `words::transport::cover_hint` and `RootView::magnify` (a portrait does not: `Magnified` is an album or a file).
 - **Album rows = catalog rows merged with the release's missing ones.** `LibraryModel::rows` =
   `Arc<[ListedRow]>` from `album_rows` when the selection is an album: `ListedRow::Held` indexes the
   tracks listing, `Missing` the release rows; `Disc` heads each disc's run (two or more discs, seat
@@ -1425,7 +1428,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     album closes it; its scrim occludes.
   - Artist hero: `profile_line`, `heard_on`, genres from the info mark (`kit::tag`). Where
     `ArtistDetail::releases_unheld` > 0 a `Tone::Ghost` button *N releases not held* (plus *, M more
-    unread*) under `UNHELD_HINT` opens `Pane::Missing`; with unread releases and `can_enrich`, *Read the
+    unread*) under `words::browser::unheld_hint` opens `Pane::Missing`; with unread releases and `can_enrich`, *Read the
     rest* = `read_the_rest_of` (`library.md`). **An artist's services are capped at `SERVICES_SHOWN`
     (4)** (a release's card and the genre card are uncapped). **Each service is the link it was named
     from**: `service_names` keeps the first URL per service beside its `Service::title` (omitting
@@ -1679,7 +1682,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     it (`a_found_song_that_landed_is_listed_once_as_the_held_track`); until then, delivered or not, it
     stays listed as found
     (`a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_again`). **A found song's whole row is that
-    press** (`found_row`, `FETCH_FOUND_HINT`); the mark's own press finds the recording already
+    press** (`found_row`, `words::browser::fetch_found_hint`); the mark's own press finds the recording already
     `wanting`; while asked for, the row takes no press. `wanting` holds a task per recording.
     **A song pressed plays once it lands, if it lands within half a minute.** The row's press, `enter`
     on a found row and on *Top results* call `LibraryModel::fetch_and_play`: `want_found`, then
@@ -2462,7 +2465,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   playlist row they take the whole reach the row is in). The + on a queue row and an opened-playlist row
   opens the playlist picker; index and opened-playlist headings use + to enter track-browsing mode.
   Albums and artists panes, the queue pane, the album page, artist page and opened suggestion carry
-  neither. Named once in `menu::PLAY_NEXT`/`menu::ADD_TO_QUEUE`: *Play next* = `Placement::Next`; *Add to
+  neither. Named once in `words::menu::play_next`/`add_to_queue`: *Play next* = `Placement::Next`; *Add to
   queue* = `Placement::Queued`. The queue pane marks a row waiting to play next with the *queue next*
   icon where its number would be (`Queued::next`); its heading counts them.
 - **The queue is drawn in the engine's four parts, each under a heading.** Published list =
@@ -2497,7 +2500,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 - **Undo and Redo are drawn in the playlists headings only** (`RootView::undo_edit`/`redo_edit`; Redo only
   while a step is there; each says how many steps stand behind the one it offers, `Undoable::behind`).
   Rows put in a playlist from the tracks or queue pane have no control to press, so the notice names
-  `ctrl-z`. **A narrowed playlist says what a gesture reaches** (`NARROWED_HINT`): Play, Play next, Add
+  `ctrl-z`. **A narrowed playlist says what a gesture reaches** (`words::playlists::narrowed_hint`): Play, Play next, Add
   to queue, Drop shown take the rows shown; Sort, Tidy, Export take the playlist whole. Tidy removes
   missing and repeated rows together in one undoable edit. The sidebar's count is the narrowed one.
 - **A pane hands its rows out by reference count, not cloned per frame.** An opened playlist's rows are

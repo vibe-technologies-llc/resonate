@@ -77,7 +77,6 @@ use crate::{
         reorder::{self, Chosen, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
         scrollbar::Scrollbars,
         search::{self, SearchShows, TopEntry, TopRun},
-        served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
             Account, Armed, Category, CheckingYoutubeMusic, FILTER_PLACEHOLDER, Fitting, HeldBand,
             LastfmAccount, LastfmSigning, Page, Plotted, SHARED_NAME_PLACEHOLDER,
@@ -93,8 +92,9 @@ use crate::{
         typing::{self, TypeAhead, jumped},
         visualiser::Visualiser,
         wrapped,
-        zones::{self, Switcher, ZONE_NAME_PLACEHOLDER, ZoneShown},
+        zones::{self, Switcher, ZoneShown},
     },
+    words,
 };
 
 pub(crate) const VOLUME_STEP: f32 = 0.05;
@@ -114,130 +114,33 @@ pub(crate) fn somewhere_in(rows: usize) -> usize {
 
 const WORDMARK_CAPITALS_CENTRED_BY: f32 = 1.0;
 
-pub(crate) const SETTING_UNSAVED: &str =
-    "Couldn't save that setting — the settings file couldn't be written";
-
-const SETTING_WRITER_STOPPED: &str =
-    "Couldn't save that setting — the part that writes the settings stopped";
-
 fn unsaved(written: Result<crate::Result<()>, oneshot::Canceled>) -> Option<Notice> {
     match written {
         Ok(Ok(())) => None,
         Ok(Err(error)) => {
             tracing::error!(%error, "a setting could not be saved");
-            Some(Notice::Trouble(SETTING_UNSAVED.to_owned()))
+            Some(Notice::Trouble(words::root::setting_unsaved().to_owned()))
         }
         Err(oneshot::Canceled) => {
             tracing::error!("the thread writing the settings dropped a batch unanswered");
-            Some(Notice::Trouble(SETTING_WRITER_STOPPED.to_owned()))
+            Some(Notice::Trouble(
+                words::root::setting_writer_stopped().to_owned(),
+            ))
         }
     }
 }
-
-const LISTEN_BUTTON_HINT: &str = keyed!(
-    "Listen for a song on the desktop or a microphone",
-    key!(listen)
-);
-
-const SEARCH_PLACEHOLDER: &str = "Type to search title, artist or album";
-
-const CUT: &str = "Cut";
-
-const COPY: &str = "Copy";
-
-const PASTE: &str = "Paste";
-
-const SELECT_ALL: &str = "Select everything";
-
-const SEARCH_HINT: &str = "Words match a title, artist or album, and a term narrows them — everything written has to hold \
-     at once, unless or sits between two, where either will do, and a leading - takes one out. \
-     title:, artist: and album: scope the words beside them; year:1970-1979, added:<30d, \
-     length:>5m, rate:>=96k, depth:24, codec:flac and is:lossless, lossy, mono, stereo, \
-     multichannel and hires narrow by what the file is. plays:>5 is every play a track ever \
-     had and plays:>5@30d only the ones inside that span. Anything the grammar cannot read is \
-     searched for as the words it was written as.";
 
 const PANE_GROUP: &str = "pane";
 
 const PANE_REGION: &str = "pane-region";
 
-const SEARCH_REGION: &str = "Search";
-
-const JUMPED_TO: &str = "Jump to";
-
-const JUMPED_NOWHERE: &str = "No match";
-
-const CLEAR_SEARCH_HINT: &str = keyed!("Clear the search", key!(leave));
-
-const SIDEBAR: &str = "Library";
-
-const PINNED_HINT: &str = "Open this pinned playlist";
-
 const PINNED_ROW: f32 = 26.0;
 
 const PINNED_INSET: f32 = 22.0;
 
-const DOWNLOADS_PANEL_LABEL: &str = "Downloads";
-
-const MAGNIFIED_LABEL: &str = "Cover";
-
-const ENRICHING_LABEL: &str = "Enriching…";
-
-const ENRICHING_HINT: &str =
-    "The reference is being asked about the library; opens the Online settings";
-
-const SHOW_DOWNLOADS_HINT: &str = "Show the songs asked for and how each is getting on";
-
-const HIDE_DOWNLOADS_HINT: &str = "Hide the songs asked for";
-
-const DISMISS_DOWNLOAD_HINT: &str = "Take this song off the list";
-
 const DOWNLOADS_PANEL_GAP: f32 = 8.0;
 
 const DOWNLOADS_TOGGLE_PRESS: Duration = Duration::from_millis(600);
-
-const CLEAR_DOWNLOADS_HINT: &str = "Take every finished song off the list";
-
-const ASK_AGAIN_HINT: &str = "Ask the providers for this song again";
-
-const CANCEL_DOWNLOAD_HINT: &str = "Stop downloading this song";
-
-const KEEPING_SONGS: &str = "Keeping songs";
-
-const STOP_KEEPING_HINT: &str = "Stop keeping songs; the rest stays queued for the next time";
-
-const PLAY_DOWNLOAD_HINT: &str = "Play this song";
-
-const OPEN_DOWNLOAD_HINT: &str = "Open the album this song is on";
-
-const KEEP_THE_TRACK_HINT: &str = keyed!("Keep the song", key!(leave));
-
-const DELETE_THE_TRACK_HINT: &str =
-    "Move the file to the trash and take the song out of the library";
-
-const MOVED_TO_THE_TRASH: &str = "Its plays stay in your statistics.";
-
-const A_CUT_GOES_WHOLE: &str = "It is cut from a file holding other tracks too, so the whole file goes to the trash, and every track cut from it.";
-
-const NAME_PLACEHOLDER: &str = "Name the playlist, then press enter";
-
-const CONTACT_PLACEHOLDER: &str = "How a service may reach you, then press enter";
-
-const ACOUSTID_PLACEHOLDER: &str = "An AcoustID client key, then press enter";
-
-const AUDD_PLACEHOLDER: &str = "An AudD API token, then press enter";
-
-const LISTENBRAINZ_PLACEHOLDER: &str = "A ListenBrainz user token, then press enter";
-
-const DISCORD_APP_PLACEHOLDER: &str = "Your Discord application's id, then press enter";
-
-const DISCORD_ICON_PLACEHOLDER: &str = "An asset key or an image address, then press enter";
-const FIGURE_PLACEHOLDER: &str = "A number, then press enter";
-const LOOKING_PLACEHOLDER: &str = "Which headphones, then press enter";
-const MEASURED_AS_PLACEHOLDER: &str = "measured";
-const ORGANISING_PLACEHOLDER: &str = "How the files are filed, then press enter";
-
-const TYPED_ROOT_PLACEHOLDER: &str = "Or type a folder, then press enter";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Magnified {
@@ -397,11 +300,11 @@ pub(crate) enum Section {
 impl Section {
     const ALL: [Self; 3] = [Self::Library, Self::Collection, Self::Playing];
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Library => "Library",
-            Self::Collection => "Collection",
-            Self::Playing => "Now playing",
+            Self::Library => words::root::section_library(),
+            Self::Collection => words::root::section_collection(),
+            Self::Playing => words::root::section_now_playing(),
         }
     }
 }
@@ -457,24 +360,24 @@ impl Pane {
         matches!(self, Self::Albums | Self::Artists | Self::Tracks)
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Albums => "Albums",
-            Self::Artists => "Artists",
-            Self::Tracks => "Tracks",
-            Self::Statistics => "Statistics",
-            Self::Party => "Listening Party",
-            Self::Queue => "Queue",
-            Self::Playlists => "Playlists",
-            Self::Favourites => "Favourites",
-            Self::Suggestions => "Suggestions",
-            Self::Missing => "Missing",
-            Self::Server => "Services",
-            Self::Lyrics => "Lyrics",
-            Self::Inspector => "Inspector",
-            Self::Visualiser => "Visualiser",
-            Self::Analysis => "Analysis",
-            Self::Settings => "Settings",
+            Self::Albums => words::root::pane_albums(),
+            Self::Artists => words::root::pane_artists(),
+            Self::Tracks => words::root::pane_tracks(),
+            Self::Statistics => words::root::pane_statistics(),
+            Self::Party => words::root::pane_listening_party(),
+            Self::Queue => words::root::pane_queue(),
+            Self::Playlists => words::root::pane_playlists(),
+            Self::Favourites => words::root::pane_favourites(),
+            Self::Suggestions => words::root::pane_suggestions(),
+            Self::Missing => words::root::pane_missing(),
+            Self::Server => words::root::pane_services(),
+            Self::Lyrics => words::root::pane_lyrics(),
+            Self::Inspector => words::root::pane_inspector(),
+            Self::Visualiser => words::root::pane_visualiser(),
+            Self::Analysis => words::root::pane_analysis(),
+            Self::Settings => words::root::pane_settings(),
         }
     }
 
@@ -521,30 +424,24 @@ impl Pane {
         }
     }
 
-    pub(crate) const fn about(self) -> &'static str {
+    pub(crate) fn about(self) -> &'static str {
         match self {
-            Self::Albums => "Every album the library has scanned",
-            Self::Artists => "Every artist the library has scanned",
-            Self::Tracks => "Every track the library has scanned",
-            Self::Statistics => "How much has been played, and what most",
-            Self::Party => "Hear the same song at the same moment as your friends",
-            Self::Queue => "What is queued, in the order it will play",
-            Self::Playlists => "Lists you have saved, and what is in them",
-            Self::Favourites => "The artists, albums and tracks you have starred",
-            Self::Suggestions => "Lists the catalog offers to make out of what it holds",
-            Self::Missing => {
-                "What the releases are short of, and what the artists have put out \
-                              that the library does not hold"
-            }
-            Self::Server => "What the services you have set up hold, to browse and to play or keep",
-            Self::Lyrics => "The words to the playing track, where a source has them",
-            Self::Inspector => "What the playing file is, and what reaches the sink",
-            Self::Visualiser => "The spectrum and the waveform of what is being heard",
-            Self::Analysis => {
-                "The whole playing track: its waveform, its spectrum, whether it is the lossless \
-                 file it claims to be and what its audio is"
-            }
-            Self::Settings => "Output, processing and library settings",
+            Self::Albums => words::root::about_albums(),
+            Self::Artists => words::root::about_artists(),
+            Self::Tracks => words::root::about_tracks(),
+            Self::Statistics => words::root::about_statistics(),
+            Self::Party => words::root::about_party(),
+            Self::Queue => words::root::about_queue(),
+            Self::Playlists => words::root::about_playlists(),
+            Self::Favourites => words::root::about_favourites(),
+            Self::Suggestions => words::root::about_suggestions(),
+            Self::Missing => words::root::about_missing(),
+            Self::Server => words::root::about_server(),
+            Self::Lyrics => words::root::about_lyrics(),
+            Self::Inspector => words::root::about_inspector(),
+            Self::Visualiser => words::root::about_visualiser(),
+            Self::Analysis => words::root::about_analysis(),
+            Self::Settings => words::root::about_settings(),
         }
     }
 
@@ -803,13 +700,11 @@ pub struct RootView {
 
 fn token_notice(held: resonate_library::Result<TokenHeld>) -> Notice {
     match held {
-        Ok(TokenHeld::By(user)) => Notice::Done(format!("The token is {user}'s on ListenBrainz")),
-        Ok(TokenHeld::Unknown) => Notice::Trouble(
-            "ListenBrainz does not know that token, so nothing will be sent under it".to_owned(),
-        ),
+        Ok(TokenHeld::By(user)) => Notice::Done(words::root::token_held_by(user)),
+        Ok(TokenHeld::Unknown) => Notice::Trouble(words::root::token_unknown().to_owned()),
         Err(error) => {
             tracing::warn!(%error, "ListenBrainz could not be asked about the token");
-            Notice::Trouble("ListenBrainz could not be asked whether it knows the token".to_owned())
+            Notice::Trouble(words::root::token_unchecked().to_owned())
         }
     }
 }
@@ -954,7 +849,7 @@ impl RootView {
         let menu_focus = cx.focus_handle();
 
         let search = cx.new(|cx| {
-            Field::new(SEARCH_PLACEHOLDER, window, cx)
+            Field::new(words::root::search_placeholder(), window, cx)
                 .catching(|text| is_a_followed_link(text) || is_an_invitation(text))
                 .searching()
         });
@@ -989,20 +884,20 @@ impl RootView {
         })
         .detach();
 
-        let zone_name = cx.new(|cx| Field::new(ZONE_NAME_PLACEHOLDER, window, cx));
+        let zone_name = cx.new(|cx| Field::new(words::zones::name_this_zone(), window, cx));
         cx.subscribe_in(&zone_name, window, |this, _, _: &Submitted, window, cx| {
             this.zone_named(window, cx);
         })
         .detach();
 
-        let name = cx.new(|cx| Field::new(NAME_PLACEHOLDER, window, cx));
+        let name = cx.new(|cx| Field::new(words::root::name_placeholder(), window, cx));
         cx.subscribe_in(&name, window, |this, _, _: &Submitted, window, cx| {
             this.name_given(window, cx);
         })
         .detach();
 
         let contact = cx.new(|cx| {
-            let mut field = Field::new(CONTACT_PLACEHOLDER, window, cx);
+            let mut field = Field::new(words::root::contact_placeholder(), window, cx);
             field.hold(online.contact.clone(), cx);
             field
         });
@@ -1014,7 +909,7 @@ impl RootView {
             .detach();
 
         let acoustid = cx.new(|cx| {
-            let mut field = Field::new(ACOUSTID_PLACEHOLDER, window, cx).masked();
+            let mut field = Field::new(words::root::acoustid_placeholder(), window, cx).masked();
             field.hold(online.acoustid_key.clone(), cx);
             field
         });
@@ -1028,7 +923,7 @@ impl RootView {
         .detach();
 
         let audd = cx.new(|cx| {
-            let mut field = Field::new(AUDD_PLACEHOLDER, window, cx).masked();
+            let mut field = Field::new(words::root::audd_placeholder(), window, cx).masked();
             field.hold(online.audd_token.clone(), cx);
             field
         });
@@ -1040,7 +935,8 @@ impl RootView {
             .detach();
 
         let listenbrainz = cx.new(|cx| {
-            let mut field = Field::new(LISTENBRAINZ_PLACEHOLDER, window, cx).masked();
+            let mut field =
+                Field::new(words::root::listenbrainz_placeholder(), window, cx).masked();
             field.hold(online.listenbrainz_token.clone(), cx);
             field
         });
@@ -1065,7 +961,7 @@ impl RootView {
         let youtube_music = YoutubeMusicField::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
-            let mut field = Field::new(DISCORD_APP_PLACEHOLDER, window, cx);
+            let mut field = Field::new(words::root::discord_app_placeholder(), window, cx);
             field.hold(
                 presence.app.map(|app| app.to_string()).unwrap_or_default(),
                 cx,
@@ -1082,7 +978,7 @@ impl RootView {
         .detach();
 
         let discord_icon = cx.new(|cx| {
-            let mut field = Field::new(DISCORD_ICON_PLACEHOLDER, window, cx);
+            let mut field = Field::new(words::root::discord_icon_placeholder(), window, cx);
             field.hold(
                 presence
                     .icon
@@ -1149,7 +1045,7 @@ impl RootView {
         .detach();
 
         let minimum_length = cx.new(|cx| {
-            let mut field = Field::new("Seconds, from 0 to 600", window, cx);
+            let mut field = Field::new(words::root::seconds_from_0_to_600(), window, cx);
             field.hold(
                 cx.global::<ResonateApp>()
                     .library
@@ -1171,7 +1067,7 @@ impl RootView {
         .detach();
 
         let organising = cx.new(|cx| {
-            let mut field = Field::new(ORGANISING_PLACEHOLDER, window, cx);
+            let mut field = Field::new(words::root::organising_placeholder(), window, cx);
             field.hold(organise_as, cx);
             field
         });
@@ -1183,7 +1079,7 @@ impl RootView {
             .detach();
 
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
-        let typed_root = cx.new(|cx| Field::new(TYPED_ROOT_PLACEHOLDER, window, cx));
+        let typed_root = cx.new(|cx| Field::new(words::root::typed_root_placeholder(), window, cx));
         cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
             this.root_typed(window, cx);
         })
@@ -1209,7 +1105,8 @@ impl RootView {
         })
         .detach();
 
-        let server_search = cx.new(|cx| Field::new(SERVER_SEARCH_PLACEHOLDER, window, cx));
+        let server_search =
+            cx.new(|cx| Field::new(words::served::search_placeholder(), window, cx));
         cx.subscribe_in(
             &server_search,
             window,
@@ -1219,7 +1116,7 @@ impl RootView {
         )
         .detach();
 
-        let figure = cx.new(|cx| Field::new(FIGURE_PLACEHOLDER, window, cx));
+        let figure = cx.new(|cx| Field::new(words::root::figure_placeholder(), window, cx));
         cx.subscribe_in(&figure, window, |this, _, _: &Submitted, window, cx| {
             this.figure_given(window, cx);
         })
@@ -1227,13 +1124,14 @@ impl RootView {
         cx.subscribe(&figure, |this, _, _: &Blurred, cx| this.figure_left(cx))
             .detach();
 
-        let looking = cx.new(|cx| Field::new(LOOKING_PLACEHOLDER, window, cx));
+        let looking = cx.new(|cx| Field::new(words::root::looking_placeholder(), window, cx));
         cx.subscribe_in(&looking, window, |this, _, _: &Submitted, _window, cx| {
             this.look_for_a_device(cx);
         })
         .detach();
 
-        let measured_as = cx.new(|cx| Field::new(MEASURED_AS_PLACEHOLDER, window, cx));
+        let measured_as =
+            cx.new(|cx| Field::new(words::root::measured_as_placeholder(), window, cx));
 
         let equaliser = cx.new(|cx| {
             let mut model = EqualiserModel::saved_on_leaving(
@@ -1687,10 +1585,7 @@ impl RootView {
         };
         let Continuing { cuts, at } = syncing.continue_from(device);
         if cuts.is_empty() {
-            self.report(
-                Notice::Trouble(format!("Nothing {device} was playing is in this library")),
-                cx,
-            );
+            self.report(Notice::Trouble(words::root::nothing_continued(device)), cx);
             return;
         }
         let mut minting = Unclaimed::beside(&[]);
@@ -1739,7 +1634,7 @@ impl RootView {
                 Ok(entries) => then(this, entries, cx),
                 Err(error) => {
                     tracing::error!(%error, playlist = playlist.get(), "a playlist could not be read");
-                    toast::tell(toast::could_not("read that playlist", &error), cx);
+                    toast::tell(toast::could_not(words::root::read_that_playlist(), &error), cx);
                 }
             });
         })
@@ -1802,7 +1697,10 @@ impl RootView {
                 Ok(entries) => this.queue(&entries, at, cx),
                 Err(error) => {
                     tracing::error!(%error, "playlists could not be read");
-                    toast::tell(toast::could_not("read those playlists", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::root::read_those_playlists(), &error),
+                        cx,
+                    );
                 }
             });
         })
@@ -2112,9 +2010,9 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = given.clone());
 
         let said = if given.is_empty() {
-            "No contact is sent from the next request on"
+            words::root::contact_cleared()
         } else {
-            "The contact is sent from the next request on"
+            words::root::contact_taken()
         };
         self.store(&Setting::Contact(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -2140,9 +2038,9 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.acoustid_key = given.clone());
 
         let said = if given.is_empty() {
-            "Nothing is recognised from the next start"
+            words::root::acoustid_key_cleared()
         } else {
-            "The key is used from the next start"
+            words::root::acoustid_key_taken()
         };
         self.store(&Setting::AcoustidKey(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -2186,9 +2084,9 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.audd_token = given.clone());
 
         let said = if given.is_empty() {
-            "AudD is not asked from the next start"
+            words::root::audd_token_cleared()
         } else {
-            "The token is used from the next start"
+            words::root::audd_token_taken()
         };
         self.store(&Setting::AuddToken(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -2236,9 +2134,9 @@ impl RootView {
         });
 
         let said = if given.is_empty() {
-            "Nothing heard is sent to ListenBrainz from now on"
+            words::root::listens_not_sent()
         } else {
-            "What is heard from now on is sent to ListenBrainz"
+            words::root::listens_sent()
         };
         self.store(&Setting::ListenbrainzToken(given.clone()), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -3268,7 +3166,10 @@ impl RootView {
                 Ok(listing) => then(this, drawn.ordered(listing.into()), window, cx),
                 Err(error) => {
                     tracing::error!(%error, "the whole listing could not be read");
-                    toast::tell(toast::could_not("read that listing", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::root::read_that_listing(), &error),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -3293,7 +3194,10 @@ impl RootView {
                 Ok(tracks) => then(this, tracks.into(), window, cx),
                 Err(error) => {
                     tracing::error!(%error, "the whole library could not be read");
-                    toast::tell(toast::could_not("read the library", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::root::read_the_library(), &error),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -3370,7 +3274,10 @@ impl RootView {
                 Ok(rows) => then(this, rows.into(), window, cx),
                 Err(error) => {
                     tracing::error!(%error, "a suggestion's rows could not be read");
-                    toast::tell(toast::could_not("read that suggestion", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::root::read_that_suggestion(), &error),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -3409,7 +3316,10 @@ impl RootView {
                 Ok(listing) => this.queue(&listed(&listing), at, cx),
                 Err(error) => {
                     tracing::error!(%error, "a scoped listing could not be read");
-                    toast::tell(toast::could_not("read those tracks", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::root::read_those_tracks(), &error),
+                        cx,
+                    );
                 }
             });
             let _ = outcome;
@@ -3481,7 +3391,7 @@ impl RootView {
                 Ok(tracks) => this.landed(&tracks, into, cx),
                 Err(error) => {
                     tracing::error!(%error, "a dragged album could not be read");
-                    toast::tell(toast::could_not("read that album", &error), cx);
+                    toast::tell(toast::could_not(words::root::read_that_album(), &error), cx);
                 }
             });
         })
@@ -4123,7 +4033,7 @@ impl RootView {
 
         div()
             .id("magnified-cover")
-            .dialog(MAGNIFIED_LABEL)
+            .dialog(words::root::magnified_label())
             .track_focus(&self.sheet_panels.holding(MAGNIFIER_PANEL, cx))
             .absolute()
             .inset_0()
@@ -4395,9 +4305,9 @@ impl RootView {
     fn type_ahead_pill(&self) -> Option<Div> {
         let typed = SharedString::from(self.type_ahead.typed()?.to_owned());
         let says = if self.type_ahead.found() {
-            JUMPED_TO
+            words::root::jumped_to()
         } else {
-            JUMPED_NOWHERE
+            words::root::jumped_nowhere()
         };
 
         Some(
@@ -4891,9 +4801,13 @@ impl RootView {
                     .child(self.search_field(window, cx))
                     .child(
                         self.in_the_pane_ring(
-                            kit::icon_button("listen", Icon::Listen, LISTEN_BUTTON_HINT)
-                                .flex_none()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
+                            kit::icon_button(
+                                "listen",
+                                Icon::Listen,
+                                words::root::listen_hint(key!(listen)),
+                            )
+                            .flex_none()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()),
                             |this, _, cx| this.open_the_listener(cx),
                             cx,
                         ),
@@ -4991,7 +4905,7 @@ impl RootView {
             .when(empty && !searching, |field| {
                 field.child(kit::figure("ctrl-f").text_color(rgb(theme::faint())))
             })
-            .child(hint::explains("search-terms", SEARCH_HINT));
+            .child(hint::explains("search-terms", words::root::search_hint()));
 
         menu::opens_a_menu(
             box_of_words,
@@ -5000,25 +4914,40 @@ impl RootView {
 
                 Menu::at(at)
                     .when_some(holding.then_some(()), |menu, ()| {
-                        menu.under(Icon::Rename, CUT, "ctrl-x", |this, window, cx| {
-                            this.search.update(cx, |field, cx| field.cuts(window, cx));
-                        })
+                        menu.under(
+                            Icon::Rename,
+                            words::root::cut(),
+                            "ctrl-x",
+                            |this, window, cx| {
+                                this.search.update(cx, |field, cx| field.cuts(window, cx));
+                            },
+                        )
                         .under(
                             Icon::Export,
-                            COPY,
+                            words::root::copy(),
                             "ctrl-c",
                             |this, window, cx| {
                                 this.search.update(cx, |field, cx| field.copies(window, cx));
                             },
                         )
                     })
-                    .under(Icon::Import, PASTE, "ctrl-v", |this, window, cx| {
-                        this.search.update(cx, |field, cx| field.pastes(window, cx));
-                    })
-                    .under(Icon::Check, SELECT_ALL, "ctrl-a", |this, window, cx| {
-                        this.search
-                            .update(cx, |field, cx| field.selects_everything(window, cx));
-                    })
+                    .under(
+                        Icon::Import,
+                        words::root::paste(),
+                        "ctrl-v",
+                        |this, window, cx| {
+                            this.search.update(cx, |field, cx| field.pastes(window, cx));
+                        },
+                    )
+                    .under(
+                        Icon::Check,
+                        words::root::select_all(),
+                        "ctrl-a",
+                        |this, window, cx| {
+                            this.search
+                                .update(cx, |field, cx| field.selects_everything(window, cx));
+                        },
+                    )
             },
             cx,
         )
@@ -5037,7 +4966,7 @@ impl RootView {
             .rounded_full()
             .cursor_pointer()
             .hover(|button| button.bg(rgb(theme::hover())))
-            .names(CLEAR_SEARCH_HINT)
+            .names(words::root::clear_search_hint(key!(leave)))
             .on_click(cx.listener(|this, _, window, cx| {
                 this.search.update(cx, |search, cx| {
                     search.take_focus(window, cx);
@@ -5128,7 +5057,7 @@ impl RootView {
         div()
             .id("sidebar")
             .relative()
-            .named_as(Role::Navigation, SIDEBAR, "")
+            .named_as(Role::Navigation, words::root::sidebar(), "")
             .flex()
             .flex_none()
             .flex_col()
@@ -5200,8 +5129,8 @@ impl RootView {
                         row.font_weight(gpui::FontWeight::MEDIUM)
                     })
                     .hover(|row| row.bg(rgb(theme::hover())))
-                    .named_as(Role::Link, &playlist.name, PINNED_HINT)
-                    .names(PINNED_HINT)
+                    .named_as(Role::Link, &playlist.name, words::root::pinned_hint())
+                    .names(words::root::pinned_hint())
                     .child(
                         div()
                             .flex_1()
@@ -5245,9 +5174,9 @@ impl RootView {
         );
         let open = self.downloads_open;
         let hint = if open {
-            HIDE_DOWNLOADS_HINT
+            words::root::hide_downloads_hint()
         } else {
-            SHOW_DOWNLOADS_HINT
+            words::root::show_downloads_hint()
         };
         let mark = if underway {
             theme::accent()
@@ -5341,7 +5270,7 @@ impl RootView {
         Some(motion::risen_in(
             div()
                 .id("downloads-panel")
-                .named_as(Role::Dialog, DOWNLOADS_PANEL_LABEL, "")
+                .named_as(Role::Dialog, words::root::downloads_panel_label(), "")
                 .absolute()
                 .left(px(theme::sidebar_width() + DOWNLOADS_PANEL_GAP))
                 .bottom(resting)
@@ -5373,7 +5302,7 @@ impl RootView {
                         .justify_between()
                         .gap_2()
                         .pl_2()
-                        .child(kit::eyebrow("Downloads"))
+                        .child(kit::eyebrow(words::root::downloads()))
                         .child(
                             div()
                                 .flex()
@@ -5384,8 +5313,8 @@ impl RootView {
                                         kit::button(
                                             "clear-downloads",
                                             None,
-                                            "Clear finished",
-                                            CLEAR_DOWNLOADS_HINT,
+                                            words::root::clear_finished(),
+                                            words::root::clear_downloads_hint(),
                                             kit::Tone::Ghost,
                                         ),
                                         |this, _, cx| {
@@ -5400,7 +5329,7 @@ impl RootView {
                                     kit::icon_button(
                                         "close-downloads",
                                         Icon::Close,
-                                        HIDE_DOWNLOADS_HINT,
+                                        words::root::hide_downloads_hint(),
                                     ),
                                     |this, _, cx| {
                                         this.close_the_downloads(cx);
@@ -5441,7 +5370,7 @@ impl RootView {
                             .text_color(rgb(theme::text()))
                             .truncate()
                             .ends_in_an_ellipsis()
-                            .child(KEEPING_SONGS),
+                            .child(words::root::keeping_songs()),
                     )
                     .child(
                         div()
@@ -5453,7 +5382,7 @@ impl RootView {
                     ),
             )
             .child(self.in_the_pane_ring(
-                kit::icon_button("stop-keeping", Icon::Stop, STOP_KEEPING_HINT),
+                kit::icon_button("stop-keeping", Icon::Stop, words::root::stop_keeping_hint()),
                 |this, _, cx| {
                     this.library
                         .update(cx, |library, cx| library.stop_keeping(cx));
@@ -5520,11 +5449,13 @@ impl RootView {
             );
         let text = match album {
             Some(album) => self.in_the_pane_ring(
-                text.cursor_pointer().names(OPEN_DOWNLOAD_HINT).named_as(
-                    Role::Link,
-                    &download.found.title,
-                    OPEN_DOWNLOAD_HINT,
-                ),
+                text.cursor_pointer()
+                    .names(words::root::open_download_hint())
+                    .named_as(
+                        Role::Link,
+                        &download.found.title,
+                        words::root::open_download_hint(),
+                    ),
                 move |this, _, cx| {
                     this.close_the_downloads(cx);
                     this.opened(Selection::Album(album), cx);
@@ -5544,7 +5475,7 @@ impl RootView {
                     kit::icon_button(
                         listing::keyed_by("play-download", &recording),
                         Icon::Play,
-                        PLAY_DOWNLOAD_HINT,
+                        words::root::play_download_hint(),
                     ),
                     move |this, _, cx| {
                         this.play_what_was_downloaded(track, cx);
@@ -5557,7 +5488,7 @@ impl RootView {
                     kit::icon_button(
                         listing::keyed_by("ask-again", &recording),
                         Icon::Redo,
-                        ASK_AGAIN_HINT,
+                        words::root::ask_again_hint(),
                     ),
                     move |this, _, cx| {
                         let wanted = again.clone();
@@ -5573,7 +5504,7 @@ impl RootView {
                     kit::icon_button(
                         listing::keyed_by("cancel-download", &recording),
                         Icon::Stop,
-                        CANCEL_DOWNLOAD_HINT,
+                        words::root::cancel_download_hint(),
                     ),
                     move |this, _, cx| {
                         this.library.update(cx, |library, cx| {
@@ -5589,7 +5520,7 @@ impl RootView {
                     kit::icon_button(
                         listing::keyed_by("dismiss-download", &recording),
                         Icon::Close,
-                        DISMISS_DOWNLOAD_HINT,
+                        words::root::dismiss_download_hint(),
                     ),
                     move |this, _, cx| {
                         this.library.update(cx, |library, cx| {
@@ -5627,7 +5558,7 @@ impl RootView {
                 Ok(None) => {}
                 Err(error) => {
                     tracing::warn!(%error, "a downloaded song could not be read to play");
-                    toast::tell(toast::could_not("play that song", &error), cx);
+                    toast::tell(toast::could_not(words::root::play_that_song(), &error), cx);
                 }
             });
             let _ = played;
@@ -5658,7 +5589,7 @@ impl RootView {
     fn deletion_sheet(&self, deleting: &Deleting, cx: &mut Context<Self>) -> Div {
         let card = kit::sheet()
             .id("delete-sheet")
-            .dialog(deleting.asking())
+            .dialog(&deleting.asking())
             .track_focus(&self.sheet_panels.holding(sheets::DELETE_PANEL, cx))
             .w(px(theme::confirm_width()))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.keep_the_track(cx)))
@@ -5678,12 +5609,14 @@ impl RootView {
                     .text_size(px(theme::text_sm()))
                     .text_color(rgb(theme::muted()))
                     .child(SharedString::from(deleting.saying()))
-                    .when(deleting.a_cut, |body| body.child(A_CUT_GOES_WHOLE))
+                    .when(deleting.a_cut, |body| {
+                        body.child(words::root::a_cut_goes_whole())
+                    })
                     .child(
                         div()
                             .text_color(rgb(theme::text()))
                             .font_weight(gpui::FontWeight::MEDIUM)
-                            .child(MOVED_TO_THE_TRASH),
+                            .child(words::root::moved_to_the_trash()),
                     ),
             )
             .child(
@@ -5692,8 +5625,8 @@ impl RootView {
                         kit::button(
                             "keep-the-track",
                             None,
-                            "Cancel",
-                            KEEP_THE_TRACK_HINT,
+                            words::root::cancel(),
+                            words::root::keep_the_track_hint(key!(leave)),
                             kit::Tone::Outlined,
                         ),
                         |this, _, cx| this.keep_the_track(cx),
@@ -5703,8 +5636,8 @@ impl RootView {
                         kit::button(
                             "delete-the-track",
                             Some(Icon::Delete),
-                            "Delete",
-                            DELETE_THE_TRACK_HINT,
+                            words::root::delete(),
+                            words::root::delete_the_track_hint(),
                             kit::Tone::Destructive,
                         ),
                         |this, _, cx| this.delete_the_track(cx),
@@ -5718,7 +5651,11 @@ impl RootView {
     fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let row = div()
             .id("enriching")
-            .named_as(Role::Button, ENRICHING_LABEL, ENRICHING_HINT)
+            .named_as(
+                Role::Button,
+                words::root::enriching_label(),
+                words::root::enriching_hint(),
+            )
             .flex()
             .items_center()
             .gap_2p5()
@@ -5727,7 +5664,7 @@ impl RootView {
             .rounded_md()
             .cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
-            .names(ENRICHING_HINT)
+            .names(words::root::enriching_hint())
             .child(icons::icon(Icon::Globe, theme::text_base(), theme::faint()))
             .child(
                 div()
@@ -5737,7 +5674,7 @@ impl RootView {
                     .text_color(rgb(theme::muted()))
                     .truncate()
                     .ends_in_an_ellipsis()
-                    .child(ENRICHING_LABEL),
+                    .child(words::root::enriching_label()),
             );
 
         self.in_the_standing_ring(
@@ -5955,7 +5892,7 @@ impl RootView {
                 self.finding_holds_the_caret = self.finding.read(cx).is_focused(window);
                 let shown = self.pane_shown(cx);
                 let named = match self.search_in_front(cx) {
-                    Some(_) => SEARCH_REGION,
+                    Some(_) => words::root::search_region(),
                     None => self.pane.label(),
                 };
                 motion::faded_in(
@@ -6368,29 +6305,19 @@ impl Deleting {
         }
     }
 
-    fn asking(&self) -> &'static str {
-        match self.tracks.len() {
-            1 => "Delete this song?",
-            _ => "Delete these songs?",
-        }
+    fn asking(&self) -> String {
+        words::root::delete_songs(self.tracks.len())
     }
 
     fn saying(&self) -> String {
         if self.tracks.len() > 1 {
-            return format!(
-                "{} are moved to the trash and taken out of the library.",
-                format::counted(self.tracks.len(), "song", "songs")
-            );
+            return words::root::songs_moved_to_the_trash(self.tracks.len());
         }
         match &self.artist {
-            Some(artist) => format!(
-                "“{}” by {artist} is moved to the trash and taken out of the library.",
-                self.title
-            ),
-            None => format!(
-                "“{}” is moved to the trash and taken out of the library.",
-                self.title
-            ),
+            Some(artist) => {
+                words::root::song_by_moved_to_the_trash(artist.as_str(), self.title.as_str())
+            }
+            None => words::root::song_moved_to_the_trash(self.title.as_str()),
         }
     }
 }
@@ -6433,12 +6360,10 @@ pub(crate) fn listed(tracks: &[Track]) -> Arc<[PlaylistEntry]> {
 }
 
 fn queued(rows: usize, at: Placement, play: bool) -> String {
-    let tracks = format::counted(rows, "track", "tracks");
-
     match (play, at) {
-        (true, _) => format!("{tracks} queued and playing"),
-        (false, Placement::Next) => format!("{tracks} to play next"),
-        (false, Placement::Queued | Placement::At(_)) => format!("{tracks} added to the queue"),
+        (true, _) => words::root::queued_and_playing(rows),
+        (false, Placement::Next) => words::root::to_play_next(rows),
+        (false, Placement::Queued | Placement::At(_)) => words::root::added_to_the_queue(rows),
     }
 }
 

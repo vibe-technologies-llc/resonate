@@ -16,6 +16,7 @@ use crate::{
     models::{AtSide, Drawn, Forget as _, Picture, Scale, drawn_within},
     recent::Recent,
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves},
+    words,
 };
 
 const COVERS_HELD: NonZeroUsize = NonZeroUsize::new(256).expect("a cache holds an entry");
@@ -47,21 +48,21 @@ pub(crate) enum Place {
 impl Place {
     pub(crate) fn title(&self) -> String {
         match self {
-            Self::Artists => "Artists".to_owned(),
+            Self::Artists => words::serving::artists().to_owned(),
             Self::Artist { name, .. } | Self::Album { name, .. } | Self::Mix { name, .. } => {
                 name.clone()
             }
-            Self::Found { words } => format!("\u{201C}{words}\u{201D}"),
+            Self::Found { words: typed } => words::serving::found(typed.as_str()),
         }
     }
 
-    pub(crate) const fn eyebrow(&self) -> &'static str {
+    pub(crate) fn eyebrow(&self) -> &'static str {
         match self {
-            Self::Artists => "Services",
-            Self::Artist { .. } => "Artist on the server",
-            Self::Album { .. } => "Album on the server",
-            Self::Mix { .. } => "Mix on the server",
-            Self::Found { .. } => "Search on the server",
+            Self::Artists => words::serving::services(),
+            Self::Artist { .. } => words::serving::artist_on_the_server(),
+            Self::Album { .. } => words::serving::album_on_the_server(),
+            Self::Mix { .. } => words::serving::mix_on_the_server(),
+            Self::Found { .. } => words::serving::search_on_the_server(),
         }
     }
 
@@ -147,19 +148,19 @@ pub(crate) fn rows_of_found(found: ServedFound) -> Vec<Row> {
     } = found;
     let mut rows = Vec::new();
     if !artists.is_empty() {
-        rows.push(Row::Heading("Artists"));
+        rows.push(Row::Heading(words::serving::artists()));
         rows.extend(artists.into_iter().map(Row::Artist));
     }
     if !albums.is_empty() {
-        rows.push(Row::Heading("Albums"));
+        rows.push(Row::Heading(words::serving::albums()));
         rows.extend(albums.into_iter().map(Row::Album));
     }
     if !mixes.is_empty() {
-        rows.push(Row::Heading("Mixes"));
+        rows.push(Row::Heading(words::serving::mixes()));
         rows.extend(mixes.into_iter().map(Row::Mix));
     }
     if !songs.is_empty() {
-        rows.push(Row::Heading("Songs"));
+        rows.push(Row::Heading(words::serving::songs()));
         rows.extend(songs.into_iter().map(Row::Song));
     }
     rows
@@ -181,21 +182,27 @@ impl Failure {
         }
     }
 
-    pub(crate) const fn says(self) -> &'static str {
+    pub(crate) fn says(self) -> &'static str {
         match self {
-            Self::Unwelcome => "The server turned the account away",
-            Self::Unreached => "The server could not be reached",
-            Self::Unreadable => "The server did not answer in a way that could be read",
+            Self::Unwelcome => words::serving::unwelcome(),
+            Self::Unreached => words::serving::unreached(),
+            Self::Unreadable => words::serving::unreadable(),
         }
     }
 
-    pub(crate) const fn advises(self) -> &'static str {
+    pub(crate) fn said_after(self) -> &'static str {
         match self {
-            Self::Unwelcome => "Check the account in Settings, under Online.",
-            Self::Unreached => {
-                "Check the address in Settings, under Online, and that the server is running."
-            }
-            Self::Unreadable => "The address may not be the service's.",
+            Self::Unwelcome => words::serving::unwelcome_after(),
+            Self::Unreached => words::serving::unreached_after(),
+            Self::Unreadable => words::serving::unreadable_after(),
+        }
+    }
+
+    pub(crate) fn advises(self) -> &'static str {
+        match self {
+            Self::Unwelcome => words::serving::unwelcome_advice(),
+            Self::Unreached => words::serving::unreached_advice(),
+            Self::Unreadable => words::serving::unreadable_advice(),
         }
     }
 }
