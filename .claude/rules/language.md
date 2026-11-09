@@ -93,6 +93,11 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   files, and a literal opening on an SQL keyword is a statement, not words. An `#[error(...)]`
   message is an attribute the walk passes over, so every `Error` sentence there is read by eye:
   each is `words::errors::…` or a `failure.rs` function, never a literal.
+- **The binary's is `every_word_the_terminal_says_is_said_through_its_catalog`** (`catalog.rs`):
+  `PROPER` names proper names, diagnostics and a stored spelling, `NOT_WORDS` is `cli.rs` (the clap
+  grammar), `error.rs` and `awake.rs` (a power request only `powercfg` shows). Its table headings
+  share one `columns` area. Its `mod words` allows dead code unless every feature (`ui`, `online`,
+  `sync`, `mcp`, `discord`) is on, so the full-feature clippy is the one that refuses a dead word.
 - **Every other crate a listener hears from has one, each a `said_through_the_catalog` module.** A
   crate whose sources hold little else walks them all through `prose_in` with its `PROPER`
   (`resonate-core`'s `every_word_core_hands_a_listener_is_said_through_its_catalog`: theme and
