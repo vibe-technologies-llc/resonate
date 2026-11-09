@@ -4,14 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Downloads
-- [S · 0.7.1] A MusicBrainz export whose download is whole but unverified can never resume: a
-  cancel during the checksum (`summed` → `looked_at`), a kill before the rename, or one between
-  `rename(partial, whole)` and the `.verified` write leaves a complete `.part` (the next run renames
-  a `whole` with no marker back to `partial`), and `downloaded` then asks `Range: bytes=<length>-`
-  at the end of the file, which a server answers 416 and `Ranged` turns into `Refused(416)`, so every
-  later build and background `keep_fresh` fails until `resonate musicbrainz --remove` (the Subsonic,
-  Monochrome and hifi readers treat 412 and 416 as start over; here a partial at or past the listed
-  size should go straight to verification, else start again)
 - [S · 0.7.1] A hifi-api server that answers 206 to a request with no `Range` makes
   `relayed_download` call itself without end: with nothing held a 206 matches neither the `200`
   arm nor `continuing_held`, `ranged` is `None` and the fall-through is `relayed_download(…, None)`,

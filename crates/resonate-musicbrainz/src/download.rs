@@ -25,6 +25,7 @@ const BROKEN_OFF_AFTER: Duration = Duration::from_secs(60);
 const RESUMED_AFTER: Duration = Duration::from_secs(2);
 const LONGEST_LISTING: u64 = 64 * 1024;
 const COPIED_AT_ONCE: usize = 1024 * 1024;
+const RANGE_PAST_THE_END: u16 = 416;
 const GATE_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
 
 pub fn agent() -> Agent {
@@ -131,7 +132,8 @@ pub fn fetched(
         let sum = checksum_listed(&listing, file).ok_or_else(|| Error::Unlisted {
             file: file.to_owned(),
         })?;
-        held.push(downloaded(agent, dump, &into, file, &sum, gate, building)?);
+        let url = format!("{DUMP_SERVER}/{dump}/{file}");
+        held.push(downloaded(agent, &url, &into, file, &sum, gate, building)?);
     }
     let derived = held.pop().unwrap_or_default();
     let core = held.pop().unwrap_or_default();
@@ -155,7 +157,7 @@ fn named(path: &Path, extension: &str) -> PathBuf {
 
 fn downloaded(
     agent: &Agent,
-    dump: &str,
+    url: &str,
     into: &Path,
     file: &str,
     sum: &str,
@@ -171,25 +173,19 @@ fn downloaded(
     if whole.is_file() {
         fs::rename(&whole, &partial).map_err(Error::archive(&whole, ArchiveOp::Rename))?;
     }
-    let url = format!("{DUMP_SERVER}/{dump}/{file}");
+    let mut started_over = false;
     loop {
-        building.enter(Phase::Downloading);
-        while gate.is_shut() {
-            building.enter(Phase::Waiting);
-            building.looked_at()?;
-            gate.wait_while_shut(GATE_LOOKED_AT_EVERY);
+        let reached = fetched_whole(agent, url, &partial, gate, building)?;
+        building.enter(Phase::Verifying);
+        let found = summed(&partial, building)?;
+        if found == sum {
+            break;
         }
-        building.enter(Phase::Downloading);
-        let from = fs::metadata(&partial).map_or(0, |meta| meta.len());
-        match copied(agent, &url, &partial, from, gate, building)? {
-            Copied::Whole => break,
-            Copied::Shut => continue,
-        }
-    }
-    building.enter(Phase::Verifying);
-    let found = summed(&partial, building)?;
-    if found != sum {
         let _ = fs::remove_file(&partial);
+        if reached == Copied::PastTheEnd && !started_over {
+            started_over = true;
+            continue;
+        }
         return Err(Error::Checksum {
             file: file.to_owned(),
         });
@@ -199,8 +195,33 @@ fn downloaded(
     Ok(whole)
 }
 
+fn fetched_whole(
+    agent: &Agent,
+    url: &str,
+    partial: &Path,
+    gate: &Gate,
+    building: &Building,
+) -> Result<Copied> {
+    loop {
+        building.enter(Phase::Downloading);
+        while gate.is_shut() {
+            building.enter(Phase::Waiting);
+            building.looked_at()?;
+            gate.wait_while_shut(GATE_LOOKED_AT_EVERY);
+        }
+        building.enter(Phase::Downloading);
+        let from = fs::metadata(partial).map_or(0, |meta| meta.len());
+        match copied(agent, url, partial, from, gate, building)? {
+            Copied::Shut => continue,
+            reached => return Ok(reached),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Copied {
     Whole,
+    PastTheEnd,
     Shut,
 }
 
@@ -214,6 +235,7 @@ fn copied(
 ) -> Result<Copied> {
     let mut source = match Ranged::opened_from(agent.clone(), url.to_owned(), from, RESUMED_AFTER) {
         Ok(source) => source,
+        Err(Unfetched::Refused(RANGE_PAST_THE_END)) if from > 0 => return Ok(Copied::PastTheEnd),
         Err(Unfetched::Refused(status)) => {
             return Err(Error::Refused {
                 url: url.to_owned(),
@@ -293,5 +315,102 @@ mod tests {
         assert!(is_a_dump_name("20261104-002222"));
         assert!(!is_a_dump_name("../etc"));
         assert!(!is_a_dump_name(""));
+    }
+
+    const ARCHIVE: &[u8] = b"the whole of an export archive";
+
+    fn served_once_more(listener: &std::net::TcpListener) {
+        let (mut stream, _) = listener.accept().expect("a fetch");
+        let mut asked = Vec::new();
+        let mut byte = [0_u8; 1];
+        while !asked.ends_with(b"\r\n\r\n") {
+            if stream.read(&mut byte).expect("the request") == 0 {
+                break;
+            }
+            asked.push(byte[0]);
+        }
+        let asked = String::from_utf8_lossy(&asked).to_ascii_lowercase();
+        let from = asked
+            .lines()
+            .find_map(|line| line.strip_prefix("range: bytes="))
+            .and_then(|range| range.trim().trim_end_matches('-').parse::<usize>().ok())
+            .unwrap_or(0);
+        let total = ARCHIVE.len();
+        let answer = if from >= total && from > 0 {
+            format!(
+                "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{total}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            .into_bytes()
+        } else {
+            let mut answer =
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n")
+                    .into_bytes();
+            answer.extend_from_slice(ARCHIVE);
+            answer
+        };
+        stream.write_all(&answer).expect("the answer");
+    }
+
+    fn sum_of(bytes: &[u8]) -> String {
+        Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    fn a_folder(named: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!("resonate-{named}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("a folder");
+        folder
+    }
+
+    #[test]
+    fn a_whole_part_the_server_answers_past_the_end_is_verified_or_fetched_again() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let url = format!(
+            "http://{}/{CORE_ARCHIVE}",
+            listener.local_addr().expect("bound")
+        );
+        let serving = std::thread::spawn(move || {
+            for _ in 0..3 {
+                served_once_more(&listener);
+            }
+        });
+        let into = a_folder("whole-part");
+        let partial = named(&into.join(CORE_ARCHIVE), PARTIAL);
+        let sum = sum_of(ARCHIVE);
+
+        fs::write(&partial, ARCHIVE).expect("a whole part");
+        let verified = downloaded(
+            &agent(),
+            &url,
+            &into,
+            CORE_ARCHIVE,
+            &sum,
+            &Gate::open(),
+            &Building::default(),
+        )
+        .expect("the part is verified");
+        let held = fs::read(&verified).expect("the archive");
+
+        fs::remove_file(&verified).expect("removed");
+        fs::write(&partial, vec![b'x'; ARCHIVE.len()]).expect("a damaged part");
+        let fetched_again = downloaded(
+            &agent(),
+            &url,
+            &into,
+            CORE_ARCHIVE,
+            &sum,
+            &Gate::open(),
+            &Building::default(),
+        )
+        .expect("the archive is fetched again");
+        let held_again = fs::read(&fetched_again).expect("the archive");
+
+        serving.join().expect("served");
+        let _ = fs::remove_dir_all(&into);
+        assert_eq!(held, ARCHIVE);
+        assert_eq!(held_again, ARCHIVE);
     }
 }

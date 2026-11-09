@@ -180,6 +180,10 @@ the export it came from is the source.
    - It waits while the download gate is shut (`stall-downloads-on-metered`).
    - Each archive is checked against its sum before being renamed whole and marked `.verified`.
    - A mismatch removes the part and is `Error::Checksum`.
+   - A part already whole (a cancel during the checksum, a kill before the rename) is answered
+     `416` when ranged past its end: that goes straight to the checksum, and a part that fails it
+     is fetched again once from the start, never refused for good
+     (`a_whole_part_the_server_answers_past_the_end_is_verified_or_fetched_again`).
 3. Older dumps' folders are removed.
 
 What was downloaded goes once the build lands (`forget_downloads`). A build `--from` a folder
