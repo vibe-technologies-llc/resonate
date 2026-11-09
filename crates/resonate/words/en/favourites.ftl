@@ -1,0 +1,9 @@
+favourited = favourited { $shown }
+already = { $shown } is a favourite already
+took-off = took { $shown } off the favourites
+no-favourite = { $shown } is no favourite
+by = { $title } by { $artist }
+tracks = TRACKS
+albums = ALBUMS
+artists = ARTISTS
+none-yet = nothing here is a favourite yet

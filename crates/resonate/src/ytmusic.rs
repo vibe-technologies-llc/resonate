@@ -13,7 +13,7 @@ use resonate_library::{
 use resonate_providers::{Id, PlaysInPlace as _, Providers, Song, WhyAway};
 use resonate_ytmusic::{Connection, VideoId, YtMusic, playlist_id};
 
-use crate::{Error, Result, cli::YtmusicArgs, config::Config, counted, providers, signals};
+use crate::{Error, Result, cli::YtmusicArgs, config::Config, providers, signals, words};
 
 const AFTER_THE_SCHEME: &str = "://";
 const SHORT_LINKS_ARE_ON: &str = "youtu.be";
@@ -113,8 +113,8 @@ fn queue_the_song(music: &YtMusic, video: &VideoId, library: &Library) -> Result
     })?;
     let title = song.title.clone();
     match library.keep_song(to_keep(music.scheme(), song))? {
-        KeptSong::Queued => said!("{title} is queued"),
-        KeptSong::AlreadyHeld(_) => said!("{title} is already held, so nothing was queued"),
+        KeptSong::Queued => said!("{}", words::ytmusic::queued(&title)),
+        KeptSong::AlreadyHeld(_) => said!("{}", words::ytmusic::already_held(&title)),
     }
     Ok(())
 }
@@ -137,17 +137,10 @@ fn queue_the_playlist(music: &YtMusic, list: &Id, ordered: bool, library: &Libra
 }
 
 fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
-    let held = format!(
-        "{name}: {} queued, {} already held",
-        counted(kept.queued as u64, "song", "songs"),
-        counted(kept.held as u64, "song", "songs"),
-    );
+    let held = words::ytmusic::list_kept(kept.held, name, kept.queued);
     match left_out {
         0 => held,
-        left_out => format!(
-            "{held}, {} left out with no title",
-            counted(left_out as u64, "song", "songs")
-        ),
+        left_out => words::ytmusic::left_out(held, left_out),
     }
 }
 
@@ -177,10 +170,8 @@ fn walked_until_told(library: &Library, music: Arc<YtMusic>) -> Result<()> {
     let _interrupting = signals::cancel_when_told(move || told.store(true, Ordering::Relaxed));
     let summary = walked(library, music, &stopping)?;
     said!(
-        "landed {} | gone {} | unkept {}",
-        summary.landed,
-        summary.gone,
-        summary.unkept
+        "{}",
+        words::ytmusic::walked(summary.gone, summary.landed, summary.unkept)
     );
     if stopping.load(Ordering::Relaxed) {
         return Err(Error::KeepCancelled);
@@ -220,16 +211,14 @@ fn keep(
     walked_until_told(&library, music)
 }
 
-const fn connection_said(connection: Connection) -> &'static str {
+fn connection_said(connection: Connection) -> &'static str {
     match connection {
-        Connection::Premium => "Premium formats available",
-        Connection::SignedInWithoutPremium => "signed in, but this account has no Premium formats",
-        Connection::NotSignedIn => "not signed in",
-        Connection::ToolMissing => "yt-dlp could not be run; it is a separate install",
-        Connection::CheckSongGone => {
-            "the song this check asks about has left YouTube, so nothing could be told"
-        }
-        Connection::CouldNotCheck => "YouTube could not be asked just now; try again in a while",
+        Connection::Premium => words::ytmusic::premium(),
+        Connection::SignedInWithoutPremium => words::ytmusic::without_premium(),
+        Connection::NotSignedIn => words::ytmusic::not_signed_in(),
+        Connection::ToolMissing => words::ytmusic::tool_missing(),
+        Connection::CheckSongGone => words::ytmusic::check_song_gone(),
+        Connection::CouldNotCheck => words::ytmusic::could_not_check(),
     }
 }
 

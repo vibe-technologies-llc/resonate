@@ -2,19 +2,16 @@ use std::path::Path;
 
 use resonate_library::{Library, ProfileLink, Upkeep};
 
-use crate::{Error, Result, config, config::Config, counted, error::ConfigKey, followed, online};
+use crate::{Error, Result, config, config::Config, error::ConfigKey, followed, online, words};
 
 pub fn sign_in(config: &Config, settings: &Path) -> Result<()> {
     let token = online::signed_in_to_spotify(config)?;
     config::store(settings, ConfigKey::SpotifyRefreshToken, token)?;
     said!(
-        "signed in to Spotify; the refresh token is kept in {}",
-        settings.display()
+        "{}",
+        words::spotify::signed_in(settings.display().to_string())
     );
-    said!(
-        "`resonate spotify --follow` keeps the account's playlists in step, \
-         `resonate spotify --move` copies them once"
-    );
+    said!("{}", words::spotify::follow_or_move());
     Ok(())
 }
 
@@ -28,11 +25,7 @@ pub fn follow(library: &Library, config: &Config, upkeep: Upkeep) -> Result<()> 
 pub fn sign_out(library: &Library, settings: &Path) -> Result<()> {
     config::clear(settings, ConfigKey::SpotifyRefreshToken)?;
     let let_go = library.let_go_of_the_profile(&ProfileLink::SpotifyAccount)?;
-    said!(
-        "signed out of Spotify; nothing more is asked of the account, and {} kept the rows and no \
-         longer followed it",
-        counted(let_go as u64, "playlist", "playlists")
-    );
+    said!("{}", words::spotify::signed_out(let_go));
     Ok(())
 }
 

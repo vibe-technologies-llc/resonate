@@ -10,6 +10,7 @@ use crate::{
     folded_name,
     info::clock,
     table::Table,
+    words::{self, columns},
 };
 
 const NO_ARTIST: &str = "-";
@@ -52,10 +53,10 @@ fn mark(library: &Library, wanted: &FavouritesArgs) -> Result<()> {
 
 fn told_of(favourite: bool, changed: bool, shown: &str) -> String {
     match (favourite, changed) {
-        (true, true) => format!("favourited {shown}"),
-        (true, false) => format!("{shown} is a favourite already"),
-        (false, true) => format!("took {shown} off the favourites"),
-        (false, false) => format!("{shown} is no favourite"),
+        (true, true) => words::favourites::favourited(shown),
+        (true, false) => words::favourites::already(shown),
+        (false, true) => words::favourites::took_off(shown),
+        (false, false) => words::favourites::no_favourite(shown),
     }
 }
 
@@ -140,7 +141,7 @@ fn albums_named(library: &Library, name: &str, by: Option<&str>) -> Result<Vec<C
 
 fn shown_with(title: &str, artist: Option<&str>) -> String {
     match artist {
-        Some(artist) => format!("{title} by {artist}"),
+        Some(artist) => words::favourites::by(artist, title),
         None => title.to_owned(),
     }
 }
@@ -152,21 +153,21 @@ fn print(library: &Library, wanted: &FavouritesArgs) -> Result<()> {
     if wanted.tracks || everything {
         draw(
             &mut drawn,
-            "TRACKS",
+            words::favourites::tracks(),
             tracks(&library.favourite_tracks(&asked())?),
         );
     }
     if wanted.albums || everything {
         draw(
             &mut drawn,
-            "ALBUMS",
+            words::favourites::albums(),
             albums(&library.favourite_albums(&asked_of_albums())?),
         );
     }
     if wanted.artists || everything {
         draw(
             &mut drawn,
-            "ARTISTS",
+            words::favourites::artists(),
             artists(&library.favourite_artists(&asked_of_artists())?),
         );
     }
@@ -182,7 +183,7 @@ fn draw(drawn: &mut bool, heading: &'static str, table: Option<Table>) {
 
     match table {
         Some(table) => said_on!("{}", table.render()),
-        None => said!("nothing here is a favourite yet"),
+        None => said!("{}", words::favourites::none_yet()),
     }
 }
 
@@ -220,7 +221,13 @@ fn tracks(held: &[Track]) -> Option<Table> {
     if held.is_empty() {
         return None;
     }
-    let mut table = Table::new(vec!["TITLE", "ARTIST", "LENGTH", "PLAYS", "FAVOURITED"]);
+    let mut table = Table::new(vec![
+        columns::title(),
+        columns::artist(),
+        columns::length(),
+        columns::plays(),
+        columns::favourited(),
+    ]);
     for track in held {
         table.push(vec![
             track.title.clone(),
@@ -239,7 +246,13 @@ fn albums(held: &[Album]) -> Option<Table> {
     if held.is_empty() {
         return None;
     }
-    let mut table = Table::new(vec!["ALBUM", "ARTIST", "YEAR", "TRACKS", "FAVOURITED"]);
+    let mut table = Table::new(vec![
+        columns::album(),
+        columns::artist(),
+        columns::year(),
+        columns::tracks(),
+        columns::favourited(),
+    ]);
     for album in held {
         table.push(vec![
             album.title.clone(),
@@ -256,7 +269,12 @@ fn artists(held: &[Artist]) -> Option<Table> {
     if held.is_empty() {
         return None;
     }
-    let mut table = Table::new(vec!["ARTIST", "ALBUMS", "TRACKS", "FAVOURITED"]);
+    let mut table = Table::new(vec![
+        columns::artist(),
+        columns::albums(),
+        columns::tracks(),
+        columns::favourited(),
+    ]);
     for artist in held {
         table.push(vec![
             artist.name.clone(),

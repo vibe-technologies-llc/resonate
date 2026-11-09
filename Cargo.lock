@@ -6184,6 +6184,7 @@ dependencies = [
  "resonate-vault",
  "resonate-win32",
  "resonate-words",
+ "resonate-words-build",
  "resonate-ytmusic",
  "rustix",
  "signal-hook 0.4.6",

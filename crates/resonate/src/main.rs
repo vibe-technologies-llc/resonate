@@ -7,6 +7,7 @@ mod abx;
 mod analyse;
 #[cfg(windows)]
 mod awake;
+mod catalog;
 mod cli;
 mod config;
 mod discord;
@@ -78,6 +79,20 @@ mod ytmusic;
 #[cfg(feature = "ui")]
 mod zoning;
 
+#[cfg_attr(
+    not(all(
+        feature = "ui",
+        feature = "online",
+        feature = "sync",
+        feature = "mcp",
+        feature = "discord"
+    )),
+    allow(dead_code)
+)]
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
@@ -143,6 +158,7 @@ use crate::{
     rendering::{Asked, Rendering},
     served::Served,
     table::Table,
+    words::columns,
 };
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
@@ -154,12 +170,6 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 const LOG_FILTER: &str = "RESONATE_LOG";
 
 const DEFAULT_LOG: &str = "warn,resonate=info,symphonia=off";
-
-const WITHIN_THE_MINUTE: &str = "just now";
-
-const COVER_ART: &str = "cover art";
-const TAKEN_AWAY: &str = "(taken away)";
-const RATING: &str = "rating";
 
 fn main() -> ExitCode {
     gaming::watch();
@@ -757,22 +767,23 @@ fn list_sinks(
 
     let mut table = Table::new(vec![
         "",
-        "DEVICE",
-        "NODE NAME",
-        "DRIVEN BY",
-        "PROFILE",
-        "PORT",
-        "FORMAT",
-        "ADVERTISES",
-        "GRAPH",
-        "NOW",
+        columns::device(),
+        columns::node_name(),
+        columns::driven_by(),
+        columns::profile(),
+        columns::port(),
+        columns::format(),
+        columns::advertises(),
+        columns::graph(),
+        columns::now(),
     ]);
 
     for sink in &sinks {
         let marker = if sink.is_default { "*" } else { "" };
-        let current = sink
-            .current_rate
-            .map_or_else(|| "unknown".to_owned(), |rate: SampleRate| rate.to_string());
+        let current = sink.current_rate.map_or_else(
+            || words::main::unknown().to_owned(),
+            |rate: SampleRate| rate.to_string(),
+        );
 
         let mut formats = sink.formats.iter();
         let first = formats.next();
@@ -781,12 +792,16 @@ fn list_sinks(
             sink.description.clone(),
             sink.name.to_string(),
             driven_by(sink).to_owned(),
-            sink.profile
-                .as_ref()
-                .map_or_else(|| "none".to_owned(), |profile| profile.description.clone()),
+            sink.profile.as_ref().map_or_else(
+                || words::main::none().to_owned(),
+                |profile| profile.description.clone(),
+            ),
             comes_out_of(sink),
-            first.map_or_else(|| "none".to_owned(), SinkFormats::spelled),
-            first.map_or_else(|| "none".to_owned(), |entry| rates(&entry.rates)),
+            first.map_or_else(|| words::main::none().to_owned(), SinkFormats::spelled),
+            first.map_or_else(
+                || words::main::none().to_owned(),
+                |entry| rates(&entry.rates),
+            ),
             rates(&sink.allowed_rates),
             current,
         ]);
@@ -811,35 +826,35 @@ fn list_sinks(
 
 fn driven_by(sink: &SinkInfo) -> &'static str {
     if rendering::names_a_renderer(&sink.name) {
-        "the network"
+        words::main::the_network()
     } else if sink.is_hardware {
-        "a device"
+        words::main::a_device()
     } else {
-        "the graph"
+        words::main::the_graph()
     }
 }
 
 fn comes_out_of(sink: &SinkInfo) -> String {
     let Some(port) = sink.port.as_ref() else {
-        return "none".to_owned();
+        return words::main::none().to_owned();
     };
     let plugged = match port.plugged {
         Plugged::Unsaid => port.description.clone(),
-        Plugged::No => format!("{} (nothing plugged in)", port.description),
-        Plugged::Yes => format!("{} (plugged in)", port.description),
+        Plugged::No => words::main::nothing_plugged_in(&port.description),
+        Plugged::Yes => words::main::plugged_in(&port.description),
     };
     let volume = match port.hardware_volume {
         HardwareVolume::Unsaid => plugged,
-        HardwareVolume::No => format!("{plugged}, volume in software"),
-        HardwareVolume::Yes => format!("{plugged}, volume on the hardware"),
-        HardwareVolume::Always => format!("{plugged}, volume always on the device"),
+        HardwareVolume::No => words::main::volume_in_software(plugged),
+        HardwareVolume::Yes => words::main::volume_on_the_hardware(plugged),
+        HardwareVolume::Always => words::main::volume_always_on_the_device(plugged),
     };
     let level = match port.volume {
-        Some(gain) => format!("{volume} at {}", Volume::heard_at(gain)),
+        Some(gain) => words::main::heard_at(Volume::heard_at(gain).to_string(), volume),
         None => volume,
     };
     if port.muted {
-        format!("{level}, muted")
+        words::main::muted(level)
     } else {
         level
     }
@@ -857,17 +872,19 @@ fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
     let summary = until_told(handle)?;
     let stats = summary.stats;
     said!(
-        "discovered {} | added {} | updated {} | moved {} | removed {} | failed {}{}",
-        stats.discovered,
-        stats.added,
-        stats.updated,
-        stats.moved,
-        stats.removed,
-        stats.failed.total(),
+        "{}{}",
+        words::main::scanned(
+            stats.added,
+            stats.discovered,
+            stats.failed.total(),
+            stats.moved,
+            stats.removed,
+            stats.updated,
+        ),
         broken_down(stats.failed)
     );
     if summary.cancelled {
-        said!("cancelled");
+        said!("{}", words::main::cancelled());
     }
     finished(PassKind::Scan, summary.cancelled)?;
     let scanned = none_failed(PassKind::Scan, stats.failed.total());
@@ -938,7 +955,7 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
         refresh = left.refresh,
         "carrying on a lookup the last run left unfinished"
     );
-    said!("carrying on the lookup a run left unfinished");
+    said!("{}", words::main::carrying_on());
 
     Ok(EnrichOptions {
         refresh: left.refresh,
@@ -949,20 +966,19 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
 fn enriched(summary: &EnrichSummary) -> String {
     let mut told = counted_by_section(&summary.stats);
     if let Some(op) = summary.stopped_by {
-        told.push_str(&format!(
-            "stopped: the reference could not be reached while asking for {}\n",
-            asked_for(op)
-        ));
+        told.push_str(&words::main::stopped_unreached(asked_for(op)));
+        told.push('\n');
     }
     if summary.cancelled {
-        told.push_str("cancelled\n");
+        told.push_str(words::main::cancelled());
+        told.push('\n');
     }
     told
 }
 
 fn counted_by_section(stats: &EnrichStats) -> String {
     if stats.is_blank() {
-        return "nothing was asked\n".to_owned();
+        return format!("{}\n", words::main::nothing_asked());
     }
     let widest = Outcome::ALL
         .into_iter()
@@ -981,46 +997,53 @@ fn counted_by_section(stats: &EnrichStats) -> String {
     told
 }
 
-const fn asked_for(op: LookupOp) -> &'static str {
+fn asked_for(op: LookupOp) -> &'static str {
     match op {
-        LookupOp::Release => "a release",
-        LookupOp::FindRelease => "a release search",
-        LookupOp::Recording => "a recording",
-        LookupOp::Isrc => "a recording by its ISRC",
-        LookupOp::FindRecording => "a recording search",
-        LookupOp::ReleaseGroup => "a release group",
-        LookupOp::FindReleaseGroup => "a release group search",
-        LookupOp::Artist => "an artist",
-        LookupOp::FindArtist => "an artist search",
-        LookupOp::ReleaseGroupsOfArtist => "the releases of an artist",
-        LookupOp::ReleasesOfGroup => "the pressings of a release",
-        LookupOp::ReleasesOfArtist => "the pressings of an artist",
-        LookupOp::Cover => "a cover",
-        LookupOp::Portrait => "a portrait",
-        LookupOp::Lyrics => "lyrics",
-        LookupOp::Devices => "the measured devices",
-        LookupOp::Correction => "a measured correction",
-        LookupOp::Recognise => "a recognition",
-        LookupOp::Submit => "a submission of what was heard",
-        LookupOp::Love => "a favourite told to a listening service",
-        LookupOp::Token => "a check of a listening service's token",
-        LookupOp::StreamLink => "a look for where a track streams",
-        LookupOp::FollowLink => "what a link names",
-        LookupOp::ShareFile => "a public file upload",
-        LookupOp::LatestRelease => "the latest release of Resonate",
-        LookupOp::SpotifyAccount => "a sign-in to the Spotify account",
+        LookupOp::Release => words::main::asked_release(),
+        LookupOp::FindRelease => words::main::asked_find_release(),
+        LookupOp::Recording => words::main::asked_recording(),
+        LookupOp::Isrc => words::main::asked_isrc(),
+        LookupOp::FindRecording => words::main::asked_find_recording(),
+        LookupOp::ReleaseGroup => words::main::asked_release_group(),
+        LookupOp::FindReleaseGroup => words::main::asked_find_release_group(),
+        LookupOp::Artist => words::main::asked_artist(),
+        LookupOp::FindArtist => words::main::asked_find_artist(),
+        LookupOp::ReleaseGroupsOfArtist => words::main::asked_release_groups_of_artist(),
+        LookupOp::ReleasesOfGroup => words::main::asked_releases_of_group(),
+        LookupOp::ReleasesOfArtist => words::main::asked_releases_of_artist(),
+        LookupOp::Cover => words::main::asked_cover(),
+        LookupOp::Portrait => words::main::asked_portrait(),
+        LookupOp::Lyrics => words::main::asked_lyrics(),
+        LookupOp::Devices => words::main::asked_devices(),
+        LookupOp::Correction => words::main::asked_correction(),
+        LookupOp::Recognise => words::main::asked_recognise(),
+        LookupOp::Submit => words::main::asked_submit(),
+        LookupOp::Love => words::main::asked_love(),
+        LookupOp::Token => words::main::asked_token(),
+        LookupOp::StreamLink => words::main::asked_stream_link(),
+        LookupOp::FollowLink => words::main::asked_follow_link(),
+        LookupOp::ShareFile => words::main::asked_share_file(),
+        LookupOp::LatestRelease => words::main::asked_latest_release(),
+        LookupOp::SpotifyAccount => words::main::asked_spotify_account(),
     }
 }
 
 fn wants(library: &Library) -> Result<()> {
     let wanted = library.wants()?;
     if wanted.is_empty() {
-        said!("nothing is wanted");
+        said!("{}", words::main::nothing_wanted());
         return Ok(());
     }
 
     let mut table = Table::new(vec![
-        "TITLE", "ARTIST", "ALBUM", "STATE", "WANTED", "TRIED", "OFFERED", "LINKS",
+        columns::title(),
+        columns::artist(),
+        columns::album(),
+        columns::state(),
+        columns::wanted(),
+        columns::tried(),
+        columns::offered(),
+        columns::links(),
     ]);
     let now = SystemTime::now();
     for want in &wanted {
@@ -1042,34 +1065,34 @@ fn wants(library: &Library) -> Result<()> {
 
 fn standing_of(want: &Want, now: SystemTime) -> String {
     if want.held.is_some() {
-        return "held".to_owned();
+        return words::main::held().to_owned();
     }
     if want.gave_up() {
-        return format!("gave up after {TRIES_BEFORE_GIVING_UP} tries");
+        return words::main::gave_up(TRIES_BEFORE_GIVING_UP);
     }
     let due = want
         .due_at()
         .and_then(|at| at.duration_since(now).ok())
         .filter(|left| !left.is_zero());
     let waiting = |said: String| match due {
-        Some(left) => format!("{said}, again in {}", lasting_for(left)),
-        None => format!("{said}, due"),
+        Some(left) => words::main::again_in(lasting_for(left), said),
+        None => words::main::due_again(said),
     };
 
     match (want.offered.is_some(), want.misses) {
-        (true, _) => waiting("offered".to_owned()),
-        (false, 0) if want.tried.is_none() => "due".to_owned(),
-        (false, 0) => waiting("unanswered".to_owned()),
-        (false, misses) => waiting(format!("no match {misses} of {TRIES_BEFORE_GIVING_UP}")),
+        (true, _) => waiting(words::main::offered().to_owned()),
+        (false, 0) if want.tried.is_none() => words::main::due().to_owned(),
+        (false, 0) => waiting(words::main::unanswered().to_owned()),
+        (false, misses) => waiting(words::main::no_match(misses, TRIES_BEFORE_GIVING_UP)),
     }
 }
 
 fn lasting_for(left: Duration) -> String {
     let minutes = left.as_secs().div_ceil(60);
     match (minutes / 60, minutes % 60) {
-        (0, minutes) => format!("{minutes}m"),
-        (hours, 0) => format!("{hours}h"),
-        (hours, minutes) => format!("{hours}h {minutes}m"),
+        (0, minutes) => words::main::lasting_minutes(minutes),
+        (hours, 0) => words::main::lasting_hours(hours),
+        (hours, minutes) => words::main::lasting_hours_and_minutes(hours, minutes),
     }
 }
 
@@ -1098,26 +1121,19 @@ fn read_the_rest_of(
 ) -> Result<()> {
     let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
     let read = library.read_the_rest_of(artist, reference.as_ref())?;
-    said!(
-        "read {} more of {named}'s discography",
-        counted(read as u64, "release", "releases")
-    );
+    said!("{}", words::main::read_the_rest(named, read));
     Ok(())
 }
 
 fn dismissed_beside(dismissed: Missing) -> String {
     match dismissed.tracks + dismissed.releases {
         0 => String::new(),
-        many => format!(" · {many} dismissed, --bring-back lists them again"),
+        many => format!(" · {}", words::main::dismissed_beside(many)),
     }
 }
 
 fn brought_back(brought: Missing) -> String {
-    format!(
-        "brought back {} and {}",
-        counted(brought.tracks, "dismissed track", "dismissed tracks"),
-        counted(brought.releases, "dismissed release", "dismissed releases")
-    )
+    words::main::brought_back(brought.releases, brought.tracks)
 }
 
 fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
@@ -1143,8 +1159,8 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
 
     if tracks.is_empty() && releases.is_empty() {
         match artist {
-            None => said!("nothing is missing"),
-            Some(named) => said!("nothing of {named} is missing"),
+            None => said!("{}", words::main::nothing_missing()),
+            Some(named) => said!("{}", words::main::nothing_of_missing(named)),
         }
         return Ok(());
     }
@@ -1155,25 +1171,23 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
         Some(_) => Missing::default(),
     };
     said!(
-        "{} missing across {} · {} not held{}",
-        counted(tracks_missing, "track", "tracks"),
-        counted(discs_of.len() as u64, "album", "albums"),
-        counted(releases_unheld, "release", "releases"),
+        "{}{}",
+        words::main::missing_across(discs_of.len(), releases_unheld, tracks_missing),
         dismissed_beside(dismissed)
     );
 
     said!();
-    said!("TRACKS MISSING");
+    said!("{}", words::main::tracks_missing());
     if tracks.is_empty() {
-        said!("every release track the catalog knows of is held");
+        said!("{}", words::main::every_track_held());
     } else {
         said_on!("{}", missing_tracks_table(&tracks, &discs_of).render());
     }
 
     said!();
-    said!("RELEASES NOT HELD");
+    said!("{}", words::main::releases_not_held());
     if releases.is_empty() {
-        said!("every release of a held artist is held");
+        said!("{}", words::main::every_release_held());
     } else {
         said_on!("{}", unheld_releases_table(&releases).render());
     }
@@ -1183,12 +1197,8 @@ fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
         && detail.releases_unread > 0
     {
         said!(
-            "MusicBrainz credits {named} on {} more that were not read",
-            counted(
-                u64::from(detail.releases_unread),
-                "release group",
-                "release groups"
-            )
+            "{}",
+            words::main::credits_unread(named, detail.releases_unread)
         );
     }
     Ok(())
@@ -1211,7 +1221,13 @@ fn missing_tracks_table(
     discs_of: &BTreeMap<AlbumId, BTreeSet<u32>>,
 ) -> Table {
     let mut table = Table::new(vec![
-        "ALBUM", "ARTIST", "DISC", "#", "TITLE", "LENGTH", "WANTED",
+        columns::album(),
+        columns::artist(),
+        columns::disc(),
+        "#",
+        columns::title(),
+        columns::length(),
+        columns::wanted(),
     ]);
     for track in tracks {
         let on_several_discs = discs_of
@@ -1237,14 +1253,24 @@ fn missing_tracks_table(
             track
                 .length
                 .map_or_else(|| "-".to_owned(), |length| played(Some(length))),
-            if track.want.is_some() { "yes" } else { "-" }.to_owned(),
+            if track.want.is_some() {
+                words::main::yes()
+            } else {
+                "-"
+            }
+            .to_owned(),
         ]);
     }
     table
 }
 
 fn unheld_releases_table(releases: &[UnheldRelease]) -> Table {
-    let mut table = Table::new(vec!["ARTIST", "RELEASE", "KIND", "FIRST RELEASED"]);
+    let mut table = Table::new(vec![
+        columns::artist(),
+        columns::release(),
+        columns::kind(),
+        columns::first_released(),
+    ]);
     for release in releases {
         table.push(vec![
             release.artist_name.clone(),
@@ -1266,7 +1292,7 @@ fn poll(
     again: bool,
 ) -> Result<()> {
     if !providers.has_a_source() {
-        said!("no provider is registered");
+        said!("{}", words::main::no_provider());
     }
     let options = if again {
         PollOptions::ASKING_EVERY_WANT
@@ -1276,17 +1302,19 @@ fn poll(
     let summary = until_told(library.poll(Arc::new(providers), options)?)?;
     let stats = summary.stats;
     said!(
-        "asked {} | offered {} | kept {} | unkept {} | nothing {} | refused {} | late {}",
-        stats.asked,
-        stats.offered,
-        stats.kept,
-        stats.unkept,
-        stats.nothing,
-        stats.refused,
-        stats.late
+        "{}",
+        words::main::polled(
+            stats.asked,
+            stats.kept,
+            stats.late,
+            stats.nothing,
+            stats.offered,
+            stats.refused,
+            stats.unkept,
+        )
     );
     if summary.cancelled {
-        said!("cancelled");
+        said!("{}", words::main::cancelled());
     }
     finished(PassKind::Poll, summary.cancelled)?;
     keeping.unkept().map_or(Ok(()), Err)
@@ -1310,18 +1338,22 @@ enum Forgotten {
 fn forget(library: &Library, named: &[PathBuf]) -> Result<()> {
     for argument in named {
         match forgotten(library, argument)? {
-            Forgotten::Root => said!("forgot {}", argument.display()),
+            Forgotten::Root => said!("{}", words::main::forgot(argument.display().to_string())),
             Forgotten::Delivered(delivered) => {
-                said!("forgot the delivered {}", delivered.display());
+                said!(
+                    "{}",
+                    words::main::forgot_delivered(delivered.display().to_string())
+                );
             }
-            Forgotten::Gone(1) => said!("forgot 1 track gone from {}", argument.display()),
             Forgotten::Gone(tracks) => {
-                said!("forgot {tracks} tracks gone from {}", argument.display());
+                said!(
+                    "{}",
+                    words::main::forgot_gone(argument.display().to_string(), tracks)
+                );
             }
             Forgotten::Nothing => said!(
-                "{} was neither a library root, a delivered track nor a folder holding a track \
-                 that is gone",
-                argument.display()
+                "{}",
+                words::main::forgot_nothing(argument.display().to_string())
             ),
         }
     }
@@ -1368,37 +1400,27 @@ fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<
 fn dedupe(library: &Library, apply: bool) -> Result<()> {
     let copies = library.numbered_copies()?;
     for copy in &copies.numbered {
-        said!("{} copies {}", copy.copy.display(), copy.kept.display());
-    }
-    for differing in &copies.differing {
-        said!(
-            "{} is numbered like a copy but differs, so it stays",
-            differing.display()
-        );
-    }
-    if !apply {
         said!(
             "{}",
-            copies_counted(copies.numbered.len(), "to fold; --apply folds them")
+            words::main::copies(
+                copy.copy.display().to_string(),
+                copy.kept.display().to_string()
+            )
         );
+    }
+    for differing in &copies.differing {
+        said!("{}", words::main::differs(differing.display().to_string()));
+    }
+    if !apply {
+        said!("{}", words::main::to_fold(copies.numbered.len()));
         return Ok(());
     }
     let deleted = library.fold_copies(&copies.numbered)?;
-    said!(
-        "{}",
-        copies_counted(deleted.files as usize, "folded and sent to the trash")
-    );
+    said!("{}", words::main::folded(deleted.files));
     if deleted.kept > 0 {
-        said!("{} the trash would not take, so they stay", deleted.kept);
+        said!("{}", words::main::trash_refused(deleted.kept));
     }
     Ok(())
-}
-
-fn copies_counted(copies: usize, what: &str) -> String {
-    match copies {
-        1 => format!("1 copy {what}"),
-        copies => format!("{copies} copies {what}"),
-    }
 }
 
 fn pictured(picture: &CoverArt) -> String {
@@ -1410,14 +1432,11 @@ fn pictured(picture: &CoverArt) -> String {
 }
 
 fn rated(popularity: Popularity) -> String {
-    let plays = match popularity.plays {
-        1 => "1 play".to_owned(),
-        plays => format!("{plays} plays"),
-    };
+    let plays = words::main::plays(popularity.plays);
     if popularity.favourite {
-        format!("favourite · {plays}")
+        words::main::favourite_plays(plays)
     } else {
-        format!("not a favourite · {plays}")
+        words::main::not_favourite_plays(plays)
     }
 }
 
@@ -1427,12 +1446,12 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
         && retagging.sheets.is_empty()
         && retagging.passed_over.is_empty()
     {
-        return "nothing to tag\n".to_owned();
+        return format!("{}\n", words::main::nothing_to_tag());
     }
 
     let mut told = String::new();
     if !retagging.writes.is_empty() || !retagging.sheets.is_empty() {
-        let mut table = Table::new(vec!["FILE", "FIELD", "VALUE"]);
+        let mut table = Table::new(vec![columns::file(), columns::field(), columns::value()]);
         for write in &retagging.writes {
             let mut named = under_its_root(&write.path, roots);
             for edit in &write.edits {
@@ -1446,27 +1465,27 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                 table.push(vec![
                     mem::take(&mut named),
                     field.to_string(),
-                    TAKEN_AWAY.to_owned(),
+                    words::main::taken_away().to_owned(),
                 ]);
             }
             if let Some(picture) = &write.picture {
                 table.push(vec![
                     mem::take(&mut named),
-                    COVER_ART.to_owned(),
+                    words::main::cover_art().to_owned(),
                     pictured(picture),
                 ]);
             }
             if write.unpictured {
                 table.push(vec![
                     mem::take(&mut named),
-                    COVER_ART.to_owned(),
-                    TAKEN_AWAY.to_owned(),
+                    words::main::cover_art().to_owned(),
+                    words::main::taken_away().to_owned(),
                 ]);
             }
             if let Some(popularity) = write.popularity {
                 table.push(vec![
                     mem::take(&mut named),
-                    RATING.to_owned(),
+                    words::main::rating().to_owned(),
                     rated(popularity),
                 ]);
             }
@@ -1476,12 +1495,16 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
             for edit in &write.edits {
                 let field = match edit.scope {
                     SheetScope::Disc => edit.field.to_string(),
-                    SheetScope::Track(number) => format!("track {number:02} {}", edit.field),
+                    SheetScope::Track(number) => {
+                        words::main::sheet_track(edit.field.to_string(), format!("{number:02}"))
+                    }
                 };
                 table.push(vec![
                     mem::take(&mut named),
                     field,
-                    edit.value.clone().unwrap_or_else(|| TAKEN_AWAY.to_owned()),
+                    edit.value
+                        .clone()
+                        .unwrap_or_else(|| words::main::taken_away().to_owned()),
                 ]);
             }
         }
@@ -1498,14 +1521,9 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
 
     let stats = &summary.stats;
     let written = if apply {
-        format!(
-            "written {} | fields {} | pictures {} | ratings {}",
-            stats.written, stats.fields, stats.pictures, stats.ratings
-        )
+        words::main::written(stats.fields, stats.pictures, stats.ratings, stats.written)
     } else {
-        format!(
-            "would write {} | fields {} | pictures {} | ratings {}",
-            retagging.writes.len() + retagging.sheets.len(),
+        words::main::would_write(
             retagging
                 .writes
                 .iter()
@@ -1521,19 +1539,25 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                 .writes
                 .iter()
                 .filter(|write| write.popularity.is_some())
-                .count()
+                .count(),
+            retagging.writes.len() + retagging.sheets.len(),
         )
     };
 
-    told.push_str(&format!(
-        "{written} | already said {} | passed over {} | walked {}\n",
-        stats.unchanged, stats.passed_over, stats.walked
+    told.push_str(&words::main::tagged(
+        stats.passed_over,
+        stats.unchanged,
+        stats.walked,
+        written,
     ));
+    told.push('\n');
     if !apply {
-        told.push_str("nothing was written; pass --apply to do it\n");
+        told.push_str(words::main::nothing_written());
+        told.push('\n');
     }
     if summary.cancelled {
-        told.push_str("cancelled\n");
+        told.push_str(words::main::cancelled());
+        told.push('\n');
     }
     told
 }
@@ -1564,7 +1588,7 @@ fn organise(
     })?)?;
 
     if how.walk_back && summary.plan.moves.is_empty() {
-        said!("no applied run is kept to put back");
+        said!("{}", words::main::nothing_to_put_back());
         return Ok(());
     }
     said_on!("{}", organised(&summary, &library.roots()?, how.apply));
@@ -1663,12 +1687,12 @@ fn filed_from(roots: &[PathBuf]) -> Vec<PathBuf> {
 fn organised(summary: &OrganiseSummary, roots: &[PathBuf], apply: bool) -> String {
     let plan = &summary.plan;
     if plan.moves.is_empty() && plan.refused.is_empty() {
-        return "nothing to organise\n".to_owned();
+        return format!("{}\n", words::main::nothing_to_organise());
     }
 
     let mut told = String::new();
     if !plan.moves.is_empty() {
-        let mut table = Table::new(vec!["FROM", "TO"]);
+        let mut table = Table::new(vec![columns::from(), columns::to()]);
         for (from, to) in plan.moves.iter().flat_map(Move::files) {
             table.push(vec![under_its_root(from, roots), under_its_root(to, roots)]);
         }
@@ -1683,25 +1707,32 @@ fn organised(summary: &OrganiseSummary, roots: &[PathBuf], apply: bool) -> Strin
     let stats = &summary.stats;
     let (moved, folders) = if apply {
         (
-            format!("moved {}", stats.moved),
-            format!("folders pruned {}", stats.pruned),
+            words::main::moved(stats.moved),
+            words::main::folders_pruned(stats.pruned),
         )
     } else {
         (
-            format!("would move {}", plan.files_moving()),
-            format!("folders to empty {}", plan.folders.len()),
+            words::main::would_move(plan.files_moving()),
+            words::main::folders_to_empty(plan.folders.len()),
         )
     };
 
-    told.push_str(&format!(
-        "{moved} | in place {} | unidentified {} | collided {} | failed {} | {folders}\n",
-        stats.unchanged, stats.unidentified, stats.collided, stats.failed
+    told.push_str(&words::main::organised(
+        stats.collided,
+        stats.failed,
+        folders,
+        moved,
+        stats.unchanged,
+        stats.unidentified,
     ));
+    told.push('\n');
     if !apply {
-        told.push_str("nothing was moved; pass --apply to do it\n");
+        told.push_str(words::main::nothing_moved());
+        told.push('\n');
     }
     if summary.cancelled {
-        told.push_str("cancelled\n");
+        told.push_str(words::main::cancelled());
+        told.push('\n');
     }
     told
 }
@@ -1714,23 +1745,23 @@ fn left_standing(refused: &Refused, roots: &[PathBuf]) -> String {
         Refusal::Collided { with }
         | Refusal::SharesASheet { sheet: with }
         | Refusal::NamedFromAbove { sheet: with } => {
-            format!("{standing}: {why} {}", under_its_root(with, roots))
+            words::main::refused_with(standing, why, under_its_root(with, roots))
         }
-        Refusal::Unmoved { kind } => format!("{standing}: {why} ({kind})"),
-        _ => format!("{standing}: {why}"),
+        Refusal::Unmoved { kind } => words::main::refused_kind(kind.to_string(), standing, why),
+        _ => words::main::refused(standing, why),
     }
 }
 
-const fn stands_because(refusal: &Refusal) -> &'static str {
+fn stands_because(refusal: &Refusal) -> &'static str {
     match refusal {
-        Refusal::Unidentified => "nothing names an album to file it under",
-        Refusal::Loose => "it would land loose in the root",
-        Refusal::Collided { .. } => "it would collide with",
-        Refusal::SharesASheet { .. } => "it would be split from another file named by",
-        Refusal::NamedFromAbove { .. } => "it is cut by a sheet in a folder above it,",
-        Refusal::OutOfReach => "its path would be longer than Windows takes",
-        Refusal::SourceGone => "it is no longer where the catalog says",
-        Refusal::Unmoved { .. } => "the volume refused the move",
+        Refusal::Unidentified => words::main::unidentified(),
+        Refusal::Loose => words::main::loose(),
+        Refusal::Collided { .. } => words::main::collided(),
+        Refusal::SharesASheet { .. } => words::main::shares_a_sheet(),
+        Refusal::NamedFromAbove { .. } => words::main::named_from_above(),
+        Refusal::OutOfReach => words::main::out_of_reach(),
+        Refusal::SourceGone => words::main::source_gone(),
+        Refusal::Unmoved { .. } => words::main::unmoved(),
     }
 }
 
@@ -1755,77 +1786,102 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     let decoded = Decoded::of(&info, None);
     let plan = plan_output(decoded, &sink, &config, replay_gain);
 
-    said!("source: {}", info.spec);
+    said!("{}", words::main::explain_source(info.spec.to_string()));
     if let Packing::DopMarked(rate) = info.packing {
-        said!("dsd:    {rate} ({} Hz, 1-bit)", rate.hz());
+        said!("{}", words::main::explain_dsd(rate.hz(), rate.to_string()));
     }
-    said!("sink:   {} ({})", sink.description, sink.name);
-    said!("output: {} [{:?}]", plan.stream, plan.mode);
-    if let Some(words) = sink.words_for(plan.stream.format)
-        && words != Words::Whole
+    said!(
+        "{}",
+        words::main::explain_sink(&sink.description, sink.name.as_str())
+    );
+    said!(
+        "{}",
+        words::main::explain_output(format!("{:?}", plan.mode), plan.stream.to_string())
+    );
+    if let Some(framing) = sink.words_for(plan.stream.format)
+        && framing != Words::Whole
     {
         said!(
-            "words:  offered as {}; the device names {}",
-            Words::offered_for(plan.stream.format).spelled(plan.stream.format),
-            words.spelled(plan.stream.format)
+            "{}",
+            words::main::explain_words(
+                framing.spelled(plan.stream.format),
+                Words::offered_for(plan.stream.format).spelled(plan.stream.format),
+            )
         );
     }
     if let Some((from, to)) = plan.remix {
-        said!("remix:    {from} -> {to}");
+        said!(
+            "{}",
+            words::main::explain_remix(from.to_string(), to.to_string())
+        );
     }
     if let Some((from, to)) = plan.resample {
         said!(
-            "resample: {from} -> {to} [{:?}, {:?} phase]",
-            config.quality,
-            config.filter_phase
+            "{}",
+            words::main::explain_resample(
+                from.to_string(),
+                format!("{:?}", config.filter_phase),
+                format!("{:?}", config.quality),
+                to.to_string(),
+            )
         );
     }
     if let Some(profile) = plan.equalisation.as_ref() {
         said!(
-            "eq:      {} bands, peak {:+.2} dB, preamp {}{}",
-            profile.applied(plan.stream.rate),
-            profile.peak_db(plan.stream.rate),
-            profile.preamp(),
+            "{}{}",
+            words::main::explain_eq(
+                profile.applied(plan.stream.rate),
+                format!("{:+.2}", profile.peak_db(plan.stream.rate)),
+                profile.preamp().to_string(),
+            ),
             above_nyquist(profile.passed_over(plan.stream.rate)),
         );
     } else if config.equaliser.enabled {
-        said!("eq:      on, but nothing this device is bound to shapes the sound");
+        said!("{}", words::main::explain_eq_unbound());
     }
     if let Some(impulse) = plan.convolution.as_ref() {
         said!(
-            "room:     {} taps a channel over {} channels, measured at {}",
-            impulse.frames(),
-            impulse.channels(),
-            impulse.rate()
+            "{}",
+            words::main::explain_room(
+                impulse.channels(),
+                impulse.rate().to_string(),
+                impulse.frames(),
+            )
         );
     }
     if let Some(restoring) = plan.restoration {
         let wall = restoring.wall.map_or_else(
-            || "found as it plays".to_owned(),
+            || words::main::found_as_it_plays().to_owned(),
             |wall| {
-                format!(
-                    "studied at {:.1} kHz",
-                    f64::from(wall.centihertz()) / 100_000.0
-                )
+                words::main::studied_at(format!("{:.1}", f64::from(wall.centihertz()) / 100_000.0))
             },
         );
         said!(
-            "restore: {} a {:?} source, its wall {wall}",
-            restoring.restoration.as_str(),
-            restoring.tuning
+            "{}",
+            words::main::explain_restore(
+                restoring.restoration.as_str(),
+                format!("{:?}", restoring.tuning),
+                wall,
+            )
         );
     }
     if let Some(crossfeed) = plan.crossfeed {
-        said!("crossfeed: {}", crossfeed.as_str());
+        said!("{}", words::main::explain_crossfeed(crossfeed.as_str()));
     }
     if plan.true_peak {
-        said!("guard:   true peaks held under -0.1 dBTP");
+        said!("{}", words::main::explain_guard());
     }
     if let Some(depth) = plan.dither_to {
-        said!("dither:  to {depth} [{:?}]", plan.shaping);
+        said!(
+            "{}",
+            words::main::explain_dither(depth.to_string(), format!("{:?}", plan.shaping))
+        );
     }
     if let Packing::DopMarked(_) = info.packing {
-        said!("dop:     {}", dop_reading(&plan, &sink, &config, info.spec));
+        said!(
+            "{}",
+            words::main::explain_dop(dop_reading(&plan, &sink, &config, info.spec))
+        );
     }
     Ok(())
 }
@@ -1833,8 +1889,7 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
 fn above_nyquist(bands: usize) -> String {
     match bands {
         0 => String::new(),
-        1 => " (1 band is above the output's Nyquist and is not applied)".to_owned(),
-        many => format!(" ({many} bands are above the output's Nyquist and are not applied)"),
+        bands => format!(" ({})", words::main::above_nyquist(bands)),
     }
 }
 
@@ -1845,15 +1900,15 @@ fn dop_reading(
     source: StreamSpec,
 ) -> &'static str {
     if matches!(plan.packing, Packing::DopMarked(_)) {
-        return "packed over PCM, untouched";
+        return words::main::dop_packed();
     }
     if !config.dop {
-        return "decimated to PCM; dop is off";
+        return words::main::dop_off();
     }
     if !sink.supports(source) {
-        return "decimated to PCM; the sink does not take the carrier exactly";
+        return words::main::dop_inexact();
     }
-    "decimated to PCM; a gain stage would rewrite the markers"
+    words::main::dop_gain()
 }
 
 fn list_playlists(
@@ -1867,14 +1922,14 @@ fn list_playlists(
     let listed = library.playlists(order, reading, named)?;
 
     let mut table = Table::new(vec![
-        "PLAYLIST",
-        "FILLS",
-        "TRACKS",
-        "LENGTH",
-        "LAST PLAYED",
-        "PLAYS",
-        "PINNED",
-        "FROM",
+        columns::playlist(),
+        columns::fills(),
+        columns::tracks(),
+        columns::length(),
+        columns::last_played(),
+        columns::plays(),
+        columns::pinned(),
+        columns::from(),
     ]);
     for playlist in listed {
         table.push(vec![
@@ -1893,13 +1948,6 @@ fn list_playlists(
     Ok(())
 }
 
-fn counted(count: u64, one: &str, many: &str) -> String {
-    match count {
-        1 => format!("1 {one}"),
-        count => format!("{count} {many}"),
-    }
-}
-
 fn times(plays: u32) -> String {
     match plays {
         0 => String::new(),
@@ -1910,31 +1958,31 @@ fn times(plays: u32) -> String {
 fn fills(playlist: &Playlist) -> String {
     let Some(query) = playlist.query.as_ref() else {
         return match playlist.kept {
-            Some(kept) => format!("a list kept in {}", kept_order(kept)),
-            None => "a list".to_owned(),
+            Some(kept) => words::main::a_list_kept_in(kept_order(kept)),
+            None => words::main::a_list().to_owned(),
         };
     };
 
     match query.text.as_deref() {
-        Some(text) => format!("itself, {text:?}"),
-        None => "itself".to_owned(),
+        Some(text) => words::main::itself_with(format!("{text:?}")),
+        None => words::main::itself().to_owned(),
     }
 }
 
 fn kept_order(kept: Kept) -> String {
     match kept.reading {
-        Direction::Ascending => format!("{} order", ordered_by(kept.order)),
-        Direction::Descending => format!("reverse {} order", ordered_by(kept.order)),
+        Direction::Ascending => words::main::in_order(ordered_by(kept.order)),
+        Direction::Descending => words::main::in_reverse_order(ordered_by(kept.order)),
     }
 }
 
-const fn ordered_by(order: RowOrder) -> &'static str {
+fn ordered_by(order: RowOrder) -> &'static str {
     match order {
-        RowOrder::Album => "album",
-        RowOrder::Artist => "artist",
-        RowOrder::Title => "title",
-        RowOrder::Length => "length",
-        RowOrder::File => "file name",
+        RowOrder::Album => words::main::by_album(),
+        RowOrder::Artist => words::main::by_artist(),
+        RowOrder::Title => words::main::by_title(),
+        RowOrder::Length => words::main::by_length(),
+        RowOrder::File => words::main::by_file_name(),
     }
 }
 
@@ -1956,16 +2004,16 @@ fn ago(played: Option<SystemTime>) -> String {
         return String::new();
     };
     let Ok(since) = played.elapsed() else {
-        return WITHIN_THE_MINUTE.to_owned();
+        return words::main::just_now().to_owned();
     };
 
     let minutes = since.as_secs() / 60;
     let hours = minutes / 60;
     match (hours / 24, hours, minutes) {
-        (0, 0, 0) => WITHIN_THE_MINUTE.to_owned(),
-        (0, 0, minutes) => format!("{minutes}m ago"),
-        (0, hours, _) => format!("{hours}h ago"),
-        (days, _, _) => format!("{days}d ago"),
+        (0, 0, 0) => words::main::just_now().to_owned(),
+        (0, 0, minutes) => words::main::minutes_ago(minutes),
+        (0, hours, _) => words::main::hours_ago(hours),
+        (days, _, _) => words::main::days_ago(days),
     }
 }
 
@@ -1984,7 +2032,7 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(name)))?;
     if let Some(into) = wanted.rename.as_deref() {
         library.rename_playlist(found.id, into)?;
-        said!("{} is called {into} now", found.name);
+        said!("{}", words::main::renamed(into, &found.name));
         return Ok(());
     }
     if wanted.discard {
@@ -2009,11 +2057,13 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
     if let Some(target) = wanted.export.as_deref() {
         let written = library.export_playlist(found.id, target)?;
         said!(
-            "wrote {} rows of {} to {} as {}",
-            written.rows,
-            found.name,
-            target.display(),
-            written.format.name()
+            "{}",
+            words::main::exported(
+                written.format.name(),
+                &found.name,
+                target.display().to_string(),
+                written.rows,
+            )
         );
         return Ok(());
     }
@@ -2037,10 +2087,7 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
     }
     if wanted.by_hand {
         library.keep_playlist_in_order(found.id, None)?;
-        said!(
-            "{} is back in hand, and a row added to it lands at the end",
-            found.name
-        );
+        said!("{}", words::main::back_in_hand(&found.name));
         return Ok(());
     }
     if wanted.tidy {
@@ -2060,7 +2107,7 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
     let matching = wanted.matching.as_deref();
     let entries = library.playlist_entries(found.id, matching)?;
     if entries.is_empty() {
-        said!("{} holds nothing to play", found.name);
+        said!("{}", words::main::holds_nothing(&found.name));
         return Ok(());
     }
 
@@ -2094,10 +2141,7 @@ fn copy_into(
         .playlist(into)?
         .map_or(copied as u32, |playlist| playlist.entries);
 
-    said!(
-        "copied {copied} of {} into {target}, which now holds {held}",
-        found.name
-    );
+    said!("{}", words::main::copied(copied, held, &found.name, target));
     Ok(())
 }
 
@@ -2114,32 +2158,33 @@ fn save_query(library: &Library, name: &str, text: &str, wanted: &PlaylistArgs) 
         limit: wanted.limit.map(NonZeroUsize::get),
     };
 
-    let (id, said) = match library.playlist_named(name)? {
+    let (id, revised) = match library.playlist_named(name)? {
         Some(found) => {
             library.revise_query(found.id, &found.name, &query)?;
-            (found.id, format!("{} now fills itself", found.name))
+            (found.id, Some(found.name))
         }
-        None => (
-            library.save_query(name, &query)?,
-            format!("{name} fills itself"),
-        ),
+        None => (library.save_query(name, &query)?, None),
     };
     let held = library.playlist(id)?.map_or(0, |found| found.entries);
+    let matched = matching(query.text.as_deref());
 
     said!(
-        "{said}{}, and holds {held} now",
-        matching(query.text.as_deref())
+        "{}",
+        match revised {
+            Some(revised) => words::main::query_revised(held, matched, revised),
+            None => words::main::query_saved(held, matched, name),
+        }
     );
     if let Some(reads) = understood(query.text.as_deref()) {
-        said!("it reads that as {reads}");
+        said!("{}", words::main::reads_as(reads));
     }
     Ok(())
 }
 
 fn matching(text: Option<&str>) -> String {
     match text {
-        Some(text) => format!(" with whatever matches {text:?}"),
-        None => " with the whole library".to_owned(),
+        Some(text) => format!(" {}", words::main::whatever_matches(format!("{text:?}"))),
+        None => format!(" {}", words::main::the_whole_library()),
     }
 }
 
@@ -2180,7 +2225,7 @@ fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result<()> {
         .playlist(id)?
         .map_or(added as u32, |playlist| playlist.entries);
 
-    said!("added {added} to {name}, which now holds {held}");
+    said!("{}", words::main::added(added, held, name));
     Ok(())
 }
 
@@ -2213,11 +2258,14 @@ fn import(
             .map_or(read.added as u32, |playlist| playlist.entries);
 
         said!(
-            "{}: read {} as {}, added {}, which now holds {held}{}{}{}{}",
-            read.name,
-            read.format.name(),
-            read.encoding.name(),
-            read.added,
+            "{}{}{}{}{}",
+            words::main::imported(
+                read.added,
+                read.encoding.name(),
+                read.format.name(),
+                held,
+                &read.name,
+            ),
             already_held(read.already),
             passed_over(read.elsewhere),
             not_on_disk(read.missing),
@@ -2229,96 +2277,85 @@ fn import(
 
 fn reordered(moved: usize, name: &str) -> String {
     match moved {
-        0 => format!("{name} was already in that order"),
-        1 => format!("moved 1 row of {name} into that order"),
-        moved => format!("moved {moved} rows of {name} into that order"),
+        0 => words::main::already_in_order(name),
+        moved => words::main::reordered(moved, name),
     }
 }
 
 fn now_kept(moved: usize, name: &str, kept: Kept) -> String {
     let order = kept_order(kept);
     match moved {
-        0 => format!("{name} is kept in {order}, and was already in it"),
-        1 => format!("{name} is kept in {order}, and 1 row moved into it"),
-        moved => format!("{name} is kept in {order}, and {moved} rows moved into it"),
+        0 => words::main::kept_already(name, order),
+        moved => words::main::now_kept(moved, name, order),
     }
 }
 
 fn tidied(dropped: usize, name: &str) -> String {
     match dropped {
-        0 => format!("every row of {name} still names a file that is there"),
-        1 => format!("dropped 1 row of {name} whose file has gone"),
-        dropped => format!("dropped {dropped} rows of {name} whose files have gone"),
+        0 => words::main::all_there(name),
+        dropped => words::main::tidied(dropped, name),
     }
 }
 
 fn folded(dropped: usize, name: &str) -> String {
     match dropped {
-        0 => format!("every row of {name} names a file no other row does"),
-        1 => format!("folded 1 doubled row of {name} into the one above it"),
-        dropped => format!("folded {dropped} doubled rows of {name} into the ones above them"),
+        0 => words::main::none_doubled(name),
+        dropped => words::main::folded_doubles(dropped, name),
     }
 }
 
 fn pinning(name: &str, pinned: bool) -> String {
     if pinned {
-        format!("{name} is pinned, and stands at the top of the listing")
+        words::main::pinned(name)
     } else {
-        format!("{name} is unpinned, and takes its place in the order the listing reads in")
+        words::main::unpinned(name)
     }
 }
 
 fn discarded(found: &Playlist) -> String {
     let name = &found.name;
     if found.query.is_some() {
-        return format!("discarded {name} and the search it filled itself from");
+        return words::main::discarded_search(name);
     }
 
     match found.entries {
-        0 => format!("discarded {name}, which held nothing"),
-        1 => format!("discarded {name} and the 1 row it held; the file stays where it is"),
-        held => {
-            format!("discarded {name} and the {held} rows it held; the files stay where they are")
-        }
+        0 => words::main::discarded_empty(name),
+        held => words::main::discarded(held, name),
     }
 }
 
 fn taken_out(dropped: usize, name: &str, text: &str) -> String {
     match dropped {
-        0 => format!("nothing in {name} matches {text:?}, so no row was taken out"),
-        1 => format!("took 1 row matching {text:?} out of {name}"),
-        dropped => format!("took {dropped} rows matching {text:?} out of {name}"),
+        0 => words::main::none_match(name, format!("{text:?}")),
+        dropped => words::main::took_out(dropped, name, format!("{text:?}")),
     }
 }
 
 fn already_held(already: usize) -> String {
     match already {
         0 => String::new(),
-        1 => " | 1 was already in it".to_owned(),
-        already => format!(" | {already} were already in it"),
+        already => format!(" | {}", words::main::already_in_it(already)),
     }
 }
 
 fn passed_over(elsewhere: usize) -> String {
     match elsewhere {
         0 => String::new(),
-        passed => format!(" | passed over {passed} naming no local file"),
+        passed => format!(" | {}", words::main::passed_over(passed)),
     }
 }
 
 fn fell_short(short: usize) -> String {
     match short {
         0 => String::new(),
-        1 => " | the sheet declared 1 row it did not hold".to_owned(),
-        short => format!(" | the sheet declared {short} rows it did not hold"),
+        short => format!(" | {}", words::main::fell_short(short)),
     }
 }
 
 fn not_on_disk(missing: usize) -> String {
     match missing {
         0 => String::new(),
-        1 => " | 1 names a file that is not there".to_owned(),
-        missing => format!(" | {missing} name files that are not there"),
+        missing => format!(" | {}", words::main::not_on_disk(missing)),
     }
 }
 
@@ -2380,7 +2417,10 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
         },
     )?;
 
-    said!("queued {queued} onto {}", running.name());
+    said!(
+        "{}",
+        words::main::queued_onto(running.name().to_string(), queued)
+    );
     Ok(())
 }
 
@@ -2390,7 +2430,10 @@ fn move_the_playback(running: &Running, to: ZoneAsked) -> Result<()> {
         .ok_or(Error::NoSuchZone { zone: to })?;
     running.hand_over(target)?;
 
-    said!("moving what {} plays to zone {target}", running.name());
+    said!(
+        "{}",
+        words::main::moving_to(running.name().to_string(), target.to_string())
+    );
     Ok(())
 }
 
@@ -2438,12 +2481,17 @@ fn players() -> Result<()> {
         .collect();
 
     if standing.is_empty() {
-        said!("no player of this build is running");
+        said!("{}", words::main::no_player());
         return Ok(());
     }
 
     let mut table = Table::new(vec![
-        "PLAYER", "ZONE", "STATUS", "QUEUED", "TITLE", "ARTIST",
+        columns::player(),
+        columns::zone(),
+        columns::status(),
+        columns::queued(),
+        columns::title(),
+        columns::artist(),
     ]);
     for player in &standing {
         table.push(vec![
@@ -2677,13 +2725,13 @@ fn play_queue(
         .then(input::KeyAtATime::where_a_terminal)
         .flatten();
     let help = if keyed.is_some() {
-        input::KEYS
+        input::keys_said()
     } else {
-        input::HELP
+        input::help_said()
     };
     let mut readout = Readout::over(keyed.is_some() && io::stdout().is_terminal());
     if behind {
-        told!("playing in the background, so no key is read; fg and an interrupt stop it");
+        told!("{}", words::main::in_the_background());
     } else {
         said!("{help}");
     }
@@ -2729,7 +2777,7 @@ fn play_queue(
                     Pressed::Acted(Action::Quit) => break,
                     Pressed::Acted(action) => {
                         readout.clear();
-                        acted = act(&player, action, help);
+                        acted = act(&player, action, &help);
                         if acted.is_err() {
                             break;
                         }
@@ -2737,7 +2785,7 @@ fn play_queue(
                     Pressed::Typing(typed) => readout.typing(typed),
                     Pressed::Unknown(line) => {
                         readout.clear();
-                        told!("unknown key {line:?}; ? for help");
+                        told!("{}", words::main::unknown_key(format!("{line:?}")));
                     }
                 }
                 readout.draw(&player);
@@ -2878,25 +2926,31 @@ fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Op
 
 fn announce(event: Event, player: &Player) -> bool {
     match event {
-        Event::TrackStarted(track) => said!("started  {}", readout::billing(player, track)),
-        Event::TrackFinished(track) => said!("finished {}", readout::billing(player, track)),
+        Event::TrackStarted(track) => {
+            said!("{}", words::main::started(readout::billing(player, track)))
+        }
+        Event::TrackFinished(track) => {
+            said!("{}", words::main::finished(readout::billing(player, track)))
+        }
         Event::OutputChanged(status) => said!(
-            "output   {} [{mode:?}] on sink {sink}",
-            status.negotiated,
-            mode = status.mode,
-            sink = status.sink
+            "{}",
+            words::main::output(
+                format!("{:?}", status.mode),
+                status.sink.to_string(),
+                status.negotiated.to_string(),
+            )
         ),
-        Event::Underrun { missing } => told!("underrun {missing} frames"),
+        Event::Underrun { missing } => told!("{}", words::main::underrun(missing.to_string())),
         Event::Failed { track, error } => {
-            told!("{} failed", readout::billing(player, track));
+            told!("{}", words::main::failed(readout::billing(player, track)));
             report(&error);
         }
         Event::Waiting { track, error } => {
-            told!("{} waits for a device", readout::billing(player, track));
+            told!("{}", words::main::waits(readout::billing(player, track)));
             report(&error);
         }
         Event::CommandFailed { command, error } => {
-            told!("{command:?} rejected");
+            told!("{}", words::main::rejected(format!("{command:?}")));
             report(&error);
         }
         Event::QueueFinished => return true,
@@ -2946,7 +3000,7 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
 
     let kind = command.kind();
     if let Err(error) = player.request(command)?.wait_for(COMMAND_TIMEOUT) {
-        told!("{kind:?} rejected");
+        told!("{}", words::main::rejected(format!("{kind:?}")));
         report(&error);
     }
     Ok(())
@@ -3409,7 +3463,7 @@ fn handed_to(
 ) -> Result<()> {
     if let Err(error) = window.tune(tuning) {
         tracing::warn!(%error, "the window already open did not take the settings given");
-        told!("the window already open did not take the settings given for this run");
+        told!("{}", words::main::untuned());
     }
     let (invitations, arguments): (Vec<&OsString>, Vec<&OsString>) = arguments
         .iter()
@@ -3434,7 +3488,7 @@ fn handed_to(
         )?;
     }
     window.raise()?;
-    said!("handed to the window already open as {}", window.name());
+    said!("{}", words::main::handed(window.name().to_string()));
     Ok(())
 }
 

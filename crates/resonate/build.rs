@@ -37,6 +37,8 @@ fn main() -> io::Result<()> {
         .join()
         .unwrap_or_else(|panicked| panic::resume_unwind(panicked))?;
 
+    resonate_words_build::write().map_err(io::Error::other)?;
+
     #[cfg(windows)]
     if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == WINDOWS) {
         resources::embed().map_err(io::Error::other)?;

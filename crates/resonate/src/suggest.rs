@@ -2,9 +2,7 @@ use std::fmt;
 
 use resonate_library::{Library, Suggestion};
 
-use crate::{Error, Result, folded_name, table::Table};
-
-const THE_WHOLE_LIBRARY: &str = "the whole library";
+use crate::{Error, Result, folded_name, table::Table, words};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SuggestionName(Box<str>);
@@ -35,11 +33,16 @@ pub fn print(library: &Library, save: Option<&str>) -> Result<()> {
 
 fn list(suggested: &[Suggestion]) {
     if suggested.is_empty() {
-        said!("the catalog holds too little to suggest anything yet");
+        said!("{}", words::suggest::too_little());
         return;
     }
 
-    let mut table = Table::new(vec!["NAME", "WHY", "TRACKS", "FILLS FROM"]);
+    let mut table = Table::new(vec![
+        words::suggest::name(),
+        words::suggest::why(),
+        words::suggest::tracks(),
+        words::suggest::fills_from(),
+    ]);
     for suggestion in suggested {
         table.push(vec![
             suggestion.name.clone(),
@@ -57,7 +60,7 @@ fn fills_from(suggestion: &Suggestion) -> String {
         .query
         .text
         .clone()
-        .unwrap_or_else(|| THE_WHOLE_LIBRARY.to_owned())
+        .unwrap_or_else(|| words::suggest::the_whole_library().to_owned())
 }
 
 fn keep(library: &Library, suggested: &[Suggestion], name: &str) -> Result<()> {
@@ -67,18 +70,21 @@ fn keep(library: &Library, suggested: &[Suggestion], name: &str) -> Result<()> {
         .find(|suggestion| folded_name(&suggestion.name) == wanted)
         .ok_or_else(|| Error::NoSuchSuggestion(SuggestionName::new(name)))?;
 
-    let (id, said) = match library.playlist_named(&found.name)? {
+    let (id, revised) = match library.playlist_named(&found.name)? {
         Some(held) => {
             library.revise_query(held.id, &held.name, &found.query)?;
-            (held.id, format!("{} now fills itself", held.name))
+            (held.id, Some(held.name))
         }
-        None => (
-            library.save_query(&found.name, &found.query)?,
-            format!("{} fills itself", found.name),
-        ),
+        None => (library.save_query(&found.name, &found.query)?, None),
     };
     let held = library.playlist(id)?.map_or(0, |playlist| playlist.entries);
 
-    said!("{said} from {}, and holds {held} now", fills_from(found));
+    said!(
+        "{}",
+        match revised {
+            Some(name) => words::suggest::now_fills_itself(fills_from(found), held, name),
+            None => words::suggest::fills_itself(fills_from(found), held, &found.name),
+        }
+    );
     Ok(())
 }

@@ -20,12 +20,15 @@ use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Son
 
 #[cfg(feature = "online")]
 use crate::providers::{self, InPlace};
-#[cfg(feature = "online")]
-use crate::table::Table;
 use crate::{
     cli::BrowsingArgs,
     config::Config,
     error::{Error, Result},
+};
+#[cfg(feature = "online")]
+use crate::{
+    table::Table,
+    words::{self, columns},
 };
 
 #[cfg(feature = "online")]
@@ -611,7 +614,7 @@ fn counted(count: Option<u32>) -> String {
 
 #[cfg(feature = "online")]
 fn artists_table(service: &dyn PlaysInPlace, artists: &[Artist]) -> Table {
-    let mut table = Table::new(vec!["ARTIST", "ALBUMS", "URI"]);
+    let mut table = Table::new(vec![columns::artist(), columns::albums(), "URI"]);
     for artist in artists {
         table.push(vec![
             artist.name.clone(),
@@ -624,7 +627,13 @@ fn artists_table(service: &dyn PlaysInPlace, artists: &[Artist]) -> Table {
 
 #[cfg(feature = "online")]
 fn albums_table(service: &dyn PlaysInPlace, albums: &[Album]) -> Table {
-    let mut table = Table::new(vec!["ALBUM", "ARTIST", "YEAR", "SONGS", "URI"]);
+    let mut table = Table::new(vec![
+        columns::album(),
+        columns::artist(),
+        columns::year(),
+        columns::songs(),
+        "URI",
+    ]);
     for album in albums {
         table.push(vec![
             album.name.clone(),
@@ -641,9 +650,14 @@ fn albums_table(service: &dyn PlaysInPlace, albums: &[Album]) -> Table {
 
 #[cfg(feature = "online")]
 fn favoured_table(service: &dyn PlaysInPlace, song: &Id, favoured: bool) -> Table {
-    let mut table = Table::new(vec!["FAVOURITE", "URI"]);
+    let mut table = Table::new(vec![columns::favourite(), "URI"]);
     table.push(vec![
-        if favoured { "kept" } else { "taken out" }.to_owned(),
+        if favoured {
+            words::served::kept()
+        } else {
+            words::served::taken_out()
+        }
+        .to_owned(),
         uri_of(service, Named::Song(song.clone())),
     ]);
     table
@@ -651,7 +665,7 @@ fn favoured_table(service: &dyn PlaysInPlace, song: &Id, favoured: bool) -> Tabl
 
 #[cfg(feature = "online")]
 fn mixes_table(service: &dyn PlaysInPlace, mixes: &[Mix]) -> Table {
-    let mut table = Table::new(vec!["MIX", "ABOUT", "URI"]);
+    let mut table = Table::new(vec![columns::mix(), columns::about(), "URI"]);
     for mix in mixes {
         table.push(vec![
             mix.name.clone(),
@@ -664,7 +678,14 @@ fn mixes_table(service: &dyn PlaysInPlace, mixes: &[Mix]) -> Table {
 
 #[cfg(feature = "online")]
 fn songs_table(service: &dyn PlaysInPlace, songs: &[Song]) -> Table {
-    let mut table = Table::new(vec!["#", "TITLE", "ARTIST", "LENGTH", "FORMAT", "URI"]);
+    let mut table = Table::new(vec![
+        "#",
+        columns::title(),
+        columns::artist(),
+        columns::length(),
+        columns::format(),
+        "URI",
+    ]);
     for song in songs {
         table.push(vec![
             counted(song.track),

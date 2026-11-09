@@ -142,7 +142,7 @@ pub(crate) fn cancel_when_told(cancel: impl Fn() + Send + 'static) -> Option<Int
             leave(INTERRUPT);
         }
         told = true;
-        told!("stopping once the file in hand is finished; a second interrupt leaves at once");
+        told!("{}", crate::words::signals::stopping_once());
         cancel();
     }));
     if watching {

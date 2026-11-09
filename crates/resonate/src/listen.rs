@@ -11,7 +11,7 @@ use resonate_listen::{Heard, PictureFormat};
 #[cfg(feature = "ui")]
 use resonate_mpris::{Teller, Told};
 
-use crate::{Error, Result, config::Config, info::pairs, online};
+use crate::{Error, Result, config::Config, info::pairs, online, words};
 
 const APP_NAME: &str = "Resonate";
 
@@ -44,11 +44,11 @@ pub fn run(
         Duration::from_secs,
     );
     let heard_from = match &from {
-        Listening::Desktop => "what the desktop plays".to_owned(),
-        Listening::Microphone(None) => "the default microphone".to_owned(),
+        Listening::Desktop => words::listen::what_the_desktop_plays().to_owned(),
+        Listening::Microphone(None) => words::listen::the_default_microphone().to_owned(),
         Listening::Microphone(Some(name)) => name.to_string(),
     };
-    told!("listening to {heard_from} for {} s", length.as_secs());
+    told!("{}", words::listen::listening(heard_from, length.as_secs()));
 
     let clip = listener.record(&from, length, &Hearing::new())?;
     let recognition = recognisers.recognise(&clip)?;
@@ -58,22 +58,28 @@ pub fn run(
             .iter()
             .map(ToString::to_string)
             .collect();
-        said!("nothing {} knows was heard", asked.join(", "));
+        said!("{}", words::listen::nothing_known(asked.join(", ")));
         return Ok(());
     };
     let told = |value: Option<String>| value.unwrap_or_else(|| "—".to_owned());
     pairs(vec![
-        ("title", heard.title),
-        ("artist", told(heard.artist)),
-        ("album", told(heard.album)),
-        ("year", told(heard.year.map(|year| year.to_string()))),
-        ("isrc", told(heard.isrc.map(|isrc| isrc.to_string()))),
+        (words::listen::title(), heard.title),
+        (words::listen::artist(), told(heard.artist)),
+        (words::listen::album(), told(heard.album)),
         (
-            "recording",
+            words::listen::year(),
+            told(heard.year.map(|year| year.to_string())),
+        ),
+        (
+            words::listen::isrc(),
+            told(heard.isrc.map(|isrc| isrc.to_string())),
+        ),
+        (
+            words::listen::recording(),
             told(heard.recording.map(|mbid| mbid.to_string())),
         ),
-        ("link", told(heard.link)),
-        ("heard by", heard.by.to_string()),
+        (words::listen::link(), told(heard.link)),
+        (words::listen::heard_by(), heard.by.to_string()),
     ]);
     Ok(())
 }
