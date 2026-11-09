@@ -1011,15 +1011,7 @@ impl Running {
                     kept.bytes_since = 0;
                 }
                 FromServer::Records { entries } => {
-                    for entry in entries {
-                        if let Some(blob) = &entry.blob {
-                            changed |= self.heard_a_record(at, &keys, blob)?;
-                            self.lists[at].bytes_since += blob.len() as u64;
-                        }
-                        let kept = &mut self.lists[at];
-                        kept.cursor = entry.seq;
-                        kept.records_since += 1;
-                    }
+                    changed |= self.heard_records(at, &keys, entries)?;
                 }
                 FromServer::Closed { sealed } => {
                     heard_closed = Some(sealed);
@@ -1037,7 +1029,9 @@ impl Running {
 
         let mut closed_now = None;
         if !viewing {
-            closed_now = self.pushed(at, &keys, &mut send, &mut recv).await?;
+            closed_now = self
+                .pushed(at, &keys, &mut send, &mut recv, &mut changed)
+                .await?;
         }
         if closed_now.is_none() && !viewing {
             self.compacted(at, &keys, &mut send, &mut recv).await?;
@@ -1059,6 +1053,26 @@ impl Running {
         }
 
         Ok(())
+    }
+
+    fn heard_records(
+        &mut self,
+        at: usize,
+        keys: &crate::shared::SharedKeys,
+        entries: Vec<crate::wire::Record>,
+    ) -> Result<bool> {
+        let mut changed = false;
+        for entry in entries {
+            if let Some(blob) = &entry.blob {
+                changed |= self.heard_a_record(at, keys, blob)?;
+                self.lists[at].bytes_since += blob.len() as u64;
+            }
+            let kept = &mut self.lists[at];
+            kept.cursor = entry.seq;
+            kept.records_since += 1;
+        }
+
+        Ok(changed)
     }
 
     fn heard_a_record(
@@ -1094,6 +1108,7 @@ impl Running {
         keys: &crate::shared::SharedKeys,
         send: &mut Outgoing,
         recv: &mut Incoming,
+        changed: &mut bool,
     ) -> Result<Option<Vec<u8>>> {
         if self.lists[at].owed.is_empty() {
             return Ok(None);
@@ -1121,11 +1136,7 @@ impl Running {
                     return Ok(None);
                 }
                 FromServer::Records { entries } => {
-                    let kept = &mut self.lists[at];
-                    for entry in entries {
-                        kept.cursor = entry.seq;
-                        kept.records_since += 1;
-                    }
+                    *changed |= self.heard_records(at, keys, entries)?;
                 }
                 FromServer::Closed { sealed } => return Ok(Some(sealed)),
                 FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),

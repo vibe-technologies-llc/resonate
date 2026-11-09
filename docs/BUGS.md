@@ -4,15 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Sync and sharing
-- [S · 0.7.1] A shared playlist's other members' records are skipped by the push that races them:
-  `pushed` in `shared/service.rs` answers a `Records` frame by moving `kept.cursor` to each entry's
-  `seq` and never calls `heard_a_record` on `entry.blob`, which the same arm in `visited` does, and
-  the server sends a device's own appends bare and every other device's with their blob, so a member
-  appending while another waits for `Appended` is passed over for good (the next visit asks
-  `after = cursor`); `compacted` runs right after in the same visit and, once 512 records or 4 MiB
-  are held, snapshots the list without the op and tells the server `through >= seq`, which deletes
-  the record for every member who had not read it (only a `Snapshot` repairs it, and a small list
-  never compacts)
 - [S · 0.7.1] A shared-playlist member can hang every other member's client: `Place::between`
   loops `for at in 0..` and returns only where the high byte exceeds the low by two, so a `high`
   that is `low` followed by zero bytes (`[1]` and `[1, 0]`), or an all-zero `high` against an empty
