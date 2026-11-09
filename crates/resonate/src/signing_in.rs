@@ -1,0 +1,258 @@
+use std::{
+    env,
+    ffi::OsString,
+    fs, io,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    thread,
+    time::Duration,
+};
+
+use parking_lot::Mutex;
+use resonate_signin::Outcome;
+
+use crate::{Error, Result, config, error::SignOutOp};
+
+#[cfg(windows)]
+pub const PROGRAM: &str = "resonate-signin.exe";
+
+#[cfg(not(windows))]
+pub const PROGRAM: &str = "resonate-signin";
+
+const JAR: &str = "youtube-music-cookies.txt";
+
+const PROFILE: &str = "youtube-music-sign-in";
+
+const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
+
+static SIGNING_IN: Mutex<Vec<Child>> = Mutex::new(Vec::new());
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Kept {
+    pub jar: PathBuf,
+    pub profile: PathBuf,
+}
+
+impl Kept {
+    pub fn in_the_data_folder() -> Result<Self> {
+        config::data_dir().map(|folder| Self::under(&folder))
+    }
+
+    pub fn under(folder: &Path) -> Self {
+        Self {
+            jar: folder.join(JAR),
+            profile: folder.join(PROFILE),
+        }
+    }
+
+    pub fn jar_named(&self) -> Result<String> {
+        self.jar
+            .to_str()
+            .map(str::to_owned)
+            .ok_or(Error::YoutubeMusicJarNotText)
+    }
+}
+
+pub fn the_program() -> Option<PathBuf> {
+    let resonate = env::current_exe().ok();
+    found(
+        resonate.as_deref().and_then(Path::parent),
+        env::var_os("PATH"),
+    )
+}
+
+fn found(beside: Option<&Path>, path: Option<OsString>) -> Option<PathBuf> {
+    beside
+        .map(|folder| folder.join(PROGRAM))
+        .into_iter()
+        .chain(
+            path.iter()
+                .flat_map(env::split_paths)
+                .map(|folder| folder.join(PROGRAM)),
+        )
+        .find(|program| program.is_file())
+}
+
+pub fn names_the_jar(setting: &str, kept: &Kept) -> bool {
+    let setting = setting.trim();
+    !setting.is_empty() && Path::new(setting) == kept.jar
+}
+
+pub fn sign_in(program: &Path, kept: &Kept) -> Result<()> {
+    let child = Command::new(program)
+        .arg("--jar")
+        .arg(&kept.jar)
+        .arg("--profile")
+        .arg(&kept.profile)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .map_err(|source| Error::YoutubeMusicSignInNotStarted { source })?;
+    let id = child.id();
+    SIGNING_IN.lock().push(child);
+    match Outcome::of(waited(id)?) {
+        Outcome::SignedIn => Ok(()),
+        Outcome::Closed => Err(Error::YoutubeMusicSignInClosed),
+        Outcome::Failed { code } => Err(Error::YoutubeMusicSignInFailed { code }),
+    }
+}
+
+fn waited(id: u32) -> Result<std::process::ExitStatus> {
+    loop {
+        let looked = {
+            let mut held = SIGNING_IN.lock();
+            let Some(at) = held.iter().position(|child| child.id() == id) else {
+                return Err(Error::YoutubeMusicSignInFailed { code: None });
+            };
+            let looked = held[at].try_wait();
+            if !matches!(looked, Ok(None)) {
+                let _ = held.swap_remove(at).wait();
+            }
+            looked
+        };
+        match looked {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => thread::sleep(LOOKED_AT_EVERY),
+            Err(source) => return Err(Error::YoutubeMusicSignInNotStarted { source }),
+        }
+    }
+}
+
+pub fn stop_signing_in() {
+    for mut child in SIGNING_IN.lock().drain(..) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+pub fn sign_out(kept: &Kept) -> Result<()> {
+    gone(fs::remove_file(&kept.jar)).map_err(|source| Error::YoutubeMusicSignOut {
+        op: SignOutOp::Jar,
+        source,
+    })?;
+    gone(fs::remove_dir_all(&kept.profile)).map_err(|source| Error::YoutubeMusicSignOut {
+        op: SignOutOp::Profile,
+        source,
+    })
+}
+
+fn gone(removed: io::Result<()>) -> io::Result<()> {
+    match removed {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        removed => removed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, process};
+
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let folder = env::temp_dir().join(format!("resonate-signing-in-{}-{name}", process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("a folder");
+        folder
+    }
+
+    #[cfg(unix)]
+    fn a_program(folder: &Path, says: &str) -> PathBuf {
+        use std::{
+            os::unix::fs::PermissionsExt as _,
+            process::Command,
+            sync::atomic::{AtomicUsize, Ordering},
+        };
+
+        static MADE: AtomicUsize = AtomicUsize::new(0);
+        let program = folder.join(format!("program-{}", MADE.fetch_add(1, Ordering::Relaxed)));
+        fs::write(
+            &program,
+            format!("#!/bin/sh\n[ \"$1\" = --runs ] && exit 0\n{says}\n"),
+        )
+        .expect("a program");
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).expect("runnable");
+        loop {
+            match Command::new(&program).arg("--runs").status() {
+                Err(error) if error.kind() == io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::yield_now();
+                }
+                ran => {
+                    ran.expect("the program runs");
+                    return program;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_program_beside_resonate_is_found_before_one_on_the_path() {
+        let beside = scratch("beside");
+        let on_the_path = scratch("on-the-path");
+        let elsewhere = scratch("elsewhere");
+        fs::write(on_the_path.join(PROGRAM), "").expect("one on the path");
+        let path = env::join_paths([elsewhere.clone(), on_the_path.clone()]).expect("a path");
+
+        assert_eq!(
+            found(Some(&beside), Some(path.clone())),
+            Some(on_the_path.join(PROGRAM))
+        );
+        fs::write(beside.join(PROGRAM), "").expect("one beside");
+        assert_eq!(found(Some(&beside), Some(path)), Some(beside.join(PROGRAM)));
+        assert_eq!(found(Some(&elsewhere), None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn each_ending_of_the_sign_in_program_is_its_own_answer() {
+        let folder = scratch("endings");
+        let kept = Kept::under(&folder);
+
+        let signing = a_program(&folder, "printf 'jar' > \"$2\"; exit 0");
+        sign_in(&signing, &kept).expect("signed in");
+        assert_eq!(fs::read_to_string(&kept.jar).expect("the jar"), "jar");
+
+        let closing = a_program(&folder, "exit 3");
+        assert!(matches!(
+            sign_in(&closing, &kept),
+            Err(Error::YoutubeMusicSignInClosed)
+        ));
+
+        let failing = a_program(&folder, "exit 1");
+        assert!(matches!(
+            sign_in(&failing, &kept),
+            Err(Error::YoutubeMusicSignInFailed { code: Some(1) })
+        ));
+
+        assert!(matches!(
+            sign_in(&folder.join("gone"), &kept),
+            Err(Error::YoutubeMusicSignInNotStarted { .. })
+        ));
+    }
+
+    #[test]
+    fn signing_out_takes_away_the_jar_and_the_profile_and_a_second_time_is_no_failure() {
+        let folder = scratch("out");
+        let kept = Kept::under(&folder);
+        fs::write(&kept.jar, "jar").expect("a jar");
+        fs::create_dir_all(kept.profile.join("WebKit")).expect("a profile");
+
+        sign_out(&kept).expect("signed out");
+        sign_out(&kept).expect("signed out again");
+
+        assert!(!kept.jar.exists());
+        assert!(!kept.profile.exists());
+    }
+
+    #[test]
+    fn only_the_jar_the_window_kept_is_named_as_its_own() {
+        let kept = Kept::under(Path::new("/data/resonate"));
+        let jar = kept.jar.display().to_string();
+
+        assert!(names_the_jar(&jar, &kept));
+        assert!(names_the_jar(&format!("  {jar} "), &kept));
+        assert!(!names_the_jar("firefox", &kept));
+        assert!(!names_the_jar("/home/a/cookies.txt", &kept));
+        assert!(!names_the_jar("", &kept));
+    }
+}

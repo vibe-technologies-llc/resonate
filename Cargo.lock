@@ -6795,6 +6795,7 @@ dependencies = [
  "resonate-musicbrainz",
  "resonate-online",
  "resonate-providers",
+ "resonate-signin",
  "resonate-subsonic",
  "resonate-sync",
  "resonate-tidal",

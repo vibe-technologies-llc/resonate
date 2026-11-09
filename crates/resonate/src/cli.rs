@@ -271,6 +271,17 @@ pub enum YtmusicArgs {
                  album song"
     )]
     Check,
+    #[command(
+        about = "Sign in to YouTube Music in a window of its own (resonate-signin), keep the \
+                 account's cookies in the data folder, point youtube-music-cookies at them and \
+                 check the account. Needs youtube-music on"
+    )]
+    SignIn,
+    #[command(
+        about = "Take away what the sign-in window kept, its cookies and its browser profile, and \
+                 clear youtube-music-cookies where it names them"
+    )]
+    SignOut,
 }
 
 #[derive(Debug, Args)]

@@ -53,6 +53,8 @@ mod signals;
 #[cfg(windows)]
 #[path = "interrupts.rs"]
 mod signals;
+#[cfg(feature = "online")]
+mod signing_in;
 mod sleep;
 mod spotify;
 #[cfg(feature = "ui")]

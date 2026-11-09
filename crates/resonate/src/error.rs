@@ -513,6 +513,13 @@ pub enum IconOp {
     Remove,
 }
 
+#[cfg(feature = "online")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SignOutOp {
+    Jar,
+    Profile,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("this user has no XDG data directory")]
@@ -827,6 +834,40 @@ pub enum Error {
     #[cfg(feature = "online")]
     #[error("youtube-music is off in the settings, so nothing was asked of YouTube Music")]
     YoutubeMusicOff,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "resonate-signin is not installed beside resonate or on the path; install it to sign in \
+         to YouTube Music here, or name a browser or a cookies file in youtube-music-cookies"
+    )]
+    NoSignInProgram,
+
+    #[cfg(feature = "online")]
+    #[error("the sign-in window was closed before signing in, so nothing was kept")]
+    YoutubeMusicSignInClosed,
+
+    #[cfg(feature = "online")]
+    #[error("the sign-in window stopped without signing in (exit code {code:?})")]
+    YoutubeMusicSignInFailed { code: Option<i32> },
+
+    #[cfg(feature = "online")]
+    #[error("the sign-in window could not be started")]
+    YoutubeMusicSignInNotStarted {
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(feature = "online")]
+    #[error("the data folder's path is not text, so youtube-music-cookies cannot name the jar")]
+    YoutubeMusicJarNotText,
+
+    #[cfg(feature = "online")]
+    #[error("signing out of YouTube Music could not take away the {op:?}")]
+    YoutubeMusicSignOut {
+        op: SignOutOp,
+        #[source]
+        source: io::Error,
+    },
 
     #[cfg(feature = "online")]
     #[error("{link} is not a link to a song or a playlist on YouTube Music")]

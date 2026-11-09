@@ -214,6 +214,7 @@ pub fn checks_youtube_music(_settings: Option<PathBuf>) -> Option<resonate_ui::C
 #[cfg(feature = "online")]
 pub fn stop_the_tools() {
     resonate_ytmusic::stop_the_tools();
+    crate::signing_in::stop_signing_in();
 }
 
 #[cfg(not(feature = "online"))]
