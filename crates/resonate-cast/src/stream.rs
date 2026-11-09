@@ -437,7 +437,7 @@ impl Watch {
                         .heard
                         .zip(self.feed.ended_at())
                         .is_some_and(|(heard, ended)| {
-                            self.feed.frames_of(heard + HEARD_WITHIN) >= ended
+                            self.feed.frames_of(heard.saturating_add(HEARD_WITHIN)) >= ended
                         });
                 Some(if drained {
                     Reading::Drained
@@ -504,8 +504,7 @@ fn entries_in(said: &Json) -> Option<Vec<Entry>> {
             let heard = entry
                 .get("currentTime")
                 .and_then(Json::as_number)
-                .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
-                .map(Duration::from_secs_f64);
+                .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok());
             Some(Entry {
                 session,
                 idle,
@@ -554,6 +553,24 @@ mod tests {
         assert!(
             entries_in(&Json::read(r#"{"type":"RECEIVER_STATUS","status":[]}"#).expect("JSON"))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn a_place_no_duration_can_hold_is_no_place_rather_than_a_panic() {
+        let said = Json::read(
+            r#"{"type":"MEDIA_STATUS","requestId":4,"status":[
+                {"mediaSessionId":2,"playerState":"PLAYING","currentTime":1e30}]}"#,
+        )
+        .expect("JSON");
+
+        assert_eq!(
+            entries_in(&said).expect("a media status"),
+            [Entry {
+                session: 2,
+                idle: None,
+                heard: None
+            }]
         );
     }
 }

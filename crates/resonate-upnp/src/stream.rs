@@ -244,7 +244,10 @@ impl Watch {
                     if drain_asked
                         && !drained
                         && let Some(ended) = self.feed.ended_at()
-                        && self.feed.frames_of(heard + HEARD_TO_THE_SECOND) >= ended
+                        && self
+                            .feed
+                            .frames_of(heard.saturating_add(HEARD_TO_THE_SECOND))
+                            >= ended
                     {
                         drained = true;
                         let _ = self.announce.send(StreamEvent::Drained);

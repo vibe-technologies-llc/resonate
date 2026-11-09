@@ -164,7 +164,7 @@ codec are dev-dependencies, for the end-to-end tests.
   `STOP` is needed before it; a stream closing while it holds the lane sends media `STOP` for its
   own session. The receiver application is never stopped, so the next stream needs no launch.
 - **The receiver's clock is read**: every `STATUS_ASKED_EVERY` (500 ms) while streaming, a media
-  `GET_STATUS`'s `currentTime` (fractional seconds) against the frames served is the delay
+  `GET_STATUS`'s `currentTime` (fractional seconds, through `Duration::try_from_secs_f64`, so an oversized figure is no reading) against the frames served is the delay
   published through `Feed::heard_through`; `STATUS_FAILURES_AT_MOST` (6) unanswered in a row is
   the receiver gone. The same `MEDIA_STATUS` arriving unasked is read the same way.
 - **A drain is told once**: after `Drain` the feed marks the end, and `Drained` is sent when the

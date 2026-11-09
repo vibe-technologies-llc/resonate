@@ -212,7 +212,7 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   feed closed. A refused `Play` is `StreamEvent::Refused` with the UPnP code, anything else failing
   `StateChanged` to `Failed`, so the engine waits for the device as for any sink gone.
 - **The renderer's clock is read, not assumed:** every `POSITION_ASKED_EVERY` (500 ms) while it
-  streams, `GetPositionInfo`'s `RelTime` against the frames served gives the frames still ahead of
+  streams, `GetPositionInfo`'s `RelTime` (read through `Duration::try_from_secs_f64` and `checked_add`, so a figure no duration holds is no reading, never a panic) against the frames served gives the frames still ahead of
   the ear, published through `StreamClock::note` as a `GraphTime` ticking at the stream's rate,
   which is what the engine's position, the heard frame and the drain fallback read.
   `POSITION_FAILURES_AT_MOST` (6) unanswered in a row is the renderer gone.

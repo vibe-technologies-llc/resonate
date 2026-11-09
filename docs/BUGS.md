@@ -3,17 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Network devices
-- [S · 0.7.1] A UPnP renderer or Cast receiver can abort the player with one number: `clock_of`
-  in `resonate-upnp` parses `RelTime`'s seconds as an `f64`, refuses only the non-finite and
-  negative, and hands it to `Duration::from_secs_f64`, which panics from about 1.8e19 (`0:00:1e30`),
-  as an `hours` near the limit overflows its `+`; `resonate-cast`'s `currentTime` reaches
-  `from_secs_f64` the same way (`Json::number` takes `1e30`); both streams then add a constant to
-  `heard` (`+ HEARD_TO_THE_SECOND`, `+ HEARD_WITHIN`), which overflows near `Duration::MAX`; the
-  release profile is `panic = "abort"`, so a device on the network that answers a position poll with
-  an oversized figure ends the process (`try_from_secs_f64`, `checked_add` and `saturating_add`, as
-  the AcoustID, LRCLIB and TIDAL readers already do)
-
 ## Downloads
 - [S · 0.7.1] A MusicBrainz export whose download is whole but unverified can never resume: a
   cancel during the checksum (`summed` → `looked_at`), a kill before the rename, or one between

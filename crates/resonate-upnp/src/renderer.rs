@@ -314,7 +314,7 @@ fn clock_of(time: &str) -> Option<Duration> {
     let whole = hours
         .checked_mul(3_600)?
         .checked_add(minutes.checked_mul(60)?)?;
-    Some(Duration::from_secs(whole) + Duration::from_secs_f64(seconds))
+    Duration::from_secs(whole).checked_add(Duration::try_from_secs_f64(seconds).ok()?)
 }
 
 #[cfg(test)]
@@ -326,6 +326,13 @@ mod tests {
         assert_eq!(clock_of("0:01:02.500"), Some(Duration::from_millis(62_500)));
         assert_eq!(clock_of("10:00:00"), Some(Duration::from_secs(36_000)));
         assert_eq!(clock_of("NOT_IMPLEMENTED"), None);
+    }
+
+    #[test]
+    fn a_figure_no_duration_can_hold_is_nothing_rather_than_a_panic() {
+        assert_eq!(clock_of("0:00:1e30"), None);
+        assert_eq!(clock_of("5124095576030432:00:00"), None);
+        assert_eq!(clock_of("5124095576030431:00:59"), None);
     }
 
     #[test]
