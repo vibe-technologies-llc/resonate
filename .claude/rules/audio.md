@@ -786,6 +786,28 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   keeps the rest of it right behind (rows already queued play after the run), then starts it as
   `Engine::hear` (`Command::JumpTo`) does, so they cannot disagree about starting a row. `Queue::unshuffled` keeps the list order while shuffled; with shuffle off a drag,
   sort or play-next edits `order` alone; not kept across runs.
+- **Shuffle orders by kin, looked up off the engine thread.** `SmartShuffle` (`shuffling.rs`,
+  `EngineConfig::smart_shuffle`, `Command::SetSmartShuffle`, every zone, published as
+  `PlayerState::smart_shuffle`) is a `ShuffleStyle` (`Random`, `Smart` the default, `Albums`) and,
+  for `Smart`, three switches: spread artists, spread albums, songs heard lately last.
+  `shuffling::arranged` is the one arithmetic over every reshuffle (turning shuffle on, a load or
+  style change under it, a wrap): `Smart` groups rows by artist (albums within it), gives each
+  group's rows evenly spaced places across the unit interval from a random offset with a small
+  jitter, and sorts by place, so one artist's songs fall about a group's share of the queue apart
+  (fresh rows before rows `heard_lately` when asked); `Albums` keeps each album whole in its loaded
+  order and shuffles the albums, the playing row's album leading with the rows before it counted
+  heard. A row of unknown kin is a group of its own, so with no kin at all every style but
+  `Albums` is a plain shuffle. **Kin is the front end's, through the `Kinship` seam**
+  (`EngineConfig::kinship`, a `KinSource`; the binary's `kinship::Catalogued` reads
+  `Library::tracks_with_ids` for the rows' catalog ids, matching location too, heard lately = played
+  within seven days; the phones give none). The queue keeps kin by place (`Queue::kin`, emptied with
+  a new `kin_epoch` by a load or restore) and owes an ask where a reshuffle met rows it lacks; the
+  engine sends the ask to a `resonate-kin` thread (`KinAsk::sent_to`), one at a time, its answer a
+  waker of the run loop, and on landing re-arranges once (`respread_unless_moved_since`) only where
+  the shuffle that owed it is the last edit (`Queue::revision` unchanged), so a drag or removal
+  meanwhile is never undone; an answer from before a load is dropped
+  (`kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row`,
+  `a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands`).
 - **Coming back is a command.** `Command::Resume` carries a `Resumption` (rows as playing, where
   each was loaded, row, frame, shuffled or not); sole caller of `Engine::start(at)` with other than
   `Frames::ZERO`. A frame past the row's end opens it at its start. It opens the row and stops

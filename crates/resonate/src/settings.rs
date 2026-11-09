@@ -236,6 +236,14 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             ConfigKey::PreviousRestarts,
             Some((*previous == PreviousRestarts::RestartsTheTrack).into()),
         ),
+        Setting::ShuffleStyle(style) => (ConfigKey::ShuffleStyle, Some(style.as_str().into())),
+        Setting::ShuffleSpreadsArtists(spreads) => {
+            (ConfigKey::ShuffleSpreadsArtists, Some((*spreads).into()))
+        }
+        Setting::ShuffleSpreadsAlbums(spreads) => {
+            (ConfigKey::ShuffleSpreadsAlbums, Some((*spreads).into()))
+        }
+        Setting::ShuffleFreshFirst(fresh) => (ConfigKey::ShuffleFreshFirst, Some((*fresh).into())),
         Setting::Contact(contact) => {
             let contact = contact.trim();
             (
@@ -505,6 +513,10 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::IdentifyBySound => ConfigKey::IdentifyBySound,
         SettingKey::SkipUnderRepeat => ConfigKey::SkipRepeatsQueue,
         SettingKey::PreviousRestarts => ConfigKey::PreviousRestarts,
+        SettingKey::ShuffleStyle => ConfigKey::ShuffleStyle,
+        SettingKey::ShuffleSpreadsArtists => ConfigKey::ShuffleSpreadsArtists,
+        SettingKey::ShuffleSpreadsAlbums => ConfigKey::ShuffleSpreadsAlbums,
+        SettingKey::ShuffleFreshFirst => ConfigKey::ShuffleFreshFirst,
         SettingKey::Contact => ConfigKey::Contact,
         SettingKey::AcoustidKey => ConfigKey::AcoustidKey,
         SettingKey::AuddToken => ConfigKey::AuddToken,

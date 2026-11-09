@@ -8,7 +8,7 @@ use std::{
     process,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -25,14 +25,14 @@ use resonate_engine::{
     AudioSource, Audition, Backend, Band, BandGain, BandKind, Caught, Cause, Command, Contest,
     DeviceTime, DitherKind, Dithering, EngineConfig, Equalisation, Error as EngineError, Event,
     FADED_OVER, FilterPhase, Frequency, GraphTime, HardwareVolume, HeardAt, HeardClock, Held,
-    Hinting, Impulse, LoudnessMeter, Lowered, Media, MediaProvider, MediaStream, Moment, NodeName,
-    NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged,
-    Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
-    ReplayGainMode, Resampling, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
-    Seat, SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
-    SkipUnderRepeat, Sounding, SourceId, Sources, Stepping, StreamClock, StreamCommand,
-    StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Unreshapable, Until,
-    Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
+    Hinting, Impulse, Kin, KinSource, Kinship, LoudnessMeter, Lowered, Media, MediaProvider,
+    MediaStream, Moment, NodeName, NoiseShaping, Opener, Opening, Opens, OutputMode, Placement,
+    PlaybackState, Player, Plugged, Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem,
+    QueueRows, Reading, RepeatMode, ReplayGainMode, Resampling, Reshaped, Reshaper, Restoration,
+    Result, Resumable, Resumption, Seat, SinkChange, SinkError, SinkFormats, SinkId, SinkInfo,
+    SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SmartShuffle, Sounding, SourceId, Sources,
+    Stepping, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume,
+    Surveyor, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -3473,6 +3473,72 @@ fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_kee
         .wait_for(PATIENCE)?;
     player.request(Command::Next)?.wait_for(PATIENCE)?;
     assert_eq!(player.state().repeat, RepeatMode::Off);
+    Ok(())
+}
+
+struct ArtistByThree {
+    asked: AtomicUsize,
+}
+
+impl Kinship for ArtistByThree {
+    fn kin_of(&self, rows: &[Arc<QueueItem>]) -> Vec<Option<Kin>> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        rows.iter()
+            .map(|row| {
+                Some(Kin {
+                    artist: Some(row.id.get() % 3),
+                    album: Some(row.id.get() % 3),
+                    heard_lately: false,
+                })
+            })
+            .collect()
+    }
+}
+
+fn artists_meeting(player: &Player) -> usize {
+    let artists: Vec<u64> = player.queue().iter().map(|row| row.id.get() % 3).collect();
+    artists.windows(2).filter(|pair| pair[0] == pair[1]).count()
+}
+
+#[test]
+fn a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands() -> Result<()> {
+    let kinship = Arc::new(ArtistByThree {
+        asked: AtomicUsize::new(0),
+    });
+    let smart = SmartShuffle {
+        fresh_first: false,
+        ..SmartShuffle::default()
+    };
+    let config = EngineConfig {
+        smart_shuffle: smart,
+        kinship: KinSource::by(Arc::clone(&kinship) as Arc<dyn Kinship>),
+        ..config()
+    };
+    let (backend, _graph) =
+        FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let player = Player::with_backend(config, move |_| Ok(Box::new(backend)))?;
+    let rows: Vec<QueueItem> = (1..=30)
+        .map(|id| track(Path::new(&format!("/nowhere/{id}.flac")), id))
+        .collect();
+
+    player
+        .request(Command::Load {
+            items: rows,
+            start_at: 0,
+            autoplay: false,
+        })?
+        .wait_for(PATIENCE)?;
+    player
+        .request(Command::SetShuffle(true))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| kinship.asked.load(Ordering::SeqCst) > 0 && artists_meeting(player) <= 2,
+        "the artists to be spread apart",
+    );
+
+    assert_eq!(player.state().smart_shuffle, smart);
+    assert!(player.state().shuffle);
     Ok(())
 }
 

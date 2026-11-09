@@ -3,11 +3,14 @@ use std::{
     sync::Arc,
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use imbl::{OrdMap, Vector};
 use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Resumption, RowStamp, Span, TrackId};
 
-use crate::{RepeatMode, seed};
+use crate::{
+    RepeatMode,
+    shuffling::{Kin, KinAsk, Kindred, ShuffleStyle, Shuffler, SmartShuffle, album_of, arranged},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct QueueItem {
@@ -254,22 +257,6 @@ impl Unclaimed {
     }
 }
 
-#[derive(Clone)]
-struct Shuffler(u64);
-
-impl Shuffler {
-    fn new() -> Self {
-        Self(seed::from_clock())
-    }
-
-    fn next_below(&mut self, bound: usize) -> usize {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 % bound as u64) as usize
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Seat {
     Nowhere,
@@ -506,6 +493,11 @@ pub struct Queue {
     repeat: RepeatMode,
     shuffle: bool,
     shuffler: Shuffler,
+    smart: SmartShuffle,
+    kin: AHashMap<usize, Kin>,
+    kin_epoch: u64,
+    kin_owed: bool,
+    respread_owed: bool,
     revision: u64,
     rows_revision: u64,
     stamp: QueueStamp,
@@ -525,6 +517,11 @@ impl Queue {
             repeat: RepeatMode::Off,
             shuffle: false,
             shuffler: Shuffler::new(),
+            smart: SmartShuffle::default(),
+            kin: AHashMap::new(),
+            kin_epoch: 0,
+            kin_owed: false,
+            respread_owed: false,
             revision: 0,
             rows_revision: 0,
             stamp: QueueStamp::default(),
@@ -543,6 +540,7 @@ impl Queue {
         let count = loaded.len();
 
         self.places = 0;
+        self.forget_the_kin();
         let order: Vector<Held> = loaded.into_iter().map(|item| self.held(item)).collect();
         let next: Vector<Held> = kept.into_iter().map(|item| self.held(item)).collect();
         self.ids = minting;
@@ -565,6 +563,7 @@ impl Queue {
 
         if self.shuffle {
             self.reshuffle_keeping(start);
+            self.respread_owed = true;
         } else {
             self.after = start + 1;
         }
@@ -580,6 +579,7 @@ impl Queue {
         let mut minting = Unclaimed::beside([]);
 
         self.places = 0;
+        self.forget_the_kin();
         let rows: Vec<Held> = resumption
             .rows
             .into_iter()
@@ -644,6 +644,7 @@ impl Queue {
         self.seat = seat;
         self.stamp_afresh();
         self.rows_moved();
+        self.kin_owed = self.shuffle;
         self.heard_place()
     }
 
@@ -665,6 +666,7 @@ impl Queue {
             Row::InOrder(at) => self.land_in_order(at, landed, before_the_queued),
         }
         self.rows_moved();
+        self.kin_owed |= self.shuffle;
         Some(self.drawn_at(row))
     }
 
@@ -976,10 +978,7 @@ impl Queue {
 
         if shuffle {
             self.unshuffled = Standing::of(self.order.iter().cloned());
-            match (self.seat, last_heard) {
-                (Seat::InOrder | Seat::Next, Some(heard)) => self.reshuffle_keeping(heard),
-                _ => self.reshuffle(),
-            }
+            self.shuffle_afresh();
             return;
         }
 
@@ -995,6 +994,79 @@ impl Queue {
             (_, None) => 0,
         };
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub const fn smart_shuffle(&self) -> SmartShuffle {
+        self.smart
+    }
+
+    pub fn set_smart_shuffle(&mut self, smart: SmartShuffle) {
+        if self.smart == smart {
+            return;
+        }
+        self.smart = smart;
+        if self.shuffle {
+            self.shuffle_afresh();
+        }
+    }
+
+    pub(crate) fn kin_wanted(&mut self) -> Option<KinAsk> {
+        if !std::mem::take(&mut self.kin_owed) || !self.shuffle || !self.smart.reads_kin() {
+            self.respread_owed = false;
+            return None;
+        }
+        let rows: Vec<(usize, Arc<QueueItem>)> = self
+            .order
+            .iter()
+            .chain(self.next.iter())
+            .filter(|held| !self.kin.contains_key(&held.place))
+            .map(|held| (held.place, Arc::clone(&held.item)))
+            .collect();
+        let respread_at = std::mem::take(&mut self.respread_owed).then_some(self.revision);
+        if rows.is_empty() {
+            return None;
+        }
+        Some(KinAsk {
+            epoch: self.kin_epoch,
+            rows,
+            respread_at,
+        })
+    }
+
+    pub(crate) fn owe_the_kin_again(&mut self) {
+        self.kin_owed = true;
+    }
+
+    pub(crate) fn know_kin(&mut self, epoch: u64, kin: Vec<(usize, Kin)>) -> bool {
+        if epoch != self.kin_epoch {
+            return false;
+        }
+        self.kin.extend(kin);
+        true
+    }
+
+    pub(crate) fn respread_unless_moved_since(&mut self, revision: u64) {
+        if self.shuffle && self.smart.reads_kin() && self.revision == revision {
+            let heard = self.last_heard().map(|held| held.place);
+            match (self.seat, heard) {
+                (Seat::InOrder | Seat::Next, Some(heard)) => self.reshuffle_keeping(heard),
+                _ => self.reshuffle(),
+            }
+        }
+    }
+
+    fn forget_the_kin(&mut self) {
+        self.kin.clear();
+        self.kin_epoch = self.kin_epoch.wrapping_add(1);
+    }
+
+    fn shuffle_afresh(&mut self) {
+        let last_heard = self.last_heard().map(|held| held.place);
+        match (self.seat, last_heard) {
+            (Seat::InOrder | Seat::Next, Some(heard)) => self.reshuffle_keeping(heard),
+            _ => self.reshuffle(),
+        }
+        self.respread_owed = true;
     }
 
     pub fn wraps_next(&self) -> bool {
@@ -1481,10 +1553,32 @@ impl Queue {
 
     fn reshuffle_keeping(&mut self, playing: usize) {
         self.reshuffle();
-        if let Some(at) = self.order.iter().position(|held| held.place == playing) {
-            self.order.swap(0, at);
-        }
-        self.after = 1;
+        let Some(at) = self.order.iter().position(|held| held.place == playing) else {
+            self.after = 1;
+            return;
+        };
+
+        let album = (self.smart.style == ShuffleStyle::Albums)
+            .then(|| album_of(&self.kindred(&self.order[at])))
+            .flatten();
+        let Some(album) = album else {
+            let held = self.order.remove(at);
+            self.order.push_front(held);
+            self.after = 1;
+            return;
+        };
+
+        let (mut leading, rest): (Vec<Held>, Vec<Held>) = self
+            .order
+            .iter()
+            .cloned()
+            .partition(|held| album_of(&self.kindred(held)) == Some(album));
+        leading.sort_unstable_by_key(|held| held.place);
+        self.after = leading
+            .iter()
+            .position(|held| held.place == playing)
+            .map_or(1, |at| at + 1);
+        self.order = leading.into_iter().chain(rest).collect();
     }
 
     fn reshuffle_after_a_pass(&mut self) {
@@ -1499,14 +1593,26 @@ impl Queue {
         self.order.swap(0, elsewhere);
     }
 
+    fn kindred(&self, held: &Held) -> Kindred {
+        Kindred {
+            place: held.place,
+            kin: self.kin.get(&held.place).copied(),
+        }
+    }
+
     fn reshuffle(&mut self) {
         self.revision = self.revision.wrapping_add(1);
-        let mut remaining = self.order.len();
-        while remaining > 1 {
-            let pick = self.shuffler.next_below(remaining);
-            remaining -= 1;
-            self.order.swap(pick, remaining);
+        let rows: Vec<Held> = self.order.iter().cloned().collect();
+        let kindred: Vec<Kindred> = rows.iter().map(|held| self.kindred(held)).collect();
+        if self.smart.reads_kin() && kindred.iter().any(|row| row.kin.is_none()) {
+            self.kin_owed = true;
         }
+
+        let arranged = arranged(&kindred, self.smart, &mut self.shuffler);
+        self.order = arranged
+            .into_iter()
+            .filter_map(|row| rows.get(row).cloned())
+            .collect();
     }
 }
 
@@ -1841,6 +1947,132 @@ mod tests {
             order, sorted,
             "unshuffling lost the load order around a removal"
         );
+    }
+
+    fn artist_of(n: usize) -> u64 {
+        (n % 3) as u64
+    }
+
+    fn kin_by_artist(ask: &KinAsk) -> Vec<(usize, Kin)> {
+        ask.rows
+            .iter()
+            .map(|(place, _)| {
+                (
+                    *place,
+                    Kin {
+                        artist: Some(artist_of(*place)),
+                        album: Some(artist_of(*place)),
+                        heard_lately: false,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row() {
+        let mut queue = loaded(30, 4);
+        queue.set_smart_shuffle(SmartShuffle {
+            fresh_first: false,
+            ..SmartShuffle::default()
+        });
+
+        queue.set_shuffle(true);
+        let ask = queue
+            .kin_wanted()
+            .expect("a smart shuffle asks for the kin");
+        let revision = ask
+            .respread_at
+            .expect("a fresh shuffle is spread once kin lands");
+        assert!(queue.know_kin(ask.epoch, kin_by_artist(&ask)));
+        queue.respread_unless_moved_since(revision);
+
+        let order = loaded_at(&queue);
+        assert_eq!(current(&queue), Some(5));
+        assert_eq!(order.first(), Some(&4));
+        let artists: Vec<u64> = order[1..].iter().map(|place| artist_of(*place)).collect();
+        let alike = artists.windows(2).filter(|pair| pair[0] == pair[1]).count();
+        assert!(alike <= 2, "{artists:?}");
+        assert!(
+            queue.kin_wanted().is_none(),
+            "kin already known is asked again"
+        );
+    }
+
+    #[test]
+    fn kin_landing_after_the_queue_moved_leaves_the_order_alone() {
+        let mut queue = loaded(10, 0);
+
+        queue.set_shuffle(true);
+        let ask = queue
+            .kin_wanted()
+            .expect("a smart shuffle asks for the kin");
+        queue.remove_rows(Span::between(5, 5));
+        let before = loaded_at(&queue);
+        assert!(queue.know_kin(ask.epoch, kin_by_artist(&ask)));
+        queue.respread_unless_moved_since(ask.respread_at.expect("a respread is owed"));
+
+        assert_eq!(loaded_at(&queue), before);
+    }
+
+    #[test]
+    fn kin_asked_before_a_load_is_not_taken_for_the_rows_loaded_since() {
+        let mut queue = loaded(10, 0);
+
+        queue.set_shuffle(true);
+        let ask = queue
+            .kin_wanted()
+            .expect("a smart shuffle asks for the kin");
+        queue.load(items(4), 0);
+
+        assert!(!queue.know_kin(ask.epoch, kin_by_artist(&ask)));
+        assert!(queue.kin.is_empty());
+    }
+
+    #[test]
+    fn a_random_shuffle_asks_for_no_kin() {
+        let mut queue = loaded(10, 0);
+        queue.set_smart_shuffle(SmartShuffle::RANDOM);
+
+        queue.set_shuffle(true);
+
+        assert!(queue.kin_wanted().is_none());
+    }
+
+    #[test]
+    fn album_by_album_plays_on_through_the_album_the_playing_row_is_in() {
+        let mut queue = loaded(12, 5);
+        queue.set_smart_shuffle(SmartShuffle {
+            style: ShuffleStyle::Albums,
+            ..SmartShuffle::default()
+        });
+        let album = |place: usize| (place / 4) as u64;
+        queue.kin = (0..12)
+            .map(|place| {
+                (
+                    place,
+                    Kin {
+                        artist: None,
+                        album: Some(album(place)),
+                        heard_lately: false,
+                    },
+                )
+            })
+            .collect();
+
+        queue.set_shuffle(true);
+
+        let order = loaded_at(&queue);
+        assert_eq!(&order[..4], &[4, 5, 6, 7]);
+        assert_eq!(current(&queue), Some(6));
+        assert_eq!(queue.cursor(), Some(1));
+        for run in order[4..].chunks(4) {
+            assert!(
+                run.iter().all(|place| album(*place) == album(run[0])),
+                "{order:?}"
+            );
+            assert!(run.is_sorted(), "{order:?}");
+        }
     }
 
     #[test]

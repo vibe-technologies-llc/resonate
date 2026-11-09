@@ -207,6 +207,7 @@ mod tests {
             skip_under_repeat: crate::SkipUnderRepeat::default(),
             previous_restarts: crate::PreviousRestarts::default(),
             shuffle: false,
+            smart_shuffle: crate::SmartShuffle::default(),
             queue_position: Some(number as usize - 1),
             loaded_position: Some(number as usize - 1),
             queue_len: 1,

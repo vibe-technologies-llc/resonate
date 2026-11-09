@@ -19,6 +19,7 @@ mod followed;
 mod gaming;
 mod info;
 mod input;
+mod kinship;
 mod lastfm;
 mod lasting;
 #[cfg(all(feature = "ui", unix))]
@@ -2587,7 +2588,7 @@ fn play_queue(
         library.as_deref(),
         &Served::of(config, settings_path(cli).ok()),
     );
-    let mut engine = engine_config(cli, config);
+    let mut engine = kinship::kin_from(engine_config(cli, config), library.as_ref());
     if let Some(percent) = transport.volume {
         engine.volume = at_percent(percent)?;
     }
@@ -3022,6 +3023,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
             .and_then(|path| impulse_at(path, config.speakers())),
         skip_under_repeat: config.skip_under_repeat(),
         previous_restarts: config.previous_restarts(),
+        smart_shuffle: config.smart_shuffle(),
         ..defaults
     }
 }
@@ -3049,7 +3051,10 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let sources = playing_from(Some(&library), &served);
     let rendering = Rendering::for_the_window(&config, wanted_sink(&cli, &config).as_ref());
     let renderers = rendering.switch();
-    let player = rendering.player(engine_config(&cli, &config), Arc::clone(&sources))?;
+    let player = rendering.player(
+        kinship::kin_from(engine_config(&cli, &config), Some(&library)),
+        Arc::clone(&sources),
+    )?;
     let player = Arc::new(match config::analyses_dir() {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
         None => player,
@@ -3070,7 +3075,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let by_sound = online::by_sound(&config);
     let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
     let opener = zoning::Opener::new(
-        engine_config(&cli, &config),
+        kinship::kin_from(engine_config(&cli, &config), Some(&library)),
         &sources,
         rendering,
         mpris::Serving::new(

@@ -41,6 +41,7 @@ use crate::{
         Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer,
         TURNS_WAITING_AT_MOST, Turned, ring,
     },
+    shuffling::{KinAsking, KinLanded},
     streaming::{Asked, Came, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
     turns::Turns,
@@ -961,6 +962,7 @@ pub struct Engine {
     faded_for_a_nudge: bool,
     stepping: Stepping,
     auditioning: Option<Auditioning>,
+    kin: Option<KinAsking>,
 }
 
 struct Auditioning {
@@ -997,6 +999,7 @@ struct Heard {
     ahead: Option<Receiver<resonate_codec::Result<Unwrapped>>>,
     decoded: Option<Receiver<Returned>>,
     streamed: Option<Receiver<Streamed>>,
+    kin: Option<Receiver<KinLanded>>,
 }
 
 impl Heard {
@@ -1023,6 +1026,9 @@ impl Heard {
         }
         if let Some(streamed) = self.streamed.as_ref() {
             select.recv(streamed);
+        }
+        if let Some(kin) = self.kin.as_ref() {
+            select.recv(kin);
         }
 
         select
@@ -1052,6 +1058,10 @@ impl Heard {
             && is_one_channel(
                 self.streamed.as_ref(),
                 engine.streaming.as_ref().map(Streaming::answers),
+            )
+            && is_one_channel(
+                self.kin.as_ref(),
+                engine.kin.as_ref().map(|asking| &asking.landed),
             )
     }
 }
@@ -1137,7 +1147,14 @@ impl Engine {
             faded_for_a_nudge: false,
             stepping: Stepping::Alone,
             auditioning: None,
+            kin: None,
         }
+        .with_the_queue_shuffled_as_set()
+    }
+
+    fn with_the_queue_shuffled_as_set(mut self) -> Self {
+        self.queue.set_smart_shuffle(self.config.smart_shuffle);
+        self
     }
 
     pub fn run(mut self) {
@@ -1152,6 +1169,9 @@ impl Engine {
                 if !self.take_commands() {
                     break 'running;
                 }
+
+                self.land_the_kin();
+                self.ask_for_the_kin();
 
                 self.rediscover();
                 self.land_the_opening();
@@ -1222,6 +1242,43 @@ impl Engine {
                 .streaming
                 .as_ref()
                 .map(|streaming| streaming.answers().clone()),
+            kin: self.kin.as_ref().map(|asking| asking.landed.clone()),
+        }
+    }
+
+    fn ask_for_the_kin(&mut self) {
+        if self.kin.is_some() {
+            return;
+        }
+        let Some(kinship) = self.config.kinship.kinship() else {
+            return;
+        };
+        if let Some(ask) = self.queue.kin_wanted() {
+            self.kin = ask.sent_to(kinship);
+        }
+    }
+
+    fn land_the_kin(&mut self) {
+        let Some(asking) = self.kin.as_ref() else {
+            return;
+        };
+        let landed = match asking.landed.try_recv() {
+            Ok(landed) => landed,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                self.kin = None;
+                return;
+            }
+        };
+        let respread_at = asking.respread_at;
+        self.kin = None;
+
+        if !self.queue.know_kin(landed.epoch, landed.kin) {
+            self.queue.owe_the_kin_again();
+            return;
+        }
+        if let Some(revision) = respread_at {
+            self.queue.respread_unless_moved_since(revision);
         }
     }
 
@@ -1667,6 +1724,11 @@ impl Engine {
             }
             Command::SetShuffle(shuffle) => {
                 self.queue.set_shuffle(shuffle);
+                Ok(())
+            }
+            Command::SetSmartShuffle(smart) => {
+                self.config.smart_shuffle = smart;
+                self.queue.set_smart_shuffle(smart);
                 Ok(())
             }
             Command::SetSink(sink) => {
@@ -4755,6 +4817,7 @@ impl Engine {
             skip_under_repeat: self.config.skip_under_repeat,
             previous_restarts: self.config.previous_restarts,
             shuffle: self.queue.shuffle(),
+            smart_shuffle: self.queue.smart_shuffle(),
             queue_position: self.queue.cursor(),
             loaded_position: self.queue.position(),
             queue_len: self.queue.len(),
@@ -4954,6 +5017,7 @@ mod tests {
             ahead: None,
             decoded: None,
             streamed: None,
+            kin: None,
         };
         let mut parked = heard.registered(&commands);
 
@@ -4992,6 +5056,7 @@ mod tests {
             ahead: None,
             decoded: None,
             streamed: None,
+            kin: None,
         };
         let mut parked = heard.registered(&commands);
 

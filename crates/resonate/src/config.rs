@@ -21,7 +21,7 @@ use resonate_core::{
 use resonate_core::{Appearance, Following};
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
-    ReplayGainMode, Restoration, SkipUnderRepeat,
+    ReplayGainMode, Restoration, ShuffleStyle, SkipUnderRepeat, SmartShuffle,
 };
 use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
@@ -177,6 +177,10 @@ pub struct Config {
     pub identify_by_sound: Option<bool>,
     pub skip_repeats_queue: Option<bool>,
     pub previous_restarts: Option<bool>,
+    pub shuffle_style: Option<ShuffleStyle>,
+    pub shuffle_spreads_artists: Option<bool>,
+    pub shuffle_spreads_albums: Option<bool>,
+    pub shuffle_fresh_first: Option<bool>,
     pub contact: Option<String>,
     pub read_from: Option<PathBuf>,
     pub acoustid_key: Option<String>,
@@ -320,6 +324,10 @@ impl fmt::Debug for Config {
             identify_by_sound,
             skip_repeats_queue,
             previous_restarts,
+            shuffle_style,
+            shuffle_spreads_artists,
+            shuffle_spreads_albums,
+            shuffle_fresh_first,
             contact,
             read_from,
             acoustid_key,
@@ -449,6 +457,10 @@ impl fmt::Debug for Config {
             .field("identify_by_sound", identify_by_sound)
             .field("skip_repeats_queue", skip_repeats_queue)
             .field("previous_restarts", previous_restarts)
+            .field("shuffle_style", shuffle_style)
+            .field("shuffle_spreads_artists", shuffle_spreads_artists)
+            .field("shuffle_spreads_albums", shuffle_spreads_albums)
+            .field("shuffle_fresh_first", shuffle_fresh_first)
             .field("contact", &withheld(contact.as_ref()))
             .field("read_from", read_from)
             .field("acoustid_key", &withheld(acoustid_key.as_ref()))
@@ -699,6 +711,20 @@ impl Config {
         match self.skip_repeats_queue {
             Some(false) => SkipUnderRepeat::KeepsRepeatingTheTrack,
             Some(true) | None => SkipUnderRepeat::RepeatsTheQueue,
+        }
+    }
+
+    pub fn smart_shuffle(&self) -> SmartShuffle {
+        let defaults = SmartShuffle::default();
+        SmartShuffle {
+            style: self.shuffle_style.unwrap_or(defaults.style),
+            spreads_artists: self
+                .shuffle_spreads_artists
+                .unwrap_or(defaults.spreads_artists),
+            spreads_albums: self
+                .shuffle_spreads_albums
+                .unwrap_or(defaults.spreads_albums),
+            fresh_first: self.shuffle_fresh_first.unwrap_or(defaults.fresh_first),
         }
     }
 
@@ -1123,6 +1149,18 @@ impl Config {
             ConfigKey::IdentifyBySound => config.identify_by_sound = Some(at.boolean(value)?),
             ConfigKey::SkipRepeatsQueue => {
                 config.skip_repeats_queue = Some(at.boolean(value)?);
+            }
+            ConfigKey::ShuffleStyle => {
+                config.shuffle_style = Some(at.one_of(value, ShuffleStyle::parse)?);
+            }
+            ConfigKey::ShuffleSpreadsArtists => {
+                config.shuffle_spreads_artists = Some(at.boolean(value)?);
+            }
+            ConfigKey::ShuffleSpreadsAlbums => {
+                config.shuffle_spreads_albums = Some(at.boolean(value)?);
+            }
+            ConfigKey::ShuffleFreshFirst => {
+                config.shuffle_fresh_first = Some(at.boolean(value)?);
             }
             ConfigKey::PreviousRestarts => {
                 config.previous_restarts = Some(at.boolean(value)?);
@@ -1967,7 +2005,7 @@ mod tests {
 
     #[test]
     fn the_man_page_gives_every_spelling_a_setting_takes() {
-        let spelled: [(ConfigKey, Vec<String>); 17] = [
+        let spelled: [(ConfigKey, Vec<String>); 18] = [
             (ConfigKey::Quality, spelled_by::<QualityArg>()),
             (ConfigKey::FilterPhase, spelled_by::<FilterPhaseArg>()),
             (ConfigKey::Dither, spelled_by::<DitherArg>()),
@@ -2006,6 +2044,12 @@ mod tests {
                 ConfigKey::SyncControl,
                 RemoteTrust::ALL
                     .map(|trust| trust.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::ShuffleStyle,
+                ShuffleStyle::ALL
+                    .map(|style| style.as_str().to_owned())
                     .to_vec(),
             ),
             (
@@ -2837,6 +2881,29 @@ mod tests {
             config.skip_under_repeat(),
             SkipUnderRepeat::KeepsRepeatingTheTrack
         );
+    }
+
+    #[test]
+    fn a_smart_shuffle_spreading_everything_unless_the_file_says_otherwise() {
+        let config = read("").expect("an empty document");
+        assert_eq!(config.smart_shuffle(), SmartShuffle::default());
+
+        let config = read(
+            "shuffle-style = \"albums\"\nshuffle-spreads-artists = false\nshuffle-spreads-albums = false\nshuffle-fresh-first = false",
+        )
+        .expect("a well formed document");
+        assert_eq!(
+            config.smart_shuffle(),
+            SmartShuffle {
+                style: ShuffleStyle::Albums,
+                spreads_artists: false,
+                spreads_albums: false,
+                fresh_first: false,
+            }
+        );
+
+        let config = read("shuffle-style = \"random\"").expect("a well formed document");
+        assert_eq!(config.smart_shuffle().style, ShuffleStyle::Random);
     }
 
     #[test]

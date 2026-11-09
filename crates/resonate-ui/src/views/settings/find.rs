@@ -272,6 +272,7 @@ pub(crate) enum Group {
     Speakers,
     Abx,
     Resuming,
+    Shuffling,
     Repeating,
     PreviousButton,
     Folders,
@@ -326,7 +327,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 77] = [
+    pub(crate) const ALL: [Self; 78] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -353,6 +354,7 @@ impl Group {
         Self::Speakers,
         Self::Abx,
         Self::Resuming,
+        Self::Shuffling,
         Self::Repeating,
         Self::PreviousButton,
         Self::Folders,
@@ -671,6 +673,20 @@ impl Group {
                 hint: RESUMING_HINT,
                 also_called: "queue restart restore carry on position where left off",
                 keys: &[SettingKey::Resume],
+            },
+            Self::Shuffling => Described {
+                category: Category::Playback,
+                page: None,
+                title: "Shuffle",
+                hint: SHUFFLING_HINT,
+                also_called: "shuffle smart random spread artist album apart fair order albums whole \
+                 heard lately fresh recently played spotify",
+                keys: &[
+                    SettingKey::ShuffleStyle,
+                    SettingKey::ShuffleSpreadsArtists,
+                    SettingKey::ShuffleSpreadsAlbums,
+                    SettingKey::ShuffleFreshFirst,
+                ],
             },
             Self::Repeating => Described {
                 category: Category::Playback,
@@ -1536,6 +1552,13 @@ pub(crate) const ORGANISING_HINT: &str = "Where the files themselves are kept, w
      and only Apply moves anything. A track nothing names an album for is left where it is, so is \
      one whose destination another file already holds, and a folder left empty is taken away. \
      Nothing is filed on its own: this runs when you press it and at no other time.";
+
+pub(crate) const SHUFFLING_HINT: &str = "How the queue is ordered while shuffle is on. Smart \
+                                         spreads each artist and album across the queue and \
+                                         plays what you have not heard this week first; by \
+                                         album keeps albums whole. Right-click or shift-click \
+                                         the shuffle button to change it from the playback \
+                                         bar.";
 
 pub(crate) const REPEATING_HINT: &str = "What a skip does while one track is repeating. On, \
                                          pressing next or previous moves on and repeats the \

@@ -14,7 +14,7 @@ use resonate_dsp::{
     TruePeak, Tuning,
 };
 
-use crate::{PreviousRestarts, SkipUnderRepeat, seed};
+use crate::{KinSource, PreviousRestarts, SkipUnderRepeat, SmartShuffle, seed};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Equalisation {
@@ -78,6 +78,8 @@ pub struct EngineConfig {
     pub crossfeed: Crossfeed,
     pub skip_under_repeat: SkipUnderRepeat,
     pub previous_restarts: PreviousRestarts,
+    pub smart_shuffle: SmartShuffle,
+    pub kinship: KinSource,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -164,6 +166,8 @@ impl Default for EngineConfig {
             crossfeed: Crossfeed::Off,
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
+            smart_shuffle: SmartShuffle::default(),
+            kinship: KinSource::default(),
         }
     }
 }

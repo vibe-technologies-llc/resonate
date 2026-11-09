@@ -1178,6 +1178,59 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_right_or_shift_press_on_shuffle_opens_how_it_shuffles_and_a_plain_press_still_toggles(
+        cx: &mut TestAppContext,
+    ) {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        let smart = |driven: &mut Driven| {
+            driven.read(|root, cx| root.player.read(cx).state().smart_shuffle)
+        };
+        let shuffled =
+            |driven: &mut Driven| driven.read(|root, cx| root.player.read(cx).state().shuffle);
+
+        driven.right_click("shuffle");
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "a right press opened no menu"
+        );
+        driven.click("menu-entry-4");
+        driven.until(|root, cx| {
+            root.player.read(cx).state().smart_shuffle.style
+                == resonate_engine::ShuffleStyle::Albums
+        });
+        assert!(
+            !shuffled(&mut driven),
+            "choosing how it shuffles turned shuffle on"
+        );
+
+        driven.click_with(
+            "shuffle",
+            Modifiers {
+                shift: true,
+                ..Modifiers::none()
+            },
+        );
+        assert!(
+            driven.read(|root, _| root.menu.is_some()),
+            "a shift press opened no menu"
+        );
+        driven.click("menu-entry-3");
+        driven.until(|root, cx| {
+            root.player.read(cx).state().smart_shuffle.style == resonate_engine::ShuffleStyle::Smart
+        });
+        assert!(smart(&mut driven).spreads_artists);
+        assert!(!shuffled(&mut driven));
+
+        driven.click("shuffle");
+        driven.until(|root, cx| root.player.read(cx).state().shuffle);
+        assert!(
+            driven.read(|root, _| root.menu.is_none()),
+            "a plain press opened the menu"
+        );
+    }
+
+    #[gpui::test]
     fn the_row_whose_menu_is_open_stays_lit_so_its_controls_do_not_vanish_under_the_scrim(
         cx: &mut TestAppContext,
     ) {

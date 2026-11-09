@@ -9,7 +9,7 @@ use resonate_dsp::{
 
 use crate::{
     Audition, BluetoothWake, Equalisation, Error, HeardClock, Levelling, Placement, QueueItem,
-    Result, Until, Within,
+    Result, SmartShuffle, Until, Within,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -92,6 +92,7 @@ pub enum Command {
     SetSkipUnderRepeat(SkipUnderRepeat),
     SetPreviousRestarts(PreviousRestarts),
     SetShuffle(bool),
+    SetSmartShuffle(SmartShuffle),
     SetSink(Option<NodeName>),
     FollowTheFormats,
     SetQuality(Quality),
@@ -142,6 +143,7 @@ pub enum CommandKind {
     SetRepeat,
     SetSkipUnderRepeat,
     SetPreviousRestarts,
+    SetSmartShuffle,
     SetShuffle,
     SetSink,
     FollowTheFormats,
@@ -193,6 +195,7 @@ impl CommandKind {
             Self::SetRepeat => "repeat",
             Self::SetSkipUnderRepeat => "what a skip does to repeat",
             Self::SetPreviousRestarts => "what previous does past the opening",
+            Self::SetSmartShuffle => "how shuffle orders the queue",
             Self::SetShuffle => "shuffle",
             Self::SetSink => "the device",
             Self::FollowTheFormats => "the formats the device offers",
@@ -253,6 +256,7 @@ impl CommandKind {
             | Self::Audition => Within::TheZone,
             Self::SetSkipUnderRepeat
             | Self::SetPreviousRestarts
+            | Self::SetSmartShuffle
             | Self::SetQuality
             | Self::SetFilterPhase
             | Self::SetTruePeak
@@ -307,6 +311,7 @@ impl Command {
             Self::SetRepeat(_) => CommandKind::SetRepeat,
             Self::SetSkipUnderRepeat(_) => CommandKind::SetSkipUnderRepeat,
             Self::SetPreviousRestarts(_) => CommandKind::SetPreviousRestarts,
+            Self::SetSmartShuffle(_) => CommandKind::SetSmartShuffle,
             Self::SetShuffle(_) => CommandKind::SetShuffle,
             Self::SetSink(_) => CommandKind::SetSink,
             Self::FollowTheFormats => CommandKind::FollowTheFormats,

@@ -608,6 +608,7 @@ impl RootView {
             Group::Spotify => self.spotify_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
+            Group::Shuffling => self.shuffling_group(cx),
             Group::Repeating => self.repeating_group(cx),
             Group::PreviousButton => self.previous_group(cx),
             Group::Lookups => self.lookups_group(cx),
@@ -826,6 +827,7 @@ impl RootView {
         let history_kept = cx.global::<ResonateApp>().history_kept;
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
         let previous_restarts = self.player.read(cx).state().previous_restarts;
+        let smart_shuffle = self.player.read(cx).state().smart_shuffle;
         let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
         let renderers = cx
             .global::<ResonateApp>()
@@ -942,6 +944,7 @@ impl RootView {
             music_filters: cx.global::<ResonateApp>().library.music_filters(),
             skip_under_repeat,
             previous_restarts,
+            smart_shuffle,
             notify,
             renderers,
             window_buttons,

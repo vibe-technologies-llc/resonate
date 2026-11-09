@@ -20,7 +20,7 @@ use resonate_core::{
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
-    ReplayGainMode, Restoration, SinkInfo, SkipUnderRepeat,
+    ReplayGainMode, Restoration, ShuffleStyle, SinkInfo, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
@@ -228,6 +228,10 @@ pub enum SettingKey {
     HistoryKept,
     SkipUnderRepeat,
     PreviousRestarts,
+    ShuffleStyle,
+    ShuffleSpreadsArtists,
+    ShuffleSpreadsAlbums,
+    ShuffleFreshFirst,
     OrganiseAs,
     Notify,
     MinimiseButton,
@@ -293,7 +297,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 121] = [
+    pub const ALL: [Self; 125] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -353,6 +357,10 @@ impl SettingKey {
         Self::HistoryKept,
         Self::SkipUnderRepeat,
         Self::PreviousRestarts,
+        Self::ShuffleStyle,
+        Self::ShuffleSpreadsArtists,
+        Self::ShuffleSpreadsAlbums,
+        Self::ShuffleFreshFirst,
         Self::OrganiseAs,
         Self::Notify,
         Self::MinimiseButton,
@@ -485,6 +493,10 @@ pub enum Setting {
     HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
     PreviousRestarts(PreviousRestarts),
+    ShuffleStyle(ShuffleStyle),
+    ShuffleSpreadsArtists(bool),
+    ShuffleSpreadsAlbums(bool),
+    ShuffleFreshFirst(bool),
     OrganiseAs(String),
     Notify(bool),
     MinimiseButton(bool),
@@ -617,6 +629,10 @@ impl Setting {
             Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
             Self::PreviousRestarts(_) => SettingKey::PreviousRestarts,
+            Self::ShuffleStyle(_) => SettingKey::ShuffleStyle,
+            Self::ShuffleSpreadsArtists(_) => SettingKey::ShuffleSpreadsArtists,
+            Self::ShuffleSpreadsAlbums(_) => SettingKey::ShuffleSpreadsAlbums,
+            Self::ShuffleFreshFirst(_) => SettingKey::ShuffleFreshFirst,
             Self::OrganiseAs(_) => SettingKey::OrganiseAs,
             Self::Notify(_) => SettingKey::Notify,
             Self::MinimiseButton(_) => SettingKey::MinimiseButton,

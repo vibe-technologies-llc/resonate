@@ -7,7 +7,7 @@ use gpui::{
     ClickEvent, Context, Div, ElementId, PathPromptOptions, SharedString, Stateful, Window, div,
     prelude::*, px, rgb,
 };
-use resonate_engine::{Command, PreviousRestarts, SkipUnderRepeat};
+use resonate_engine::{Command, PreviousRestarts, ShuffleStyle, SkipUnderRepeat, SmartShuffle};
 use resonate_library::{
     EnrichStats, EnrichSummary, Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout,
     OrganiseStats, OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Vault, Wanted,
@@ -881,6 +881,100 @@ impl RootView {
             },
             cx,
         ))
+    }
+
+    pub(super) fn shuffling_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let smart = self.player.read(cx).state().smart_shuffle;
+        let spreads = smart.style == ShuffleStyle::Smart;
+
+        let rows = kit::rows().child(kit::field(
+            "How shuffle orders the queue",
+            self.choices("shuffle-style", smart.style, cx, move |this, style, cx| {
+                this.shuffle_as(SmartShuffle { style, ..smart }, cx);
+            }),
+        ));
+        if !spreads {
+            return rows;
+        }
+        rows.child(self.in_the_ring(
+            "shuffle-spreads-artists",
+            switch_row(
+                "Spread each artist apart",
+                "Songs by one artist are heard across the queue rather than in a cluster",
+                smart.spreads_artists,
+                "shuffle-spreads-artists",
+            ),
+            move |this, _, cx| {
+                this.shuffle_as(
+                    SmartShuffle {
+                        spreads_artists: !smart.spreads_artists,
+                        ..smart
+                    },
+                    cx,
+                );
+            },
+            cx,
+        ))
+        .child(self.in_the_ring(
+            "shuffle-spreads-albums",
+            switch_row(
+                "Spread each album apart",
+                "Songs from one album are kept apart too, within an artist as well",
+                smart.spreads_albums,
+                "shuffle-spreads-albums",
+            ),
+            move |this, _, cx| {
+                this.shuffle_as(
+                    SmartShuffle {
+                        spreads_albums: !smart.spreads_albums,
+                        ..smart
+                    },
+                    cx,
+                );
+            },
+            cx,
+        ))
+        .child(self.in_the_ring(
+            "shuffle-fresh-first",
+            switch_row(
+                "Songs heard this week come last",
+                "What you have not heard lately is played before what you have",
+                smart.fresh_first,
+                "shuffle-fresh-first",
+            ),
+            move |this, _, cx| {
+                this.shuffle_as(
+                    SmartShuffle {
+                        fresh_first: !smart.fresh_first,
+                        ..smart
+                    },
+                    cx,
+                );
+            },
+            cx,
+        ))
+    }
+
+    pub(crate) fn shuffle_as(&mut self, smart: SmartShuffle, cx: &mut Context<Self>) {
+        let was = self.player.read(cx).state().smart_shuffle;
+        if was == smart {
+            return;
+        }
+        self.send(Command::SetSmartShuffle(smart), cx);
+
+        if was.style != smart.style {
+            self.store(&Setting::ShuffleStyle(smart.style), cx);
+        }
+        if was.spreads_artists != smart.spreads_artists {
+            self.store(&Setting::ShuffleSpreadsArtists(smart.spreads_artists), cx);
+        }
+        if was.spreads_albums != smart.spreads_albums {
+            self.store(&Setting::ShuffleSpreadsAlbums(smart.spreads_albums), cx);
+        }
+        if was.fresh_first != smart.fresh_first {
+            self.store(&Setting::ShuffleFreshFirst(smart.fresh_first), cx);
+        }
+        cx.notify();
     }
 
     pub(super) fn previous_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -1934,6 +2028,33 @@ const fn unplanned(planned: Planned, first: &'static str) -> &'static str {
     match planned {
         Planned::Outdated => MOVED_UNDER_THE_PREVIEW,
         Planned::Not | Planned::Shown(_) => first,
+    }
+}
+
+impl Choice for ShuffleStyle {
+    const ALL: &'static [Self] = &ShuffleStyle::ALL;
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Random => "Random",
+            Self::Smart => "Smart",
+            Self::Albums => "By album",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Random => "Every song in the queue in any order, as a die would have it.",
+            Self::Smart => {
+                "Every song in the queue, laid out so the same artist or album does not come \
+                 round again soon, as the switches below say. A song the library does not hold \
+                 is placed at random."
+            }
+            Self::Albums => {
+                "Whole albums one after another, each in its own order, the albums in any order. \
+                 Turned on mid-album, the album playing plays on first."
+            }
+        })
     }
 }
 

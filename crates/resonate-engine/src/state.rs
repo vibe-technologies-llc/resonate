@@ -14,7 +14,8 @@ use resonate_core::{
 use crate::{
     Asleep, BluetoothWake, CommandKind, Crossfeed, DitherKind, EngineConfig, Equalisation, Error,
     FilterPhase, HeardClock, Levelling, NoiseShaping, OutputMode, PreviousRestarts, Quality,
-    Queued, RepeatMode, ReplayGainMode, Restoration, SkipUnderRepeat, Stepping, Tapped,
+    Queued, RepeatMode, ReplayGainMode, Restoration, SkipUnderRepeat, SmartShuffle, Stepping,
+    Tapped,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -99,6 +100,7 @@ pub struct PlayerState {
     pub skip_under_repeat: SkipUnderRepeat,
     pub previous_restarts: PreviousRestarts,
     pub shuffle: bool,
+    pub smart_shuffle: SmartShuffle,
     pub queue_position: Option<usize>,
     pub loaded_position: Option<usize>,
     pub queue_len: usize,
@@ -118,6 +120,7 @@ impl Default for PlayerState {
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
             shuffle: false,
+            smart_shuffle: SmartShuffle::default(),
             queue_position: None,
             loaded_position: None,
             queue_len: 0,

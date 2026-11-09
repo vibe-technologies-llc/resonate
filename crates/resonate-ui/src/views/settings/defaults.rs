@@ -7,7 +7,9 @@ use resonate_core::{
     Appearance, Presence, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
     SpectrumTilt,
 };
-use resonate_engine::{Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat};
+use resonate_engine::{
+    Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat, SmartShuffle,
+};
 use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
@@ -71,6 +73,7 @@ pub(crate) struct Standing {
     pub(crate) music_filters: MusicFilters,
     pub(crate) skip_under_repeat: SkipUnderRepeat,
     pub(crate) previous_restarts: PreviousRestarts,
+    pub(crate) smart_shuffle: SmartShuffle,
     pub(crate) notify: bool,
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
@@ -126,6 +129,7 @@ impl Standing {
             music_filters: MusicFilters::default(),
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
+            smart_shuffle: SmartShuffle::default(),
             notify: NOTIFY,
             renderers: false,
             window_buttons: WINDOW_BUTTONS,
@@ -201,6 +205,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::MinimumLength => standing.music_filters.minimum_length != MinimumLength::default(),
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
         Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
+        Group::Shuffling => standing.smart_shuffle != SmartShuffle::default(),
         Group::Notifications => standing.notify != NOTIFY,
         Group::Discord => {
             let (worn, off) = (&standing.presence, &Presence::OFF);
@@ -313,6 +318,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         Group::PreviousButton => {
             vec![Command::SetPreviousRestarts(PreviousRestarts::default())]
         }
+        Group::Shuffling => vec![Command::SetSmartShuffle(SmartShuffle::default())],
         Group::Equalising | Group::BoundTo => {
             vec![Command::SetEqualisation(Arc::clone(&built.equaliser))]
         }
@@ -380,6 +386,7 @@ mod tests {
                     | Group::LossySources
                     | Group::Equalising
                     | Group::BoundTo
+                    | Group::Shuffling
                     | Group::Repeating
                     | Group::PreviousButton
             );

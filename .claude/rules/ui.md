@@ -1013,6 +1013,13 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     the queue are a glyph in the accent over a 4 px accent dot (`TOGGLE_DOT`) while on, the dot faded
     by the same flip, never a tinted chip; the running sleep timer is its glyph and countdown in the
     accent. The clocks are `kit::figure` in `faint`, time left with a true minus (*−3:12*).
+  - **Shuffle says how it shuffles from a right or shift press** (`shuffle_button`,
+    `shuffle_menu`): a plain press or `ctrl-h` toggles; a right press (`menu::opens_a_menu`) or a
+    press with shift held opens a `Menu` of *Shuffle*, the three styles, the Smart switches where
+    Smart is held, and *Shuffle settings…* (Playback). Every choice goes through
+    `RootView::shuffle_as`, which the Playback category's *Shuffle* group uses too: one
+    `Command::SetSmartShuffle` and a `Setting` per key that moved
+    (`a_right_or_shift_press_on_shuffle_opens_how_it_shuffles_and_a_plain_press_still_toggles`).
   - **Now-playing panel**: cover (`theme::now_playing_cover()`, 56, rounded by `cover_rounding`),
     title, artist, album, signal path: the codec word in the lossless or lossy colour then depth and
     rate in `faint` (`kit::format_badge`'s shape, no pill; the quality lights to `muted` under the

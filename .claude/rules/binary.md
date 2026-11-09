@@ -423,6 +423,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `lastfm-session`: written by `resonate lastfm --user` or the Accounts category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
   scrobbled; `Config`'s `Debug` and `Accounts`' print none of them.
+- `shuffle-style` (`random`, `smart`, `albums`; `smart` unless set), `shuffle-spreads-artists`,
+  `shuffle-spreads-albums`, `shuffle-fresh-first` (each on unless set): `Config::smart_shuffle`,
+  the engine's `SmartShuffle` (`audio.md`); the window, `play` and every zone are handed the
+  catalog's kin (`kinship::kin_from`), a command with no catalog none.
 - `history-kept`: `forever` or whole days; every command opening the catalog first forgets listens
   and skipped time older than that.
 - **`enrich-on-metered` (off) and `stall-downloads-on-metered` (off)** are read through

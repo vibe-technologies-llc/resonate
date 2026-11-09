@@ -13,13 +13,13 @@ use resonate_core::{
     AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
 };
 use resonate_engine::{
-    Asleep, Command, Placement, PlaybackState, PlayerState, QueueItem, RepeatMode, StreamDigest,
-    Until,
+    Asleep, Command, Placement, PlaybackState, PlayerState, QueueItem, RepeatMode, ShuffleStyle,
+    SmartShuffle, StreamDigest, Until,
 };
 use resonate_library::{Codec, Favoured};
 
 use crate::{
-    Drawn, ResonateApp, RootView, Selection,
+    Drawn, ResonateApp, RootView, Selection, SettingsCategory,
     app::Grain,
     clipboard, format,
     icons::{self, Icon},
@@ -461,18 +461,7 @@ impl RootView {
             .child(kit::measures_its_width(self.status_room.clone()))
             .child(self.queue_button(cx))
             .when(kept.shuffle, |cluster| {
-                cluster.child(self.in_the_standing_ring(
-                    "shuffle",
-                    self.toggle(
-                        "shuffle",
-                        SHUFFLE,
-                        Icon::Shuffle,
-                        shuffling(shuffle),
-                        shuffle,
-                    ),
-                    move |this, _, cx| this.send(Command::SetShuffle(!shuffle), cx),
-                    cx,
-                ))
+                cluster.child(self.shuffle_button(shuffle, state.smart_shuffle, cx))
             })
             .when(kept.repeat, |cluster| {
                 cluster.child(self.in_the_standing_ring(
@@ -492,6 +481,40 @@ impl RootView {
                 cluster.child(self.sleep_button(state.sleeping, cx))
             })
             .child(self.volume_bar(state.volume.get(), kept.rail, kept.reading, cx))
+    }
+
+    fn shuffle_button(
+        &self,
+        shuffle: bool,
+        smart: SmartShuffle,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let control = self.in_the_standing_ring(
+            "shuffle",
+            self.toggle(
+                "shuffle",
+                SHUFFLE,
+                Icon::Shuffle,
+                shuffling(shuffle),
+                shuffle,
+            ),
+            move |this, window, cx| {
+                if window.modifiers().shift {
+                    let menu = shuffle_menu(window.mouse_position(), shuffle, smart)
+                        .opened_on(Some(ElementId::from("shuffle")));
+                    this.open_a_menu(menu, cx);
+                    return;
+                }
+                this.send(Command::SetShuffle(!shuffle), cx);
+            },
+            cx,
+        );
+
+        menu::opens_a_menu(
+            control,
+            move |_, at, _| shuffle_menu(at, shuffle, smart),
+            cx,
+        )
     }
 
     fn sleep_button(&self, sleeping: Option<Asleep>, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1458,6 +1481,75 @@ fn spoken_position(elapsed: &str, length: Option<String>) -> SharedString {
     }
 }
 
+fn shuffle_menu(at: Point<Pixels>, shuffle: bool, smart: SmartShuffle) -> Menu {
+    let mut menu = Menu::at(at).chooses(SHUFFLE_ON, shuffle, move |this, _, cx| {
+        this.send(Command::SetShuffle(!shuffle), cx);
+    });
+
+    menu = menu.apart();
+    for style in ShuffleStyle::ALL {
+        menu = menu.chooses(
+            shuffled_as(style),
+            smart.style == style,
+            move |this, _, cx| {
+                this.shuffle_as(SmartShuffle { style, ..smart }, cx);
+            },
+        );
+    }
+
+    if smart.style == ShuffleStyle::Smart {
+        menu = menu
+            .apart()
+            .chooses(SPREAD_ARTISTS, smart.spreads_artists, move |this, _, cx| {
+                this.shuffle_as(
+                    SmartShuffle {
+                        spreads_artists: !smart.spreads_artists,
+                        ..smart
+                    },
+                    cx,
+                );
+            })
+            .chooses(SPREAD_ALBUMS, smart.spreads_albums, move |this, _, cx| {
+                this.shuffle_as(
+                    SmartShuffle {
+                        spreads_albums: !smart.spreads_albums,
+                        ..smart
+                    },
+                    cx,
+                );
+            })
+            .chooses(FRESH_FIRST, smart.fresh_first, move |this, _, cx| {
+                this.shuffle_as(
+                    SmartShuffle {
+                        fresh_first: !smart.fresh_first,
+                        ..smart
+                    },
+                    cx,
+                );
+            });
+    }
+
+    menu.apart()
+        .does(Icon::Settings, SHUFFLE_SETTINGS, |this, _, cx| {
+            this.set_pane(Pane::Settings, cx);
+            this.show_settings(SettingsCategory::Playback, cx);
+        })
+}
+
+const SHUFFLE_ON: &str = "Shuffle";
+const SPREAD_ARTISTS: &str = "Spread each artist apart";
+const SPREAD_ALBUMS: &str = "Spread each album apart";
+const FRESH_FIRST: &str = "Songs heard this week come last";
+const SHUFFLE_SETTINGS: &str = "Shuffle settings…";
+
+const fn shuffled_as(style: ShuffleStyle) -> &'static str {
+    match style {
+        ShuffleStyle::Random => "Random",
+        ShuffleStyle::Smart => "Smart shuffle",
+        ShuffleStyle::Albums => "Album by album",
+    }
+}
+
 fn sleep_menu(at: Point<Pixels>, sleeping: Option<Asleep>) -> Menu {
     let mut menu = Menu::at(at);
     for minutes in SLEEP_MINUTES {
@@ -1525,10 +1617,14 @@ const fn shuffling(shuffle: bool) -> &'static str {
     if shuffle {
         concat!(
             "Shuffle is on. ",
-            keyed!("Play the queue in its load order again", key!(shuffle))
+            keyed!("Play the queue in its load order again", key!(shuffle)),
+            ". Right-click or shift-click to choose how it shuffles"
         )
     } else {
-        keyed!("Shuffle the play order", key!(shuffle))
+        concat!(
+            keyed!("Shuffle the play order", key!(shuffle)),
+            ". Right-click or shift-click to choose how it shuffles"
+        )
     }
 }
 

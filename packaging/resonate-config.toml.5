@@ -117,6 +117,31 @@ Default: true.
 Boolean. Previous restarts the track playing once it is more than three seconds in; off, it
 always goes back a row.
 Default: true.
+.TP
+.B shuffle-style
+One of
+.BR random ,
+.B smart
+or
+.BR albums .
+How shuffle orders the queue:
+.B random
+in any order;
+.B smart
+spreads each artist and album apart and keeps songs heard in the last week for the end, as the
+three keys below say;
+.B albums
+plays whole albums in their own order, the albums shuffled.
+Default: smart.
+.TP
+.B shuffle-spreads-artists
+Boolean. A smart shuffle spreads the songs of one artist apart. Default: true.
+.TP
+.B shuffle-spreads-albums
+Boolean. A smart shuffle spreads the songs of one album apart. Default: true.
+.TP
+.B shuffle-fresh-first
+Boolean. A smart shuffle keeps songs heard in the last week for after the rest. Default: true.
 .SH EQUALISER
 .TP
 .B equaliser

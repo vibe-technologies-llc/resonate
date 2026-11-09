@@ -65,6 +65,10 @@ pub enum ConfigKey {
     HistoryKept,
     SkipRepeatsQueue,
     PreviousRestarts,
+    ShuffleStyle,
+    ShuffleSpreadsArtists,
+    ShuffleSpreadsAlbums,
+    ShuffleFreshFirst,
     OrganiseAs,
     Notify,
     MinimiseButton,
@@ -190,7 +194,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 126] = [
+    pub const ALL: [Self; 130] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -246,6 +250,10 @@ impl ConfigKey {
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
         Self::PreviousRestarts,
+        Self::ShuffleStyle,
+        Self::ShuffleSpreadsArtists,
+        Self::ShuffleSpreadsAlbums,
+        Self::ShuffleFreshFirst,
         Self::OrganiseAs,
         Self::Notify,
         Self::MinimiseButton,
@@ -360,6 +368,10 @@ impl ConfigKey {
             Self::IdentifyBySound => "identify-by-sound",
             Self::SkipRepeatsQueue => "skip-repeats-queue",
             Self::PreviousRestarts => "previous-restarts",
+            Self::ShuffleStyle => "shuffle-style",
+            Self::ShuffleSpreadsArtists => "shuffle-spreads-artists",
+            Self::ShuffleSpreadsAlbums => "shuffle-spreads-albums",
+            Self::ShuffleFreshFirst => "shuffle-fresh-first",
             Self::Contact => "contact",
             Self::Equaliser => "equaliser",
             Self::EqualiserFor => "equaliser-for",
