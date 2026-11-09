@@ -1,0 +1,12 @@
+what-the-desktop-plays = what the desktop plays
+the-default-microphone = the default microphone
+listening = listening to { $heard } for { $seconds } s
+nothing-known = nothing { $asked } knows was heard
+title = title
+artist = artist
+album = album
+year = year
+isrc = isrc
+recording = recording
+link = link
+heard-by = heard by

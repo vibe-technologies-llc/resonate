@@ -5,6 +5,7 @@ use zbus::{OwnedObjectPath, Variant};
 use crate::{
     BusOp, Error, Host, Result,
     blocking::{Connection, Proxy},
+    words,
 };
 
 const PORTAL: &str = "org.freedesktop.portal.Desktop";
@@ -65,7 +66,7 @@ impl Awake {
 
         Ok(Self {
             proxy,
-            reason: format!("{} is playing", host.identity()),
+            reason: words::idle::playing(host.identity()),
             request: None,
         })
     }

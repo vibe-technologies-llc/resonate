@@ -3,12 +3,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use resonate_core::{Mbid, Pictured, Presence, Shown};
 use serde::Serialize;
 
+use crate::words;
+
 const LISTENING: u8 = 2;
 const LONGEST_TEXT: usize = 128;
 const SHORTEST_TEXT: usize = 2;
 const PADDING: char = '\u{200b}';
 const PLAYER: &str = "Resonate";
-const PAUSED: &str = "Paused";
 const ALBUM_AFTER_ARTIST: &str = " — ";
 const COVER_ART_ARCHIVE: &str = "https://coverartarchive.org";
 const COVER_SIZE: &str = "front-500";
@@ -120,7 +121,13 @@ impl Activity {
         };
         let small_text = small_image
             .as_ref()
-            .map(|_| if playing.paused { PAUSED } else { PLAYER })
+            .map(|_| {
+                if playing.paused {
+                    words::activity::paused()
+                } else {
+                    PLAYER
+                }
+            })
             .and_then(fitted);
 
         let timestamps = (presence.progress && !playing.paused)

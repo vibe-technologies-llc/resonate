@@ -519,7 +519,7 @@ in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: Wi
   the title, then the artist and the album each as a line, the cover as an `appLogoOverride` image
   at its `file:///C:/...` URI (`art::Pictures` lays it in the temporary folder), `<audio
   silent="true"/>` and, for a track change, three buttons Previous, Play/Pause and Next
-  (`notify::ACTIONS`, the keys Linux uses) with `activationType="foreground"`. Text is escaped for
+  (`notify::actions`, the keys Linux uses) with `activationType="foreground"`. Text is escaped for
   XML and characters XML 1.0 refuses are left out. A toast is tagged (`track`, or `listen` for what
   Listen named, which has no buttons) in the group `resonate`, so the second telling when the cover
   lands replaces the first in the Action Center; teardown hides the track's toast. `ToastNotification::Activated` carries

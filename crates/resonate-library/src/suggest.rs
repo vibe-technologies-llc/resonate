@@ -11,7 +11,7 @@ use crate::{
     Search, Shape, SortOrder, StoreOp, Term, TrackQuery, Word,
     db::{self, Inner},
     search::Conditions,
-    store,
+    store, words,
 };
 
 const ENOUGH_FOR_A_DECADE: u32 = 20;
@@ -55,17 +55,6 @@ const PLAYED_MORE_THAN: u32 = 5;
 const ON_REPEAT_AT_LEAST: u32 = 3;
 const AN_OLD_FLAME_AT_LEAST: u32 = 5;
 const LEFT_BEHIND_AT_LEAST: i64 = 10;
-
-const DECADES_WITH_A_NAME: [(i32, &str); 8] = [
-    (1920, "the twenties"),
-    (1930, "the thirties"),
-    (1940, "the forties"),
-    (1950, "the fifties"),
-    (1960, "the sixties"),
-    (1970, "the seventies"),
-    (1980, "the eighties"),
-    (1990, "the nineties"),
-];
 
 const THE_DECADES_THE_CATALOG_HOLDS: &str = "SELECT (a.year / ?1) * ?1 AS decade,
             count(*) AS held
@@ -154,31 +143,35 @@ pub enum Reason {
 impl Reason {
     pub fn says(&self) -> String {
         match self {
-            Self::Decade(decade) => format!("Everything from {}", spelled(*decade)),
-            Self::GenreOfADecade(decade) => format!("One genre, from {}", spelled(*decade)),
-            Self::Genre => "Everything filed under it".to_owned(),
-            Self::Artist => "Everything they made".to_owned(),
-            Self::NeverHeard => "You have never heard these".to_owned(),
-            Self::MostPlayed => "The ones you come back to".to_owned(),
-            Self::RecentlyAdded => "The newest in the library".to_owned(),
-            Self::FreshArrivals => "New this month and not played yet".to_owned(),
-            Self::BackCatalogue => "Not heard for over a year".to_owned(),
-            Self::OnRepeat => "What you keep going back to this month".to_owned(),
-            Self::KindredArtists => "Artists sharing its genres, that you hear less".to_owned(),
-            Self::DeepCuts => "What you pass over by an artist you play".to_owned(),
-            Self::ArtistToDiscover => "An artist you hold and have never played".to_owned(),
-            Self::UnheardGenre => "A genre you play, in songs you have not".to_owned(),
-            Self::ForgottenFavourites => "Starred, then left alone for half a year".to_owned(),
-            Self::OldFlames => "Played often once, quiet for half a year".to_owned(),
-            Self::SecondChances => "Played once, over a month ago".to_owned(),
-            Self::StarredUnheard => "You marked these before hearing them".to_owned(),
-            Self::ArtistLeftBehind => "You played them often, then stopped".to_owned(),
-            Self::HiRes => "Better than a CD".to_owned(),
-            Self::LongPlayers => "Ten minutes and over".to_owned(),
-            Self::SlowBurners => "Six to ten minutes".to_owned(),
-            Self::ShortAndSharp => "Two minutes or less".to_owned(),
-            Self::Surround => "More than two channels".to_owned(),
-            Self::Mono => "One channel".to_owned(),
+            Self::Decade(decade) => {
+                words::suggest::reason_decade(words::suggest::the_decade(*decade))
+            }
+            Self::GenreOfADecade(decade) => {
+                words::suggest::reason_genre_of_a_decade(words::suggest::the_decade(*decade))
+            }
+            Self::Genre => words::suggest::reason_genre().to_owned(),
+            Self::Artist => words::suggest::reason_artist().to_owned(),
+            Self::NeverHeard => words::suggest::reason_never_heard().to_owned(),
+            Self::MostPlayed => words::suggest::reason_most_played().to_owned(),
+            Self::RecentlyAdded => words::suggest::reason_recently_added().to_owned(),
+            Self::FreshArrivals => words::suggest::reason_fresh_arrivals().to_owned(),
+            Self::BackCatalogue => words::suggest::reason_back_catalogue().to_owned(),
+            Self::OnRepeat => words::suggest::reason_on_repeat().to_owned(),
+            Self::KindredArtists => words::suggest::reason_kindred_artists().to_owned(),
+            Self::DeepCuts => words::suggest::reason_deep_cuts().to_owned(),
+            Self::ArtistToDiscover => words::suggest::reason_artist_to_discover().to_owned(),
+            Self::UnheardGenre => words::suggest::reason_unheard_genre().to_owned(),
+            Self::ForgottenFavourites => words::suggest::reason_forgotten_favourites().to_owned(),
+            Self::OldFlames => words::suggest::reason_old_flames().to_owned(),
+            Self::SecondChances => words::suggest::reason_second_chances().to_owned(),
+            Self::StarredUnheard => words::suggest::reason_starred_unheard().to_owned(),
+            Self::ArtistLeftBehind => words::suggest::reason_artist_left_behind().to_owned(),
+            Self::HiRes => words::suggest::reason_hi_res().to_owned(),
+            Self::LongPlayers => words::suggest::reason_long_players().to_owned(),
+            Self::SlowBurners => words::suggest::reason_slow_burners().to_owned(),
+            Self::ShortAndSharp => words::suggest::reason_short_and_sharp().to_owned(),
+            Self::Surround => words::suggest::reason_surround().to_owned(),
+            Self::Mono => words::suggest::reason_mono().to_owned(),
         }
     }
 }
@@ -230,15 +223,15 @@ impl Kind {
         Self::Sound,
     ];
 
-    pub const fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
-            Self::ForYou => "Made for you",
-            Self::Rediscover => "Rediscover",
-            Self::Listening => "From your listening",
-            Self::Eras => "Eras",
-            Self::Genres => "Genres",
-            Self::Artists => "Artists",
-            Self::Sound => "Sound",
+            Self::ForYou => words::suggest::kind_for_you(),
+            Self::Rediscover => words::suggest::kind_rediscover(),
+            Self::Listening => words::suggest::kind_listening(),
+            Self::Eras => words::suggest::kind_eras(),
+            Self::Genres => words::suggest::kind_genres(),
+            Self::Artists => words::suggest::kind_artists(),
+            Self::Sound => words::suggest::kind_sound(),
         }
     }
 }
@@ -600,7 +593,7 @@ fn a_decade(decade: i32) -> Candidate {
     let text = asking(years_of(decade));
 
     Candidate::new(
-        beginning_in_capitals(&spelled(decade)),
+        words::suggest::decade_named(decade),
         Reason::Decade(decade),
         written(
             text,
@@ -708,7 +701,7 @@ fn a_genre_of_a_decade(decade: i32, name: &str) -> Candidate {
     ]);
 
     Candidate::new(
-        format!("{} of {}", billed_as(name), spelled(decade)),
+        words::suggest::genre_of_a_decade(words::suggest::the_decade(decade), billed_as(name)),
         Reason::GenreOfADecade(decade),
         written(text, SortOrder::Plays, SortOrder::Plays.reads()),
     )
@@ -922,7 +915,7 @@ fn listening_lists(
 
     let mut candidates = vec![
         a_list_of(
-            "On repeat",
+            words::suggest::on_repeat(),
             Reason::OnRepeat,
             smallvec![Condition::Term(Term::Plays {
                 compare: Compare::AtLeast,
@@ -932,7 +925,7 @@ fn listening_lists(
             SortOrder::PlaysThisMonth,
         ),
         a_list_of(
-            "Forgotten favourites",
+            words::suggest::forgotten_favourites(),
             Reason::ForgottenFavourites,
             smallvec![
                 Condition::Term(Term::Shape(Shape::Favourite)),
@@ -941,7 +934,7 @@ fn listening_lists(
             SortOrder::Played,
         ),
         a_list_of(
-            "Old flames",
+            words::suggest::old_flames(),
             Reason::OldFlames,
             smallvec![
                 Condition::Term(Term::Plays {
@@ -954,7 +947,7 @@ fn listening_lists(
             SortOrder::Plays,
         ),
         a_list_of(
-            "Second chances",
+            words::suggest::second_chances(),
             Reason::SecondChances,
             smallvec![
                 Condition::Term(Term::Plays {
@@ -967,7 +960,7 @@ fn listening_lists(
             SortOrder::Played,
         ),
         a_list_of(
-            "Starred, never played",
+            words::suggest::starred_never_played(),
             Reason::StarredUnheard,
             smallvec![
                 Condition::Term(Term::Shape(Shape::Favourite)),
@@ -976,7 +969,7 @@ fn listening_lists(
             SortOrder::Favourited,
         ),
         a_list_of(
-            "Fresh arrivals",
+            words::suggest::fresh_arrivals(),
             Reason::FreshArrivals,
             smallvec![
                 Condition::Term(Term::Added {
@@ -1117,7 +1110,7 @@ fn more_like(seed: &str, kindred: &[String]) -> Candidate {
     };
 
     Candidate::new(
-        format!("More like {seed}"),
+        words::suggest::more_like(seed),
         Reason::KindredArtists,
         written(text, SortOrder::Plays, Direction::Ascending),
     )
@@ -1127,7 +1120,7 @@ fn more_like(seed: &str, kindred: &[String]) -> Candidate {
 
 fn deep_cuts_of(artist: &str) -> Candidate {
     a_list_of(
-        &format!("{artist}, deep cuts"),
+        &words::suggest::deep_cuts(artist),
         Reason::DeepCuts,
         smallvec![
             Condition::Word(the_whole_name(Column::Artist, artist)),
@@ -1144,7 +1137,7 @@ fn deep_cuts_of(artist: &str) -> Candidate {
 
 fn an_artist_to_discover(artist: &str) -> Candidate {
     a_list_of(
-        &format!("Discover {artist}"),
+        &words::suggest::discover(artist),
         Reason::ArtistToDiscover,
         smallvec![Condition::Word(the_whole_name(Column::Artist, artist))],
         SortOrder::AlbumThenTrack,
@@ -1154,7 +1147,7 @@ fn an_artist_to_discover(artist: &str) -> Candidate {
 
 fn an_artist_left_behind(artist: &str) -> Candidate {
     a_list_of(
-        &format!("Back to {artist}"),
+        &words::suggest::back_to(artist),
         Reason::ArtistLeftBehind,
         smallvec![Condition::Word(the_whole_name(Column::Artist, artist))],
         SortOrder::Plays,
@@ -1164,7 +1157,7 @@ fn an_artist_left_behind(artist: &str) -> Candidate {
 
 fn a_genre_unheard(genre: &str) -> Candidate {
     a_list_of(
-        &format!("Unheard {}", billed_as(genre)),
+        &words::suggest::unheard_genre(billed_as(genre)),
         Reason::UnheardGenre,
         smallvec![
             Condition::Word(the_whole_name(Column::Genre, genre)),
@@ -1197,7 +1190,7 @@ const fn never_played_yet() -> Term {
 fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
     vec![
         of_one_term(
-            "Short and sharp",
+            words::suggest::short_and_sharp(),
             Reason::ShortAndSharp,
             Term::Length {
                 compare: Compare::AtMost,
@@ -1209,7 +1202,7 @@ fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
         )
         .only_if_it_adds_something(),
         of_one_term(
-            "Surround",
+            words::suggest::surround(),
             Reason::Surround,
             Term::Shape(Shape::Multichannel),
             SortOrder::AlbumThenTrack,
@@ -1217,7 +1210,7 @@ fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
         )
         .only_if_it_adds_something(),
         of_one_term(
-            "In mono",
+            words::suggest::in_mono(),
             Reason::Mono,
             Term::Shape(Shape::Mono),
             SortOrder::AlbumThenTrack,
@@ -1225,7 +1218,7 @@ fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
         )
         .only_if_it_adds_something(),
         a_list_of(
-            "Slow burners",
+            words::suggest::slow_burners(),
             Reason::SlowBurners,
             smallvec![
                 Condition::Term(Term::Length {
@@ -1247,7 +1240,7 @@ fn the_sounds_the_catalog_holds() -> Vec<Candidate> {
 fn the_shape_of_the_catalog() -> Vec<Candidate> {
     vec![
         of_one_term(
-            "Never heard",
+            words::suggest::never_heard(),
             Reason::NeverHeard,
             Term::Plays {
                 compare: Compare::Exactly,
@@ -1258,7 +1251,7 @@ fn the_shape_of_the_catalog() -> Vec<Candidate> {
             SortOrder::DateAdded.reads(),
         ),
         of_one_term(
-            "Most played",
+            words::suggest::most_played(),
             Reason::MostPlayed,
             Term::Plays {
                 compare: Compare::Above,
@@ -1269,7 +1262,7 @@ fn the_shape_of_the_catalog() -> Vec<Candidate> {
             SortOrder::Plays.reads(),
         ),
         of_one_term(
-            "Recently added",
+            words::suggest::recently_added(),
             Reason::RecentlyAdded,
             Term::Added {
                 compare: Compare::Below,
@@ -1279,7 +1272,7 @@ fn the_shape_of_the_catalog() -> Vec<Candidate> {
             SortOrder::DateAdded.reads(),
         ),
         of_one_term(
-            "Back catalogue",
+            words::suggest::back_catalogue(),
             Reason::BackCatalogue,
             Term::Played {
                 compare: Compare::Above,
@@ -1289,14 +1282,14 @@ fn the_shape_of_the_catalog() -> Vec<Candidate> {
             SortOrder::Played.reads(),
         ),
         of_one_term(
-            "Hi-res",
+            words::suggest::hi_res(),
             Reason::HiRes,
             Term::Shape(Shape::HiRes),
             SortOrder::AlbumThenTrack,
             SortOrder::AlbumThenTrack.reads(),
         ),
         of_one_term(
-            "Long players",
+            words::suggest::long_players(),
             Reason::LongPlayers,
             Term::Length {
                 compare: Compare::AtLeast,
@@ -1384,22 +1377,6 @@ fn name_and_count(row: &Row<'_>) -> rusqlite::Result<(String, i64)> {
     Ok((row.get(0)?, row.get(1)?))
 }
 
-fn spelled(decade: i32) -> String {
-    DECADES_WITH_A_NAME
-        .into_iter()
-        .find(|(from, _)| *from == decade)
-        .map_or_else(|| format!("the {decade}s"), |(_, named)| named.to_owned())
-}
-
-fn beginning_in_capitals(text: &str) -> String {
-    let mut letters = text.chars();
-
-    match letters.next() {
-        Some(first) => first.to_uppercase().chain(letters).collect(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use resonate_core::SampleFormat;
@@ -1409,10 +1386,17 @@ mod tests {
 
     #[test]
     fn a_decade_is_named_where_it_has_a_name_and_numbered_where_it_has_none() {
-        assert_eq!(spelled(1990), "the nineties");
-        assert_eq!(spelled(2000), "the 2000s");
-        assert_eq!(beginning_in_capitals(&spelled(1970)), "The seventies");
-        assert_eq!(beginning_in_capitals(""), "");
+        assert_eq!(Reason::Decade(1990).says(), "Everything from the nineties");
+        assert_eq!(
+            Reason::GenreOfADecade(2000).says(),
+            "One genre, from the 2000s"
+        );
+        assert_eq!(words::suggest::decade_named(1970), "The seventies");
+        assert_eq!(words::suggest::decade_named(2010), "The 2010s");
+        assert_eq!(
+            words::suggest::genre_of_a_decade(words::suggest::the_decade(1980), "Synth-Pop"),
+            "Synth-Pop of the eighties"
+        );
     }
 
     #[test]

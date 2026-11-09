@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::words;
+
 const SHORTEST_SNOWFLAKE: usize = 17;
 const LONGEST_SNOWFLAKE: usize = 20;
 const LONGEST_ICON: usize = 256;
@@ -71,11 +73,11 @@ impl Shown {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Application => "Just the player",
-            Self::Track => "Track",
-            Self::Album => "Track and album",
+            Self::Application => words::presence::just_the_player(),
+            Self::Track => words::presence::track(),
+            Self::Album => words::presence::track_and_album(),
         }
     }
 
@@ -108,11 +110,11 @@ impl Pictured {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Cover => "Cover",
-            Self::Icon => "Icon",
-            Self::Nothing => "None",
+            Self::Cover => words::presence::cover(),
+            Self::Icon => words::presence::icon(),
+            Self::Nothing => words::presence::nothing(),
         }
     }
 

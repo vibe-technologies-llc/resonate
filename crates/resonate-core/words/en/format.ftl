@@ -1,0 +1,1 @@
+kilohertz = { $kilohertz } kHz

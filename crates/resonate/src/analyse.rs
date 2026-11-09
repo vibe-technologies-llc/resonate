@@ -10,6 +10,7 @@ use crate::{
     info::{BLOCKS, clock, heading, pairs},
     names_a_sheet,
     table::Table,
+    words,
 };
 
 const PLOT_COLUMNS: usize = 72;
@@ -90,29 +91,29 @@ pub fn print(
     let Analysed { location, span } = analysed;
     let analysis = analyse(sources, location, *span, &Watch::default())?;
 
-    heading("STREAM");
+    heading(words::analyse::stream());
     stream(&analysis, *span);
 
-    heading("VERDICT");
+    heading(words::analyse::verdict());
     verdict(&analysis);
 
-    heading("LEVELS");
+    heading(words::analyse::levels());
     levels(&analysis);
 
-    heading("SPECTRUM");
+    heading(words::analyse::spectrum());
     spectrum(
         &analysis.study.spectrum,
         analysis.study.judgement.cutoff.map(|cutoff| cutoff.hz),
     );
 
-    heading("WAVEFORM");
+    heading(words::analyse::waveform());
     waveform(&analysis.envelope);
 
-    heading("PRINT");
+    heading(words::analyse::print());
     printed(&analysis);
 
     if let Some(fingerprinters) = recognising {
-        heading("RECOGNISED");
+        heading(words::analyse::recognised());
         recognised(&analysis, analysed, &fingerprinters);
     }
     Ok(())
@@ -122,28 +123,33 @@ fn stream(analysis: &Analysis, span: Option<FrameSpan>) {
     let examined = &analysis.study.examined;
     let frames = analysis.envelope.frames();
     let cut = span.map(|span| {
-        let end = span
-            .end()
-            .map_or_else(|| "the end".to_owned(), |end| clock(end, examined.rate));
+        let end = span.end().map_or_else(
+            || words::analyse::the_end().to_owned(),
+            |end| clock(end, examined.rate),
+        );
         (
-            "cut",
-            format!("{} to {end}", clock(span.start(), examined.rate)),
+            words::analyse::cut(),
+            words::analyse::cut_from_to(end, clock(span.start(), examined.rate)),
         )
     });
     pairs(
         cut.into_iter()
             .chain([
-                ("codec", examined.codec.to_string()),
-                ("rate", format!("{} Hz", examined.rate.hz())),
-                ("channels", examined.channels.to_string()),
+                (words::analyse::codec(), examined.codec.to_string()),
                 (
-                    "declared depth",
-                    examined
-                        .declared_bits
-                        .map_or_else(|| "none".to_owned(), |bits| format!("{bits} bits")),
+                    words::analyse::rate(),
+                    words::analyse::hertz(examined.rate.hz()),
                 ),
-                ("decoded as", examined.format.to_string()),
-                ("length", clock(frames, examined.rate)),
+                (words::analyse::channels(), examined.channels.to_string()),
+                (
+                    words::analyse::declared_depth(),
+                    examined.declared_bits.map_or_else(
+                        || words::analyse::no_depth().to_owned(),
+                        words::analyse::bits,
+                    ),
+                ),
+                (words::analyse::decoded_as(), examined.format.to_string()),
+                (words::analyse::length(), clock(frames, examined.rate)),
             ])
             .collect(),
     );
@@ -159,75 +165,87 @@ fn verdict(analysis: &Analysis) {
 
 fn true_peak_of(level: f32) -> String {
     if level <= 0.0 {
-        return "silent".to_owned();
+        return words::analyse::silent().to_owned();
     }
-    format!("{:+.2} dBTP", 20.0 * level.log10())
+    words::analyse::true_peak_level(format!("{:+.2}", 20.0 * level.log10()))
 }
 
 fn lufs_of(lufs: Option<f32>) -> String {
     lufs.map_or_else(
-        || "too quiet to measure".to_owned(),
-        |lufs| format!("{lufs:.1} LUFS"),
+        || words::analyse::too_quiet().to_owned(),
+        |lufs| words::analyse::lufs(format!("{lufs:.1}")),
     )
 }
 
 fn lu_of(range: Option<f32>) -> String {
     range.map_or_else(
-        || "too quiet to measure".to_owned(),
-        |lu| format!("{lu:.1} LU"),
+        || words::analyse::too_quiet().to_owned(),
+        |lu| words::analyse::lu(format!("{lu:.1}")),
     )
 }
 
 fn decibels_of(level: f32) -> String {
     if level <= 0.0 {
-        return "silent".to_owned();
+        return words::analyse::silent().to_owned();
     }
-    format!("{:+.2} dBFS", 20.0 * level.log10())
+    words::analyse::dbfs(format!("{:+.2}", 20.0 * level.log10()))
 }
 
 fn levels(analysis: &Analysis) {
     let study = &analysis.study;
     let levels = &study.levels;
     pairs(vec![
-        ("peak", decibels_of(levels.peak)),
-        ("rms", decibels_of(levels.rms)),
-        ("true peak", true_peak_of(study.loudness.true_peak)),
+        (words::analyse::peak(), decibels_of(levels.peak)),
+        (words::analyse::rms(), decibels_of(levels.rms)),
         (
-            "loudness",
-            study.loudness.integrated.map_or_else(
-                || "too quiet to measure".to_owned(),
-                |lufs| format!("{lufs:.1} LUFS"),
+            words::analyse::true_peak(),
+            true_peak_of(study.loudness.true_peak),
+        ),
+        (
+            words::analyse::loudness(),
+            lufs_of(study.loudness.integrated),
+        ),
+        (
+            words::analyse::loudness_range(),
+            lu_of(study.loudness.range),
+        ),
+        (
+            words::analyse::momentary_max(),
+            lufs_of(study.loudness.momentary_max),
+        ),
+        (
+            words::analyse::short_term_max(),
+            lufs_of(study.loudness.short_term_max),
+        ),
+        (
+            words::analyse::dynamic_range(),
+            study.loudness.dynamic_range.map_or_else(
+                || words::analyse::unmeasured().to_owned(),
+                |dr| format!("DR{dr}"),
             ),
         ),
-        ("loudness range", lu_of(study.loudness.range)),
-        ("momentary max", lufs_of(study.loudness.momentary_max)),
-        ("short-term max", lufs_of(study.loudness.short_term_max)),
         (
-            "dynamic range",
-            study
-                .loudness
-                .dynamic_range
-                .map_or_else(|| "unmeasured".to_owned(), |dr| format!("DR{dr}")),
+            words::analyse::clipped(),
+            words::analyse::clipped_samples(levels.clipped_runs, levels.clipped),
+        ),
+        (words::analyse::dc_offset(), decibels_of(levels.dc)),
+        (
+            words::analyse::bits_in_use(),
+            levels.bits_in_use.map_or_else(
+                || words::analyse::not_measured().to_owned(),
+                |bits| bits.to_string(),
+            ),
         ),
         (
-            "clipped",
-            format!("{} samples in {} runs", levels.clipped, levels.clipped_runs),
-        ),
-        ("dc offset", decibels_of(levels.dc)),
-        (
-            "bits in use",
-            levels
-                .bits_in_use
-                .map_or_else(|| "not measured".to_owned(), |bits| bits.to_string()),
-        ),
-        (
-            "channels",
+            words::analyse::channels(),
             levels.stereo.map_or_else(
-                || "not stereo".to_owned(),
+                || words::analyse::not_stereo().to_owned(),
                 |stereo| match (stereo.identical, stereo.correlation) {
-                    (true, _) => "identical".to_owned(),
-                    (false, Some(correlation)) => format!("correlated {correlation:+.2}"),
-                    (false, None) => "silent".to_owned(),
+                    (true, _) => words::analyse::identical().to_owned(),
+                    (false, Some(correlation)) => {
+                        words::analyse::correlated(format!("{correlation:+.2}"))
+                    }
+                    (false, None) => words::analyse::silent().to_owned(),
                 },
             ),
         ),
@@ -262,7 +280,9 @@ fn spectrum(spectrum: &Spectrum, cutoff_hz: Option<u32>) {
                 .max(SPECTRUM_FLOOR_DB)
         })
         .collect();
-    bars(&series, SPECTRUM_FLOOR_DB, 0.0, |db| format!("{db:.0} dB"));
+    bars(&series, SPECTRUM_FLOOR_DB, 0.0, |db| {
+        words::analyse::decibels(format!("{db:.0}"))
+    });
 
     let marked: String = (0..PLOT_COLUMNS)
         .map(|column| {
@@ -276,9 +296,10 @@ fn spectrum(spectrum: &Spectrum, cutoff_hz: Option<u32>) {
         .collect();
     said!("  {:>9}  {marked}", "");
     said!(
-        "  {:>9}  0 kHz{:>width$}",
+        "  {:>9}  {}{:>width$}",
         "",
-        format!("{:.1} kHz", nyquist / HZ_A_KILOHERTZ),
+        words::analyse::kilohertz("0"),
+        words::analyse::kilohertz(format!("{:.1}", nyquist / HZ_A_KILOHERTZ)),
         width = PLOT_COLUMNS.saturating_sub(5)
     );
 }
@@ -303,7 +324,7 @@ fn waveform(envelope: &Envelope) {
         })
         .collect();
     if columns.is_empty() || envelope.frames() == Frames::ZERO {
-        said!("  nothing was heard");
+        said!("  {}", words::analyse::nothing_heard());
         return;
     }
 
@@ -340,12 +361,16 @@ fn waveform(envelope: &Envelope) {
             format!("{:+.2}", -((row + 1) as f32) / side)
         );
     }
-    said!("  {:>9}  {WAVEFORM_RMS} rms  {WAVEFORM_PEAK} peak", "");
+    said!(
+        "  {:>9}  {}",
+        "",
+        words::analyse::waveform_legend(WAVEFORM_PEAK.to_string(), WAVEFORM_RMS.to_string())
+    );
 }
 
 fn printed(analysis: &Analysis) {
     let Some(print) = analysis.study.print.as_ref() else {
-        said!("  the stream could not be fingerprinted");
+        said!("  {}", words::analyse::unprinted());
         return;
     };
     let encoded = print.encoded();
@@ -357,21 +382,21 @@ fn printed(analysis: &Analysis) {
     };
     pairs(vec![
         ("chromaprint", format!("{shown}{more}")),
-        ("characters", encoded.len().to_string()),
-        ("length", format!("{} s", print.length().as_secs())),
+        (words::analyse::characters(), encoded.len().to_string()),
+        (
+            words::analyse::length(),
+            words::analyse::seconds(print.length().as_secs()),
+        ),
     ]);
 }
 
 fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerprinters) {
     if !fingerprinters.has_a_source() {
-        said!(
-            "  nothing to ask: set `acoustid-key` in config.toml, and leave `online` on, to \
-             recognise what a file is"
-        );
+        said!("  {}", words::analyse::no_acoustid_key());
         return;
     }
     let Some(print) = analysis.study.print.clone() else {
-        said!("  there is no print to ask with");
+        said!("  {}", words::analyse::no_print());
         return;
     };
 
@@ -384,15 +409,20 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
         print,
     });
     if recognition.refused && recognition.matches.is_empty() {
-        said!("  the recognition service refused or could not be reached");
+        said!("  {}", words::analyse::recognition_refused());
         return;
     }
     if recognition.matches.is_empty() {
-        said!("  nothing the service holds sounds like this");
+        said!("  {}", words::analyse::no_match());
         return;
     }
 
-    let mut table = Table::new(vec!["SCORE", "TITLE", "ARTIST", "RECORDING"]);
+    let mut table = Table::new(vec![
+        words::analyse::score(),
+        words::analyse::title(),
+        words::analyse::artist(),
+        words::analyse::recording(),
+    ]);
     for found in &recognition.matches {
         let heard = HeardAs::of(found);
         table.push(vec![

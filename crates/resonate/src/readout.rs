@@ -6,6 +6,8 @@ use resonate_core::TrackId;
 use resonate_engine::{Asleep, PlaybackState, Player, PlayerState, RepeatMode, TrackState, Until};
 use unicode_width::UnicodeWidthChar as _;
 
+use crate::words;
+
 const CLEAR_THE_LINE: &str = "\r\x1b[K";
 const SECONDS_A_MINUTE: u64 = 60;
 const MINUTES_AN_HOUR: u64 = 60;
@@ -65,7 +67,7 @@ pub fn billing(player: &Player, track: TrackId) -> String {
     if let Some(digest) = player.digest().filter(|digest| digest.track == track) {
         let tags = &digest.info.tags;
         match (tags.title.as_deref(), tags.artist.as_deref()) {
-            (Some(title), Some(artist)) => return format!("{title} — {artist}"),
+            (Some(title), Some(artist)) => return words::readout::billed(artist, title),
             (Some(title), None) => return title.to_owned(),
             _ => {}
         }
@@ -80,23 +82,30 @@ pub fn billing(player: &Player, track: TrackId) -> String {
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
         })
-        .unwrap_or_else(|| format!("track {track}"))
+        .unwrap_or_else(|| words::readout::track(track.to_string()))
 }
 
 pub fn line_of(state: &PlayerState, billed: &str, typing: &str) -> String {
     let mut line = format!(
-        "{} {}  vol {:.0}%",
+        "{} {}  {}",
         glyph(state.playback),
         where_in(state.current),
-        state.volume.get() * WHOLE
+        words::readout::volume(format!("{:.0}", state.volume.get() * WHOLE))
     );
     if state.shuffle {
-        line.push_str("  shuffle");
+        line.push_str("  ");
+        line.push_str(words::readout::shuffle());
     }
     match state.repeat {
         RepeatMode::Off => {}
-        RepeatMode::Queue => line.push_str("  repeat queue"),
-        RepeatMode::Track => line.push_str("  repeat track"),
+        RepeatMode::Queue => {
+            line.push_str("  ");
+            line.push_str(words::readout::repeat_queue());
+        }
+        RepeatMode::Track => {
+            line.push_str("  ");
+            line.push_str(words::readout::repeat_track());
+        }
     }
     if let Some(asleep) = state.sleeping {
         line.push_str("  ");
@@ -182,10 +191,10 @@ fn where_in(current: Option<TrackState>) -> String {
 
 fn sleeping(asleep: Asleep) -> String {
     match (asleep.until, asleep.left) {
-        (Until::After(_), Some(left)) => format!("sleep in {}", ticked(left)),
-        (Until::After(after), None) => format!("sleep in {}", ticked(after)),
-        (Until::EndOfTrack, _) => "sleep at the end of the track".to_owned(),
-        (Until::EndOfQueue, _) => "sleep at the end of the queue".to_owned(),
+        (Until::After(_), Some(left)) => words::readout::sleep_in(ticked(left)),
+        (Until::After(after), None) => words::readout::sleep_in(ticked(after)),
+        (Until::EndOfTrack, _) => words::readout::sleep_at_the_end_of_the_track().to_owned(),
+        (Until::EndOfQueue, _) => words::readout::sleep_at_the_end_of_the_queue().to_owned(),
     }
 }
 

@@ -17,6 +17,7 @@ resonate-core.workspace = true
 resonate-providers.workspace = true
 resonate-sync.workspace = true
 resonate-tidal.workspace = true
+resonate-words.workspace = true
 ring.workspace = true
 rusqlite.workspace = true
 rustls = { workspace = true, features = ["ring"] }
@@ -32,9 +33,13 @@ toml_edit.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
 base64.workspace = true
 rcgen.workspace = true
+resonate-words-build.workspace = true
 
 [lints]
 workspace = true

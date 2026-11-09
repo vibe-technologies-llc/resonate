@@ -725,7 +725,7 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   As for any peer, a phone on a metered network with mobile data off refuses the connection and an
   iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
 - **`sync-control` is a choice on every front end, worded alike.** `RemoteTrust::label` and `meaning`
-  and `REMOTE_TRUST_TITLE`, `_ASKED` and `_TOLD` (core) are the words; the desktop's Device sync
+  and `remote_trust_title`, `_asked` and `_told` (core, out of its `zone` catalog; the phones' boundary words its own, `mobile.md`) are the words; the desktop's Device sync
   category has the group of that title (`sync_control_group`, a `kit::segmented`,
   `Setting::SyncControl`, `Synchronised::control`), and the phones read the same sentences out of
   `resonate-mobile`'s `driving` area (said in the phone's language) through

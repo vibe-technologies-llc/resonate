@@ -40,6 +40,8 @@ mod reference;
 mod renamed;
 mod resumed;
 mod retag;
+#[cfg(test)]
+mod said;
 mod scan;
 mod schema;
 mod scrobble;
@@ -68,6 +70,10 @@ mod volumes;
 mod watch;
 mod wrapped;
 mod xspf;
+
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
 
 pub use resonate_analysis::{Cutoff, LossyGuess, Study, Verdict};
 pub use resonate_codec::{

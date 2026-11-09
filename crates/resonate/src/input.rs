@@ -14,6 +14,7 @@ use rustix::termios::{self, LocalModes, OptionalActions, SpecialCodeIndex, Termi
 use crate::{
     lasting::{Bare, lasting},
     sleep::{Sleep, WITHOUT_A_SPEC},
+    words,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,19 +34,33 @@ pub enum Action {
     Quit,
 }
 
-pub const HELP: &str = "\
-  enter / p  play or pause    n  next track     b  previous track
-  f [time]   forward 10s      r [time]  back 10s   <time>  seek to (90, 1:30, 2m)
-  + [step]   louder 5%        - [step]  quieter    s  shuffle
-  l          cycle repeat     x  stop         q  quit        ?  this help
-  z [spec]   sleep in 30m, or z <mins> / z 1h30m / z track / z queue / z off";
+pub fn help_said() -> String {
+    indented(&[
+        words::input::piped_play(),
+        words::input::piped_seek(),
+        words::input::piped_volume(),
+        words::input::piped_repeat(),
+        words::input::piped_sleep(),
+    ])
+}
 
-pub const KEYS: &str = "\
-  space / p  play or pause    n  next track     b  previous track
-  f / →      forward 10s      r / ←  back 10s      <time> enter  seek to
-  + / ↑      louder 5%        - / ↓  quieter       s  shuffle
-  l          cycle repeat     x  stop         q  quit        ?  these keys
-  z          sleep in 30m     :  type any line the piped form takes — :f 45, :z track";
+pub fn keys_said() -> String {
+    indented(&[
+        words::input::keyed_play(),
+        words::input::keyed_seek(),
+        words::input::keyed_volume(),
+        words::input::keyed_repeat(),
+        words::input::keyed_sleep(),
+    ])
+}
+
+fn indented(lines: &[&str]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 const ESCAPE: u8 = 0x1b;
 const INTRODUCER: u8 = b'[';

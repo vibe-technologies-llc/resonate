@@ -962,7 +962,7 @@ impl Group {
             Self::SyncControl => Described {
                 category: Category::Sync,
                 page: Some(Page::Devices),
-                title: resonate_core::REMOTE_TRUST_TITLE,
+                title: resonate_core::remote_trust_title(),
                 hint: words::settings_find::sync_control_hint(),
                 also_called: words::settings_find::drive_driven_remote_control_another_device(),
                 keys: &[SettingKey::SyncControl],

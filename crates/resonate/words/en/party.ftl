@@ -1,0 +1,15 @@
+waiting-for-the-host = Waiting for the host to play something
+finding = Looking for this song
+not-held = You don't have this song, so you sit it out
+cannot-start-mid-song = This song can't start part way through here, so you join at the next
+asked-to = Paused here; press play to rejoin
+host-paused = The host has paused
+in-step = In step with the host
+connecting = Reaching the server…
+reconnecting = Lost the server; trying again…
+ended = The party is over
+no-such-party = That party has ended, or was never begun
+turned-away = The server turned that link away
+server-too-old = The server is too old to hold parties
+invite = Invite people with { $link }
+here = { $people } here

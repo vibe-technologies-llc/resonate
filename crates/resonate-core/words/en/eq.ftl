@@ -1,0 +1,10 @@
+hertz = { $hertz } Hz
+decibels = { $decibels } dB
+peak = Peak
+low-shelf = Low shelf
+high-shelf = High shelf
+low-pass = Low pass
+high-pass = High pass
+notch = Notch
+band-pass = Band pass
+all-pass = All pass

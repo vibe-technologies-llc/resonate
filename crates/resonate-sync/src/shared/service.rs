@@ -35,9 +35,8 @@ use crate::{
     },
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{FromServer, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
+    words,
 };
-
-const A_NAME_FOR_A_LIST_WITH_NONE: &str = "Shared playlist";
 
 const LOOK_EVERY: Duration = Duration::from_secs(2);
 
@@ -743,11 +742,10 @@ impl Running {
         let kept = &mut self.lists[at];
         let rows = kept.list.rows();
         let entries: Vec<Recording> = rows.iter().map(|row| row.recording.clone()).collect();
-        let name = kept
-            .list
-            .name()
-            .unwrap_or(A_NAME_FOR_A_LIST_WITH_NONE)
-            .to_owned();
+        let name = kept.list.name().map_or_else(
+            || words::shared::a_list_with_no_name().to_owned(),
+            str::to_owned,
+        );
 
         let written = catalog
             .shared_write(kept.at, &name, &entries, kept.access.may_edit())
@@ -1341,11 +1339,10 @@ impl Running {
             shown.push(SharedShown {
                 space: kept.space,
                 at: kept.at,
-                name: kept
-                    .list
-                    .name()
-                    .unwrap_or(A_NAME_FOR_A_LIST_WITH_NONE)
-                    .to_owned(),
+                name: kept.list.name().map_or_else(
+                    || words::shared::a_list_with_no_name().to_owned(),
+                    str::to_owned,
+                ),
                 may_edit: kept.access.may_edit(),
                 invites,
                 people: kept

@@ -15,12 +15,19 @@ jxl-oxide.workspace = true
 parking_lot.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
+resonate-words.workspace = true
 symphonia.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 zstd.workspace = true
 zune-core.workspace = true
 zune-jpegxl.workspace = true
+
+[build-dependencies]
+resonate-words-build.workspace = true
+
+[dev-dependencies]
+resonate-words-build.workspace = true
 
 [lints]
 workspace = true

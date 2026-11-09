@@ -13,6 +13,7 @@ chardetng.workspace = true
 encoding_rs.workspace = true
 jiff.workspace = true
 parking_lot.workspace = true
+resonate-words.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
 
@@ -26,8 +27,12 @@ jiff = { workspace = true, features = ["tzdb-bundle-always", "tzdb-concatenated"
 [target.'cfg(target_os = "ios")'.dependencies]
 jiff = { workspace = true, features = ["tzdb-bundle-always"] }
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
 proptest.workspace = true
+resonate-words-build.workspace = true
 
 [lints]
 workspace = true

@@ -3,7 +3,7 @@ use std::{
     num::{NonZeroU8, NonZeroU32},
 };
 
-use crate::{ChannelCount, ChannelLayout, Error, Frames, Result};
+use crate::{ChannelCount, ChannelLayout, Error, Frames, Result, words};
 
 const fn rate(hz: u32) -> SampleRate {
     match NonZeroU32::new(hz) {
@@ -97,7 +97,7 @@ impl SampleRate {
 
 impl fmt::Display for SampleRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} kHz", self.kilohertz())
+        f.write_str(&words::format::kilohertz(self.kilohertz()))
     }
 }
 

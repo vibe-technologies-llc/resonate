@@ -5,7 +5,7 @@ use gpui::{
     SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use qrcode::{Color, EcLevel, QrCode};
-use resonate_core::{REMOTE_TRUST_ASKED, REMOTE_TRUST_TOLD, RemoteTrust, SyncedSongs};
+use resonate_core::{RemoteTrust, SyncedSongs, remote_trust_asked, remote_trust_told};
 
 use crate::{
     Notice, RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, ResonateApp, Setting,
@@ -1119,7 +1119,7 @@ impl RootView {
         }
         kit::rows()
             .child(kit::stacked_row(
-                REMOTE_TRUST_ASKED,
+                remote_trust_asked(),
                 "",
                 div()
                     .flex()
@@ -1128,7 +1128,7 @@ impl RootView {
                     .child(div().flex().child(choices))
                     .child(note(chosen.meaning())),
             ))
-            .note(REMOTE_TRUST_TOLD)
+            .note(remote_trust_told())
             .note(words::settings_sync::syncing_note())
     }
 

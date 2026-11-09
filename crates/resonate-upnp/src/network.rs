@@ -23,6 +23,7 @@ use crate::{
     serve::Server,
     ssdp,
     stream::{self, Holders},
+    words,
 };
 
 const RENDERER_IDS_FROM: u32 = 0xF000_0000;
@@ -608,7 +609,7 @@ fn sink_of(id: SinkId, renderer: &Renderer) -> SinkInfo {
         is_default: false,
         is_hardware: true,
         port: Some(SinkPort {
-            description: format!("UPnP renderer at {}", renderer.location().host()),
+            description: words::network::renderer_at(renderer.location().host().to_string()),
             plugged: Plugged::Unsaid,
             hardware_volume: if renderer.turns_its_own_volume() {
                 HardwareVolume::Always

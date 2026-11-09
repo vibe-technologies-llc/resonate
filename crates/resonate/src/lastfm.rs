@@ -6,11 +6,11 @@ use crate::{Result, config::Config};
 pub fn sign_in(config: &Config, settings: &Path, user: Option<&str>, forget: bool) -> Result<()> {
     use resonate_online::Application;
 
-    use crate::{Error, config, error::ConfigKey, input, online, signals};
+    use crate::{Error, config, error::ConfigKey, input, online, signals, words};
 
     if forget {
         config::clear(settings, ConfigKey::LastfmSession)?;
-        said!("nothing more is scrobbled to Last.fm");
+        said!("{}", words::lastfm::forgotten());
         return Ok(());
     }
     if !config.online_enabled() {
@@ -30,7 +30,7 @@ pub fn sign_in(config: &Config, settings: &Path, user: Option<&str>, forget: boo
         return Err(Error::NoLastfmUser);
     };
 
-    told!("type the Last.fm password for {user}, then enter:");
+    told!("{}", words::lastfm::type_the_password(user));
     let leaving = signals::leave_when_told();
     let password = input::a_line_unechoed().map_err(|source| Error::ReadPassword { source })?;
     drop(leaving);
@@ -41,9 +41,8 @@ pub fn sign_in(config: &Config, settings: &Path, user: Option<&str>, forget: boo
     };
     config::store(settings, ConfigKey::LastfmSession, session.key)?;
     said!(
-        "signed in to Last.fm as {}; the session key is kept in {}",
-        session.name,
-        settings.display()
+        "{}",
+        words::lastfm::signed_in(session.name, settings.display().to_string())
     );
     Ok(())
 }

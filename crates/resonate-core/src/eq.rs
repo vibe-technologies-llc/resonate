@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::{ChannelLayout, ChannelPosition, Error, Result, SampleRate};
+use crate::{ChannelLayout, ChannelPosition, Error, Result, SampleRate, words};
 
 pub const MAX_BANDS: usize = 32;
 
@@ -63,11 +63,13 @@ impl Frequency {
 
 impl fmt::Display for Frequency {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0.is_multiple_of(100) {
-            write!(f, "{} Hz", self.0 / 100)
+        let hertz = if self.0.is_multiple_of(100) {
+            (self.0 / 100).to_string()
         } else {
-            write!(f, "{:.2} Hz", self.hertz())
-        }
+            format!("{:.2}", self.hertz())
+        };
+
+        f.write_str(&words::eq::hertz(hertz))
     }
 }
 
@@ -113,7 +115,7 @@ impl BandGain {
 
 impl fmt::Display for BandGain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:+.1} dB", self.decibels())
+        f.write_str(&words::eq::decibels(format!("{:+.1}", self.decibels())))
     }
 }
 
@@ -348,7 +350,7 @@ impl Preamp {
 
 impl fmt::Display for Preamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:+.1} dB", self.decibels())
+        f.write_str(&words::eq::decibels(format!("{:+.1}", self.decibels())))
     }
 }
 
@@ -390,16 +392,16 @@ impl BandKind {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Peaking => "Peak",
-            Self::LowShelf => "Low shelf",
-            Self::HighShelf => "High shelf",
-            Self::LowPass => "Low pass",
-            Self::HighPass => "High pass",
-            Self::Notch => "Notch",
-            Self::BandPass => "Band pass",
-            Self::AllPass => "All pass",
+            Self::Peaking => words::eq::peak(),
+            Self::LowShelf => words::eq::low_shelf(),
+            Self::HighShelf => words::eq::high_shelf(),
+            Self::LowPass => words::eq::low_pass(),
+            Self::HighPass => words::eq::high_pass(),
+            Self::Notch => words::eq::notch(),
+            Self::BandPass => words::eq::band_pass(),
+            Self::AllPass => words::eq::all_pass(),
         }
     }
 

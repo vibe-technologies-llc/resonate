@@ -2,13 +2,11 @@ use std::time::Duration;
 
 use resonate_library::{Library, Listened, MostListened, Statistics, Window};
 
-use crate::{Result, cli::WindowArg, counted, table::Table};
+use crate::{Result, cli::WindowArg, table::Table, words};
 
 const SECONDS_A_MINUTE: u64 = 60;
 const MINUTES_AN_HOUR: u64 = 60;
 const SECONDS_AN_HOUR: u64 = MINUTES_AN_HOUR * SECONDS_A_MINUTE;
-
-const NOTHING_WAS_HEARD: &str = "nothing was played";
 
 pub fn print(library: &Library, window: WindowArg, most: usize) -> Result<()> {
     let window = Window::from(window);
@@ -25,9 +23,13 @@ pub fn print(library: &Library, window: WindowArg, most: usize) -> Result<()> {
         artists,
     } = &listened;
 
-    section("TRACKS MOST LISTENED TO", "TRACK", tracks);
-    section("ALBUMS MOST LISTENED TO", "ALBUM", albums);
-    section("ARTISTS MOST LISTENED TO", "ARTIST", artists);
+    section(words::stats::tracks_most(), words::stats::track(), tracks);
+    section(words::stats::albums_most(), words::stats::album(), albums);
+    section(
+        words::stats::artists_most(),
+        words::stats::artist(),
+        artists,
+    );
     Ok(())
 }
 
@@ -35,11 +37,15 @@ fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
     said!();
     said!("{heading}");
     if rows.is_empty() {
-        said!("{NOTHING_WAS_HEARD}");
+        said!("{}", words::stats::nothing_played());
         return;
     }
 
-    let mut table = Table::new(vec![named, "PLAYS", "LISTENED"]);
+    let mut table = Table::new(vec![
+        named,
+        words::stats::plays_heading(),
+        words::stats::listened_heading(),
+    ]);
     for row in rows {
         table.push(vec![
             row.name.clone(),
@@ -53,23 +59,25 @@ fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
 fn summarised(counts: Statistics, window: Window) -> String {
     let across = across(window);
     if counts.plays == 0 {
-        return format!("{NOTHING_WAS_HEARD} {across}");
+        return words::stats::nothing_played_across(across);
     }
 
-    format!(
-        "{} {across} · {} listened · {} · {} · {}",
-        counted(counts.plays, "play", "plays"),
+    words::stats::summary(
+        across,
+        counts.albums,
+        counts.artists,
         heard_for(counts.listened),
-        counted(counts.tracks, "track", "tracks"),
-        counted(counts.albums, "album", "albums"),
-        counted(counts.artists, "artist", "artists")
+        counts.plays,
+        counts.tracks,
     )
 }
 
-fn across(window: Window) -> String {
+fn across(window: Window) -> &'static str {
     match window {
-        Window::Everything => "all told".to_owned(),
-        span => format!("over the last {}", span.name()),
+        Window::Everything => words::stats::all_told(),
+        Window::Week => words::stats::over_the_last_week(),
+        Window::Month => words::stats::over_the_last_month(),
+        Window::Year => words::stats::over_the_last_year(),
     }
 }
 
@@ -78,9 +86,9 @@ fn heard_for(span: Duration) -> String {
     let minutes = seconds / SECONDS_A_MINUTE;
 
     match seconds / SECONDS_AN_HOUR {
-        0 if minutes == 0 => format!("{seconds}s"),
-        0 => format!("{minutes}m"),
-        hours => format!("{hours}h {}m", minutes % MINUTES_AN_HOUR),
+        0 if minutes == 0 => words::stats::seconds(seconds),
+        0 => words::stats::minutes(minutes),
+        hours => words::stats::hours_and_minutes(hours, minutes % MINUTES_AN_HOUR),
     }
 }
 

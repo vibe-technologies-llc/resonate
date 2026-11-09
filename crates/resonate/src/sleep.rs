@@ -6,7 +6,7 @@ use resonate_mpris::Running;
 use crate::{
     Error, Result,
     lasting::{Bare, lasting},
-    reached,
+    reached, words,
 };
 
 const END_OF_TRACK: &str = "track";
@@ -68,25 +68,28 @@ pub fn set(spoken: &str, player: Option<&str>, zone: Option<&str>) -> Result<()>
     let running = reached(player, zone)?;
     running.set_sleep(wanted.until())?;
 
-    said!("{}: {}", running.name(), reads_as(&running)?);
+    said!(
+        "{}",
+        words::sleep::reads_as(running.name().to_string(), reads_as(&running)?)
+    );
     Ok(())
 }
 
 fn reads_as(running: &Running) -> Result<String> {
     Ok(running.sleep()?.map_or_else(
-        || "no sleep timer".to_owned(),
-        |asleep| format!("sleeping {}", when(asleep)),
+        || words::sleep::no_timer().to_owned(),
+        |asleep| words::sleep::sleeping(when(asleep)),
     ))
 }
 
 fn when(asleep: Asleep) -> String {
     match asleep.until {
         Until::After(_) => match asleep.left {
-            Some(left) => format!("in {}", counting_down(left)),
-            None => "soon".to_owned(),
+            Some(left) => words::sleep::r#in(counting_down(left)),
+            None => words::sleep::soon().to_owned(),
         },
-        Until::EndOfTrack => "at the end of the track playing".to_owned(),
-        Until::EndOfQueue => "at the end of the queue".to_owned(),
+        Until::EndOfTrack => words::sleep::end_of_the_track().to_owned(),
+        Until::EndOfQueue => words::sleep::end_of_the_queue().to_owned(),
     }
 }
 
@@ -94,8 +97,10 @@ fn counting_down(left: Duration) -> String {
     let seconds = left.as_secs();
 
     match (seconds / SECONDS_AN_HOUR, seconds % SECONDS_AN_HOUR) {
-        (0, rest) => format!("{}m {}s", rest / SECONDS_A_MINUTE, rest % SECONDS_A_MINUTE),
-        (hours, rest) => format!("{hours}h {}m", rest / SECONDS_A_MINUTE),
+        (0, rest) => {
+            words::sleep::minutes_and_seconds(rest / SECONDS_A_MINUTE, rest % SECONDS_A_MINUTE)
+        }
+        (hours, rest) => words::sleep::hours_and_minutes(hours, rest / SECONDS_A_MINUTE),
     }
 }
 

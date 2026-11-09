@@ -1,0 +1,10 @@
+first-given = Zone { $zone }
+remote-trust-title = Driven by your other devices
+remote-trust-asked = What your other devices may do here
+remote-trust-told = Your other devices drive this one from their list of devices.
+everything = Everything
+playback-only = Playback only
+nothing = Nothing
+everything-means = Play, pause, skip, seek, set the volume and change the queue
+playback-only-means = Play, pause, skip, seek and set the volume, but not move or remove songs
+nothing-means = They cannot see or change what plays here

@@ -130,7 +130,10 @@ rows read via `Player::media` like any unscanned row.
   thread (`online.md`).
 - **A suggestion is a named saved query, so it costs almost nothing.** `suggest.rs` answers
   `Suggestion { name, reason, query, rows, length, pictured_by }`; the query is written through
-  `Display for Search`, so suggestion and search-box parse cannot drift. A genre/artist with no
+  `Display for Search`, so suggestion and search-box parse cannot drift. Its name, `Reason::says`
+  and `Kind::name` are said through `words/en/suggest.ftl` (a decade by the `the-decade` and
+  `decade-named` selectors on the year, so a name is the language's own, never a capital put on a
+  phrase); a name saved as a playlist keeps the language it was saved in. A genre/artist with no
   letter or digit or containing `"` is not offered. Saving = `Library::save_query`; nothing persists
   until saved; nothing offered below `ENOUGH_TO_OFFER` rows (`ENOUGH_OF_ONE_ARTIST` for a list of one
   artist or a few); `names_a_decade` drops a genre that is only a decade. `Library::suggestions`
@@ -682,7 +685,8 @@ rows read via `Player::media` like any unscanned row.
   or with no exact match; covers and portraits fetched or none to be had; lyrics kept or none held;
   plus the studies' counts and `refused`. **A refusal is not a miss**: `no strict match` counts
   only where `Pass::fruitlessly` says `Missed`, so a service refusing is `refused` and nothing
-  else. `outcomes.rs` is the one list (`Outcome::ALL`, each with `key`, `label` and `Section`;
+  else. `outcomes.rs` is the one list (`Outcome::ALL`, each with `key`, `label` and `Section`, the
+  label and the section's title said through `words/en/outcomes.ftl`;
   `EnrichStats::of`, `told_by_section`): the CLI, MCP and the window read it, so a counter added
   without an `Outcome` fails the exhaustive `of`, and one with two fails
   `every_counter_is_one_outcome_and_every_outcome_one_counter`. A metered connection is no counter:

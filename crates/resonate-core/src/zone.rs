@@ -1,6 +1,6 @@
 use std::{fmt, num::NonZeroU32};
 
-use crate::Volume;
+use crate::{Volume, words};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ZoneId(NonZeroU32);
@@ -58,7 +58,7 @@ impl ZoneName {
     }
 
     pub fn first_given_to(zone: ZoneId) -> Self {
-        Self(format!("Zone {zone}").into())
+        Self(words::zone::first_given(zone.to_string()).into())
     }
 
     pub fn as_str(&self) -> &str {
@@ -88,30 +88,34 @@ pub enum RemoteTrust {
     Nothing,
 }
 
-pub const REMOTE_TRUST_TITLE: &str = "Driven by your other devices";
+pub fn remote_trust_title() -> &'static str {
+    words::zone::remote_trust_title()
+}
 
-pub const REMOTE_TRUST_ASKED: &str = "What your other devices may do here";
+pub fn remote_trust_asked() -> &'static str {
+    words::zone::remote_trust_asked()
+}
 
-pub const REMOTE_TRUST_TOLD: &str = "Your other devices drive this one from their list of devices.";
+pub fn remote_trust_told() -> &'static str {
+    words::zone::remote_trust_told()
+}
 
 impl RemoteTrust {
     pub const ALL: [Self; 3] = [Self::Everything, Self::Transport, Self::Nothing];
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Everything => "Everything",
-            Self::Transport => "Playback only",
-            Self::Nothing => "Nothing",
+            Self::Everything => words::zone::everything(),
+            Self::Transport => words::zone::playback_only(),
+            Self::Nothing => words::zone::nothing(),
         }
     }
 
-    pub const fn meaning(self) -> &'static str {
+    pub fn meaning(self) -> &'static str {
         match self {
-            Self::Everything => "Play, pause, skip, seek, set the volume and change the queue",
-            Self::Transport => {
-                "Play, pause, skip, seek and set the volume, but not move or remove songs"
-            }
-            Self::Nothing => "They cannot see or change what plays here",
+            Self::Everything => words::zone::everything_means(),
+            Self::Transport => words::zone::playback_only_means(),
+            Self::Nothing => words::zone::nothing_means(),
         }
     }
 

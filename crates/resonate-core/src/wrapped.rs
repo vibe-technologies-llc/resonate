@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use crate::{Calendar, CivilDate, folded_letters};
+use crate::{Calendar, CivilDate, date::MONTHS_BRIEFLY, folded_letters, words};
 
 mod frozen;
 
@@ -30,8 +30,6 @@ const SECONDS_IN_AN_HOUR: u64 = 3_600;
 const WHOLE_SHARE: u64 = 1_000;
 
 const DECEMBER: i64 = 12;
-
-const WHAT_THE_RANKINGS_COUNT: &str = "Rankings count the songs still in your library.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ranked {
@@ -396,9 +394,9 @@ impl YearReview {
                 Slide::saying(
                     SlideKind::Whole,
                     &self.eyebrow(),
-                    format!("Nothing was played in {}", self.year),
+                    words::wrapped::nothing_played(self.year),
                 )
-                .detailed("Play something and this fills itself in."),
+                .detailed(words::wrapped::play_something()),
             ];
         }
 
@@ -406,25 +404,25 @@ impl YearReview {
         slides.extend(self.top_of(
             SlideKind::Songs,
             &self.top_songs,
-            "Your song of the year",
+            words::wrapped::song_of_the_year(),
             None,
         ));
         slides.extend(self.top_of(
             SlideKind::Artists,
             &self.top_artists,
-            "Your artist of the year",
-            Some(WHAT_THE_RANKINGS_COUNT),
+            words::wrapped::artist_of_the_year(),
+            Some(words::wrapped::what_the_rankings_count()),
         ));
         slides.extend(self.top_of(
             SlideKind::Albums,
             &self.top_albums,
-            "Your album of the year",
+            words::wrapped::album_of_the_year(),
             None,
         ));
         slides.extend(self.top_of(
             SlideKind::Genres,
             &self.top_genres,
-            "Your genre of the year",
+            words::wrapped::genre_of_the_year(),
             None,
         ));
         slides.extend(self.months());
@@ -440,35 +438,34 @@ impl YearReview {
 
     pub fn summary(&self) -> String {
         let mut lines = vec![
-            format!("My {} on Resonate", self.year),
-            format!("{} of music", spelled_listening(self.listened)),
+            words::wrapped::my_year(self.year),
+            words::wrapped::of_music(spelled_listening(self.listened)),
             format!(
                 "{} · {} · {}",
-                counted(self.songs, "song", "songs"),
-                counted(self.artists, "artist", "artists"),
-                counted(self.albums, "album", "albums"),
+                words::wrapped::songs(self.songs),
+                words::wrapped::artists(self.artists),
+                words::wrapped::albums(self.albums),
             ),
         ];
         if let Some(song) = self.top_songs.first() {
-            lines.push(format!("Top song: {}", named_with_its_artist(song)));
+            lines.push(words::wrapped::top_song(named_with_its_artist(song)));
         }
         if let Some(artist) = self.top_artists.first() {
-            lines.push(format!("Top artist: {}", artist.name));
+            lines.push(words::wrapped::top_artist(artist.name.as_str()));
         }
         if let Some(album) = self.top_albums.first() {
-            lines.push(format!("Top album: {}", named_with_its_artist(album)));
+            lines.push(words::wrapped::top_album(named_with_its_artist(album)));
         }
         if let Some(genre) = self.top_genres.first() {
-            lines.push(format!("Top genre: {}", genre.name));
+            lines.push(words::wrapped::top_genre(genre.name.as_str()));
         }
         if let Some(streak) = self.rhythm.longest_streak.filter(|streak| streak.days > 1) {
-            lines.push(format!("Longest streak: {} days", streak.days));
+            lines.push(words::wrapped::longest_streak(streak.days));
         }
         if let Some(formats) = self.formats {
-            lines.push(format!(
-                "{} lossless",
-                spelled_share(formats.lossless_permille)
-            ));
+            lines.push(words::wrapped::lossless(spelled_share(
+                formats.lossless_permille,
+            )));
         }
 
         lines.join("\n")
@@ -480,20 +477,20 @@ impl YearReview {
 
     fn whole(&self) -> Slide {
         let across = [
-            counted(self.songs, "song", "songs"),
-            counted(self.artists, "artist", "artists"),
-            counted(self.albums, "album", "albums"),
+            words::wrapped::songs(self.songs),
+            words::wrapped::artists(self.artists),
+            words::wrapped::albums(self.albums),
         ]
         .join(" · ");
 
         Slide::saying(
             SlideKind::Whole,
             &self.eyebrow(),
-            format!("{} of music", spelled_listening(self.listened)),
+            words::wrapped::of_music(spelled_listening(self.listened)),
         )
-        .detailed(format!(
-            "{across}, over {}",
-            counted(u64::from(self.rhythm.days_heard), "day", "days")
+        .detailed(words::wrapped::across_the_days(
+            across,
+            words::wrapped::days(self.rhythm.days_heard),
         ))
     }
 
@@ -520,12 +517,10 @@ impl YearReview {
         Some(
             Slide::saying(
                 SlideKind::Months,
-                "Your year",
-                format!("{} was your biggest month", MONTHS_NAMED[month]),
+                words::wrapped::your_year(),
+                words::wrapped::biggest_month(MONTHS_NAMED[month]()),
             )
-            .charted(&self.rhythm.months, |at| {
-                MONTHS_NAMED[at].chars().take(3).collect()
-            }),
+            .charted(&self.rhythm.months, |at| MONTHS_BRIEFLY[at]().to_owned()),
         )
     }
 
@@ -535,8 +530,8 @@ impl YearReview {
         Some(
             Slide::saying(
                 SlideKind::Hours,
-                "Your day",
-                format!("You listened most at {hour:02}:00"),
+                words::wrapped::your_day(),
+                words::wrapped::listened_most_at(format!("{hour:02}")),
             )
             .detailed(time_of_day(hour))
             .charted(&self.rhythm.hours, |at| format!("{at:02}")),
@@ -545,25 +540,21 @@ impl YearReview {
 
     fn days(&self) -> Option<Slide> {
         let busiest = self.rhythm.busiest_day?;
-        let on = format!(
-            "Your biggest day was {}: {}",
+        let on = words::wrapped::biggest_day_was(
             spelled_date(busiest.date),
-            spelled_listening(busiest.listened)
+            spelled_listening(busiest.listened),
         );
 
         Some(match self.rhythm.longest_streak {
             Some(streak) if streak.days > 1 => Slide::saying(
                 SlideKind::Days,
-                "Your streak",
-                format!(
-                    "{} in a row",
-                    counted(u64::from(streak.days), "day", "days")
-                ),
+                words::wrapped::your_streak(),
+                words::wrapped::in_a_row(words::wrapped::days(streak.days)),
             )
-            .detailed(format!("From {}. {on}", spelled_date(streak.from))),
+            .detailed(words::wrapped::streak_from(on, spelled_date(streak.from))),
             _ => Slide::saying(
                 SlideKind::Days,
-                "Your biggest day",
+                words::wrapped::your_biggest_day(),
                 spelled_date(busiest.date),
             )
             .detailed(spelled_listening(busiest.listened)),
@@ -571,19 +562,15 @@ impl YearReview {
     }
 
     fn discoveries(&self) -> Option<Slide> {
-        let added = (self.songs_added > 0).then(|| {
-            format!(
-                "{} joined your library.",
-                counted(self.songs_added, "song", "songs")
-            )
-        });
+        let added = (self.songs_added > 0)
+            .then(|| words::wrapped::joined_your_library(words::wrapped::songs(self.songs_added)));
 
         match (self.songs_new.filter(|new| *new > 0), added) {
             (Some(new), added) => {
                 let slide = Slide::saying(
                     SlideKind::Discoveries,
-                    "New to you",
-                    format!("{} heard for the first time", counted(new, "song", "songs")),
+                    words::wrapped::new_to_you(),
+                    words::wrapped::heard_for_the_first_time(words::wrapped::songs(new)),
                 );
                 Some(match added {
                     Some(added) => slide.detailed(added),
@@ -592,7 +579,7 @@ impl YearReview {
             }
             (None, Some(added)) => Some(Slide::saying(
                 SlideKind::Discoveries,
-                "New to your library",
+                words::wrapped::new_to_your_library(),
                 added,
             )),
             (None, None) => None,
@@ -605,13 +592,12 @@ impl YearReview {
         Some(
             Slide::saying(
                 SlideKind::Sound,
-                "Your sound",
-                format!("{} lossless", spelled_share(formats.lossless_permille)),
+                words::wrapped::your_sound(),
+                words::wrapped::lossless(spelled_share(formats.lossless_permille)),
             )
-            .detailed(format!(
-                "{} above CD quality. Counted over the songs in your library.",
-                spelled_share(formats.high_resolution_permille)
-            )),
+            .detailed(words::wrapped::above_cd_quality(spelled_share(
+                formats.high_resolution_permille,
+            ))),
         )
     }
 
@@ -620,12 +606,15 @@ impl YearReview {
         let on = spelled_date(first.on);
 
         Some(
-            Slide::saying(SlideKind::FirstSong, "Where it began", first.title.clone()).detailed(
-                match &first.by {
-                    Some(by) => format!("{by}, on {on}"),
-                    None => format!("On {on}"),
-                },
-            ),
+            Slide::saying(
+                SlideKind::FirstSong,
+                words::wrapped::where_it_began(),
+                first.title.clone(),
+            )
+            .detailed(match &first.by {
+                Some(by) => words::wrapped::by_on(by.as_str(), on),
+                None => words::wrapped::only_on(on),
+            }),
         )
     }
 
@@ -633,49 +622,42 @@ impl YearReview {
         Slide::saying(
             SlideKind::Farewell,
             &self.eyebrow(),
-            format!("That was your {}", self.year),
+            words::wrapped::that_was_your_year(self.year),
         )
-        .detailed(format!("{} of music", spelled_listening(self.listened)))
+        .detailed(words::wrapped::of_music(spelled_listening(self.listened)))
     }
 }
 
 fn named_with_its_artist(ranked: &Ranked) -> String {
     match &ranked.by {
-        Some(by) => format!("{} by {by}", ranked.name),
+        Some(by) => words::wrapped::named_by(by.as_str(), ranked.name.as_str()),
         None => ranked.name.clone(),
     }
 }
 
-const MONTHS_NAMED: [&str; MONTHS_IN_A_YEAR] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+const MONTHS_NAMED: [fn() -> &'static str; MONTHS_IN_A_YEAR] = [
+    words::wrapped::january,
+    words::wrapped::february,
+    words::wrapped::march,
+    words::wrapped::april,
+    words::wrapped::may,
+    words::wrapped::june,
+    words::wrapped::july,
+    words::wrapped::august,
+    words::wrapped::september,
+    words::wrapped::october,
+    words::wrapped::november,
+    words::wrapped::december,
 ];
 
-const fn time_of_day(hour: usize) -> &'static str {
+fn time_of_day(hour: usize) -> &'static str {
     match hour {
-        0..=4 => "The small hours are yours.",
-        5..=8 => "You start the day with music.",
-        9..=11 => "Your mornings have a soundtrack.",
-        12..=16 => "Your afternoons have a soundtrack.",
-        17..=20 => "Your evenings have a soundtrack.",
-        _ => "You listen late.",
-    }
-}
-
-fn counted(count: u64, one: &str, many: &str) -> String {
-    match count {
-        1 => format!("1 {one}"),
-        count => format!("{count} {many}"),
+        0..=4 => words::wrapped::small_hours(),
+        5..=8 => words::wrapped::start_the_day(),
+        9..=11 => words::wrapped::mornings(),
+        12..=16 => words::wrapped::afternoons(),
+        17..=20 => words::wrapped::evenings(),
+        _ => words::wrapped::late(),
     }
 }
 
@@ -683,8 +665,8 @@ pub fn spelled_listening(span: Duration) -> String {
     let seconds = span.as_secs();
 
     match seconds / SECONDS_IN_AN_HOUR {
-        0 => counted(seconds / SECONDS_IN_A_MINUTE, "minute", "minutes"),
-        hours => counted(hours, "hour", "hours"),
+        0 => words::wrapped::minutes(seconds / SECONDS_IN_A_MINUTE),
+        hours => words::wrapped::hours(hours),
     }
 }
 
@@ -696,10 +678,9 @@ fn spelled_date(date: CivilDate) -> String {
     let month = usize::try_from(date.month - 1)
         .ok()
         .and_then(|month| MONTHS_NAMED.get(month))
-        .copied()
-        .unwrap_or_default();
+        .map_or("", |named| named());
 
-    format!("{} {month}", date.day)
+    words::wrapped::day_and_month(date.day, month)
 }
 
 impl Calendar {

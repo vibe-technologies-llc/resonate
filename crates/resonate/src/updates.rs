@@ -12,9 +12,13 @@ use crate::{
     Error, Result,
     config::{self, Config},
     online::{self, Asking, Released},
+    words,
 };
 
 const KEPT_IN: &str = "latest-release";
+const CHECKED_AT: &str = "checked";
+const LATEST_VERSION: &str = "latest";
+const LATEST_PAGE: &str = "page";
 
 #[cfg(any(feature = "ui", test))]
 const ASKED_AGAIN_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
@@ -33,10 +37,10 @@ impl Heard {
             .checked
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
-        let mut text = format!("checked {seconds}\n");
+        let mut text = format!("{CHECKED_AT} {seconds}\n");
         if let Some(latest) = &self.latest {
             text.push_str(&format!(
-                "latest {}\npage {}\n",
+                "{LATEST_VERSION} {}\n{LATEST_PAGE} {}\n",
                 latest.version, latest.page
             ));
         }
@@ -50,11 +54,11 @@ impl Heard {
         let mut page = None;
         for line in text.lines() {
             match line.split_once(' ') {
-                Some(("checked", seconds)) => {
+                Some((CHECKED_AT, seconds)) => {
                     checked = Some(UNIX_EPOCH + Duration::from_secs(seconds.trim().parse().ok()?));
                 }
-                Some(("latest", spelt)) => version = Some(spelt.trim().to_owned()),
-                Some(("page", spelt)) => page = Some(spelt.trim().to_owned()),
+                Some((LATEST_VERSION, spelt)) => version = Some(spelt.trim().to_owned()),
+                Some((LATEST_PAGE, spelt)) => page = Some(spelt.trim().to_owned()),
                 _ => {}
             }
         }
@@ -152,14 +156,14 @@ pub fn run(config: &Config) -> Result<()> {
         }
     }
 
-    said!("this build: {THIS_BUILD}");
+    said!("{}", words::updates::this_build(THIS_BUILD));
     match latest {
-        None => said!("no release is published yet"),
+        None => said!("{}", words::updates::none_published()),
         Some(latest) if online::outdates_this_build(&latest.version) => {
-            said!("newer: {}", latest.version);
+            said!("{}", words::updates::newer(&latest.version));
             said!("{}", latest.page);
         }
-        Some(latest) => said!("latest: {}, which this build is not behind", latest.version),
+        Some(latest) => said!("{}", words::updates::not_behind(&latest.version)),
     }
     Ok(())
 }

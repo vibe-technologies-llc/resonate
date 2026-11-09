@@ -1,3 +1,5 @@
+use crate::words;
+
 const PAGE_REQUEST_READ_AT_MOST: usize = 2_048;
 
 const SHARED_PLAYLIST: &str = "shared";
@@ -9,7 +11,7 @@ const ASSET_LINKS_TARGET: &str = "/.well-known/assetlinks.json";
 const ANDROID_PACKAGE: &str = "org.resonate.android";
 
 const PAGE: &str = r##"<!doctype html>
-<html lang="en">
+<html lang="@LANGUAGE@">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -30,9 +32,9 @@ code{display:block;margin-top:1.2rem;word-break:break-all;color:var(--faint)}
 <main>
 <h1>@HEADING@</h1>
 <p>@SAYING@</p>
-<a class="open" id="open" href="#">Open in Resonate</a>
+<a class="open" id="open" href="#">@OPEN@</a>
 <code id="code"></code>
-<noscript><p>This page needs JavaScript to hand the invitation to Resonate.</p></noscript>
+<noscript><p>@NEEDS_SCRIPT@</p></noscript>
 </main>
 <script>
 var code = location.hash.slice(1);
@@ -89,20 +91,26 @@ pub fn answer(asked: Asked, android_certificates: &[String]) -> Vec<u8> {
 
 fn page_of(kind: &str) -> String {
     let (heading, saying) = if kind == PARTY {
-        (
-            "You're invited to a listening party",
-            "Open it in Resonate to listen along. Everyone plays their own copy of each song, so nothing is sent between you.",
-        )
+        (words::pages::party_heading(), words::pages::party_saying())
     } else {
         (
-            "A playlist was shared with you",
-            "Open it in Resonate to follow it. The server keeps it sealed and cannot read it, so this page cannot show it.",
+            words::pages::shared_heading(),
+            words::pages::shared_saying(),
         )
     };
 
-    PAGE.replace("@HEADING@", heading)
-        .replace("@SAYING@", saying)
+    PAGE.replace("@LANGUAGE@", resonate_words::spoken().tag())
+        .replace("@HEADING@", &escaped(heading))
+        .replace("@SAYING@", &escaped(saying))
+        .replace("@OPEN@", &escaped(words::pages::open()))
+        .replace("@NEEDS_SCRIPT@", &escaped(words::pages::needs_script()))
         .replace("@KIND@", kind)
+}
+
+fn escaped(said: &str) -> String {
+    said.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn asset_links(certificates: &[String]) -> String {

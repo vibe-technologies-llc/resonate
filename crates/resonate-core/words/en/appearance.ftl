@@ -1,0 +1,12 @@
+mauve = Mauve
+blue = Blue
+teal = Teal
+green = Green
+amber = Amber
+peach = Peach
+red = Red
+small = Small
+medium = Medium
+large = Large
+larger = Larger
+largest = Largest

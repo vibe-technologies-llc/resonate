@@ -4,6 +4,7 @@ use resonate_library::{Agreement, Library, StudiedTrack, StudyFilter, Verdict};
 use crate::{
     Error, Result,
     table::{self, Table},
+    words,
 };
 
 const NOTHING: &str = "-";
@@ -26,14 +27,15 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         .filter(|track| track.studied.recognised.is_some())
         .count();
     said!(
-        "studied {} | genuine {} | suspect {} | fake {} | lossy {} | not judged {} | recognised \
-         {recognised} | misnamed {misnamed}",
-        every.len(),
-        counted(Verdict::Genuine),
-        counted(Verdict::Suspect),
-        counted(Verdict::Fake),
-        counted(Verdict::Lossy),
-        counted(Verdict::NotJudged),
+        "{} | {}",
+        words::studies::judged(
+            counted(Verdict::Fake),
+            counted(Verdict::Genuine),
+            counted(Verdict::Lossy),
+            every.len(),
+            counted(Verdict::Suspect),
+        ),
+        words::studies::named(misnamed, recognised, counted(Verdict::NotJudged)),
     );
 
     let shown = if filter == StudyFilter::default() {
@@ -42,12 +44,19 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         library.studies(filter)?
     };
     if shown.is_empty() {
-        said!("nothing studied matches");
+        said!("{}", words::studies::none_match());
         return Ok(());
     }
 
     let mut table = Table::new(vec![
-        "VERDICT", "CUTOFF", "BITS", "LOUDNESS", "RANGE", "HEARD AS", "ARTIST", "TITLE",
+        words::studies::verdict(),
+        words::studies::cutoff(),
+        words::studies::bits(),
+        words::studies::loudness(),
+        words::studies::range(),
+        words::studies::heard_as(),
+        words::studies::artist(),
+        words::studies::title(),
     ]);
     for track in &shown {
         table.push(row(track));
@@ -71,11 +80,13 @@ pub fn take(library: &Library, location: &MediaLocation, span: Option<FrameSpan>
         })?;
 
     said!(
-        "{} — {} | recording {} | heard at {}",
-        table::on_one_line(taken.artist.as_deref().unwrap_or(NOTHING)),
-        table::on_one_line(&taken.title),
-        taken.recording,
-        taken.score
+        "{}",
+        words::studies::taken(
+            table::on_one_line(taken.artist.as_deref().unwrap_or(NOTHING)),
+            taken.recording.to_string(),
+            taken.score.to_string(),
+            table::on_one_line(&taken.title),
+        )
     );
     Ok(())
 }
@@ -89,7 +100,7 @@ fn row(track: &StudiedTrack) -> Vec<String> {
             heard.title
         ),
         (Some(heard), _) => format!("{} ({})", heard.title, heard.score),
-        (None, Some(Agreement::Unheard)) => "not recognised".to_owned(),
+        (None, Some(Agreement::Unheard)) => words::studies::not_recognised().to_owned(),
         (None, _) => NOTHING.to_owned(),
     };
 
@@ -97,7 +108,7 @@ fn row(track: &StudiedTrack) -> Vec<String> {
         studied.verdict.as_str().to_owned(),
         studied.cutoff.map_or_else(
             || NOTHING.to_owned(),
-            |cutoff| format!("{:.1} kHz", cutoff.hz as f32 / HZ_A_KILOHERTZ),
+            |cutoff| words::studies::kilohertz(format!("{:.1}", cutoff.hz as f32 / HZ_A_KILOHERTZ)),
         ),
         match (studied.bits_in_use, studied.declared_bits) {
             (Some(used), Some(declared)) if used < declared => format!("{used}/{declared}"),
@@ -105,12 +116,14 @@ fn row(track: &StudiedTrack) -> Vec<String> {
             (Some(used), None) => used.to_string(),
             (None, None) => NOTHING.to_owned(),
         },
-        studied
-            .loudness
-            .map_or_else(|| NOTHING.to_owned(), |lufs| format!("{lufs:.1} LUFS")),
-        studied
-            .loudness_range
-            .map_or_else(|| NOTHING.to_owned(), |lu| format!("{lu:.1} LU")),
+        studied.loudness.map_or_else(
+            || NOTHING.to_owned(),
+            |lufs| words::studies::lufs(format!("{lufs:.1}")),
+        ),
+        studied.loudness_range.map_or_else(
+            || NOTHING.to_owned(),
+            |lu| words::studies::lu(format!("{lu:.1}")),
+        ),
         heard,
         track.artist.clone().unwrap_or_else(|| NOTHING.to_owned()),
         track.title.clone(),

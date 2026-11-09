@@ -14,11 +14,18 @@ rayon.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-dsp.workspace = true
+resonate-words.workspace = true
 rustfft.workspace = true
 rusty-chromaprint.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[build-dependencies]
+resonate-words-build.workspace = true
+
+[dev-dependencies]
+resonate-words-build.workspace = true
 
 [[bench]]
 name = "bound"

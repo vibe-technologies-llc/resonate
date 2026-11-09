@@ -7,7 +7,6 @@ use serde_json::Value;
 use crate::{Tool, VideoId};
 
 pub(crate) const LIKED_SONGS_ID: &str = "LM";
-pub(crate) const LIKED_SONGS: &str = "Liked songs";
 const THE_ACCOUNTS_PLAYLISTS_ARE_AT: &str = "https://www.youtube.com/feed/playlists";
 const A_PLAYLIST_IS_AT: &str = "https://music.youtube.com/playlist?list=";
 const NOT_A_PLAYLIST_OF_SONGS: [&str; 3] = [LIKED_SONGS_ID, "LL", "WL"];

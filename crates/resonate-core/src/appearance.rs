@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::words;
+
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
@@ -187,15 +189,15 @@ impl Accent {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Mauve => "Mauve",
-            Self::Blue => "Blue",
-            Self::Teal => "Teal",
-            Self::Green => "Green",
-            Self::Amber => "Amber",
-            Self::Peach => "Peach",
-            Self::Red => "Red",
+            Self::Mauve => words::appearance::mauve(),
+            Self::Blue => words::appearance::blue(),
+            Self::Teal => words::appearance::teal(),
+            Self::Green => words::appearance::green(),
+            Self::Amber => words::appearance::amber(),
+            Self::Peach => words::appearance::peach(),
+            Self::Red => words::appearance::red(),
         }
     }
 
@@ -240,13 +242,13 @@ impl TextSize {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Small => "Small",
-            Self::Medium => "Medium",
-            Self::Large => "Large",
-            Self::Larger => "Larger",
-            Self::Largest => "Largest",
+            Self::Small => words::appearance::small(),
+            Self::Medium => words::appearance::medium(),
+            Self::Large => words::appearance::large(),
+            Self::Larger => words::appearance::larger(),
+            Self::Largest => words::appearance::largest(),
         }
     }
 

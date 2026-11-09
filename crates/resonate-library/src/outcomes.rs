@@ -1,4 +1,4 @@
-use crate::EnrichStats;
+use crate::{EnrichStats, words};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Section {
@@ -22,15 +22,15 @@ impl Section {
         Self::Trouble,
     ];
 
-    pub const fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
-            Self::Albums => "Albums",
-            Self::Tracks => "Tracks",
-            Self::Artists => "Artists",
-            Self::Pictures => "Pictures",
-            Self::Words => "Lyrics and songs",
-            Self::Studies => "Studies",
-            Self::Trouble => "Trouble",
+            Self::Albums => words::outcomes::section_albums(),
+            Self::Tracks => words::outcomes::section_tracks(),
+            Self::Artists => words::outcomes::section_artists(),
+            Self::Pictures => words::outcomes::section_pictures(),
+            Self::Words => words::outcomes::section_words(),
+            Self::Studies => words::outcomes::section_studies(),
+            Self::Trouble => words::outcomes::section_trouble(),
         }
     }
 
@@ -168,37 +168,37 @@ impl Outcome {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Albums => "asked about",
-            Self::Releases => "matched to a release",
-            Self::Groups => "matched to a release group alone",
-            Self::Matched => "tracks paired with a release's rows",
-            Self::AlbumsUnmatched => "with no strict match",
-            Self::AlbumsRejected => "left alone, the release being one you refused",
-            Self::Tracks => "asked about",
-            Self::Named => "renamed to what the reference calls them",
-            Self::ByIsrc => "identified by their ISRC",
-            Self::ByRecording => "identified by their recording id",
-            Self::BySearch => "identified by a search",
-            Self::ByFingerprint => "identified by their sound",
-            Self::TracksUnmatched => "with no strict match",
-            Self::Artists => "asked about",
-            Self::Profiles => "answered",
-            Self::ArtistsUnmatched => "with no exact match",
-            Self::ReleasesFound => "releases found on their discographies",
-            Self::Covers => "covers fetched",
-            Self::CoversMissing => "albums the archive holds no cover for",
-            Self::Portraits => "portraits fetched",
-            Self::PortraitsMissing => "artists with no portrait to fetch",
-            Self::Lyrics => "tracks given lyrics",
-            Self::LyricsMissing => "tracks the lyric services hold none for",
-            Self::Songs => "songs of albums not held learnt",
-            Self::Studied => "tracks studied",
-            Self::Fakes => "found fake lossless",
-            Self::Recognised => "recognised by sound",
-            Self::Misnamed => "recognised as another song than named",
-            Self::Refused => "requests a service refused or answered unreadably",
+            Self::Albums => words::outcomes::albums_asked(),
+            Self::Releases => words::outcomes::albums_matched_to_a_release(),
+            Self::Groups => words::outcomes::albums_matched_to_a_group(),
+            Self::Matched => words::outcomes::tracks_paired(),
+            Self::AlbumsUnmatched => words::outcomes::albums_unmatched(),
+            Self::AlbumsRejected => words::outcomes::albums_rejected(),
+            Self::Tracks => words::outcomes::tracks_asked(),
+            Self::Named => words::outcomes::tracks_named(),
+            Self::ByIsrc => words::outcomes::tracks_by_isrc(),
+            Self::ByRecording => words::outcomes::tracks_by_recording(),
+            Self::BySearch => words::outcomes::tracks_by_search(),
+            Self::ByFingerprint => words::outcomes::tracks_by_fingerprint(),
+            Self::TracksUnmatched => words::outcomes::tracks_unmatched(),
+            Self::Artists => words::outcomes::artists_asked(),
+            Self::Profiles => words::outcomes::artists_answered(),
+            Self::ArtistsUnmatched => words::outcomes::artists_unmatched(),
+            Self::ReleasesFound => words::outcomes::releases_found(),
+            Self::Covers => words::outcomes::covers_fetched(),
+            Self::CoversMissing => words::outcomes::covers_missing(),
+            Self::Portraits => words::outcomes::portraits_fetched(),
+            Self::PortraitsMissing => words::outcomes::portraits_missing(),
+            Self::Lyrics => words::outcomes::lyrics_kept(),
+            Self::LyricsMissing => words::outcomes::lyrics_missing(),
+            Self::Songs => words::outcomes::songs_learnt(),
+            Self::Studied => words::outcomes::tracks_studied(),
+            Self::Fakes => words::outcomes::fakes_found(),
+            Self::Recognised => words::outcomes::recognised_by_sound(),
+            Self::Misnamed => words::outcomes::recognised_as_another(),
+            Self::Refused => words::outcomes::requests_refused(),
         }
     }
 }
