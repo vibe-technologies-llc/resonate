@@ -136,7 +136,7 @@ class ProviderAccountViewModel(
     }
 
     fun quickConnect() {
-        val account = draft?.trimmed() ?: return
+        val account = draft?.trimmed()?.let { lettingASessionGo(it) } ?: return
         resonate.attempt(viewModelScope) {
             val key =
                 withContext(Dispatchers.IO) { features.keepProviderAccount(keptId.value, account) }

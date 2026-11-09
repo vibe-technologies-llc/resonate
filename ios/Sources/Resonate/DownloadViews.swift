@@ -406,7 +406,17 @@ struct ProviderSection: View {
 
     private func followed(_ previous: DownloadAccount, _ current: DownloadAccount) -> DownloadAccount {
         let unedited = account == previous || account.trimmed == current
-        return unedited ? current : account.renewed(current.refreshToken)
+        if unedited { return current }
+        guard current.holdsAQuickConnectSession, !account.holdsAQuickConnectSession else {
+            return account.renewed(current.refreshToken)
+        }
+        var signed = account
+        signed.user = current.user
+        signed.password = ""
+        signed.token = current.token
+        signed.userId = current.userId
+        signed.device = current.device
+        return signed
     }
 }
 
@@ -441,6 +451,9 @@ struct ProviderFields: View {
             SecureField("Key for your own server (optional)", text: $account.password)
         case .subsonic, .jellyfin:
             serverField("Server URL")
+                .onChange(of: account.server) { _, _ in
+                    if account.provider == .jellyfin { account.letGoOfTheQuickConnectSession() }
+                }
             TextField("Username", text: $account.user)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

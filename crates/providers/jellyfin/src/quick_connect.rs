@@ -18,6 +18,8 @@ pub const A_QUICK_CONNECT_LAPSES_AFTER: Duration = Duration::from_secs(10 * 60);
 
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 
+const A_POLL_ANSWERED_WITHIN: Duration = Duration::from_secs(3);
+
 const METHOD_NOT_ALLOWED: u16 = 405;
 
 const FIRST_SERVER_ERROR: u16 = 500;
@@ -165,7 +167,11 @@ impl QuickConnect {
                 return Err(self.lapsed());
             }
             match Self::polled(&asking, approving) {
-                Ok(true) => return Self::signed_in(&asking, approving).map(Some),
+                Ok(true) if cancelled() => return Ok(None),
+                Ok(true) => {
+                    let signed = Self::signed_in(&asking, approving)?;
+                    return Ok((!cancelled()).then_some(signed));
+                }
                 Ok(false) => {}
                 Err(Error::Refused {
                     status: NOT_FOUND, ..
@@ -188,7 +194,9 @@ impl QuickConnect {
             asking.roots().0,
             escaped(&approving.secret)
         );
-        let response = asking.called_within(&asking.asking, op, &Call::Get, &url, None)?;
+        let deadline = Instant::now() + A_POLL_ANSWERED_WITHIN;
+        let response =
+            asking.called_within(&asking.asking, op, &Call::Get, &url, Some(deadline))?;
         let bytes = asking.read_whole(op, response)?;
         let polled: Polled = asking.document(&bytes, op)?;
         Ok(polled.authenticated)

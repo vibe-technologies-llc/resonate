@@ -90,6 +90,7 @@ impl RootView {
             return;
         }
 
+        let asked_at = address.clone();
         let stopped = Arc::new(AtomicBool::new(false));
         self.jellyfin_quick.stopped = Arc::clone(&stopped);
         self.jellyfin_quick.shown = Shown::Asking;
@@ -130,14 +131,17 @@ impl RootView {
                 .await;
             let told = this.update(cx, |this, cx| {
                 this.jellyfin_quick.shown = Shown::Idle;
-                this.quick_connected(answered, cx);
+                let moved = cx.global::<ResonateApp>().online.jellyfin.trim() != asked_at;
+                if !moved {
+                    this.quick_connected(answered, cx);
+                }
                 cx.notify();
             });
             let _ = told;
         });
     }
 
-    fn stop_quick_connect(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn stop_quick_connect(&mut self, cx: &mut Context<Self>) {
         self.jellyfin_quick.stopped.store(true, Ordering::SeqCst);
         self.jellyfin_quick.shown = Shown::Idle;
         self.jellyfin_quick.task = Task::ready(());

@@ -217,6 +217,9 @@ impl RootView {
         if lets_the_session_go {
             self.let_go_of_the_jellyfin_session(cx);
         }
+        if service == Service::Jellyfin && account == Account::Server {
+            self.stop_quick_connect(cx);
+        }
         self.report(Notice::Done(said), cx);
         self.the_sources_moved(cx);
         window.focus(&self.focus, cx);
