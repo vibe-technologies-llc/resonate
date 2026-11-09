@@ -4,15 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Mobile
-- [S · 0.7.1] Deleting or folding songs on a phone leaves dead rows in the live queue and then
-  stops the queue from being kept: `drop_from_queue_in` sends one `Command::Remove` per run of gone
-  rows and stops silently at `QUEUE_EDITS_AT_MOST` (64) runs or at the first error, `forget_deleted_songs`
-  and `fold_identical_songs` then delete the `documents` rows, and `save_zone` fails on
-  `ids_at` with `UnknownTrack` for any queue row whose document is gone, on every five-second tick and
-  at `shutdown`, so after a large delete or fold of songs that sit apart in a queued library the
-  queue and position are no longer written, a process death restores a stale queue and one failure
-  stops `save` before the zones after it, with a vague toast once and then none (loop until none is
-  gone, and let `save_zone` pass over a row the catalog lacks)
 - [M · 0.7.1] A refresh of the phones' song list can duplicate rows and crash the list: Android's
   `pagedTracks` and iOS's `Library.pages` read 500 rows at a time by offset against the live
   catalog, `scanDocument` runs between pages without the lock the pages take, a new song sorting

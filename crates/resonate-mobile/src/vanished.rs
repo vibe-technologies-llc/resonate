@@ -124,35 +124,34 @@ impl MobilePlayer {
     }
 
     fn drop_from_queue_in(&self, zone: ZoneId, missing: &BTreeSet<String>) -> usize {
-        let mut dropped = 0;
         for _ in 0..QUEUE_EDITS_AT_MOST {
-            let mut run = None;
+            let mut dropped = 0;
             let edited = self.edit_queue_in(zone, |queued, _| {
                 let gone = |row: usize| {
                     document_uri(&queued.rows[row].location).is_ok_and(|uri| missing.contains(&uri))
                 };
-                let Some(last) = (0..queued.rows.len()).rev().find(|row| gone(*row)) else {
-                    return Ok(None);
-                };
-                let first = (0..last)
-                    .rev()
-                    .take_while(|row| gone(*row))
-                    .last()
-                    .unwrap_or(last);
-                let span = Span::between(first, last);
-                run = Some(span.rows());
-                Ok(Some(Command::Remove(span)))
+                let mut runs: Vec<Span> = Vec::new();
+                for row in (0..queued.rows.len()).filter(|row| gone(*row)) {
+                    match runs.last_mut() {
+                        Some(run) if run.last() + 1 == row => {
+                            *run = Span::between(run.first(), row)
+                        }
+                        _ => runs.push(Span::between(row, row)),
+                    }
+                }
+                dropped = runs.iter().map(|run| run.rows()).sum();
+                Ok((!runs.is_empty()).then_some(Command::RemoveAll(runs)))
             });
-            match (edited, run) {
-                (Ok(()), Some(rows)) => dropped += rows,
-                (Ok(()), None) => break,
-                (Err(error), _) => {
-                    tracing::debug!(%error, "a song could not leave the queue");
-                    break;
+            match edited {
+                Ok(()) => return dropped,
+                Err(Error::Player(resonate_engine::Error::QueueChanged { .. })) => continue,
+                Err(error) => {
+                    tracing::debug!(%error, "the songs gone could not leave the queue");
+                    return 0;
                 }
             }
         }
-        dropped
+        0
     }
 
     pub(crate) fn take_the_place_of_missing(&self, id: u64, absorbing: Absorbing) -> Result<()> {

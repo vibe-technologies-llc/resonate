@@ -438,6 +438,25 @@ mod tests {
     }
 
     #[test]
+    fn a_song_deleted_from_more_places_than_edits_once_took_leaves_every_one_and_the_queue_is_kept()
+    {
+        let harness = Harness::new();
+        let apart = "bc".repeat(70);
+        harness.resumed(&format!("d{apart}"), 0, 0);
+        let gone = harness.song('b').id;
+
+        let forgotten = harness
+            .player
+            .forget_deleted_songs(vec![gone])
+            .expect("a deletion");
+        let saved = harness.player.save();
+
+        assert_eq!(forgotten.left_the_queue, 70);
+        assert_eq!(harness.queued(), format!("d{}", "c".repeat(70)));
+        assert!(saved.is_ok(), "the queue was not kept: {saved:?}");
+    }
+
+    #[test]
     fn an_empty_queue_takes_what_is_queued_paused_on_its_first_row() {
         let harness = Harness::new();
 

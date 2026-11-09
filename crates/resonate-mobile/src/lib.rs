@@ -635,7 +635,10 @@ impl MobilePlayer {
                 .filter(|item| !served::Served::names(&item.location))
                 .map(|item| document_uri(&item.location))
                 .collect::<Result<Vec<_>>>()?;
-            let mut ids = self.catalog.ids_at(&uris)?.into_iter();
+            let mut ids = self.catalog.ids_held_at(&uris)?.into_iter();
+            let mut passed_before_the_place: u32 = 0;
+            let mut the_place_passed_over = false;
+            let mut passed_over_any = false;
             let kept = rows
                 .iter()
                 .enumerate()
@@ -646,11 +649,30 @@ impl MobilePlayer {
                             rate: rate.filter(|_| at == place.row as usize),
                         }));
                     }
-                    ids.next().map(catalog::KeptRow::Document)
+                    let held = ids.next().flatten();
+                    if held.is_none() {
+                        passed_over_any = true;
+                        match at.cmp(&(place.row as usize)) {
+                            std::cmp::Ordering::Less => passed_before_the_place += 1,
+                            std::cmp::Ordering::Equal => the_place_passed_over = true,
+                            std::cmp::Ordering::Greater => {}
+                        }
+                    }
+                    held.map(catalog::KeptRow::Document)
                 })
                 .collect::<Vec<_>>();
+            let row = place.row.saturating_sub(passed_before_the_place);
+            let position_ms = if the_place_passed_over {
+                0
+            } else {
+                place.position_ms
+            };
             self.catalog
-                .save_rows_of(zone.id, &kept, place.row, place.position_ms)?;
+                .save_rows_of(zone.id, &kept, row, position_ms)?;
+            if passed_over_any {
+                *saved = None;
+                return Ok(());
+            }
         }
         *saved = Some(place);
         Ok(())

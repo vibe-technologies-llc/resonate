@@ -141,7 +141,7 @@ A steady tick takes no catalog lock at all: the playing row's `Track` is kept wi
 catalog revision it was read at (`Catalog::kept_track_uri`), read again only when either moves
 (`a_snapshot_keeps_the_playing_song_until_the_catalog_moves`). `save` copies the place and rows
 under the player lock and turns URIs into ids after releasing it. A run of rows by URI or id
-(`tracks_at`, `ids_at`, `tracks_by_id`: the queue read, a save, `load`, the resumption at open) is
+(`tracks_at`, `ids_held_at`, `tracks_by_id`: the queue read, a save, `load`, the resumption at open; a save passes over a row whose document the catalog no longer holds, the place moved past it, and keeps the queue whole again on the next tick) is
 read `ROWS_READ_PER_HOLD` (256) to a hold, so a whole-library queue lets a snapshot or a favourite
 in between (`rows_read_across_several_holds_keep_the_order_asked`).
 The long holds themselves are short: the search index is read in pages of 2 000 rows with the lock
@@ -654,7 +654,7 @@ forgetting and handing over songs reach it as they reach `queue`). The first zon
 `save` saves every zone; `MobilePlayer::new` resumes the first zone, then opens each kept zone at the
 system's device with its kept queue paused and at its kept volume (`restore_zones`); the front end
 binds a kept route to the device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
-(`drop_from_queue`), and `documents_moved` saves and resumes each zone holding a moved song. One
+(`drop_from_queue`, every run of its rows in one `Command::RemoveAll`, asked again where the queue moved meanwhile), and `documents_moved` saves and resumes each zone holding a moved song. One
 `resonate-watch` thread follows each zone's events, counting that zone's listening and telling the
 watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
 (`a_zone_added_keeps_a_queue_of_its_own_and_every_call_follows_the_zone_shown`,

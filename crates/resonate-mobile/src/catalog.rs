@@ -762,8 +762,8 @@ impl Catalog {
         )
     }
 
-    pub(crate) fn ids_at(&self, uris: &[String]) -> Result<Vec<u64>> {
-        self.each_in_holds(
+    pub(crate) fn ids_held_at(&self, uris: &[String]) -> Result<Vec<Option<u64>>> {
+        self.each_in_may_hold(
             uris,
             "SELECT id FROM documents WHERE uri = ?1",
             |query, uri| query.query_row([uri], |row| row.get::<_, i64>(0).map(|id| id as u64)),
@@ -780,8 +780,20 @@ impl Catalog {
         &self,
         keys: &[Key],
         sql: &str,
-        mut asked: impl FnMut(&mut CachedStatement<'_>, &Key) -> rusqlite::Result<Row>,
+        asked: impl FnMut(&mut CachedStatement<'_>, &Key) -> rusqlite::Result<Row>,
     ) -> Result<Vec<Row>> {
+        self.each_in_may_hold(keys, sql, asked)?
+            .into_iter()
+            .map(|row| row.ok_or(Error::UnknownTrack))
+            .collect()
+    }
+
+    fn each_in_may_hold<Key, Row>(
+        &self,
+        keys: &[Key],
+        sql: &str,
+        mut asked: impl FnMut(&mut CachedStatement<'_>, &Key) -> rusqlite::Result<Row>,
+    ) -> Result<Vec<Option<Row>>> {
         let mut rows = Vec::with_capacity(keys.len());
         for held in keys.chunks(ROWS_READ_PER_HOLD) {
             let connection = self.0.lock();
@@ -792,8 +804,7 @@ impl Catalog {
                 rows.push(
                     asked(&mut query, key)
                         .optional()
-                        .map_err(|source| Error::store(StoreOp::Read, source))?
-                        .ok_or(Error::UnknownTrack)?,
+                        .map_err(|source| Error::store(StoreOp::Read, source))?,
                 );
             }
         }
@@ -2024,11 +2035,11 @@ mod tests {
         let ids = songs.iter().map(|song| song.id).collect::<Vec<_>>();
 
         let read = catalog.tracks_at(&uris).expect("rows by uri");
-        let numbered = catalog.ids_at(&uris).expect("ids by uri");
+        let numbered = catalog.ids_held_at(&uris).expect("ids by uri");
         let found = catalog.tracks_by_id(&ids).expect("rows by id");
 
         assert_eq!(read.iter().map(|song| song.id).collect::<Vec<_>>(), ids);
-        assert_eq!(numbered, ids);
+        assert_eq!(numbered, ids.iter().copied().map(Some).collect::<Vec<_>>());
         assert_eq!(
             found
                 .iter()
@@ -2036,9 +2047,11 @@ mod tests {
                 .collect::<Vec<_>>(),
             uris
         );
-        assert!(matches!(
-            catalog.ids_at(&["content://music/none.flac".into()]),
-            Err(Error::UnknownTrack)
-        ));
+        assert_eq!(
+            catalog
+                .ids_held_at(&["content://music/none.flac".into()])
+                .expect("an answer"),
+            [None]
+        );
     }
 }
