@@ -1,4 +1,4 @@
-use gpui::{Context, Div, FontWeight, SharedString, Window, div, prelude::*, px, rgb};
+use gpui::{Context, SharedString, Window, div, prelude::*};
 use resonate_core::AUDIO_EXTENSIONS;
 use resonate_library::{MinimumLength, MusicExtensions, MusicFilters};
 
@@ -8,9 +8,9 @@ use crate::{
     theme,
     views::{
         hint::Names as _,
-        kit::{self, EndsInAnEllipsis as _},
+        kit,
         root::RootView,
-        settings::{action, note},
+        settings::{Rows, action, note},
     },
 };
 
@@ -24,7 +24,7 @@ const NOTHING_HIDDEN: &str = "Nothing is hidden. A song hidden from its menu wai
 const SHOW_AGAIN: &str = "Show again";
 
 impl RootView {
-    pub(super) fn music_extensions_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn music_extensions_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let extensions = cx
             .global::<ResonateApp>()
             .library
@@ -58,14 +58,14 @@ impl RootView {
                 ),
             );
         }
-        kit::section_body()
-            .child(note(format!(
-                "{selected} of {} selected. Choose the formats to include in your library.",
-                AUDIO_EXTENSIONS.len(),
-            )))
-            .child(choices)
+        kit::rows()
+            .child(kit::stacked_row(
+                format!("{selected} of {} included", AUDIO_EXTENSIONS.len()),
+                "Choose the formats to include in your library",
+                choices,
+            ))
             .child(
-                kit::actions()
+                kit::action_row()
                     .child(action(
                         "music-extensions-all",
                         "Select all",
@@ -91,16 +91,24 @@ impl RootView {
                         cx,
                     )),
             )
-            .child(note("Changes apply to library listings immediately. Excluded files stay on disk and in the catalog."))
+            .note("Changes apply to library listings immediately. Excluded files stay on disk and in the catalog.")
     }
 
-    pub(super) fn hidden_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn hidden_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let hidden = self.library.read(cx).hidden();
         if hidden.counted == 0 {
-            return kit::section_body().child(note(NOTHING_HIDDEN));
+            return kit::rows().child(note(NOTHING_HIDDEN));
         }
 
-        let mut listed = div().flex().flex_col().gap_1();
+        let shown = hidden.tracks.len() as u64;
+        let counted = hidden.counted;
+        let mut listed = kit::rows().child(note(match counted {
+            1 => "1 song is hidden.".to_owned(),
+            counted if shown < counted => {
+                format!("{counted} songs are hidden; the first {shown} by title are listed.")
+            }
+            counted => format!("{counted} songs are hidden."),
+        }));
         for track in &hidden.tracks {
             let id = track.id;
             let under = track.artist.clone().unwrap_or_default();
@@ -111,66 +119,48 @@ impl RootView {
                 format!("Show {} in the library again", track.title),
                 kit::Tone::Ghost,
             );
-            listed = listed.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .px_3()
-                    .py_1()
-                    .rounded_lg()
-                    .bg(rgb(theme::raised()))
-                    .child(hidden_song(track.title.clone(), under))
-                    .child(self.in_the_ring_at(
-                        format!("show-hidden-{}", id.get()),
-                        control,
-                        move |this, _, cx| {
-                            this.library
-                                .update(cx, |library, cx| library.hide_track(id, false, cx));
-                        },
-                        cx,
-                    )),
-            );
+            listed = listed.child(kit::row(
+                track.title.clone(),
+                under,
+                self.in_the_ring_at(
+                    format!("show-hidden-{}", id.get()),
+                    control,
+                    move |this, _, cx| {
+                        this.library
+                            .update(cx, |library, cx| library.hide_track(id, false, cx));
+                    },
+                    cx,
+                ),
+            ));
         }
-        let shown = hidden.tracks.len() as u64;
-        let counted = hidden.counted;
 
-        kit::section_body()
-            .child(note(match counted {
-                1 => "1 song is hidden.".to_owned(),
-                counted if shown < counted => {
-                    format!("{counted} songs are hidden; the first {shown} by title are listed.")
-                }
-                counted => format!("{counted} songs are hidden."),
-            }))
-            .child(listed)
-            .child(
-                kit::actions()
-                    .child(action(
-                        "show-every-hidden",
-                        "Show them all again",
-                        Icon::Undo,
-                        false,
-                        |this, _, cx| {
-                            this.library
-                                .update(cx, |library, cx| library.show_every_hidden_track(cx));
-                        },
-                        self,
-                        cx,
-                    ))
-                    .child(action(
-                        "list-the-hidden",
-                        "List them in Tracks",
-                        Icon::Search,
-                        false,
-                        |this, window, cx| {
-                            this.search_instead(LISTS_THE_HIDDEN.to_owned(), window, cx);
-                            this.choose_pane(crate::views::root::Pane::Tracks, cx);
-                        },
-                        self,
-                        cx,
-                    )),
-            )
+        listed.child(
+            kit::action_row()
+                .child(action(
+                    "show-every-hidden",
+                    "Show them all again",
+                    Icon::Undo,
+                    false,
+                    |this, _, cx| {
+                        this.library
+                            .update(cx, |library, cx| library.show_every_hidden_track(cx));
+                    },
+                    self,
+                    cx,
+                ))
+                .child(action(
+                    "list-the-hidden",
+                    "List them in Tracks",
+                    Icon::Search,
+                    false,
+                    |this, window, cx| {
+                        this.search_instead(LISTS_THE_HIDDEN.to_owned(), window, cx);
+                        this.choose_pane(crate::views::root::Pane::Tracks, cx);
+                    },
+                    self,
+                    cx,
+                )),
+        )
     }
 
     pub(crate) fn set_music_extensions(
@@ -188,10 +178,10 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn minimum_length_group(&mut self, cx: &mut Context<Self>) -> Div {
-        kit::section_body().child(kit::field("Minimum length in seconds", self.key_field("minimum-length", &self.minimum_length,
+    pub(super) fn minimum_length_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        kit::rows().child(kit::field("Minimum length in seconds", self.text_field("minimum-length", &self.minimum_length,
             |this, window, cx| this.leave_minimum_length(window, cx), cx)))
-            .child(note("Enter a value from 0 to 600 seconds (10 minutes), then press Enter to apply. Zero includes every length; a positive minimum excludes tracks whose length is unknown."))
+            .note("Enter a value from 0 to 600 seconds (10 minutes), then press Enter to apply. Zero includes every length; a positive minimum excludes tracks whose length is unknown.")
     }
 
     fn leave_minimum_length(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -247,30 +237,6 @@ impl RootView {
         self.store(&Setting::MinimumLength(minimum_length), cx);
         cx.notify();
     }
-}
-
-fn hidden_song(title: String, by: String) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .min_w(px(0.0))
-        .child(
-            div()
-                .text_size(px(theme::text_sm()))
-                .font_weight(FontWeight::MEDIUM)
-                .truncate()
-                .ends_in_an_ellipsis()
-                .child(title),
-        )
-        .child(
-            div()
-                .text_size(px(theme::text_xs()))
-                .text_color(rgb(theme::faint()))
-                .truncate()
-                .ends_in_an_ellipsis()
-                .child(by),
-        )
 }
 
 #[cfg(test)]

@@ -18,30 +18,33 @@ pub(crate) mod sync;
 mod tidal;
 mod youtube_music;
 
-use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
+use std::{cell::Cell, path::PathBuf, rc::Rc, sync::atomic::Ordering};
 
 pub(crate) use abx::{ListeningTest, Setup};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
-    Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
+    AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, MouseButton, Pixels,
+    Point, Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{Appearance, Following, HeadYaw, SpeakerAngle, SpeakerElevation};
-use resonate_library::DEFAULT_LAYOUT;
+use resonate_library::{DEFAULT_LAYOUT, HistoryKept};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
-pub(crate) use crate::views::settings::{
-    curve::{HeldBand, Plotted},
-    equaliser::{Fitting, marked_at},
-    find::{Category, Group},
-    lastfm::{LastfmAccount, LastfmSigning},
-    spotify::SpotifyState,
-    subsonic::{Account, Service},
-    sync::{
-        SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
-        SYNC_SERVER_PLACEHOLDER,
+pub(crate) use crate::views::{
+    kit::{Rows, note, switch_row},
+    settings::{
+        curve::{HeldBand, Plotted},
+        equaliser::{Fitting, marked_at},
+        find::{Category, Group, Page},
+        lastfm::{LastfmAccount, LastfmSigning},
+        spotify::SpotifyState,
+        subsonic::{Account, Service},
+        sync::{
+            SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
+            SYNC_SERVER_PLACEHOLDER,
+        },
+        tidal::{SigningIn, TidalAccount},
+        youtube_music::{CheckingYoutubeMusic, YoutubeMusicField},
     },
-    tidal::{SigningIn, TidalAccount},
-    youtube_music::{CheckingYoutubeMusic, YoutubeMusicField},
 };
 use crate::{
     AppIcon, Followed, Measurers, ResonateApp, Setting, Synchronised,
@@ -49,18 +52,23 @@ use crate::{
     icons::{self, Icon},
     motion, theme,
     views::{
+        field::Field,
         focus::{self, by_the_pointer},
         hint::{self, Names},
-        kit::{self, EndsInAnEllipsis as _, Press, Tone},
+        kit::{self, Press, Tone},
         root::RootView,
         scrollbar::Scrollbars,
         settings::{
             defaults::{Standing, can_be_put_back, differs, puts_back},
-            find::Narrowing,
+            find::{Drawn, Narrowing},
         },
         spoken::{self, Spoken},
     },
 };
+
+const CATEGORIES: &str = "Settings categories";
+
+const BACK_HINT: &str = keyed!("Back to the rest of this category", key!(leave));
 
 const CLEAR_THE_FILTER_HINT: &str = "Clear what is typed";
 
@@ -74,6 +82,8 @@ const EXPERIMENTAL: &str = "Experimental";
 const RESET_HINT: &str = "Put every setting in this category back to what Resonate was built with";
 
 const NOTHING_FOUND: &str = "No setting answers to that.";
+
+type Place = (Category, Option<Page>);
 
 const NOTHING_FOUND_MORE: &str = "A setting is found by its name, by the words its hint uses, or \
                                   by what other players call it.";
@@ -122,14 +132,15 @@ impl RootView {
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let narrowing = Narrowing::of(self.finding.read(cx).text());
         let category = self.settings_category;
+        let page = self
+            .settings_page
+            .filter(|page| page.category() == category && !narrowing.narrows());
         let standing = self.standing(cx);
         let rail = self.categories(&narrowing, cx);
-        let body = self.shown(&narrowing, category, &standing, cx);
-        let footer = (!narrowing.narrows() && category.groups().any(can_be_put_back))
-            .then(|| self.reset(category, cx));
+        let body = self.shown(&narrowing, category, page, &standing, cx);
 
         kit::pane()
-            .child(self.settings_heading(&narrowing, category, cx))
+            .child(self.settings_heading(&narrowing, category, page, cx))
             .child(
                 div()
                     .flex()
@@ -153,7 +164,6 @@ impl RootView {
                         body,
                     )),
             )
-            .when_some(footer, Div::child)
             .into_any_element()
     }
 
@@ -161,23 +171,41 @@ impl RootView {
         &self,
         narrowing: &Narrowing,
         category: Category,
+        page: Option<Page>,
         cx: &mut Context<Self>,
     ) -> Div {
         let found = narrowing.anywhere().count();
-        let (title, about) = if narrowing.narrows() {
-            (
+        let (title, about) = match (narrowing.narrows(), page) {
+            (true, _) => (
                 SharedString::new_static("Found"),
                 SharedString::from(match found {
                     0 => "No setting anywhere answers to that".to_owned(),
                     1 => "One setting, wherever it is kept".to_owned(),
                     many => format!("{many} settings, wherever they are kept"),
                 }),
-            )
-        } else {
-            (
+            ),
+            (false, Some(page)) => (
+                SharedString::new_static(page.title()),
+                SharedString::new_static(page.about()),
+            ),
+            (false, None) => (
                 SharedString::new_static(category.label()),
                 SharedString::new_static(category.about()),
-            )
+            ),
+        };
+        let above = match page {
+            Some(_) => self
+                .in_the_ring(
+                    "settings-way-back",
+                    kit::way_back("settings-way-back", category.label(), BACK_HINT),
+                    |this, window, cx| {
+                        this.leave_the_settings_page(cx);
+                        window.focus(&this.focus, cx);
+                    },
+                    cx,
+                )
+                .into_any_element(),
+            None => kit::eyebrow("Settings").into_any_element(),
         };
 
         kit::heading().child(
@@ -189,7 +217,13 @@ impl RootView {
                         .flex_1()
                         .min_w(theme::width(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow("Settings"))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .min_h(px(theme::way_back_height()))
+                                .child(above),
+                        )
                         .child(kit::title(title))
                         .child(kit::subtitle(about)),
                 )
@@ -199,29 +233,10 @@ impl RootView {
 
     fn filter_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let typed = !self.finding.read(cx).text().is_empty();
-        let holding_the_caret = self.finding_holds_the_caret;
 
-        div()
-            .id("find-a-setting")
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_2()
+        kit::framed_field("find-a-setting", self.finding_holds_the_caret)
             .w(theme::width(theme::picker_width()))
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(if holding_the_caret {
-                theme::tinted(theme::accent(), 0x99)
-            } else {
-                rgb(theme::border())
-            })
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
+            .max_w_full()
             .child(icons::icon(
                 Icon::Search,
                 theme::search_icon(),
@@ -275,6 +290,7 @@ impl RootView {
         let chosen = self.settings_category;
         let mut rail = div()
             .id("settings-categories")
+            .named_as(Role::TabList, CATEGORIES, "")
             .flex()
             .flex_col()
             .flex_none()
@@ -304,13 +320,15 @@ impl RootView {
                     div()
                         .id(SharedString::new_static(category.label()))
                         .debug_selector(|| format!("category-{}", category.label()))
+                        .named_as(Role::Tab, category.label(), category.about())
+                        .chosen(selected)
                         .flex()
                         .items_center()
                         .gap_2p5()
                         .px_3()
                         .py_2()
                         .rounded_lg()
-                        .text_size(px(theme::text_xs()))
+                        .text_size(px(theme::text_sm()))
                         .whitespace_nowrap()
                         .cursor_pointer()
                         .relative()
@@ -352,21 +370,28 @@ impl RootView {
         &mut self,
         narrowing: &Narrowing,
         category: Category,
+        page: Option<Page>,
         standing: &Standing,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let mut column = div().flex().flex_col().flex_none().gap_4();
+        let mut column = div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap_6()
+            .w(theme::width(theme::settings_column()))
+            .max_w_full();
 
         if narrowing.narrows() {
-            let mut last = None;
+            let mut places: Vec<(Place, Vec<Group>)> = Vec::new();
             for group in narrowing.anywhere() {
-                if last != Some(group.category()) {
-                    last = Some(group.category());
-                    column = column.child(kit::eyebrow(group.category().label()));
+                let place = (group.category(), group.page());
+                match places.last_mut() {
+                    Some((held, groups)) if *held == place => groups.push(group),
+                    _ => places.push((place, vec![group])),
                 }
-                column = column.child(self.group(group, standing, cx));
             }
-            if last.is_none() {
+            if places.is_empty() {
                 column = column.child(
                     div()
                         .flex()
@@ -387,9 +412,35 @@ impl RootView {
                         ),
                 );
             }
+            for ((category, page), groups) in places {
+                let mut place = div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(div().flex().child(self.place_link(category, page, cx)));
+                for group in groups {
+                    place = place.child(self.group(group, standing, cx));
+                }
+                column = column.child(place);
+            }
         } else {
-            for group in category.groups() {
-                column = column.child(self.group(group, standing, cx));
+            match page {
+                Some(page) => {
+                    for group in category.shown_on(Some(page)) {
+                        column = column.child(self.group(group, standing, cx));
+                    }
+                }
+                None => {
+                    for drawn in category.drawn() {
+                        column = column.child(match drawn {
+                            Drawn::Group(group) => self.group(group, standing, cx),
+                            Drawn::Pages(pages) => self.pages(&pages, cx),
+                        });
+                    }
+                    if category.groups().any(can_be_put_back) {
+                        column = column.child(self.reset(category, cx));
+                    }
+                }
             }
         }
 
@@ -407,8 +458,6 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .min_h(px(0.0))
-            .px_5()
-            .py_4()
             .overflow_y_scroll()
             .track_scroll(&self.settings_scroll)
             .child(motion::faded_in(
@@ -416,15 +465,102 @@ impl RootView {
                     .flex()
                     .flex_col()
                     .flex_none()
-                    .w(theme::width(theme::settings_column()))
-                    .max_w_full()
+                    .items_center()
+                    .p_6()
                     .child(column),
-                SharedString::from(match narrowing.narrows() {
-                    true => "settings-found".to_owned(),
-                    false => format!("settings-{}", category.label()),
+                SharedString::from(match (narrowing.narrows(), page) {
+                    (true, _) => "settings-found".to_owned(),
+                    (false, Some(page)) => format!("settings-{}-{}", category.as_str(), page.id()),
+                    (false, None) => format!("settings-{}", category.as_str()),
                 }),
                 motion::ARRIVES_OVER,
             ))
+    }
+
+    fn place_link(
+        &self,
+        category: Category,
+        page: Option<Page>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let id = format!(
+            "settings-place-{}-{}",
+            category.as_str(),
+            page.map_or("main", Page::id)
+        );
+        let label = match page {
+            Some(page) => format!("{} · {}", category.label(), page.title()),
+            None => category.label().to_owned(),
+        };
+
+        self.in_the_ring_at(
+            id.clone(),
+            kit::place_link(
+                SharedString::from(id),
+                label.clone(),
+                format!("Open {label}, where these settings are kept"),
+            ),
+            move |this, window, cx| {
+                this.open_the_place(category, page, cx);
+                window.focus(&this.focus, cx);
+            },
+            cx,
+        )
+    }
+
+    fn pages(&self, pages: &[Page], cx: &mut Context<Self>) -> Div {
+        let gathered = pages.first().map_or("", |page| page.gathered_under());
+        let mut listed = kit::rows();
+        for page in pages.iter().copied() {
+            let id = format!("settings-page-{}", page.id());
+            listed = listed.child(self.in_the_ring_at(
+                id.clone(),
+                kit::nav_row(
+                    SharedString::from(id),
+                    page.icon(),
+                    page.title(),
+                    page.about(),
+                ),
+                move |this, window, cx| {
+                    this.open_the_settings_page(page, cx);
+                    window.focus(&this.focus, cx);
+                },
+                cx,
+            ));
+        }
+
+        kit::group(
+            kit::group_heading().child(kit::group_title(gathered)),
+            listed,
+        )
+    }
+
+    pub(crate) fn open_the_settings_page(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.show_settings(page.category(), cx);
+        self.settings_page = Some(page);
+        self.settings_scroll.set_offset(Point::default());
+        cx.notify();
+    }
+
+    pub(crate) fn leave_the_settings_page(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.settings_page.take().is_none() {
+            return false;
+        }
+        self.settings_scroll.set_offset(Point::default());
+        self.disarm();
+        cx.notify();
+        true
+    }
+
+    fn open_the_place(&mut self, category: Category, page: Option<Page>, cx: &mut Context<Self>) {
+        self.finding.update(cx, |finding, cx| finding.clear(cx));
+        match page {
+            Some(page) => self.open_the_settings_page(page, cx),
+            None => {
+                self.show_settings(category, cx);
+                self.settings_scroll.set_offset(Point::default());
+            }
+        }
     }
 
     fn group(&mut self, group: Group, standing: &Standing, cx: &mut Context<Self>) -> Div {
@@ -447,14 +583,20 @@ impl RootView {
             Group::Equalising => self.equalising_group(cx),
             Group::BoundTo => self.bound_to_group(cx),
             Group::Bands => self.bands_group(cx),
-            Group::Measured => self.measured_group(cx),
+            Group::AutoEq => self.autoeq_group(cx),
+            Group::Measurers => self.measurers_group(cx),
+            Group::OwnMeasurement => self.own_measurement_group(cx),
+            Group::RoomMeasurement => self.room_measurement_group(cx),
             Group::RoomCorrection => self.room_group(cx),
+            Group::Speakers => self.speakers_group(cx),
             Group::Abx => self.abx_group(cx),
             Group::Hidden => self.hidden_group(cx),
             Group::MusicExtensions => self.music_extensions_group(cx),
             Group::MinimumLength => self.minimum_length_group(cx),
             Group::Folders => self.folders_group(cx),
-            Group::Updating => self.updating_group(cx),
+            Group::Rescanning => self.rescanning_group(cx),
+            Group::LookingUp => self.looking_up_group(cx),
+            Group::Retagging => self.retagging_group(cx),
             Group::Organising => self.organising_group(cx),
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
@@ -505,20 +647,25 @@ impl RootView {
         self.grouped(group, standing, body, cx)
     }
 
-    fn grouped(&self, group: Group, standing: &Standing, body: Div, cx: &mut Context<Self>) -> Div {
+    fn grouped(
+        &self,
+        group: Group,
+        standing: &Standing,
+        body: Rows,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let moved = can_be_put_back(group) && differs(group, standing);
 
-        kit::section()
-            .child(
-                kit::section_header()
-                    .child(kit::section_name(group.title()))
-                    .when(group.is_experimental(), |header| {
-                        header.child(kit::badge(EXPERIMENTAL, theme::lossy()))
-                    })
-                    .when(moved, |header| header.child(self.revert(group, cx)))
-                    .child(hint::explains(group.title(), group.hint())),
-            )
-            .child(body)
+        kit::group(
+            kit::group_heading()
+                .child(kit::group_title(group.title()))
+                .when(group.is_experimental(), |heading| {
+                    heading.child(kit::badge(EXPERIMENTAL, theme::lossy()))
+                })
+                .when(moved, |heading| heading.child(self.revert(group, cx)))
+                .child(hint::explains(group.title(), group.hint())),
+            body,
+        )
     }
 
     fn revert(&self, group: Group, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -535,33 +682,22 @@ impl RootView {
     }
 
     fn reset(&self, category: Category, cx: &mut Context<Self>) -> Div {
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_end()
-            .gap_2()
-            .px_5()
-            .py_3()
-            .bg(rgb(theme::surface()))
-            .border_t_1()
-            .border_color(rgb(theme::border()))
-            .child(self.in_the_ring(
+        div().flex().justify_end().child(self.in_the_ring(
+            "reset-the-category",
+            kit::button(
                 "reset-the-category",
-                kit::button(
-                    "reset-the-category",
-                    Some(Icon::Undo),
-                    format!("Reset {}", category.label().to_lowercase()),
-                    RESET_HINT,
-                    Tone::Ghost,
-                ),
-                move |this, _, cx| {
-                    for group in category.groups().filter(|group| can_be_put_back(*group)) {
-                        this.put_back(group, cx);
-                    }
-                },
-                cx,
-            ))
+                Some(Icon::Undo),
+                format!("Reset {}", category.label().to_lowercase()),
+                RESET_HINT,
+                Tone::Ghost,
+            ),
+            move |this, _, cx| {
+                for group in category.groups().filter(|group| can_be_put_back(*group)) {
+                    this.put_back(group, cx);
+                }
+            },
+            cx,
+        ))
     }
 
     pub(crate) fn put_back(&mut self, group: Group, cx: &mut Context<Self>) {
@@ -628,7 +764,7 @@ impl RootView {
             }
             Group::DiscordShows => self.put_discord_shows_back(cx),
             Group::Contact => self.clear_contact(cx),
-            Group::Measured => self.wear_the_measurers(Measurers::default(), cx),
+            Group::Measurers => self.wear_the_measurers(Measurers::default(), cx),
             Group::Recognition => {
                 self.clear_acoustid_key(cx);
                 self.clear_audd_token(cx);
@@ -654,11 +790,11 @@ impl RootView {
             Group::Tidal => self.forget_the_tidal_account(cx),
             Group::Spotify => self.forget_the_spotify_account(cx),
             Group::YoutubeMusic => self.forget_youtube_music(cx),
-            Group::RoomCorrection => {
+            Group::RoomCorrection => self.correct_the_room(None, cx),
+            Group::Speakers => {
                 self.set_the_speaker_angle(SpeakerAngle::STANDARD, cx);
                 self.set_the_speaker_elevation(SpeakerElevation::LEVEL, cx);
                 self.set_the_head_yaw(HeadYaw::AHEAD, cx);
-                self.correct_the_room(None, cx);
             }
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
@@ -740,8 +876,8 @@ impl RootView {
         let inbox_given = self.library.read(cx).inbox().is_some();
         let music_folder_given = cx.global::<ResonateApp>().music_folder.is_some();
         let file_dropped = cx.global::<ResonateApp>().file_dropped;
-        let convolving = cx.global::<ResonateApp>().convolution.is_some()
-            || cx.global::<ResonateApp>().speaker_angle != SpeakerAngle::STANDARD
+        let convolving = cx.global::<ResonateApp>().convolution.is_some();
+        let speakers_moved = cx.global::<ResonateApp>().speaker_angle != SpeakerAngle::STANDARD
             || cx.global::<ResonateApp>().speaker_elevation != SpeakerElevation::LEVEL
             || cx.global::<ResonateApp>().head_yaw != HeadYaw::AHEAD;
         let subsonic_given = self
@@ -831,6 +967,7 @@ impl RootView {
             resonate_key_given,
             youtube_music_given,
             convolving,
+            speakers_moved,
         }
     }
 
@@ -840,32 +977,40 @@ impl RootView {
     }
 
     fn holds_a_press_armed(&self) -> bool {
-        self.resetting_everything
-            || self.regenerating_the_code
-            || self.moving_the_files
-            || self.walking_the_filing_back
-            || self.walking_the_tags_back
-            || self.writing_the_tags
-            || self.keeping_the_tracks
-            || self.discarding_the_curve
-            || self.telling_the_earlier_plays
-            || self.aging_the_history.is_some()
-            || self.forgetting_the_folder.is_some()
+        self.armed.is_some()
     }
 
     pub(super) fn lower_every_armed_press(&mut self) {
-        self.resetting_everything = false;
-        self.regenerating_the_code = false;
+        self.armed = None;
         self.pairing_shown = false;
-        self.moving_the_files = false;
-        self.walking_the_filing_back = false;
-        self.walking_the_tags_back = false;
-        self.writing_the_tags = false;
-        self.keeping_the_tracks = false;
-        self.discarding_the_curve = false;
-        self.telling_the_earlier_plays = false;
-        self.aging_the_history = None;
-        self.forgetting_the_folder = None;
+    }
+
+    pub(crate) fn is_armed(&self, armed: &Armed) -> bool {
+        self.armed.as_ref() == Some(armed)
+    }
+
+    pub(crate) fn arm(&mut self, armed: Armed) {
+        self.armed = Some(armed);
+    }
+
+    pub(crate) fn lower(&mut self, armed: &Armed) {
+        if self.is_armed(armed) {
+            self.armed = None;
+        }
+    }
+
+    pub(crate) const fn history_armed(&self) -> Option<HistoryKept> {
+        match &self.armed {
+            Some(Armed::AgeTheHistory(kept)) => Some(*kept),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn folder_armed(&self) -> Option<&PathBuf> {
+        match &self.armed {
+            Some(Armed::ForgetTheFolder(root)) => Some(root),
+            _ => None,
+        }
     }
 
     pub(crate) fn in_the_ring_at(
@@ -1083,14 +1228,23 @@ impl RootView {
 
     fn option_in_the_ring(
         &self,
-        mut control: Stateful<Div>,
+        control: Stateful<Div>,
         id: &'static str,
         index: usize,
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        self.option_named(control, format!("{id}-{index}"), press, cx)
+    }
+
+    fn option_named(
+        &self,
+        mut control: Stateful<Div>,
+        named: String,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let clicked = press.clone();
-        let named = format!("{id}-{index}");
         self.controls
             .captioned_by_its_name(named.clone(), &mut control);
 
@@ -1125,76 +1279,50 @@ impl RootView {
     }
 }
 
-fn switch_row(
-    label: impl Into<SharedString>,
-    under: impl Into<SharedString>,
-    on: bool,
-    id: impl Into<SharedString>,
-) -> Stateful<Div> {
-    let id = id.into();
-    let label = label.into();
-    let under = under.into();
-    div()
-        .id(id.clone())
-        .named_as(Role::Switch, &label, &under)
-        .thrown(on)
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_3()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .cursor_pointer()
-        .bg(rgb(theme::raised()))
-        .border_1()
-        .border_color(rgb(theme::border()))
-        .hover(|row| row.bg(rgb(theme::hover())))
-        .child(named(label, under))
-        .child(kit::switch(SharedString::from(format!("{id}-track")), on))
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Armed {
+    ResetEverything,
+    RegenerateTheCode,
+    MoveTheFiles,
+    WalkTheFilingBack,
+    WalkTheTagsBack,
+    WriteTheTags,
+    KeepTheTracks,
+    DiscardTheCurve,
+    TellTheEarlierPlays,
+    AgeTheHistory(HistoryKept),
+    ForgetTheFolder(PathBuf),
 }
 
-fn rows() -> Div {
-    div().flex().flex_col().gap_1()
-}
+impl RootView {
+    pub(super) fn text_field(
+        &self,
+        id: &'static str,
+        field: &Entity<Field>,
+        leave: fn(&mut Self, &mut Window, &mut Context<Self>),
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let taking = field.clone();
+        let held = field.clone();
 
-fn named(title: impl Into<SharedString>, under: impl Into<SharedString>) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .min_w(px(0.0))
-        .child(
-            div()
-                .text_size(px(theme::text_sm()))
-                .font_weight(FontWeight::MEDIUM)
-                .truncate()
-                .ends_in_an_ellipsis()
-                .child(title.into()),
-        )
-        .child(
-            div()
-                .text_size(px(theme::text_xs()))
-                .text_color(rgb(theme::faint()))
-                .truncate()
-                .ends_in_an_ellipsis()
-                .child(under.into()),
-        )
-}
+        kit::framed_field(id, false)
+            .on_mouse_down_out(cx.listener(move |this, _, window, cx| {
+                if held.read(cx).is_focused(window) {
+                    leave(this, window, cx);
+                }
+            }))
+            .on_click(cx.listener(move |_, _: &ClickEvent, window, cx| {
+                taking.update(cx, |typed, cx| typed.take_focus(window, cx));
+                cx.notify();
+            }))
+            .child(field.clone())
+            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+    }
 
-fn note(text: impl Into<SharedString>) -> Stateful<Div> {
-    let text = text.into();
-
-    div()
-        .id(text.clone())
-        .read_plainly(&text)
-        .text_size(px(theme::text_sm()))
-        .text_color(rgb(theme::faint()))
-        .child(text)
-}
-
-fn hugging(control: Stateful<Div>) -> Div {
-    div().flex().child(control)
+    pub(super) fn let_go_of_the_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
 }
 
 fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Stateful<Div> {
@@ -1206,21 +1334,16 @@ fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> St
         .read_plainly_as(|| spoken::joined([label.as_ref(), value.as_ref()]))
         .flex()
         .items_start()
-        .gap_3()
-        .child(
-            div()
-                .flex_none()
-                .w(theme::width(theme::field_label()))
-                .text_size(px(theme::text_xs()))
-                .text_color(rgb(theme::muted()))
-                .child(label),
-        )
+        .justify_between()
+        .gap_4()
+        .child(kit::row_name(label).flex_none())
         .child(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .text_size(px(theme::text_xs()))
-                .text_color(rgb(theme::text()))
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(theme::muted()))
+                .text_right()
                 .child(value),
         )
 }

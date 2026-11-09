@@ -383,7 +383,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `<hostname> (Linux)`, from `/proc/sys/kernel/hostname`, else `Linux`); `sync-songs` an array of
   `favourites`, `playlists`, `everything` (empty = only on request). `sync-control` what another
   device may do to this one's zones (`everything`, `transport`, `nothing`; `RemoteTrust`, `sync.md`'s
-  *One device drives another's zones*), chosen in the Device sync category's *Driven by your other devices* group, driven from elsewhere by `resonate sync --control <device>`. Off whenever `online` is, unless
+  *One device drives another's zones*), chosen in the Sync category's *Your devices* page, its *Driven by your other devices* group, driven from elsewhere by `resonate sync --control <device>`. Off whenever `online` is, unless
   `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file
   (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a
   window holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the
@@ -408,7 +408,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `node.name` to the measurer preferred for it alone (a blank or non-text entry is passed over with a
   warning), read as `Config::equaliser_measurer_for(sink)`. `eq --find`/`--suggest` take `--measurer`
   over both and the equaliser pane's search and suggestion take the device in use's over the fixed
-  ranking (`EqualiserModel::prefer(Measurers)`); the Equaliser category's *Measured corrections* group
+  ranking (`EqualiserModel::prefer(Measurers)`); the Equaliser category's *Headphone correction* page, its *Preferred measurers* group,
   chooses them with a `kit::pick` each, one for every device and one for the device in use (*Best ranked* /
   *As for the rest*, `resonate_eq::MEASURERS_BEST_FIRST`, and a held name outside them), written as
   `Setting::EqualiserMeasurer` and `Setting::EqualiserMeasurerFor` and worn at once on
@@ -420,7 +420,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   where the file's mtime moved, so a sign-in elsewhere is heard at the next read), cleared by
   `--forget`; `Config`'s `Debug` withholds it.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
-  `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
+  `lastfm-session`: written by `resonate lastfm --user` or the Accounts category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
   scrobbled; `Config`'s `Debug` and `Accounts`' print none of them.
 - `history-kept`: `forever` or whole days; every command opening the catalog first forgets listens
@@ -507,4 +507,14 @@ key, not an empty string (`Config::contact` stays `None`, the User-Agent bare).
 
 The desktop starts its Game Mode watcher at entry: Linux through MPRIS's session bus worker, Windows through the Win32 effective power mode watch. `core::gaming` holds background enrichment and studies while active and releases them automatically afterward; playback and foreground analysis continue. The phones use the study duty limit without this desktop gate.
 
-Desktop settings separate Accounts (service credentials and sign-ins) and Enrichment (scan, lookup progress and tag controls) from Library and Online. Category identifiers are additive so existing remembered categories still load.
+**`last-settings-category` reads every spelling a build has written.** `config::settings_category`
+takes the fourteen categories (`SETTINGS_CATEGORIES`: output, processing, equaliser, playback,
+library, filters, online, recognition, accounts, sync, desktop, appearance, window, about) and the
+spellings of categories since folded into others (`SETTINGS_CATEGORIES_SPELT_BEFORE`: enrichment,
+scrobbling), and `remembered_settings_category` opens the one holding their settings now
+(`resonate_ui::SettingsCategory::parse`: enrichment is Library, scrobbling Accounts; `ui.md`), so a
+file an older build wrote opens where its settings went
+(`every_settings_category_an_earlier_build_remembered_still_reads`,
+`a_remembered_category_whose_settings_moved_opens_the_category_holding_them_now`). Accounts holds
+every service credential and sign-in and both scrobbling services (Last.fm, ListenBrainz); Library's
+*Rescan, refresh and retag* page the scan, lookup progress and tag controls.

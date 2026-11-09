@@ -35,16 +35,16 @@ pub enum SettingsCategory {
     Output,
     Processing,
     Equaliser,
+    Playback,
     Library,
     Filters,
-    Enrichment,
-    Accounts,
     Online,
     Recognition,
-    Scrobbling,
+    Accounts,
     Sync,
     Desktop,
     Appearance,
+    Window,
     About,
 }
 
@@ -53,17 +53,22 @@ impl SettingsCategory {
         Self::Output,
         Self::Processing,
         Self::Equaliser,
+        Self::Playback,
         Self::Library,
         Self::Filters,
-        Self::Enrichment,
-        Self::Accounts,
         Self::Online,
         Self::Recognition,
-        Self::Scrobbling,
+        Self::Accounts,
         Self::Sync,
         Self::Desktop,
         Self::Appearance,
+        Self::Window,
         Self::About,
+    ];
+
+    const SPELT_BY_EARLIER_BUILDS: [(&'static str, Self); 2] = [
+        ("enrichment", Self::Library),
+        ("scrobbling", Self::Accounts),
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -71,16 +76,16 @@ impl SettingsCategory {
             Self::Output => "output",
             Self::Processing => "processing",
             Self::Equaliser => "equaliser",
+            Self::Playback => "playback",
             Self::Library => "library",
             Self::Filters => "filters",
-            Self::Enrichment => "enrichment",
-            Self::Accounts => "accounts",
             Self::Online => "online",
             Self::Recognition => "recognition",
-            Self::Scrobbling => "scrobbling",
+            Self::Accounts => "accounts",
             Self::Sync => "sync",
             Self::Desktop => "desktop",
             Self::Appearance => "appearance",
+            Self::Window => "window",
             Self::About => "about",
         }
     }
@@ -89,6 +94,11 @@ impl SettingsCategory {
         Self::ALL
             .into_iter()
             .find(|category| category.as_str() == text)
+            .or_else(|| {
+                Self::SPELT_BY_EARLIER_BUILDS
+                    .into_iter()
+                    .find_map(|(spelt, category)| (spelt == text).then_some(category))
+            })
     }
 }
 
@@ -1459,6 +1469,46 @@ mod tests {
     use resonate_eq::ProfileName;
 
     use super::*;
+
+    macro_rules! a_remembered_page_opens {
+        ($($test:ident: $spelt:literal => $category:ident),+ $(,)?) => {
+            $(
+                #[test]
+                fn $test() {
+                    assert_eq!(
+                        SettingsCategory::parse($spelt),
+                        Some(SettingsCategory::$category)
+                    );
+                }
+            )+
+        };
+    }
+
+    a_remembered_page_opens! {
+        a_remembered_output_page_opens_output: "output" => Output,
+        a_remembered_processing_page_opens_processing: "processing" => Processing,
+        a_remembered_equaliser_page_opens_the_equaliser: "equaliser" => Equaliser,
+        a_remembered_library_page_opens_the_library: "library" => Library,
+        a_remembered_filters_page_opens_the_filters: "filters" => Filters,
+        a_remembered_enrichment_page_opens_the_library_that_now_holds_it: "enrichment" => Library,
+        a_remembered_accounts_page_opens_the_accounts: "accounts" => Accounts,
+        a_remembered_online_page_opens_online: "online" => Online,
+        a_remembered_recognition_page_opens_recognition: "recognition" => Recognition,
+        a_remembered_scrobbling_page_opens_the_accounts_that_now_hold_it: "scrobbling" => Accounts,
+        a_remembered_sync_page_opens_sync: "sync" => Sync,
+        a_remembered_desktop_page_opens_the_desktop: "desktop" => Desktop,
+        a_remembered_appearance_page_opens_the_appearance: "appearance" => Appearance,
+        a_remembered_about_page_opens_about: "about" => About,
+    }
+
+    #[test]
+    fn every_category_reads_back_as_it_is_written_and_nothing_else_reads() {
+        for category in SettingsCategory::ALL {
+            assert_eq!(SettingsCategory::parse(category.as_str()), Some(category));
+        }
+        assert_eq!(SettingsCategory::parse("Output"), None);
+        assert_eq!(SettingsCategory::parse("scrobble"), None);
+    }
 
     fn kept(name: &str) -> Binding {
         Binding::Profile(ProfileName::new(name).expect("a usable name"))

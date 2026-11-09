@@ -2,8 +2,8 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     AnyElement, App, BoxShadow, Div, ElementId, Font, FontWeight, MouseButton, Pixels, Role,
-    ScrollHandle, SharedString, Stateful, TruncateFrom, canvas, div, point, prelude::*, px, rgb,
-    rgba,
+    ScrollHandle, SharedString, Stateful, TruncateFrom, canvas, div, point, prelude::*, px,
+    relative, rgb, rgba,
 };
 use resonate_core::{Appearance, StreamSpec};
 use resonate_library::Codec;
@@ -24,6 +24,16 @@ use crate::{
 const BUTTON_GROUP: &str = "button";
 
 const WAY_BACK_GROUP: &str = "way-back";
+
+const NAV_ROW_GROUP: &str = "nav-row";
+
+const NAV_MARK_WASH: u8 = 0x1f;
+
+const FIELD_LIT: u8 = 0x99;
+
+const ROW_CONTROL_SHARE: f32 = 0.6;
+
+pub(crate) const CHOSEN_WASH: u8 = 0x1a;
 
 pub(crate) const GREYED: f32 = 0.5;
 
@@ -744,17 +754,340 @@ pub(crate) fn field(label: impl Into<SharedString>, control: impl IntoElement) -
         .flex()
         .flex_col()
         .gap_2()
-        .child(field_name(label))
+        .child(row_name(label))
         .child(control)
 }
 
-pub(crate) fn field_name(label: impl Into<SharedString>) -> Div {
+pub(crate) fn row_name(label: impl Into<SharedString>) -> Div {
+    div()
+        .min_w(px(0.0))
+        .text_size(px(theme::text_sm()))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(rgb(theme::text()))
+        .child(label.into())
+}
+
+pub(crate) fn row_under(text: impl Into<SharedString>) -> Div {
+    div()
+        .min_w(px(0.0))
+        .text_size(px(theme::text_xs()))
+        .text_color(rgb(theme::muted()))
+        .child(text.into())
+}
+
+pub(crate) fn named(name: impl Into<SharedString>, under: impl Into<SharedString>) -> Div {
+    let under = under.into();
+
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_w(px(0.0))
+        .gap_0p5()
+        .child(row_name(name))
+        .when(!under.is_empty(), |named| named.child(row_under(under)))
+}
+
+pub(crate) fn note(text: impl Into<SharedString>) -> Stateful<Div> {
+    let text = text.into();
+
+    div()
+        .id(text.clone())
+        .read_plainly(&text)
+        .text_size(px(theme::text_sm()))
+        .text_color(rgb(theme::faint()))
+        .child(text)
+}
+
+pub(crate) struct Rows {
+    card: Div,
+    notes: Vec<Stateful<Div>>,
+    held: usize,
+}
+
+pub(crate) fn rows() -> Rows {
+    Rows {
+        card: div()
+            .flex()
+            .flex_col()
+            .p_1()
+            .rounded_xl()
+            .bg(rgb(theme::surface()))
+            .border_1()
+            .border_color(rgb(theme::soft_edge())),
+        notes: Vec::new(),
+        held: 0,
+    }
+}
+
+impl Rows {
+    pub(crate) fn note(mut self, text: impl Into<SharedString>) -> Self {
+        self.notes.push(note(text));
+        self
+    }
+}
+
+impl ParentElement for Rows {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        for element in elements {
+            if self.held > 0 {
+                self.card.extend([row_rule().into_any_element()]);
+            }
+            self.card.extend([cell().child(element).into_any_element()]);
+            self.held += 1;
+        }
+    }
+}
+
+impl IntoElement for Rows {
+    type Element = Div;
+
+    fn into_element(self) -> Div {
+        let Self { card, notes, held } = self;
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .when(held > 0, |boxed| boxed.child(card))
+            .children(notes.into_iter().map(|note| note.px_4()))
+    }
+}
+
+fn cell() -> Div {
+    div().flex().flex_col().gap_2().px_3().py_2p5()
+}
+
+fn row_rule() -> Div {
     div()
         .flex_none()
+        .h(px(RULE))
+        .mx_3()
+        .bg(rgb(theme::soft_edge()))
+}
+
+pub(crate) fn group(heading: impl IntoElement, rows: impl IntoElement) -> Div {
+    div().flex().flex_col().gap_2().child(heading).child(rows)
+}
+
+pub(crate) fn group_heading() -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2()
+        .px_4()
+        .min_h(px(theme::row_control()))
+}
+
+pub(crate) fn group_title(text: impl Into<SharedString>) -> Stateful<Div> {
+    let text = text.into();
+
+    div()
+        .id(text.clone())
+        .headed(2, &text)
+        .flex_1()
+        .min_w(px(0.0))
+        .text_size(px(theme::text_sm()))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(rgb(theme::text()))
+        .child(text)
+}
+
+pub(crate) fn row(
+    name: impl Into<SharedString>,
+    under: impl Into<SharedString>,
+    control: impl IntoElement,
+) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_4()
+        .child(told(name, under))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .justify_end()
+                .max_w(relative(ROW_CONTROL_SHARE))
+                .child(control),
+        )
+}
+
+pub(crate) fn stacked_row(
+    name: impl Into<SharedString>,
+    under: impl Into<SharedString>,
+    control: impl IntoElement,
+) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(told(name, under))
+        .child(control)
+}
+
+fn told(name: impl Into<SharedString>, under: impl Into<SharedString>) -> Div {
+    let under = under.into();
+
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_w(px(0.0))
+        .gap_0p5()
+        .child(row_name(name))
+        .when(!under.is_empty(), |named| {
+            named.child(
+                note(under)
+                    .text_size(px(theme::text_xs()))
+                    .text_color(rgb(theme::muted())),
+            )
+        })
+}
+
+pub(crate) trait Bleeds: Styled + Sized {
+    fn bleeds(self) -> Self {
+        self.mx_neg_3().my_neg_2p5().px_3().py_2p5().rounded_lg()
+    }
+}
+
+impl<E: Styled> Bleeds for E {}
+
+pub(crate) fn switch_row(
+    label: impl Into<SharedString>,
+    under: impl Into<SharedString>,
+    on: bool,
+    id: impl Into<SharedString>,
+) -> Stateful<Div> {
+    let id = id.into();
+    let label = label.into();
+    let under = under.into();
+
+    div()
+        .id(id.clone())
+        .named_as(Role::Switch, &label, &under)
+        .thrown(on)
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .bleeds()
+        .cursor_pointer()
+        .hover(|row| row.bg(rgb(theme::hover())))
+        .child(named(label, under))
+        .child(switch(SharedString::from(format!("{id}-track")), on))
+}
+
+pub(crate) fn nav_row(
+    id: impl Into<ElementId>,
+    icon: Icon,
+    name: impl Into<SharedString>,
+    under: impl Into<SharedString>,
+) -> Stateful<Div> {
+    let id = id.into();
+    let name = name.into();
+    let under = under.into();
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .named_as(Role::Link, &name, &under)
+        .group(NAV_ROW_GROUP)
+        .flex()
+        .items_center()
+        .gap_3()
+        .bleeds()
+        .cursor_pointer()
+        .hover(|row| row.bg(rgb(theme::hover())))
+        .names(under.clone())
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(theme::row_control()))
+                .rounded_md()
+                .bg(theme::tinted(theme::accent(), NAV_MARK_WASH))
+                .child(icons::icon(
+                    icon,
+                    theme::row_control_icon(),
+                    theme::accent(),
+                )),
+        )
+        .child(named(name, under))
+        .child(icons::lit_on_hover(
+            icons::icon(
+                Icon::ChevronRight,
+                theme::row_control_icon(),
+                theme::faint(),
+            ),
+            NAV_ROW_GROUP,
+        ))
+}
+
+pub(crate) fn place_link(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    saying: impl Into<SharedString>,
+) -> Stateful<Div> {
+    let id = id.into();
+    let label = label.into();
+    let saying = saying.into();
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .named_as(Role::Link, &label, &saying)
+        .group(NAV_ROW_GROUP)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .min_h(px(theme::hint_control()))
+        .px_1()
+        .rounded_md()
         .text_size(px(theme::text_xs()))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(rgb(theme::muted()))
-        .child(label.into())
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(rgb(theme::faint()))
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .hover(|link| link.bg(rgb(theme::hover())))
+        .lit_under_the_pointer(id, |link| link.text_color(rgb(theme::text())))
+        .names(saying)
+        .child(label)
+        .child(icons::lit_on_hover(
+            icons::icon(Icon::ChevronRight, theme::hint_icon(), theme::faint()),
+            NAV_ROW_GROUP,
+        ))
+}
+
+pub(crate) fn framed_field(id: impl Into<ElementId>, lit: bool) -> Stateful<Div> {
+    let id = id.into();
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .h(theme::width(theme::search_height()))
+        .px_3()
+        .rounded_lg()
+        .bg(rgb(theme::background()))
+        .border_1()
+        .border_color(if lit {
+            theme::tinted(theme::accent(), FIELD_LIT)
+        } else {
+            rgb(theme::soft_edge())
+        })
+        .text_size(px(theme::text_sm()))
+        .cursor_text()
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+        .hover(|field| field.border_color(theme::tinted(theme::accent(), FIELD_LIT)))
 }
 
 pub(crate) fn segmented() -> Div {
@@ -1004,22 +1337,12 @@ pub(crate) fn choice_row(
         .flex()
         .items_start()
         .gap_3()
-        .px_3()
-        .py_2p5()
-        .rounded_lg()
+        .bleeds()
         .cursor_pointer()
-        .border_1()
         .when_else(
             chosen,
-            |row| {
-                row.bg(theme::tinted(theme::accent(), 0x14))
-                    .border_color(rgb(theme::accent()))
-            },
-            |row| {
-                row.bg(rgb(theme::raised()))
-                    .border_color(rgb(theme::border()))
-                    .hover(|row| row.bg(rgb(theme::hover())))
-            },
+            |row| row.bg(theme::tinted(theme::accent(), CHOSEN_WASH)),
+            |row| row.hover(|row| row.bg(rgb(theme::hover()))),
         )
 }
 

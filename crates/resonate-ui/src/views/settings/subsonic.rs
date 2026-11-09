@@ -1,5 +1,5 @@
 use gpui::{
-    App, AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Window,
+    App, AppContext as _, BorrowAppContext as _, Context, Entity, ParentElement as _, Window,
 };
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
-        settings::note,
+        settings::Rows,
     },
 };
 
@@ -298,12 +298,12 @@ impl RootView {
         }
     }
 
-    pub(super) fn account_group(&mut self, service: Service, cx: &mut Context<Self>) -> Div {
-        let mut body = kit::section_body();
+    pub(super) fn account_group(&mut self, service: Service, cx: &mut Context<Self>) -> Rows {
+        let mut body = kit::rows();
         for account in Account::ALL {
             body = body.child(kit::field(
                 account.label(),
-                self.key_field(
+                self.text_field(
                     account.id(service),
                     self.account_field(service, account),
                     |this, window, cx| this.leave_the_account(window, cx),
@@ -311,6 +311,6 @@ impl RootView {
                 ),
             ));
         }
-        body.child(note(service.note()))
+        body.note(service.note())
     }
 }

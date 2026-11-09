@@ -1,9 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
-    AccessibleAction, Bounds, Context, Div, FontWeight, KeyContext, MouseButton, MouseDownEvent,
-    Role, SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb,
-    size,
+    AccessibleAction, Bounds, Context, Div, KeyContext, MouseButton, MouseDownEvent, Role,
+    SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use qrcode::{Color, EcLevel, QrCode};
 use resonate_core::{REMOTE_TRUST_ASKED, REMOTE_TRUST_TOLD, RemoteTrust, SyncedSongs};
@@ -20,7 +19,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis, Found, Tone},
         root::RootView,
-        settings::{note, switch_row},
+        settings::{Armed, Rows, note, switch_row},
         spoken::{self, Reading, Spoken},
     },
 };
@@ -397,7 +396,7 @@ const fn platform_name(platform: SyncedPlatform) -> Option<&'static str> {
 }
 
 impl RootView {
-    pub(super) fn syncing_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn syncing_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let shown = cx
             .global::<ResonateApp>()
@@ -411,12 +410,7 @@ impl RootView {
         let mut standing = div()
             .flex()
             .items_center()
-            .gap_4()
-            .p_4()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::border()))
+            .gap_3()
             .child(
                 div()
                     .flex()
@@ -432,27 +426,7 @@ impl RootView {
                         colour,
                     )),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .gap_0p5()
-                    .child(
-                        div()
-                            .text_size(px(theme::text_base()))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(theme::text()))
-                            .child(said.headline),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(theme::text_sm()))
-                            .text_color(rgb(theme::muted()))
-                            .child(said.under),
-                    ),
-            );
+            .child(kit::named(said.headline, said.under));
         if on && shown.is_some() {
             standing = standing.child(self.in_the_ring(
                 "sync-force",
@@ -468,7 +442,7 @@ impl RootView {
             ));
         }
 
-        let mut body = kit::section_body()
+        let mut body = kit::rows()
             .child(self.in_the_ring(
                 "sync-on",
                 switch_row(
@@ -487,10 +461,10 @@ impl RootView {
         {
             body = body.child(note(on_their_way));
         }
-        body.child(note(SYNCING_NOTE))
+        body.note(SYNCING_NOTE)
     }
 
-    pub(super) fn pairing_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn pairing_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let shown = cx
             .global::<ResonateApp>()
             .syncing
@@ -499,7 +473,7 @@ impl RootView {
             .filter(|shown| !shown.code.is_empty());
         let revealed = self.pairing_shown;
 
-        let mut body = kit::section_body();
+        let mut body = kit::rows();
         if let Some(shown) = shown {
             let tile = if revealed {
                 div()
@@ -606,16 +580,12 @@ impl RootView {
                         .flex()
                         .items_center()
                         .gap_6()
-                        .p_4()
-                        .rounded_lg()
-                        .bg(rgb(theme::raised()))
-                        .border_1()
-                        .border_color(rgb(theme::border()))
+                        .py_1()
                         .child(tile)
                         .child(column),
                 )
-                .child(note(PAIRING_NOTE));
-            if self.regenerating_the_code {
+                .note(PAIRING_NOTE);
+            if self.is_armed(&Armed::RegenerateTheCode) {
                 body = body.child(note(ARMED_TO_REGENERATE));
             } else if self.code_regenerated {
                 body = body.child(note(REGENERATED));
@@ -624,35 +594,27 @@ impl RootView {
             body = body.child(note(NO_CODE_YET));
         }
         body.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .pt_4()
-                .border_t_1()
-                .border_color(rgb(theme::border()))
-                .child(kit::field(
-                    "Join another device's code",
-                    self.key_field(
-                        "sync-code",
-                        &self.sync_code,
-                        |this, window, cx| this.leave_sync_field(window, cx),
-                        cx,
-                    ),
-                ))
-                .child(note(JOINING_NOTE)),
+            kit::field(
+                "Join another device's code",
+                self.text_field(
+                    "sync-code",
+                    &self.sync_code,
+                    |this, window, cx| this.leave_sync_field(window, cx),
+                    cx,
+                ),
+            )
+            .child(note(JOINING_NOTE)),
         )
     }
 
-    pub(super) fn sync_devices_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn sync_devices_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let shown = cx
             .global::<ResonateApp>()
             .syncing
             .as_ref()
             .map(|syncing| syncing.shown());
         let Some(shown) = shown.filter(|shown| !shown.devices.is_empty()) else {
-            return kit::section_body()
-                .child(note("Your devices are listed here once this device syncs"));
+            return kit::rows().child(note("Your devices are listed here once this device syncs"));
         };
         let mut devices = shown.devices;
         devices.sort_by(|first, second| {
@@ -662,7 +624,7 @@ impl RootView {
                 .then(second.online.cmp(&first.online))
                 .then_with(|| first.name.to_lowercase().cmp(&second.name.to_lowercase()))
         });
-        let mut body = kit::section_body().gap_2();
+        let mut body = kit::rows();
         for device in &devices {
             body = body.child(self.device_row(device, cx));
         }
@@ -718,18 +680,7 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_2()
-            .p_3()
-            .rounded_lg()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .child(
-                div()
-                    .text_size(px(theme::text_sm()))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(theme::text()))
-                    .child(format!("Playing on {name}")),
-            );
+            .child(kit::row_name(format!("Playing on {name}")));
         match shown {
             RemoteShown::Waiting => panel.child(note(DRIVING_WAITS)),
             RemoteShown::Refused => panel.child(note(DRIVING_REFUSED)),
@@ -1099,7 +1050,7 @@ impl RootView {
         .detach();
     }
 
-    pub(super) fn sync_connection_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn sync_connection_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let chosen = Route::of(&synchronised, self.own_server_asked);
 
@@ -1113,7 +1064,7 @@ impl RootView {
                 cx,
             ));
         }
-        let mut body = kit::section_body().child(
+        let mut body = kit::rows().child(
             div()
                 .flex()
                 .flex_col()
@@ -1124,7 +1075,7 @@ impl RootView {
         if chosen == Route::Own {
             body = body.child(kit::field(
                 "Server",
-                self.key_field(
+                self.text_field(
                     "sync-server",
                     &self.sync_server,
                     |this, window, cx| this.leave_sync_field(window, cx),
@@ -1134,7 +1085,7 @@ impl RootView {
         }
         body.child(kit::field(
             "Device name",
-            self.key_field(
+            self.text_field(
                 "sync-device",
                 &self.sync_device,
                 |this, window, cx| this.leave_sync_field(window, cx),
@@ -1143,20 +1094,20 @@ impl RootView {
         ))
         .child(kit::field(
             "Your name on shared playlists and parties",
-            self.key_field(
+            self.text_field(
                 "shared-name",
                 &self.shared_name,
                 |this, window, cx| this.leave_sync_field(window, cx),
                 cx,
             ),
         ))
-        .child(note(SYNCING_NOTE))
+        .note(SYNCING_NOTE)
     }
 
-    pub(super) fn synced_songs_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn synced_songs_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let songs = cx.global::<ResonateApp>().synchronised.songs;
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "sync-favourites",
                 switch_row(
@@ -1214,10 +1165,10 @@ impl RootView {
                 },
                 cx,
             ))
-            .child(note(SONGS_NOTE))
+            .note(SONGS_NOTE)
     }
 
-    pub(super) fn sync_control_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn sync_control_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let chosen = cx.global::<ResonateApp>().synchronised.control;
 
         let mut choices = kit::segmented();
@@ -1230,17 +1181,19 @@ impl RootView {
                 cx,
             ));
         }
-        kit::section_body().child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(note(REMOTE_TRUST_ASKED))
-                .child(div().flex().child(choices))
-                .child(note(chosen.meaning()))
-                .child(note(REMOTE_TRUST_TOLD))
-                .child(note(SYNCING_NOTE)),
-        )
+        kit::rows()
+            .child(kit::stacked_row(
+                REMOTE_TRUST_ASKED,
+                "",
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(div().flex().child(choices))
+                    .child(note(chosen.meaning())),
+            ))
+            .note(REMOTE_TRUST_TOLD)
+            .note(SYNCING_NOTE)
     }
 
     pub(crate) fn trust_other_devices(&mut self, control: RemoteTrust, cx: &mut Context<Self>) {
@@ -1268,7 +1221,7 @@ impl RootView {
     }
 
     fn regenerate_button(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let armed = self.regenerating_the_code;
+        let armed = self.is_armed(&Armed::RegenerateTheCode);
         self.in_the_ring(
             "sync-regenerate",
             kit::button(
@@ -1290,7 +1243,7 @@ impl RootView {
                 if armed {
                     this.regenerate_the_code(cx);
                 } else {
-                    this.regenerating_the_code = true;
+                    this.arm(Armed::RegenerateTheCode);
                     cx.notify();
                 }
             },
@@ -1313,33 +1266,8 @@ impl RootView {
             .flex()
             .items_center()
             .gap_3()
-            .px_3()
-            .py_2()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::border()))
             .child(device_mark(device.platform, device.online))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .child(
-                        div()
-                            .text_size(px(theme::text_sm()))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(rgb(theme::text()))
-                            .child(device.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(theme::text_xs()))
-                            .text_color(rgb(theme::muted()))
-                            .child(under),
-                    ),
-            );
+            .child(kit::named(device.name.clone(), under));
         if device.online {
             if device.this {
                 return row;
@@ -1387,7 +1315,7 @@ impl RootView {
     }
 
     fn regenerate_the_code(&mut self, cx: &mut Context<Self>) {
-        self.regenerating_the_code = false;
+        self.lower(&Armed::RegenerateTheCode);
         self.code_regenerated = true;
         self.pairing_shown = false;
         self.store(&Setting::SyncKey(String::new()), cx);

@@ -491,8 +491,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 ## The listening test
 
 A level-matched ABX of the equaliser against a bypass of itself, or of lossy restoration, the
-resampler or dither against another setting, in the Equaliser category's *Listening test* group
-(`Group::Abx`, `views/settings/abx.rs`); the arithmetic is `resonate-core::abx`, windowless and
+resampler or dither against another setting, on the Equaliser category's *Listening test* page
+(its *A blind test* group, `Group::Abx`, `views/settings/abx.rs`); the arithmetic is `resonate-core::abx`, windowless and
 tested.
 
 - **A is the chain as set, B its bypass, each lowered and neither raised.** `Arms::matched(profile,
@@ -681,7 +681,7 @@ tested.
   flushes the tail.
 - **`EngineConfig::convolution`, `Command::SetConvolution`, key `convolution`.**
   `OutputPlan::convolution` makes the plan `Converted`; a change rebinds at the position, no retune.
-  The binary reads the file at start, `explain` names it; the pane's *Room correction* group reads
+  The binary reads the file at start, `explain` names it; the *Room correction* page's *The room's response* group reads
   one on a background thread. `RootView::reading_the_room` is one task: a second pick replaces it,
   *Stop correcting* drops it, so the last gesture wins. One response for all devices, no binding.
 - **The fit of the preamp covers it** (*Fit the preamp to the music*): the decode runs the
@@ -835,7 +835,7 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   `speaker-elevation` and `head-yaw` (`Config::speakers`, each an integer held to its range, a value
   outside it costing the key alone), `Setting::SpeakerAngle`, `Setting::SpeakerElevation` and
   `Setting::HeadYaw`, worn on `ResonateApp::speaker_angle`, `speaker_elevation` and `head_yaw`
-  (`speakers_worn` in the pane makes the trio every read takes). The Room correction group offers each as a stepper (`degrees_stepper`: a
+  (`speakers_worn` in the pane makes the trio every read takes). The *Room correction* page's *Where the speakers stand* group offers each as a stepper (`degrees_stepper`: a
   `kit::stepper` of `Icon::Minus` and `Icon::Plus`, a degree a press, the reading
   between) beside segments for common places (20, 30, 45, 60 and 90 degrees of angle; 0, 10, 20, 30
   and 45 of elevation), so any angle from 5 to 90 and any elevation is reached, and a third field,
@@ -1118,7 +1118,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
 - **Reachable from `eq --fit-measurement FILE [--target NAME|FILE]`** (default
   `harman-over-ear-2018`), kept like `--import`: named by `--profile` or the file's stem
   (`Store::name_for_import`, a replaced name said), bound by `--for`, or the device's own curve with
-  `--own`; it conflicts with every other action. And from the *Measured corrections* group: the
+  `--own`; it conflicts with every other action. And from the *Your own measurement* page's *Fit a measurement* group: the
   *Fit toward* `kit::pick` (`Goal::{BuiltIn, File}`, Harman over-ear 2018 by default,
   `EqualiserModel::aim_at`) and *Fit a measurement…*, which fits and keeps on the background
   executor in `_measured` (own task, like `_imported`), shows the new profile and says how many
@@ -1189,7 +1189,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   hearing)` answers an `Unheard`
   (`Played`, `Deconvolved`, `Response`, each the source error unchanged, converted to the crate's
   `Error` for the command and to `Unmeasured` for the window), and the pane's *Measure your room*
-  field (under *Your own measurement*, in *Measured corrections*) holds the microphone to hear it
+  group (the *Measure with a microphone* page of the Equaliser category) holds the microphone to hear it
   through as the Listen sheet's own choice, a `kit::pick` of the desktop, the default microphone and every
   microphone `Listener::microphones` lists (`ListenModel::choose`, shared with the sheet, so a
   microphone chosen in one is chosen in the other; the list is looked for the first time the group
@@ -1266,8 +1266,9 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   (`Config::equaliser_measurer_for`); the flag outranks both, and the pane's search and suggestion
   read the device in use's (`Measurers::for_sink`, `EqualiserModel::look`/`suggested` take the sink;
   `the_pane_suggests_from_the_measurer_preferred_for_the_device_in_use_before_the_one_for_every_device`).
-  `--suggest` reads the chosen sink's, `--find` the `--sink` or configured sink's. The *Measured
-  corrections* group chooses both live, a field for every device and one for the device in use
+  `--suggest` reads the chosen sink's, `--find` the `--sink` or configured sink's. The *Headphone
+  correction* page's *Preferred measurers* group chooses both live, a pick for every device and one
+  for the device in use
   (`prefer_a_measurer`, `prefer_a_measurer_for`: the global, the model and a search standing are
   changed together, then the file; `a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once`,
   `a_measurer_is_chosen_for_the_device_in_use_alone_and_worn_at_once`)
@@ -1302,6 +1303,19 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
 
 ## The pane
 
+- **The category's own page is the switch, the bindings and the curve; every tool is a page of its
+  own.** *Equaliser*, *Bound to each device* (a segmented row a device, each segment a radio in the
+  ring) and *Bands* stand on the Equaliser category's page, then a card of nav rows to *Headphone
+  correction* (AutoEq's search, results and what is plugged in; the preferred measurers), *Your own
+  measurement*, *Measure with a microphone*, *Room correction* (the response; where the speakers
+  stand) and *Listening test* (`ui.md`'s pages). *Bands* is one card: the curve, then the curve's
+  name with the peak it reaches and the preamp with *Fit*, then a row a band (number, kind, the
+  three cells, the switch, the remove mark; the kind's segments open under its row, each in the
+  ring), then the actions.
+- **The curve is as wide as the column and as tall as its width allows**: `w_full` with
+  `CURVE_ASPECT` (2.6) as its aspect ratio, held between `theme::curve_height_at_least()` (160) and
+  `curve_height_at_most()` (320); `Plotted` takes its bounds in the canvas's prepaint, so the pointer follows
+  whatever size it is drawn at.
 - **The curve is shaped where drawn; typed numbers stay the exact way in.** Press on empty space
   adds a peaking band; on a handle takes it; drag moves; wheel over a handle turns Q; secondary
   press removes.
@@ -1374,7 +1388,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   uses.
 - **The shown curve can be kept under a name or discarded.** *Keep as a profile* under an own curve
   writes a copy via `Store::keep` under the device's description (`unused_name` adds ` 2`, ` 3`);
-  binding stays on the own curve. *Discard* takes two presses (`discarding_the_curve`, lowered by
+  binding stays on the own curve. *Discard* takes two presses (`Armed::DiscardTheCurve`, lowered by
   `disarm`); `discard_the_curve` first unbinds (via `bind_a_curve`) every device and the fallback
   resolving to that curve, then `EqualiserModel::discard` removes the file via
   `Store::forget`/`forget_own`.

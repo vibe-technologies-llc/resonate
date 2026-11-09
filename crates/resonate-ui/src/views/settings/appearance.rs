@@ -10,7 +10,7 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis as _},
         root::{Pane, RootView},
-        settings::{Choice, find::Category, note, switch_row},
+        settings::{Choice, Rows, find::Category, note, switch_row},
         spoken::Spoken,
     },
 };
@@ -186,7 +186,7 @@ impl Choice for SpectrumFalls {
 }
 
 impl RootView {
-    pub(super) fn colour_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn colour_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let worn = theme::worn();
         let following = theme::chosen().follows.scheme;
         let mut shelf = div().flex().flex_wrap().gap_2();
@@ -204,7 +204,7 @@ impl RootView {
             accents = accents.child(self.accent(Some(accent), worn, cx));
         }
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 FOLLOW_SCHEME_ID,
                 switch_row(
@@ -216,7 +216,6 @@ impl RootView {
                 move |this, _, cx| this.follow_the_desktop_scheme(!following, cx),
                 cx,
             ))
-            .child(note(FOLLOW_SCHEME_NOTE))
             .child(kit::field("Theme", shelf))
             .child(kit::field(
                 "Accent",
@@ -227,6 +226,7 @@ impl RootView {
                     .child(accents)
                     .child(note(KEEPS_ITS_OWN)),
             ))
+            .note(FOLLOW_SCHEME_NOTE)
     }
 
     fn palette(&self, palette: Theme, worn: Appearance, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -318,11 +318,11 @@ impl RootView {
         )
     }
 
-    pub(super) fn layout_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn layout_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let worn = theme::worn();
         let following = theme::chosen().follows.text;
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 FOLLOW_TEXT_SIZE_ID,
                 switch_row(
@@ -334,7 +334,6 @@ impl RootView {
                 move |this, _, cx| this.follow_the_desktop_text_size(!following, cx),
                 cx,
             ))
-            .child(note(FOLLOW_TEXT_SIZE_NOTE))
             .child(kit::field(
                 "Text size",
                 self.choices(
@@ -359,6 +358,7 @@ impl RootView {
                     },
                 ),
             ))
+            .note(FOLLOW_TEXT_SIZE_NOTE)
     }
 
     pub(crate) fn follow_the_desktop_scheme(&mut self, follows: bool, cx: &mut Context<Self>) {
@@ -393,10 +393,10 @@ impl RootView {
         self.store(&Setting::FollowDesktopTextSize(follows), cx);
     }
 
-    pub(super) fn motion_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn motion_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let reduced = cx.global::<ResonateApp>().reduced_motion;
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             REDUCED_MOTION_ID,
             switch_row(
                 "Reduce motion",
@@ -412,7 +412,7 @@ impl RootView {
         ))
     }
 
-    pub(super) fn window_buttons_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn window_buttons_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let shown = cx.global::<ResonateApp>().window_buttons;
         let flip_minimise = WindowButtons {
             minimise: !shown.minimise,
@@ -423,7 +423,7 @@ impl RootView {
             ..shown
         };
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 MINIMISE_ID,
                 switch_row(
@@ -452,13 +452,13 @@ impl RootView {
                 },
                 cx,
             ))
-            .child(note(WINDOW_BUTTONS_NOTE))
+            .note(WINDOW_BUTTONS_NOTE)
     }
 
-    pub(super) fn volume_wheel_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn volume_wheel_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let wheeled = cx.global::<ResonateApp>().scroll_volume;
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             VOLUME_WHEEL_ID,
             switch_row(
                 "Turn the volume with the wheel",
@@ -474,10 +474,10 @@ impl RootView {
         ))
     }
 
-    pub(super) fn scrollbars_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn scrollbars_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let mode = cx.global::<ResonateApp>().scrollbars;
 
-        kit::section_body().child(kit::field(
+        kit::rows().child(kit::field(
             "Draw scrollbars",
             self.choices("scrollbars", mode, cx, |this, mode: ScrollbarMode, cx| {
                 this.draw_scrollbars(mode, cx);
@@ -486,10 +486,10 @@ impl RootView {
         ))
     }
 
-    pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let enabled = cx.global::<ResonateApp>().mouse_navigation;
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             MOUSE_NAVIGATION_ID,
             switch_row(
                 "Use the mouse back and forward buttons",
@@ -505,7 +505,7 @@ impl RootView {
         ))
     }
 
-    pub(super) fn tabs_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn tabs_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let shown = cx.global::<ResonateApp>().tabs;
         let flip_suggestions = Tabs {
             suggestions: !shown.suggestions,
@@ -520,7 +520,7 @@ impl RootView {
             ..shown
         };
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 SUGGESTIONS_TAB_ID,
                 switch_row(
@@ -573,11 +573,10 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn live_spectrum_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn live_spectrum_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let spectral = cx.global::<ResonateApp>().spectral;
 
-        kit::section_body()
-            .gap_4()
+        kit::rows()
             .child(kit::field(
                 "Treble lifted",
                 self.choices("spectrum-tilt", spectral.tilt, cx, |this, tilt, cx| {
@@ -644,13 +643,13 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn window_state_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn window_state_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let global = cx.global::<ResonateApp>();
         let remember_tab = global.remember_tab;
         let remember_window_size = global.remember_window_size;
         let remember_settings_category = global.remember_settings_category;
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 REMEMBER_TAB_ID,
                 switch_row(

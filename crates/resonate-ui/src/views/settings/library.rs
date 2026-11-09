@@ -21,10 +21,10 @@ use crate::{
     views::{
         focus::{self, by_the_pointer},
         hint::Names as _,
-        kit::{self, EndsInAnEllipsis as _, Found as _, Press},
+        kit::{self, Bleeds as _, EndsInAnEllipsis as _, Found as _, Press},
         listing,
         root::RootView,
-        settings::{Choice, action, hugging, named, note, progress, reading, rows, switch_row},
+        settings::{Armed, Choice, Rows, action, note, progress, reading, switch_row},
         spoken::Spoken as _,
     },
 };
@@ -74,12 +74,6 @@ const NO_FOLDERS: &str = "No folders yet. Add one and Resonate will scan it; pre
 const FOLDERS_NOTE: &str = "Everything under these folders is read into the library and followed \
                             while the window is open. The files are only read: nothing in them \
                             changes unless Tagging or Organising below is applied.";
-
-const FILES_EYEBROW: &str = "The files";
-
-const DETAILS_EYEBROW: &str = "What online knows";
-
-const TAGS_EYEBROW: &str = "The tags in the files";
 
 const FILES_NOTE: &str = "Rescan reads what was added or changed since the last scan. Read every \
                           file again re-reads each file whatever its size and time say: names, \
@@ -187,7 +181,7 @@ const WRITES_SHOWN: usize = 12;
 const COVER_ART: &str = "cover art";
 
 impl RootView {
-    pub(super) fn folders_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn folders_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let roots = library.roots().to_vec();
         let waiting = library.roots_waiting().to_vec();
@@ -198,7 +192,7 @@ impl RootView {
         let apart = primary.clone().filter(|primary| !roots.contains(primary));
         let nothing_listed = roots.is_empty() && apart.is_none();
 
-        let mut listed = rows();
+        let mut listed = kit::rows().when(nothing_listed, |body| body.child(note(NO_FOLDERS)));
         for root in &roots {
             listed = listed.child(self.folder(root, primary.as_deref(), cx));
         }
@@ -206,11 +200,20 @@ impl RootView {
             listed = listed.child(self.primary_apart(apart, cx));
         }
 
-        kit::section_body()
-            .when(nothing_listed, |body| body.child(note(NO_FOLDERS)))
-            .when(!nothing_listed, |body| body.child(listed))
-            .child(hugging(self.add_folder(cx)))
-            .child(self.typed_root_field(cx))
+        listed
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().flex_1().min_w(px(0.0)).child(self.text_field(
+                        "typed-root",
+                        &self.typed_root,
+                        |this, window, cx| this.leave_typed_root(window, cx),
+                        cx,
+                    )))
+                    .child(self.add_folder(cx)),
+            )
             .when(!waiting.is_empty(), |body| {
                 body.child(note(SharedString::from(waiting_line(&waiting))))
             })
@@ -232,33 +235,8 @@ impl RootView {
                 },
                 cx,
             ))
-            .when(!nothing_listed, |body| body.child(note(FOLDERS_NOTE)))
-            .child(note(PRIMARY_NOTE))
-    }
-
-    fn typed_root_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id("typed-root")
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
-            .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_typed_root(window, cx)))
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.typed_root
-                    .update(cx, |typed, cx| typed.take_focus(window, cx));
-                cx.notify();
-            }))
-            .child(self.typed_root.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+            .when(!nothing_listed, |body| body.note(FOLDERS_NOTE))
+            .note(PRIMARY_NOTE)
     }
 
     pub(crate) fn root_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -398,7 +376,7 @@ impl RootView {
     fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Div {
         let id = (ElementId::Path(Arc::from(root.as_path())), "forget");
         let named = format!("forget {}", resonate_core::path_text::shown(&root));
-        let asked = self.forgetting_the_folder.as_deref() == Some(root.as_path());
+        let asked = self.folder_armed() == Some(&root);
 
         div()
             .flex()
@@ -428,8 +406,8 @@ impl RootView {
     }
 
     pub(crate) fn ask_to_forget_the_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
-        if self.forgetting_the_folder.as_ref() == Some(&root) {
-            self.forgetting_the_folder = None;
+        if self.folder_armed() == Some(&root) {
+            self.armed = None;
             let held = cx.global::<ResonateApp>().music_folder.clone();
             if held.is_some_and(|primary| primary.starts_with(&root)) {
                 self.forget_the_music_folder(cx);
@@ -438,7 +416,7 @@ impl RootView {
                 .update(cx, |library, cx| library.forget_root(root, cx));
         } else {
             self.lower_every_armed_press();
-            self.forgetting_the_folder = Some(root);
+            self.arm(Armed::ForgetTheFolder(root));
         }
         cx.notify();
     }
@@ -481,44 +459,42 @@ impl RootView {
         )
     }
 
-    pub(super) fn updating_group(&mut self, cx: &mut Context<Self>) -> Div {
-        kit::section_body()
-            .child(self.details_part(cx))
-            .child(self.files_part(cx))
-            .child(self.tags_part(cx))
-    }
-
-    fn files_part(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn rescanning_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let scanning = library.is_scanning();
         let stopping = library.is_stopping();
         let stats = library.stats();
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(kit::eyebrow(FILES_EYEBROW))
+        kit::rows()
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(self.rescan(busy, scanning, cx))
                     .child(self.read_everything_again(busy, cx))
                     .when(scanning, |row| row.child(self.stop_scan(stopping, cx))),
             )
-            .when(scanning, |body| {
-                body.child(progress(read_so_far(stats.unwrap_or_default())))
+            .when_some(stats, |body, stats| {
+                body.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .when(scanning, |told| told.child(progress(read_so_far(stats))))
+                        .child(note(counted(stats))),
+                )
             })
-            .child(note(match stats {
-                Some(stats) => SharedString::from(counted(stats)),
-                None => SharedString::new_static(FILES_NOTE),
-            }))
+            .note(FILES_NOTE)
     }
 
-    fn details_part(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn looking_up_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        self.details_part(cx)
+    }
+
+    pub(super) fn retagging_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        self.tags_part(cx)
+    }
+
+    fn details_part(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let held_back = library.is_busy() || library.is_enriching() || !library.can_enrich();
         let enriching = library.is_enriching();
@@ -532,23 +508,15 @@ impl RootView {
             .filter(|_| !enriching)
             .and_then(|summary| lookup_ending(&summary));
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(kit::eyebrow(DETAILS_EYEBROW))
+        kit::rows()
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(self.look_up(held_back, enriching, cx))
                     .child(self.refresh_all(held_back, cx))
                     .child(self.hurry_the_lookup(unhurriable, hurried, cx))
                     .child(self.look_for_missing_covers(held_back, cx))
                     .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
             )
-            .child(note(DETAILS_NOTE))
             .when_some(
                 breakdown.filter(|lines| !lines.is_empty()),
                 |body, lines| {
@@ -557,7 +525,7 @@ impl RootView {
                             .flex()
                             .flex_col()
                             .gap_1p5()
-                            .child(kit::eyebrow(if enriching {
+                            .child(kit::row_name(if enriching {
                                 LOOKUP_UNDER_WAY
                             } else {
                                 LAST_LOOKUP
@@ -571,6 +539,7 @@ impl RootView {
                 },
             )
             .when_some(ending, |body, ending| body.child(note(ending)))
+            .note(DETAILS_NOTE)
     }
 
     fn rescan(&self, busy: bool, scanning: bool, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -831,10 +800,10 @@ fn counted(stats: ScanStats) -> String {
 }
 
 impl RootView {
-    pub(super) fn resuming_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn resuming_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let keeps = self.library.read(cx).resumes();
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "resume-the-queue",
                 switch_row(
@@ -846,14 +815,14 @@ impl RootView {
                 move |this, _, cx| this.set_resume(!keeps, cx),
                 cx,
             ))
-            .child(note(RESUMING_NOTE))
+            .note(RESUMING_NOTE)
     }
 
-    pub(super) fn history_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn history_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let kept = cx.global::<ResonateApp>().history_kept;
-        let armed = self.aging_the_history;
+        let armed = self.history_armed();
 
-        kit::section_body()
+        kit::rows()
             .child(kit::field(
                 "Keep what was listened to",
                 self.choices("history-kept", kept, cx, |this, kept: HistoryKept, cx| {
@@ -871,13 +840,13 @@ impl RootView {
 
     fn ask_to_keep_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
         let now = cx.global::<ResonateApp>().history_kept;
-        if forgets_listens(now, kept) && self.aging_the_history != Some(kept) {
+        if forgets_listens(now, kept) && self.history_armed() != Some(kept) {
             self.lower_every_armed_press();
-            self.aging_the_history = Some(kept);
+            self.arm(Armed::AgeTheHistory(kept));
             cx.notify();
             return;
         }
-        self.aging_the_history = None;
+        self.armed = None;
         self.keep_the_history(kept, cx);
         cx.notify();
     }
@@ -889,7 +858,7 @@ impl RootView {
         self.store(&Setting::HistoryKept(kept), cx);
     }
 
-    pub(super) fn repeating_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn repeating_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let skip = self.player.read(cx).state().skip_under_repeat;
         let repeats_the_queue = skip == SkipUnderRepeat::RepeatsTheQueue;
         let flipped = if repeats_the_queue {
@@ -898,7 +867,7 @@ impl RootView {
             SkipUnderRepeat::RepeatsTheQueue
         };
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             "skip-repeats-queue",
             switch_row(
                 "A skip repeats the queue",
@@ -914,7 +883,7 @@ impl RootView {
         ))
     }
 
-    pub(super) fn previous_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn previous_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let policy = self.player.read(cx).state().previous_restarts;
         let restarts = policy == PreviousRestarts::RestartsTheTrack;
         let flipped = if restarts {
@@ -923,7 +892,7 @@ impl RootView {
             PreviousRestarts::RestartsTheTrack
         };
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             "previous-restarts",
             switch_row(
                 "Previous restarts the song",
@@ -948,7 +917,7 @@ impl RootView {
 }
 
 impl RootView {
-    pub(super) fn organising_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn organising_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let typed = self.organising.read(cx).text().trim().to_owned();
         let refused = Layout::read(&typed).err().map(|error| error.to_string());
         let unreadable = refused.is_some();
@@ -960,9 +929,9 @@ impl RootView {
         let moving = library.is_moving();
         let planned = library.previewed();
         let previewed = planned.is_shown();
-        let armed = self.moving_the_files && previewed;
+        let armed = self.is_armed(&Armed::MoveTheFiles) && previewed;
         let walks_back = library.walks_back();
-        let walking_back = self.walking_the_filing_back && walks_back;
+        let walking_back = self.is_armed(&Armed::WalkTheFilingBack) && walks_back;
         let stopping = library.is_stopping_organise();
         let stats = library.organise_stats();
         let told = library
@@ -970,17 +939,23 @@ impl RootView {
             .filter(|(pass, _)| !pass.applies())
             .map(|(_, summary)| filed(summary));
 
-        kit::section_body()
-            .child(kit::field(TEMPLATE_LABEL, self.template_field(cx)))
-            .when_some(refused, |body, refused| {
-                body.child(listing::noticed(&Notice::Trouble(refused)))
-            })
-            .child(note(ORGANISING_NOTE))
+        kit::rows()
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::field(
+                    TEMPLATE_LABEL,
+                    self.text_field(
+                        "organise-as",
+                        &self.organising,
+                        |this, window, cx| this.leave_organising(window, cx),
+                        cx,
+                    ),
+                )
+                .when_some(refused, |field, refused| {
+                    field.child(listing::noticed(&Notice::Trouble(refused)))
+                }),
+            )
+            .child(
+                kit::action_row()
                     .child(self.preview_the_filing(busy || unreadable, organising && !moving, cx))
                     .child(self.file_the_tracks(
                         busy || unreadable || !previewed,
@@ -1002,31 +977,7 @@ impl RootView {
                 body.child(note(going(stats.unwrap_or_default(), moving)))
             })
             .when_some(told, |body, told| body.child(note(told)))
-    }
-
-    fn template_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id("organise-as")
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
-            .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_organising(window, cx)))
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.organising
-                    .update(cx, |organising, cx| organising.take_focus(window, cx));
-                cx.notify();
-            }))
-            .child(self.organising.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+            .note(ORGANISING_NOTE)
     }
 
     fn preview_the_filing(
@@ -1112,11 +1063,11 @@ impl RootView {
             held_back,
             move |this, _, cx| {
                 if armed {
-                    this.walking_the_filing_back = false;
+                    this.lower(&Armed::WalkTheFilingBack);
                     this.library
                         .update(cx, |library, cx| library.walk_the_filing_back(cx));
                 } else {
-                    this.walking_the_filing_back = true;
+                    this.arm(Armed::WalkTheFilingBack);
                 }
                 cx.notify();
             },
@@ -1126,12 +1077,12 @@ impl RootView {
     }
 
     fn arm_the_move(&mut self, cx: &mut Context<Self>) {
-        self.moving_the_files = true;
+        self.arm(Armed::MoveTheFiles);
         cx.notify();
     }
 
     fn file_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        self.moving_the_files = false;
+        self.lower(&Armed::MoveTheFiles);
         let typed = self.organising.read(cx).text().trim().to_owned();
 
         match Layout::read(&typed) {
@@ -1180,16 +1131,16 @@ impl RootView {
 }
 
 impl RootView {
-    fn tags_part(&mut self, cx: &mut Context<Self>) -> Div {
+    fn tags_part(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let tagging = library.is_tagging();
         let writing = library.is_writing_tags();
         let planned = library.previewed_tags();
         let previewed = planned.is_shown();
-        let armed = self.writing_the_tags && previewed;
+        let armed = self.is_armed(&Armed::WriteTheTags) && previewed;
         let walks_back = library.tags_walk_back();
-        let walking_back = self.walking_the_tags_back && walks_back;
+        let walking_back = self.is_armed(&Armed::WalkTheTagsBack) && walks_back;
         let stopping = library.is_stopping_retag();
         let stats = library.retag_stats();
         let told = library
@@ -1197,17 +1148,9 @@ impl RootView {
             .filter(|(pass, _)| !pass.applies())
             .map(|(_, summary)| (written(summary), listed(summary)));
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(kit::eyebrow(TAGS_EYEBROW))
-            .child(note(TAGGING_NOTE))
+        kit::rows()
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(self.preview_the_tags(busy, tagging && !writing, cx))
                     .child(self.write_the_tags(busy || !previewed, writing, armed, cx))
                     .when(tagging, |row| row.child(self.stop_tagging(stopping, cx)))
@@ -1226,9 +1169,10 @@ impl RootView {
                 body.child(note(so_far(stats.unwrap_or_default(), writing)))
             })
             .when_some(told, |body, (told, listed)| {
-                body.when_some(listed, |body, listed| body.child(listed))
+                body.when_some(listed, |body, listed| body.children(listed))
                     .child(note(told))
             })
+            .note(TAGGING_NOTE)
     }
 
     fn put_the_tags_back(
@@ -1248,11 +1192,11 @@ impl RootView {
             held_back,
             move |this, _, cx| {
                 if armed {
-                    this.walking_the_tags_back = false;
+                    this.lower(&Armed::WalkTheTagsBack);
                     this.library
                         .update(cx, |library, cx| library.walk_the_tags_back(cx));
                 } else {
-                    this.walking_the_tags_back = true;
+                    this.arm(Armed::WalkTheTagsBack);
                 }
                 cx.notify();
             },
@@ -1328,34 +1272,35 @@ impl RootView {
     }
 
     fn arm_the_write(&mut self, cx: &mut Context<Self>) {
-        self.writing_the_tags = true;
+        self.arm(Armed::WriteTheTags);
         cx.notify();
     }
 
     fn tag_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        self.writing_the_tags = false;
+        self.lower(&Armed::WriteTheTags);
         self.library
             .update(cx, |library, cx| library.retag(pass, cx));
         cx.notify();
     }
 }
 
-fn listed(summary: &RetagSummary) -> Option<Div> {
+fn listed(summary: &RetagSummary) -> Option<Vec<gpui::AnyElement>> {
     let writes = &summary.retagging.writes;
     if writes.is_empty() {
         return None;
     }
 
-    let mut listing = rows();
-    for write in writes.iter().take(WRITES_SHOWN) {
-        listing = listing.child(write_row(write));
-    }
+    let mut listing: Vec<gpui::AnyElement> = writes
+        .iter()
+        .take(WRITES_SHOWN)
+        .map(|write| write_row(write).into_any_element())
+        .collect();
     if let Some(rest) = writes
         .len()
         .checked_sub(WRITES_SHOWN)
         .filter(|rest| *rest > 0)
     {
-        listing = listing.child(note(format!("and {rest} more")));
+        listing.push(note(format!("and {rest} more")).into_any_element());
     }
 
     Some(listing)
@@ -1369,14 +1314,7 @@ fn write_row(write: &Written) -> Div {
         .to_string_lossy()
         .into_owned();
 
-    div()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .bg(rgb(theme::raised()))
-        .border_1()
-        .border_color(rgb(theme::border()))
-        .child(named(shown, fields_of(write)))
+    kit::named(shown, fields_of(write))
 }
 
 fn fields_of(write: &Written) -> String {
@@ -1495,7 +1433,7 @@ const NOTHING_TO_KEEP: &str = "Nothing to import. The vault already holds every 
                                can.";
 
 impl RootView {
-    pub(super) fn vault_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn vault_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let Some(root) = library.vault_root() else {
             return self.naming_a_vault(cx);
@@ -1506,7 +1444,7 @@ impl RootView {
         let keeping = library.is_keeping();
         let planned = library.previewed_import();
         let previewed = planned.is_shown();
-        let armed = self.keeping_the_tracks && previewed;
+        let armed = self.is_armed(&Armed::KeepTheTracks) && previewed;
         let stopping = library.is_stopping_import();
         let stats = library.import_stats();
         let told = library
@@ -1518,14 +1456,10 @@ impl RootView {
             .filter(|(pass, _)| !pass.applies())
             .map(|(_, summary)| wanted_rows(summary));
 
-        kit::section_body()
+        kit::rows()
             .child(folder_row(&root))
-            .child(note(VAULT_NOTE))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(self.preview_the_import(busy, importing && !keeping, cx))
                     .child(self.keep_the_tracks(busy || !previewed, keeping, armed, cx))
                     .when(importing, |row| row.child(self.stop_keeping(stopping, cx))),
@@ -1537,19 +1471,20 @@ impl RootView {
             .when(importing && keeping, |body| {
                 body.child(progress(kept_so_far(stats.unwrap_or_default())))
             })
-            .when_some(listed, |body, listed| body.child(listed))
+            .when_some(listed, |body, listed| body.children(listed))
             .when_some(told, |body, told| body.child(note(told)))
+            .note(VAULT_NOTE)
     }
 
-    fn naming_a_vault(&self, cx: &mut Context<Self>) -> Div {
+    fn naming_a_vault(&self, cx: &mut Context<Self>) -> Rows {
         let named = self.vault_named.clone();
 
-        kit::section_body()
+        kit::rows()
             .child(match &named {
                 Some(folder) => div().child(folder_row(folder)),
                 None => div().child(note(NO_VAULT)),
             })
-            .child(div().flex().flex_wrap().gap_2().child(action(
+            .child(kit::action_row().child(action(
                 "choose-vault-folder",
                 "Choose folder…",
                 Icon::Folder,
@@ -1659,12 +1594,12 @@ impl RootView {
     }
 
     fn arm_the_keep(&mut self, cx: &mut Context<Self>) {
-        self.keeping_the_tracks = true;
+        self.arm(Armed::KeepTheTracks);
         cx.notify();
     }
 
     fn keep_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        self.keeping_the_tracks = false;
+        self.lower(&Armed::KeepTheTracks);
         self.library
             .update(cx, |library, cx| library.import(pass, cx));
         cx.notify();
@@ -1678,40 +1613,38 @@ fn kept_so_far(stats: ImportStats) -> f32 {
     (stats.vaulted + stats.passed) as f32 / stats.walked as f32
 }
 
-fn wanted_rows(summary: &ImportSummary) -> Div {
+fn wanted_rows(summary: &ImportSummary) -> Vec<gpui::AnyElement> {
     let wanted = &summary.plan.wanted;
     if wanted.is_empty() {
-        return div().child(note(NOTHING_TO_KEEP));
+        return vec![note(NOTHING_TO_KEEP).into_any_element()];
     }
 
-    let mut listed = div().flex().flex_col().gap_1();
-    for asked in wanted.iter().take(WRITES_SHOWN) {
-        listed = listed.child(
+    let mut listed: Vec<gpui::AnyElement> = wanted
+        .iter()
+        .take(WRITES_SHOWN)
+        .map(|asked| {
             div()
                 .flex()
                 .items_center()
                 .justify_between()
                 .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(rgb(theme::raised()))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_size(px(theme::text_xs()))
+                        .text_size(px(theme::text_sm()))
                         .text_color(rgb(theme::text()))
                         .ends_in_an_ellipsis()
                         .child(named_file(&asked.from)),
                 )
                 .child(kit::figure(format::bytes(asked.bytes)))
-                .child(kit::badge(kept_as(asked), theme::muted())),
-        );
-    }
+                .child(kit::badge(kept_as(asked), theme::muted()))
+                .into_any_element()
+        })
+        .collect();
 
     if wanted.len() > WRITES_SHOWN {
-        listed = listed.child(note(format!("and {} more", wanted.len() - WRITES_SHOWN)));
+        listed.push(note(format!("and {} more", wanted.len() - WRITES_SHOWN)).into_any_element());
     }
     listed
 }
@@ -1833,7 +1766,7 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn inbox_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn inbox_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let inbox = library.inbox().map(Path::to_path_buf);
         let busy = library.is_busy();
@@ -1842,22 +1775,19 @@ impl RootView {
         let held_back = busy || !library.can_poll(cx);
         let told = library.poll_stats().map(asked_of_the_inbox);
 
-        kit::section_body()
+        kit::rows()
             .child(match &inbox {
                 Some(folder) => div().child(folder_row(folder)),
                 None => div().child(note(NO_INBOX)),
             })
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(self.choose_inbox(busy, cx))
                     .child(self.poll_now(held_back, polling, cx))
                     .when(polling, |row| row.child(self.stop_polling(stopping, cx))),
             )
-            .when(inbox.is_some(), |body| body.child(note(INBOX_NOTE)))
             .when_some(told, |body, told| body.child(note(told)))
+            .when(inbox.is_some(), |body| body.note(INBOX_NOTE))
     }
 
     fn choose_inbox(&self, busy: bool, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1918,21 +1848,10 @@ fn folder_card(folder: &Path, chosen: bool) -> Stateful<Div> {
         .flex()
         .items_center()
         .gap_3()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .border_1()
-        .when_else(
-            chosen,
-            |card| {
-                card.bg(theme::tinted(theme::accent(), 0x14))
-                    .border_color(rgb(theme::accent()))
-            },
-            |card| {
-                card.bg(rgb(theme::raised()))
-                    .border_color(rgb(theme::border()))
-            },
-        )
+        .bleeds()
+        .when(chosen, |card| {
+            card.bg(theme::tinted(theme::accent(), kit::CHOSEN_WASH))
+        })
 }
 
 fn folder_name(folder: &Path) -> Div {
@@ -1963,12 +1882,6 @@ fn folder_row(folder: &Path) -> Div {
         .flex()
         .items_center()
         .gap_3()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .bg(rgb(theme::raised()))
-        .border_1()
-        .border_color(rgb(theme::border()))
         .child(icons::icon(
             Icon::Folder,
             theme::root_icon(),

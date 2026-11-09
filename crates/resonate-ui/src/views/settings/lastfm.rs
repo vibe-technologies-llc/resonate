@@ -1,6 +1,5 @@
 use gpui::{
-    App, AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Task,
-    Window,
+    App, AppContext as _, BorrowAppContext as _, Context, Entity, ParentElement as _, Task, Window,
 };
 use resonate_library::{Error, LastfmSession, LastfmSignIn};
 
@@ -12,7 +11,7 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
-        settings::{action, note},
+        settings::{Rows, action},
     },
 };
 
@@ -318,7 +317,7 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn lastfm_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn lastfm_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let app = cx.global::<ResonateApp>();
         let signed_in = !app.online.lastfm_session.trim().is_empty();
         let reachable = app.scrobblers.is_some() && app.online.enabled;
@@ -329,11 +328,11 @@ impl RootView {
         } else {
             &LastfmAccount::ALL
         };
-        let mut body = kit::section_body();
+        let mut body = kit::rows();
         for account in shown {
             body = body.child(kit::field(
                 account.label(),
-                self.key_field(
+                self.text_field(
                     account.id(),
                     self.lastfm_field(*account),
                     |this, window, cx| this.leave_the_account(window, cx),
@@ -344,7 +343,7 @@ impl RootView {
 
         if signed_in {
             return body
-                .child(action(
+                .child(kit::action_row().child(action(
                     "lastfm-sign-out",
                     "Sign out of Last.fm",
                     Icon::Close,
@@ -352,11 +351,11 @@ impl RootView {
                     |this, _, cx| this.sign_out_of_lastfm(cx),
                     self,
                     cx,
-                ))
-                .child(note(SIGNED_IN_NOTE));
+                )))
+                .note(SIGNED_IN_NOTE);
         }
         let held_back = !reachable || asking || self.lastfm_sign_in(cx).is_none();
-        body.child(action(
+        body.child(kit::action_row().child(action(
             "lastfm-sign-in",
             if asking {
                 "Asking Last.fm…"
@@ -368,7 +367,7 @@ impl RootView {
             |this, _, cx| this.sign_in_to_lastfm(cx),
             self,
             cx,
-        ))
-        .child(note(SIGN_IN_NOTE))
+        )))
+        .note(SIGN_IN_NOTE)
     }
 }

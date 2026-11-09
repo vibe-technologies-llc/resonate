@@ -19,7 +19,7 @@ use crate::{
         kit,
         root::RootView,
         settings::{
-            action, note,
+            Rows, action, note,
             subsonic::{not_a_server, reads_as_a_server},
             switch_row,
         },
@@ -457,9 +457,15 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(self.sign_in_button("Sign in to TIDAL", held_back, cx))
+                .child(kit::action_row().child(self.sign_in_button(
+                    "Sign in to TIDAL",
+                    held_back,
+                    cx,
+                )))
                 .child(note(SIGN_IN_NOTE)),
-            TidalSigning::Asking => div().child(self.sign_in_button("Asking TIDAL…", true, cx)),
+            TidalSigning::Asking => {
+                kit::action_row().child(self.sign_in_button("Asking TIDAL…", true, cx))
+            }
             TidalSigning::Waiting(authorizing) => {
                 let opened = authorizing.verify_at.clone();
                 div()
@@ -471,10 +477,7 @@ impl RootView {
                         kit::figure(authorizing.user_code.clone()),
                     ))
                     .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_2()
+                        kit::action_row()
                             .child(self.open_the_tidal_page(opened, cx))
                             .child(self.stop_signing_in(cx)),
                     )
@@ -530,15 +533,15 @@ impl RootView {
         )
     }
 
-    pub(super) fn tidal_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let mut body = kit::section_body();
+    pub(super) fn tidal_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let mut body = kit::rows();
         for account in TidalAccount::ALL
             .into_iter()
             .filter(|account| account.is_tidals())
         {
             body = body.child(kit::field(
                 account.label(),
-                self.key_field(
+                self.text_field(
                     account.id(),
                     self.tidal_field(account),
                     |this, window, cx| this.leave_the_account(window, cx),
@@ -559,26 +562,26 @@ impl RootView {
             cx,
         ))
         .child(self.signing_in_to_tidal(cx))
-        .child(note(TIDAL_NOTE))
+        .note(TIDAL_NOTE)
     }
 
-    pub(super) fn resonate_key_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn resonate_key_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let account = TidalAccount::HifiSecret;
-        kit::section_body()
+        kit::rows()
             .child(kit::field(
                 account.label(),
-                self.key_field(
+                self.text_field(
                     account.id(),
                     self.tidal_field(account),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),
             ))
-            .child(note(SharedString::from(format!(
+            .note(SharedString::from(format!(
                 "Wanted songs are asked of {RESONATE_HOST} with this key, as a bearer token over \
                  https, and nowhere else. Asked as soon as it is given, and only while Online \
                  is on."
-            ))))
+            )))
     }
 
     fn set_hosted_services(&mut self, allowed: bool, cx: &mut Context<Self>) {

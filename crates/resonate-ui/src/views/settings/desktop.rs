@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use gpui::{Context, Div, SharedString, Window, prelude::*};
+use gpui::{Context, SharedString, Window, prelude::*};
 use resonate_core::{AppId, Pictured, Presence, Shown};
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     views::{
         kit,
         root::RootView,
-        settings::{Choice, note, switch_row},
+        settings::{Choice, Rows, switch_row},
     },
 };
 
@@ -70,10 +70,10 @@ impl Choice for Pictured {
 }
 
 impl RootView {
-    pub(super) fn notifications_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn notifications_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let tells = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "notify-on-a-track-change",
                 switch_row(
@@ -85,7 +85,7 @@ impl RootView {
                 move |this, _, cx| this.set_notify(!tells, cx),
                 cx,
             ))
-            .child(note(NOTIFICATIONS_NOTE))
+            .note(NOTIFICATIONS_NOTE)
     }
 
     pub(crate) fn set_notify(&mut self, notify: bool, cx: &mut Context<Self>) {
@@ -96,7 +96,7 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn discord_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn discord_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let on = presence.enabled;
         let under = match (on, presence.app.is_some()) {
@@ -105,7 +105,7 @@ impl RootView {
             (true, true) => "Discord is told what is playing",
         };
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "discord-on",
                 switch_row("Show what is playing on Discord", under, on, "discord-on"),
@@ -120,22 +120,22 @@ impl RootView {
             ))
             .child(kit::field(
                 "Application id",
-                self.key_field(
+                self.text_field(
                     "discord-app",
                     &self.discord_app,
                     |this, window, cx| this.leave_discord_app(window, cx),
                     cx,
                 ),
             ))
-            .child(note(DISCORD_NOTE))
+            .note(DISCORD_NOTE)
     }
 
-    pub(super) fn discord_shows_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn discord_shows_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let progress = presence.progress;
         let while_paused = presence.while_paused;
 
-        kit::section_body()
+        kit::rows()
             .child(kit::field(
                 "Shows",
                 self.choices(
@@ -168,7 +168,7 @@ impl RootView {
             ))
             .child(kit::field(
                 "Icon",
-                self.key_field(
+                self.text_field(
                     "discord-icon",
                     &self.discord_icon,
                     |this, window, cx| this.leave_discord_icon(window, cx),
@@ -209,7 +209,7 @@ impl RootView {
                 },
                 cx,
             ))
-            .child(note(DISCORD_ART_NOTE))
+            .note(DISCORD_ART_NOTE)
     }
 
     pub(crate) fn discord_app_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {

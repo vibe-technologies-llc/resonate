@@ -365,8 +365,8 @@ is never named.
     icon is recoloured from the worn palette's accent as ever (`AppIcon::of(theme::worn())`).
   - **A fresh install wears the palette's own accent** (`native`; `Appearance::DEFAULT` names none);
     the Colour card offers it as a ringed swatch ahead of the seven; choosing none again =
-    `Setting::Accent(None)`, removing the `accent` key. Theme cards are `theme_swatch()` wide, four a
-    row in a `settings_column()` body.
+    `Setting::Accent(None)`, removing the `accent` key. Theme cards are `theme_swatch()` wide, five a
+    row in a `settings_column()` card.
   - **AMOLED's `background` and `surface` are pure black**; raised and hover still step up.
   - **Where a published palette names no hue for an accent, its terminal mapping decides** (Dracula's
     ANSI blue is its purple, magenta its pink). One Dark's body text is `d7dae0`, `abb2bf` muted;
@@ -438,14 +438,14 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     `forget_root` put the request in `roots_waiting` (`RootWaiting::ToAdd`/`ToForget`) wherever a
     `Work` runs; `take_up_what_waited` runs when a pass hands its `Work` back: a forget first, one at
     a time, then every waiting folder in one scan. A forget mark is keyed by its root, and **armed by a first press** like *Reset everything*:
-    `forgetting_the_folder` names the root asked about (the mark says *Press again to forget*), a second
+    `Armed::ForgetTheFolder` names the root asked about (the mark says *Press again to forget*), a second
     press on the same root calls `forget_root`, any other press or leaving the pane lowers it
     (`lower_every_armed_press`).
   - **An enrichment is deliberately not a `Work`**: `LibraryModel::enriching` is a slot of its own,
     started with `for_the_pass` (`online.md`). A running lookup greys *Look up*, *Refresh all* and
     *Look for missing covers* via `held_back`; *Speed up once* (`LibraryModel::hurry_the_lookup`) hurries the running lookup, or starts a hurried one, and reads *Sped up* greyed until it ends (`analysis.md`); a scan can still start under one. `RootView::enrichment_status` sits
     above the sidebar's *Settings* row while `LibraryModel::is_enriching` (a globe in `theme::faint()`
-    and *Enriching…*; a press opens `Category::Library`); the toast `looked_up` tells what was found.
+    and *Enriching…*; a press opens the Library category's *Rescan, refresh and retag* page, `Page::Enrichment`); the toast `looked_up` tells what was found.
     **The Library category's *What online knows* group shows the breakdown** (`library.md`): while a
     lookup runs *The lookup so far*, read from `EnrichProgress::snapshot` on the poll, and once it
     ends *The last lookup*, kept in `LibraryModel::looked_up` until the next begins (a section a
@@ -741,7 +741,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     own: `kit::button`/`button_when` and the marks are buttons (greyed = AccessKit's disabled, through
     `a11y_synthetic_children`), `star` a toggle button, `segment` and `radio_row` radio buttons, `pick` a combo box, `checkbox` a
     check box;
-    `settings::switch_row` and the Listen sheet's *Keep listening* are the switch, never the
+    `kit::switch_row` and the Listen sheet's *Keep listening* are the switch, never the
     `kit::switch` mark inside them.
   - **What is spoken**: the playback bar is a group *Playback* holding *Now playing: title, artist*,
     previous/play-pause/next, shuffle, repeat and queue as toggles, the sleep control, mute, and the
@@ -1184,7 +1184,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `Unplugged` backend sinks to list, so a device row is pressed too. gpui can't build an
   `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`; the platform's
   own drag events are driven by the `drive-a-drag` skill on a hosted KWin, which `crates/resonate/tests/dragging.rs` runs (opt-in: `RESONATE_DRAG_TESTS=1`, a compositor, GTK 4 in python3 and `spectacle` on the path) and which proves the drop is accepted and copied and the overlay drawn: against `before.png` the window drew widely, and in `over.png` (decoded with the `png` dev-dependency, found by what is drawn rather than by the window's place, which KWin does not always honour) everything past the source window but one card-sized, drop-centred box sits under the scrim, and that box holds a tinted border several times what the same box held before. `views/root.rs`
-  drives keys. The equaliser's note is always drawn and `kit::section_header` holds a row control's
+  drives keys. The equaliser's note is always drawn and `kit::group_heading` holds a row control's
   height, so pressing the curve with the equaliser off moves nothing under the press.
 
 ## Panes
@@ -1900,16 +1900,59 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `App::has_active_drag` says the drag is over; one task serves both ends and panes and alone clears
   the cell.
 
-- **Settings pane: a rail of categories over a column of sections; one table says what a section is.**
-  `views/settings/` is a folder. `find.rs` = vocabulary: `Category` (Output, Processing, Equaliser,
-  Library, Filters, Online, Recognition, Scrobbling, Sync, Desktop, Appearance, About) and `Group`, one per setting, carrying category,
-  title, hint, *also*-called words, the `SettingKey`s putting it back. Nothing else enumerates sections:
-  `Category::groups` filters the one table, `mod.rs::group` dispatches a `Group` to its drawing method;
-  tests hold every group to one category, a unique title, its own hint, no key claimed twice. Rail =
-  `theme::settings_rail()`; `RootView` remembers the open category for the run; body = a column of
-  `kit::section`s (header strip: title, revert mark, info mark). Body scrolls under
-  `RootView::settings_scroll`; `show_settings` resets it on category change (gpui keys scroll offset by
-  element id).
+- **Settings pane: a rail of categories beside a centred column of boxed groups; one table says what
+  a group is and where it is drawn.** `views/settings/` is a folder. `find.rs` = vocabulary:
+  `Category` (Output, Processing, Equaliser, Playback, Library, Filters, Online, Recognition,
+  Accounts, Sync, Desktop, Appearance, Window, About), `Page` (a page inside a category) and `Group`,
+  one per setting, whose one match `Group::described` gives its category, its page (`None` for the
+  category's own page), title, hint, *also*-called words and the `SettingKey`s putting it back; every
+  other accessor reads that row. Nothing else enumerates groups: `Category::groups` filters the one
+  table, `Category::shown_on(page)` a page of it, `Category::drawn` the category's own page in table
+  order (`Drawn::Group`, and `Drawn::Pages` where the first group of a page stands, consecutive pages
+  sharing a `Page::gathered_under` gathered into one card), `mod.rs::group` dispatches a `Group` to its
+  drawing method. Tests hold every group to one category, a unique title, its own hint, no key claimed
+  twice, every page to groups of its own category, every group drawn once and every category to a
+  mark of its own. Rail = `theme::settings_rail()`, a tab list a reader hears (`Role::TabList`, each
+  category a `Role::Tab`, selected where open); `RootView` remembers the open category for the run.
+  Body = a column `theme::settings_column()` (720) wide at most, centred in the pane with a measure of
+  padding on every side, of `kit::group`s a measure apart, then *Reset <category>* right-aligned at
+  its end. Body scrolls under `RootView::settings_scroll`; `show_settings` resets it on category or
+  page change (gpui keys scroll offset by element id).
+- **A group is a title above a card of rows.** `kit::group(heading, rows)`: `kit::group_heading`
+  holds `kit::group_title` (`text_sm`, semibold, in `text`, a level-2 heading), the *Experimental*
+  badge, the revert mark and the info mark; under it a `kit::Rows` (`kit::rows()`), a card on
+  `surface` with a `soft_edge` border whose every child is a row, laid in a padded cell with a
+  `soft_edge` hairline before each but the first (`Rows` is a `ParentElement`, so `.child` is the
+  whole API), then the group's `note`s under the card (`Rows::note`), at the rows' inset. **One label
+  style**: `kit::row_name` (`text_sm`, medium, `text`) over a `muted` `text_xs` line under it
+  (`kit::named`, or a `note` restyled where it must be read plainly); `kit::row` puts a name and its
+  line on the left and a control on the right (at most `ROW_CONTROL_SHARE` of the row),
+  `kit::stacked_row` and `kit::field` put a wide control (a long segmented choice, a field, a list, a
+  grid) full width under them, `reading` a figure on the right. A pressable row
+  (`kit::switch_row`, `kit::nav_row`, `kit::choice_row`, a folder) **bleeds** to its cell's edges
+  (`kit::Bleeds`: negative margins as deep as the cell's padding, the same padding inside, rounded),
+  so its hover wash and focus ring fill the row and stay clear of the card's rounded corners. A row
+  of buttons is a `kit::action_row`. **One framed text field**: `kit::framed_field(id, lit)` (the
+  search height, `background`, a `soft_edge` border lit in the accent under the pointer or while it
+  holds the caret) is every field's frame; `RootView::text_field(id, field, leave)` is every
+  settings field: a press focuses the `Field`, a press outside calls `leave` where the field held the
+  caret, and the faint *enter* says how a value is given. The settings filter alone draws the frame
+  with its search mark, *ctrl-,* and the clear mark.
+- **A page inside a category opens from a nav row and is left by the way back or escape.** A heavy
+  tool is a `Page`: the Equaliser's *Headphone correction* (AutoEq and what is plugged in, the
+  preferred measurers), *Your own measurement*, *Measure with a microphone*, *Room correction* (the
+  response, where the speakers stand) and *Listening test*; Library's *Rescan, refresh and retag*
+  (the files, what online knows, the tags in the files); Sync's *Your devices* (the devices and
+  driving them, what they may drive here). Each is a `kit::nav_row` (`settings-page-<id>`: a mark in
+  an accent wash, the title, `Page::about`, a chevron) in a card titled by `Page::gathered_under`
+  where the page's first group stands in the table. `RootView::settings_page` holds the page beside
+  the category (`open_the_settings_page`, `leave_the_settings_page`; `show_settings` lets it go, so a
+  rail press or another category returns to the category's own page); the heading reads the page's
+  title and `about` under `kit::way_back` (`settings-way-back`, *‹ Equaliser*) in place of the
+  *Settings* eyebrow, and escape with nothing else to dismiss and the filter empty goes back
+  (`dismiss_search`), before any step back through the window's pages
+  (`a_correction_opens_on_a_page_of_its_own_and_the_way_back_and_escape_return_to_the_equaliser`).
+  The page is not remembered between runs; the category is.
 - **Hidden songs are brought back from Filters** (`Group::Hidden`, `filters.rs`'s `hidden_group`):
   the songs hidden from their menus, listed by title off `LibraryModel::hidden` (read with the
   standing part of every whole read, `Library::hidden_tracks`, at most `HIDDEN_LISTED_AT_MOST`
@@ -1932,7 +1975,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   that has left can still be unnamed); it stores the whole set as `Setting::FlacAbove96kFor`, says it
   is read from the next start, and its mark empties the set.
 - **The library's folders are one box, and the primary one is chosen in it.** `Group::Folders`
-  (*Music folders*, Library category) lists every root as a card: a radio, the folder, a
+  (*Music folders*, Library category) lists every root as a row of its card: a radio, the folder, a
   `PRIMARY` badge on the chosen one and the forget mark. Pressing a card's radio or name makes that
   root `music-folder` (checked off the window's thread, then `set_the_music_folder`); pressing the
   primary again chooses none. A `music-folder` that is no root itself (inside one, or waiting to be
@@ -1966,9 +2009,10 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `run` winds it down (`wound_down`: cancel, wait up to `WIND_DOWN_WITHIN` 10 s) before the library's
   own pass. A file being copied is `.<name>.<pid>.resonate-part` until renamed into place whole.
 - **Sync is a category of its own** (`Category::Sync`, `Icon::Sync`; `views/settings/sync.rs`,
-  `sync.md`), five groups:
-  - *Device sync*: the switch and a standing card (a tinted mark, `done`, accent, `failure` or
-    muted by `Mood`, a headline and a line under it read off `SyncShown`; *Sync now* while syncing),
+  `sync.md`): *Device sync*, *Pairing*, the *Your devices* page (*Devices*, and *Driven by your
+  other devices*), *Connection* and *Songs between devices*:
+  - *Device sync*: the switch and a standing row (a tinted mark, `done`, accent, `failure` or
+    muted by `Mood`, a headline and a line under it read off `SyncShown` in the one label style; *Sync now* while syncing),
     and the songs on their way, said as both numbers: *342 songs on their way from another device
     · 2 downloading · 340 waiting* (`on_their_way`); the phones head their transfers the same way
     (`transfersHeader`, `fetchingHeading`).
@@ -1977,11 +2021,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     crate, level M, painted as quads in runs of dark modules on `scanned_paper` with `scanned_ink`,
     the one place a colour is not the palette's: a scanner wants black on white); beside it the code,
     covered by `•` until shown, with *Show*/*Hide*, *Copy* and *New code* (armed by the first press,
-    `regenerating_the_code`; the second clears `sync-key`, and the binary's sync watcher mints a new code at once), then *Join another
+    `Armed::RegenerateTheCode`; the second clears `sync-key`, and the binary's sync watcher mints a new code at once), then *Join another
     device's code* (read by `Stored::reads_as_a_code`, the binary's `SyncKey::from_code`, whether or
     not sync runs). `RootView::pairing_shown` falls back to covered with every armed press lowered
-    (leaving the category or the pane, or the pointer leaving the body) and after a new code.
-  - *Your devices* (keyless): this device first, then online before away, each a raised row with
+    (leaving the category, a page or the pane, or the pointer leaving the body) and after a new code.
+  - *Devices* (keyless, on the *Your devices* page): this device first, then online before away, each a row of the card with
     its platform's mark (`Icon::Computer` or `Icon::Phone`, `SyncedPlatform`) and *On this network*,
     *Online* or *Away*; one that is away has *Remove* (`Syncing::forget` by `SyncedDevice::id`).
   - *Connection*: a `kit::segmented` of *Resonate's server*, *Your own server* (shows the server
@@ -1999,24 +2043,27 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `ResonateApp::presence`, stores its `Setting`, hands the whole `Presence` to `Present::follow`. Id and
   icon are `Field`s read on enter via `AppId::parse`/`Icon::parse`; unreadable text is a
   `Notice::Trouble` storing nothing; blank clears the key.
-- **A boolean is a `kit::switch`, a choice a `kit::segmented`; only a device or palette is still a row.**
+- **A boolean is a `kit::switch_row`, a choice a `kit::segmented`; only a device or palette is still a row of its own.**
   A switch names what it does and what off means, whole row = hit area; a `Choice` is a trough of
-  segments. Vocabulary: `kit::section`, `field`, `segmented`, `switch`, `preview`, `dot_swatch`,
-  `choice_row` with its `radio`; the pane draws none itself. **`kit::segmented` answers with the trough
+  segments, each a radio in the ring (`option_in_the_ring`, `option_named` for a segment named at
+  run time: a binding's and a band kind's), so every one takes `space`/`enter` and wears the ring.
+  Vocabulary: `kit::group`, `rows`, `row`, `stacked_row`, `field`, `nav_row`, `switch_row`,
+  `framed_field`, `action_row`, `segmented`, `switch`, `preview`, `dot_swatch`, `choice_row` with its
+  `radio`; the pane draws none itself. **`kit::segmented` answers with the trough
   itself; the caller hugs it** (a wrapper round the trough put every segment beside it): watch for
   builders returning a parent their children will not reach.
 - **A device reads as what it is and what it takes; its node name is behind the pointer.** Each choice,
   *Follow the system default* included, is a `kit::choice_row`: `kit::radio` held
   `kit::level_with_the_choice` beside a column whose first line is a `kit::choice_name` (`flex_1`, ends
   in an ellipsis; badges `DEFAULT`, `UNPLUGGED`, `IN USE`, the playing track's verdict `TAKES … AS IS`/
-  `CONVERTS` follow on the same line). The chosen row has an accent border over an accent wash and the
-  filled radio as its only marks. Under the name, two `kit::details` lines divided by faint `·`: how the
+  `CONVERTS` follow on the same line). Each is a row of the group's card, bled to its cell; the chosen
+  row has an accent wash (`kit::CHOSEN_WASH`) and the filled radio as its only marks. Under the name, two `kit::details` lines divided by faint `·`: how the
   sink is reached, in words (port, the card's profile, whose volume it is), and what it takes, in
   `kit::figure`s (depths/rates via `format::depth` and `SampleRate::kilohertz`, every digit the rate
   holds, so 22.05 kHz is not 22.0). The node name is what the settings file holds, so the row `names`
   itself by it; `SinkInfo::is_hardware` is drawn nowhere.
-- **A section holds a subject, not a control** (theme shelf and accent swatches = one *Colour* section).
-  A group's hint is written once, in the table; the header's info mark is its only drawing (a gpui
+- **A group holds a subject, not a control** (theme shelf and accent swatches = one *Colour* group).
+  A group's hint is written once, in the table; the heading's info mark is its only drawing (a gpui
   tooltip is built from an `AnyView`, not a string).
 - **Every group ends in a line saying what it does; a choice says what the chosen option does.**
   `Choice::meaning` is required; `RootView::choices` draws the chosen option's meaning under its trough
@@ -2028,17 +2075,26 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 - **A palette is shown, not named.** `kit::preview` = a strip of four bands (sidebar, panes, what it
   raises above them, the accent that would be worn) under the palette's name in a card with an accent
   border when worn. An accent is a round `kit::dot_swatch` with a check in `theme::ink_over`'s ink.
-  Appearance is the one category with nothing behind it but the window: a choice is worn via
-  `theme::wear`, saved through the `Settings` seam, redrawn by `cx.refresh_windows()`; no `Command`.
-  Groups in order: *Colour* (a switch *Follow the desktop's light or dark setting*, the palette cards,
-  the accents); *Layout* (a switch *Follow the desktop's text size*, then the text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
-  and 19 against the 13.5 middling one, so Larger reads at 141 per cent, and Largest at 27, 200 per cent); *Motion* (`reduced-motion`,
-  `ResonateApp::reduced_motion`, `RootView::reduce_motion`; `motion.md`); *Window buttons* (worn via
-  `RootView::show_window_buttons` onto the global, not `theme`); *The volume wheel*
-  (`ResonateApp::scroll_volume`, `scroll-volume`); *Mouse navigation* (`mouse-navigation`);
-  *Scrollbars*: Always / While scrolling (`ScrollbarMode::AutoHidden`, default) / Never
-  (`ResonateApp::scrollbars`); *Sidebar tabs*: `suggestions-tab`, `missing-tab`, `tab-counts` onto
-  `ResonateApp::tabs` via `RootView::show_tabs`; *Window state* (`remember-*`); *Live spectrum*.
+  Appearance and Window are the categories with nothing behind them but the window: a choice is worn
+  via `theme::wear` or a `ResonateApp` field, saved through the `Settings` seam, redrawn by
+  `cx.refresh_windows()`; no `Command`. Appearance's groups in order: *Colour* (a switch *Follow the
+  desktop's light or dark setting*, the palette cards, the accents); *Layout* (a switch *Follow the
+  desktop's text size*, then the text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
+  and 19 against the 13.5 middling one, so Larger reads at 141 per cent, and Largest at 27, 200 per
+  cent); *Motion* (`reduced-motion`, `ResonateApp::reduced_motion`, `RootView::reduce_motion`;
+  `motion.md`); *Scrollbars*: Always / While scrolling (`ScrollbarMode::AutoHidden`, default) /
+  Never (`ResonateApp::scrollbars`); *Live spectrum*. Window's: *Window buttons* (worn via
+  `RootView::show_window_buttons` onto the global, not `theme`); *Sidebar tabs*: `suggestions-tab`,
+  `missing-tab`, `tab-counts` onto `ResonateApp::tabs` via `RootView::show_tabs`; *Window state*
+  (`remember-*`); *The volume wheel* (`ResonateApp::scroll_volume`, `scroll-volume`); *Mouse
+  navigation* (`mouse-navigation`). Playback holds *Resuming*, *Repeating a track* and *The
+  previous button*; Accounts every sign-in and server key, Last.fm and ListenBrainz (*where your
+  plays are scrobbled*) among them.
+- **A remembered category reads every spelling a build has written.** `SettingsCategory::parse`
+  takes each category's own word and `SPELT_BY_EARLIER_BUILDS`: `enrichment` opens Library (whose
+  *Rescan, refresh and retag* page holds what it held), `scrobbling` Accounts (which holds
+  ListenBrainz now), so an older `last-settings-category` lands where its settings went (a test per
+  spelling, `settings.rs`; the binary's reader takes them too, `binary.md`).
   `Pane::is_shown` is what a tab being off means: sidebar and `stepped_pane` skip the pane, `set_pane`
   lands on Tracks instead, hiding the front pane moves off it at once.
 - **gpui scrolls a region and draws no bar, so `views/scrollbar.rs` does.** `Scrollbars::of` reads the
@@ -2071,10 +2127,15 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   ahead of the contact field in `dismiss_search`. `Narrowing` matches every word against a group's
   title, hint, category and other names (`sink` finds the device, `latency` the buffer, `sacd` DoP).
   With a query the heading reads *Found*, the rail draws match counts, and the body draws matching
-  sections from *every* category under a category eyebrow. **Ranked by how they answered**: a group
-  answers each word by title, other name, category or hint, in that order of strength, weighed as its
-  weakest word; a category leads by its best group, so no category is drawn under two eyebrows
-  (`a_setting_named_by_the_words_leads_one_whose_hint_merely_mentions_them`).
+  groups from *every* category and page, whole and working, under a link naming where they are kept
+  (`kit::place_link`, `settings-place-<category>-<page or main>`: *Equaliser · Headphone
+  correction*); pressing it clears the query and opens that page
+  (`a_setting_found_on_a_page_of_its_own_opens_that_page_and_leaves_the_search`). **Ranked by how
+  they answered**: a group answers each word by title, other name, its category's or page's name, or
+  hint, in that order of strength, weighed as its weakest word; a category leads by its best group and
+  a page within it by its own, so no category or page is drawn under two links
+  (`a_setting_named_by_the_words_leads_one_whose_hint_merely_mentions_them`,
+  `a_setting_on_a_page_of_its_own_is_found_by_its_name_and_by_the_pages`).
 - **A right press answers with a menu; `views/menu.rs` is all of how.** `Menu` = position + entries
   (icon, label, optional key, closure); `Menu::at(…).does(…).under(…).apart()` builds,
   `menu::opens_a_menu` attaches to any element: a pane says what a press offers, never how a menu
@@ -2225,9 +2286,12 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   the tags part of *Rescan, refresh and retag*: *Preview* runs the pass with `Pass::Preview`; *Apply* is greyed until a preview landed,
   then takes two presses (the second under a note saying what the first armed); *Stop* is drawn only
   while it runs. *Put the last run back* (`walks_back`, `tags_walk_back`) is armed the same way.
-  `disarm` (leaving the pane or category) and the pointer leaving the settings body (a transition via
-  `on_hover`) run `lower_every_armed_press` (these four, the reset, the vault's keep, the curve discard,
-  history aging). Passes run through `Work`, read by `LibraryModel::is_busy`: scan, forget, organise,
+  **One press is armed at a time**: `RootView::armed` is an `Option<Armed>` (the filing's move and
+  walk back, the tags' write and walk back, the reset, the vault's keep, the curve discard, history
+  aging, a folder's forget, a new pairing code, the earlier plays), `arm`, `is_armed` and `lower`
+  its only gestures, so arming one lowers any other; `disarm` (leaving the pane, a category or a
+  page) and the pointer leaving the settings body (a transition via `on_hover`) run
+  `lower_every_armed_press`. Passes run through `Work`, read by `LibraryModel::is_busy`: scan, forget, organise,
   tag write cannot overlap, each greying the others' controls (`Library::retag`, `scan` and `organise`
   share one `Walk` guard).
 - **A preview is taken down once the catalog it read has moved.** `Planned` (held by *Organising*,
@@ -2240,11 +2304,12 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   **The tags part draws the plan, not a count of it**: `listed` = first `WRITES_SHOWN` (12) of
   `Retagging::writes`, one raised row per file over the fields to be written, *and N more*; the count
   stays the pass's own so note and rows cannot disagree.
-- **Everything that brings the catalog up to date is one Library group, in three parts.** *Rescan,
-  refresh and retag* (`Group::Updating`, `updating_group`): *The files* (*Rescan folders*, *Read every
-  file again*, *Stop* while a scan runs), *What Online knows* (*Look up*, *Refresh all*, *Look for
-  missing covers*, *Stop* while a lookup runs) and *The tags in the files* (the armed *Preview*/*Apply*
-  pass below). *Read every file again* (`Reading::Everything` beside `Prompted` on
+- **Everything that brings the catalog up to date is one Library page, in three groups.** *Rescan,
+  refresh and retag* (`Page::Enrichment`): *The files* (`Group::Rescanning`: *Rescan folders*, *Read
+  every file again*, *Stop* while a scan runs, the scan's progress and counts), *What online knows*
+  (`Group::LookingUp`: *Look up*, *Refresh all*, *Speed up once*, *Look for missing covers*, *Stop*
+  while a lookup runs, the breakdown) and *The tags in the files* (`Group::Retagging`: the armed
+  *Preview*/*Apply* pass below), each a group with a hint of its own. *Read every file again* (`Reading::Everything` beside `Prompted` on
   `LibraryModel::start_scan`) re-probes every file whatever size and mtime say, each row keeping id,
   plays, favourite; *Look for missing covers* is `Library::ask_again_for_covers` + a lookup with studies and lyrics off (`LibraryModel::only_the_covers`), so the button never starts the study pool's decoding; *Refresh
   all* is `enrich(true)`. The files part greys with `is_busy`, the lookups with `is_busy`,
@@ -2368,7 +2433,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   group writes the same key and `listen-for`; *Recognition* has the AudD token beside the AcoustID key
   (read at the next start); *ListenBrainz* is the `listenbrainz-token` field, not read at next start (the
   binary's submitter follows the settings file). With a token typed, *Send earlier plays* is armed by
-  the first press (`telling_the_earlier_plays`) and asks `Library::tell_earlier_listens` on the second
+  the first press (`Armed::TellTheEarlierPlays`) and asks `Library::tell_earlier_listens` on the second
   (`the_earlier_plays_are_asked_for_by_the_second_press_alone`). **A token given is asked about at
   once**: where Online is on and the build handed `Lookups::scrobblers`, `check_the_listenbrainz_token`
   asks `token_held` on bg and toasts whose token it is or that the service does not know it.
@@ -2447,7 +2512,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `activate_window` on every window (a compositor may still refuse without an activation token). `Quit`
   sends on the channel `resonate play` uses, drained by the gpui foreground on the frame timer.
 
-The desktop collection orders Favourites, Playlists, Suggestions and Listening Party before Missing. The enrichment status opens the Enrichment settings category, with live lookup counts and cancellation alongside scan and tag controls. Accounts holds service sign-ins and server credentials, including Spotify, TIDAL, Subsonic, Jellyfin and Last.fm; Online retains network policy. Existing category identifiers remain valid so remembered settings pages survive the additional categories.
+The desktop collection orders Favourites, Playlists, Suggestions and Listening Party before Missing. The enrichment status opens the Library category's *Rescan, refresh and retag* page, with live lookup counts and cancellation alongside scan and tag controls. Accounts holds service sign-ins, server credentials and scrobbling, including Spotify, TIDAL, Subsonic, Jellyfin, Last.fm and ListenBrainz; Online retains network policy.
 
 Other devices playing appear as compact cards at the sidebar foot across panes (`views/remote.rs`):
 platform mark, device name and playing or paused state on one line, cover beside title, artist and

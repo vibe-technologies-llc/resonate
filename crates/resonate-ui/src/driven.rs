@@ -2572,6 +2572,102 @@ mod tests {
         driven.settle();
     }
 
+    fn showing_settings_page(driven: &mut Driven, page: crate::views::settings::Page) {
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Settings, cx);
+            root.open_the_settings_page(page, cx);
+        });
+        driven.settle();
+    }
+
+    #[gpui::test]
+    fn a_correction_opens_on_a_page_of_its_own_and_the_way_back_and_escape_return_to_the_equaliser(
+        cx: &mut TestAppContext,
+    ) {
+        use crate::views::settings::Page;
+
+        let mut driven = Driven::open(cx, catalog());
+        let place = |driven: &mut Driven| {
+            driven.read(|root, _| (root.pane, root.settings_category, root.settings_page))
+        };
+        driven.click("tab-settings");
+        driven.click("category-Equaliser");
+        driven.scroll("settings", 6000.0);
+
+        driven.click("settings-page-room-correction");
+
+        assert_eq!(
+            place(&mut driven),
+            (
+                Pane::Settings,
+                SettingsCategory::Equaliser,
+                Some(Page::RoomCorrection)
+            )
+        );
+        driven.bounds_of("choose-a-response");
+
+        driven.click("settings-way-back");
+
+        assert_eq!(
+            place(&mut driven),
+            (Pane::Settings, SettingsCategory::Equaliser, None)
+        );
+
+        driven.scroll("settings", 6000.0);
+        driven.click("settings-page-listening-test");
+        assert_eq!(
+            place(&mut driven).2,
+            Some(Page::ListeningTest),
+            "the listening test did not open"
+        );
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        assert_eq!(
+            place(&mut driven),
+            (Pane::Settings, SettingsCategory::Equaliser, None)
+        );
+
+        driven.scroll("settings", 6000.0);
+        driven.click("settings-page-own-measurement");
+        driven.click("category-Output");
+
+        assert_eq!(
+            place(&mut driven),
+            (Pane::Settings, SettingsCategory::Output, None),
+            "another category kept the page of the last"
+        );
+    }
+
+    #[gpui::test]
+    fn a_setting_found_on_a_page_of_its_own_opens_that_page_and_leaves_the_search(
+        cx: &mut TestAppContext,
+    ) {
+        use crate::views::settings::Page;
+
+        let mut driven = Driven::open(cx, catalog());
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("autoeq");
+        driven.settle();
+
+        driven.click("settings-place-equaliser-headphone-correction");
+
+        assert_eq!(
+            driven.read(|root, cx| (
+                root.settings_category,
+                root.settings_page,
+                root.finding.read(cx).text().to_owned()
+            )),
+            (
+                SettingsCategory::Equaliser,
+                Some(Page::HeadphoneCorrection),
+                String::new()
+            )
+        );
+        driven.bounds_of("measurer");
+    }
+
     fn typed_into(
         driven: &mut Driven,
         field: fn(&RootView) -> &Entity<crate::views::field::Field>,
@@ -2636,7 +2732,7 @@ mod tests {
             "an-audd"
         );
 
-        showing_settings(&mut driven, SettingsCategory::Scrobbling);
+        showing_settings(&mut driven, SettingsCategory::Accounts);
 
         typed_into(&mut driven, |root| &root.listenbrainz, "a-token");
         driven.cx.simulate_keystrokes("tab");
@@ -4421,7 +4517,7 @@ mod tests {
     ) {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        driven.click("category-Scrobbling");
+        driven.click("category-Accounts");
         driven.focus(|root| &root.listenbrainz);
 
         driven.cx.simulate_input("token");
@@ -5052,15 +5148,19 @@ mod tests {
 
         driven.click("send-the-earlier-plays");
 
-        assert!(driven.read(|root, _| root.telling_the_earlier_plays));
+        assert!(
+            driven
+                .read(|root, _| root.is_armed(&crate::views::settings::Armed::TellTheEarlierPlays))
+        );
         assert!(!owed(&library), "the first press sent the earlier plays");
 
         driven.click("send-the-earlier-plays");
 
         assert!(owed(&library));
-        assert!(
-            driven.read(|root, _| { !root.telling_the_earlier_plays && root.earlier_plays_asked })
-        );
+        assert!(driven.read(|root, _| {
+            !root.is_armed(&crate::views::settings::Armed::TellTheEarlierPlays)
+                && root.earlier_plays_asked
+        }));
     }
 
     #[gpui::test]
@@ -5078,6 +5178,8 @@ mod tests {
         );
         driven.click("tab-settings");
         driven.click("category-Equaliser");
+        driven.scroll("settings", 6000.0);
+        driven.click("settings-page-headphone-correction");
         driven.focus(|root| &root.looking);
         driven.cx.simulate_input("hd 650");
         driven.settle();
@@ -5116,6 +5218,8 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
         driven.click("category-Equaliser");
+        driven.scroll("settings", 6000.0);
+        driven.click("settings-page-headphone-correction");
 
         driven.click("measurer");
         pressed_in_the_menu(&mut driven, "rtings");
@@ -5159,6 +5263,8 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).sinks().len() == 2);
         driven.click("tab-settings");
         driven.click("category-Equaliser");
+        driven.scroll("settings", 6000.0);
+        driven.click("settings-page-headphone-correction");
 
         driven.click("measurer");
         pressed_in_the_menu(&mut driven, "rtings");
@@ -5189,7 +5295,7 @@ mod tests {
             driven.read(|root, cx| {
                 (
                     cx.global::<ResonateApp>().history_kept,
-                    root.aging_the_history,
+                    root.history_armed(),
                 )
             })
         };
@@ -5238,7 +5344,7 @@ mod tests {
         driven.click(forget);
 
         assert_eq!(
-            driven.read(|root, _| root.forgetting_the_folder.clone()),
+            driven.read(|root, _| root.folder_armed().cloned()),
             Some(music.clone())
         );
         assert_eq!(
@@ -5249,10 +5355,7 @@ mod tests {
         driven.click(forget);
 
         driven.until(|_, _| library.roots().expect("the roots read").is_empty());
-        assert_eq!(
-            driven.read(|root, _| root.forgetting_the_folder.clone()),
-            None
-        );
+        assert_eq!(driven.read(|root, _| root.folder_armed().cloned()), None);
     }
 
     #[gpui::test]
@@ -5539,7 +5642,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
-        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        showing_settings_page(&mut driven, crate::views::settings::Page::RoomCorrection);
         for _ in 0..60 {
             let in_reach = driven
                 .cx
@@ -5575,7 +5678,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
-        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        showing_settings_page(&mut driven, crate::views::settings::Page::RoomCorrection);
         scrolled_to(&mut driven, "speaker-angle-more");
 
         driven.click("speaker-angle-more");
@@ -5629,7 +5732,7 @@ mod tests {
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|app, _| app.measures = Some(Arc::new(Flat)));
         });
-        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        showing_settings_page(&mut driven, crate::views::settings::Page::RoomMeasurement);
         scrolled_to(&mut driven, "measure-the-room");
 
         driven.click("measure-the-room");
@@ -5688,7 +5791,7 @@ mod tests {
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|app, _| app.measures = Some(rig));
         });
-        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        showing_settings_page(&mut driven, crate::views::settings::Page::RoomMeasurement);
         let root = driven.root.clone();
         let chosen = microphone.clone();
         driven.cx.update(|_, cx| {

@@ -1,4 +1,4 @@
-use gpui::{Context, Div, prelude::*};
+use gpui::{Context, prelude::*};
 
 use crate::{
     ResonateApp, fonts,
@@ -6,7 +6,7 @@ use crate::{
     views::{
         kit,
         root::RootView,
-        settings::{Group, action, hugging, note, reading},
+        settings::{Armed, Group, Rows, action, reading},
     },
 };
 
@@ -29,12 +29,12 @@ const START_AGAIN: &str = "Puts every setting on this page and the others back t
                            the music folders, the catalog and the files are left alone.";
 
 impl RootView {
-    pub(super) fn build_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn build_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let faces = fonts::drawn_in();
         let sinks = self.player.read(cx).sinks().len();
         let reference = self.library.read(cx).has_reference();
 
-        kit::section_body()
+        kit::rows()
             .child(reading("Version", VERSION))
             .child(reading("Body face", faces.body))
             .child(reading("Codes", faces.monospace))
@@ -54,23 +54,31 @@ impl RootView {
                     "none this run — the feature is out of this build, or it started offline"
                 },
             ))
-            .child(note(THIS_BUILD))
+            .note(THIS_BUILD)
     }
 
-    pub(super) fn places_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn places_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let places = cx.global::<ResonateApp>().places.clone();
 
-        kit::section_body()
+        kit::rows()
             .child(reading("Settings", places.config.display().to_string()))
             .child(reading("Catalog", places.library.display().to_string()))
-            .child(note(PLACES))
+            .note(PLACES)
     }
 
-    pub(super) fn everything_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let armed = self.resetting_everything;
+    pub(super) fn everything_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let armed = self.is_armed(&Armed::ResetEverything);
 
-        kit::section_body()
-            .child(hugging(action(
+        kit::rows().child(kit::row(
+            "Every setting",
+            if armed {
+                ASK_AGAIN
+            } else if self.reset_everything_landed {
+                PUT_BACK
+            } else {
+                START_AGAIN
+            },
+            action(
                 "reset-everything",
                 if armed {
                     "Press again to reset everything"
@@ -88,18 +96,12 @@ impl RootView {
                 },
                 self,
                 cx,
-            )))
-            .child(note(if armed {
-                ASK_AGAIN
-            } else if self.reset_everything_landed {
-                PUT_BACK
-            } else {
-                START_AGAIN
-            }))
+            ),
+        ))
     }
 
     fn arm_the_reset(&mut self, cx: &mut Context<Self>) {
-        self.resetting_everything = true;
+        self.arm(Armed::ResetEverything);
         self.reset_everything_landed = false;
         cx.notify();
     }
@@ -108,7 +110,7 @@ impl RootView {
         for group in Group::ALL {
             self.put_back(group, cx);
         }
-        self.resetting_everything = false;
+        self.lower(&Armed::ResetEverything);
         self.reset_everything_landed = true;
         cx.notify();
     }

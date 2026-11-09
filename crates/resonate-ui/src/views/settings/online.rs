@@ -1,19 +1,15 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
-use gpui::{
-    ClickEvent, Context, Div, Entity, SharedString, Stateful, Window, div, prelude::*, rgb,
-};
+use gpui::{Context, SharedString, div, prelude::*};
 use resonate_listen::Listening;
 
 use crate::{
     MirrorTold, ResonateApp, Setting,
     icons::Icon,
-    theme,
     views::{
-        field::Field,
         kit,
         root::RootView,
-        settings::{Choice, action, note, switch_row},
+        settings::{Armed, Choice, Rows, action, note, switch_row},
     },
 };
 
@@ -166,12 +162,12 @@ const CONTACT_NOTE: &str = "Sent in the User-Agent to MusicBrainz, the Cover Art
                             request on. Leave it empty to send nothing.";
 
 impl RootView {
-    pub(super) fn lookups_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn lookups_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let library = self.library.read(cx);
         let on = library.is_online();
         let reachable = library.has_reference();
 
-        kit::section_body()
+        let rows = kit::rows()
             .child(self.in_the_ring(
                 "reference-lookups",
                 switch_row(
@@ -183,12 +179,13 @@ impl RootView {
                 move |this, _, cx| this.set_online(!on, cx),
                 cx,
             ))
-            .child(note(LOOKUPS_NOTE))
             .when(on && !reachable, |body| body.child(note(NEXT_START_NOTE)))
-            .child(self.mirror_rows(cx))
+            .note(LOOKUPS_NOTE);
+
+        self.mirror_rows(rows, cx)
     }
 
-    fn mirror_rows(&mut self, cx: &mut Context<Self>) -> Div {
+    fn mirror_rows(&mut self, rows: Rows, cx: &mut Context<Self>) -> Rows {
         let mirrors = cx.global::<ResonateApp>().online.musicbrainz_mirror;
         let told = cx
             .global::<ResonateApp>()
@@ -221,68 +218,68 @@ impl RootView {
         }
         let held = matches!(told, Some(MirrorTold::Held { .. }));
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(self.in_the_ring(
+        rows.child(self.in_the_ring(
+            "musicbrainz-mirror",
+            switch_row(
+                "Keep a copy of MusicBrainz here",
+                "Off, MusicBrainz is asked over the network or of a synced device",
+                mirrors,
                 "musicbrainz-mirror",
-                switch_row(
-                    "Keep a copy of MusicBrainz here",
-                    "Off, MusicBrainz is asked over the network or of a synced device",
-                    mirrors,
-                    "musicbrainz-mirror",
-                ),
-                move |this, _, cx| this.set_musicbrainz_mirror(!mirrors, cx),
-                cx,
-            ))
-            .child(note(MIRROR_NOTE))
-            .when_some(told.filter(|_| mirrors), |body, told| {
-                body.child(note(mirror_said(&told))).child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(action(
-                            "musicbrainz-mirror-build",
-                            if held {
-                                "Build it again"
-                            } else {
-                                "Build it now"
-                            },
-                            Icon::Download,
-                            building,
-                            |_, _, cx| {
-                                if let Some(mirroring) =
-                                    cx.global::<ResonateApp>().mirroring.clone()
-                                {
-                                    mirroring.build();
-                                }
-                                cx.notify();
-                            },
-                            self,
-                            cx,
-                        ))
-                        .when(held, |row| {
-                            row.child(action(
-                                "musicbrainz-mirror-remove",
-                                "Remove the copy",
-                                Icon::Delete,
+            ),
+            move |this, _, cx| this.set_musicbrainz_mirror(!mirrors, cx),
+            cx,
+        ))
+        .when_some(told.filter(|_| mirrors), |body, told| {
+            body.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(note(mirror_said(&told)))
+                    .child(
+                        kit::action_row()
+                            .child(action(
+                                "musicbrainz-mirror-build",
+                                if held {
+                                    "Build it again"
+                                } else {
+                                    "Build it now"
+                                },
+                                Icon::Download,
                                 building,
                                 |_, _, cx| {
                                     if let Some(mirroring) =
                                         cx.global::<ResonateApp>().mirroring.clone()
                                     {
-                                        mirroring.remove();
+                                        mirroring.build();
                                     }
                                     cx.notify();
                                 },
                                 self,
                                 cx,
                             ))
-                        }),
-                )
-            })
+                            .when(held, |row| {
+                                row.child(action(
+                                    "musicbrainz-mirror-remove",
+                                    "Remove the copy",
+                                    Icon::Delete,
+                                    building,
+                                    |_, _, cx| {
+                                        if let Some(mirroring) =
+                                            cx.global::<ResonateApp>().mirroring.clone()
+                                        {
+                                            mirroring.remove();
+                                        }
+                                        cx.notify();
+                                    },
+                                    self,
+                                    cx,
+                                ))
+                            }),
+                    ),
+            )
+        })
+        .note(MIRROR_NOTE)
     }
 
     pub(crate) fn set_musicbrainz_mirror(&mut self, mirrors: bool, cx: &mut Context<Self>) {
@@ -291,10 +288,10 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn after_scan_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn after_scan_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let after_scan = self.library.read(cx).enriches_after_scan();
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             "after-a-scan",
             switch_row(
                 "Ask as soon as a scan ends",
@@ -307,13 +304,13 @@ impl RootView {
         ))
     }
 
-    pub(super) fn metered_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn metered_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let online = &cx.global::<ResonateApp>().online;
         let enriches = online.enrich_on_metered;
         let stalls = online.stall_downloads_on_metered;
         let waiting = self.library.read(cx).is_waiting_on_the_meter();
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "enrich-on-metered",
                 switch_row(
@@ -336,8 +333,8 @@ impl RootView {
                 move |this, _, cx| this.set_stall_downloads_on_metered(!stalls, cx),
                 cx,
             ))
-            .child(note(METERED_NOTE))
             .when(waiting, |body| body.child(note(WAITING_ON_THE_METER)))
+            .note(METERED_NOTE)
     }
 
     pub(crate) fn set_enrich_on_metered(&mut self, enriches: bool, cx: &mut Context<Self>) {
@@ -354,11 +351,11 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn studies_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn studies_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let studies = self.library.read(cx).studies();
         let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "studying-tracks",
                 switch_row(
@@ -381,7 +378,7 @@ impl RootView {
                 move |this, _, cx| this.set_by_sound(!by_sound, cx),
                 cx,
             ))
-            .child(note(BY_SOUND_NOTE))
+            .note(BY_SOUND_NOTE)
     }
 
     pub(crate) fn set_by_sound(&mut self, by_sound: bool, cx: &mut Context<Self>) {
@@ -392,14 +389,14 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn lyrics_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn lyrics_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let lyrics = self.library.read(cx).fetches_lyrics();
         let by_the_locale = cx
             .global::<ResonateApp>()
             .lyrics_by_the_locale
             .load(Ordering::Acquire);
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "fetching-lyrics",
                 switch_row(
@@ -432,95 +429,110 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn contact_group(&mut self, cx: &mut Context<Self>) -> Div {
-        kit::section_body()
-            .child(self.contact_field(cx))
-            .child(note(CONTACT_NOTE))
+    pub(super) fn contact_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        kit::rows()
+            .child(self.text_field(
+                "contact",
+                &self.contact,
+                |this, window, cx| this.leave_contact(window, cx),
+                cx,
+            ))
+            .note(CONTACT_NOTE)
     }
 
-    pub(super) fn recognition_group(&mut self, cx: &mut Context<Self>) -> Div {
-        kit::section_body()
-            .child(kit::field(
-                "AcoustID",
-                self.key_field(
-                    "acoustid-key",
-                    &self.acoustid,
-                    |this, window, cx| this.leave_acoustid_key(window, cx),
-                    cx,
-                ),
-            ))
-            .child(note(KEY_NOTE))
-            .child(kit::field(
-                "AudD",
-                self.key_field(
-                    "audd-token",
-                    &self.audd,
-                    |this, window, cx| this.leave_audd_token(window, cx),
-                    cx,
-                ),
-            ))
-            .child(note(TOKEN_NOTE))
+    pub(super) fn recognition_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        kit::rows()
+            .child(
+                kit::field(
+                    "AcoustID",
+                    self.text_field(
+                        "acoustid-key",
+                        &self.acoustid,
+                        |this, window, cx| this.leave_acoustid_key(window, cx),
+                        cx,
+                    ),
+                )
+                .child(note(KEY_NOTE)),
+            )
+            .child(
+                kit::field(
+                    "AudD",
+                    self.text_field(
+                        "audd-token",
+                        &self.audd,
+                        |this, window, cx| this.leave_audd_token(window, cx),
+                        cx,
+                    ),
+                )
+                .child(note(TOKEN_NOTE)),
+            )
     }
 
-    pub(super) fn submitting_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn submitting_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let given = !self.listenbrainz.read(cx).text().trim().is_empty();
-        let armed = self.telling_the_earlier_plays;
+        let armed = self.is_armed(&Armed::TellTheEarlierPlays);
         let asked = self.earlier_plays_asked;
 
-        kit::section_body()
+        kit::rows()
             .child(kit::field(
                 "User token",
-                self.key_field(
+                self.text_field(
                     "listenbrainz-token",
                     &self.listenbrainz,
                     |this, window, cx| this.leave_listenbrainz_token(window, cx),
                     cx,
                 ),
             ))
-            .child(note(SUBMITTING_NOTE))
             .when(given, |body| {
-                body.child(div().flex().flex_wrap().gap_2().child(action(
-                    "send-the-earlier-plays",
-                    if armed {
-                        "Press again to send every earlier play"
-                    } else {
-                        "Send earlier plays"
-                    },
-                    Icon::Export,
-                    asked,
-                    move |this, _, cx| {
-                        if armed {
-                            this.send_the_earlier_plays(cx);
+                body.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(kit::action_row().child(action(
+                            "send-the-earlier-plays",
+                            if armed {
+                                "Press again to send every earlier play"
+                            } else {
+                                "Send earlier plays"
+                            },
+                            Icon::Export,
+                            asked,
+                            move |this, _, cx| {
+                                if armed {
+                                    this.send_the_earlier_plays(cx);
+                                } else {
+                                    this.arm(Armed::TellTheEarlierPlays);
+                                    cx.notify();
+                                }
+                            },
+                            self,
+                            cx,
+                        )))
+                        .child(note(if asked {
+                            EARLIER_PLAYS_ASKED
                         } else {
-                            this.telling_the_earlier_plays = true;
-                            cx.notify();
-                        }
-                    },
-                    self,
-                    cx,
-                )))
-                .child(note(if asked {
-                    EARLIER_PLAYS_ASKED
-                } else {
-                    EARLIER_PLAYS_NOTE
-                }))
+                            EARLIER_PLAYS_NOTE
+                        })),
+                )
             })
+            .note(SUBMITTING_NOTE)
     }
 
     fn send_the_earlier_plays(&mut self, cx: &mut Context<Self>) {
-        self.telling_the_earlier_plays = false;
+        self.lower(&Armed::TellTheEarlierPlays);
         self.earlier_plays_asked = self
             .library
             .update(cx, |library, cx| library.tell_earlier_listens(cx));
         cx.notify();
     }
 
-    pub(super) fn listening_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn listening_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let listen = self.listen.read(cx);
         let from = HeardFrom::of(listen.from());
         let length = ClipLength(listen.length());
 
-        kit::section_body()
+        kit::rows()
             .child(kit::field(
                 "Listen to",
                 self.choices("listen-from", from, cx, |this, from: HeardFrom, cx| {
@@ -537,63 +549,7 @@ impl RootView {
                     this.listen_for(length.0, cx);
                 }),
             ))
-            .child(note(LISTENING_NOTE))
-    }
-
-    pub(super) fn key_field(
-        &self,
-        id: &'static str,
-        field: &Entity<Field>,
-        leave: fn(&mut Self, &mut Window, &mut Context<Self>),
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let taking = field.clone();
-        div()
-            .id(id)
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(gpui::px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
-            .on_mouse_down_out(cx.listener(move |this, _, window, cx| leave(this, window, cx)))
-            .on_click(cx.listener(move |_, _: &ClickEvent, window, cx| {
-                taking.update(cx, |key, cx| key.take_focus(window, cx));
-                cx.notify();
-            }))
-            .child(field.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
-    }
-
-    fn contact_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id("contact")
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(gpui::px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
-            .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_contact(window, cx)))
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.contact
-                    .update(cx, |contact, cx| contact.take_focus(window, cx));
-                cx.notify();
-            }))
-            .child(self.contact.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
+            .note(LISTENING_NOTE)
     }
 }
 

@@ -1838,20 +1838,30 @@ fn window_size(text: &str) -> Option<(u32, u32)> {
     (width >= 720 && height >= 520 && width <= 8192 && height <= 8192).then_some((width, height))
 }
 
+const SETTINGS_CATEGORIES: [&str; 14] = [
+    "output",
+    "processing",
+    "equaliser",
+    "playback",
+    "library",
+    "filters",
+    "online",
+    "recognition",
+    "accounts",
+    "sync",
+    "desktop",
+    "appearance",
+    "window",
+    "about",
+];
+
+const SETTINGS_CATEGORIES_SPELT_BEFORE: [&str; 2] = ["enrichment", "scrobbling"];
+
 fn settings_category(text: &str) -> Option<&'static str> {
-    match text {
-        "output" => Some("output"),
-        "processing" => Some("processing"),
-        "equaliser" => Some("equaliser"),
-        "library" => Some("library"),
-        "filters" => Some("filters"),
-        "online" => Some("online"),
-        "sync" => Some("sync"),
-        "desktop" => Some("desktop"),
-        "appearance" => Some("appearance"),
-        "about" => Some("about"),
-        _ => None,
-    }
+    SETTINGS_CATEGORIES
+        .into_iter()
+        .chain(SETTINGS_CATEGORIES_SPELT_BEFORE)
+        .find(|category| *category == text)
 }
 
 fn quality(text: &str) -> Option<Quality> {
@@ -2073,24 +2083,58 @@ mod tests {
                 "{tab_named} is not in the man page"
             );
         }
-        for category in [
-            "output",
-            "processing",
-            "equaliser",
-            "library",
-            "filters",
-            "online",
-            "sync",
-            "desktop",
-            "appearance",
-            "about",
-        ] {
+        for category in SETTINGS_CATEGORIES
+            .into_iter()
+            .chain(SETTINGS_CATEGORIES_SPELT_BEFORE)
+        {
             assert!(settings_category(category).is_some());
             assert!(
                 categories.contains(category),
                 "{category} is not in the man page"
             );
         }
+    }
+
+    #[test]
+    fn every_settings_category_an_earlier_build_remembered_still_reads() {
+        for remembered in [
+            "output",
+            "processing",
+            "equaliser",
+            "library",
+            "filters",
+            "enrichment",
+            "accounts",
+            "online",
+            "recognition",
+            "scrobbling",
+            "sync",
+            "desktop",
+            "appearance",
+            "about",
+        ] {
+            let read = read(&format!("last-settings-category = \"{remembered}\""))
+                .unwrap_or_else(|error| panic!("{remembered} was refused: {error:?}"));
+            assert_eq!(read.last_settings_category.as_deref(), Some(remembered));
+        }
+        assert!(settings_category("scrobble").is_none());
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_remembered_category_whose_settings_moved_opens_the_category_holding_them_now() {
+        use resonate_ui::SettingsCategory;
+
+        let opened = |remembered: &str| {
+            read(&format!("last-settings-category = \"{remembered}\""))
+                .expect("a remembered category")
+                .remembered_settings_category()
+        };
+
+        assert_eq!(opened("enrichment"), SettingsCategory::Library);
+        assert_eq!(opened("scrobbling"), SettingsCategory::Accounts);
+        assert_eq!(opened("recognition"), SettingsCategory::Recognition);
+        assert_eq!(opened("window"), SettingsCategory::Window);
     }
 
     #[test]

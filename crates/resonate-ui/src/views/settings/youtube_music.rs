@@ -11,7 +11,7 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
-        settings::{action, hugging, note, switch_row},
+        settings::{Rows, action, note, switch_row},
     },
 };
 
@@ -307,12 +307,12 @@ impl RootView {
         )
     }
 
-    pub(super) fn youtube_music_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn youtube_music_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let online = &cx.global::<ResonateApp>().online;
         let on = online.youtube_music;
         let keeps = online.youtube_music_keep_order;
 
-        let mut body = kit::section_body()
+        let mut body = kit::rows()
             .child(self.in_the_ring(
                 "youtube-music",
                 switch_row(
@@ -328,7 +328,7 @@ impl RootView {
         for named in YoutubeMusicField::ALL {
             body = body.child(kit::field(
                 named.label(),
-                self.key_field(
+                self.text_field(
                     named.id(),
                     self.youtube_music_field(named),
                     |this, window, cx| this.leave_the_account(window, cx),
@@ -347,8 +347,8 @@ impl RootView {
             move |this, _, cx| this.keep_youtubes_order(!keeps, cx),
             cx,
         ))
-        .child(hugging(self.check_button(cx)))
-        .child(note(YOUTUBE_MUSIC_NOTE))
+        .child(kit::action_row().child(self.check_button(cx)))
+        .note(YOUTUBE_MUSIC_NOTE)
     }
 }
 

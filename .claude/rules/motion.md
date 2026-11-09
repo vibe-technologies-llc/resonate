@@ -34,7 +34,7 @@ open does not. A hint is a new entity per show, so it fades in each time.
   tile-and-words shape, so only its content changes, the cover landing where the mark stood. The
   progress rail is data and moves without easing.
 - **Pane body fades in**, keyed by the pane (tracks pane: the scope, plus whether search results
-  stand in front); the clock's per-tick redraw keeps the key. Settings column: keyed by category,
+  stand in front); the clock's per-tick redraw keeps the key. Settings column: keyed by category and page,
   or *found* while narrowed.
 - **Nothing waits on the way out**: a dismissed surface leaves that frame, so a closing animation
   never holds a backdrop after the listener moved on. The toast is excepted: nobody dismissed it.

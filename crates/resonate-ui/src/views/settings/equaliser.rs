@@ -43,9 +43,9 @@ use crate::{
         plot,
         root::RootView,
         settings::{
-            action,
+            Armed, Rows, action,
             curve::{CURVE_LINE, HeldBand, PIXELS_PER_NOTCH, Plot, Plotted, across_at},
-            hugging, note, rows, switch_row,
+            note, switch_row,
         },
         spoken::Spoken as _,
     },
@@ -69,7 +69,7 @@ const DESKTOP_HEARD: &str = "The desktop";
 const DEFAULT_MICROPHONE_HEARD: &str = "The default microphone";
 
 const DRAG_TOLD_EVERY: Duration = Duration::from_millis(50);
-const CURVE_HEIGHT: f32 = 168.0;
+const CURVE_ASPECT: f32 = 2.6;
 
 const NO_FILE_PICKER: &str = "Couldn't open the file picker";
 const CURVE_MARKED_AT_HZ: [f64; 3] = [100.0, 1_000.0, 10_000.0];
@@ -93,6 +93,15 @@ const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to mo
                               over one to change its Q, and right-press it to take it out.";
 
 const NO_MEASURING: &str = "This build cannot play a sweep and hear it";
+
+const UNCALIBRATED: &str = "None chosen: the fit corrects the microphone too";
+
+const AUTOEQ_NOTE: &str = "Who measured each result and on which rig is said beside it; a \
+                           correction used is fetched once and kept here as an ordinary profile.";
+
+const MEASURERS_NOTE: &str = "Where several measured one device, the measurer named here is \
+                              taken before the fixed ranking, in the search and in what is \
+                              suggested for what is plugged in.";
 
 const MEASURE_NOTE: &str = "Plays a sweep of eight seconds through the output in use, straight to \
                             the device and past the equaliser, and records it for two more; Stop \
@@ -132,11 +141,11 @@ const BAND_KEYS_HINT: &str = concat!(
 const EVERY_OTHER_DEVICE: &str = "Every other device";
 
 impl RootView {
-    pub(super) fn equalising_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn equalising_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let on = self.equaliser.read(cx).bindings().enabled;
         let bound = self.equaliser.read(cx).bindings().binds_anything();
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "equaliser",
                 switch_row(
@@ -152,10 +161,10 @@ impl RootView {
                 move |this, _, cx| this.switch_the_equaliser(!on, cx),
                 cx,
             ))
-            .child(note(NOT_BIT_PERFECT))
+            .note(NOT_BIT_PERFECT)
     }
 
-    pub(super) fn bound_to_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn bound_to_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let devices: Vec<(NodeName, String)> = self
             .player
             .read(cx)
@@ -167,7 +176,7 @@ impl RootView {
         let away = unplugged(self.equaliser.read(cx).bindings(), &devices);
 
         let mut listed =
-            rows().child(self.binding_row(None, EVERY_OTHER_DEVICE.to_owned(), &kept, cx));
+            kit::rows().child(self.binding_row(None, EVERY_OTHER_DEVICE.to_owned(), &kept, cx));
         for (name, description) in devices {
             listed = listed.child(self.binding_row(Some(name), description, &kept, cx));
         }
@@ -176,7 +185,7 @@ impl RootView {
                 listed.child(self.binding_row(Some(name), NOT_PLUGGED_IN.to_owned(), &kept, cx));
         }
 
-        kit::section_body().child(listed).child(note(BOUND_TO_NOTE))
+        listed.note(BOUND_TO_NOTE)
     }
 
     fn binding_row(
@@ -224,13 +233,7 @@ impl RootView {
             ));
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_1p5()
-            .py_2()
-            .child(super::named(description, under))
-            .child(div().flex().child(choices))
+        kit::stacked_row(description, under, div().flex().child(choices))
     }
 
     fn bound_option(
@@ -251,17 +254,16 @@ impl RootView {
             Some(Binding::Profile(name)) => format!("kept-{}", ProfileName::as_str(name)),
         };
         let id = format!("bind-{bound}-{to}");
-        let segment = kit::segment(gpui::SharedString::from(id.clone()), label, chosen);
 
-        segment
-            .track_focus(&self.controls.at(&id, cx))
-            .key_context(crate::app::CONTROL_CONTEXT)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.bind_a_curve(sink.clone(), binding.clone(), cx);
-            }))
+        self.option_named(
+            kit::segment(gpui::SharedString::from(id.clone()), label, chosen),
+            id,
+            move |this, _, cx| this.bind_a_curve(sink.clone(), binding.clone(), cx),
+            cx,
+        )
     }
 
-    pub(super) fn bands_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn bands_group(&mut self, cx: &mut Context<Self>) -> Rows {
         self.follow_the_binding(cx);
         let rate = self.curve_rate(cx);
 
@@ -284,32 +286,24 @@ impl RootView {
             cx,
         );
         let Some(shown) = showing else {
-            return kit::section_body()
+            return kit::rows()
                 .child(curve)
-                .child(note(NOTHING_BOUND))
-                .child(self.band_actions(false, cx));
+                .child(self.band_actions(false, cx))
+                .note(NOTHING_BOUND);
         };
 
-        let mut listed = rows();
+        let mut listed = kit::rows().child(curve).child(kit::row(
+            shown.spoken(),
+            format!("Reaches {peak:+.2} dB before the preamp"),
+            self.preamp_cell(preamp, cx),
+        ));
         for (row, band) in bands.iter().enumerate() {
             listed = listed.child(self.band_row(row, *band, chosen == Some(row), cx));
         }
 
-        kit::section_body()
-            .child(curve)
-            .child(note(SHAPED_BY_HAND))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_3()
-                    .child(kit::field("Curve", kit::figure(shown.spoken())))
-                    .child(kit::field("Preamp", self.preamp_cell(preamp, cx)))
-                    .child(kit::field("Peak", kit::figure(format!("{peak:+.2} dB")))),
-            )
-            .when(!bands.is_empty(), |body| body.child(listed))
+        listed
             .child(self.band_actions(true, cx))
+            .note(SHAPED_BY_HAND)
     }
 
     fn curve(
@@ -328,12 +322,14 @@ impl RootView {
             .debug_selector(|| "equaliser-curve".to_owned())
             .pictured_as(THE_CURVE, || curve_said(&handles.bands, widest))
             .relative()
-            .h(px(CURVE_HEIGHT))
             .w_full()
+            .aspect_ratio(CURVE_ASPECT)
+            .min_h(px(theme::curve_height_at_least()))
+            .max_h(px(theme::curve_height_at_most()))
             .rounded_lg()
             .bg(rgb(theme::background()))
             .border_1()
-            .border_color(rgb(theme::border()))
+            .border_color(rgb(theme::soft_edge()))
             .overflow_hidden()
             .cursor_crosshair()
             .on_mouse_down(
@@ -492,18 +488,18 @@ impl RootView {
         let mut offered = kit::segmented();
         for kind in BandKind::ALL {
             let id = format!("band-kind-{row}-{}", kind.as_str());
-            offered = offered.child(
+            offered = offered.child(self.option_named(
                 kit::segment(
                     gpui::SharedString::from(id.clone()),
                     kind.label(),
                     kind == chosen,
-                )
-                .track_focus(&self.controls.at(&id, cx))
-                .key_context(crate::app::CONTROL_CONTEXT)
-                .on_click(cx.listener(move |this, _, _, cx| this.retype_a_band(row, kind, cx))),
-            );
+                ),
+                id,
+                move |this, _, cx| this.retype_a_band(row, kind, cx),
+                cx,
+            ));
         }
-        div().flex().pb_2().child(offered)
+        div().flex().pt_2().child(offered)
     }
 
     fn numeric_cell(
@@ -585,12 +581,9 @@ impl RootView {
             self.equaliser.read(cx).shown_curve(),
             Some(crate::equaliser::Curve::Own(_))
         );
-        let armed = self.discarding_the_curve;
+        let armed = self.is_armed(&Armed::DiscardTheCurve);
 
-        div()
-            .flex()
-            .flex_wrap()
-            .gap_2()
+        kit::action_row()
             .child(action(
                 "add-a-band",
                 "Add a band",
@@ -645,7 +638,7 @@ impl RootView {
                         if armed {
                             this.discard_the_curve(cx);
                         } else {
-                            this.discarding_the_curve = true;
+                            this.arm(Armed::DiscardTheCurve);
                             cx.notify();
                         }
                     },
@@ -655,7 +648,7 @@ impl RootView {
             })
     }
 
-    pub(super) fn measured_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn autoeq_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let in_use = self
             .player
             .read(cx)
@@ -671,15 +664,9 @@ impl RootView {
             .cloned();
         let knows = model.knows_the_catalogue();
 
-        let mut listed = rows();
-        for device in &found {
-            listed = listed.child(self.measured_row(device, cx));
-        }
-
-        kit::section_body()
-            .child(self.measurer_choice(cx))
-            .when_some(in_use.clone(), |body, (name, description)| {
-                body.child(self.measurer_choice_for(name, &description, cx))
+        let mut listed = kit::rows()
+            .when_some(in_use, |body, (_, description)| {
+                body.child(self.plugged_in(&description, suggested.as_ref(), knows, reachable, cx))
             })
             .when(!reachable, |body| {
                 body.child(note(
@@ -687,18 +674,38 @@ impl RootView {
                 ))
             })
             .when(reachable, |body| {
-                body.child(self.looking_field(cx))
-                    .when(looking, |held| held.child(note("Asking AutoEq…")))
-                    .when(!found.is_empty(), |held| held.child(listed))
-            })
-            .when_some(in_use, |body, (_, description)| {
-                body.child(self.plugged_in(&description, suggested.as_ref(), knows, reachable, cx))
-            })
-            .child(self.own_measurement(cx))
-            .child(self.measure_the_room_field(cx))
+                body.child(self.text_field(
+                    "look-for-a-device",
+                    &self.looking,
+                    |this, window, cx| this.let_go_of_the_field(window, cx),
+                    cx,
+                ))
+                .when(looking, |held| held.child(note("Asking AutoEq…")))
+            });
+        if reachable {
+            for device in &found {
+                listed = listed.child(self.measured_row(device, cx));
+            }
+        }
+        listed.note(AUTOEQ_NOTE)
     }
 
-    fn own_measurement(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn measurers_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let in_use = self
+            .player
+            .read(cx)
+            .sink_in_use()
+            .map(|sink| (sink.name.clone(), sink.description.clone()));
+
+        kit::rows()
+            .child(self.measurer_choice(cx))
+            .when_some(in_use, |body, (name, description)| {
+                body.child(self.measurer_choice_for(name, &description, cx))
+            })
+            .note(MEASURERS_NOTE)
+    }
+
+    pub(super) fn own_measurement_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let model = self.equaliser.read(cx);
         let goal = model.goal().clone();
         let fitting = model.is_fitting_a_measurement();
@@ -716,31 +723,25 @@ impl RootView {
             cx,
         );
 
-        kit::field(
-            "Your own measurement",
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(kit::field("Fit toward", hugging(target)))
-                .child(div().flex().flex_wrap().gap_2().child(action(
-                    "fit-a-measurement",
-                    if fitting {
-                        "Fitting…"
-                    } else {
-                        "Fit a measurement…"
-                    },
-                    Icon::Import,
-                    fitting,
-                    |this, _, cx| this.choose_a_measurement(cx),
-                    self,
-                    cx,
-                )))
-                .child(note(OWN_MEASUREMENT_NOTE)),
-        )
+        kit::rows()
+            .child(kit::row("Fit toward", FIT_TOWARD_HINT, target))
+            .child(kit::action_row().child(action(
+                "fit-a-measurement",
+                if fitting {
+                    "Fitting…"
+                } else {
+                    "Fit a measurement…"
+                },
+                Icon::Import,
+                fitting,
+                |this, _, cx| this.choose_a_measurement(cx),
+                self,
+                cx,
+            )))
+            .note(OWN_MEASUREMENT_NOTE)
     }
 
-    fn measure_the_room_field(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn room_measurement_group(&mut self, cx: &mut Context<Self>) -> Rows {
         if !self.listen.read(cx).has_looked_for_microphones() {
             self.listen
                 .update(cx, |listen, cx| listen.look_for_microphones(cx));
@@ -767,106 +768,72 @@ impl RootView {
             },
             cx,
         );
-
-        kit::field(
-            "Measure your room",
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(kit::field("Heard through", hugging(sources)))
-                .child(self.calibration_field(cx))
-                .child(kit::field("Keep as", self.measured_as_field(cx)))
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(action(
-                            "measure-the-room",
-                            if measuring { "Measuring…" } else { "Measure" },
-                            Icon::Listen,
-                            measuring,
-                            |this, _, cx| this.measure_the_room(cx),
-                            self,
-                            cx,
-                        ))
-                        .when(measuring, |row| {
-                            row.child(action(
-                                "stop-measuring",
-                                "Stop",
-                                Icon::Stop,
-                                false,
-                                |this, _, cx| this.stop_measuring_the_room(cx),
-                                self,
-                                cx,
-                            ))
-                        }),
-                )
-                .child(note(MEASURE_NOTE)),
-        )
-    }
-
-    fn calibration_field(&mut self, cx: &mut Context<Self>) -> Div {
         let held = self.equaliser.read(cx).calibration().cloned();
         let named = held
             .as_ref()
             .and_then(|file| file.file_name())
             .map(|name| name.to_string_lossy().into_owned());
-        let measuring = self.equaliser.read(cx).is_measuring_the_room();
 
-        kit::field(
-            "Microphone calibration",
-            div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap_2()
-                .child(action(
-                    "measure-calibration",
-                    "Choose a calibration…",
-                    Icon::Import,
-                    measuring,
-                    |this, _, cx| this.choose_a_calibration(cx),
-                    self,
-                    cx,
-                ))
-                .when_some(named, |row, name| {
-                    row.child(kit::badge(name, theme::muted())).child(action(
-                        "measure-calibration-forget",
-                        "Remove",
-                        Icon::Close,
+        kit::rows()
+            .child(kit::row("Heard through", HEARD_THROUGH_HINT, sources))
+            .child(kit::stacked_row(
+                "Microphone calibration",
+                named.clone().unwrap_or_else(|| UNCALIBRATED.to_owned()),
+                kit::action_row()
+                    .child(action(
+                        "measure-calibration",
+                        "Choose a calibration…",
+                        Icon::Import,
                         measuring,
-                        |this, _, cx| this.calibrate_with(None, cx),
+                        |this, _, cx| this.choose_a_calibration(cx),
                         self,
                         cx,
                     ))
-                }),
-        )
-    }
-
-    fn measured_as_field(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let _ = cx;
-        div()
-            .id("measure-profile-name")
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.measured_as
-                    .update(cx, |field, cx| field.take_focus(window, cx));
-                cx.notify();
-            }))
-            .child(self.measured_as.clone())
+                    .when(named.is_some(), |row| {
+                        row.child(action(
+                            "measure-calibration-forget",
+                            "Remove",
+                            Icon::Close,
+                            measuring,
+                            |this, _, cx| this.calibrate_with(None, cx),
+                            self,
+                            cx,
+                        ))
+                    }),
+            ))
+            .child(kit::field(
+                "Keep as",
+                self.text_field(
+                    "measure-profile-name",
+                    &self.measured_as,
+                    |this, window, cx| this.let_go_of_the_field(window, cx),
+                    cx,
+                ),
+            ))
+            .child(
+                kit::action_row()
+                    .child(action(
+                        "measure-the-room",
+                        if measuring { "Measuring…" } else { "Measure" },
+                        Icon::Listen,
+                        measuring,
+                        |this, _, cx| this.measure_the_room(cx),
+                        self,
+                        cx,
+                    ))
+                    .when(measuring, |row| {
+                        row.child(action(
+                            "stop-measuring",
+                            "Stop",
+                            Icon::Stop,
+                            false,
+                            |this, _, cx| this.stop_measuring_the_room(cx),
+                            self,
+                            cx,
+                        ))
+                    }),
+            )
+            .note(MEASURE_NOTE)
     }
 
     pub(crate) fn calibrate_with(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
@@ -1011,7 +978,11 @@ impl RootView {
             cx,
         );
 
-        kit::field("Preferred measurer", hugging(choices))
+        kit::row(
+            "For every device",
+            "Best ranked leaves it to the fixed ranking",
+            choices,
+        )
     }
 
     fn measurer_choice_for(
@@ -1037,9 +1008,10 @@ impl RootView {
             cx,
         );
 
-        kit::field(
-            format!("Preferred measurer for {description}"),
-            hugging(choices),
+        kit::row(
+            format!("For {description}"),
+            "As for the rest takes the one chosen for every device",
+            choices,
         )
     }
 
@@ -1100,30 +1072,6 @@ impl RootView {
         });
     }
 
-    fn looking_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id("look-for-a-device")
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.looking
-                    .update(cx, |looking, cx| looking.take_focus(window, cx));
-                cx.notify();
-            }))
-            .child(self.looking.clone())
-            .child(kit::figure("enter").text_color(rgb(theme::faint())))
-    }
-
     fn measured_row(&self, device: &Device, cx: &mut Context<Self>) -> Div {
         let id = format!("fetch-{}", device.id);
         let label = device.label.clone();
@@ -1177,15 +1125,9 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_2()
-            .pt_2()
-            .child(kit::field(
-                "What is plugged in",
-                div()
-                    .text_size(px(theme::text_sm()))
-                    .child(gpui::SharedString::from(description.to_owned())),
-            ))
+            .child(kit::named("What is plugged in", description.to_owned()))
             .when(reachable && !knows, |body| {
-                body.child(hugging(self.in_the_ring(
+                body.child(kit::action_row().child(self.in_the_ring(
                     "read-the-catalogue",
                     kit::button(
                         "read-the-catalogue",
@@ -2111,7 +2053,7 @@ impl RootView {
     }
 
     fn discard_the_curve(&mut self, cx: &mut Context<Self>) {
-        self.discarding_the_curve = false;
+        self.lower(&Armed::DiscardTheCurve);
         let Some(curve) = self.equaliser.read(cx).shown_curve().cloned() else {
             return;
         };
@@ -2230,13 +2172,13 @@ impl RootView {
         });
     }
 
-    pub(super) fn room_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn room_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let held = cx.global::<ResonateApp>().convolution.clone();
         if let Some(file) = &held {
             self.look_at_the_room(file, cx);
         }
 
-        kit::section_body()
+        kit::rows()
             .child(match &held {
                 Some(file) => note(file.display().to_string()),
                 None => note(NO_ROOM),
@@ -2245,10 +2187,7 @@ impl RootView {
                 body.child(note(BINAURAL_NOTE))
             })
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(action(
                         "choose-a-response",
                         "Choose a response…",
@@ -2279,10 +2218,14 @@ impl RootView {
                         ))
                     }),
             )
+            .note(ROOM_NOTE)
+    }
+
+    pub(super) fn speakers_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        kit::rows()
             .child(self.speaker_angle_field(cx))
             .child(self.speaker_elevation_field(cx))
             .child(self.head_yaw_field(cx))
-            .child(note(ROOM_NOTE))
     }
 
     fn speaker_angle_field(&mut self, cx: &mut Context<Self>) -> Div {

@@ -27,9 +27,8 @@ use resonate_engine::{
     stamp_of,
 };
 use resonate_library::{
-    ArtistFound, Cut, Direction, HistoryKept, Kept, Library, Playing, Playlist, PlaylistEntry,
-    PlaylistOrder, RowOrder, SavedQuery, SortOrder, TokenHeld, Track, TrackQuery,
-    is_a_followed_link,
+    ArtistFound, Cut, Direction, Kept, Library, Playing, Playlist, PlaylistEntry, PlaylistOrder,
+    RowOrder, SavedQuery, SortOrder, TokenHeld, Track, TrackQuery, is_a_followed_link,
 };
 
 use crate::{
@@ -80,10 +79,10 @@ use crate::{
         search::{self, SearchShows, TopEntry, TopRun},
         served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
-            Account, Category, CheckingYoutubeMusic, FILTER_PLACEHOLDER, Fitting, HeldBand,
-            LastfmAccount, LastfmSigning, Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER,
-            SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER, Service, SigningIn, SpotifyState,
-            TidalAccount, YoutubeMusicField, spotify,
+            Account, Armed, Category, CheckingYoutubeMusic, FILTER_PLACEHOLDER, Fitting, HeldBand,
+            LastfmAccount, LastfmSigning, Page, Plotted, SHARED_NAME_PLACEHOLDER,
+            SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER, Service,
+            SigningIn, SpotifyState, TidalAccount, YoutubeMusicField, spotify,
         },
         sharing,
         sheets::{self, MAGNIFIER_PANEL},
@@ -629,6 +628,7 @@ pub struct RootView {
     pub(crate) settings_written: SettingsWriter,
     pub(crate) pane: Pane,
     pub(crate) settings_category: Category,
+    pub(crate) settings_page: Option<Page>,
     pub(crate) settings_scroll: ScrollHandle,
     pub(crate) settings_rail_scroll: ScrollHandle,
     pub(crate) sidebar_scroll: ScrollHandle,
@@ -698,8 +698,7 @@ pub struct RootView {
     pub(crate) took_out: TakenBack,
     pub(crate) queue_length: QueueMeasure,
     pub(crate) queue_ordered: Option<Task<()>>,
-    pub(crate) resetting_everything: bool,
-    pub(crate) regenerating_the_code: bool,
+    pub(crate) armed: Option<Armed>,
     pub(crate) code_regenerated: bool,
     pub(crate) pairing_shown: bool,
     pub(super) remote_songs: Vec<super::remote::RemoteSong>,
@@ -715,17 +714,8 @@ pub struct RootView {
     pub(crate) driving_rails: std::collections::BTreeMap<u32, crate::views::slider::Rail>,
     pub(crate) driving_rows: usize,
     pub(crate) own_server_asked: bool,
-    pub(crate) discarding_the_curve: bool,
-    pub(crate) aging_the_history: Option<HistoryKept>,
-    pub(crate) forgetting_the_folder: Option<PathBuf>,
     pub(crate) reset_everything_landed: bool,
-    pub(crate) moving_the_files: bool,
-    pub(crate) walking_the_filing_back: bool,
-    pub(crate) walking_the_tags_back: bool,
-    pub(crate) writing_the_tags: bool,
-    pub(crate) keeping_the_tracks: bool,
     pub(crate) vault_named: Option<PathBuf>,
-    pub(crate) telling_the_earlier_plays: bool,
     pub(crate) earlier_plays_asked: bool,
     pub(crate) query_sort: SortOrder,
     pub(crate) query_reading: Direction,
@@ -1307,6 +1297,7 @@ impl RootView {
             settings_written: SettingsWriter::over(settings),
             pane,
             settings_category,
+            settings_page: None,
             settings_scroll: ScrollHandle::new(),
             settings_rail_scroll: ScrollHandle::new(),
             sidebar_scroll: ScrollHandle::new(),
@@ -1376,8 +1367,7 @@ impl RootView {
             took_out: TakenBack::default(),
             queue_length: QueueMeasure::default(),
             queue_ordered: None,
-            resetting_everything: false,
-            regenerating_the_code: false,
+            armed: None,
             code_regenerated: false,
             pairing_shown: false,
             remote_songs: Vec::new(),
@@ -1393,17 +1383,8 @@ impl RootView {
             driving_rails: std::collections::BTreeMap::new(),
             driving_rows: crate::views::settings::sync::DRIVEN_ROWS_AT_FIRST,
             own_server_asked: false,
-            discarding_the_curve: false,
-            aging_the_history: None,
-            forgetting_the_folder: None,
             reset_everything_landed: false,
-            moving_the_files: false,
-            walking_the_filing_back: false,
-            walking_the_tags_back: false,
-            writing_the_tags: false,
-            keeping_the_tracks: false,
             vault_named: None,
-            telling_the_earlier_plays: false,
             earlier_plays_asked: false,
             query_sort: SortOrder::default(),
             query_reading: SortOrder::default().reads(),
@@ -3720,10 +3701,14 @@ impl RootView {
     }
 
     pub(crate) fn show_settings(&mut self, category: Category, cx: &mut Context<Self>) {
-        if self.settings_category != category {
+        let left_a_page = self.settings_page.take().is_some();
+        let moved = self.settings_category != category;
+        if moved {
             self.settings_category = category;
-            self.settings_scroll.set_offset(Point::default());
             self.remember_current_settings_category(cx);
+        }
+        if moved || left_a_page {
+            self.settings_scroll.set_offset(Point::default());
         }
         self.disarm();
         cx.notify();
@@ -3744,6 +3729,7 @@ impl RootView {
         let mut stamp = AHasher::default();
         self.pane.hash(&mut stamp);
         self.settings_category.hash(&mut stamp);
+        self.settings_page.hash(&mut stamp);
         self.player.read(cx).queued().revision.hash(&mut stamp);
         Arc::as_ptr(&library.albums()).cast::<()>().hash(&mut stamp);
         Arc::as_ptr(&library.artists())
@@ -4643,6 +4629,13 @@ impl RootView {
         }
         if self.adding_songs_to.is_some() {
             self.finish_adding_songs(cx);
+            return;
+        }
+        if self.pane == Pane::Settings
+            && self.finding.read(cx).text().is_empty()
+            && self.leave_the_settings_page(cx)
+        {
+            window.focus(&self.focus, cx);
             return;
         }
 
@@ -5747,7 +5740,7 @@ impl RootView {
             row,
             |this, _, cx| {
                 this.set_pane(Pane::Settings, cx);
-                this.show_settings(Category::Enrichment, cx);
+                this.open_the_settings_page(Page::Enrichment, cx);
             },
             cx,
         )

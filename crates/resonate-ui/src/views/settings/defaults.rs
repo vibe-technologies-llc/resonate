@@ -95,6 +95,7 @@ pub(crate) struct Standing {
     pub(crate) resonate_key_given: bool,
     pub(crate) youtube_music_given: bool,
     pub(crate) convolving: bool,
+    pub(crate) speakers_moved: bool,
 }
 
 impl Standing {
@@ -150,6 +151,7 @@ impl Standing {
             resonate_key_given: false,
             youtube_music_given: false,
             convolving: false,
+            speakers_moved: false,
         }
     }
 }
@@ -222,7 +224,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::SyncedSongs => standing.synchronised.songs != AS_BUILT.synchronised.songs,
         Group::SyncControl => standing.synchronised.control != AS_BUILT.synchronised.control,
         Group::Contact => standing.contact_given,
-        Group::Measured => standing.measurer_given,
+        Group::Measurers => standing.measurer_given,
         Group::Recognition => standing.key_given || standing.token_given,
         Group::Submitting => standing.submitting_given,
         Group::Lastfm => standing.lastfm_given,
@@ -235,6 +237,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Folders => standing.music_folder_given || standing.file_dropped != FILE_DROPPED,
         Group::ResonateKey => standing.resonate_key_given,
         Group::RoomCorrection => standing.convolving,
+        Group::Speakers => standing.speakers_moved,
         Group::Subsonic => standing.subsonic_given,
         Group::Jellyfin => standing.jellyfin_given,
         Group::Tidal => standing.tidal_given,
@@ -262,11 +265,16 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || standing.remember_settings_category != REMEMBER_SETTINGS_CATEGORY
         }
         Group::Bands
+        | Group::AutoEq
+        | Group::OwnMeasurement
+        | Group::RoomMeasurement
         | Group::Abx
         | Group::Hidden
         | Group::Pairing
         | Group::SyncDevices
-        | Group::Updating
+        | Group::Rescanning
+        | Group::LookingUp
+        | Group::Retagging
         | Group::Vault
         | Group::Build
         | Group::Places
@@ -308,59 +316,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         Group::Equalising | Group::BoundTo => {
             vec![Command::SetEqualisation(Arc::clone(&built.equaliser))]
         }
-        Group::Bands
-        | Group::Measured
-        | Group::Lookups
-        | Group::AfterScan
-        | Group::Metered
-        | Group::FlacRenderers
-        | Group::Studies
-        | Group::Lyrics
-        | Group::Contact
-        | Group::Recognition
-        | Group::Listening
-        | Group::Submitting
-        | Group::Lastfm
-        | Group::Colour
-        | Group::Layout
-        | Group::Motion
-        | Group::WindowButtons
-        | Group::VolumeWheel
-        | Group::MouseNavigation
-        | Group::Scrollbars
-        | Group::LiveSpectrum
-        | Group::Tabs
-        | Group::WindowState
-        | Group::Folders
-        | Group::Updating
-        | Group::Organising
-        | Group::Vault
-        | Group::Inbox
-        | Group::YoutubeMusic
-        | Group::MusicExtensions
-        | Group::MinimumLength
-        | Group::ResonateKey
-        | Group::Subsonic
-        | Group::Jellyfin
-        | Group::Tidal
-        | Group::Spotify
-        | Group::RoomCorrection
-        | Group::Abx
-        | Group::Hidden
-        | Group::Resuming
-        | Group::History
-        | Group::Notifications
-        | Group::Discord
-        | Group::DiscordShows
-        | Group::Syncing
-        | Group::Pairing
-        | Group::SyncDevices
-        | Group::SyncConnection
-        | Group::SyncedSongs
-        | Group::SyncControl
-        | Group::Build
-        | Group::Places
-        | Group::Everything => Vec::new(),
+        _ => Vec::new(),
     }
 }
 
@@ -506,7 +462,7 @@ mod tests {
             }
         ));
         assert!(differs(
-            Group::Measured,
+            Group::Measurers,
             &Standing {
                 measurer_given: true,
                 ..built.clone()

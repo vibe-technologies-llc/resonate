@@ -1,4 +1,4 @@
-use gpui::{Context, Div, SharedString, prelude::*};
+use gpui::{Context, SharedString, prelude::*};
 use resonate_core::Trim;
 use resonate_engine::{
     Command, Crossfeed, DitherKind, FilterPhase, Levelling, NoiseShaping, Quality, ReplayGainMode,
@@ -10,7 +10,7 @@ use crate::{
     views::{
         kit,
         root::RootView,
-        settings::{Choice, note, switch_row},
+        settings::{Choice, Rows, switch_row},
     },
 };
 
@@ -329,11 +329,11 @@ impl Choice for Untagged {
 }
 
 impl RootView {
-    pub(super) fn resampler_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn resampler_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let settings = self.player.read(cx).output_settings();
         let (quality, phase) = (settings.quality, settings.filter_phase);
 
-        kit::section_body()
+        kit::rows()
             .child(
                 self.choices("quality", quality, cx, |this, quality: Quality, cx| {
                     this.send(Command::SetQuality(quality), cx);
@@ -349,10 +349,10 @@ impl RootView {
             ))
     }
 
-    pub(super) fn true_peak_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn true_peak_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let guarded = self.player.read(cx).output_settings().true_peak;
 
-        kit::section_body().child(self.in_the_ring(
+        kit::rows().child(self.in_the_ring(
             "true-peak",
             switch_row(
                 "Keep true peaks under full scale",
@@ -368,10 +368,10 @@ impl RootView {
         ))
     }
 
-    pub(super) fn lossy_sources_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn lossy_sources_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let restoration = self.player.read(cx).output_settings().restoration;
 
-        kit::section_body()
+        kit::rows()
             .child(self.choices(
                 "restore-lossy",
                 restoration,
@@ -381,13 +381,13 @@ impl RootView {
                     this.store(&Setting::Restoration(restoration), cx);
                 },
             ))
-            .child(note(LOSSY_ONLY))
+            .note(LOSSY_ONLY)
     }
 
-    pub(super) fn crossfeed_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn crossfeed_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let crossfeed = self.player.read(cx).output_settings().crossfeed;
 
-        kit::section_body()
+        kit::rows()
             .child(self.choices(
                 "crossfeed",
                 crossfeed,
@@ -397,27 +397,24 @@ impl RootView {
                     this.store(&Setting::Crossfeed(crossfeed), cx);
                 },
             ))
-            .child(note(CROSSFEED_STEREO_ONLY))
+            .note(CROSSFEED_STEREO_ONLY)
     }
 
-    pub(super) fn dither_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn dither_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let dither = self.player.read(cx).output_settings().dither;
 
-        kit::section_body().child(self.choices(
-            "dither",
-            dither,
-            cx,
-            |this, dither: DitherKind, cx| {
+        kit::rows().child(
+            self.choices("dither", dither, cx, |this, dither: DitherKind, cx| {
                 this.send(Command::SetDither(dither), cx);
                 this.store(&Setting::Dither(dither), cx);
-            },
-        ))
+            }),
+        )
     }
 
-    pub(super) fn noise_shaping_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn noise_shaping_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let shaping = self.player.read(cx).output_settings().noise_shaping;
 
-        kit::section_body().child(self.choices(
+        kit::rows().child(self.choices(
             "noise-shaping",
             shaping,
             cx,
@@ -428,12 +425,12 @@ impl RootView {
         ))
     }
 
-    pub(super) fn replay_gain_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn replay_gain_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let settings = self.player.read(cx).output_settings();
         let mode = settings.replay_gain;
         let levelling = settings.levelling;
 
-        kit::section_body()
+        kit::rows()
             .child(
                 self.choices("replay-gain", mode, cx, |this, mode: ReplayGainMode, cx| {
                     this.send(Command::SetReplayGain(mode), cx);

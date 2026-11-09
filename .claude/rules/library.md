@@ -105,7 +105,7 @@ rows read via `Player::media` like any unscanned row.
   `passes`, `playlist_plays` older than it (`forgotten_before`), a listen only at or behind the
   lowest `submissions` mark. `tracks.plays`/`played` are separate counters and stay. The binary ages
   in `open_library_with`; the settings pane arms a shorter span on the first press
-  (`RootView::aging_the_history`, lowered by `disarm`) and keeps it on the second; a longer span or
+  (`Armed::AgeTheHistory`, lowered by `disarm`) and keeps it on the second; a longer span or
   *Forever* is kept at once.
 - **A service's told-ness is a mark in the history.** `submissions`: per `ListeningService`, id of
   the last `listens` row told. `Library::submit_listens` (`scrobble.rs`) reads listens past the mark

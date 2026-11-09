@@ -15,7 +15,7 @@ use crate::{
         hint::Names,
         kit,
         root::RootView,
-        settings::{Choice, note, switch_row},
+        settings::{Choice, Rows, note, switch_row},
         spoken,
     },
 };
@@ -385,10 +385,10 @@ fn held_by_another(zone: &str) -> String {
 }
 
 impl RootView {
-    pub(super) fn bluetooth_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn bluetooth_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let wake = self.player.read(cx).output_settings().bluetooth;
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "bluetooth-wake",
                 switch_row(
@@ -449,10 +449,10 @@ impl RootView {
                     ),
                 ))
             })
-            .child(note(BLUETOOTH_NOTE))
+            .note(BLUETOOTH_NOTE)
     }
 
-    pub(super) fn device_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn device_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let model = self.player.read(cx);
         let sinks = model.sinks().to_vec();
         let wanted = model.output_settings().sink.clone();
@@ -460,11 +460,8 @@ impl RootView {
         let open = state.output.map(|output| output.sink);
         let source = state.current.map(|track| track.source);
 
-        let mut listed = div().flex().flex_col().gap_2().child(self.default_device(
-            wanted.is_none(),
-            routes_to(&sinks),
-            cx,
-        ));
+        let mut listed =
+            kit::rows().child(self.default_device(wanted.is_none(), routes_to(&sinks), cx));
         let held = Self::zones(cx).holding(self.switcher.selected());
         for sink in &sinks {
             let held_by = held
@@ -492,13 +489,9 @@ impl RootView {
             .renderers
             .as_ref()
             .map(|renderers| renderers.looking());
-        kit::section_body()
-            .child(listed)
+        listed
             .when(sinks.is_empty(), |body| body.child(note(NO_SINKS)))
             .when(away, |body| body.child(note(AWAY)))
-            .when(!sinks.is_empty() && !away, |body| {
-                body.child(note(DEVICE_NOTE))
-            })
             .when_some(looking, |body, looking| {
                 body.child(self.in_the_ring(
                     "renderers",
@@ -511,11 +504,12 @@ impl RootView {
                     move |this, _, cx| this.look_for_renderers(!looking, cx),
                     cx,
                 ))
-                .child(note(RENDERERS_NOTE))
+                .note(RENDERERS_NOTE)
             })
+            .when(!sinks.is_empty() && !away, |body| body.note(DEVICE_NOTE))
     }
 
-    pub(super) fn flac_renderers_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn flac_renderers_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let named = cx.global::<ResonateApp>().flac_above_96k_for.clone();
         let listed: Vec<(NodeName, String)> = self
             .player
@@ -531,7 +525,7 @@ impl RootView {
             .cloned()
             .collect();
 
-        let mut body = kit::section_body();
+        let mut body = kit::rows();
         for (name, description) in listed {
             let vouched = named.contains(&name);
             body = body.child(self.vouching_row(name, description, vouched, cx));
@@ -542,7 +536,7 @@ impl RootView {
         body.when(named.is_empty() && !self.a_renderer_is_listed(cx), |body| {
             body.child(note(NO_RENDERERS_TO_NAME))
         })
-        .child(note(FLAC_RENDERERS_NOTE))
+        .note(FLAC_RENDERERS_NOTE)
     }
 
     fn a_renderer_is_listed(&self, cx: &Context<Self>) -> bool {
@@ -747,10 +741,10 @@ impl RootView {
             }))
     }
 
-    pub(super) fn sample_rate_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn sample_rate_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let prefer = self.player.read(cx).output_settings().prefer_bit_perfect;
 
-        kit::section_body().child(self.choices(
+        kit::rows().child(self.choices(
             "sample-rate",
             SourceRate::of(prefer),
             cx,
@@ -761,10 +755,10 @@ impl RootView {
         ))
     }
 
-    pub(super) fn graph_rate_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn graph_rate_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let forced = self.player.read(cx).output_settings().force_graph_rate;
 
-        kit::section_body().child(self.choices(
+        kit::rows().child(self.choices(
             "graph-rate",
             GraphRate::of(forced),
             cx,
@@ -775,21 +769,18 @@ impl RootView {
         ))
     }
 
-    pub(super) fn buffer_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn buffer_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let held = BufferDepth(self.player.read(cx).output_settings().buffer);
 
-        kit::section_body().child(self.choices(
-            "buffer",
-            held,
-            cx,
-            |this, depth: BufferDepth, cx| {
+        kit::rows().child(
+            self.choices("buffer", held, cx, |this, depth: BufferDepth, cx| {
                 this.send(Command::SetBuffer(depth.0), cx);
                 this.store(&Setting::Buffer(depth.0), cx);
-            },
-        ))
+            }),
+        )
     }
 
-    pub(super) fn device_volume_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn device_volume_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let player = self.player.read(cx);
         let handed = player.output_settings().device_volume;
         let bound = player.state().output.map(|output| output.sink);
@@ -801,7 +792,7 @@ impl RootView {
                 .map(SinkInfo::turns_its_own_volume)
         });
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "device-volume",
                 switch_row(
@@ -817,19 +808,19 @@ impl RootView {
                 cx,
             ))
             .when_some(turns_its_own, |body, turns_its_own| {
-                body.child(div().child(note(if turns_its_own {
+                body.note(if turns_its_own {
                     "The device playing now has a volume of its own."
                 } else {
                     "The device playing now has no volume of its own, so the stream still turns \
                      it."
-                })))
+                })
             })
     }
 
-    pub(super) fn dop_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn dop_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let marked = self.player.read(cx).output_settings().dop;
 
-        kit::section_body()
+        kit::rows()
             .child(self.in_the_ring(
                 "dop",
                 switch_row(
@@ -844,8 +835,8 @@ impl RootView {
                 },
                 cx,
             ))
-            .child(div().child(note(DOP_WARNING)))
             .child(self.dsd_level_switch(cx))
+            .note(DOP_WARNING)
     }
 
     fn dsd_level_switch(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {

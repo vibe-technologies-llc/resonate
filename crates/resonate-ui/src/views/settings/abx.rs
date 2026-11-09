@@ -24,7 +24,7 @@ use crate::{
     views::{
         kit,
         root::RootView,
-        settings::{Choice, action, hugging, note, reading},
+        settings::{Choice, Rows, action, note, reading},
     },
 };
 
@@ -441,7 +441,7 @@ fn said_of_a(testing: Testing, set: &OutputSettings) -> Option<String> {
 }
 
 impl RootView {
-    pub(super) fn abx_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn abx_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let Some(test) = self.audition.as_ref() else {
             return self.setting_up_a_test(cx);
         };
@@ -455,7 +455,7 @@ impl RootView {
         let significant = test.session.score().is_significant();
         let how = test.testing().meaning();
 
-        let mut body = kit::section_body()
+        let mut body = kit::rows()
             .child(note(how))
             .child(
                 div()
@@ -493,10 +493,7 @@ impl RootView {
         } else {
             body = body
                 .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
+                    kit::action_row()
                         .child(action(
                             "abx-hear-a",
                             "Hear A",
@@ -526,10 +523,7 @@ impl RootView {
                         )),
                 )
                 .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
+                    kit::action_row()
                         .child(action(
                             "abx-x-is-a",
                             "X is A",
@@ -551,7 +545,7 @@ impl RootView {
                 );
         }
 
-        body.child(hugging(action(
+        body.child(kit::action_row().child(action(
             "abx-end",
             if finished { "Done" } else { "End the test" },
             Icon::Stop,
@@ -562,33 +556,30 @@ impl RootView {
         )))
     }
 
-    fn setting_up_a_test(&mut self, cx: &mut Context<Self>) -> Div {
+    fn setting_up_a_test(&mut self, cx: &mut Context<Self>) -> Rows {
         let testing = self.test_setup.testing;
         let set = self.player.read(cx).engine().output_settings();
         let busy = self.test_setup.measuring.is_busy();
         let what = self.test_setup.measuring.what;
 
-        let mut body = kit::section_body().child(self.choices(
-            "abx-testing",
-            testing,
-            cx,
-            |this, testing, cx| {
-                this.test_setup.testing = testing;
-                cx.notify();
-            },
-        ));
+        let mut body =
+            kit::rows().child(
+                self.choices("abx-testing", testing, cx, |this, testing, cx| {
+                    this.test_setup.testing = testing;
+                    cx.notify();
+                }),
+            );
 
         if let Some(held) = said_of_a(testing, &set) {
             body = body.child(reading("A", held));
         }
-        body = body.child(self.against(testing, &set, cx));
+        if testing != Testing::Equaliser {
+            body = body.child(self.against(testing, &set, cx));
+        }
 
         if busy {
             return body.child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
+                kit::action_row()
                     .child(action(
                         "abx-measuring",
                         what,
@@ -626,10 +617,7 @@ impl RootView {
             )
         };
         body.child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap_2()
+            kit::action_row()
                 .child(starts(SHORT_TEST))
                 .child(starts(TRIALS_BY_DEFAULT))
                 .child(starts(LONG_TEST)),
@@ -1064,6 +1052,8 @@ mod tests {
         driven.click("tab-settings");
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
+        driven.click("settings-page-listening-test");
+        driven.scroll("settings", 6000.0);
 
         driven.click("abx-testing-1");
         driven.scroll("settings", 6000.0);
@@ -1095,6 +1085,8 @@ mod tests {
         let mut driven = Driven::open(cx, library);
         driven.click("tab-settings");
         driven.click("category-Equaliser");
+        driven.scroll("settings", 6000.0);
+        driven.click("settings-page-listening-test");
         driven.scroll("settings", 6000.0);
         driven.click("abx-testing-1");
 

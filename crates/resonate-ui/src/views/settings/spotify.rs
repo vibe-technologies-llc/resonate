@@ -5,7 +5,7 @@ use std::sync::{
 
 use gpui::{
     AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Stateful,
-    Styled as _, Task, Window, div,
+    Task, Window,
 };
 use resonate_library::{Error, LookupOp, ProfileLink, SpotifySignInFailure, Upkeep};
 
@@ -18,7 +18,7 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
-        settings::{action, note},
+        settings::{Rows, action},
     },
 };
 
@@ -322,16 +322,16 @@ impl RootView {
         action(id, label, icon, held_back, press, self, cx)
     }
 
-    pub(super) fn spotify_group(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn spotify_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let app = cx.global::<ResonateApp>();
         let reachable = app.spotify.is_some() && app.online.enabled;
         let client_given = !app.online.spotify_client_id.trim().is_empty();
         let signed_in = !app.online.spotify_refresh_token.trim().is_empty();
         let reading = self.spotify_state.reading;
 
-        let body = kit::section_body().child(kit::field(
+        let body = kit::rows().child(kit::field(
             "Client ID",
-            self.key_field(
+            self.text_field(
                 "spotify-client-id",
                 &self.spotify_client,
                 |this, window, cx| this.leave_the_account(window, cx),
@@ -341,10 +341,7 @@ impl RootView {
         if signed_in && client_given {
             return body
                 .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
+                    kit::action_row()
                         .child(self.spotify_button(
                             "spotify-follow",
                             if reading {
@@ -374,12 +371,12 @@ impl RootView {
                             cx,
                         )),
                 )
-                .child(note(SIGNED_IN_NOTE))
-                .child(note(ACCOUNT_NOTE));
+                .note(SIGNED_IN_NOTE)
+                .note(ACCOUNT_NOTE);
         }
 
         let signing: Div = match self.spotify_state.shown.clone() {
-            SpotifySigning::Idle => div().child(self.spotify_button(
+            SpotifySigning::Idle => kit::action_row().child(self.spotify_button(
                 "spotify-sign-in",
                 "Sign in to Spotify",
                 Icon::Link,
@@ -387,7 +384,7 @@ impl RootView {
                 |this, _, cx| this.sign_in_to_spotify(cx),
                 cx,
             )),
-            SpotifySigning::Asking => div().child(self.spotify_button(
+            SpotifySigning::Asking => kit::action_row().child(self.spotify_button(
                 "spotify-sign-in",
                 "Opening the sign-in…",
                 Icon::Link,
@@ -395,10 +392,7 @@ impl RootView {
                 |_, _, _| {},
                 cx,
             )),
-            SpotifySigning::Waiting(address) => div()
-                .flex()
-                .flex_wrap()
-                .gap_2()
+            SpotifySigning::Waiting(address) => kit::action_row()
                 .child(self.spotify_button(
                     "spotify-open-page",
                     "Open the page again",
@@ -416,6 +410,6 @@ impl RootView {
                     cx,
                 )),
         };
-        body.child(signing).child(note(ACCOUNT_NOTE))
+        body.child(signing).note(ACCOUNT_NOTE)
     }
 }
