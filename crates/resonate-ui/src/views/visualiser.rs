@@ -754,8 +754,7 @@ impl RootView {
                 .flex_col()
                 .flex_1()
                 .min_h(px(0.0))
-                .px_6()
-                .py_5()
+                .p_6()
                 .child(
                     div()
                         .flex_1()

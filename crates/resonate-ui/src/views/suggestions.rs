@@ -74,8 +74,7 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_6()
-            .px(px(SHELF_PADDING))
-            .py_5()
+            .p(px(SHELF_PADDING))
             .overflow_y_scroll()
             .track_scroll(&self.suggestions_scroll);
         let shelved = in_shelf_order(&offered);

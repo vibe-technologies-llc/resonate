@@ -471,6 +471,9 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   under, nor *Lyrics*, *Visualiser*, *Analysis* or *Inspector* over the song's title), `kit::title`,
   `kit::subtitle` (counts, total length), `kit::actions` on the right; under it the *Reads* chips
   (`listing::reads`) and a naming row where a pane has one.
+  - **A body under the heading pads one measure on every side**: `p_6`, the heading's own `px_6`,
+    so statistics, the visualiser, analysis, the inspector, the party page and the suggestion shelves
+    leave as much above and below as beside them.
   - **The name keeps its room; actions drop under it.** Each name block holds `theme::heading_name()`
     at least and `kit::heading_row` wraps (`kit::actions`: `flex_wrap`, `max_w_full`, pushed right),
     so a long name is not ground to a letter and no action is pushed off.
@@ -549,8 +552,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `fields` takes an `Option` per row and draws only what is there, one faint line where a whole card
   is empty. The inspector stacks the signal path, Source, Output, Bitrate (and its graph),
   ReplayGain, Heard, Container layout and Tags in one column at most `theme::inspector_column()`
-  (760) wide: dealt into two columns, cards of one row stood beside cards of eight and left ragged
-  gaps. `beside` (two `flex_col` columns wrapping to one) is the analysis pane's, for its Levels and
+  (760) wide, centred in the pane (`mx_auto`, so a wide window leaves no gap on one side alone):
+  dealt into two columns, cards of one row stood beside cards of eight and left ragged gaps. `beside` (two `flex_col` columns wrapping to one) is the analysis pane's, for its Levels and
   Source.
 - **The inspector is the one pane reading the catalog, not the engine; the *Heard* card is why.** Every
   other card is the `StreamDigest` or `OutputStatus`; play count and last play come off the `Track`

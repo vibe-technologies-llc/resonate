@@ -426,8 +426,7 @@ impl RootView {
             .flex_1()
             .gap_4()
             .min_w(px(0.0))
-            .px_6()
-            .py_5()
+            .p_6()
             .when_some(reach_said(seen.reach), |page, reach| {
                 let shade = if reach_is_the_end(seen.reach) {
                     theme::failure()

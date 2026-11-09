@@ -108,6 +108,7 @@ impl RootView {
             .flex_col()
             .w_full()
             .max_w(px(theme::inspector_column()))
+            .mx_auto()
             .gap_4()
             .child(div().pb_1().child(heading))
             .child(signal_path(&digest, output, sink))
@@ -140,8 +141,7 @@ impl RootView {
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
-            .px_6()
-            .py_5()
+            .p_6()
             .overflow_y_scroll()
             .track_scroll(&self.inspector_scroll)
             .child(column.child(tags(&digest.info.tags, carried)));

@@ -530,8 +530,7 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_4()
-            .px_6()
-            .py_5()
+            .p_6()
             .overflow_y_scroll()
             .track_scroll(&self.statistics_scroll)
             .child(side_by_side(
