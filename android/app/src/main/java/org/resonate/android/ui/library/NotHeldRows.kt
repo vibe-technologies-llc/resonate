@@ -18,32 +18,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.resonate.android.DownloadState
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.clock
 import org.resonate.android.ui.components.rememberTitleMaxLines
+import org.resonate.android.words
 
-const val NOT_IN_YOUR_LIBRARY = "Not in your library"
-
-fun standingWords(standing: DownloadState?): String? =
+fun standingWords(words: Words, standing: DownloadState?): String? =
     when (standing) {
-        DownloadState.WAITING -> "Waiting to download"
-        DownloadState.FINDING -> "Finding the song…"
-        DownloadState.DOWNLOADING -> "Downloading…"
-        DownloadState.VALIDATING -> "Checking the download…"
+        DownloadState.WAITING -> words.string(R.string.library_download_waiting)
+        DownloadState.FINDING -> words.string(R.string.library_download_finding)
+        DownloadState.DOWNLOADING -> words.string(R.string.library_download_downloading)
+        DownloadState.VALIDATING -> words.string(R.string.library_download_checking)
         DownloadState.DONE,
         DownloadState.FAILED,
         DownloadState.CANCELLED,
         null -> null
     }
 
-fun notHeldLine(song: SearchSong, standing: DownloadState?, withAlbum: Boolean): String =
-    standingWords(standing)
+fun notHeldLine(words: Words, song: SearchSong, standing: DownloadState?, withAlbum: Boolean): String =
+    standingWords(words, standing)
         ?: listOfNotNull(
                 song.album.takeIf { withAlbum && it.isNotBlank() },
                 song.durationMs?.let { clock(it) },
@@ -62,13 +64,14 @@ fun NotHeldSongRow(
 ) {
     val scheme = MaterialTheme.colorScheme
     val lines = rememberTitleMaxLines()
-    val line = notHeldLine(song, standing, withAlbum)
+    val line = notHeldLine(words(), song, standing, withAlbum)
+    val notInYourLibrary = stringResource(R.string.library_not_in_your_library)
     ListItem(
         onClick = { if (standing == null) onDownload() },
         modifier =
             modifier
                 .testTag("not-held-song")
-                .semantics(mergeDescendants = true) { stateDescription = NOT_IN_YOUR_LIBRARY },
+                .semantics(mergeDescendants = true) { stateDescription = notInYourLibrary },
         colors =
             ListItemDefaults.colors(containerColor = Color.Transparent, contentColor = scheme.onSurfaceVariant),
         leadingContent =
@@ -93,17 +96,27 @@ fun NotHeldSongRow(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
                 if (standing == null) {
                     IconButton(onClick = onDownload) {
-                        Icon(Icons.Rounded.Download, contentDescription = "Download ${song.title}")
+                        Icon(
+                            Icons.Rounded.Download,
+                            contentDescription = stringResource(R.string.library_download_song, song.title),
+                        )
                     }
                 }
                 if (onMore != null) {
                     IconButton(onClick = onMore) {
-                        Icon(Icons.Rounded.MoreVert, contentDescription = "More options for ${song.title}")
+                        Icon(
+                            Icons.Rounded.MoreVert,
+                            contentDescription = stringResource(R.string.library_more_options_for, song.title),
+                        )
                     }
                 }
             }
         },
     ) {
-        Text(song.title.ifBlank { "Unknown song" }, maxLines = lines, overflow = TextOverflow.Ellipsis)
+        Text(
+            song.title.ifBlank { stringResource(R.string.unknown_song) },
+            maxLines = lines,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

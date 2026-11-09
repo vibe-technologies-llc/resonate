@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -54,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.ListenFollowing
 import org.resonate.android.ListenPlan
 import org.resonate.android.ListenStage
+import org.resonate.android.R
 import org.resonate.android.nativecore.HeardSong
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.navigation.LocalNavigator
@@ -97,13 +99,18 @@ fun ListenSheet(dismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Keep listening", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            when (following) {
-                                ListenFollowing.OFF -> "Name the next song on its own"
-                                ListenFollowing.WAITING -> "Listening again in a moment"
-                                ListenFollowing.LISTENING -> "Listening now"
-                            },
+                            stringResource(R.string.listen_keep),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            stringResource(
+                                when (following) {
+                                    ListenFollowing.OFF -> R.string.listen_keep_off
+                                    ListenFollowing.WAITING -> R.string.listen_keep_waiting
+                                    ListenFollowing.LISTENING -> R.string.listen_keep_listening
+                                }
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -114,7 +121,7 @@ fun ListenSheet(dismiss: () -> Unit) {
             if (heard.size > 1 || (heard.isNotEmpty() && stage !is ListenStage.Found)) {
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
                 Text(
-                    "Heard earlier",
+                    stringResource(R.string.listen_heard_earlier),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -137,39 +144,71 @@ private fun Stage(stage: ListenStage, dismiss: () -> Unit) {
     val resonate = LocalResonate.current
     when (stage) {
         ListenStage.Idle ->
-            Message(Icons.Rounded.Hearing, "Ready to listen", null) {
-                Button(onClick = resonate::listen) { Text("Listen") }
+            Message(Icons.Rounded.Hearing, stringResource(R.string.listen_ready), null) {
+                Button(onClick = resonate::listen) { Text(stringResource(R.string.listen_start)) }
             }
         is ListenStage.Recording ->
             Working(
-                "Listening…",
-                if (stage.nth > 1) "Try ${stage.nth} of ${ListenPlan.TRIES_ON_A_MISS}" else "Hold the phone near the music",
+                stringResource(R.string.listen_listening),
+                if (stage.nth > 1) {
+                    stringResource(R.string.listen_try, stage.nth, ListenPlan.TRIES_ON_A_MISS)
+                } else stringResource(R.string.listen_hold_near),
             )
-        ListenStage.Asking -> Working("Asking what it is…", "Shazam first, then AudD where it has a token")
+        ListenStage.Asking ->
+            Working(
+                stringResource(R.string.listen_asking),
+                stringResource(R.string.listen_asking_detail),
+            )
         is ListenStage.Found -> Found(stage.song, dismiss)
         ListenStage.Unknown ->
-            Message(Icons.Rounded.MusicNote, "Not recognised", "Nothing known matches what was heard.") {
-                Button(onClick = resonate::listen) { Text("Listen again") }
+            Message(
+                Icons.Rounded.MusicNote,
+                stringResource(R.string.listen_unknown),
+                stringResource(R.string.listen_unknown_detail),
+            ) {
+                Button(onClick = resonate::listen) { Text(stringResource(R.string.listen_again)) }
             }
         ListenStage.Silent ->
-            Message(Icons.Rounded.MicOff, "Nothing heard", "Move closer to the sound, or turn it up.") {
-                Button(onClick = resonate::listen) { Text("Listen again") }
+            Message(
+                Icons.Rounded.MicOff,
+                stringResource(R.string.listen_silent),
+                stringResource(R.string.listen_silent_detail),
+            ) {
+                Button(onClick = resonate::listen) { Text(stringResource(R.string.listen_again)) }
             }
         is ListenStage.Unreached ->
-            Message(Icons.Rounded.CloudOff, "${stage.service} could not be reached", "Check the connection and try again.") {
-                Button(onClick = resonate::listen) { Text("Listen again") }
+            Message(
+                Icons.Rounded.CloudOff,
+                stringResource(R.string.listen_unreached, stage.service),
+                stringResource(R.string.listen_unreached_detail),
+            ) {
+                Button(onClick = resonate::listen) { Text(stringResource(R.string.listen_again)) }
             }
         ListenStage.Offline ->
-            Message(Icons.Rounded.CloudOff, "Online features are off", "Naming a song asks a recognition service.") {
-                Button(onClick = { resonate.features.setOnline(true); resonate.listen() }) { Text("Turn on and listen") }
+            Message(
+                Icons.Rounded.CloudOff,
+                stringResource(R.string.listen_offline),
+                stringResource(R.string.listen_offline_detail),
+            ) {
+                Button(onClick = { resonate.features.setOnline(true); resonate.listen() }) {
+                    Text(stringResource(R.string.listen_turn_on))
+                }
             }
         ListenStage.Denied ->
-            Message(Icons.Rounded.MicOff, "Resonate needs the microphone", "Allow it in Settings to name songs.") {
-                Button(onClick = resonate.host::openAppSettings) { Text("Open Settings") }
+            Message(
+                Icons.Rounded.MicOff,
+                stringResource(R.string.listen_denied),
+                stringResource(R.string.listen_denied_detail),
+            ) {
+                Button(onClick = resonate.host::openAppSettings) {
+                    Text(stringResource(R.string.listen_open_settings))
+                }
             }
         is ListenStage.Failed ->
-            Message(Icons.Rounded.MicOff, "Could not listen", stage.text) {
-                Button(onClick = resonate::listen) { Text("Try again") }
+            Message(Icons.Rounded.MicOff, stringResource(R.string.listen_failed), stage.text) {
+                Button(onClick = resonate::listen) {
+                    Text(stringResource(R.string.listen_try_again))
+                }
             }
     }
 }
@@ -235,7 +274,7 @@ private fun Found(song: HeardSong, dismiss: () -> Unit) {
         Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Text(
-        "Named by ${song.by}",
+        stringResource(R.string.listen_named_by, song.by),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -249,11 +288,15 @@ private fun Found(song: HeardSong, dismiss: () -> Unit) {
             },
             modifier = Modifier.testTag("find-heard"),
         ) {
-            Text("Find it")
+            Text(stringResource(R.string.listen_find))
         }
         if (song.link.startsWith("http")) {
-            OutlinedButton(onClick = { resonate.host.open(android.net.Uri.parse(song.link)) }) { Text("Open") }
+            OutlinedButton(onClick = { resonate.host.open(android.net.Uri.parse(song.link)) }) {
+                Text(stringResource(R.string.listen_open))
+            }
         }
-        OutlinedButton(onClick = resonate::listen) { Text("Again") }
+        OutlinedButton(onClick = resonate::listen) {
+            Text(stringResource(R.string.listen_short_again))
+        }
     }
 }

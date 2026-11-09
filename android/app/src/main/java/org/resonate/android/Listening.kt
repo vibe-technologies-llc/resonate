@@ -165,7 +165,9 @@ class Listening(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                return Outcome.Failed(failure.message ?: "The microphone could not be used")
+                return Outcome.Failed(
+                    failure.message ?: library.words.string(R.string.listen_microphone_failed)
+                )
             }
         asking()
         return try {
@@ -177,7 +179,9 @@ class Listening(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            Outcome.Failed(failure.message ?: "The song could not be asked about")
+            Outcome.Failed(
+                failure.message ?: library.words.string(R.string.listen_asking_failed)
+            )
         }
     }
 }

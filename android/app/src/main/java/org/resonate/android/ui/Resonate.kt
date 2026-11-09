@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.LibraryFeatures
 import org.resonate.android.LibraryRepository
+import org.resonate.android.R
 import org.resonate.android.mediaItem
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.Track
@@ -59,7 +60,7 @@ class Playback(
     private val controller: () -> MediaController?,
 ) {
     private fun remote(): MediaController? =
-        controller().also { if (it == null) library.notice("Playback is still connecting") }
+        controller().also { if (it == null) library.notice(R.string.notice_playback_connecting) }
 
     fun playFromSearch(found: List<Track>, index: Int) {
         val chosen = found.getOrNull(index) ?: return
@@ -167,7 +168,7 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
                 library.report(failure)
             } catch (failure: LinkageError) {
                 Log.e("Resonate", "A native call failed", failure)
-                library.notice("The action could not be completed")
+                library.notice(R.string.notice_action_failed)
             }
         }
 
@@ -180,7 +181,7 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
             Result.failure(failure)
         } catch (failure: LinkageError) {
             Log.e("Resonate", "A native call failed", failure)
-            Result.failure(IllegalStateException("The action could not be completed", failure))
+            Result.failure(IllegalStateException(library.words.string(R.string.notice_action_failed), failure))
         }
 }
 

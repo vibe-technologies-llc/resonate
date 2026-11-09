@@ -1,6 +1,8 @@
 package org.resonate.android.ui.search
 
 import java.util.Locale
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.LibrarySearch
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.SearchColumn
@@ -77,10 +79,10 @@ data class Lit(private val ranges: Map<Pair<SearchColumn, String>, List<IntRange
     }
 }
 
-fun asked(found: LibrarySearch): Set<Pair<SearchColumn, String>> =
+fun asked(words: Words, found: LibrarySearch): Set<Pair<SearchColumn, String>> =
     buildSet {
             found.tracks.forEach { track ->
-                add(SearchColumn.TITLE to track.shownTitle)
+                add(SearchColumn.TITLE to track.shownTitle(words))
                 add(SearchColumn.ARTIST to track.artist)
                 add(SearchColumn.ALBUM to track.album)
             }
@@ -93,13 +95,14 @@ fun asked(found: LibrarySearch): Set<Pair<SearchColumn, String>> =
         .filterTo(mutableSetOf()) { it.second.isNotBlank() }
 
 fun lit(
+    words: Words,
     query: String,
     found: LibrarySearch,
     highlights: (String, String, SearchColumn) -> List<TextRange>,
 ): Lit {
     if (query.isBlank()) return Lit.none
     return Lit(
-        asked(found)
+        asked(words, found)
             .associateWith { (column, text) -> litRanges(text, highlights(query, text, column)) }
             .filterValues { it.isNotEmpty() }
     )
@@ -134,18 +137,19 @@ fun scopes(found: LibrarySearch): List<LibraryScope> = buildList {
     if (found.artists.isNotEmpty()) add(LibraryScope.ARTISTS)
 }
 
-fun scopeLabel(scope: LibraryScope, found: LibrarySearch): String =
+fun scopeLabel(words: Words, scope: LibraryScope, found: LibrarySearch): String =
     when (scope) {
-        LibraryScope.TOP -> "Top results"
-        LibraryScope.SONGS -> "Songs · ${songsCounted(found)}"
-        LibraryScope.ALBUMS -> "Albums · ${found.albums.size}"
-        LibraryScope.ARTISTS -> "Artists · ${found.artists.size}"
+        LibraryScope.TOP -> words.string(R.string.search_scope_top)
+        LibraryScope.SONGS -> words.string(R.string.search_scope_songs, songsCounted(words, found))
+        LibraryScope.ALBUMS -> words.string(R.string.search_scope_albums, found.albums.size)
+        LibraryScope.ARTISTS -> words.string(R.string.search_scope_artists, found.artists.size)
     }
 
-fun songsCounted(found: LibrarySearch): String {
+fun songsCounted(words: Words, found: LibrarySearch): String {
     val shown = found.tracks.size
     val total = found.trackCount.toLong()
-    return if (total > shown) "$shown of $total" else "$total"
+    return if (total > shown) words.string(R.string.search_songs_of_total, shown, total)
+    else "$total"
 }
 
 fun matchedNothing(found: LibrarySearch): Boolean =

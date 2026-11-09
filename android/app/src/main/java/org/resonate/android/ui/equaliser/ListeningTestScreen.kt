@@ -24,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -39,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.nativecore.ListeningTest
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.TestArm
@@ -58,6 +61,7 @@ import org.resonate.android.ui.settings.SettingsList
 import org.resonate.android.ui.settings.phaseChoices
 import org.resonate.android.ui.settings.qualityChoices
 import org.resonate.android.ui.settings.restorationChoices
+import org.resonate.android.words
 
 class ListeningTestViewModel(private val resonate: Resonate) : ViewModel() {
     private val library = resonate.library
@@ -145,20 +149,21 @@ fun ListeningTestScreen() {
     val model = resonateViewModel { ListeningTestViewModel(it) }
     val view by model.listening.collectAsStateWithLifecycle()
     val run = view.run
-    Page("Listening test") { padding ->
+    val words = words()
+    Page(stringResource(R.string.equaliser_listening_test)) { padding ->
         SettingsList(padding, Modifier.testTag("listening-list")) {
             if (run == null) {
                 item(key = "choose") {
-                    SectionHeader("What is tested")
+                    SectionHeader(stringResource(R.string.equaliser_test_what))
                     TestingChoices(view, model)
-                    Note(view.testing.how)
+                    Note(howWords(words, view.testing))
                 }
                 val against = view.against?.takeIf { view.testing != Testing.Equaliser }
                 if (against != null) {
                     item(key = "against") { Against(against, model) }
                 }
                 item(key = "begin") {
-                    SectionHeader("Trials")
+                    SectionHeader(stringResource(R.string.equaliser_test_trials))
                     ButtonRow(start = true) {
                         if (view.lengths.isEmpty()) {
                             Spacer(Modifier.height(ButtonDefaults.MinHeight))
@@ -177,8 +182,13 @@ fun ListeningTestScreen() {
                                 )
                                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                                 Text(
-                                    if (view.beginning) beginningWords(view.testing)
-                                    else "Begin $trials trials"
+                                    if (view.beginning) beginningWords(words, view.testing)
+                                    else
+                                        pluralStringResource(
+                                            R.plurals.equaliser_test_begin,
+                                            trials.toInt(),
+                                            trials.toInt(),
+                                        )
                                 )
                             }
                         }
@@ -194,15 +204,16 @@ fun ListeningTestScreen() {
 @Composable
 private fun Running(run: ListeningRun, model: ListeningTestViewModel) {
     val standing = run.standing
-    SectionHeader(run.testing.label)
+    val words = words()
+    SectionHeader(stringResource(run.testing.label))
     Column(
         Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp)
             .semantics { liveRegion = LiveRegionMode.Polite }
             .testTag("listening-standing")
     ) {
-        Text(standingWords(standing), style = MaterialTheme.typography.titleMedium)
+        Text(standingWords(words, standing), style = MaterialTheme.typography.titleMedium)
         Text(
-            heardWords(standing),
+            heardWords(words, standing),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -213,7 +224,7 @@ private fun Running(run: ListeningRun, model: ListeningTestViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        lastWords(standing)?.let {
+        lastWords(words, standing)?.let {
             Text(
                 it,
                 style = MaterialTheme.typography.bodyMedium,
@@ -221,7 +232,7 @@ private fun Running(run: ListeningRun, model: ListeningTestViewModel) {
             )
         }
         if (standing.finished) {
-            Text(conclusionWords(standing), style = MaterialTheme.typography.bodyLarge)
+            Text(conclusionWords(words, standing), style = MaterialTheme.typography.bodyLarge)
         }
     }
     if (!standing.finished) {
@@ -231,8 +242,8 @@ private fun Running(run: ListeningRun, model: ListeningTestViewModel) {
             HearButton("X", TestHear.X, model)
         }
         ButtonRow(start = true) {
-            SayButton("X is A", TestArm.A, model)
-            SayButton("X is B", TestArm.B, model)
+            SayButton(stringResource(R.string.equaliser_test_x_is_a), TestArm.A, model)
+            SayButton(stringResource(R.string.equaliser_test_x_is_b), TestArm.B, model)
         }
     }
     ButtonRow(start = true) {
@@ -243,10 +254,15 @@ private fun Running(run: ListeningRun, model: ListeningTestViewModel) {
         ) {
             Icon(Icons.Rounded.Stop, null, Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text(if (standing.finished) "Done" else "End the test")
+            Text(
+                stringResource(
+                    if (standing.finished) R.string.equaliser_test_done
+                    else R.string.equaliser_test_end
+                )
+            )
         }
     }
-    Note(run.testing.how)
+    Note(howWords(words, run.testing))
 }
 
 @Composable
@@ -261,7 +277,7 @@ private fun TestingChoices(view: ListeningTestView, model: ListeningTestViewMode
                 selected = view.testing == testing,
                 onClick = { model.chooseTesting(testing) },
                 enabled = !view.beginning,
-                label = { Text(testing.label) },
+                label = { Text(stringResource(testing.label)) },
                 modifier = Modifier.testTag("listening-testing-${testing.name}"),
             )
         }
@@ -270,12 +286,14 @@ private fun TestingChoices(view: ListeningTestView, model: ListeningTestViewMode
 
 @Composable
 private fun Against(setting: TestedSetting, model: ListeningTestViewModel) {
-    SectionHeader("Against")
-    Note(playedAsWords(setting), Modifier.testTag("listening-a"))
+    val words = words()
+    val bIs = stringResource(R.string.equaliser_test_b_is)
+    SectionHeader(stringResource(R.string.equaliser_test_against))
+    Note(playedAsWords(words, setting), Modifier.testTag("listening-a"))
     when (setting) {
         is TestedSetting.Restoration ->
             AgainstRow(
-                "B is",
+                bIs,
                 restorationChoices.filter { it.value != setting.a },
                 setting.b,
                 "restoration",
@@ -283,17 +301,27 @@ private fun Against(setting: TestedSetting, model: ListeningTestViewModel) {
                 model.against(setting.copy(b = it))
             }
         is TestedSetting.Resampling -> {
-            AgainstRow("B's quality", qualityChoices, setting.bQuality, "quality") {
+            AgainstRow(
+                stringResource(R.string.equaliser_test_b_quality),
+                qualityChoices,
+                setting.bQuality,
+                "quality",
+            ) {
                 model.against(setting.copy(bQuality = it))
             }
-            AgainstRow("B's phase", phaseChoices, setting.bPhase, "phase") {
+            AgainstRow(
+                stringResource(R.string.equaliser_test_b_phase),
+                phaseChoices,
+                setting.bPhase,
+                "phase",
+            ) {
                 model.against(setting.copy(bPhase = it))
             }
         }
         is TestedSetting.Dither ->
             AgainstRow(
-                "B is",
-                ditherChoices.filter { it.value != setting.a },
+                bIs,
+                ditherChoices(words).filter { it.value != setting.a },
                 setting.b,
                 "dither",
             ) {
@@ -341,7 +369,7 @@ private fun HearButton(label: String, hear: TestHear, model: ListeningTestViewMo
     ) {
         Icon(Icons.Rounded.PlayArrow, null, Modifier.size(ButtonDefaults.IconSize))
         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-        Text("Hear $label")
+        Text(stringResource(R.string.equaliser_test_hear, label))
     }
 }
 

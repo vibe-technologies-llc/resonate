@@ -1,19 +1,20 @@
 package org.resonate.android.ui.library
 
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.toShape
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -22,18 +23,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.R
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Mix
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.SuggestedSearch
-import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.SongSelectionBar
-import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.TrackRow
+import org.resonate.android.ui.components.rememberSelection
+import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 data class MixPage(val tracks: List<Track>, val covers: List<ULong>)
 
@@ -103,13 +106,13 @@ fun FavouritesScreen() {
     val loaded by model.tracks.collectAsStateWithLifecycle()
     val playing by model.playing.collectAsStateWithLifecycle()
     SongCollection(
-        title = "Favourites",
-        overline = "Playlist",
+        title = stringResource(R.string.library_favourites),
+        overline = stringResource(R.string.library_overline_playlist),
         loaded = loaded,
         onRetry = {},
         playing = playing,
         tag = "favourites",
-        empty = "Tap the heart on any song to keep it here.",
+        empty = stringResource(R.string.library_favourites_empty),
     ) { side ->
         ShapeCover(side, MaterialShapes.Heart.toShape())
     }
@@ -122,14 +125,14 @@ fun MixScreen(mix: Mix) {
     val playing by model.playing.collectAsStateWithLifecycle()
     val covers = loaded.valueOrNull()?.covers.orEmpty()
     SongCollection(
-        title = mix.title,
-        overline = "Made for you",
-        detail = mix.subtitle,
+        title = stringResource(mix.title),
+        overline = stringResource(R.string.library_made_for_you),
+        detail = stringResource(mix.subtitle),
         loaded = loaded.map { it.tracks },
         onRetry = model.retry::again,
         playing = playing,
         tag = "mix",
-        empty = "Nothing fits this mix yet. Listen a little and come back.",
+        empty = stringResource(R.string.library_mix_empty),
     ) { side ->
         PlaylistCover(covers, side, shape = MaterialTheme.shapes.extraLarge)
     }
@@ -147,13 +150,13 @@ fun SuggestedScreen(suggested: Screen.Suggested) {
     val covers = loaded.valueOrNull()?.covers.orEmpty()
     SongCollection(
         title = suggested.name,
-        overline = "Made for you",
+        overline = stringResource(R.string.library_made_for_you),
         detail = suggested.detail,
         loaded = loaded.map { it.tracks },
         onRetry = model.retry::again,
         playing = playing,
         tag = "suggested",
-        empty = "Nothing fits this list right now. Listen a little and come back.",
+        empty = stringResource(R.string.library_suggested_empty),
         keep = { resonate.features.keepSearchAsPlaylist(suggested.name, suggested.search.native()) },
     ) { side ->
         PlaylistCover(covers, side, shape = MaterialTheme.shapes.extraLarge)
@@ -205,23 +208,38 @@ private fun SongCollection(
             OverflowMenu(
                 listOf(
                     listOf(
-                        MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) { resonate.playNext(tracks) },
-                        MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { resonate.addToQueue(tracks) },
-                        MenuEntry.Action("Add to playlist", Icons.AutoMirrored.Rounded.PlaylistAdd) { sheets.addToPlaylist(tracks) },
+                        MenuEntry.Action(
+                            stringResource(R.string.library_play_next),
+                            Icons.AutoMirrored.Rounded.PlaylistPlay,
+                        ) {
+                            resonate.playNext(tracks)
+                        },
+                        MenuEntry.Action(
+                            stringResource(R.string.library_add_to_queue),
+                            Icons.AutoMirrored.Rounded.QueueMusic,
+                        ) {
+                            resonate.addToQueue(tracks)
+                        },
+                        MenuEntry.Action(
+                            stringResource(R.string.library_add_to_playlist),
+                            Icons.AutoMirrored.Rounded.PlaylistAdd,
+                        ) {
+                            sheets.addToPlaylist(tracks)
+                        },
                     )
                 ) +
                     listOfNotNull(
                         keep?.let { keep ->
                             listOf(
                                 MenuEntry.Action(
-                                    KEEP_AS_PLAYLIST,
+                                    stringResource(R.string.library_keep_as_playlist),
                                     Icons.Rounded.AutoAwesome,
                                     run = keep,
                                 )
                             )
                         }
                     ),
-                description = "$title options",
+                description = stringResource(R.string.library_options_for, title),
             )
         },
     ) { shown ->
@@ -229,7 +247,7 @@ private fun SongCollection(
             CollectionHeader(
                 title = title,
                 overline = overline,
-                summary = collectionSummary(tracks = shown),
+                summary = collectionSummary(words(), tracks = shown),
                 extra =
                     detail?.let { text ->
                         { align ->
@@ -262,5 +280,3 @@ private fun SongCollection(
         }
     }
 }
-
-private const val KEEP_AS_PLAYLIST = "Keep as a playlist that fills itself"

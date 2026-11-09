@@ -1,9 +1,12 @@
 package org.resonate.android.ui.search
 
-enum class OnlineKind(val label: String) {
-    SONGS("Songs"),
-    ALBUMS("Albums"),
-    ARTISTS("Artists"),
+import androidx.annotation.StringRes
+import org.resonate.android.R
+
+enum class OnlineKind(@StringRes val label: Int) {
+    SONGS(R.string.search_online_songs),
+    ALBUMS(R.string.search_online_albums),
+    ARTISTS(R.string.search_online_artists),
 }
 
 sealed interface OnlineView {

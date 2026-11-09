@@ -15,8 +15,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.SearchOff
@@ -25,8 +25,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,9 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.R
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.nativecore.defaultTrackFilter
 import org.resonate.android.ui.LocalResonate
@@ -48,8 +51,8 @@ import org.resonate.android.ui.components.PlayShuffleButtons
 import org.resonate.android.ui.components.Selection
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TrackRow
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.length
+import org.resonate.android.words
 
 @Composable
 fun SongsTab(model: LibraryViewModel, padding: PaddingValues, selection: Selection<ULong>) {
@@ -61,8 +64,11 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues, selection: Selecti
     val filter = chosen ?: defaultTrackFilter()
     var filtering by rememberSaveable { mutableStateOf(false) }
     val list = rememberLazyListState()
+    val words = words()
     val totalLength =
-        remember(songs) { songs.takeIf { it.isNotEmpty() }?.let { rows -> length(rows.sumOf { it.durationMs }) } }
+        remember(songs, words) {
+            songs.takeIf { it.isNotEmpty() }?.let { rows -> length(words, rows.sumOf { it.durationMs }) }
+        }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = list,
@@ -80,7 +86,7 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues, selection: Selecti
             }
             item("chips") {
                 FilterChips(
-                    title = counted(songs.size, "song"),
+                    title = pluralStringResource(R.plurals.count_songs, songs.size, songs.size),
                     detail = totalLength,
                     filter = filter,
                     onOrder = { order -> model.change { it.copy(order = order) } },
@@ -94,10 +100,10 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues, selection: Selecti
                 item("none") {
                     EmptyState(
                         Icons.Rounded.SearchOff,
-                        "No songs match",
+                        stringResource(R.string.library_no_songs_match),
                         modifier = Modifier.padding(top = 24.dp),
-                        detail = "Try loosening or clearing your filters.",
-                        action = "Clear filters",
+                        detail = stringResource(R.string.library_loosen_filters),
+                        action = stringResource(R.string.library_clear_filters),
                         onAction = model::clearFilter,
                     )
                 }
@@ -131,6 +137,7 @@ private fun FilterChips(
     onClear: () -> Unit,
 ) {
     val parts = filter.parts()
+    val words = words()
     var sorting by remember { mutableStateOf(false) }
     Column {
         Row(
@@ -154,7 +161,7 @@ private fun FilterChips(
                 FilterChip(
                     selected = filter.ordered,
                     onClick = { sorting = true },
-                    label = { Text(filter.orderLabel(), maxLines = 1) },
+                    label = { Text(filter.orderLabel(words), maxLines = 1) },
                     leadingIcon = {
                         Icon(
                             if (filter.descending) Icons.Rounded.ArrowDownward
@@ -173,7 +180,7 @@ private fun FilterChips(
                     { sorting = false },
                     listOf(
                         TrackOrder.entries.map { order ->
-                            MenuEntry.Choice(order.label, order == filter.order) {
+                            MenuEntry.Choice(stringResource(order.label), order == filter.order) {
                                 if (order == filter.order) onDescending(!filter.descending)
                                 else onOrder(order)
                             }
@@ -184,7 +191,13 @@ private fun FilterChips(
             FilterChip(
                 selected = parts.isNotEmpty(),
                 onClick = onFilters,
-                label = { Text(if (parts.isEmpty()) "Filters" else "Filters · ${parts.size}", maxLines = 1) },
+                label = {
+                    Text(
+                        if (parts.isEmpty()) stringResource(R.string.library_filters)
+                        else stringResource(R.string.library_filters_count, parts.size),
+                        maxLines = 1,
+                    )
+                },
                 leadingIcon = {
                     Icon(Icons.Rounded.FilterList, null, Modifier.size(FilterChipDefaults.IconSize))
                 },
@@ -202,18 +215,20 @@ private fun FilterChips(
                         InputChip(
                             selected = true,
                             onClick = { onRemove(part) },
-                            label = { Text(filter.label(part), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = {
+                                Text(filter.label(words, part), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
                             trailingIcon = {
                                 Icon(
                                     Icons.Rounded.Close,
-                                    "Remove ${filter.label(part)}",
+                                    stringResource(R.string.library_remove_named, filter.label(words, part)),
                                     Modifier.size(FilterChipDefaults.IconSize),
                                 )
                             },
                         )
                     }
                 }
-                item("clear") { TextButton(onClick = onClear) { Text("Clear") } }
+                item("clear") { TextButton(onClick = onClear) { Text(stringResource(R.string.library_clear)) } }
             }
         }
     }

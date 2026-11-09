@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
 import org.resonate.android.ui.components.CommitSlider
 import org.resonate.android.ui.components.Sizes
 
@@ -69,7 +71,7 @@ fun MeasureControl(
     tag: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    unused: String = "Not used",
+    unused: String = stringResource(R.string.equaliser_not_used),
     action: (@Composable () -> Unit)? = null,
 ) {
     var draft by remember { mutableStateOf<Float?>(null) }
@@ -81,6 +83,7 @@ fun MeasureControl(
         }
     val actual: (Float) -> Float = { raw -> scale?.actual(raw) ?: raw }
     val shown = if (enabled) measure.shown(draft ?: value) else unused
+    val typeAValue = stringResource(R.string.equaliser_type_a_value)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(-CONTROL_OVERLAP)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -95,7 +98,7 @@ fun MeasureControl(
                 modifier =
                     Modifier.semantics {
                             contentDescription = "$description, $shown"
-                            onClick(label = "Type a value") {
+                            onClick(label = typeAValue) {
                                 entering = true
                                 true
                             }
@@ -180,7 +183,11 @@ fun ExactEntry(
                                     text = TextFieldValue(flipped, TextRange(flipped.length))
                                 }
                             ) {
-                                Icon(Icons.Rounded.Exposure, contentDescription = "Change the sign")
+                                Icon(
+                                    Icons.Rounded.Exposure,
+                                    contentDescription =
+                                        stringResource(R.string.equaliser_change_sign),
+                                )
                             }
                         }
                     } else null,
@@ -193,9 +200,11 @@ fun ExactEntry(
                 enabled = accepted != null,
                 modifier = Modifier.testTag("exact-entry-set"),
             ) {
-                Text("Set")
+                Text(stringResource(R.string.equaliser_set))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.equaliser_cancel)) }
+        },
     )
 }

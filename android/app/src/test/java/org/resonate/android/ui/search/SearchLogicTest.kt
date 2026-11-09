@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistHit
 import org.resonate.android.nativecore.LibrarySearch
@@ -131,7 +132,7 @@ class SearchLogicTest {
                 SearchColumn.ARTIST to "Aurora Fields",
                 SearchColumn.ALBUM to "Lumen",
             ),
-            asked(result),
+            asked(English, result),
         )
     }
 
@@ -140,7 +141,7 @@ class SearchLogicTest {
         val result = found(tracks = listOf(track(1u, "Night Drive", "Aurora Fields", "Lumen")))
 
         val lit =
-            lit("night", result) { _, text, _ ->
+            lit(English, "night", result) { _, text, _ ->
                 if (text.startsWith("Night")) listOf(TextRange(0u, 5u)) else emptyList()
             }
 
@@ -152,9 +153,9 @@ class SearchLogicTest {
     fun songsSayHowManyOfTheMatchesAreListed() {
         val tracks = listOf(track(1u, "a", "b", "c"))
 
-        assertEquals("1 of 812", songsCounted(found(tracks, trackCount = 812u)))
-        assertEquals("1", songsCounted(found(tracks)))
-        assertEquals("Songs · 1 of 812", scopeLabel(LibraryScope.SONGS, found(tracks, 812u)))
+        assertEquals("1 of 812", songsCounted(English, found(tracks, trackCount = 812u)))
+        assertEquals("1", songsCounted(English, found(tracks)))
+        assertEquals("Songs · 1 of 812", scopeLabel(English, LibraryScope.SONGS, found(tracks, 812u)))
     }
 
     @Test

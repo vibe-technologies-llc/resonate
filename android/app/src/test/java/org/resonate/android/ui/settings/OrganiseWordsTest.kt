@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.OrganisePlan
 
 class OrganiseWordsTest {
@@ -30,6 +31,6 @@ class OrganiseWordsTest {
 
     @Test
     fun theConfirmationNamesTheFolder() {
-        assertTrue(OrganiseWords.explained("Music").startsWith("The files move inside Music,"))
+        assertTrue(OrganiseWords.explained(English, "Music").startsWith("The files move inside Music,"))
     }
 }

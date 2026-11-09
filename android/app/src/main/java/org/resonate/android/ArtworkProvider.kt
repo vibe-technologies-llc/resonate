@@ -76,6 +76,6 @@ class ArtworkProvider : ContentProvider() {
     private companion object {
         const val JPEG = "image/jpeg"
         const val READ_ONLY = "r"
-        const val NO_COVER = "no cover"
+        const val NO_COVER = "uncovered"
     }
 }

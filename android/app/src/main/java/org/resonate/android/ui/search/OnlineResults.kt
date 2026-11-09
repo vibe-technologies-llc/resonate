@@ -1,5 +1,6 @@
 package org.resonate.android.ui.search
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -67,6 +70,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.LinkedPlaylistWords
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.SearchAlbum
 import org.resonate.android.nativecore.SearchArtist
 import org.resonate.android.nativecore.SearchRelease
@@ -78,9 +83,9 @@ import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.words
 
 @Stable
 class OnlineScroll {
@@ -102,6 +107,7 @@ fun OnlineResults(
     val online by model.online.collectAsStateWithLifecycle()
     val following by model.followingProfiles.collectAsStateWithLifecycle()
     val sheets = LocalSheets.current
+    val words = words()
     val levels = remember { mutableMapOf<List<OnlineView>, LazyListState>() }
     levels.keys.retainAll { place -> trail.views.take(place.size) == place }
     val profileLink = (trail.top as? OnlineView.Link)?.text
@@ -140,10 +146,12 @@ fun OnlineResults(
                         item(key = "failed") {
                             EmptyState(
                                 Icons.Rounded.CloudOff,
-                                "Couldn’t reach the music service",
+                                stringResource(R.string.online_unreached),
                                 Modifier.fillParentMaxHeight(0.6f),
-                                detail = current.reason ?: "Check your connection and try again.",
-                                action = "Try again",
+                                detail =
+                                    current.reason
+                                        ?: stringResource(R.string.online_unreached_detail),
+                                action = stringResource(R.string.online_try_again),
                                 onAction = model::retryOnline,
                             )
                         }
@@ -155,10 +163,12 @@ fun OnlineResults(
                             model = model,
                             act = act,
                             import = { name, songs ->
-                                sheets.name("Import as playlist", name) { model.import(it, songs) }
+                                sheets.name(words.string(R.string.online_import_title), name) {
+                                    model.import(it, songs)
+                                }
                             },
                             importLinked = { link, name, songs, keptInStep ->
-                                sheets.name(LinkedPlaylistWords.naming(keptInStep), name) {
+                                sheets.name(LinkedPlaylistWords.naming(words, keptInStep), name) {
                                     model.importLinked(link, it, songs, keptInStep)
                                 }
                             },
@@ -185,14 +195,14 @@ private fun ProfileCard(
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = { Icon(Icons.Rounded.Person, contentDescription = null) },
             supportingContent = {
-                Text(
-                    "Bring in every playlist this profile made and the songs it loves, held in step " +
-                        "as it changes, or moved once.",
-                )
+                Text(stringResource(R.string.online_profile_detail))
             },
             overlineContent = { Text(link, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         ) {
-            Text("$service profile", modifier = Modifier.semantics { heading() })
+            Text(
+                stringResource(R.string.online_profile, service),
+                modifier = Modifier.semantics { heading() },
+            )
         }
         FlowRow(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
@@ -200,19 +210,18 @@ private fun ProfileCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (following) {
-                LoadingIndicator(
-                    Modifier.size(40.dp).semantics { contentDescription = "Reading the $service profile" }
-                )
+                val reading = stringResource(R.string.online_profile_reading, service)
+                LoadingIndicator(Modifier.size(40.dp).semantics { contentDescription = reading })
             } else {
                 Button(onClick = onFollow, modifier = Modifier.testTag("follow-profile")) {
                     Icon(Icons.Rounded.Sync, null, Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Follow $service profile")
+                    Text(stringResource(R.string.online_profile_follow, service))
                 }
                 FilledTonalButton(onClick = onMove, modifier = Modifier.testTag("move-profile")) {
                     Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Move to Resonate once")
+                    Text(stringResource(R.string.online_profile_move))
                 }
             }
         }
@@ -221,14 +230,23 @@ private fun ProfileCard(
 
 @Composable
 private fun Heading(view: OnlineView, back: () -> Boolean) {
+    val words = words()
+    val backWord = stringResource(R.string.online_back)
     val (title, detail, backLabel) =
         when (view) {
-            OnlineView.Top -> Triple("Online", "", "Back")
-            is OnlineView.Found -> Triple(view.kind.label, "", "Back")
-            is OnlineView.Discography -> Triple(view.name, "Albums and singles", "Back")
-            is OnlineView.Editions -> Triple(view.title, editionsDetail(view), "Back")
-            is OnlineView.Release -> Triple(view.title, view.detail, "Back to editions")
-            is OnlineView.Link -> Triple("Shared link", view.text, "Close link")
+            OnlineView.Top -> Triple(stringResource(R.string.online_heading), "", backWord)
+            is OnlineView.Found -> Triple(stringResource(view.kind.label), "", backWord)
+            is OnlineView.Discography ->
+                Triple(view.name, stringResource(R.string.online_discography_detail), backWord)
+            is OnlineView.Editions -> Triple(view.title, editionsDetail(words, view), backWord)
+            is OnlineView.Release ->
+                Triple(view.title, view.detail, stringResource(R.string.online_back_to_editions))
+            is OnlineView.Link ->
+                Triple(
+                    stringResource(R.string.online_shared_link),
+                    view.text,
+                    stringResource(R.string.online_close_link),
+                )
         }
     Row(
         Modifier.fillMaxWidth().padding(start = 4.dp, end = Sizes.gutter, top = 4.dp, bottom = 4.dp),
@@ -239,7 +257,7 @@ private fun Heading(view: OnlineView, back: () -> Boolean) {
         }
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
             Text(
-                title.ifBlank { "Untitled" },
+                title.ifBlank { stringResource(R.string.search_untitled) },
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -258,14 +276,18 @@ private fun Heading(view: OnlineView, back: () -> Boolean) {
     }
 }
 
-private fun editionsDetail(view: OnlineView.Editions): String =
-    listOf(view.artist, "Editions").filter { it.isNotBlank() }.joinToString(" · ")
+private fun editionsDetail(words: Words, view: OnlineView.Editions): String =
+    listOf(view.artist, words.string(R.string.online_editions))
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
 
-private fun releaseDetail(release: SearchRelease): String =
+private fun releaseDetail(words: Words, release: SearchRelease): String =
     listOfNotNull(
             release.date.takeIf { it.isNotBlank() },
             release.country.takeIf { it.isNotBlank() },
-            release.songs.takeIf { it > 0u }?.let { counted(it, "song") },
+            release.songs
+                .takeIf { it > 0u }
+                ?.let { words.plural(R.plurals.count_songs, it.toInt(), it.toInt()) },
         )
         .joinToString(" · ")
 
@@ -286,9 +308,10 @@ private fun LazyListScope.answer(
             if (answer.songs.isEmpty()) {
                 nothing(
                     if (top is OnlineView.Release) Icons.Rounded.MusicOff else Icons.Rounded.SearchOff,
-                    if (top is OnlineView.Release) "No songs listed" else "No songs found",
-                    if (top is OnlineView.Release) "This edition lists no songs."
-                    else "Try a different title or artist.",
+                    if (top is OnlineView.Release) R.string.online_no_songs_listed
+                    else R.string.online_no_songs,
+                    if (top is OnlineView.Release) R.string.online_no_songs_listed_detail
+                    else R.string.online_try_title_or_artist,
                 )
                 return
             }
@@ -306,7 +329,11 @@ private fun LazyListScope.answer(
         }
         is OnlineAnswer.Albums -> {
             if (answer.albums.isEmpty()) {
-                nothing(Icons.Rounded.Album, "No albums found", "Try a different title or artist.")
+                nothing(
+                    Icons.Rounded.Album,
+                    R.string.online_no_albums,
+                    R.string.online_try_title_or_artist,
+                )
                 return
             }
             albums(answer.albums, model)
@@ -317,7 +344,7 @@ private fun LazyListScope.answer(
                             LoadingIndicator(Modifier.size(40.dp))
                         } else {
                             OutlinedButton(onClick = model::more, modifier = Modifier.testTag("more-albums")) {
-                                Text("Show more albums")
+                                Text(stringResource(R.string.online_more_albums))
                             }
                         }
                     }
@@ -326,27 +353,39 @@ private fun LazyListScope.answer(
         }
         is OnlineAnswer.Artists -> {
             if (answer.artists.isEmpty()) {
-                nothing(Icons.Rounded.Person, "No artists found", "Try a different spelling.")
+                nothing(
+                    Icons.Rounded.Person,
+                    R.string.online_no_artists,
+                    R.string.online_try_spelling,
+                )
                 return
             }
             artists(answer.artists, model)
         }
         is OnlineAnswer.Editions -> {
             if (answer.releases.isEmpty()) {
-                nothing(Icons.Rounded.Album, "No editions found", "This album has no releases to show.")
+                nothing(
+                    Icons.Rounded.Album,
+                    R.string.online_no_editions,
+                    R.string.online_no_editions_detail,
+                )
                 return
             }
             releases(answer.releases, model)
         }
         is OnlineAnswer.Link -> {
             if (answer.songs.isEmpty() && answer.releases.isEmpty() && answer.artists.isEmpty()) {
-                nothing(Icons.Rounded.LinkOff, "Nothing to show", "No music could be read from this link.")
+                nothing(
+                    Icons.Rounded.LinkOff,
+                    R.string.online_link_empty,
+                    R.string.online_link_empty_detail,
+                )
                 return
             }
             item(key = "link-title") {
                 Column(Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp)) {
                     Text(
-                        answer.name.ifBlank { "Shared music" },
+                        answer.name.ifBlank { stringResource(R.string.online_shared_music) },
                         style = MaterialTheme.typography.headlineSmall,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
@@ -354,7 +393,11 @@ private fun LazyListScope.answer(
                     )
                     if (answer.songs.isNotEmpty()) {
                         Text(
-                            counted(answer.songs.size, "song"),
+                            pluralStringResource(
+                                R.plurals.count_songs,
+                                answer.songs.size,
+                                answer.songs.size,
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -365,31 +408,47 @@ private fun LazyListScope.answer(
                 item(key = "link-actions") {
                     CollectionActions(
                         songs = answer.songs,
-                        importable = answer.name.ifBlank { "Imported playlist" },
+                        importable =
+                            answer.name.ifBlank {
+                                stringResource(R.string.online_imported_playlist)
+                            },
                         save = model::saveAll,
                         import = import,
                         link = (top as? OnlineView.Link)?.text,
                         importLinked = importLinked,
                     )
                 }
-                item(key = "link-songs") { SectionHeader("Songs") }
+                item(key = "link-songs") { SectionHeader(stringResource(R.string.search_songs)) }
                 songs(answer.songs, numbered = false, act = act)
             }
             if (answer.releases.isNotEmpty()) {
-                item(key = "link-releases") { SectionHeader("Editions") }
+                item(key = "link-releases") {
+                    SectionHeader(stringResource(R.string.online_editions))
+                }
                 releases(answer.releases, model)
             }
             if (answer.artists.isNotEmpty()) {
-                item(key = "link-artists") { SectionHeader("Artists") }
+                item(key = "link-artists") {
+                    SectionHeader(stringResource(R.string.search_artists))
+                }
                 artists(answer.artists, model)
             }
         }
     }
 }
 
-private fun LazyListScope.nothing(icon: ImageVector, title: String, detail: String) {
+private fun LazyListScope.nothing(
+    icon: ImageVector,
+    @StringRes title: Int,
+    @StringRes detail: Int,
+) {
     item(key = "nothing") {
-        EmptyState(icon, title, Modifier.fillParentMaxHeight(0.55f), detail = detail)
+        EmptyState(
+            icon,
+            stringResource(title),
+            Modifier.fillParentMaxHeight(0.55f),
+            detail = stringResource(detail),
+        )
     }
 }
 
@@ -431,11 +490,12 @@ private fun LazyListScope.artists(artists: List<SearchArtist>, model: SearchView
 
 private fun LazyListScope.releases(releases: List<SearchRelease>, model: SearchViewModel) {
     items(releases, key = { "release-${it.id}" }) { release ->
+        val detail = releaseDetail(words(), release)
         OnlineCollectionRow(
             title = release.title,
-            detail = releaseDetail(release),
+            detail = detail,
             icon = Icons.Rounded.Album,
-            onClick = { model.open(OnlineView.Release(release.id, release.title, releaseDetail(release))) },
+            onClick = { model.open(OnlineView.Release(release.id, release.title, detail)) },
             modifier = Modifier.testTag("online-release"),
         )
     }
@@ -463,7 +523,7 @@ private fun CollectionActions(
             ) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Import once")
+                Text(stringResource(R.string.online_import_once))
             }
             Button(
                 onClick = { importLinked(link, importable, songs, true) },
@@ -471,19 +531,19 @@ private fun CollectionActions(
             ) {
                 Icon(Icons.Rounded.Sync, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Keep in step with $service")
+                Text(stringResource(R.string.online_keep_in_step, service))
             }
         } else if (importable != null) {
             Button(onClick = { import(importable, songs) }, modifier = Modifier.testTag("import-playlist")) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Import as playlist")
+                Text(stringResource(R.string.online_import_title))
             }
         }
         FilledTonalButton(onClick = { save(songs) }, modifier = Modifier.testTag("save-all")) {
             Icon(Icons.Outlined.BookmarkAdd, null, Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-            Text("Save all for later")
+            Text(stringResource(R.string.online_save_all))
         }
     }
     Spacer(Modifier.height(4.dp))
@@ -493,7 +553,7 @@ private const val ONLINE_SONGS_SHOWN = 5
 private const val ONLINE_SHELF_SHOWN = 3
 
 fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (SearchSong) -> Unit) {
-    item(key = "online-header") { SectionHeader("Online") }
+    item(key = "online-header") { SectionHeader(stringResource(R.string.search_online)) }
     val sections = listOf(top.songs, top.albums, top.artists)
     if (sections.all { it is OnlineSection.Failed }) {
         item(key = "online-failed") {
@@ -501,10 +561,16 @@ fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (Search
             ListItem(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 leadingContent = { Icon(Icons.Rounded.CloudOff, contentDescription = null) },
-                supportingContent = { Text(reason ?: "Check your connection and try again.") },
-                trailingContent = { TextButton(onClick = model::retryOnline) { Text("Try again") } },
+                supportingContent = {
+                    Text(reason ?: stringResource(R.string.online_unreached_detail))
+                },
+                trailingContent = {
+                    TextButton(onClick = model::retryOnline) {
+                        Text(stringResource(R.string.online_try_again))
+                    }
+                },
             ) {
-                Text("Couldn’t reach the music service")
+                Text(stringResource(R.string.online_unreached))
             }
         }
         return
@@ -515,8 +581,10 @@ fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (Search
     if (songs.isNotEmpty()) {
         item(key = "online-songs-header") {
             SectionHeader(
-                "Songs",
-                action = if (songs.size > ONLINE_SONGS_SHOWN) "See all" else null,
+                stringResource(R.string.search_songs),
+                action =
+                    if (songs.size > ONLINE_SONGS_SHOWN) stringResource(R.string.search_see_all)
+                    else null,
                 onAction = { model.open(OnlineView.Found(OnlineKind.SONGS)) },
             )
         }
@@ -525,8 +593,10 @@ fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (Search
     if (albums.isNotEmpty()) {
         item(key = "online-albums-header") {
             SectionHeader(
-                "Albums",
-                action = if (albums.size > ONLINE_SHELF_SHOWN) "See all" else null,
+                stringResource(R.string.search_albums),
+                action =
+                    if (albums.size > ONLINE_SHELF_SHOWN) stringResource(R.string.search_see_all)
+                    else null,
                 onAction = { model.open(OnlineView.Found(OnlineKind.ALBUMS)) },
             )
         }
@@ -535,15 +605,21 @@ fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (Search
     if (artists.isNotEmpty()) {
         item(key = "online-artists-header") {
             SectionHeader(
-                "Artists",
-                action = if (artists.size > ONLINE_SHELF_SHOWN) "See all" else null,
+                stringResource(R.string.search_artists),
+                action =
+                    if (artists.size > ONLINE_SHELF_SHOWN) stringResource(R.string.search_see_all)
+                    else null,
                 onAction = { model.open(OnlineView.Found(OnlineKind.ARTISTS)) },
             )
         }
         artists(artists.take(ONLINE_SHELF_SHOWN), model)
     }
     val awaited =
-        listOf("songs" to top.songs, "albums" to top.albums, "artists" to top.artists)
+        listOf(
+                R.string.online_waiting_songs to top.songs,
+                R.string.online_waiting_albums to top.albums,
+                R.string.online_waiting_artists to top.artists,
+            )
             .firstOrNull { it.second is OnlineSection.Loading }
     if (awaited != null) {
         item(key = "online-waiting") {
@@ -552,7 +628,7 @@ fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (Search
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 leadingContent = { LoadingIndicator(Modifier.size(24.dp)) },
             ) {
-                Text("Searching online for ${awaited.first}…")
+                Text(stringResource(awaited.first))
             }
         }
     } else if (songs.isEmpty() && albums.isEmpty() && artists.isEmpty()) {
@@ -560,9 +636,11 @@ fun LazyListScope.onlineTop(top: OnlineTop, model: SearchViewModel, act: (Search
             ListItem(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 leadingContent = { Icon(Icons.Rounded.SearchOff, contentDescription = null) },
-                supportingContent = { Text("Try a different title or artist.") },
+                supportingContent = {
+                    Text(stringResource(R.string.online_try_title_or_artist))
+                },
             ) {
-                Text("Nothing found online")
+                Text(stringResource(R.string.online_nothing))
             }
         }
     }

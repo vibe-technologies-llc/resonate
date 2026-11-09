@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.OutputRoute
 
 class OutputCurvesTest {
@@ -25,8 +26,8 @@ class OutputCurvesTest {
 
     @Test
     fun theCurveIsSaidToBelongToTheOutputThatKeepsItAndElseToEveryOutput() {
-        assertEquals("Buds", curveScope(buds, listOf(buds)))
-        assertEquals("Every output", curveScope(buds, listOf(car)))
-        assertEquals("Every output", curveScope(null, listOf(car)))
+        assertEquals("Buds", curveScope(English, buds, listOf(buds)))
+        assertEquals("Every output", curveScope(English, buds, listOf(car)))
+        assertEquals("Every output", curveScope(English, null, listOf(car)))
     }
 }

@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -45,9 +47,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import org.resonate.android.R
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.SyncActivity
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.syncActivity
 
 private const val NOTICE_SHOWN_FOR_MS = 6_000L
@@ -74,7 +76,7 @@ fun Banners(modifier: Modifier = Modifier, showNotice: Boolean = true) {
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            ProgressBanner(Icons.Rounded.LibraryMusic, "Reading music folder", null)
+            ProgressBanner(Icons.Rounded.LibraryMusic, stringResource(R.string.banner_reading_folder), null)
         }
         AnimatedVisibility(
             activity != null,
@@ -85,11 +87,11 @@ fun Banners(modifier: Modifier = Modifier, showNotice: Boolean = true) {
                 is SyncActivity.Fetching ->
                     ProgressBanner(
                         Icons.Rounded.Sync,
-                        "Fetching songs from your devices",
+                        stringResource(R.string.banner_fetching),
                         shown.fraction,
-                        detail = counted(shown.songs, "song"),
+                        detail = pluralStringResource(R.plurals.count_songs, shown.songs, shown.songs),
                     )
-                else -> ProgressBanner(Icons.Rounded.Sync, "Syncing with your devices", null)
+                else -> ProgressBanner(Icons.Rounded.Sync, stringResource(R.string.banner_syncing), null)
             }
         }
         if (showNotice) StatusNotice()
@@ -139,7 +141,10 @@ private fun ProgressBanner(
     val spoken =
         listOfNotNull(
                 detail,
-                fraction?.let { "${(it * 100).toInt() / PERCENT_STEP * PERCENT_STEP} percent" },
+                fraction?.let {
+                    val percent = (it * 100).toInt() / PERCENT_STEP * PERCENT_STEP
+                    pluralStringResource(R.plurals.banner_percent, percent, percent)
+                },
             )
             .joinToString(", ")
     Surface(
@@ -215,7 +220,7 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
                 modifier = Modifier.weight(1f).padding(vertical = 10.dp),
             )
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Rounded.Close, contentDescription = "Dismiss")
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.banner_dismiss))
             }
         }
     }

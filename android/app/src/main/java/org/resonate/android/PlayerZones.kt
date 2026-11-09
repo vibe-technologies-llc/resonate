@@ -32,19 +32,23 @@ object ZonePlan {
 
     fun heardOn(rendererName: String?, device: String): String = rendererName ?: device
 
-    fun rendererLine(kind: RendererKind, host: String): String =
+    fun rendererLine(words: Words, kind: RendererKind, host: String): String =
         when (kind) {
             RendererKind.UPNP -> host
-            RendererKind.CAST -> "Google Cast · $host"
+            RendererKind.CAST -> words.string(R.string.zone_renderer_cast, host)
         }
 
-    fun line(output: String, transport: Transport, playing: String?): String {
+    fun line(words: Words, output: String, transport: Transport, playing: String?): String {
         val doing =
             when (transport) {
-                Transport.PLAYING -> playing?.let { "Playing $it" } ?: "Playing"
-                Transport.LOADING -> "Opening a song"
-                Transport.PAUSED -> playing?.let { "Paused on $it" } ?: "Paused"
-                Transport.STOPPED -> "Stopped"
+                Transport.PLAYING ->
+                    playing?.let { words.string(R.string.zone_playing_song, it) }
+                        ?: words.string(R.string.zone_playing)
+                Transport.LOADING -> words.string(R.string.zone_opening)
+                Transport.PAUSED ->
+                    playing?.let { words.string(R.string.zone_paused_on, it) }
+                        ?: words.string(R.string.zone_paused)
+                Transport.STOPPED -> words.string(R.string.zone_stopped)
             }
         return "$output · $doing"
     }

@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -51,11 +52,13 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.AudioOutput
+import org.resonate.android.R
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 class OutputViewModel(resonate: Resonate) : ViewModel() {
     private val features = resonate.features
@@ -81,16 +84,25 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
 }
 
 private fun iconFor(output: AudioOutput): ImageVector =
-    when (output.kind) {
-        AUTOMATIC_KIND -> Icons.Rounded.SpeakerGroup
-        "Earpiece" -> Icons.Rounded.Hearing
-        "Wired headphones",
-        "Wired headset" -> Icons.Rounded.Headphones
-        "Bluetooth audio" -> Icons.Rounded.BluetoothAudio
-        "USB audio" -> Icons.Rounded.Usb
-        "HDMI audio" -> Icons.Rounded.Tv
-        else -> Icons.Rounded.Speaker
-    }
+    if (output.isSystemDefault) Icons.Rounded.SpeakerGroup
+    else
+        when (output.type) {
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> Icons.Rounded.Hearing
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> Icons.Rounded.Headphones
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_BLE_BROADCAST -> Icons.Rounded.BluetoothAudio
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_USB_ACCESSORY -> Icons.Rounded.Usb
+            AudioDeviceInfo.TYPE_HDMI,
+            AudioDeviceInfo.TYPE_HDMI_ARC,
+            AudioDeviceInfo.TYPE_HDMI_EARC -> Icons.Rounded.Tv
+            else -> Icons.Rounded.Speaker
+        }
 
 @Composable
 private fun FollowDevices(refresh: () -> Unit) {
@@ -121,13 +133,17 @@ fun OutputScreen() {
     val stream by model.stream.collectAsStateWithLifecycle()
     val followsSongRate by model.followsSongRate.collectAsStateWithLifecycle()
     FollowDevices(model::refresh)
+    val words = words()
     val choices = offeredOutputs(outputs)
     val playing = withSystemDefault(outputs).firstOrNull { it.id == actual }
     Page(
-        "Audio output",
+        stringResource(R.string.settings_output_title),
         actions = {
             IconButton(onClick = model::refresh) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "Look for outputs again")
+                Icon(
+                    Icons.Rounded.Refresh,
+                    contentDescription = stringResource(R.string.output_refresh),
+                )
             }
         },
     ) { padding ->
@@ -135,24 +151,25 @@ fun OutputScreen() {
             item(key = "status") {
                 RouteCard(
                     playing = playing,
-                    playingName = outputNamed(outputs, actual),
-                    pending = pendingOutput(selected, actual)?.let { outputNamed(outputs, it) },
+                    playingName = outputNamed(words, outputs, actual),
+                    pending =
+                        pendingOutput(selected, actual)?.let { outputNamed(words, outputs, it) },
                 )
             }
             stream?.let { open ->
                 item(key = "stream") {
                     SettingRow(
-                        title = "Current stream",
-                        supporting = outputPathWords(open.path),
-                        trailing = { Text(outputStreamWords(open)) },
+                        title = stringResource(R.string.output_current_stream),
+                        supporting = outputPathWords(words, open.path),
+                        trailing = { Text(outputStreamWords(words, open)) },
                         modifier = Modifier.testTag("output-stream"),
                     )
                 }
             }
-            playing?.let(::outputTakes)?.let { takes ->
+            playing?.let { outputTakes(words, it) }?.let { takes ->
                 item(key = "takes") {
                     SettingRow(
-                        title = "This output takes",
+                        title = stringResource(R.string.output_takes),
                         supporting = takes,
                         modifier = Modifier.testTag("output-takes"),
                     )
@@ -160,31 +177,34 @@ fun OutputScreen() {
             }
             item(key = "follow") {
                 SwitchRow(
-                    title = "Match the song's sample rate",
+                    title = stringResource(R.string.output_follow_song_rate),
                     checked = followsSongRate,
                     onCheckedChange = model::followSongRate,
-                    supporting = FOLLOW_SONG_RATE_NOTE,
+                    supporting = stringResource(R.string.output_follow_song_rate_note),
                     modifier = Modifier.testTag("follow-song-rate"),
                 )
             }
-            clampedSamplesWords(clamped)?.let { words ->
+            clampedSamplesWords(clamped)?.let { count ->
                 item(key = "clamped") {
                     SettingRow(
-                        title = "Clamped samples",
-                        supporting = CLAMPED_SAMPLES_NOTE,
-                        trailing = { Text(words) },
+                        title = stringResource(R.string.output_clamped),
+                        supporting = stringResource(R.string.output_clamped_note),
+                        trailing = { Text(count) },
                         modifier = Modifier.testTag("clamped-samples"),
                     )
                 }
             }
-            item(key = "choose") { SectionHeader("Play through") }
+            item(key = "choose") { SectionHeader(stringResource(R.string.output_play_through)) }
             item(key = "choices") {
                 Column(Modifier.selectableGroup()) {
                     choices.forEach { output ->
                         RadioRow(
-                            title = outputTitle(output),
+                            title = outputTitle(words, output),
                             supporting =
-                                listOfNotNull(outputSubtitle(output), outputRates(output))
+                                listOfNotNull(
+                                        outputSubtitle(words, output),
+                                        outputRates(words, output),
+                                    )
                                     .joinToString(" · "),
                             icon = iconFor(output),
                             selected = standsFor(output, selected, outputs),
@@ -195,9 +215,7 @@ fun OutputScreen() {
                 }
             }
             item(key = "note") {
-                Footnote(
-                    "Android owns the physical route: choosing an output asks for it, and Android may still send sound elsewhere. Unless the current stream says it is exclusive or bit-perfect, Android's mixer may still convert what Resonate hands it."
-                )
+                Footnote(stringResource(R.string.output_note))
             }
         }
     }
@@ -206,6 +224,7 @@ fun OutputScreen() {
 @Composable
 private fun RouteCard(playing: AudioOutput?, playingName: String, pending: String?) {
     val scheme = MaterialTheme.colorScheme
+    val words = words()
     Card(
         modifier =
             Modifier.fillMaxWidth()
@@ -234,9 +253,12 @@ private fun RouteCard(playing: AudioOutput?, playingName: String, pending: Strin
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("Playing through", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    stringResource(R.string.output_playing_through),
+                    style = MaterialTheme.typography.labelLarge,
+                )
                 Text(playingName, style = MaterialTheme.typography.titleLarge)
-                playing?.let(::outputSubtitle)?.takeIf { it != playingName }?.let {
+                playing?.let { outputSubtitle(words, it) }?.takeIf { it != playingName }?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -253,7 +275,7 @@ private fun RouteCard(playing: AudioOutput?, playingName: String, pending: Strin
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Asked for $pending; Android has not moved the sound there yet",
+                    stringResource(R.string.output_pending, pending),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

@@ -38,10 +38,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
+import org.resonate.android.R
 import org.resonate.android.RESPONSE_DOCUMENTS
 import org.resonate.android.RoomView
 import org.resonate.android.nativecore.SpeakerLimits
@@ -56,6 +58,7 @@ import org.resonate.android.ui.settings.Note
 import org.resonate.android.ui.settings.SettingRow
 import org.resonate.android.ui.settings.SettingsList
 import org.resonate.android.ui.settings.SwitchRow
+import org.resonate.android.words
 
 val ANGLE_PRESETS = listOf(20, 30, 45, 60, 90)
 
@@ -105,28 +108,32 @@ fun RoomCorrectionScreen() {
     val named = room.name != null
     val left = room.left
     val limits = model.limits
-    Page("Room correction") { padding ->
+    val words = words()
+    Page(stringResource(R.string.equaliser_room_correction)) { padding ->
         SettingsList(padding, Modifier.testTag("room-list")) {
             item(key = "switch") {
                 SwitchRow(
-                    title = "Correct for the room",
+                    title = stringResource(R.string.equaliser_room_switch),
                     checked = room.on,
                     onCheckedChange = model::turn,
                     enabled = named,
                     icon = Icons.Rounded.SurroundSound,
                     supporting =
                         if (named) {
-                            listOfNotNull(room.name, describeRoom(room.kept).ifEmpty { null })
+                            listOfNotNull(
+                                    room.name,
+                                    describeRoom(words, room.kept).ifEmpty { null },
+                                )
                                 .joinToString(" · ")
-                        } else "Choose a measured response first",
+                        } else stringResource(R.string.equaliser_room_choose_first),
                     modifier = Modifier.testTag("room-switch"),
                 )
             }
             item(key = "response") {
-                SectionHeader("The response")
+                SectionHeader(stringResource(R.string.equaliser_room_response))
                 if (left != null) {
                     SettingRow(
-                        title = "Left speaker",
+                        title = stringResource(R.string.equaliser_room_left),
                         icon = Icons.Rounded.Headphones,
                         supporting = left.name,
                         modifier = Modifier.testTag("room-pair-left"),
@@ -145,12 +152,14 @@ fun RoomCorrectionScreen() {
                             )
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                             Text(
-                                if (room.reading) "Reading…"
-                                else "Choose the right speaker's response"
+                                stringResource(
+                                    if (room.reading) R.string.equaliser_room_reading
+                                    else R.string.equaliser_room_choose_right
+                                )
                             )
                         }
                         TextButton(onClick = model::cancelPair, enabled = !room.reading) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.equaliser_cancel))
                         }
                     }
                 } else {
@@ -168,11 +177,13 @@ fun RoomCorrectionScreen() {
                             )
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                             Text(
-                                when {
-                                    room.reading -> "Reading…"
-                                    named -> "Choose another response"
-                                    else -> "Choose a response"
-                                }
+                                stringResource(
+                                    when {
+                                        room.reading -> R.string.equaliser_room_reading
+                                        named -> R.string.equaliser_room_choose_another
+                                        else -> R.string.equaliser_room_choose
+                                    }
+                                )
                             )
                         }
                         OutlinedButton(
@@ -187,7 +198,7 @@ fun RoomCorrectionScreen() {
                                 Modifier.size(ButtonDefaults.IconSize),
                             )
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text("Choose a pair")
+                            Text(stringResource(R.string.equaliser_room_choose_pair))
                         }
                         if (named) {
                             OutlinedButton(
@@ -205,57 +216,51 @@ fun RoomCorrectionScreen() {
                                     Modifier.size(ButtonDefaults.IconSize),
                                 )
                                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                                Text("Forget")
+                                Text(stringResource(R.string.equaliser_forget))
                             }
                         }
                     }
                 }
-                Note(
-                    "A measured impulse response, up to ten seconds long, played before the equaliser on every output and lowered where it would lift the music past full scale."
-                )
-                Note(
-                    "A four-channel file is a two-by-two (binaural) response: left to left, left to right, right to left, right to right. A pair is the left speaker's stereo response and then the right's, joined into one."
-                )
+                Note(stringResource(R.string.equaliser_room_response_note))
+                Note(stringResource(R.string.equaliser_room_four_channels_note))
             }
             if (named) {
                 item(key = "speakers") {
-                    SectionHeader("The speakers")
-                    Note(
-                        "A SOFA set of head-related responses is read where the speakers stand and your head turns, blended where several measurements surround them."
-                    )
+                    SectionHeader(stringResource(R.string.equaliser_room_speakers))
+                    Note(stringResource(R.string.equaliser_room_speakers_note))
                     SpeakerSetting(
-                        title = "Speaker angle",
+                        title = stringResource(R.string.equaliser_room_angle),
                         icon = Icons.Rounded.SpeakerGroup,
                         value = room.angle,
                         least = limits.angleLeastDegrees.toInt(),
                         most = limits.angleMostDegrees.toInt(),
                         presets = ANGLE_PRESETS,
-                        lessSaying = "Bring the speakers a degree closer",
-                        moreSaying = "Put the speakers a degree further apart",
+                        lessSaying = stringResource(R.string.equaliser_room_angle_less),
+                        moreSaying = stringResource(R.string.equaliser_room_angle_more),
                         tag = "speaker-angle",
                         onChange = model::speakAt,
                     )
                     SpeakerSetting(
-                        title = "Speaker elevation",
+                        title = stringResource(R.string.equaliser_room_elevation),
                         icon = Icons.Rounded.Height,
                         value = room.elevation,
                         least = limits.elevationLeastDegrees.toInt(),
                         most = limits.elevationMostDegrees.toInt(),
                         presets = ELEVATION_PRESETS,
-                        lessSaying = "Lower the speakers a degree",
-                        moreSaying = "Raise the speakers a degree",
+                        lessSaying = stringResource(R.string.equaliser_room_elevation_less),
+                        moreSaying = stringResource(R.string.equaliser_room_elevation_more),
                         tag = "speaker-elevation",
                         onChange = model::raiseTo,
                     )
                     SpeakerSetting(
-                        title = "Head turned",
+                        title = stringResource(R.string.equaliser_room_yaw),
                         icon = Icons.AutoMirrored.Rounded.RotateLeft,
                         value = room.yaw,
                         least = limits.yawLeastDegrees.toInt(),
                         most = limits.yawMostDegrees.toInt(),
                         presets = YAW_PRESETS,
-                        lessSaying = "Turn the head a degree to the right",
-                        moreSaying = "Turn the head a degree to the left",
+                        lessSaying = stringResource(R.string.equaliser_room_yaw_less),
+                        moreSaying = stringResource(R.string.equaliser_room_yaw_more),
                         tag = "head-yaw",
                         onChange = model::turnTo,
                     )
@@ -265,10 +270,9 @@ fun RoomCorrectionScreen() {
     }
     if (forgetting) {
         ConfirmDialog(
-            title = "Forget the room response?",
-            text =
-                "Room correction turns off and the kept response is deleted. You can choose it again later.",
-            confirm = "Forget",
+            title = stringResource(R.string.equaliser_room_forget_title),
+            text = stringResource(R.string.equaliser_room_forget_text),
+            confirm = stringResource(R.string.equaliser_forget),
             onConfirm = model::forget,
             onDismiss = { forgetting = false },
             icon = Icons.Rounded.DeleteOutline,
@@ -293,7 +297,7 @@ private fun SpeakerSetting(
     SettingRow(
         title = title,
         icon = icon,
-        supporting = "$value°",
+        supporting = stringResource(R.string.equaliser_degrees, value),
         trailing = {
             Row {
                 IconButton(
@@ -322,7 +326,7 @@ private fun SpeakerSetting(
             FilterChip(
                 selected = value == preset,
                 onClick = { onChange(preset) },
-                label = { Text("$preset°") },
+                label = { Text(stringResource(R.string.equaliser_degrees, preset)) },
                 modifier = Modifier.testTag("$tag-$preset"),
             )
         }

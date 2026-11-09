@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -25,6 +26,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import org.resonate.android.R
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
@@ -114,7 +116,7 @@ fun ScrobblingScreen() {
     val draft = model.draft
     val status by model.status.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
-    Page("Scrobbling") { padding ->
+    Page(stringResource(R.string.scrobbling_title)) { padding ->
         val current = draft
         if (current == null) {
             Loading(padding)
@@ -125,16 +127,14 @@ fun ScrobblingScreen() {
             stored?.let { it.trimmed() != account.trimmed() } ?: true || current.includeHistory
         SettingsList(padding, Modifier.testTag("scrobbling-list")) {
             item(key = "intro") {
-                Note(
-                    "Songs you listen to through are queued on this device and sent to the accounts saved here while online features are on."
-                )
+                Note(stringResource(R.string.scrobbling_intro))
             }
             if (!online) {
                 item(key = "offline") {
                     NoticeCard(
                         Icons.Rounded.CloudOff,
-                        "Online features are off. Listens wait here until you turn them on.",
-                        action = "Turn on",
+                        stringResource(R.string.scrobbling_offline),
+                        action = stringResource(R.string.scrobbling_turn_on),
                         onAction = model::goOnline,
                     )
                 }
@@ -146,8 +146,8 @@ fun ScrobblingScreen() {
                     onValueChange = { value ->
                         model.edit { it.copy(account = it.account.copy(listenbrainzToken = value)) }
                     },
-                    label = "User token",
-                    supporting = "Find it in your ListenBrainz settings",
+                    label = stringResource(R.string.scrobbling_user_token),
+                    supporting = stringResource(R.string.scrobbling_user_token_detail),
                     secret = true,
                     modifier = Modifier.testTag("listenbrainz-token"),
                 )
@@ -159,7 +159,7 @@ fun ScrobblingScreen() {
                     onValueChange = { value ->
                         model.edit { it.copy(account = it.account.copy(lastfmKey = value)) }
                     },
-                    label = "API key",
+                    label = stringResource(R.string.scrobbling_api_key),
                     secret = true,
                 )
             }
@@ -169,41 +169,44 @@ fun ScrobblingScreen() {
                     onValueChange = { value ->
                         model.edit { it.copy(account = it.account.copy(lastfmSecret = value)) }
                     },
-                    label = "Shared secret",
-                    supporting = "Both come from an API account you create at Last.fm",
+                    label = stringResource(R.string.scrobbling_shared_secret),
+                    supporting = stringResource(R.string.scrobbling_shared_secret_detail),
                     secret = true,
                 )
             }
             if (account.lastfmSession.isNotEmpty()) {
                 item(key = "lastfm-session") {
                     SettingRow(
-                        title = "Signed in to Last.fm",
+                        title = stringResource(R.string.scrobbling_lastfm_signed_in),
                         icon = Icons.Rounded.CheckCircle,
-                        supporting = "Resonate keeps the session, never your password",
-                        trailing = { TextButton(onClick = model::signOut) { Text("Sign out") } },
+                        supporting = stringResource(R.string.scrobbling_lastfm_signed_in_detail),
+                        trailing = {
+                            TextButton(onClick = model::signOut) {
+                                Text(stringResource(R.string.scrobbling_sign_out))
+                            }
+                        },
                     )
                 }
             } else {
                 item(key = "lastfm-signed-out") {
                     SettingRow(
-                        title = "Sign in to Last.fm",
+                        title = stringResource(R.string.scrobbling_lastfm_sign_in_title),
                         icon = Icons.Rounded.Lock,
-                        supporting =
-                            "Your password is used once to start a session and is never saved",
+                        supporting = stringResource(R.string.scrobbling_lastfm_sign_in_detail),
                     )
                 }
                 item(key = "lastfm-user") {
                     Field(
                         value = current.user,
                         onValueChange = { value -> model.edit { it.copy(user = value) } },
-                        label = "Last.fm username",
+                        label = stringResource(R.string.scrobbling_lastfm_user),
                     )
                 }
                 item(key = "lastfm-password") {
                     Field(
                         value = current.password,
                         onValueChange = { value -> model.edit { it.copy(password = value) } },
-                        label = "Last.fm password",
+                        label = stringResource(R.string.scrobbling_lastfm_password),
                         secret = true,
                     )
                 }
@@ -214,17 +217,19 @@ fun ScrobblingScreen() {
                             enabled = online && canSignInToLastFm(current),
                             modifier = Modifier.testTag("lastfm-sign-in"),
                         ) {
-                            Text("Sign in")
+                            Text(stringResource(R.string.scrobbling_sign_in))
                         }
                     }
                 }
             }
-            item(key = "options-header") { SectionHeader("When saving") }
+            item(key = "options-header") {
+                SectionHeader(stringResource(R.string.scrobbling_when_saving))
+            }
             item(key = "history") {
                 SwitchRow(
-                    title = "Include existing history",
+                    title = stringResource(R.string.scrobbling_history),
                     icon = Icons.Rounded.History,
-                    supporting = "Also send what you listened to before these accounts were saved",
+                    supporting = stringResource(R.string.scrobbling_history_detail),
                     checked = current.includeHistory,
                     onCheckedChange = { value -> model.edit { it.copy(includeHistory = value) } },
                 )
@@ -232,14 +237,18 @@ fun ScrobblingScreen() {
             item(key = "actions") {
                 ButtonRow {
                     OutlinedButton(onClick = model::validate, enabled = online) {
-                        Text("Check accounts")
+                        Text(stringResource(R.string.scrobbling_check))
                     }
                     Button(
                         onClick = model::save,
                         enabled = unsaved,
                         modifier = Modifier.testTag("save-scrobbling"),
                     ) {
-                        Text(if (unsaved) "Save" else "Saved")
+                        Text(
+                            stringResource(
+                                if (unsaved) R.string.scrobbling_save else R.string.scrobbling_saved
+                            )
+                        )
                     }
                 }
             }
@@ -254,14 +263,13 @@ fun ScrobblingScreen() {
             }
             item(key = "loves") {
                 SettingRow(
-                    title = "Favourites are told for you",
+                    title = stringResource(R.string.scrobbling_loves),
                     icon = Icons.Rounded.Favorite,
-                    supporting =
-                        "A favourite with a recording is loved on each saved account, and taken back there when you remove it. There is nothing to send by hand.",
+                    supporting = stringResource(R.string.scrobbling_loves_detail),
                 )
             }
             item(key = "keystore") {
-                Footnote("Tokens, keys and sessions stay encrypted with Android Keystore.")
+                Footnote(stringResource(R.string.scrobbling_keystore))
             }
         }
     }

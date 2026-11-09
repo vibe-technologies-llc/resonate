@@ -95,7 +95,7 @@ object ResonateWidgets {
         val song =
             WidgetSong(
                 track?.title ?: "Resonate",
-                track?.artist.orEmpty().ifBlank { "Your music, everywhere" },
+                track?.artist.orEmpty().ifBlank { context.getString(R.string.widget_artist) },
                 track?.album.orEmpty(),
                 snapshot?.transport == Transport.PLAYING ||
                     snapshot?.transport == Transport.LOADING,
@@ -139,7 +139,9 @@ object ResonateWidgets {
                         latest
                             ?: WidgetSong(
                                 preferences.getString("title", "Resonate") ?: "Resonate",
-                                preferences.getString("artist", "Your music, everywhere").orEmpty(),
+                                preferences
+                                    .getString("artist", context.getString(R.string.widget_artist))
+                                    .orEmpty(),
                                 preferences.getString("album", "").orEmpty(),
                                 false,
                                 preferences.getString("artwork", null)?.let(::storedArtwork),

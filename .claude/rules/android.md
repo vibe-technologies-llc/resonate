@@ -24,8 +24,14 @@ candidate digit, 9 for a final), so a release is versioned in one place.
 a count, the launcher's name `@string/app_name`; `generateLocaleConfig` and `res/resources.properties`
 (`unqualifiedResLocale=en`) make the language the system's per-app setting, and `SpokenLanguages`
 tells the boundary the configuration's locales as the player opens and on every configuration change
-(`ResonateApplication.onConfigurationChanged`, once the engine is open). `WordsTest` refuses a prose
-literal in a file not on its `STILL_TO_MOVE` list.
+(`ResonateApplication.onConfigurationChanged`, once the engine is open). Composables read
+`stringResource` and `pluralStringResource`; everything else says its words through the `Words` seam
+(`Words.kt`: `string(id, args)` and `plural(id, count, args)`), `ResourceWords` over `Resources` in the
+app (`LibraryRepository.words`, `words()` in a composable) and, in JVM tests, `English`, which reads
+`res/values/*.xml` and formats each resource as Android does for English, so logic tested on the JVM
+(`DeletionSentences`, `SyncWords`, `TagSentences` and the rest) takes a `Words` and its tests assert the
+same English without Robolectric. `WordsTest` refuses a prose literal in any Kotlin source; `PROPER`
+names the literals that are proper names.
 
 `MainActivity` is a `ComponentActivity` that draws edge to edge and sets `ResonateApp`; it keeps
 the `MediaController` connection (made again on start where none is, or the last one failed or was
@@ -374,7 +380,8 @@ Scrobbling; Spotify), *Devices* (Device sync), *Appearance* (Appearance) and *Ap
 notifications, with *Allow* while refused, and the version). Every row is an icon, its page's title and
 a one-line status, live where there is one to tell (the equaliser's *On · <curve>* or *Off*, the output
 in use, the theme and accent). Search folds accents and matches word starts across a row's title, line,
-group and the settings its page holds (`Setting.inner`, the one matched named in place of the line);
+group, the settings its page holds (`Setting.inner`, the one matched named in place of the line) and the
+proper names it answers to (`Setting.names`), each row's words read from the resources first (`matchingSettings(words, query)`);
 the equaliser's pages (*Headphone correction*, *Measure with a microphone*, *Room correction*,
 *Listening test*, *Curves for other outputs* while one is kept) are rows only search lists
 (`Setting.onRoot` false, their line led by *Equaliser ·*), so *AutoEq*, *room*, *ABX* or *microphone*

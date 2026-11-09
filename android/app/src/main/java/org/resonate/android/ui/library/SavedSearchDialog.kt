@@ -28,9 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.SearchOrder
 
@@ -57,15 +59,15 @@ fun SavedSearchDialog(request: SearchEditing, dismiss: () -> Unit) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it.take(NAME_AT_MOST) },
-                    label = { Text("Playlist name") },
+                    label = { Text(stringResource(R.string.library_search_playlist_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("saved-search-name"),
                 )
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("Search") },
-                    supportingText = { Text("Blank asks every song") },
+                    label = { Text(stringResource(R.string.library_search_text)) },
+                    supportingText = { Text(stringResource(R.string.library_search_blank_asks_every_song)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("saved-search-query"),
                 )
@@ -81,15 +83,20 @@ fun SavedSearchDialog(request: SearchEditing, dismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("Descending", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.library_search_descending), style = MaterialTheme.typography.bodyLarge)
                     Switch(checked = descending, onCheckedChange = null)
                 }
                 OutlinedTextField(
                     value = cap,
                     onValueChange = { cap = it.take(CAP_DIGITS_AT_MOST) },
-                    label = { Text("Limit") },
+                    label = { Text(stringResource(R.string.library_search_limit)) },
                     supportingText = {
-                        Text(if (search == null) "A whole number above zero, or blank for every row" else "Blank keeps every row")
+                        Text(
+                            stringResource(
+                                if (search == null) R.string.library_search_limit_refused
+                                else R.string.library_search_limit_blank
+                            )
+                        )
                     },
                     isError = search == null,
                     singleLine = true,
@@ -109,10 +116,10 @@ fun SavedSearchDialog(request: SearchEditing, dismiss: () -> Unit) {
                 enabled = search != null && draft.name.isNotEmpty(),
                 modifier = Modifier.testTag("saved-search-save"),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.library_save))
             }
         },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.library_cancel)) } },
     )
 }
 
@@ -121,11 +128,11 @@ private fun OrderMenu(order: SearchOrder, onChoose: (SearchOrder) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
         OutlinedTextField(
-            value = order.label,
+            value = stringResource(order.label),
             onValueChange = {},
             readOnly = true,
             singleLine = true,
-            label = { Text("Order") },
+            label = { Text(stringResource(R.string.library_search_order)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier =
                 Modifier.fillMaxWidth()
@@ -135,7 +142,7 @@ private fun OrderMenu(order: SearchOrder, onChoose: (SearchOrder) -> Unit) {
         ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             SearchOrder.entries.forEach { choice ->
                 DropdownMenuItem(
-                    text = { Text(choice.label) },
+                    text = { Text(stringResource(choice.label)) },
                     onClick = {
                         open = false
                         if (choice != order) onChoose(choice)

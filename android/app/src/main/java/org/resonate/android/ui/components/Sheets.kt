@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
@@ -26,13 +27,12 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -60,16 +60,20 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.DeletionSentences
+import org.resonate.android.R
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.albumKey
@@ -77,16 +81,15 @@ import org.resonate.android.served
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.albumOwner
-import org.resonate.android.ui.counted
+import org.resonate.android.ui.library.SavedSearchDialog
+import org.resonate.android.ui.library.SavedSearchDraft
+import org.resonate.android.ui.library.SearchEditing
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Navigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
-import org.resonate.android.ui.library.SavedSearchDialog
-import org.resonate.android.ui.library.SavedSearchDraft
-import org.resonate.android.ui.library.SearchEditing
 import org.resonate.android.ui.shownTitle
-import org.resonate.android.DeletionSentences
+import org.resonate.android.words
 
 data class SongSheetRequest(val track: Track, val queueId: ULong? = null, val inPlayer: Boolean = false)
 
@@ -148,8 +151,8 @@ fun Resonate.favourite(
     scope.launch {
         val answer =
             sheets.snackbar.showSnackbar(
-                "Added to favourites",
-                actionLabel = "Add to playlist",
+                library.words.string(R.string.sheet_added_to_favourites),
+                actionLabel = library.words.string(R.string.sheet_add_to_playlist),
                 duration = SnackbarDuration.Long,
             )
         if (answer == SnackbarResult.ActionPerformed) sheets.addToPlaylist(listOf(track))
@@ -172,11 +175,14 @@ fun Resonate.shareLink(track: Track, scope: CoroutineScope) {
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            library.notice(failure.message ?: "The share link could not be resolved")
+            val message = failure.message
+            if (message != null) library.notice(message)
+            else library.notice(R.string.sheet_share_unresolved)
             return@attempt
         }
-        if (link == null) library.notice("There is no link to share for “${track.shownTitle}”")
-        else host.share(track.shownTitle, link)
+        val title = track.shownTitle(library.words)
+        if (link == null) library.notice(R.string.sheet_share_none, title)
+        else host.share(title, link)
     }
 }
 
@@ -198,14 +204,11 @@ private fun DeleteSongsDialog(tracks: List<Track>, dismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = dismiss,
         icon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
-        title = { Text(DeletionSentences.title(tracks.map { it.shownTitle })) },
+        title = {
+            Text(DeletionSentences.title(words(), tracks.map { it.shownTitle }))
+        },
         text = {
-            Text(
-                if (tracks.size == 1)
-                    "Its file is deleted from your phone, and it leaves the queue, your playlists and favourites."
-                else
-                    "Their files are deleted from your phone, and they leave the queue, your playlists and favourites."
-            )
+            Text(pluralStringResource(R.plurals.sheet_delete_explained, tracks.size))
         },
         confirmButton = {
             TextButton(
@@ -216,10 +219,16 @@ private fun DeleteSongsDialog(tracks: List<Track>, dismiss: () -> Unit) {
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier.testTag("confirm-delete"),
             ) {
-                Text(if (tracks.size == 1) "Delete song" else "Delete ${tracks.size} songs")
+                Text(
+                    if (tracks.size == 1) stringResource(R.string.sheet_delete_song)
+                    else
+                        pluralStringResource(R.plurals.sheet_delete_songs, tracks.size, tracks.size)
+                )
             }
         },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.sheet_cancel)) }
+        },
     )
 }
 
@@ -229,6 +238,7 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
     val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     val scope = rememberCoroutineScope()
+    val words = words()
     val catalog by resonate.library.allTracks.collectAsState()
     val track =
         remember(catalog, request) {
@@ -240,51 +250,87 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             add(
                 SheetAction(
                     if (track.favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    if (track.favourite) "Remove from favourites" else "Add to favourites",
+                    words.string(
+                        if (track.favourite) R.string.player_favourite_remove
+                        else R.string.player_favourite_add
+                    ),
                 ) {
                     resonate.favourite(track, !track.favourite, sheets, scope)
                 }
             )
-            add(SheetAction(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next") {
+            add(SheetAction(
+                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                words.string(R.string.sheet_play_next),
+            ) {
                 resonate.library.request { it.playNext(listOf(track.id)) }
             })
-            add(SheetAction(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue") {
+            add(SheetAction(
+                Icons.AutoMirrored.Rounded.QueueMusic,
+                words.string(R.string.sheet_add_to_queue),
+            ) {
                 resonate.library.request { it.addToQueue(listOf(track.id)) }
             })
-            add(SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist") {
+            add(SheetAction(
+                Icons.AutoMirrored.Rounded.PlaylistAdd,
+                words.string(R.string.sheet_add_to_playlist),
+            ) {
                 sheets.addToPlaylist(listOf(track))
             })
             if (track.album.isNotBlank()) {
-                add(SheetAction(Icons.Rounded.Album, "Go to album") { navigator.openAlbumOf(track) })
+                add(SheetAction(Icons.Rounded.Album, words.string(R.string.player_go_to_album)) {
+                    navigator.openAlbumOf(track)
+                })
             }
-            add(SheetAction(Icons.Rounded.Person, "Go to artist") { navigator.openArtistOf(track) })
-            add(SheetAction(Icons.Rounded.Lyrics, "Lyrics") { navigator.open(Screen.Lyrics(track.id)) })
-            add(SheetAction(Icons.Rounded.Insights, "Analysis") {
+            add(SheetAction(Icons.Rounded.Person, words.string(R.string.player_go_to_artist)) {
+                navigator.openArtistOf(track)
+            })
+            add(SheetAction(Icons.Rounded.Lyrics, words.string(R.string.player_lyrics)) {
+                navigator.open(Screen.Lyrics(track.id))
+            })
+            add(SheetAction(Icons.Rounded.Insights, words.string(R.string.analysis_title)) {
                 navigator.open(Screen.Analysis(track.id))
             })
-            add(SheetAction(Icons.Rounded.Info, "Song details") {
+            add(SheetAction(Icons.Rounded.Info, words.string(R.string.details_title)) {
                 navigator.open(Screen.Details(track.id))
             })
-            add(SheetAction(Icons.Rounded.Share, "Share link") { resonate.shareLink(track, scope) })
+            add(SheetAction(Icons.Rounded.Share, words.string(R.string.sheet_share_link)) {
+                resonate.shareLink(track, scope)
+            })
             if (resonate.features.tags.writable(track)) {
-                add(SheetAction(Icons.Rounded.Edit, "Edit tags") { sheets.editTags(listOf(track)) })
+                add(SheetAction(Icons.Rounded.Edit, words.string(R.string.sheet_edit_tags)) {
+                    sheets.editTags(listOf(track))
+                })
             }
             if (resonate.features.songDeletable(track)) {
-                add(SheetAction(Icons.Rounded.DeleteOutline, "Delete song", destructive = true) {
+                add(SheetAction(
+                    Icons.Rounded.DeleteOutline,
+                    words.string(R.string.sheet_delete_song),
+                    destructive = true,
+                ) {
                     sheets.deleting = listOf(track)
                 })
             }
         }
         if (request.inPlayer) {
-            add(SheetAction(Icons.Rounded.Bedtime, "Sleep timer") { sheets.sleeping = true })
-            add(SheetAction(Icons.Rounded.Equalizer, "Equaliser") { navigator.open(Screen.Equaliser) })
-            add(SheetAction(Icons.Rounded.Speaker, "Audio output") { navigator.open(Screen.Output) })
-            add(SheetAction(Icons.Rounded.GraphicEq, "Visualizer") {
+            add(SheetAction(Icons.Rounded.Bedtime, words.string(R.string.player_sleep_timer)) {
+                sheets.sleeping = true
+            })
+            add(SheetAction(Icons.Rounded.Equalizer, words.string(R.string.sheet_equaliser)) {
+                navigator.open(Screen.Equaliser)
+            })
+            add(SheetAction(Icons.Rounded.Speaker, words.string(R.string.sheet_audio_output)) {
+                navigator.open(Screen.Output)
+            })
+            add(SheetAction(Icons.Rounded.GraphicEq, words.string(R.string.sheet_visualizer)) {
                 navigator.open(Screen.Visualizer)
             })
         }
         request.queueId?.let { row ->
-            add(SheetAction(Icons.Rounded.RemoveCircleOutline, "Remove from queue") {
+            add(SheetAction(
+                Icons.Rounded.RemoveCircleOutline,
+                words.string(R.string.queue_remove),
+            ) {
+
                 resonate.library.request { it.removeFromQueue(row) }
             })
         }
@@ -348,9 +394,10 @@ private fun PlaylistPicker(tracks: List<Track>, dismiss: () -> Unit) {
     val sheets = LocalSheets.current
     val playlists by resonate.features.playlists.collectAsState()
     LaunchedEffect(Unit) { resonate.features.loadPlaylists() }
+    val newPlaylist = stringResource(R.string.sheet_new_playlist)
     ModalBottomSheet(onDismissRequest = dismiss) {
         Text(
-            "Add to playlist",
+            stringResource(R.string.sheet_add_to_playlist),
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
@@ -359,10 +406,10 @@ private fun PlaylistPicker(tracks: List<Track>, dismiss: () -> Unit) {
         ) {
             item {
                 CollectionRow(
-                    title = "New playlist",
+                    title = newPlaylist,
                     supporting = null,
                     onClick = {
-                        sheets.name("New playlist") { name ->
+                        sheets.name(newPlaylist) { name ->
                             resonate.features.createPlaylist(name, tracks)
                             dismiss()
                         }
@@ -373,7 +420,12 @@ private fun PlaylistPicker(tracks: List<Track>, dismiss: () -> Unit) {
             items(playlists.filter { it.search == null }, key = { it.id.toString() }) { playlist ->
                 CollectionRow(
                     title = playlist.name,
-                    supporting = counted(playlist.songs, "song"),
+                    supporting =
+                        pluralStringResource(
+                            R.plurals.count_songs,
+                            playlist.songs.toInt(),
+                            playlist.songs.toInt(),
+                        ),
                     onClick = {
                         resonate.features.addToPlaylist(playlist.id, tracks)
                         dismiss()
@@ -406,7 +458,7 @@ private fun NamePlaylistDialog(request: NamingRequest, dismiss: () -> Unit) {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(PLAYLIST_NAME_AT_MOST) },
-                label = { Text("Playlist name") },
+                label = { Text(stringResource(R.string.sheet_playlist_name)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
@@ -414,9 +466,14 @@ private fun NamePlaylistDialog(request: NamingRequest, dismiss: () -> Unit) {
             )
         },
         confirmButton = {
-            TextButton(onClick = save, enabled = name.isNotBlank()) { Text("Save") }
+            TextButton(onClick = save, enabled = name.isNotBlank()) {
+                Text(stringResource(R.string.sheet_save))
+            }
         },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.sheet_cancel)) }
+        },
+
     )
 }
 

@@ -1,5 +1,6 @@
 package org.resonate.android.ui.settings
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,11 +28,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
@@ -40,6 +44,7 @@ import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 class FoldersViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
@@ -58,11 +63,11 @@ class FoldersViewModel(private val resonate: Resonate) : ViewModel() {
     fun rescan() = resonate.library.rescan()
 }
 
-enum class FolderAccess(val text: String) {
-    DOWNLOADS("Read through Android's media library · tap to scan again"),
-    READ_AND_WRITE("Read and write access"),
-    READ_ONLY("Read access · songs from other devices and downloads cannot land here"),
-    UNAVAILABLE("Access unavailable · add the folder again to read it"),
+enum class FolderAccess(@StringRes val text: Int) {
+    DOWNLOADS(R.string.folders_access_downloads),
+    READ_AND_WRITE(R.string.folders_access_read_and_write),
+    READ_ONLY(R.string.folders_access_read_only),
+    UNAVAILABLE(R.string.folders_access_unavailable),
 }
 
 fun folderAccess(downloads: Boolean, readable: Boolean, writable: Boolean): FolderAccess =
@@ -73,11 +78,9 @@ fun folderAccess(downloads: Boolean, readable: Boolean, writable: Boolean): Fold
         else -> FolderAccess.READ_ONLY
     }
 
-fun removalText(name: String, downloads: Boolean): String =
-    if (downloads)
-        "Resonate stops reading Downloads. Your downloaded files and their songs in your library stay as they are."
-    else
-        "Resonate gives back its access to “$name”. The folder and its files stay untouched on your device; its songs leave your library until you add it again."
+fun removalText(words: Words, name: String, downloads: Boolean): String =
+    if (downloads) words.string(R.string.folders_removal_downloads)
+    else words.string(R.string.folders_removal, name)
 
 @Composable
 fun FoldersScreen() {
@@ -88,18 +91,22 @@ fun FoldersScreen() {
     var removing by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { model.refresh() }
     val hasDownloads = folders.any { it.uri == MusicDocuments.downloads }
+    val words = words()
     Page(
-        "Music folders",
+        stringResource(R.string.folders_title),
         actions = {
             IconButton(onClick = model::rescan, enabled = !scanning && folders.isNotEmpty()) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "Rescan folders")
+                Icon(
+                    Icons.Rounded.Refresh,
+                    contentDescription = stringResource(R.string.folders_rescan),
+                )
             }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = model::add,
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("Add folder") },
+                text = { Text(stringResource(R.string.folders_add)) },
                 modifier = Modifier.testTag("add-folder"),
             )
         },
@@ -117,14 +124,13 @@ fun FoldersScreen() {
                 item(key = "empty") {
                     EmptyState(
                         Icons.Rounded.CreateNewFolder,
-                        "No music folders yet",
-                        detail =
-                            "Add a folder that holds your music, or use the songs already in Downloads.",
+                        stringResource(R.string.folders_empty),
+                        detail = stringResource(R.string.folders_empty_detail),
                         modifier = Modifier.padding(top = 24.dp),
                     )
                 }
             } else {
-                item(key = "header") { SectionHeader("Your folders") }
+                item(key = "header") { SectionHeader(stringResource(R.string.folders_yours)) }
                 items(folders, key = { it.uri.toString() }) { folder ->
                     val downloads = folder.uri == MusicDocuments.downloads
                     val access = folderAccess(downloads, folder.readable, folder.writable)
@@ -136,7 +142,7 @@ fun FoldersScreen() {
                                 access == FolderAccess.UNAVAILABLE -> Icons.Rounded.FolderOff
                                 else -> Icons.Rounded.Folder
                             },
-                        supporting = access.text,
+                        supporting = stringResource(access.text),
                         supportingColor =
                             if (access == FolderAccess.UNAVAILABLE) MaterialTheme.colorScheme.error
                             else null,
@@ -152,14 +158,19 @@ fun FoldersScreen() {
                                     ) {
                                         Icon(
                                             Icons.Rounded.DriveFileRenameOutline,
-                                            contentDescription = "Organise ${folder.name}",
+                                            contentDescription =
+                                                stringResource(
+                                                    R.string.folders_organise,
+                                                    folder.name,
+                                                ),
                                         )
                                     }
                                 }
                                 IconButton(onClick = { removing = folder.uri.toString() }) {
                                     Icon(
                                         Icons.Rounded.LinkOff,
-                                        contentDescription = "Remove access to ${folder.name}",
+                                        contentDescription =
+                                            stringResource(R.string.folders_remove, folder.name),
                                     )
                                 }
                             }
@@ -169,22 +180,21 @@ fun FoldersScreen() {
                 }
             }
             if (!hasDownloads) {
-                item(key = "downloads-header") { SectionHeader("Downloads") }
+                item(key = "downloads-header") {
+                    SectionHeader(stringResource(R.string.folders_downloads))
+                }
                 item(key = "downloads") {
                     SettingRow(
-                        title = "Use Downloads",
+                        title = stringResource(R.string.folders_use_downloads),
                         icon = Icons.Rounded.Download,
-                        supporting =
-                            "Read the songs in your Downloads folder. Android asks for music access first.",
+                        supporting = stringResource(R.string.folders_use_downloads_detail),
                         onClick = model::useDownloads,
                         modifier = Modifier.testTag("use-downloads"),
                     )
                 }
             }
             item(key = "note") {
-                Footnote(
-                    "Android does not let apps choose Downloads or the whole storage as a folder, so Downloads has its own option. For any other place, choose Add folder."
-                )
+                Footnote(stringResource(R.string.folders_note))
             }
         }
     }
@@ -192,9 +202,9 @@ fun FoldersScreen() {
     if (target != null) {
         val downloads = target.uri == MusicDocuments.downloads
         ConfirmDialog(
-            title = "Remove access to ${target.name}?",
-            text = removalText(target.name, downloads),
-            confirm = "Remove access",
+            title = stringResource(R.string.folders_remove_title, target.name),
+            text = removalText(words, target.name, downloads),
+            confirm = stringResource(R.string.folders_remove_confirm),
             icon = Icons.Rounded.LinkOff,
             destructive = true,
             onConfirm = { model.remove(target) },

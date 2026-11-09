@@ -24,7 +24,7 @@ class SpotifyWordsTest {
     @Test
     fun theRedirectToRegisterIsSaid() {
         assertTrue(
-            SpotifyWords.register("http://127.0.0.1:43879/spotify")
+            SpotifyWords.register(English, "http://127.0.0.1:43879/spotify")
                 .contains("http://127.0.0.1:43879/spotify")
         )
     }

@@ -1,5 +1,6 @@
 package org.resonate.android.ui.library
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -33,26 +34,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import org.resonate.android.R
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SettingsAction
 import org.resonate.android.ui.components.SongSelectionBar
-import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.TitleSize
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 
-private enum class Shelf(val title: String) {
-    SONGS("Songs"),
-    ALBUMS("Albums"),
-    ARTISTS("Artists"),
-    PLAYLISTS("Playlists"),
+private enum class Shelf(@StringRes val title: Int) {
+    SONGS(R.string.library_shelf_songs),
+    ALBUMS(R.string.library_shelf_albums),
+    ARTISTS(R.string.library_shelf_artists),
+    PLAYLISTS(R.string.library_shelf_playlists),
 }
 
 @Composable
@@ -71,7 +74,8 @@ fun LibraryScreen() {
     val onPlaylists = pager.currentPage == Shelf.PLAYLISTS.ordinal
     LaunchedEffect(pager.currentPage) { selection.clear() }
     LaunchedEffect(songs) { selection.retain(songs.map { it.id }) }
-    val newPlaylist = { sheets.name("New playlist") { model.createOrJoin(it) } }
+    val newPlaylistTitle = stringResource(R.string.library_new_playlist)
+    val newPlaylist = { sheets.name(newPlaylistTitle) { model.createOrJoin(it) } }
     val playlistsAsked by resonate.features.together.playlistsAsked.collectAsStateWithLifecycle()
     LaunchedEffect(playlistsAsked) {
         if (playlistsAsked) {
@@ -80,7 +84,7 @@ fun LibraryScreen() {
         }
     }
     Page(
-        "Library",
+        stringResource(R.string.library_title),
         size = TitleSize.LARGE,
         back = false,
         actions = {
@@ -88,19 +92,21 @@ fun LibraryScreen() {
             OverflowMenu(
                 listOf(
                     listOf(
-                        MenuEntry.Action("Add music folder", Icons.Rounded.CreateNewFolder) {
+                        MenuEntry.Action(stringResource(R.string.library_add_folder), Icons.Rounded.CreateNewFolder) {
                             resonate.host.chooseFolder()
                         },
-                        MenuEntry.Action("Use Downloads", Icons.Rounded.Download) {
+                        MenuEntry.Action(stringResource(R.string.library_use_downloads), Icons.Rounded.Download) {
                             resonate.host.useDownloads()
                         },
-                        MenuEntry.Action("Rescan library", Icons.Rounded.Refresh) { model.rescan() },
+                        MenuEntry.Action(stringResource(R.string.library_rescan), Icons.Rounded.Refresh) {
+                            model.rescan()
+                        },
                     ),
                     listOf(
-                        MenuEntry.Action("Listening party", Icons.Rounded.Groups) {
+                        MenuEntry.Action(stringResource(R.string.library_listening_party), Icons.Rounded.Groups) {
                             navigator.open(Screen.Party)
                         },
-                        MenuEntry.Action("Library tools", Icons.Rounded.Handyman) {
+                        MenuEntry.Action(stringResource(R.string.library_tools), Icons.Rounded.Handyman) {
                             navigator.open(Screen.LibraryTools)
                         },
                     ),
@@ -128,7 +134,7 @@ fun LibraryScreen() {
                     onClick = newPlaylist,
                     modifier = Modifier.testTag("new-playlist"),
                 ) {
-                    Icon(Icons.Rounded.Add, contentDescription = "New playlist")
+                    Icon(Icons.Rounded.Add, contentDescription = newPlaylistTitle)
                 }
             }
         },
@@ -151,7 +157,13 @@ fun LibraryScreen() {
                             Tab(
                                 selected = pager.currentPage == shelf.ordinal,
                                 onClick = { scope.launch { pager.animateScrollToPage(shelf.ordinal) } },
-                                text = { Text(shelf.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                text = {
+                                    Text(
+                                        stringResource(shelf.title),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
                                 modifier = Modifier.testTag("shelf-${shelf.name.lowercase()}"),
                             )
                         }

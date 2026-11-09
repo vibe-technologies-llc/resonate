@@ -29,10 +29,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.resonate.android.R
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.settings.ButtonRow
@@ -67,7 +69,9 @@ class SecondPress {
         if (pressing.confirmed) confirmed()
     }
 
-    fun label(key: String, label: String): String = if (armed == key) "Press again" else label
+    @Composable
+    fun label(key: String, label: String): String =
+        if (armed == key) stringResource(R.string.together_press_again) else label
 
     companion object {
         val saver =
@@ -119,7 +123,7 @@ fun InvitationLink(
             OutlinedButton(onClick = { copy(saying, link) }, modifier = Modifier.testTag("$tag-copy")) {
                 Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Copy")
+                Text(stringResource(R.string.together_copy))
             }
             FilledTonalButton(
                 onClick = { resonate.host.share(shareTitle, link) },
@@ -127,12 +131,16 @@ fun InvitationLink(
             ) {
                 Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Share")
+                Text(stringResource(R.string.together_share))
             }
             TextButton(onClick = { qrShown = !qrShown }, modifier = Modifier.testTag("$tag-toggle-qr")) {
                 Icon(Icons.Rounded.QrCode2, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (qrShown) "Hide QR code" else "Show QR code")
+                Text(
+                    stringResource(
+                        if (qrShown) R.string.together_hide_qr_code else R.string.together_show_qr_code
+                    )
+                )
             }
         }
     }

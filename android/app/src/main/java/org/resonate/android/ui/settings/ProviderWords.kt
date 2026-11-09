@@ -1,6 +1,8 @@
 package org.resonate.android.ui.settings
 
+import org.resonate.android.R
 import org.resonate.android.Readiness
+import org.resonate.android.Words
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.readiness
@@ -32,14 +34,16 @@ fun providerName(provider: MusicProvider): String =
         MusicProvider.TIDAL -> "TIDAL"
     }
 
-fun providerDetail(provider: MusicProvider): String =
-    when (provider) {
-        MusicProvider.MONOCHROME -> "A Monochrome server, or the hosted one"
-        MusicProvider.HIFI_API -> "A hifi-api server, or the hosted one"
-        MusicProvider.SUBSONIC -> "Your own Subsonic or Navidrome server"
-        MusicProvider.JELLYFIN -> "Your own Jellyfin or Emby server, browsed and played where it is"
-        MusicProvider.TIDAL -> "Your TIDAL subscription"
-    }
+fun providerDetail(words: Words, provider: MusicProvider): String =
+    words.string(
+        when (provider) {
+            MusicProvider.MONOCHROME -> R.string.provider_detail_monochrome
+            MusicProvider.HIFI_API -> R.string.provider_detail_hifi_api
+            MusicProvider.SUBSONIC -> R.string.provider_detail_subsonic
+            MusicProvider.JELLYFIN -> R.string.provider_detail_jellyfin
+            MusicProvider.TIDAL -> R.string.provider_detail_tidal
+        }
+    )
 
 fun providerFields(provider: MusicProvider): List<ProviderField> =
     when (provider) {
@@ -77,36 +81,38 @@ fun DownloadAccount.with(field: ProviderField, value: String): DownloadAccount =
 fun DownloadAccount.trimmed(): DownloadAccount =
     copy(server = server.trim(), user = user.trim(), clientId = clientId.trim())
 
-fun readinessWords(readiness: Readiness): String =
-    when (readiness) {
-        Readiness.READY -> "Ready"
-        Readiness.MISSING_SERVER -> "Needs a server address"
-        Readiness.MISSING_LOGIN -> "Needs a username and password"
-        Readiness.MISSING_CLIENT -> "Needs a TIDAL client ID"
-        Readiness.NEEDS_SIGN_IN -> "Needs Sign in with TIDAL"
-    }
+fun readinessWords(words: Words, readiness: Readiness): String =
+    words.string(
+        when (readiness) {
+            Readiness.READY -> R.string.provider_ready
+            Readiness.MISSING_SERVER -> R.string.provider_missing_server
+            Readiness.MISSING_LOGIN -> R.string.provider_missing_login
+            Readiness.MISSING_CLIENT -> R.string.provider_missing_client
+            Readiness.NEEDS_SIGN_IN -> R.string.provider_needs_sign_in
+        }
+    )
 
-fun accountLocation(account: DownloadAccount): String {
+fun accountLocation(words: Words, account: DownloadAccount): String {
     val server = account.server.trim().substringAfter("://").trimEnd('/')
     return when {
         server.isNotEmpty() -> server
-        account.provider == MusicProvider.TIDAL -> "Your subscription"
+        account.provider == MusicProvider.TIDAL ->
+            words.string(R.string.provider_location_subscription)
         account.provider == MusicProvider.HIFI_API && account.password.isNotBlank() ->
-            "Your own server"
+            words.string(R.string.provider_location_own_server)
         account.provider == MusicProvider.SUBSONIC ||
-            account.provider == MusicProvider.JELLYFIN -> "No server yet"
-        else -> "Hosted service"
+            account.provider == MusicProvider.JELLYFIN ->
+            words.string(R.string.provider_location_no_server)
+        else -> words.string(R.string.provider_location_hosted)
     }
 }
 
-fun accountSummary(account: DownloadAccount, on: Boolean): String {
-    val status = if (on) readinessWords(account.readiness()) else "Off"
-    return "${accountLocation(account)} · $status"
+fun accountSummary(words: Words, account: DownloadAccount, on: Boolean): String {
+    val status =
+        if (on) readinessWords(words, account.readiness()) else words.string(R.string.provider_off)
+    return "${accountLocation(words, account)} · $status"
 }
 
-fun accountsLead(count: Int): String =
-    when (count) {
-        0 -> "No source is set up yet."
-        1 -> "One source is asked for each song."
-        else -> "All $count sources are asked at once for each song, and the first to deliver wins."
-    }
+fun accountsLead(words: Words, count: Int): String =
+    if (count == 0) words.string(R.string.providers_lead_none)
+    else words.plural(R.plurals.providers_lead, count, count)

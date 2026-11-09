@@ -2,9 +2,12 @@ package org.resonate.android.ui.equaliser
 
 import java.math.BigDecimal
 import java.util.Locale
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.EqualiserImport
 
 class Measure(
+    private val words: Words,
     val label: String,
     val unit: String,
     val range: ClosedFloatingPointRange<Float>,
@@ -16,51 +19,56 @@ class Measure(
     val centred: Boolean = false,
 ) {
     val reach: String
-        get() = "From ${shown(range.start)} to ${shown(range.endInclusive)}"
+        get() =
+            words.string(R.string.equaliser_reach, shown(range.start), shown(range.endInclusive))
 
     fun accepted(text: String): Float? = read(text)?.takeIf { it in range }
 }
 
-fun gainMeasure(bounds: EqualiserBounds) =
+fun gainMeasure(words: Words, bounds: EqualiserBounds) =
     Measure(
-        label = "Gain",
-        unit = "dB",
+        words = words,
+        label = words.string(R.string.equaliser_gain),
+        unit = words.string(R.string.equaliser_unit_decibels),
         range = bounds.gain,
-        shown = ::signedDb,
+        shown = { signedDb(words, it) },
         read = ::typedNumber,
         written = { plainNumber(tidyDb(it)) },
         signed = true,
         centred = true,
     )
 
-fun hertzMeasure(bounds: EqualiserBounds) =
+fun hertzMeasure(words: Words, bounds: EqualiserBounds) =
     Measure(
-        label = "Frequency",
-        unit = "Hz",
+        words = words,
+        label = words.string(R.string.equaliser_frequency),
+        unit = words.string(R.string.equaliser_unit_hertz),
         range = bounds.hertz,
-        shown = ::hertzLabel,
+        shown = { hertzLabel(words, it) },
         read = ::typedHertz,
         written = { plainNumber(tidyHertz(it)) },
         logarithmic = true,
     )
 
-fun widthMeasure(bounds: EqualiserBounds) =
+fun widthMeasure(words: Words, bounds: EqualiserBounds) =
     Measure(
-        label = "Width",
+        words = words,
+        label = words.string(R.string.equaliser_width),
         unit = "",
         range = bounds.q,
-        shown = ::qLabel,
+        shown = { qLabel(words, it) },
         read = ::typedNumber,
         written = { plainNumber(tidyQ(it)) },
         logarithmic = true,
     )
 
-fun preampMeasure(bounds: EqualiserBounds) =
+fun preampMeasure(words: Words, bounds: EqualiserBounds) =
     Measure(
-        label = "Level",
-        unit = "dB",
+        words = words,
+        label = words.string(R.string.equaliser_level),
+        unit = words.string(R.string.equaliser_unit_decibels),
         range = bounds.preamp,
-        shown = ::signedDb,
+        shown = { signedDb(words, it) },
         read = ::typedNumber,
         written = { plainNumber(tidyDb(it)) },
         signed = true,
@@ -101,25 +109,25 @@ fun plainNumber(value: Float): String =
         if (it == "-0") "0" else it
     }
 
-fun counted(count: UInt, one: String, many: String): String =
-    if (count == 1u) "1 $one" else "$count $many"
-
-fun importSentence(found: EqualiserImport): String {
-    val bands = counted(found.curve.bands.size.toUInt(), "band", "bands")
-    val name = found.curve.name.ifBlank { "the profile" }
-    val fitted = if (found.converted) ", fitted from its GraphicEQ line" else ""
+fun importSentence(words: Words, found: EqualiserImport): String {
+    val count = found.curve.bands.size
+    val bands = words.plural(R.plurals.equaliser_import_bands, count, count)
+    val name = found.curve.name.ifBlank { words.string(R.string.equaliser_import_the_profile) }
+    val loaded =
+        if (found.converted) words.string(R.string.equaliser_import_loaded_fitted, bands, name)
+        else words.string(R.string.equaliser_import_loaded, bands, name)
     val notes =
         listOfNotNull(
             found.clamped.takeIf { it > 0u }?.let {
-                "${counted(it, "value was", "values were")} held to the equaliser's reach"
+                words.plural(R.plurals.equaliser_import_clamped, it.toInt(), it.toInt())
             },
             found.approximated.takeIf { it > 0u }?.let {
-                "${counted(it, "filter was", "filters were")} approximated"
+                words.plural(R.plurals.equaliser_import_approximated, it.toInt(), it.toInt())
             },
             found.passedOver.takeIf { it > 0u }?.let {
-                "${counted(it, "line was", "lines were")} passed over"
+                words.plural(R.plurals.equaliser_import_passed_over, it.toInt(), it.toInt())
             },
         )
     val said = notes.joinToString("; ").replaceFirstChar { it.uppercase() }
-    return "Loaded $bands from $name$fitted." + if (said.isEmpty()) "" else " $said."
+    return loaded + if (said.isEmpty()) "" else " $said."
 }

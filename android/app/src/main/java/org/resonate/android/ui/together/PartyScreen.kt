@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -38,6 +39,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import org.resonate.android.R
 import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.ui.Resonate
@@ -51,13 +53,10 @@ import org.resonate.android.ui.settings.Note
 import org.resonate.android.ui.settings.NoticeCard
 import org.resonate.android.ui.settings.SettingRow
 import org.resonate.android.ui.settings.SettingsList
+import org.resonate.android.words
 
 const val PARTY_READ_EVERY_MS = 500L
 private const val END_KEY = "end"
-private const val NO_PARTY_YET =
-    "Everyone hears the same song at the same moment, each from their own copy or service. " +
-        "No sound passes between you."
-private const val ASKS_THE_HOST = "Adding a song to your queue asks the host to play it."
 
 class PartyViewModel(private val resonate: Resonate) : ViewModel() {
     val together = resonate.features.together
@@ -79,7 +78,7 @@ fun PartyScreen() {
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { model.follow() }
     }
-    Page("Listening party") { padding ->
+    Page(stringResource(R.string.party_title)) { padding ->
         val shown = party
         if (shown == null) {
             Column(
@@ -102,14 +101,14 @@ private fun NoParty(model: PartyViewModel) {
     val paste = rememberPasteALink()
     EmptyState(
         Icons.Rounded.Groups,
-        "Listen together",
+        stringResource(R.string.party_listen_together),
         Modifier.testTag("party-empty"),
-        detail = NO_PARTY_YET,
-        action = "Begin a party",
+        detail = stringResource(R.string.party_no_party_yet),
+        action = stringResource(R.string.party_begin),
         onAction = model.together::beginParty,
         second = {
             TextButton(onClick = paste, modifier = Modifier.testTag("party-paste")) {
-                Text("Paste a link")
+                Text(stringResource(R.string.party_paste_a_link))
             }
         },
     )
@@ -120,8 +119,9 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
     val together = model.together
     val press = rememberSecondPress()
     val over = TogetherWords.isOver(party.connection)
+    val words = words()
     Column {
-        TogetherWords.connection(party.connection)?.let { said ->
+        TogetherWords.connection(words, party.connection)?.let { said ->
             NoticeCard(
                 if (over) Icons.Rounded.ErrorOutline else Icons.Rounded.Sync,
                 said,
@@ -132,13 +132,13 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
         if (over) {
             ButtonRow {
                 Button(onClick = together::leaveParty, modifier = Modifier.testTag("party-close")) {
-                    Text("Close")
+                    Text(stringResource(R.string.party_close))
                 }
             }
             return@Column
         }
         party.song?.let { song ->
-            SectionHeader("Playing now")
+            SectionHeader(stringResource(R.string.party_playing_now))
             SettingRow(
                 title = song.title,
                 icon = Icons.Rounded.MusicNote,
@@ -147,26 +147,26 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
             )
         }
         if (party.hosting) {
-            SectionHeader("Invite people")
+            SectionHeader(stringResource(R.string.party_invite_people))
             InvitationLink(
-                "Anyone with this link can join",
+                stringResource(R.string.party_link_says),
                 party.link,
-                "Join my listening party",
+                stringResource(R.string.party_link_title),
                 "party",
                 qrAtFirst = true,
             )
         } else {
             Note(
-                TogetherWords.following(party.following),
+                TogetherWords.following(words, party.following),
                 Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("party-following"),
             )
         }
-        if (party.people.isNotEmpty()) SectionHeader("Here")
+        if (party.people.isNotEmpty()) SectionHeader(stringResource(R.string.party_here))
         party.people.forEach { person ->
             SettingRow(
-                title = TogetherWords.person(person),
+                title = TogetherWords.person(words, person),
                 icon = Icons.Rounded.Person,
-                supporting = if (person.isHost) "Host" else null,
+                supporting = if (person.isHost) stringResource(R.string.party_host) else null,
                 trailing =
                     if (party.hosting && !person.isMe) {
                         {
@@ -174,7 +174,7 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                                 onClick = { together.turnOut(person.id) },
                                 modifier = Modifier.testTag("party-remove"),
                             ) {
-                                Text("Remove")
+                                Text(stringResource(R.string.party_remove))
                             }
                         }
                     } else null,
@@ -182,7 +182,7 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
             )
         }
         if (party.hosting && party.requests.isNotEmpty()) {
-            SectionHeader("Asked for")
+            SectionHeader(stringResource(R.string.party_asked_for))
             party.requests.forEachIndexed { at, request ->
                 SettingRow(
                     title = request.title,
@@ -191,12 +191,16 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                     modifier = Modifier.testTag("party-request"),
                 )
                 ButtonRow {
-                    TextButton(onClick = { together.passOver(at) }) { Text("Pass") }
-                    OutlinedButton(onClick = { together.playNext(at) }) { Text("Play next") }
+                    TextButton(onClick = { together.passOver(at) }) {
+                        Text(stringResource(R.string.party_pass))
+                    }
+                    OutlinedButton(onClick = { together.playNext(at) }) {
+                        Text(stringResource(R.string.party_play_next))
+                    }
                 }
             }
         }
-        if (!party.hosting) Note(ASKS_THE_HOST)
+        if (!party.hosting) Note(stringResource(R.string.party_asks_the_host))
         ButtonRow {
             OutlinedButton(
                 onClick = {
@@ -210,9 +214,13 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                 modifier = Modifier.testTag("party-leave"),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Logout, null, Modifier.padding(end = 8.dp))
-                Text(if (party.hosting) press.label(END_KEY, "End the party") else "Leave")
+                Text(
+                    if (party.hosting)
+                        press.label(END_KEY, stringResource(R.string.party_notification_end))
+                    else stringResource(R.string.party_notification_leave)
+                )
             }
         }
-        party.roundTripMs?.let { Footnote(TogetherWords.roundTrip(it)) }
+        party.roundTripMs?.let { Footnote(TogetherWords.roundTrip(words, it)) }
     }
 }

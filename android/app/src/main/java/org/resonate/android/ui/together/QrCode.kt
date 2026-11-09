@@ -10,6 +10,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -18,6 +19,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.WriterException
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import org.resonate.android.R
 
 const val QUIET_MODULES = 4
 
@@ -54,9 +56,10 @@ class QrModules(val side: Int, private val dark: BooleanArray) {
 @Composable
 fun QrCode(text: String, side: Dp, modifier: Modifier = Modifier) {
     val modules = remember(text) { QrModules.of(text) } ?: return
+    val described = stringResource(R.string.together_qr_code)
     Canvas(
         modifier.size(side).clip(MaterialTheme.shapes.medium).semantics {
-            contentDescription = "QR code of this link"
+            contentDescription = described
         }
     ) {
         drawRect(Color.White)

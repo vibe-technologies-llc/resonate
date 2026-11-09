@@ -29,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -36,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.resonate.android.DownloadJob
 import org.resonate.android.DownloadPlan
+import org.resonate.android.R
 import org.resonate.android.nativecore.ReleaseNotHeld
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.LocalResonate
@@ -43,7 +46,6 @@ import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.SheetRow
 import org.resonate.android.ui.components.rememberPicture
-import org.resonate.android.ui.counted
 
 const val NOT_HELD_COVER_ALPHA = 0.5f
 
@@ -51,9 +53,6 @@ const val SONGS_LACKED_FOLDED = 20
 
 fun releaseLine(release: ReleaseNotHeld): String =
     listOf(release.kind, release.year?.toString().orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
-
-fun notInYourLibraryHeading(count: Int, noun: String): String =
-    "$NOT_IN_YOUR_LIBRARY · ${counted(count, noun)}"
 
 fun <T> firstOf(items: List<T>, all: Boolean, folded: Int = SONGS_LACKED_FOLDED): List<T> =
     if (all || items.size <= folded) items else items.take(folded)
@@ -74,12 +73,13 @@ fun UnheldReleaseCard(release: ReleaseNotHeld, onClick: () -> Unit, modifier: Mo
                     null
                 }
         }
+    val notInYourLibrary = stringResource(R.string.library_not_in_your_library)
     CoverCard(
-        title = release.title.ifBlank { "Untitled" },
+        title = release.title.ifBlank { stringResource(R.string.library_untitled) },
         detail = releaseLine(release).ifBlank { null },
         onClick = onClick,
         modifier =
-            modifier.testTag("not-held-release").semantics { stateDescription = NOT_IN_YOUR_LIBRARY },
+            modifier.testTag("not-held-release").semantics { stateDescription = notInYourLibrary },
     ) {
         Picture(
             rememberPicture(sleeve),
@@ -119,7 +119,7 @@ fun UnheldReleaseSheet(
                 .testTag("not-held-release-sheet")
         ) {
             Text(
-                release.title.ifBlank { "Untitled" },
+                release.title.ifBlank { stringResource(R.string.library_untitled) },
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
@@ -134,26 +134,26 @@ fun UnheldReleaseSheet(
             when {
                 failed ->
                     TextButton(onClick = { asked++ }, modifier = Modifier.padding(horizontal = 16.dp)) {
-                        Text("The songs could not be read. Try again")
+                        Text(stringResource(R.string.library_release_unreadable))
                     }
                 listed == null ->
                     CircularProgressIndicator(Modifier.padding(24.dp))
                 listed.isEmpty() ->
                     Text(
-                        "Nothing on this release is missing from your library.",
+                        stringResource(R.string.library_release_complete),
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
                     )
                 else -> {
                     SheetRow(
                         Icons.Rounded.Download,
-                        "Download ${counted(listed.size, "song")}",
+                        pluralStringResource(R.plurals.library_release_download, listed.size, listed.size),
                     ) {
                         dismiss()
                         onDownload(listed)
                     }
                     SheetRow(
                         Icons.Outlined.BookmarkAdd,
-                        "Save ${counted(listed.size, "song")} for later",
+                        pluralStringResource(R.plurals.library_release_save, listed.size, listed.size),
                     ) {
                         dismiss()
                         resonate.features.saveWanted(listed)

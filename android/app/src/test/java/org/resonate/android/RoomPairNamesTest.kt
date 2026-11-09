@@ -6,8 +6,8 @@ import org.junit.Test
 class RoomPairNamesTest {
     @Test
     fun aPairIsNamedByBothFilesStemsLeftFirst() {
-        assertEquals("Studio L and Studio R", pairedRoomName("Studio L.wav", "Studio R.flac"))
-        assertEquals("left.take.2 and right", pairedRoomName("left.take.2.wav", "right"))
+        assertEquals("Studio L and Studio R", pairedRoomName(English, "Studio L.wav", "Studio R.flac"))
+        assertEquals("left.take.2 and right", pairedRoomName(English, "left.take.2.wav", "right"))
     }
 
     @Test

@@ -1,8 +1,9 @@
 package org.resonate.android.ui.library
 
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.length
 
 data class PlaylistEntry(val key: String, val position: Int, val track: Track)
@@ -66,25 +67,30 @@ private fun placeOf(row: AlbumRow): UInt =
 
 fun trackNumber(track: Track, index: Int): String = (track.trackNumber?.toString() ?: "${index + 1}")
 
-fun discTitle(number: UInt?): String = if (number == null) "Other songs" else "Disc $number"
+fun discTitle(words: Words, number: UInt?): String =
+    if (number == null) words.string(R.string.library_disc_other)
+    else words.string(R.string.library_disc, number.toInt())
 
-fun collectionSummary(vararg leading: String?, tracks: List<Track>): String =
+fun collectionSummary(words: Words, vararg leading: String?, tracks: List<Track>): String =
     (leading.filterNotNull().filter { it.isNotBlank() } +
-            counted(tracks.size, "song") +
-            listOfNotNull(tracks.takeIf { it.isNotEmpty() }?.let { songs -> length(songs.sumOf { it.durationMs }) }))
+            words.plural(R.plurals.count_songs, tracks.size, tracks.size) +
+            listOfNotNull(
+                tracks.takeIf { it.isNotEmpty() }?.let { songs -> length(words, songs.sumOf { it.durationMs }) }
+            ))
         .joinToString(" · ")
 
-fun greeting(hour: Int): String =
+fun greeting(words: Words, hour: Int): String =
     when (hour) {
-        in 5..11 -> "Good morning"
-        in 12..17 -> "Good afternoon"
-        else -> "Good evening"
+        in 5..11 -> words.string(R.string.home_greeting_morning)
+        in 12..17 -> words.string(R.string.home_greeting_afternoon)
+        else -> words.string(R.string.home_greeting_evening)
     }
 
-fun listenedHours(milliseconds: ULong): String {
+fun listenedHours(words: Words, milliseconds: ULong): String {
     val hours = milliseconds.toLong() / 3_600_000
     val minutes = (milliseconds.toLong() / 60_000) % 60
-    return if (hours > 0) "$hours h" else "$minutes min"
+    return if (hours > 0) words.string(R.string.home_listened_hours, hours)
+    else words.string(R.string.length_minutes, minutes)
 }
 
 fun artistLine(kind: String, country: String, area: String): String =

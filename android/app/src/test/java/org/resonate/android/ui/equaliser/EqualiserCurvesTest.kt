@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.CrossfeedLevel
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
@@ -99,10 +100,10 @@ class EqualiserCurvesTest {
 
     @Test
     fun aCurveWithNoGainAnywhereReadsAsFlatAndAnUnnamedEditAsCustom() {
-        assertEquals(FLAT_NAME, shownName(flatCurve))
-        assertEquals(FLAT_NAME, shownName(octaveCurve(octaveCentres)))
-        assertEquals(CUSTOM_NAME, shownName(imported.withPreamp(-3f, bounds)))
-        assertEquals("My headphones", shownName(imported))
+        assertEquals("Flat", shownName(English, flatCurve))
+        assertEquals("Flat", shownName(English, octaveCurve(octaveCentres)))
+        assertEquals("Custom", shownName(English, imported.withPreamp(-3f, bounds)))
+        assertEquals("My headphones", shownName(English, imported))
         assertNull(shownPreset(presets, imported))
     }
 
@@ -143,10 +144,10 @@ class EqualiserCurvesTest {
 
     @Test
     fun bandNamesSayTheFrequencyAndWhatItSoundsLike() {
-        assertEquals("100 Hz Bass", bandName(imported.bands[0]))
-        assertEquals("2.00 kHz Vocals", bandName(imported.bands[1]))
-        assertEquals("31.3 Hz Sub-bass", bandName(EqualiserBand(EqualiserFilter.PEAKING, 31.25f, 0f, 1f)))
-        assertEquals("16.0 kHz Air", bandName(EqualiserBand(EqualiserFilter.PEAKING, 16_000f, 0f, 1f)))
+        assertEquals("100 Hz Bass", bandName(English, imported.bands[0]))
+        assertEquals("2.00 kHz Vocals", bandName(English, imported.bands[1]))
+        assertEquals("31.3 Hz Sub-bass", bandName(English, EqualiserBand(EqualiserFilter.PEAKING, 31.25f, 0f, 1f)))
+        assertEquals("16.0 kHz Air", bandName(English, EqualiserBand(EqualiserFilter.PEAKING, 16_000f, 0f, 1f)))
     }
 
     @Test
@@ -214,13 +215,13 @@ class EqualiserCurvesTest {
 
     @Test
     fun hertzAndDecibelsReadAsTheyShould() {
-        assertEquals("62.5 Hz", hertzLabel(62.5f))
-        assertEquals("250 Hz", hertzLabel(250f))
-        assertEquals("2.00 kHz", hertzLabel(2000f))
-        assertEquals("16.0 kHz", hertzLabel(16_000f))
-        assertEquals("+3.0 dB", signedDb(3f))
-        assertEquals("-4.5 dB", signedDb(-4.5f))
-        assertEquals("0.0 dB", signedDb(-0.01f))
+        assertEquals("62.5 Hz", hertzLabel(English, 62.5f))
+        assertEquals("250 Hz", hertzLabel(English, 250f))
+        assertEquals("2.00 kHz", hertzLabel(English, 2000f))
+        assertEquals("16.0 kHz", hertzLabel(English, 16_000f))
+        assertEquals("+3.0 dB", signedDb(English, 3f))
+        assertEquals("-4.5 dB", signedDb(English, -4.5f))
+        assertEquals("0.0 dB", signedDb(English, -0.01f))
     }
 
     @Test

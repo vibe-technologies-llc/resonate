@@ -6,6 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OpenedNamesTest {
+    private val unnamed = English.string(R.string.opened_unnamed)
+
     @Test
     fun aDocumentIsInTheTreeThatHoldsItAndNoOtherWithTheSamePrefix() {
         assertTrue(OpenedNames.withinTree("primary:Music/a/b.flac", "primary:Music"))
@@ -33,10 +35,10 @@ class OpenedNamesTest {
 
     @Test
     fun aNameLosesWhatAFileSystemRefuses() {
-        assertEquals("a_b_.flac", OpenedNames.safeName("a:b?.flac"))
-        assertEquals("c.flac", OpenedNames.safeName("x/y/c.flac"))
-        assertEquals("Opened song", OpenedNames.safeName(null))
-        assertEquals("Opened song", OpenedNames.safeName("  "))
+        assertEquals("a_b_.flac", OpenedNames.safeName("a:b?.flac", unnamed))
+        assertEquals("c.flac", OpenedNames.safeName("x/y/c.flac", unnamed))
+        assertEquals("Opened song", OpenedNames.safeName(null, unnamed))
+        assertEquals("Opened song", OpenedNames.safeName("  ", unnamed))
     }
 
     @Test

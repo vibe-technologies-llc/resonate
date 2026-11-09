@@ -12,27 +12,27 @@ import org.resonate.android.nativecore.FiledSong
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.OrganisePlan
 import org.resonate.android.nativecore.defaultOrganiseLayout
-import org.resonate.android.ui.counted
 
 data class OrganiseUndo(val folder: Uri, val back: List<FiledSong>)
 
 object OrganiseSentences {
-    const val WAITING = "Filing songs once the scan ends"
     const val LISTED_AT_MOST = 50
 
-    fun confirmTitle(moves: Int): String = "Move ${counted(moves, "song")}?"
+    fun confirmTitle(words: Words, moves: Int): String =
+        words.plural(R.plurals.organise_confirm, moves, moves)
 
-    fun told(moved: Int, failed: Int, undoing: Boolean): String {
+    fun told(words: Words, moved: Int, failed: Int, undoing: Boolean): String {
         val said =
-            if (undoing) "Put ${counted(moved, "song")} back where they were"
-            else "Filed ${counted(moved, "song")}"
-        return if (failed > 0) "$said; ${counted(failed, "song")} could not be moved" else said
+            if (undoing) words.plural(R.plurals.organise_put_back, moved, moved)
+            else words.plural(R.plurals.organise_filed, moved, moved)
+        return if (failed > 0) words.plural(R.plurals.organise_not_moved, failed, said, failed)
+        else said
     }
 
-    fun shown(uri: String, rootId: String): String {
+    fun shown(words: Words, uri: String, rootId: String): String {
         val id = OpenedNames.unescaped(uri.substringAfterLast("/document/"))
         val relative = Ids.relative(id, rootId) ?: listOf(id)
-        return "from " + relative.joinToString(" / ")
+        return words.string(R.string.organise_from, relative.joinToString(" / "))
     }
 }
 
@@ -66,7 +66,7 @@ class FolderOrganising(
 
     private fun file(folder: Uri, songs: List<FiledSong>, undoing: Boolean) {
         if (!busy.compareAndSet(false, true)) return
-        if (library.scanning.value) library.notice(OrganiseSentences.WAITING)
+        if (library.scanning.value) library.notice(R.string.organise_waiting)
         scope.launch {
             try {
                 val filed =
@@ -81,7 +81,9 @@ class FolderOrganising(
                 undo.value =
                     if (undoing || filed.back.isEmpty()) null else OrganiseUndo(folder, filed.back)
                 reread(library.native())
-                library.notice(OrganiseSentences.told(filed.moved.size, filed.failed, undoing))
+                library.notice(
+                    OrganiseSentences.told(library.words, filed.moved.size, filed.failed, undoing)
+                )
             } finally {
                 busy.value = false
             }

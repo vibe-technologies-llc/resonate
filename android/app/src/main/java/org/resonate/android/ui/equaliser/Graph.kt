@@ -45,8 +45,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
+import org.resonate.android.words
 
 private val HANDLE_RADIUS = 12.dp
 private val HANDLE_HALO = 20.dp
@@ -69,6 +72,7 @@ fun EqualiserGraph(
     onRelease: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val words = words()
     var frozen by remember { mutableStateOf<Float?>(null) }
     val span = frozen ?: GraphScale.span(response, curve)
     val latest by rememberUpdatedState(curve)
@@ -106,7 +110,7 @@ fun EqualiserGraph(
             Modifier.fillMaxWidth()
                 .height(height)
                 .testTag("equaliser-graph")
-                .semantics { contentDescription = graphDescription(curve, chosenIndex) }
+                .semantics { contentDescription = graphDescription(words, curve, chosenIndex) }
                 .pointerInput(bounds, inset, gutter) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -194,26 +198,31 @@ fun EqualiserGraph(
                     .size(HANDLE_TARGET)
                     .testTag("band-handle-$index")
                     .semantics {
-                        contentDescription = "Band ${index + 1}"
-                        stateDescription = handleState(band)
+                        contentDescription = words.string(R.string.equaliser_band, index + 1)
+                        stateDescription = handleState(words, band)
                         this.selected = index == chosenIndex
-                        onClick(label = "Edit band ${index + 1}") {
+                        onClick(label = words.string(R.string.equaliser_edit_band, index + 1)) {
                             select(index)
                             true
                         }
-                        customActions = handleActions(latest, index, bounds, commit, select)
+                        customActions =
+                            handleActions(words, latest, index, bounds, commit, select)
                     }
             )
         }
     }
 }
 
-fun handleState(band: EqualiserBand): String {
-    val gain = if (band.filter.usesGain) ", ${signedDb(band.gainDb)}" else ""
-    return "${band.filter.label}, ${hertzLabel(band.frequencyHz)}$gain"
-}
+fun handleState(words: Words, band: EqualiserBand): String =
+    listOfNotNull(
+            words.string(band.filter.label),
+            hertzLabel(words, band.frequencyHz),
+            signedDb(words, band.gainDb).takeIf { band.filter.usesGain },
+        )
+        .joinToString(", ")
 
 private fun handleActions(
+    words: Words,
     curve: EqualiserCurve,
     index: Int,
     bounds: EqualiserBounds,
@@ -229,20 +238,20 @@ private fun handleActions(
     val gains =
         if (band.filter.usesGain)
             listOf(
-                CustomAccessibilityAction("Raise the gain") {
+                CustomAccessibilityAction(words.string(R.string.equaliser_raise_gain)) {
                     edit(curve.withNudgedGain(index, GAIN_STEP_DB, bounds))
                 },
-                CustomAccessibilityAction("Lower the gain") {
+                CustomAccessibilityAction(words.string(R.string.equaliser_lower_gain)) {
                     edit(curve.withNudgedGain(index, -GAIN_STEP_DB, bounds))
                 },
             )
         else emptyList()
     return gains +
         listOf(
-            CustomAccessibilityAction("Raise the frequency") {
+            CustomAccessibilityAction(words.string(R.string.equaliser_raise_frequency)) {
                 edit(curve.withNudgedHertz(index, HERTZ_STEP_OCTAVES, bounds))
             },
-            CustomAccessibilityAction("Lower the frequency") {
+            CustomAccessibilityAction(words.string(R.string.equaliser_lower_frequency)) {
                 edit(curve.withNudgedHertz(index, -HERTZ_STEP_OCTAVES, bounds))
             },
         )
@@ -337,11 +346,24 @@ private fun DrawScope.drawResponse(response: List<Float>, span: Float, line: Col
     )
 }
 
-fun graphDescription(curve: EqualiserCurve, selected: Int?): String {
-    val summary = "Equaliser response, ${curve.bands.size} bands."
+fun graphDescription(words: Words, curve: EqualiserCurve, selected: Int?): String {
+    val count = curve.bands.size
+    val summary = words.plural(R.plurals.equaliser_graph_summary, count, count)
     val band = selected?.let { curve.bands.getOrNull(it) }
-    if (selected == null || band == null) return "$summary Choose a band to edit it."
-    val place = "Band ${selected + 1} of ${curve.bands.size} selected, ${hertzLabel(band.frequencyHz)}"
-    val gain = if (band.filter.usesGain) ", ${signedDb(band.gainDb)}" else ""
-    return "$summary $place$gain."
+    if (selected == null || band == null) {
+        return words.string(R.string.equaliser_graph_choose, summary)
+    }
+    val hertz = hertzLabel(words, band.frequencyHz)
+    return if (band.filter.usesGain) {
+        words.string(
+            R.string.equaliser_graph_selected_gain,
+            summary,
+            selected + 1,
+            count,
+            hertz,
+            signedDb(words, band.gainDb),
+        )
+    } else {
+        words.string(R.string.equaliser_graph_selected, summary, selected + 1, count, hertz)
+    }
 }

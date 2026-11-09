@@ -1,11 +1,12 @@
 package org.resonate.android.ui.library
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -38,10 +39,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.R
 import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.CollectionOrder
 import org.resonate.android.ui.LocalResonate
@@ -52,19 +56,20 @@ import org.resonate.android.ui.components.Shortcut
 import org.resonate.android.ui.components.ShortcutPair
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.bleeding
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.together.rememberPasteALink
+import org.resonate.android.words
 
-val CollectionOrder.label: String
+@get:StringRes
+val CollectionOrder.label: Int
     get() =
         when (this) {
-            CollectionOrder.ALPHABETICAL -> "Name"
-            CollectionOrder.ARTIST -> "Artist"
-            CollectionOrder.YEAR -> "Year"
-            CollectionOrder.ADDED -> "Recently added"
-            CollectionOrder.PLAYS -> "Most played"
+            CollectionOrder.ALPHABETICAL -> R.string.library_order_name
+            CollectionOrder.ARTIST -> R.string.library_order_artist
+            CollectionOrder.YEAR -> R.string.library_order_year
+            CollectionOrder.ADDED -> R.string.library_order_recently_added
+            CollectionOrder.PLAYS -> R.string.library_order_most_played
         }
 
 private val artistOrders = listOf(CollectionOrder.ALPHABETICAL, CollectionOrder.ADDED, CollectionOrder.PLAYS)
@@ -92,7 +97,7 @@ private fun SortHeader(
         Box {
             AssistChip(
                 onClick = { open = true },
-                label = { Text(order.label, maxLines = 1) },
+                label = { Text(stringResource(order.label), maxLines = 1) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Sort, null, Modifier.size(AssistChipDefaults.IconSize)) },
                 trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(AssistChipDefaults.IconSize)) },
                 modifier = Modifier.testTag("sort"),
@@ -100,7 +105,11 @@ private fun SortHeader(
             GroupedMenu(
                 open,
                 { open = false },
-                listOf(orders.map { choice -> MenuEntry.Choice(choice.label, choice == order) { onOrder(choice) } }),
+                listOf(
+                    orders.map { choice ->
+                        MenuEntry.Choice(stringResource(choice.label), choice == order) { onOrder(choice) }
+                    }
+                ),
             )
         }
     }
@@ -129,7 +138,7 @@ fun AlbumsTab(model: LibraryViewModel, padding: PaddingValues) {
         ) {
             item("header", span = { GridItemSpan(maxLineSpan) }) {
                 SortHeader(
-                    counted(shown.size, "album"),
+                    pluralStringResource(R.plurals.count_albums, shown.size, shown.size),
                     order,
                     CollectionOrder.entries,
                     { model.albumOrder.value = it },
@@ -153,7 +162,12 @@ fun ArtistsTab(model: LibraryViewModel, padding: PaddingValues) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(state = list, contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("artists")) {
                 item("header") {
-                    SortHeader(counted(shown.size, "artist"), order, artistOrders, { model.artistOrder.value = it })
+                    SortHeader(
+                        pluralStringResource(R.plurals.count_artists, shown.size, shown.size),
+                        order,
+                        artistOrders,
+                        { model.artistOrder.value = it },
+                    )
                 }
                 items(shown, key = { "artist:${it.name}" }) { artist ->
                     CollectionRow(
@@ -201,8 +215,8 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
                 first = { modifier ->
                     Shortcut(
                         icon = Icons.Rounded.Favorite,
-                        title = "Favourites",
-                        detail = counted(favourites, "song"),
+                        title = stringResource(R.string.library_favourites),
+                        detail = pluralStringResource(R.plurals.count_songs, favourites, favourites),
                         container = scheme.primaryContainer,
                         content = scheme.onPrimaryContainer,
                         badge = scheme.primary,
@@ -214,8 +228,10 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
                 second = { modifier ->
                     Shortcut(
                         icon = Icons.Rounded.Groups,
-                        title = "Party",
-                        detail = party?.let(TogetherWords::partyLine) ?: "Listen together",
+                        title = stringResource(R.string.library_party),
+                        detail =
+                            party?.let { TogetherWords.partyLine(words(), it) }
+                                ?: stringResource(R.string.library_listen_together),
                         container = scheme.tertiaryContainer,
                         content = scheme.onTertiaryContainer,
                         badge = scheme.tertiary,
@@ -228,8 +244,8 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
         }
         item("heading", span = { GridItemSpan(maxLineSpan) }) {
             SectionHeader(
-                "Your playlists",
-                action = "Paste a link",
+                stringResource(R.string.library_your_playlists),
+                action = stringResource(R.string.library_paste_a_link),
                 onAction = paste,
                 modifier = Modifier.bleeding(Sizes.gutter).testTag("playlists-heading"),
             )
@@ -237,8 +253,8 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
         if (playlists.isEmpty()) {
             item("none", span = { GridItemSpan(maxLineSpan) }) {
                 EmptyCollection(
-                    title = "No playlists yet",
-                    detail = "A mood, a moment, a journey. Make it a playlist.",
+                    title = stringResource(R.string.library_no_playlists),
+                    detail = stringResource(R.string.library_playlist_invitation),
                     modifier = Modifier.testTag("no-playlists"),
                 )
             }
@@ -249,6 +265,7 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
                 onClick = { navigator.open(playlist.screen) },
                 badge =
                     TogetherWords.badge(
+                        words(),
                         sharedLists.firstOrNull { it.playlist == playlist.id },
                         playlist.followed,
                     ),

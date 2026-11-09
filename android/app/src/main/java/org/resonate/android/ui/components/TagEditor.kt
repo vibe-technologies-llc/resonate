@@ -11,8 +11,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -30,26 +30,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import org.resonate.android.R
 import org.resonate.android.TagDiff
 import org.resonate.android.TagName
 import org.resonate.android.TagSentences
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
+import org.resonate.android.words
 
 @Composable
 fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
@@ -64,6 +67,7 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
     var failure by remember { mutableStateOf<String?>(null) }
     var discarding by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
+    val unreadable = stringResource(R.string.tag_editor_unread)
 
     LaunchedEffect(writable, attempt) {
         if (writable.isEmpty()) return@LaunchedEffect
@@ -80,7 +84,7 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            failure = error.message ?: "The tags could not be read"
+            failure = error.message ?: unreadable
         }
     }
 
@@ -107,18 +111,20 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                TagSentences.editTitle(tracks.size),
+                TagSentences.editTitle(words(), tracks.size),
                 style = MaterialTheme.typography.titleLarge,
             )
             when {
                 writable.isEmpty() ->
                     Text(
-                        "Tags of this kind of file cannot be written.",
+                        stringResource(R.string.tag_editor_unwritable),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 failure != null -> {
                     Text(failure.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = { attempt++ }) { Text("Try again") }
+                    OutlinedButton(onClick = { attempt++ }) {
+                        Text(stringResource(R.string.tag_editor_try_again))
+                    }
                 }
                 !loaded -> SmallLoadingRow()
                 else -> {
@@ -128,7 +134,7 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
                     }
                     if (tracks.size > 1) {
                         Text(
-                            "Fields left as they are stay as each song has them; a field marked Mixed changes only once you type into it.",
+                            stringResource(R.string.tag_editor_mixed_explained),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -141,7 +147,7 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
                     }
                     if (writable.size < tracks.size) {
                         Text(
-                            TagSentences.cannotBeWritten(tracks.size - writable.size),
+                            TagSentences.cannotBeWritten(words(), tracks.size - writable.size),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -153,7 +159,7 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
                 TextButton(onClick = request, modifier = Modifier.testTag("tags-cancel")) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.tag_editor_cancel))
                 }
                 Button(
                     onClick = {
@@ -163,7 +169,7 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
                     enabled = loaded && writable.isNotEmpty() && changed.isNotEmpty(),
                     modifier = Modifier.testTag("tags-save"),
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.tag_editor_save))
                 }
             }
         }
@@ -173,14 +179,18 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
         AlertDialog(
             onDismissRequest = { discarding = false },
             icon = { Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = null) },
-            title = { Text("Discard your changes?") },
-            text = { Text("The tags you typed have not been saved.") },
+            title = { Text(stringResource(R.string.tag_editor_discard_title)) },
+            text = { Text(stringResource(R.string.tag_editor_discard_detail)) },
             confirmButton = {
                 TextButton(onClick = dismiss, modifier = Modifier.testTag("tags-discard")) {
-                    Text("Discard")
+                    Text(stringResource(R.string.tag_editor_discard))
                 }
             },
-            dismissButton = { TextButton(onClick = { discarding = false }) { Text("Keep editing") } },
+            dismissButton = {
+                TextButton(onClick = { discarding = false }) {
+                    Text(stringResource(R.string.tag_editor_keep_editing))
+                }
+            },
         )
     }
 }
@@ -221,9 +231,9 @@ private fun TagField(
     val clearing = name in emptied
     val label =
         when (name) {
-            TagName.TrackTotal -> "Track of"
-            TagName.DiscTotal -> "Disc of"
-            else -> name.label
+            TagName.TrackTotal -> stringResource(R.string.tag_editor_track_of)
+            TagName.DiscTotal -> stringResource(R.string.tag_editor_disc_of)
+            else -> stringResource(name.label)
         }
     OutlinedTextField(
         value = value,
@@ -233,7 +243,8 @@ private fun TagField(
         },
         label = { Text(label) },
         placeholder = {
-            if (clearing) Text("Will be cleared") else if (name in mixed) Text("Mixed")
+            if (clearing) Text(stringResource(R.string.tag_editor_will_be_cleared))
+            else if (name in mixed) Text(stringResource(R.string.tag_editor_mixed))
         },
         trailingIcon =
             if (name in mixed && value.isEmpty()) {
@@ -244,7 +255,11 @@ private fun TagField(
                         Icon(
                             if (clearing) Icons.AutoMirrored.Rounded.Undo else Icons.Rounded.Close,
                             contentDescription =
-                                if (clearing) "Keep each song's" else "Clear on every song",
+                                stringResource(
+                                    if (clearing) R.string.tag_editor_keep_each
+                                    else R.string.tag_editor_clear_every
+                                ),
+
                         )
                     }
                 }

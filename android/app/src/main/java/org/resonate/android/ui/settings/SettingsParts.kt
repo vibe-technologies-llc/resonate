@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -70,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import org.resonate.android.R
 import org.resonate.android.ui.components.Sizes
 
 val PageWidth = 840.dp
@@ -268,7 +270,9 @@ fun <T> ChoiceDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
+        },
     )
 }
 
@@ -328,7 +332,9 @@ fun ConfirmDialog(
                 Text(confirm)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
+        },
     )
 }
 
@@ -420,7 +426,9 @@ fun Field(
                     IconButton(onClick = { revealed = !revealed }) {
                         Icon(
                             if (revealed) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                            contentDescription = if (revealed) "Hide $label" else "Show $label",
+                            contentDescription =
+                                if (revealed) stringResource(R.string.settings_field_hide, label)
+                                else stringResource(R.string.settings_field_show, label),
                         )
                     }
                 }

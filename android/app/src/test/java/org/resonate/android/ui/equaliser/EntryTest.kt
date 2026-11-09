@@ -3,6 +3,7 @@ package org.resonate.android.ui.equaliser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserFilter
@@ -36,24 +37,24 @@ class EntryTest {
 
     @Test
     fun aValueIsAcceptedOnlyWithinItsMeasure() {
-        assertEquals(-24f, gainMeasure(bounds).accepted("-24"))
-        assertNull(gainMeasure(bounds).accepted("24.5"))
-        assertEquals(20_000f, hertzMeasure(bounds).accepted("20k"))
-        assertNull(hertzMeasure(bounds).accepted("19"))
-        assertEquals(0.1f, widthMeasure(bounds).accepted("0.1"))
-        assertNull(widthMeasure(bounds).accepted("41"))
-        assertEquals("From -24.0 dB to +24.0 dB", gainMeasure(bounds).reach)
-        assertEquals("From 20.0 Hz to 20.0 kHz", hertzMeasure(bounds).reach)
+        assertEquals(-24f, gainMeasure(English, bounds).accepted("-24"))
+        assertNull(gainMeasure(English, bounds).accepted("24.5"))
+        assertEquals(20_000f, hertzMeasure(English, bounds).accepted("20k"))
+        assertNull(hertzMeasure(English, bounds).accepted("19"))
+        assertEquals(0.1f, widthMeasure(English, bounds).accepted("0.1"))
+        assertNull(widthMeasure(English, bounds).accepted("41"))
+        assertEquals("From -24.0 dB to +24.0 dB", gainMeasure(English, bounds).reach)
+        assertEquals("From 20.0 Hz to 20.0 kHz", hertzMeasure(English, bounds).reach)
     }
 
     @Test
     fun theFieldOpensOnTheValueAsShortAsItReads() {
-        assertEquals("3", gainMeasure(bounds).written(3f))
-        assertEquals("-4.5", gainMeasure(bounds).written(-4.5f))
-        assertEquals("0", gainMeasure(bounds).written(-0.01f))
-        assertEquals("1230", hertzMeasure(bounds).written(1234f))
-        assertEquals("31.3", hertzMeasure(bounds).written(31.25f))
-        assertEquals("1.41", widthMeasure(bounds).written(OCTAVE_Q))
+        assertEquals("3", gainMeasure(English, bounds).written(3f))
+        assertEquals("-4.5", gainMeasure(English, bounds).written(-4.5f))
+        assertEquals("0", gainMeasure(English, bounds).written(-0.01f))
+        assertEquals("1230", hertzMeasure(English, bounds).written(1234f))
+        assertEquals("31.3", hertzMeasure(English, bounds).written(31.25f))
+        assertEquals("1.41", widthMeasure(English, bounds).written(OCTAVE_Q))
     }
 
     @Test
@@ -78,16 +79,17 @@ class EntryTest {
 
         assertEquals(
             "Loaded 2 bands from HD 650.",
-            importSentence(EqualiserImport(curve, 0u, 0u, 0u, false)),
+            importSentence(English, EqualiserImport(curve, 0u, 0u, 0u, false)),
         )
         assertEquals(
             "Loaded 2 bands from HD 650, fitted from its GraphicEQ line. 1 value was held to the equaliser's reach; 3 lines were passed over.",
-            importSentence(EqualiserImport(curve, 3u, 0u, 1u, true)),
+            importSentence(English, EqualiserImport(curve, 3u, 0u, 1u, true)),
         )
         assertEquals(
             "Loaded 1 band from the profile. 2 filters were approximated.",
             importSentence(
-                EqualiserImport(EqualiserCurve("", 0f, curve.bands.take(1)), 0u, 2u, 0u, false)
+                English,
+                EqualiserImport(EqualiserCurve("", 0f, curve.bands.take(1)), 0u, 2u, 0u, false),
             ),
         )
     }

@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -53,6 +55,7 @@ import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.ResamplingPhase
 import org.resonate.android.nativecore.ResamplingQuality
+import org.resonate.android.R
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
@@ -88,30 +91,31 @@ class ProcessingViewModel(resonate: Resonate) : ViewModel() {
 fun ProcessingScreen() {
     val model = resonateViewModel { ProcessingViewModel(it) }
     val preferences by model.preferences.collectAsStateWithLifecycle()
-    Page("Sound processing") { padding ->
+    Page(stringResource(R.string.settings_processing_title)) { padding ->
         val current = preferences
         if (current == null) {
             Loading(padding)
             return@Page
         }
         SettingsList(padding, Modifier.testTag("processing-list")) {
-            item(key = "volume") { SectionHeader("Volume") }
+            item(key = "volume") { SectionHeader(stringResource(R.string.processing_volume)) }
             item(key = "replay-gain") { ReplayGain(current.replayGain, model::replayGain) }
             item(key = "true-peak") {
                 SwitchRow(
-                    title = "Prevent clipping",
+                    title = stringResource(R.string.processing_true_peak),
                     icon = Icons.AutoMirrored.Rounded.ShowChart,
-                    supporting =
-                        "Watches for true peaks between samples and lowers the level only where one would clip",
+                    supporting = stringResource(R.string.processing_true_peak_detail),
                     checked = current.truePeak,
                     onCheckedChange = model::truePeak,
                     modifier = Modifier.testTag("true-peak"),
                 )
             }
-            item(key = "resampling") { SectionHeader("Resampling") }
+            item(key = "resampling") {
+                SectionHeader(stringResource(R.string.processing_resampling))
+            }
             item(key = "quality") {
                 ChoiceRow(
-                    title = "Resampling quality",
+                    title = stringResource(R.string.settings_inner_resampling_quality),
                     icon = Icons.Rounded.GraphicEq,
                     choices = qualityChoices,
                     selected = current.quality,
@@ -121,7 +125,7 @@ fun ProcessingScreen() {
             }
             item(key = "phase") {
                 ChoiceRow(
-                    title = "Filter phase",
+                    title = stringResource(R.string.settings_inner_filter_phase),
                     icon = Icons.Rounded.Waves,
                     choices = phaseChoices,
                     selected = current.phase,
@@ -129,10 +133,10 @@ fun ProcessingScreen() {
                     modifier = Modifier.testTag("phase"),
                 )
             }
-            item(key = "stereo") { SectionHeader("Stereo image") }
+            item(key = "stereo") { SectionHeader(stringResource(R.string.processing_stereo)) }
             item(key = "crossfeed") {
                 ChoiceRow(
-                    title = "Crossfeed",
+                    title = stringResource(R.string.processing_crossfeed),
                     icon = Icons.Rounded.Headphones,
                     choices = crossfeedChoices,
                     selected = current.crossfeed,
@@ -141,27 +145,25 @@ fun ProcessingScreen() {
                 )
             }
             item(key = "crossfeed-note") {
-                Footnote(
-                    "Only a stereo stream is crossfed; anything else plays as it is whatever this says. A crossfed stream is converted rather than bit-perfect."
-                )
+                Footnote(stringResource(R.string.processing_crossfeed_note))
             }
-            item(key = "sources") { SectionHeader("Sources") }
+            item(key = "sources") { SectionHeader(stringResource(R.string.processing_sources)) }
             item(key = "dsd") {
                 SwitchRow(
-                    title = "Play DSD at PCM level",
+                    title = stringResource(R.string.settings_inner_play_dsd_at_pcm_level),
                     icon = Icons.Rounded.Memory,
-                    supporting = "Raise converted DSD by about 6 dB to match PCM loudness",
+                    supporting = stringResource(R.string.processing_dsd_detail),
                     checked = current.dsdLikePcm,
                     onCheckedChange = model::dsdLikePcm,
                 )
             }
             item(key = "restoration") { Restoration(current.restoration, model::restoration) }
-            item(key = "buffer-header") { SectionHeader("Playback buffer") }
+            item(key = "buffer-header") {
+                SectionHeader(stringResource(R.string.settings_inner_playback_buffer))
+            }
             item(key = "buffer") { Buffer(current.bufferMs.toInt(), model::buffer) }
             item(key = "note") {
-                Footnote(
-                    "Processing runs inside Resonate's own engine, before the audio reaches Android."
-                )
+                Footnote(stringResource(R.string.processing_note))
             }
         }
     }
@@ -169,22 +171,23 @@ fun ProcessingScreen() {
 
 @Composable
 private fun ReplayGain(selected: GainMode, onChoose: (GainMode) -> Unit) {
+    val choices = gainChoices
     Column(Modifier.fillMaxWidth()) {
         SettingRow(
             title = "ReplayGain",
             icon = Icons.AutoMirrored.Rounded.VolumeUp,
-            supporting = gainChoices.first { it.value == selected }.detail,
+            supporting = choices.first { it.value == selected }.detail,
         )
         SingleChoiceSegmentedButtonRow(
             Modifier.fillMaxWidth()
                 .padding(start = 56.dp, end = Sizes.gutter, bottom = 8.dp)
                 .testTag("replay-gain"),
         ) {
-            gainChoices.forEachIndexed { index, choice ->
+            choices.forEachIndexed { index, choice ->
                 SegmentedButton(
                     selected = choice.value == selected,
                     onClick = { onChoose(choice.value) },
-                    shape = SegmentedButtonDefaults.itemShape(index, gainChoices.size),
+                    shape = SegmentedButtonDefaults.itemShape(index, choices.size),
                 ) {
                     Text(choice.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -202,17 +205,29 @@ private fun Restoration(selected: LossyRestoration, onChoose: (LossyRestoration)
         leadingContent = { SettingIcon(Icons.Rounded.AutoFixHigh) },
         supportingContent = {
             Column {
-                Text("${labelOf(restorationChoices, selected)} · MP3, AAC and Vorbis only")
+                Text(
+                    stringResource(
+                        R.string.processing_restoration_line,
+                        labelOf(restorationChoices, selected),
+                    )
+                )
                 Spacer(Modifier.height(6.dp))
                 ExperimentalBadge()
             }
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     ) {
-        Text("Lossy restoration")
+        Text(stringResource(R.string.settings_inner_lossy_restoration))
     }
     if (open) {
-        ChoiceDialog("Lossy restoration", restorationChoices, selected, onChoose) { open = false }
+        ChoiceDialog(
+            stringResource(R.string.settings_inner_lossy_restoration),
+            restorationChoices,
+            selected,
+            onChoose,
+        ) {
+            open = false
+        }
     }
 }
 
@@ -228,7 +243,10 @@ private fun ExperimentalBadge() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Rounded.Science, contentDescription = null, modifier = Modifier.padding(end = 4.dp).size(16.dp))
-            Text("Experimental", style = MaterialTheme.typography.labelMedium)
+            Text(
+                stringResource(R.string.processing_experimental),
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
@@ -244,14 +262,16 @@ private fun Buffer(stored: Int, onCommit: (Int) -> Unit) {
     }
     LaunchedEffect(stored) { if (!dragging) slider.value = stored.toFloat() }
     val shown = if (dragging) bufferStep(slider.value) else stored
+    val length = stringResource(R.string.processing_buffer_length)
+    val spoken = pluralStringResource(R.plurals.processing_buffer_spoken, shown, shown)
     Column(Modifier.fillMaxWidth()) {
         SettingRow(
-            title = "Buffer length",
+            title = length,
             icon = Icons.Rounded.Timer,
-            supporting = "Longer rides out a busy phone; shorter answers controls sooner",
+            supporting = stringResource(R.string.processing_buffer_detail),
             trailing = {
                 Text(
-                    "$shown ms",
+                    stringResource(R.string.processing_buffer_ms, shown),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -272,8 +292,8 @@ private fun Buffer(stored: Int, onCommit: (Int) -> Unit) {
                 Modifier.fillMaxWidth()
                     .padding(start = 56.dp, end = Sizes.gutter)
                     .semantics {
-                        contentDescription = "Buffer length"
-                        stateDescription = "$shown milliseconds"
+                        contentDescription = length
+                        stateDescription = spoken
                     }
                     .testTag("buffer"),
         )
