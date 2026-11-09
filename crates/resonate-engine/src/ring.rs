@@ -318,6 +318,7 @@ struct Fader {
 
 const WHOLE: f64 = 1.0;
 const SILENT: f64 = 0.0;
+const RAISED_AT_MOST: f64 = 4.0;
 const S24_LEAST: f64 = -8_388_608.0;
 const S24_GREATEST: f64 = 8_388_607.0;
 
@@ -1104,6 +1105,10 @@ impl RingConsumer {
         self.heard_now = self.wanted();
     }
 
+    fn loudest_heard_as_rendered(&self) -> f64 {
+        self.rendered_at * RAISED_AT_MOST
+    }
+
     fn trim(&self) -> f64 {
         if self.rendered_at > SILENT {
             self.heard_now / self.rendered_at
@@ -1167,7 +1172,8 @@ impl RingConsumer {
                 wanted = self.wanted();
             }
             self.read = self.read.saturating_add(1);
-            self.heard_now = toward(self.heard_now, wanted, self.trim_step);
+            self.heard_now = toward(self.heard_now, wanted, self.trim_step)
+                .min(self.loudest_heard_as_rendered());
             if self.level < WHOLE || target < WHOLE {
                 self.level = toward(self.level, target, step);
             }
@@ -2415,6 +2421,40 @@ mod tests {
             left_of(&sunk),
             vec![750, 1_000, 1_000, 1_000, 1_000, 1_000, 1_000, 1_000]
         );
+    }
+
+    #[test]
+    fn a_level_raised_fast_from_near_silence_climbs_to_its_target_and_never_past_it() {
+        let target = 0.027;
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(64),
+            Silence::Unmarked,
+            FADED_OVER,
+            Entering::Whole,
+            Level {
+                rendered: 6.4e-8,
+                heard: 0.0,
+            },
+        );
+        let at_the_target = steady_at(541, 16);
+
+        producer.write(&steady_at(1, 8));
+        producer.render_at(1e-5, 0);
+        producer.write(&steady_at(1, 8));
+        producer.render_at(1e-3, 0);
+        producer.write(&steady_at(21, 8));
+        producer.render_at(target, 0);
+        producer.write(&at_the_target);
+        producer.hear_at(target);
+
+        let mut sunk = vec![0_u8; 40 * 4];
+        consumer.fill(&mut sunk);
+
+        let left = left_of(&sunk);
+        assert!(left.iter().all(|sample| *sample <= 541), "{left:?}");
+        assert!(left.windows(2).all(|pair| pair[1] >= pair[0]), "{left:?}");
+        assert_eq!(sunk[24 * 4..], at_the_target.as_bytes()[..]);
     }
 
     #[test]

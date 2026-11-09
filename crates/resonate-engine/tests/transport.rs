@@ -8327,6 +8327,7 @@ fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Re
 }
 
 const SINE_PERIOD_FRAMES: usize = 100;
+const DITHER_HEARD_AT_MOST: f64 = 32.0;
 const SINE_PEAK: f64 = 16_000.0;
 const DEEP_RING: Duration = Duration::from_millis(500);
 const AN_EQUALISER_HEARD_WITHIN: Duration = Duration::from_millis(60);
@@ -8410,6 +8411,68 @@ fn sine_over_a_deep_ring(seconds: usize) -> Result<(Player, Arc<Mutex<Graph>>, T
     })?;
     wait_for(&player, playing, "the stream to open");
     Ok((player, graph, tree))
+}
+
+#[test]
+fn a_volume_scrolled_up_fast_from_zero_is_never_heard_louder_than_where_it_lands() -> Result<()> {
+    let (player, graph, _tree) = sine_over_a_deep_ring(4)?;
+    let frame = frame_bytes(SampleFormat::S16);
+    let ring = frames_in(DEEP_RING, SampleRate::HZ_44100) * frame;
+    let nearly_silent = Volume::new(0.004).expect("in range");
+    let scrolled = [0.05, 0.1, 0.15, 0.2].map(|position| Volume::new(position).expect("in range"));
+    let landed = Volume::new(0.2).expect("in range");
+
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        |_, graph| graph.played.len() >= 8_192 * frame,
+        "the sine to play",
+    );
+
+    player
+        .request(Command::SetVolume(nearly_silent))?
+        .wait_for(PATIENCE)?;
+    player
+        .request(Command::SetVolume(Volume::MUTE))?
+        .wait_for(PATIENCE)?;
+    let rendered_nearly_silent = graph.lock().played.len() + 2 * ring;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        |_, graph| graph.played.len() >= rendered_nearly_silent,
+        "the ring to fill with frames rendered nearly silent",
+    );
+
+    let turned_up_at = graph.lock().played.len();
+    for volume in scrolled {
+        player.send(Command::SetVolume(volume))?;
+    }
+    player
+        .request(Command::SetVolume(landed))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        |_, graph| graph.played.len() >= turned_up_at + 2 * ring,
+        "the turned-up ring to play out",
+    );
+
+    let landed_peak = SINE_PEAK * f64::from(landed.to_gain().get());
+    let loudest_allowed = landed_peak + DITHER_HEARD_AT_MOST;
+    let left = left_of_the_graph(&graph.lock().played[turned_up_at..]);
+    let loudest = left.iter().map(|sample| sample.abs()).fold(0.0, f64::max);
+    assert!(
+        loudest <= loudest_allowed,
+        "a volume scrolled up from zero to a peak of {landed_peak} was heard at {loudest}"
+    );
+    assert!(
+        loudest >= landed_peak - DITHER_HEARD_AT_MOST,
+        "the volume scrolled up to a peak of {landed_peak} was never heard there, only {loudest}"
+    );
+    Ok(())
 }
 
 #[test]
