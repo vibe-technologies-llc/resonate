@@ -18,6 +18,7 @@ use crate::{
     config::Config,
     error::{Error, Result},
     sync::server_of,
+    words,
 };
 
 const SONGS_TOLD_AHEAD: usize = 8;
@@ -263,27 +264,27 @@ fn said_of(standing: Standing) -> &'static str {
     use resonate_sync::party::SittingOut;
 
     match standing {
-        Standing::WaitingForTheHost => "Waiting for the host to play something",
-        Standing::Finding => "Looking for this song",
-        Standing::SittingOut(SittingOut::NotHeld) => "You don't have this song, so you sit it out",
+        Standing::WaitingForTheHost => words::party::waiting_for_the_host(),
+        Standing::Finding => words::party::finding(),
+        Standing::SittingOut(SittingOut::NotHeld) => words::party::not_held(),
         Standing::SittingOut(SittingOut::CannotStartMidSong) => {
-            "This song can't start part way through here, so you join at the next"
+            words::party::cannot_start_mid_song()
         }
-        Standing::SittingOut(SittingOut::AskedTo) => "Paused here; press play to rejoin",
-        Standing::HostPaused => "The host has paused",
-        Standing::InStep => "In step with the host",
+        Standing::SittingOut(SittingOut::AskedTo) => words::party::asked_to(),
+        Standing::HostPaused => words::party::host_paused(),
+        Standing::InStep => words::party::in_step(),
     }
 }
 
 fn reach_said(reach: PartyReach) -> Option<&'static str> {
     match reach {
         PartyReach::Here => None,
-        PartyReach::Connecting => Some("Reaching the server…"),
-        PartyReach::Reconnecting => Some("Lost the server; trying again…"),
-        PartyReach::Ended => Some("The party is over"),
-        PartyReach::NoSuchParty => Some("That party has ended, or was never begun"),
-        PartyReach::TurnedAway => Some("The server turned that link away"),
-        PartyReach::ServerTooOld => Some("The server is too old to hold parties"),
+        PartyReach::Connecting => Some(words::party::connecting()),
+        PartyReach::Reconnecting => Some(words::party::reconnecting()),
+        PartyReach::Ended => Some(words::party::ended()),
+        PartyReach::NoSuchParty => Some(words::party::no_such_party()),
+        PartyReach::TurnedAway => Some(words::party::turned_away()),
+        PartyReach::ServerTooOld => Some(words::party::server_too_old()),
     }
 }
 
@@ -351,7 +352,7 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
 
     let shown = going.shown();
     if shown.hosting {
-        said!("Invite people with {}", shown.page.unwrap_or(shown.link));
+        said!("{}", words::party::invite(shown.page.unwrap_or(shown.link)));
     }
 
     let mut said = String::new();
@@ -364,7 +365,7 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
         let now = reach_said(shown.reach).map_or_else(
             || {
                 if shown.hosting {
-                    format!("{} here", shown.people.len())
+                    words::party::here(shown.people.len())
                 } else {
                     said_of(going.followed().standing).to_owned()
                 }

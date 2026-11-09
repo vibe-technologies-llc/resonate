@@ -29,6 +29,7 @@ use crate::{
     error::ConfigKey,
     sync::server_of,
     table::Table,
+    words,
 };
 
 const SHARED_STORE: &str = "shared.sqlite";
@@ -499,12 +500,12 @@ fn listed_as(library: &Library, shared: &Shared, name: &str) -> Result<SharedSho
 
 fn said_of(standing: SharedStanding) -> &'static str {
     match standing {
-        SharedStanding::Waiting => "waiting",
-        SharedStanding::Reached => "up to date",
-        SharedStanding::Unreached => "server not reached",
-        SharedStanding::ServerTooOld => "server too old",
-        SharedStanding::TurnedAway(_) => "turned away by the server",
-        SharedStanding::NoServer => "no server",
+        SharedStanding::Waiting => words::together::waiting(),
+        SharedStanding::Reached => words::together::up_to_date(),
+        SharedStanding::Unreached => words::together::server_not_reached(),
+        SharedStanding::ServerTooOld => words::together::server_too_old(),
+        SharedStanding::TurnedAway(_) => words::together::turned_away(),
+        SharedStanding::NoServer => words::together::no_server(),
     }
 }
 
@@ -515,10 +516,11 @@ fn told_invites(list: &SharedShown) {
         .as_ref()
         .or(list.invites.edit.as_ref())
     {
-        said!("To edit\t{edit}");
+        said!("{}\t{edit}", words::together::to_edit());
     }
     said!(
-        "To follow\t{}",
+        "{}\t{}",
+        words::together::to_follow(),
         list.invites
             .view_page
             .as_ref()
@@ -534,7 +536,7 @@ pub(crate) fn run(
 ) -> Result<()> {
     if let Some(name) = &args.name {
         config::store(settings, ConfigKey::SharedName, name.clone())?;
-        said!("Others will see you as {name}");
+        said!("{}", words::together::seen_as(name));
     }
 
     let Some(together) = start(config, &library)? else {
@@ -568,18 +570,15 @@ pub(crate) fn run(
         settled(shared);
         let list = shared.shown().into_iter().find(|list| list.space == space);
         match list {
-            Some(list) if list.may_edit => said!("You can now edit {}", list.name),
-            Some(list) => said!("You now follow {}", list.name),
-            None => said!("Joined; the list arrives once the server is reached"),
+            Some(list) if list.may_edit => said!("{}", words::together::may_edit(&list.name)),
+            Some(list) => said!("{}", words::together::follows(&list.name)),
+            None => said!("{}", words::together::joined()),
         }
     } else if let Some(name) = &args.leave {
         let list = listed_as(&library, shared, name)?;
         shared.leave(list.space).map_err(Error::Sync)?;
         settled(shared);
-        said!(
-            "You left {}; the songs stay here as your own playlist",
-            list.name
-        );
+        said!("{}", words::together::left(&list.name));
     } else if let Some(person) = &args.remove_person {
         let name = args.from.as_deref().ok_or(Error::SharedNeedsAList)?;
         let list = listed_as(&library, shared, name)?;
@@ -588,13 +587,13 @@ pub(crate) fn run(
             .reset(list.space, Some(member))
             .map_err(Error::Sync)?;
         settled(shared);
-        said!("{person} no longer reaches {name}; everyone else carries on");
+        said!("{}", words::together::removed(name, person));
         told_invites(&listed_as(&library, shared, name)?);
     } else if let Some(name) = &args.reset {
         let list = listed_as(&library, shared, name)?;
         shared.reset(list.space, None).map_err(Error::Sync)?;
         settled(shared);
-        said!("The old links to {name} reach nothing now");
+        said!("{}", words::together::reset(name));
         told_invites(&listed_as(&library, shared, name)?);
     } else {
         settled(shared);
@@ -614,28 +613,33 @@ fn person_named(list: &SharedShown, person: &str) -> Result<MemberId> {
 
 fn print_every_list(lists: &[SharedShown]) {
     if lists.is_empty() {
-        said!("No playlist is shared with anyone");
+        said!("{}", words::together::none_shared());
         return;
     }
 
     let mut table = Table::new(vec![
-        "PLAYLIST",
-        "YOU",
-        "PEOPLE",
-        "NOT HELD HERE",
-        "STANDING",
+        words::together::playlist(),
+        words::together::you_heading(),
+        words::together::people(),
+        words::together::not_held_here(),
+        words::together::standing(),
     ]);
     for list in lists {
         table.push(vec![
             list.name.clone(),
-            if list.may_edit { "edit" } else { "follow" }.to_owned(),
+            if list.may_edit {
+                words::together::edit()
+            } else {
+                words::together::follow()
+            }
+            .to_owned(),
             list.people
                 .iter()
                 .map(|person| {
                     if person.me {
-                        "you".to_owned()
+                        words::together::you().to_owned()
                     } else if person.name.is_empty() {
-                        "someone".to_owned()
+                        words::together::someone().to_owned()
                     } else {
                         person.name.clone()
                     }

@@ -1,0 +1,10 @@
+piped-play = enter / p  play or pause    n  next track     b  previous track
+piped-seek = f [time]   forward 10s      r [time]  back 10s   <time>  seek to (90, 1:30, 2m)
+piped-volume = + [step]   louder 5%        - [step]  quieter    s  shuffle
+piped-repeat = l          cycle repeat     x  stop         q  quit        ?  this help
+piped-sleep = z [spec]   sleep in 30m, or z <mins> / z 1h30m / z track / z queue / z off
+keyed-play = space / p  play or pause    n  next track     b  previous track
+keyed-seek = f / →      forward 10s      r / ←  back 10s      <time> enter  seek to
+keyed-volume = + / ↑      louder 5%        - / ↓  quieter       s  shuffle
+keyed-repeat = l          cycle repeat     x  stop         q  quit        ?  these keys
+keyed-sleep = z          sleep in 30m     :  type any line the piped form takes — :f 45, :z track

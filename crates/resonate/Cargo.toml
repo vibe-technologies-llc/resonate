@@ -8,6 +8,7 @@ license.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
+resonate-words-build.workspace = true
 
 [target.'cfg(windows)'.build-dependencies]
 thiserror.workspace = true
@@ -80,6 +81,7 @@ trash.workspace = true
 [dev-dependencies]
 base64.workspace = true
 png.workspace = true
+resonate-words-build.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 rustix = { workspace = true, features = ["pty"] }

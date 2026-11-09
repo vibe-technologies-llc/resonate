@@ -7,10 +7,12 @@ use resonate_codec::{
 };
 use resonate_core::{AppliedGain, Decibels, Frames, MediaLocation, SampleRate};
 use resonate_engine::{EngineConfig, resolve_replay_gain};
+use unicode_width::UnicodeWidthStr as _;
 
 use crate::{
     Result,
     table::{self, Table},
+    words,
 };
 
 const NANOS_A_MILLI: u128 = 1_000_000;
@@ -30,49 +32,50 @@ pub fn print(path: &Path, sources: &Sources, config: &EngineConfig, graph: bool)
     }
     let report = probe_stream(sources, &MediaLocation::local(path))?;
 
-    heading("FILE");
+    heading(words::info::file());
     file(path, &report);
 
-    heading("STREAM");
+    heading(words::info::stream());
     stream(&report);
 
     if let Some(cut) = report.info.cue.as_ref() {
-        heading("CUE SHEET");
+        heading(words::info::cue_sheet());
         cut_table(cut, Some((report.info.spec.rate, report.info.duration)));
     }
 
-    heading("REPLAYGAIN");
+    heading(words::info::replaygain());
     replay_gain(&report, config);
 
     if let Some(layout) = report.layout.as_ref() {
-        heading("CONTAINER LAYOUT");
+        heading(words::info::container_layout());
         boxes(layout);
     }
 
     if let Some(profile) = report.profile.as_ref() {
-        heading("BITRATE");
+        heading(words::info::bitrate());
         bitrate(profile);
 
         if graph {
-            heading("BITRATE OVER TIME");
+            heading(words::info::bitrate_over_time());
             plot(profile);
         }
     }
 
-    heading("TAGS");
+    heading(words::info::tags());
     tags(&report.tags);
     Ok(())
 }
 
 pub(crate) fn heading(title: &str) {
     said!("\n{title}");
-    said!("{}", "─".repeat(title.len()));
+    said!("{}", "─".repeat(title.width()));
 }
 
 pub(crate) fn pairs(rows: Vec<(&str, String)>) {
-    let width = rows.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+    let width = rows.iter().map(|(name, _)| name.width()).max().unwrap_or(0);
     for (name, value) in rows {
-        said!("  {name:<width$}  {value}");
+        let padding = " ".repeat(width - name.width());
+        said!("  {name}{padding}  {value}");
     }
 }
 
@@ -80,13 +83,13 @@ fn file(path: &Path, report: &StreamReport) {
     let bytes = std::fs::metadata(path).map(|meta| meta.len()).ok();
 
     pairs(vec![
-        ("path", path.display().to_string()),
+        (words::info::path(), path.display().to_string()),
         (
-            "container",
+            words::info::container(),
             Container::from_id(report.info.container).to_string(),
         ),
-        ("size", bytes.map_or_else(unknown, bytes_text)),
-        ("seekable", yes_no(report.info.is_seekable)),
+        (words::info::size(), bytes.map_or_else(unknown, bytes_text)),
+        (words::info::seekable(), yes_no(report.info.is_seekable)),
     ]);
 }
 
@@ -102,15 +105,15 @@ fn sheet(path: &Path) -> Result<()> {
     let sources = Sources::local();
     let held = read_cue_media(&sources, &MediaLocation::local(path))?;
 
-    heading("CUE SHEET");
+    heading(words::info::cue_sheet());
     pairs(vec![
-        ("path", path.display().to_string()),
-        ("encoding", held.encoding.to_string()),
-        ("files", held.files.len().to_string()),
+        (words::info::path(), path.display().to_string()),
+        (words::info::encoding(), held.encoding.to_string()),
+        (words::info::files(), held.files.len().to_string()),
     ]);
 
     for cut in &held.files {
-        heading(&format!("FILE {}", cut.named));
+        heading(&words::info::file_named(cut.named.as_str()));
         let beside = path
             .parent()
             .and_then(|folder| the_file_a_cue_names(folder, &cut.named));
@@ -125,7 +128,13 @@ fn sheet(path: &Path) -> Result<()> {
 }
 
 fn cut_table(cut: &CueFile, rate: Option<(SampleRate, Option<Frames>)>) {
-    let mut table = Table::new(vec!["#", "TITLE", "ARTIST", "START", "LENGTH"]);
+    let mut table = Table::new(vec![
+        words::info::number_heading(),
+        words::info::title_heading(),
+        words::info::artist_heading(),
+        words::info::start_heading(),
+        words::info::length_heading(),
+    ]);
     for (index, track) in cut.audio_tracks() {
         let span = rate.and_then(|(rate, whole)| cut.span_of(index, rate, whole));
         let length = match (span.and_then(|span| span.frames()), rate) {
@@ -157,24 +166,27 @@ fn stream(report: &StreamReport) {
         .map_or_else(unknown, |frames| clock(frames, info.spec.rate));
     let coded = info
         .bits_per_coded_sample
-        .map_or_else(unknown, |bits| format!("{bits} bit"));
+        .map_or_else(unknown, words::info::coded_bits);
 
     pairs(vec![
-        ("codec", Codec::from_id(info.codec).to_string()),
-        ("sample rate", info.spec.rate.to_string()),
-        ("channels", info.spec.channels.to_string()),
-        ("decoded format", info.spec.format.to_string()),
-        ("coded depth", coded),
-        ("duration", duration),
+        (words::info::codec(), Codec::from_id(info.codec).to_string()),
+        (words::info::sample_rate(), info.spec.rate.to_string()),
+        (words::info::channels(), info.spec.channels.to_string()),
+        (words::info::decoded_format(), info.spec.format.to_string()),
+        (words::info::coded_depth(), coded),
+        (words::info::duration(), duration),
         (
-            "frames",
+            words::info::frames(),
             info.duration
                 .map_or_else(unknown, |frames| frames.to_string()),
         ),
-        ("encoder delay", format!("{} frames", info.encoder_delay)),
         (
-            "encoder padding",
-            format!("{} frames", info.encoder_padding),
+            words::info::encoder_delay(),
+            words::info::counted_frames(info.encoder_delay),
+        ),
+        (
+            words::info::encoder_padding(),
+            words::info::counted_frames(info.encoder_padding),
         ),
     ]);
 }
@@ -184,15 +196,30 @@ fn replay_gain(report: &StreamReport, config: &EngineConfig) {
     let applied = resolve_replay_gain(config.replay_gain, config.levelling, gain);
 
     let rows = vec![
-        ("mode", format!("{:?}", config.replay_gain)),
-        ("pre-amp", config.levelling.pre_amp.to_string()),
-        ("untagged", config.levelling.untagged.to_string()),
-        ("track gain", gain.track_gain.map_or_else(unknown, decibels)),
-        ("track peak", gain.track_peak.map_or_else(unknown, peak)),
-        ("album gain", gain.album_gain.map_or_else(unknown, decibels)),
-        ("album peak", gain.album_peak.map_or_else(unknown, peak)),
-        ("applied", applied_gain(applied)),
-        ("headroom", headroom(applied)),
+        (words::info::mode(), format!("{:?}", config.replay_gain)),
+        (words::info::pre_amp(), config.levelling.pre_amp.to_string()),
+        (
+            words::info::untagged(),
+            config.levelling.untagged.to_string(),
+        ),
+        (
+            words::info::track_gain(),
+            gain.track_gain.map_or_else(unknown, decibels),
+        ),
+        (
+            words::info::track_peak(),
+            gain.track_peak.map_or_else(unknown, peak),
+        ),
+        (
+            words::info::album_gain(),
+            gain.album_gain.map_or_else(unknown, decibels),
+        ),
+        (
+            words::info::album_peak(),
+            gain.album_peak.map_or_else(unknown, peak),
+        ),
+        (words::info::applied(), applied_gain(applied)),
+        (words::info::headroom(), headroom(applied)),
     ];
 
     pairs(rows);
@@ -201,35 +228,38 @@ fn replay_gain(report: &StreamReport, config: &EngineConfig) {
 fn applied_gain(gain: AppliedGain) -> String {
     let landed = rounded(gain.applied().to_decibels().get());
     match (gain.gain, gain.is_capped()) {
-        (None, false) => "none".to_owned(),
-        (None, true) => format!("{landed:+.2} dB, to keep the peak under full scale"),
-        (Some(_), false) => format!("{landed:+.2} dB"),
-        (Some(requested), true) => {
-            format!(
-                "{landed:+.2} dB, capped from {:+.2} dB",
-                rounded(requested.get())
-            )
-        }
+        (None, false) => words::info::none().to_owned(),
+        (None, true) => words::info::under_full_scale(format!("{landed:+.2}")),
+        (Some(_), false) => words::info::decibels(format!("{landed:+.2}")),
+        (Some(requested), true) => words::info::capped_from(
+            format!("{landed:+.2}"),
+            format!("{:+.2}", rounded(requested.get())),
+        ),
     }
 }
 
 fn headroom(gain: AppliedGain) -> String {
     gain.headroom().map_or_else(unknown, |margin| {
-        format!("{:+.2} dB", rounded(margin.get()))
+        words::info::decibels(format!("{:+.2}", rounded(margin.get())))
     })
 }
 
 fn boxes(layout: &resonate_codec::BoxLayout) {
     let verdict = layout.faststart.map_or_else(
-        || "no moov/mdat pair".to_owned(),
+        || words::info::no_moov().to_owned(),
         |state| match state {
-            Faststart::Ready => format!("{state} — plays before the whole file arrives"),
-            Faststart::Trailing => format!("{state} — the index is at the end"),
+            Faststart::Ready => words::info::faststart_ready(state.to_string()),
+            Faststart::Trailing => words::info::faststart_trailing(state.to_string()),
         },
     );
     pairs(vec![("faststart", verdict)]);
 
-    let mut table = Table::new(vec!["", "BOX", "OFFSET", "SIZE"]);
+    let mut table = Table::new(vec![
+        "",
+        words::info::box_heading(),
+        words::info::offset_heading(),
+        words::info::size_heading(),
+    ]);
     for entry in &layout.boxes {
         table.push(vec![
             String::new(),
@@ -252,27 +282,24 @@ fn bitrate(profile: &StreamProfile) {
     } = profile.percentiles;
 
     pairs(vec![
-        ("overall", profile.overall.to_string()),
-        ("variability", profile.variability.to_string()),
+        (words::info::overall(), profile.overall.to_string()),
+        (words::info::variability(), profile.variability.to_string()),
         (
-            "variation",
-            format!("{:.1}% of the mean", profile.variation * 100.0),
+            words::info::variation(),
+            words::info::of_the_mean(format!("{:.1}", profile.variation * 100.0)),
         ),
-        ("mean", profile.mean.to_string()),
-        ("std deviation", profile.deviation.to_string()),
-        ("min", profile.min.to_string()),
-        ("max", profile.max.to_string()),
-        ("packets", profile.packets.to_string()),
+        (words::info::mean(), profile.mean.to_string()),
+        (words::info::std_deviation(), profile.deviation.to_string()),
+        (words::info::min(), profile.min.to_string()),
+        (words::info::max(), profile.max.to_string()),
+        (words::info::packets(), profile.packets.to_string()),
         (
-            "packet bytes",
-            format!(
-                "{} min / {} max",
-                profile.smallest_packet, profile.largest_packet
-            ),
+            words::info::packet_bytes(),
+            words::info::smallest_and_largest(profile.largest_packet, profile.smallest_packet),
         ),
         (
-            "window",
-            format!("{WINDOW:.0}s, {} points", profile.series.len()),
+            words::info::window(),
+            words::info::window_points(profile.series.len(), format!("{WINDOW:.0}")),
         ),
     ]);
 
@@ -324,11 +351,15 @@ fn plot(profile: &StreamProfile) {
 
 fn tags(tags: &[RawTag]) {
     if tags.is_empty() {
-        said!("  none");
+        said!("  {}", words::info::none());
         return;
     }
 
-    let mut table = Table::new(vec!["", "KEY", "VALUE"]);
+    let mut table = Table::new(vec![
+        "",
+        words::info::key_heading(),
+        words::info::value_heading(),
+    ]);
     for tag in tags {
         table.push(vec![
             String::new(),
@@ -354,27 +385,31 @@ fn kbps(rate: BitRate) -> String {
 }
 
 fn decibels(gain: Decibels) -> String {
-    format!("{:+.2} dB", gain.get())
+    words::info::decibels(format!("{:+.2}", gain.get()))
 }
 
 fn peak(value: f32) -> String {
-    format!(
-        "{value:.6} ({:+.2} dBFS)",
-        20.0 * value.max(f32::MIN_POSITIVE).log10()
+    words::info::peak(
+        format!("{:+.2}", 20.0 * value.max(f32::MIN_POSITIVE).log10()),
+        format!("{value:.6}"),
     )
 }
 
 pub fn bytes_text(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+    const UNITS: [fn(String) -> String; 3] = [
+        |value| words::info::kibibytes(value),
+        |value| words::info::mebibytes(value),
+        |value| words::info::gibibytes(value),
+    ];
     let mut value = bytes as f64;
     let mut unit = 0;
-    while value >= 1024.0 && unit + 1 < UNITS.len() {
+    while value >= 1024.0 && unit < UNITS.len() {
         value /= 1024.0;
         unit += 1;
     }
     match unit {
-        0 => format!("{bytes} B"),
-        _ => format!("{value:.1} {}", UNITS[unit]),
+        0 => words::info::bytes(bytes),
+        _ => UNITS[unit - 1](format!("{value:.1}")),
     }
 }
 
@@ -400,11 +435,16 @@ pub fn clock(frames: Frames, rate: SampleRate) -> String {
 }
 
 fn yes_no(value: bool) -> String {
-    if value { "yes" } else { "no" }.to_owned()
+    if value {
+        words::info::yes()
+    } else {
+        words::info::no()
+    }
+    .to_owned()
 }
 
 fn unknown() -> String {
-    "unknown".to_owned()
+    words::info::unknown().to_owned()
 }
 
 fn rounded(db: f32) -> f32 {

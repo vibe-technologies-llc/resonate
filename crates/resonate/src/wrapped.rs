@@ -4,7 +4,7 @@ use resonate_core::{
 };
 use resonate_library::{HistoryKept, Library};
 
-use crate::{Error, Result, table::Table};
+use crate::{Error, Result, table::Table, words::columns};
 
 pub fn print(
     library: &Library,
@@ -45,7 +45,7 @@ fn told_slide(slide: &Slide) -> String {
         told.push('\n');
     }
     if !slide.rows.is_empty() {
-        let mut table = Table::new(vec!["", "BY", "LISTENED"]);
+        let mut table = Table::new(vec!["", columns::by(), columns::listened()]);
         for row in &slide.rows {
             table.push(vec![
                 row.name.clone(),

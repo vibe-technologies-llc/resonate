@@ -21,7 +21,7 @@ use resonate_musicbrainz::{
     held_for_building, mirror_in, settled,
 };
 
-use crate::{Error, Result, config, config::Config, metered};
+use crate::{Error, Result, config, config::Config, metered, words};
 
 const FOLDER: &str = "musicbrainz";
 const GIVEN_DUMP: &str = "given";
@@ -291,9 +291,9 @@ pub fn run(
 ) -> Result<()> {
     if removing {
         if remove(config)? {
-            said!("The copy of MusicBrainz is removed.");
+            said!("{}", words::musicbrainz::removed());
         } else {
-            said!("No copy of MusicBrainz was held.");
+            said!("{}", words::musicbrainz::none_was_held());
         }
         return Ok(());
     }
@@ -330,24 +330,26 @@ pub fn run(
             built
         })?;
         said!(
-            "The copy of MusicBrainz is built at {} ({:.1} GB) in {} minutes.",
-            built.display(),
-            gigabytes(bytes_of(&built)),
-            began.elapsed().as_secs() / 60
+            "{}",
+            words::musicbrainz::built(
+                format!("{:.1}", gigabytes(bytes_of(&built))),
+                began.elapsed().as_secs() / 60,
+                built.display().to_string(),
+            )
         );
         if !config.mirrors_musicbrainz() {
-            said!("musicbrainz-mirror is off, so lookups do not ask it until it is turned on.");
+            said!("{}", words::musicbrainz::mirror_off());
         }
         return Ok(());
     }
     let Some(mirror) = held_mirror() else {
-        said!("No copy of MusicBrainz is held. `resonate musicbrainz --build` makes one.");
+        said!("{}", words::musicbrainz::none_held());
         return Ok(());
     };
-    if let Some(words) = search {
+    if let Some(asked) = search {
         let found = mirror
             .find_recording(&RecordingAsked {
-                title: words.to_owned(),
+                title: asked.to_owned(),
                 artist: None,
                 artist_mbid: None,
                 release: None,
@@ -362,31 +364,31 @@ pub fn run(
                 .map(|named| format!("{}{}", named.name, named.joined_by))
                 .collect();
             said!(
-                "{:>3}  {}  {} by {}",
+                "{:>3}  {}  {}",
                 recording.score,
                 recording.recording,
-                recording.title,
-                credited
+                words::musicbrainz::found(credited, &recording.title)
             );
         }
         return Ok(());
     }
     let made = mirror.made();
+    let dump = made.dump.to_string();
+    let path = mirror.path().display().to_string();
+    let weighed = format!("{:.1}", gigabytes(bytes_of(mirror.path())));
+
     said!(
-        "The export of {} is held at {} ({:.1} GB){}.",
-        made.dump,
-        mirror.path().display(),
-        gigabytes(bytes_of(mirror.path())),
+        "{}",
         if config.mirrors_musicbrainz() {
-            ""
+            words::musicbrainz::held(dump, weighed, path)
         } else {
-            ", though musicbrainz-mirror is off"
+            words::musicbrainz::held_though_off(dump, weighed, path)
         }
     );
     if let Some(kept) = kept() {
         said!(
-            "{} lookup answers are kept to share with synced devices.",
-            kept.counted().map_err(failed)?
+            "{}",
+            words::musicbrainz::answers_kept(kept.counted().map_err(failed)?)
         );
     }
     Ok(())

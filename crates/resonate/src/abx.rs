@@ -21,15 +21,11 @@ use crate::{
     config::Config,
     input,
     readout::billing,
-    signals,
+    signals, words,
 };
 
 const OUTPUT_WITHIN: Duration = Duration::from_secs(15);
 const AUDITION_BEGUN_WITHIN: Duration = Duration::from_secs(10);
-
-const HELP: &str = "\
-  a  hear A      b  hear B      x  hear X
-  1  X is A      2  X is B      q  quit        ?  this help";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Hear {
@@ -198,40 +194,31 @@ impl Test {
     }
 
     fn trial(&self) -> String {
-        format!(
-            "trial {} of {}",
-            self.session.score().answered + 1,
-            self.session.planned()
-        )
+        words::abx::trial(self.session.score().answered + 1, self.session.planned())
     }
 
     fn opening(&self) -> String {
         match &self.subject {
             Subject::Equaliser { arms, .. } => {
-                format!(
-                    "levels matched to {:.3} dB; {}",
-                    arms.residual_db(),
-                    self.trial()
-                )
+                words::abx::levels_matched(format!("{:.3}", arms.residual_db()), self.trial())
             }
             Subject::Setting { contest, .. } if contest.is_flat_in_level() => {
-                format!("A and B play at one level; {}", self.trial())
+                words::abx::one_level_played(self.trial())
             }
             Subject::Setting { lowered, .. } if lowered.by.is_none() => {
-                format!("A and B measured at one level; {}", self.trial())
+                words::abx::one_level_measured(self.trial())
             }
-            Subject::Setting { lowered, .. } => format!(
-                "the louder arm is lowered by {:.2} dB to match the other; {}",
-                f64::from(lowered.by.millibels()) / 100.0,
-                self.trial()
+            Subject::Setting { lowered, .. } => words::abx::louder_lowered(
+                format!("{:.2}", f64::from(lowered.by.millibels()) / 100.0),
+                self.trial(),
             ),
         }
     }
 
     fn after(&self, verdict: Verdict) -> String {
         let said = match verdict {
-            Verdict::Right => "right",
-            Verdict::Wrong => "wrong",
+            Verdict::Right => words::abx::right(),
+            Verdict::Wrong => words::abx::wrong(),
         };
         if self.is_finished() {
             return said.to_owned();
@@ -242,22 +229,21 @@ impl Test {
     fn conclusion(&self) -> Vec<String> {
         let score = self.session.score();
         if score.answered == 0 {
-            return vec!["no trial was answered".to_owned()];
+            return vec![words::abx::none_answered().to_owned()];
         }
 
         let mut lines = vec![scored(score)];
         if !self.is_finished() {
-            lines.push(format!(
-                "stopped after {} of {} trials",
+            lines.push(words::abx::stopped_after(
                 score.answered,
-                self.session.planned()
+                self.session.planned(),
             ));
         }
         lines.push(
             if score.is_significant() {
-                "that is unlikely to be luck: you can hear this"
+                words::abx::heard_it()
             } else {
-                "that could well be luck: no difference was shown"
+                words::abx::luck()
             }
             .to_owned(),
         );
@@ -265,13 +251,20 @@ impl Test {
     }
 }
 
+fn help() {
+    said!(
+        "  {}\n  {}",
+        words::abx::help_hearing(),
+        words::abx::help_answering()
+    );
+}
+
 fn scored(score: Score) -> String {
-    format!(
-        "{} of {} right, chance of that by guessing {:.1}% (p = {:.4})",
-        score.right,
+    words::abx::scored(
         score.answered,
-        score.p_value() * 100.0,
-        score.p_value()
+        format!("{:.4}", score.p_value()),
+        format!("{:.1}", score.p_value() * 100.0),
+        score.right,
     )
 }
 
@@ -318,7 +311,7 @@ fn the_setting_test(player: &Player, contest: Contest, trials: usize) -> Result<
     let lowered = if contest.is_flat_in_level() {
         Lowered::NOTHING
     } else {
-        said!("measuring how loud A and B play the song, to match them");
+        said!("{}", words::abx::measuring());
         player
             .levels_of_the_contest(contest, &AtomicBool::new(false))?
             .lowered()?
@@ -383,7 +376,7 @@ pub fn run(
     let events = player.events().clone();
     let strokes = if behind { never() } else { input::strokes() };
 
-    said!("{HELP}");
+    help();
     said!("{}", test.opening());
 
     let mut played = Ok(());
@@ -393,13 +386,13 @@ pub fn run(
                 let Ok(event) = event else { break };
                 match event {
                     Event::Failed { track, error } => {
-                        told!("{} failed", billing(&player, track));
+                        told!("{}", words::abx::failed(billing(&player, track)));
                         crate::report(&error);
                         played = Err(Error::NothingPlayed { failed: 1 });
                         break;
                     }
                     Event::CommandFailed { command, error } => {
-                        told!("{command:?} rejected");
+                        told!("{}", words::abx::rejected(format!("{command:?}")));
                         crate::report(&error);
                     }
                     Event::QueueFinished => break,
@@ -410,14 +403,14 @@ pub fn run(
                 let Ok(stroke) = stroke else { break };
                 match key_of(stroke) {
                     Some(Key::Quit) => break,
-                    Some(Key::Help) => said!("{HELP}"),
+                    Some(Key::Help) => help(),
                     Some(Key::Hear(hear)) => {
                         let Some(command) = test.hearing(hear) else { continue };
                         if let Err(error) = player.send(command) {
                             played = Err(error.into());
                             break;
                         }
-                        said!("hearing {}", hear.spoken());
+                        said!("{}", words::abx::hearing(hear.spoken()));
                     }
                     Some(Key::Say(arm)) => {
                         if let Some(verdict) = test.answered(arm) {

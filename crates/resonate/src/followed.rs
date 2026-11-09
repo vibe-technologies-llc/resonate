@@ -10,8 +10,8 @@ use crate::{
     Error, Result,
     cli::UpkeepArg,
     config::Config,
-    counted,
     online::{self, Asking},
+    words,
 };
 
 impl From<UpkeepArg> for Upkeep {
@@ -67,42 +67,37 @@ fn profile_followed(
     for read in &followed.playlists {
         let wanted = want_the_rest(library, reference, &read.found);
         said!(
-            "{}: {} {}, {}{}{}",
-            read.name,
-            if read.started {
-                "started from"
-            } else {
-                "read from"
-            },
-            link.service(),
-            kept_as(upkeep),
+            "{}{}{}",
+            whence(read, link.service(), upkeep),
             rows_moved(read),
             beyond_the_library(wanted, read.found.len(), read.unnamed)
         );
     }
     said!(
-        "{}: {} on {}{}{}{}",
-        followed.name,
+        "{}{}{}{}",
         match upkeep {
-            Upkeep::InStep => "followed",
-            Upkeep::Once => "moved to Resonate once, and no longer followed",
+            Upkeep::InStep => words::followed::followed_on(&followed.name, link.service()),
+            Upkeep::Once => words::followed::moved_once_on(&followed.name, link.service()),
         },
-        link.service(),
-        counted_beside(followed.let_go, "playlist let go", "playlists let go"),
-        counted_beside(
-            followed.gone,
-            "playlist deleted there",
-            "playlists deleted there"
-        ),
-        counted_beside(followed.unread, "playlist unread", "playlists unread"),
+        counted_beside(followed.let_go, words::followed::let_go),
+        counted_beside(followed.gone, words::followed::deleted_there),
+        counted_beside(followed.unread, words::followed::unread),
     );
     Ok(())
 }
 
-fn counted_beside(count: usize, one: &str, many: &str) -> String {
+fn counted_beside(count: usize, said: fn(usize) -> String) -> String {
     match count {
         0 => String::new(),
-        count => format!(" · {}", counted(count as u64, one, many)),
+        count => format!(" · {}", said(count)),
+    }
+}
+
+fn whence(read: &FromTheLink, service: &str, upkeep: Upkeep) -> String {
+    if read.started {
+        words::followed::started_from(kept_as(upkeep), &read.name, service)
+    } else {
+        words::followed::read_from(kept_as(upkeep), &read.name, service)
     }
 }
 
@@ -120,15 +115,8 @@ pub fn import(
     let wanted = want_the_rest(library, reference.as_ref(), &read.found);
 
     said!(
-        "{}: {} {}, {}{}{}",
-        read.name,
-        if read.started {
-            "started from"
-        } else {
-            "read from"
-        },
-        link.service(),
-        kept_as(upkeep),
+        "{}{}{}",
+        whence(&read, link.service(), upkeep),
         rows_moved(&read),
         beyond_the_library(wanted, read.found.len(), read.unnamed)
     );
@@ -138,16 +126,14 @@ pub fn import(
 pub fn refresh_every_kept(library: &Library, config: &Config) -> Result<()> {
     let profiles = library.profiles_followed()?;
     if profiles.is_empty() && library.playlists_kept_in_step()?.is_empty() {
-        said!(
-            "no playlist is kept in step with a link; `resonate import <LINK> --upkeep in-step` keeps one"
-        );
+        said!("{}", words::followed::none_in_step());
         return Ok(());
     }
 
     let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
     for (profile, _) in profiles {
         if profile == ProfileLink::SpotifyAccount && !config.spotify_signed_in() {
-            said!("the Spotify account is followed but not signed in; `resonate spotify` signs in");
+            said!("{}", words::followed::spotify_not_signed_in());
             continue;
         }
         profile_followed(library, reference.as_ref(), &profile, Upkeep::InStep)?;
@@ -174,14 +160,17 @@ pub fn set_upkeep(library: &Library, playlist: &Playlist, upkeep: Upkeep) -> Res
     let link = playlist
         .source
         .as_ref()
-        .map_or("its link", |source| source.link.service());
+        .map_or(words::followed::its_link(), |source| source.link.service());
 
     match (changed, upkeep) {
-        (false, _) => said!("{} was already {}", playlist.name, kept_as(upkeep)),
-        (true, Upkeep::InStep) => said!("{} is kept in step with {link} now", playlist.name),
+        (false, _) => said!(
+            "{}",
+            words::followed::was_already(kept_as(upkeep), &playlist.name)
+        ),
+        (true, Upkeep::InStep) => said!("{}", words::followed::in_step_now(link, &playlist.name)),
         (true, Upkeep::Once) => said!(
-            "{} is left as it stands, and {link} is not read again on its own",
-            playlist.name
+            "{}",
+            words::followed::left_as_it_stands(link, &playlist.name)
         ),
     }
     Ok(())
@@ -189,8 +178,8 @@ pub fn set_upkeep(library: &Library, playlist: &Playlist, upkeep: Upkeep) -> Res
 
 pub fn forget_link(library: &Library, playlist: &Playlist) -> Result<()> {
     match library.forget_playlist_source(playlist.id)? {
-        true => said!("{} no longer follows a link; its rows stay", playlist.name),
-        false => said!("{} came from no link", playlist.name),
+        true => said!("{}", words::followed::no_longer_follows(&playlist.name)),
+        false => said!("{}", words::followed::came_from_no_link(&playlist.name)),
     }
     Ok(())
 }
@@ -198,13 +187,12 @@ pub fn forget_link(library: &Library, playlist: &Playlist) -> Result<()> {
 pub fn came_from(source: Option<&PlaylistSource>) -> String {
     match source {
         None => String::new(),
-        Some(source) => format!(
-            "{}, {}",
+        Some(source) => words::followed::came_from(
             source.link.service(),
             match source.upkeep {
-                Upkeep::Once => "once",
-                Upkeep::InStep => "in step",
-            }
+                Upkeep::Once => words::followed::once(),
+                Upkeep::InStep => words::followed::in_step(),
+            },
         ),
     }
 }
@@ -217,21 +205,25 @@ fn refreshed(
 ) -> Result<()> {
     let Some(read) = library.refresh_playlist(reference, playlist)? else {
         said!(
-            "{}: {} names no playlist now; its rows stay as they were",
-            library
-                .playlist(playlist)?
-                .map_or_else(|| playlist.to_string(), |held| held.name),
-            source.link.service()
+            "{}",
+            words::followed::names_no_playlist(
+                library
+                    .playlist(playlist)?
+                    .map_or_else(|| playlist.to_string(), |held| held.name),
+                source.link.service(),
+            )
         );
         return Ok(());
     };
     let wanted = want_the_rest(library, reference, &read.found);
 
     said!(
-        "{}: read again from {}, {}{}",
-        read.name,
-        source.link.service(),
-        rows_moved(&read).trim_start_matches(", "),
+        "{}{}",
+        words::followed::read_again(
+            rows_moved(&read).trim_start_matches(", "),
+            &read.name,
+            source.link.service(),
+        ),
         beyond_the_library(wanted, read.found.len(), read.unnamed)
     );
     Ok(())
@@ -250,45 +242,35 @@ fn want_the_rest(library: &Library, reference: &dyn Reference, found: &[Found]) 
         .count()
 }
 
-const fn kept_as(upkeep: Upkeep) -> &'static str {
+fn kept_as(upkeep: Upkeep) -> &'static str {
     match upkeep {
-        Upkeep::Once => "imported once",
-        Upkeep::InStep => "kept in step",
+        Upkeep::Once => words::followed::imported_once(),
+        Upkeep::InStep => words::followed::kept_in_step(),
     }
 }
 
 fn rows_moved(read: &FromTheLink) -> String {
     match (read.added, read.removed) {
-        (0, 0) => ", nothing to add".to_owned(),
-        (added, 0) => format!(", added {}", counted(added as u64, "song", "songs")),
-        (0, removed) => format!(", took out {}", counted(removed as u64, "song", "songs")),
-        (added, removed) => format!(
-            ", added {} and took out {}",
-            counted(added as u64, "song", "songs"),
-            counted(removed as u64, "song", "songs")
-        ),
+        (0, 0) => format!(", {}", words::followed::nothing_to_add()),
+        (added, 0) => format!(", {}", words::followed::added(added)),
+        (0, removed) => format!(", {}", words::followed::took_out(removed)),
+        (added, removed) => format!(", {}", words::followed::added_and_took_out(added, removed)),
     }
 }
 
 fn beyond_the_library(wanted: usize, found: usize, unnamed: usize) -> String {
     let mut said = String::new();
     if wanted > 0 {
-        said.push_str(&format!(
-            " · wanted {} the library lacks, which `resonate poll` fetches",
-            counted(wanted as u64, "song", "songs")
-        ));
+        said.push_str(&format!(" · {}", words::followed::wanted(wanted)));
     }
     if found > wanted {
         said.push_str(&format!(
-            " · {} could not be wanted",
-            counted((found - wanted) as u64, "song", "songs")
+            " · {}",
+            words::followed::not_wanted(found - wanted)
         ));
     }
     if unnamed > 0 {
-        said.push_str(&format!(
-            " · {} named nothing MusicBrainz knows",
-            counted(unnamed as u64, "song", "songs")
-        ));
+        said.push_str(&format!(" · {}", words::followed::unnamed(unnamed)));
     }
     said
 }
