@@ -59,6 +59,7 @@ pub enum Malformed {
     NotText,
     NotAnMbid,
     NotAPrint,
+    NotAPlace,
 }
 
 #[derive(Debug, Error)]

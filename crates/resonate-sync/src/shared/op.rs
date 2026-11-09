@@ -196,8 +196,11 @@ fn decoded_op(bytes: &[u8]) -> Result<Option<SharedOp>> {
 }
 
 fn placed(bytes: &[u8]) -> Result<Place> {
-    if bytes.is_empty() {
+    let Some(last) = bytes.last() else {
         return Err(Error::Malformed(Malformed::Short { length: 0 }));
+    };
+    if *last == 0 {
+        return Err(Error::Malformed(Malformed::NotAPlace));
     }
 
     Ok(Place(bytes.to_vec()))
@@ -448,6 +451,23 @@ mod tests {
             .into_iter()
             .map(|row| row.recording.title)
             .collect()
+    }
+
+    #[test]
+    fn a_place_ending_in_a_zero_byte_is_refused_as_no_place() {
+        let hostile = encoded_ops(&[added(1, "One", &[0], 1)]);
+        let trailing = encoded_ops(&[added(1, "One", &[1, 0], 1)]);
+        let fine = encoded_ops(&[added(1, "One", &[1], 1)]);
+
+        assert!(matches!(
+            decoded_ops(&hostile),
+            Err(Error::Malformed(Malformed::NotAPlace))
+        ));
+        assert!(matches!(
+            decoded_ops(&trailing),
+            Err(Error::Malformed(Malformed::NotAPlace))
+        ));
+        assert!(decoded_ops(&fine).is_ok());
     }
 
     fn a_busy_history() -> Vec<SharedOp> {

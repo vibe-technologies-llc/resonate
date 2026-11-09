@@ -4,15 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Sync and sharing
-- [S · 0.7.1] A shared-playlist member can hang every other member's client: `Place::between`
-  loops `for at in 0..` and returns only where the high byte exceeds the low by two, so a `high`
-  that is `low` followed by zero bytes (`[1]` and `[1, 0]`), or an all-zero `high` against an empty
-  `low` (which is what `Place::before` falls through to for one), pushes a byte per turn for ever
-  with no exit and no bound on the `Vec`, and `placed` in `shared/op.rs` accepts any non-empty
-  string up to 4096 bytes as a `Place`, so an `Added` or `Moved` carrying `[0]` is kept in the log
-  and every snapshot and the next local insert at the top of the list or beside that row spins until
-  the process is killed; the generators keep a non-zero last byte (the proptest forces it) and
-  ingest never checks that they did
 - [S · 0.7.1] A record a shared-playlist member sends can ask for gigabytes before anything
   decodes: `decoded_ops` reserves `Vec::with_capacity(count)` of `SharedOp` for a `count` the reader
   bounds only by the bytes left (`OP_AT_LEAST` is 1), the seal opens up to 64 MiB of plaintext and a

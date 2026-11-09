@@ -64,6 +64,9 @@ impl Place {
         let mut bytes = Vec::with_capacity(low.len().max(WIDTH) + 1);
 
         for at in 0.. {
+            if high.is_some_and(|high| at >= high.len()) {
+                high = None;
+            }
             let from = u16::from(low.get(at).copied().unwrap_or(0));
             let to = match high {
                 Some(high) => u16::from(high.get(at).copied().unwrap_or(0)),
@@ -119,6 +122,22 @@ mod tests {
             assert!(lower.0.iter().any(|byte| *byte != 0));
             place = lower;
         }
+    }
+
+    #[test]
+    fn a_high_place_leaving_no_room_below_it_still_answers_a_place_after_the_low_one() {
+        let low = Place(vec![1]);
+        let trailing_zeros = Place(vec![1, 0]);
+        let all_zeros = Place(vec![0, 0]);
+
+        let past_low = Place::between(Some(&low), Some(&trailing_zeros));
+        let below_zeros = Place::before(&all_zeros);
+        let from_nothing = Place::between(None, Some(&all_zeros));
+
+        assert!(past_low > low);
+        assert!(past_low.0.len() <= WIDTH);
+        assert!(below_zeros.0.iter().any(|byte| *byte != 0));
+        assert!(from_nothing.0.len() <= WIDTH);
     }
 
     proptest! {
