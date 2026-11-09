@@ -60,6 +60,8 @@ final class Features {
 
     var tidalAuthorization: TidalAuthorization?
     var tidalBusy = false
+    var jellyfinCode: String?
+    var jellyfinBusy = false
     var corrections: [AutoEqDevice] = []
     var correctionsFor: String?
     var searchingCorrections = false
@@ -174,6 +176,7 @@ final class Features {
     @ObservationIgnored private var playlistRequest = 0
     @ObservationIgnored private var searchRequest = 0
     @ObservationIgnored private var tidalRequest = 0
+    @ObservationIgnored private var jellyfinRequest = 0
     @ObservationIgnored private var onlinePending: Task<Void, Never>?
     @ObservationIgnored private var onlineAnswers = OnlineAnswers()
     @ObservationIgnored private var submitting: Task<Void, Never>?
@@ -1757,6 +1760,44 @@ final class Features {
             tidalBusy = false
             tidalAuthorization = nil
         })
+    }
+
+    func quickConnectJellyfin(_ account: DownloadAccount) {
+        guard !jellyfinBusy else { return }
+        jellyfinBusy = true
+        jellyfinRequest += 1
+        let request = jellyfinRequest
+        work({ [weak self] native in
+            let begun = try await Work.aside {
+                try native.beginJellyfinQuickConnect(server: account.server)
+            }
+            guard let self, jellyfinRequest == request else { return }
+            jellyfinCode = begun.code
+            let answer = try await Work.aside { try native.finishJellyfinQuickConnect() }
+            guard let session = answer, jellyfinRequest == request else { return }
+
+            var updated = account
+            if !session.name.isEmpty { updated.user = session.name }
+            updated.password = ""
+            updated.token = session.token
+            updated.userId = session.userId
+            updated.device = session.device
+
+            try await keepProviderAccount(updated)
+            library.notice("Signed in to Jellyfin as \(session.name)")
+        }, finally: { [weak self] in
+            guard let self, jellyfinRequest == request else { return }
+            jellyfinBusy = false
+            jellyfinCode = nil
+        })
+    }
+
+    func cancelJellyfinQuickConnect() {
+        guard jellyfinBusy else { return }
+        jellyfinRequest += 1
+        jellyfinBusy = false
+        jellyfinCode = nil
+        work { native in try await Work.aside { native.cancelJellyfinQuickConnect() } }
     }
 
     func cancelTidalAuthorization() {

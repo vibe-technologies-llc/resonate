@@ -445,6 +445,23 @@ struct ProviderFields: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             SecureField("Password", text: $account.password)
+                .onChange(of: account.password) { _, typed in
+                    if !typed.isEmpty { account.letGoOfTheQuickConnectSession() }
+                }
+            if account.offersQuickConnect {
+                Button(features.jellyfinBusy ? "Waiting for approval…" : (account.holdsAQuickConnectSession ? "Sign in again with Quick Connect" : "Sign in with Quick Connect")) {
+                    features.quickConnectJellyfin(account.trimmed)
+                }
+                .disabled(features.jellyfinBusy)
+                if features.jellyfinBusy {
+                    Button("Cancel sign-in", role: .cancel) { features.cancelJellyfinQuickConnect() }
+                }
+                if let code = features.jellyfinCode {
+                    Text("Approve code \(code) in a Jellyfin app you are signed in to (Settings, Quick Connect)")
+                        .font(.title3.weight(.semibold))
+                        .textSelection(.enabled)
+                }
+            }
         case .tidal:
             TextField("TIDAL client ID", text: $account.clientId)
                 .textInputAutocapitalization(.never)
