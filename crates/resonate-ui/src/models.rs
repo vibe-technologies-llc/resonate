@@ -2274,6 +2274,28 @@ impl LibraryModel {
             .or_else(|| fetching.first().copied())
     }
 
+    pub(crate) fn told_album(&self, group: &Mbid) -> Option<SharedString> {
+        if self.albums_wanted.contains_key(group) {
+            return Some(Fetching::Landing.saying());
+        }
+        let songs: Vec<&Download> = self
+            .album_songs
+            .get(group)?
+            .iter()
+            .filter_map(|recording| self.downloads.of(recording))
+            .collect();
+        if songs.is_empty() {
+            return None;
+        }
+        let fetching: Vec<Fetching> = songs.iter().map(|song| self.fetching(song)).collect();
+        let arriving = songs.iter().any(|song| {
+            self.fetched(song)
+                .is_some_and(|fetched| fetched.is_arriving())
+        });
+
+        Some(downloads::summed_up(&fetching, arriving))
+    }
+
     pub fn downloads(&self) -> &[Download] {
         self.downloads.all()
     }

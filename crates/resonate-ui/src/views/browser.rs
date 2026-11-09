@@ -1531,6 +1531,9 @@ impl RootView {
         };
 
         let fetched = found.clone();
+        let offered = found.clone();
+        let row = menu::opens_a_menu(row, move |_, at, _| found_menu(at, &offered), cx);
+
         row.cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
             .names(hint)
@@ -2675,6 +2678,7 @@ impl RootView {
     ) -> Stateful<Div> {
         let group = album.group.clone();
         let fetching = self.library.read(cx).fetching_album(&group);
+        let told = self.library.read(cx).told_album(&group);
         let opening = self.library.read(cx).is_opening_album(&group);
         let can_ask = self.library.read(cx).can_enrich();
         let art = self.library.update(cx, |library, cx| {
@@ -2692,7 +2696,7 @@ impl RootView {
         let under = match fetching {
             Some(fetching) => div()
                 .text_color(rgb(fetching_colour(fetching)))
-                .child(fetching.saying()),
+                .child(told.unwrap_or_else(|| fetching.saying())),
             None if opening => div()
                 .text_color(rgb(theme::accent()))
                 .child(words::browser::opening()),
@@ -3535,8 +3539,40 @@ fn pressings(media: &[HeldMedium]) -> Option<String> {
     })
 }
 
+fn found_menu(at: Point<Pixels>, found: &Found) -> Menu {
+    let played = found.clone();
+    let downloaded = found.clone();
+
+    Menu::at(at)
+        .does(
+            Icon::Play,
+            words::menu::download_and_play(),
+            move |this, _, cx| {
+                let wanted = played.clone();
+                this.library
+                    .update(cx, |library, cx| library.fetch_and_play(wanted, cx));
+            },
+        )
+        .apart()
+        .does(
+            Icon::Download,
+            words::menu::download(),
+            move |this, _, cx| {
+                let wanted = downloaded.clone();
+                this.library
+                    .update(cx, |library, cx| library.want_found(wanted, cx));
+            },
+        )
+        .nests(Icon::Disc, words::menu::download_from_a_release(), |menu| {
+            releases_offered(menu, found)
+        })
+}
+
 fn releases_to_want(at: Point<Pixels>, found: &Found) -> Menu {
-    let mut menu = Menu::at(at);
+    releases_offered(Menu::at(at), found)
+}
+
+fn releases_offered(mut menu: Menu, found: &Found) -> Menu {
     for release in found
         .in_the_order_worth_offering()
         .into_iter()
@@ -4828,6 +4864,54 @@ mod tests {
             });
             driven.until(|root, cx| root.library.read(cx).downloads().is_empty());
             assert!(library.wants().expect("the wants read").is_empty());
+        }
+
+        #[gpui::test]
+        fn a_right_press_on_a_song_found_on_musicbrainz_downloads_it_without_waiting_to_play_it(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+            let recording = mbid(HEROES_TONIGHT);
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+            driven.right_click("unheld-title-0");
+            assert!(
+                driven.read(|root, _| root.menu.is_some()),
+                "a right press on a found song opened no menu"
+            );
+            driven.click("menu-entry-2");
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert!(driven.read(|root, _| root.menu.is_none()));
+            assert!(
+                driven.read(|root, cx| !root.library.read(cx).is_awaited(&recording)),
+                "the song pressed to download was waited on to play"
+            );
+            assert!(
+                driven.read(|root, cx| {
+                    root.library
+                        .read(cx)
+                        .downloads()
+                        .iter()
+                        .any(|download| download.found.recording == recording)
+                }),
+                "the song pressed to download was not listed as a download"
+            );
+            assert_eq!(library.wants().expect("the wants read").len(), 1);
         }
 
         #[gpui::test]

@@ -1459,7 +1459,10 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   the archive is asked live; title in `theme::faint()`). Pressing one = `land_album_not_held`:
   `Library::open_album_uncovered` on bg (release read whole, landed as an album with release rows and no
   want), then the album opens where each missing song is pressed to be wanted; `want_album` serves a
-  link to an album not held; `fetching_album` reads its songs from `Downloads`. *Tracks* follows the
+  link to an album not held; `fetching_album` reads its songs from `Downloads` for the colour and
+  `told_album` says them as the sidebar does (`downloads::summed_up`: *Downloading… · 9 left* while any song's
+  bytes arrive, *Searching… · N left*, then *N downloaded · N not downloaded*), never one song's state for the
+  whole album. *Tracks* follows the
   held rows with `ListedRow::NotHeld` (*Not in your library · N songs · press one to download it*) and
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
@@ -1684,7 +1687,10 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     stays listed as found
     (`a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_again`). **A found song's whole row is that
     press** (`found_row`, `words::browser::fetch_found_hint`); the mark's own press finds the recording already
-    `wanting`; while asked for, the row takes no press. `wanting` holds a task per recording.
+    `wanting`; while asked for, the row takes no press. **A right press on a found song offers it without playing
+    it** (`found_menu`): *Download and play* (the row's press), *Download* (`want_found` alone, nothing awaited)
+    and *Download from a release* nesting the releases the heart's right press lists
+    (`a_right_press_on_a_song_found_on_musicbrainz_downloads_it_without_waiting_to_play_it`). `wanting` holds a task per recording.
     **A song pressed plays once it lands, if it lands within half a minute.** The row's press, `enter`
     on a found row and on *Top results* call `LibraryModel::fetch_and_play`: `want_found`, then
     `Downloads::play_once_landed` (one song awaited, the latest press winning; the heart, a release
