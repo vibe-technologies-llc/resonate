@@ -1314,6 +1314,17 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   The tab is the pane `in_front` names; a tab hidden by `Tabs` is ignored on the next open. The size is
   written after `WINDOW_SIZE_SETTLE` (400 ms) so a drag edits the config once. Switching off removes the
   saved value.
+- **A newer release is told once and offered in About.** `ResonateApp::updates` is the binary's
+  `Updates` seam (`None` where the build names no repository or lacks `online`);
+  `RootView::look_for_a_newer_release` runs from `RootView::new` and again when *Check for updates*
+  is switched on, asking `Updates::newer(reaching)` on the background executor with the live Online
+  switch every `LOOKED_AT_AGAIN_EVERY` (6 h; the binary keeps it to once a day). A release other
+  than the one `update_dismissed` names lands in `RootView::newer` and is toasted once (`Noted`,
+  *Resonate X is out · Settings, About has it*); the About category's *Updates* group
+  (`Group::Updates`, keys `check-for-updates` and `update-dismissed`) holds the switch and, while
+  one is known, *Open the release* (`cx.open_url`) and *Dismiss*, which writes `update-dismissed`
+  (`a_newer_release_is_told_once_offered_in_about_and_dismissed_for_good`,
+  `switching_the_check_off_forgets_the_release_and_asks_no_more`).
 - **The window is handed its lookups and owns none.** `Lookups` is what `run` takes: `lyricists`,
   `fingerprinters`, `reference` (`Option<Arc<dyn Reference>>`), `for_the_pass` (`Consulted`),
   `scrobblers`, `signs_in`, `spotify`, `corrections`, the `online` setting, `bindings`, `measures` (the sweep of the Equaliser pane's *Measure*, `eq.md`), `sourcing`, `serving`, `listens`;

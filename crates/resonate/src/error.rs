@@ -71,6 +71,8 @@ pub enum ConfigKey {
     ShuffleFreshFirst,
     OrganiseAs,
     Notify,
+    CheckForUpdates,
+    UpdateDismissed,
     MinimiseButton,
     MaximiseButton,
     ScrollVolume,
@@ -194,7 +196,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 130] = [
+    pub const ALL: [Self; 132] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -256,6 +258,8 @@ impl ConfigKey {
         Self::ShuffleFreshFirst,
         Self::OrganiseAs,
         Self::Notify,
+        Self::CheckForUpdates,
+        Self::UpdateDismissed,
         Self::MinimiseButton,
         Self::MaximiseButton,
         Self::ScrollVolume,
@@ -390,6 +394,8 @@ impl ConfigKey {
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",
             Self::Notify => "notify",
+            Self::CheckForUpdates => "check-for-updates",
+            Self::UpdateDismissed => "update-dismissed",
             Self::MinimiseButton => "minimise-button",
             Self::MaximiseButton => "maximise-button",
             Self::ScrollVolume => "scroll-volume",
@@ -764,6 +770,26 @@ pub enum Error {
     #[cfg(not(feature = "online"))]
     #[error("this build keeps no copy of MusicBrainz; it was built without the online feature")]
     NoMirror,
+
+    #[cfg(not(feature = "online"))]
+    #[error("this build asks about no release; it was built without the online feature")]
+    NoUpdates,
+
+    #[cfg(feature = "online")]
+    #[error("this build names no repository it was released from, so it has nowhere to ask")]
+    NoReleasesNamed,
+
+    #[cfg(feature = "online")]
+    #[error("the latest release could not be asked for")]
+    LatestRelease(#[source] Box<resonate_online::Error>),
+
+    #[cfg(feature = "online")]
+    #[error("what was last heard of the releases could not be kept at {path}")]
+    KeepLatestRelease {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 
     #[cfg(not(feature = "online"))]
     #[error("this build has no TIDAL sign-in; it was built without the online feature")]

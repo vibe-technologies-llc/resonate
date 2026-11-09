@@ -1817,6 +1817,13 @@ pub enum Sub {
     },
 
     #[command(
+        about = "Ask now whether a newer release of Resonate is out, and print it beside this \
+                 build's version and the page it is on. The window asks at most once a day while \
+                 check-for-updates is on"
+    )]
+    Update,
+
+    #[command(
         about = "Print Resonate Wrapped: a year of what was listened to, as the window's slides \
                  read"
     )]

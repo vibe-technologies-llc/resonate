@@ -322,12 +322,13 @@ pub(crate) enum Group {
     VolumeWheel,
     MouseNavigation,
     Build,
+    Updates,
     Places,
     Everything,
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 78] = [
+    pub(crate) const ALL: [Self; 79] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -404,6 +405,7 @@ impl Group {
         Self::VolumeWheel,
         Self::MouseNavigation,
         Self::Build,
+        Self::Updates,
         Self::Places,
         Self::Everything,
     ];
@@ -1163,6 +1165,14 @@ impl Group {
                 also_called: "version typeface font features sinks",
                 keys: &[],
             },
+            Self::Updates => Described {
+                category: Category::About,
+                page: None,
+                title: "Updates",
+                hint: UPDATES_HINT,
+                also_called: "update upgrade new version release newer check github download",
+                keys: &[SettingKey::CheckForUpdates, SettingKey::UpdateDismissed],
+            },
             Self::Places => Described {
                 category: Category::About,
                 page: None,
@@ -1763,6 +1773,11 @@ pub(crate) const BUILD_HINT: &str = "What this copy of Resonate is: its version,
                                      settled on out of the families this machine has installed, \
                                      and whether the parts that are compiled in behind a feature \
                                      are here at all.";
+
+pub(crate) const UPDATES_HINT: &str = "Whether Resonate asks, at most once a day while the \
+                                       window is open, if a newer release is out. The question \
+                                       names this build and nothing else, and nothing is asked \
+                                       while Online is off.";
 
 pub(crate) const PLACES_HINT: &str = "The settings file every control here writes to, and the \
                                       SQLite catalog the library pane reads from. Neither is a \

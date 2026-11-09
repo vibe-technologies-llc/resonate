@@ -35,6 +35,7 @@ pub enum Host {
     Youtube,
     TidalEmbed,
     Tidal,
+    GitHub,
 }
 
 impl Host {
@@ -74,6 +75,7 @@ impl Host {
             Self::Youtube => "https://www.youtube.com",
             Self::TidalEmbed => "https://embed.tidal.com",
             Self::Tidal => "https://tidal.com",
+            Self::GitHub => "https://api.github.com",
         }
     }
 }

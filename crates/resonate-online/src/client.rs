@@ -189,6 +189,7 @@ impl Host {
             Self::Lrclib
             | Self::BetterLyrics
             | Self::AutoEq
+            | Self::GitHub
             | Self::AcoustId
             | Self::Shazam
             | Self::AppleArtwork
@@ -322,7 +323,8 @@ impl Host {
             | Self::Commons
             | Self::Wikidata
             | Self::Lrclib
-            | Self::AutoEq => OTHERS_INTERVAL,
+            | Self::AutoEq
+            | Self::GitHub => OTHERS_INTERVAL,
         }
     }
 }
@@ -1581,6 +1583,7 @@ mod tests {
             Host::Commons,
             Host::Lrclib,
             Host::AutoEq,
+            Host::GitHub,
             Host::AcoustId,
             Host::Deezer,
         ] {

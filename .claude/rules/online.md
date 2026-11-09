@@ -554,6 +554,24 @@ twin): one agent and its connections per process.
 
 A failed optional Deezer twin lookup preserves the names and codes already read from song.link.
 
+## The latest release
+
+`releases.rs` asks GitHub's API (`Host::GitHub`, `api.github.com`, the others' pace and gated like
+any lookup, metered included) `/repos/<owner>/<name>/releases/latest` under
+`LookupOp::LatestRelease`, saying only `resonate/<version>`. **The repository is named by the build,
+never written in the tree**: the binary reads `RESONATE_RELEASES` (`owner/name`, held by
+`Repository::named`) with `option_env!`, which `release.yml` sets to `github.repository`, so a
+build from a checkout, the `-git` recipes and the Flatpak name none and ask nothing (the window says
+so; `resonate update` is `Error::NoReleasesNamed`). A draft or pre-release is no answer (the endpoint
+names neither), a page off `https://github.com/` is replaced by the tag's own, a 404 is no release,
+and a body that is not a release is `Unreadable`. `Version` orders as semantic versioning does: a
+leading `v` and build metadata are dropped, a pre-release sorts below its release, its identifiers
+numeric before named and a shorter run first
+(`versions_order_as_semantic_versioning_orders_them`,
+`the_latest_release_is_asked_of_the_repository_saying_only_what_this_build_is`). The binary's
+`online::latest_release` and `outdates_this_build` are the only callers; `updates.rs` keeps what was
+heard (`binary.md`).
+
 ## Public file sharing
 
 `Reference::share_file` is an explicit listener action implemented by Catbox anonymous multipart uploads. The client streams at most 200 MiB with a generic filename retaining only an alphanumeric extension, never the local path. Online and metering gates apply before sending. Uploads have a ten-minute deadline, follow no redirects and are never retried automatically, so a lost response does not duplicate a public upload. Only HTTPS file URLs on files.catbox.moe are accepted, under a 4096-byte response cap. No account or deletion token is kept.

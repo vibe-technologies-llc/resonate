@@ -715,6 +715,8 @@ pub struct RootView {
     pub(crate) driving_rows: usize,
     pub(crate) own_server_asked: bool,
     pub(crate) reset_everything_landed: bool,
+    pub(crate) newer: Option<crate::Newer>,
+    pub(crate) looking_for_updates: Task<()>,
     pub(crate) vault_named: Option<PathBuf>,
     pub(crate) earlier_plays_asked: bool,
     pub(crate) query_sort: SortOrder,
@@ -1257,7 +1259,7 @@ impl RootView {
 
         Self::watch_remote_playback(cx);
 
-        let view = Self {
+        let mut view = Self {
             player,
             library,
             lyrics,
@@ -1384,6 +1386,8 @@ impl RootView {
             driving_rows: crate::views::settings::sync::DRIVEN_ROWS_AT_FIRST,
             own_server_asked: false,
             reset_everything_landed: false,
+            newer: None,
+            looking_for_updates: Task::ready(()),
             vault_named: None,
             earlier_plays_asked: false,
             query_sort: SortOrder::default(),
@@ -1471,6 +1475,7 @@ impl RootView {
             this.window_bounds_changed(window, cx);
         })
         .detach();
+        view.look_for_a_newer_release(cx);
         view
     }
 

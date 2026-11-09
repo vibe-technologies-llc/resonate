@@ -52,11 +52,11 @@ pub use crate::{
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves, Serving},
     settings::{
         Asking, Bindings, CaretBlink, ChecksYoutubeMusic, Continuing, Ephemeral, Followed,
-        HandedOff, Measurers, MirrorTold, Mirroring, Online, Places, Present, Registering,
+        HandedOff, Measurers, MirrorTold, Mirroring, Newer, Online, Places, Present, Registering,
         RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange,
         SettingKey, Settings, SettingsCategory, Sourcing, SpotifySignIn, Stored, Supplying,
         SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing, Tabs,
-        TidalSignIn, Unkept, WindowButtons, WindowSize, YoutubeMusicConnection,
+        TidalSignIn, Unkept, Updates, WindowButtons, WindowSize, YoutubeMusicConnection,
     },
     together::{
         PartyReached, PartySeen, PartyStanding, SharedPerson, SharedReach, SharedSeen, Together,

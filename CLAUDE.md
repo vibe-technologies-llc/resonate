@@ -260,6 +260,7 @@ stack's test harness:
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).
+- **Updates:** `update` (asks now whether a newer release is out; the window asks once a day while `check-for-updates` is on).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,
   `--control <device>` to see and drive another device's zones).
 - `cargo run -- <files>` opens the window with those queued; a bare `cargo run` opens it on the
