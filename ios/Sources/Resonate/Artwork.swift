@@ -370,7 +370,7 @@ struct FavouriteButton: View {
             }
         } label: {
             Image(systemName: favourite ? "heart.fill" : "heart")
-                .foregroundStyle(favourite ? Color.pink : Color.secondary)
+                .foregroundStyle(favourite ? Color.worn : Color.secondary)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : starred)
                 .touchTarget()

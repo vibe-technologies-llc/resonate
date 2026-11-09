@@ -268,14 +268,14 @@ struct FilterButton: View {
 }
 
 struct EmptyLibrary: View {
-    @ScaledMetric(relativeTo: .largeTitle) private var glyph: CGFloat = 56
+    @ScaledMetric(relativeTo: .largeTitle) private var mark: CGFloat = 72
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "music.note.house")
-                .font(.system(size: glyph))
-                .foregroundStyle(.tint)
+        VStack(spacing: 12) {
+            ResonateMark()
+                .fill(.tint)
+                .frame(width: mark, height: mark)
                 .accessibilityHidden(true)
             Text("songs.empty.title").font(.title2.weight(.semibold))
             Text("songs.empty.detail")
@@ -283,6 +283,7 @@ struct EmptyLibrary: View {
                 .foregroundStyle(.secondary)
             Button("songs.empty.choose-folder") { navigation.choosingFolder = true }
                 .buttonStyle(.glassProminent)
+                .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
         .padding(32)

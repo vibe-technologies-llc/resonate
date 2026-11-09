@@ -851,21 +851,22 @@ every route change (a pair of headphones at the same rate included), not from th
   and artist shelves read twelve each on `Work.onScreen`, keyed by `collectionGeneration` and
   `catalogEpoch`. An empty catalog shows the invitation to add a folder, devices, parties and
   playlists. Home's pages push onto its own stack.
-- **Home's *Your listening* is a glance at the last seven days** (`HomeListeningSections`, `ListeningGlanceViews.swift`; its words and sums in `ResonateLogic`'s `ListeningGlance`, held by `HomeTests`), under a *See all* header, and the whole card opens `Destination.statistics` (a `NavigationLink` in a horizontal `ScrollView` with scrolling disabled, as the shortcut cards are, so the list draws it no chevron). The card reads from one figure down: *Last 7 days*, the time listened in large title, its pace a day (over the days since the first play, seven at most) and how it moved against the seven days before (`ListeningTrend`: steady within 5 %, the percentage, *more than double* past 100 %, nothing with no week before), then a Swift Charts bar chart (`ListeningWeekChart`) of the seven days ending today, today's bar in the accent and bold in the weekday letters, the others the accent faded (more strongly drawn under Increase Contrast), an empty day a stub so its place still shows, and the average a dashed rule whose *avg* sits in the trailing axis, outside the bars; then up to four facts in an adaptive grid: the run of days ending today or yesterday (from two), the weekday heard most (from seven days heard), the time and plays in all and the songs heard of the library's. Beneath it a section *Most listened* holds the all-time first song (`TrackRow`, playing the ranked songs from it) and first album (`CollectionRow`); the first artist is left out because the *Artists* shelf above already leads with it. With nothing heard these seven days the card leads with the all-time figure and says when a song was last heard, with no chart. With no counted play at all it says *No plays yet* and how a play counts, over the chart's seven stubs and no facts. It draws one column on a phone and at accessibility text sizes and the words beside the chart where the width is regular (`ListeningGlanceArrangement`), and the chart's own letters stop growing at the first accessibility size. To VoiceOver the card is one element speaking every figure as sentences (`ListeningGlance.spoken`), since the bars need no second reading there; the Statistics page steps through them. `Features.homeListening` is worked out on `Work.aside` from a `loadStatistics` of all time alone, so a period picked on the Statistics page never reads as all time on Home, and it keeps showing while such a read lands; until the first has, the card is redacted and says it is reading. Home asks on appearing and on coming forward from `.background` where it is the page showing (`Navigation.tab`, an empty stack), since the seven days end today and a read asked beneath the Statistics page would reset its period; a day ending with the app open in the foreground is seen at the next ask.
+- **Home's *Your listening* is a glance at the last seven days** (`HomeListeningSections`, `ListeningGlanceViews.swift`; its words and sums in `ResonateLogic`'s `ListeningGlance`, held by `HomeTests`), under a *See all* header, and the whole card opens `Destination.statistics` (a `NavigationLink` in a horizontal `ScrollView` with scrolling disabled, as the shortcut cards are, so the list draws it no chevron). The card reads from one figure down: *Last 7 days*, the time listened in large title, its pace a day (over the days since the first play, seven at most) and how it moved against the seven days before (`ListeningTrend`: steady within 5 %, the percentage, *more than double* past 100 %, nothing with no week before), then a Swift Charts bar chart (`ListeningWeekChart`) of the seven days ending today, today's bar in the accent and bold in the weekday letters, the others the accent faded (more strongly drawn under Increase Contrast), an empty day a stub so its place still shows, and the average a dashed rule whose *avg* sits in the trailing axis, outside the bars; then up to four facts in an adaptive grid, each its figure over its caption with no symbol beside it: the run of days ending today or yesterday (from two), the weekday heard most (from seven days heard), the time and plays in all and the songs heard of the library's. Beneath it a section *Most listened* holds the all-time first song (`TrackRow`, playing the ranked songs from it) and first album (`CollectionRow`); the first artist is left out because the *Artists* shelf above already leads with it. With nothing heard these seven days the card leads with the all-time figure and says when a song was last heard, with no chart. With no counted play at all it says *No plays yet* and how a play counts, over the chart's seven stubs and no facts. It draws one column on a phone and at accessibility text sizes and the words beside the chart where the width is regular (`ListeningGlanceArrangement`), and the chart's own letters stop growing at the first accessibility size. To VoiceOver the card is one element speaking every figure as sentences (`ListeningGlance.spoken`), since the bars need no second reading there; the Statistics page steps through them. `Features.homeListening` is worked out on `Work.aside` from a `loadStatistics` of all time alone, so a period picked on the Statistics page never reads as all time on Home, and it keeps showing while such a read lands; until the first has, the card is redacted and says it is reading. Home asks on appearing and on coming forward from `.background` where it is the page showing (`Navigation.tab`, an empty stack), since the seven days end today and a read asked beneath the Statistics page would reset its period; a day ending with the app open in the foreground is seen at the next ask.
 - **Home's and the Library tab's shortcuts are a pair of cards** (`ShortcutCards`, `ShortcutCard`):
   one list row with no side insets and a clear background, so the two cards run edge to edge with the
-  section cards below, 16 pt below the page's title (`ShortcutCard.belowTheTitle`), side by side and stacked at accessibility text sizes. A card is a
-  corner-to-corner gradient of two system colours (20 pt continuous corners, a dark scrim toward
-  the foot so the white words hold their contrast), its symbol small at the top and large, tilted
-  and faint, overhanging the bottom trailing corner, and the title and song count at the foot,
-  at least 104 pt tall, scaled: Favourites pink and purple, All songs orange and red, Home's
-  *Shuffle all* indigo and blue. Each card is its own `NavigationLink` or `Button` in
+  section cards below, 16 pt below the page's title (`ShortcutCard.belowTheTitle`), side by side and stacked at accessibility text sizes. A card is the
+  page's own card ground (`Color.cardGround`: the themed card over the backdrop, the grouped
+  background's cell colour without it; 20 pt continuous corners), its symbol in the accent at the
+  top and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
+  scaled, and half as strong while disabled: no gradient, no colour pair of its own and no
+  watermark behind the words. Each card is its own `NavigationLink` or `Button` in
   `.buttonStyle(.plain)`, since a row holding two controls of the default style fires both on any
   tap, and the pair sits in a horizontal `ScrollView` with scrolling disabled, each card half its
   width (`containerRelativeFrame`), as the shelves' links do: a `List` gives a `NavigationLink`
   directly in a row its disclosure chevron whatever the style, which drew an arrow between the cards. The Library tab's *All songs* is a `Button` that clears any filter or mix, shows songs and
   opens the Songs page: a `simultaneousGesture` tap on a `NavigationLink` there left a tap doing
-  nothing. `ShelfTile` (a white symbol on the same gradient) stays the Favourites page's cover.
+  nothing. `ShelfTile` (a symbol in the accent, a third of the side, on the neutral ground an uncovered
+  cover wears) stays the Favourites row's and page's cover, the page's at the album header's 20 pt corner.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
   section of shortcuts (Favourites and All songs, the second hidden while searching; Suggestions and
   Statistics are Home's), *Saved for later* while not searching, then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
@@ -901,7 +902,7 @@ every route change (a pair of headphones at the same rate included), not from th
   every edit reads the playlist's latest revision inside the library's ordered lane; a refused edit, a scan, and the hiding or restoring of missing songs or a folder's songs reload the open page, and a reload lands only if it is the latest asked (`Features.playlistRequest`); its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears. A playlist's count is the rows its page shows (hidden songs are not counted), so a
-  playlist of hidden songs reads as empty and offers *Your playlist starts here*. **A saved search**
+  playlist of hidden songs reads as empty and offers *Add songs to start this playlist*. **A saved search**
   (`MusicPlaylist.search`, `android.md`'s *A playlist is a list or a saved search*) is the same page
   subtitled *Saved search*, its text and its order, direction and cap (`SavedSearch.reading`) under
   the header and its songs plain `TrackRow`s (`SavedSearchRows`): no *Add songs*, Edit, swipe or move,
@@ -963,8 +964,8 @@ every route change (a pair of headphones at the same rate included), not from th
 - **The queue is saved as a playlist** from the player's More menu (`createPlaylist` with every
   queue row, repeats kept).
 - **Statistics is a page of its own** (`StatisticsView.swift`), opened from Home's *Your listening* as
-  well as from Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): tiles
-  (`StatisticsTiles`, each title's symbol in a column of one width so the titles line up: time listened and plays, the daily average over the period or, for all time,
+  well as from Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): one ledger
+  (`StatisticsLedger` over `Ledger`: the six figures in one section card cut into equal cells by hairlines, two across on a phone, three at regular width and one at accessibility text sizes, a short last line keeping its empty cells; a cell is its name over its figure over a detail, with no icon and no card of its own: time listened and plays, the daily average over the period or, for all time,
   since the first counted play, songs heard of the library, the busiest day, the library's size, albums
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
   weeks for a year, months for all time, the day cut at the midnight of the phone's zone, `TimeZone.current.identifier` with its offset as the fallback; all time reads every day
@@ -1034,6 +1035,19 @@ every route change (a pair of headphones at the same rate included), not from th
 
 ## Appearance
 
+- **The look is quiet chrome around the covers.** Colour comes from artwork and from the accent on
+  what acts or means something; chrome is neutral. A surface is the page's card ground or glass,
+  never a gradient or a colour pair of its own (the shortcut cards, `ShelfTile`, a mix's art with no
+  cover, the Statistics ledger); a symbol that only decorates stands bare, never on a tinted tile,
+  and none is a sparkle or a wand. A favourite's heart and a served star are the accent
+  (`Color.worn`, which holds its contrast bar where pink and yellow did not), filled when set, so
+  the fill and not the hue says so. A swipe action keeps the system's hues (play next indigo, add
+  to queue orange, favourite pink, add to playlist blue, a removal red), the same on a local row
+  and a served one. The empty library's mark is the app's own five bars (`ResonateMark`,
+  `Mark.swift`: the drawing of `packaging/resonate.svg`, filled in the accent), not a stock symbol.
+  **Figures are tabular everywhere**: `RootView` is `.monospacedDigit()`, so clocks, lengths and
+  counts line up down a list and a ticking figure never shifts its neighbours. An empty state says
+  what is missing and the gesture that fills it in plain words, with no slogan.
 - **The accent is the desktop's, chosen on Settings › Appearance › Accent colour** (`Appearance.swift`):
   *Resonate* (the default: the system accent and the packaged icon) or one of `ResonateAccent.every`,
   kept as `accent` in the `appearance` suite. `AppearanceState.shared` (`@Observable`) is read by
@@ -1048,21 +1062,21 @@ every route change (a pair of headphones at the same rate included), not from th
 ## Suggestions and generated art
 
 - **A mix's art is drawn, never stored, as the desktop's** (`ui.md`'s mosaic): `MosaicArtwork`
-  (`Mosaic.swift`) draws no cover as a 135° gradient between two `MixAccent`s with the mark (an SF
-  Symbol, 22 % of the side) and, from 100 pt, the name lettered (bold, 11 %, at most three lines) in
-  the first accent's ink; one cover whole; two to four as a 2×2, a missing tile filled with the
-  accents in turn; continuous corners and a hairline. `MixAccent.color` is the system colour of the
-  accent's hue (mauve purple, amber yellow, peach orange). A name's accents are `named_accents(name)`,
-  core's `Accent::named_pair`, so a genre, artist or playlist wears the colours it wears on the
-  desktop. A playlist is drawn the same way from its first four albums.
+  (`Mosaic.swift`) draws one cover whole and two to four as a 2×2. **Where no cover is, the ground
+  is neutral**, as an uncovered album's is (`ArtworkView`'s `.quaternary`): art with no picture at
+  all is that ground with the mark (an SF Symbol, 20 % of the side) in `.tertiary` and, from 100 pt,
+  the name lettered (semibold, 10 %, at most three lines) in `.secondary`, and a tile a mosaic lacks
+  is `.quaternary` or `.quinary` by turns; continuous corners. No gradient and no accent pair is
+  drawn: the boundary still names a pair (`MixAccents`, `named_accents`), which the views do not
+  read. A playlist is drawn the same way from its first four albums.
 - **Suggestions is the desktop's lists, in shelves of cards** (`SuggestionsView`, adaptive columns at
   least 160 pt under a heading a shelf, `OfferedMixes.shelves`): `suggested_lists(time_zone,
   utc_offset_seconds)` (`mobile.md`'s *Made for you*, read with `TimeZone.current`) answers *On repeat*,
   *More like*, *deep cuts*, *Discover*, *Old flames*, *Never heard* and the rest in the desktop's shelf
   order, turning at the phone's midnight, and each is a `SuggestedMix` of a `SavedSearch` with the
-  title, the `Reason::says` line, the accent pair the boundary gives and the SF Symbol of its reason
+  title, the `Reason::says` line and the SF Symbol of its reason
   (`Suggestions.symbol`, `ResonateLogic`, held by `SuggestionsTests`). Two phone-only mixes of a
-  `TrackFilter` stand first under *Yours*, *Your favourites* mauve/red and *Recently played* amber/peach
+  `TrackFilter` stand first under *Yours*, *Your favourites* and *Recently played*
   (`TrackFilter.played`, so it holds the songs heard and never runs on into unheard ones). Covers are
   the boundary's (`SuggestedList.covers`, `picturedBy` for a filter), read with the lists in one
   `Work.aside` keyed by `collectionGeneration` and `catalogEpoch`. Pressing the art pushes
@@ -1075,7 +1089,7 @@ every route change (a pair of headphones at the same rate included), not from th
   *Never heard* shuffles the whole of it. A `MixView` of a list (a `SavedSearch` source, not a *Yours* filter)
 adds *Keep as a playlist that fills itself* to its `CollectionMenu` (`keeping`, `Features.keepSearchAsPlaylist`
 over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist fills itself from the same search.
-`SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.
+A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 10 pt corner, no shadow under it), and no symbol is a sparkle or a wand: Suggestions is a stack (`square.stack`), *Never heard* `play.slash`.
 
 ## Search
 
@@ -1091,7 +1105,7 @@ over `keep_search_as_playlist`), a disabled *Kept as a playlist* once a playlist
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
 - **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
   Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;
-  completions as a row of glass capsules heading the results (`SearchCompletions`, at most five,
+  completions as a row of glass capsules of the words alone heading the results (`SearchCompletions`, at most five,
   read from the answer on screen, so the row changes only as the results do); `.searchSuggestions`
   offers only, on an empty field, the last ten searches (`UserDefaults` suite `library-features`,
   key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and

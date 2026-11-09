@@ -26,9 +26,8 @@ struct StatisticsView: View {
             .pickerStyle(.segmented)
             if let statistics, let detail {
                 Section {
-                    StatisticsTiles(statistics: statistics, detail: detail, span: loadedDays)
+                    StatisticsLedger(statistics: statistics, detail: detail, span: loadedDays)
                         .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
                 }
                 if statistics.plays == 0 {
                     ContentUnavailableView(
@@ -156,94 +155,110 @@ enum StatisticsRank: Hashable {
     case songs, albums, artists
 }
 
-struct StatTile: View {
-    private static let corner: CGFloat = 16
-
-    @ScaledMetric(relativeTo: .caption) private var symbolWidth: CGFloat = 18
-
-    let title: String
-    let value: String
-    let detail: String?
-    let symbol: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: symbol).frame(width: symbolWidth).accessibilityHidden(true)
-            }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
-            Text(value)
-                .font(.title2.weight(.semibold))
-                .minimumScaleFactor(0.6)
-                .titleLines()
-            Text(detail ?? " ")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .titleLines()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(fill, in: RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(detail.map { "\(value), \($0)" } ?? value)
+struct Ledger: View {
+    struct Cell {
+        let title: String
+        let value: String
+        let detail: String?
     }
 
-    private var fill: Color {
-        AppearanceState.shared.themedBackground ? Color.themedCard : Color(.secondarySystemGroupedBackground)
+    private static let acrossWhenWide = 3
+    private static let acrossWhenNarrow = 2
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var horizontal
+    let cells: [Cell]
+
+    var body: some View {
+        let across = typeSize.isAccessibilitySize ? 1 : horizontal == .regular ? Self.acrossWhenWide : Self.acrossWhenNarrow
+        let lines = stride(from: 0, to: cells.count, by: across).map { Array(cells[$0..<min($0 + across, cells.count)]) }
+        VStack(spacing: 0) {
+            ForEach(lines.indices, id: \.self) { line in
+                if line > 0 { Divider() }
+                HStack(spacing: 0) {
+                    ForEach(0..<across, id: \.self) { column in
+                        if column > 0 { Divider() }
+                        if column < lines[line].count {
+                            LedgerCell(cell: lines[line][column])
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
-struct StatisticsTiles: View {
+private struct LedgerCell: View {
+    let cell: Ledger.Cell
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(cell.title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .titleLines()
+            Text(cell.value)
+                .font(.title3.weight(.semibold))
+                .minimumScaleFactor(0.7)
+                .titleLines()
+            if let detail = cell.detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .titleLines()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cell.title)
+        .accessibilityValue(cell.detail.map { "\(cell.value), \($0)" } ?? cell.value)
+    }
+}
+
+struct StatisticsLedger: View {
     let statistics: LibraryStatistics
     let detail: ListeningDetail
     let span: UInt32
 
     var body: some View {
         let busiest = detail.days.max { $0.listenedMs < $1.listenedMs }
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-            StatTile(
+        Ledger(cells: [
+            Ledger.Cell(
                 title: said("statistics.listened"),
                 value: StatisticsView.brief(statistics.listenedMs),
-                detail: said("counted.plays", Int(statistics.plays)),
-                symbol: "headphones"
-            )
-            StatTile(
+                detail: said("counted.plays", Int(statistics.plays))
+            ),
+            Ledger.Cell(
                 title: said("statistics.daily-average"),
                 value: StatisticsView.brief(average),
-                detail: span == 0 ? said("statistics.daily-average.since-first") : said("statistics.daily-average.over-days", Int(span)),
-                symbol: "calendar"
-            )
-            StatTile(
+                detail: span == 0 ? said("statistics.daily-average.since-first") : said("statistics.daily-average.over-days", Int(span))
+            ),
+            Ledger.Cell(
                 title: said("statistics.songs-heard"),
                 value: "\(detail.songsHeard)",
-                detail: said("statistics.songs-heard.of", Int(statistics.songs)),
-                symbol: "music.note"
-            )
-            StatTile(
+                detail: said("statistics.songs-heard.of", Int(statistics.songs))
+            ),
+            Ledger.Cell(
                 title: said("statistics.busiest-day"),
                 value: busiest.map { StatisticsView.brief($0.listenedMs) } ?? said("statistics.busiest-day.none"),
-                detail: busiest.map { Date(timeIntervalSince1970: TimeInterval($0.starts)).formatted(span == 0 || span == 365 ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated)) },
-                symbol: "flame"
-            )
-            StatTile(
+                detail: busiest.map { Date(timeIntervalSince1970: TimeInterval($0.starts)).formatted(span == 0 || span == 365 ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated)) }
+            ),
+            Ledger.Cell(
                 title: said("library.title"),
                 value: said("counted.songs", Int(statistics.songs)),
-                detail: StatisticsView.brief(statistics.durationMs),
-                symbol: "music.note.house"
-            )
-            StatTile(
+                detail: StatisticsView.brief(statistics.durationMs)
+            ),
+            Ledger.Cell(
                 title: said("statistics.albums-and-artists"),
                 value: "\(statistics.albums) · \(statistics.artists)",
-                detail: said("statistics.albums-and-artists.detail"),
-                symbol: "square.stack"
-            )
-        }
-        .padding(.vertical, 4)
+                detail: said("statistics.albums-and-artists.detail")
+            ),
+        ])
     }
 
     private var average: UInt64 {

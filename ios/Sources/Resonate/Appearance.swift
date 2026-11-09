@@ -187,6 +187,10 @@ extension Color {
     @MainActor static var worn: Color { AppearanceState.shared.tint }
     @MainActor static var wornInk: Color { AppearanceState.shared.ink }
     static let themedCard = AccentColours.card
+
+    @MainActor static var cardGround: Color {
+        AppearanceState.shared.themedBackground ? themedCard : Color(.secondarySystemGroupedBackground)
+    }
 }
 
 extension View {

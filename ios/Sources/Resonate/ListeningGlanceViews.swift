@@ -234,35 +234,16 @@ private struct ListeningFacts: View {
 }
 
 private struct ListeningFactView: View {
-    @ScaledMetric(relativeTo: .subheadline) private var symbolWidth: CGFloat = 22
-
     let fact: ListeningGlance.Fact
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: symbol)
+        VStack(alignment: .leading, spacing: 1) {
+            Text(fact.value)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.worn)
-                .frame(width: symbolWidth)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(fact.value)
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                Text(fact.caption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .fixedSize(horizontal: false, vertical: true)
+            Text(fact.caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-    }
-
-    private var symbol: String {
-        switch fact.kind {
-        case .run: "flame.fill"
-        case .weekday: "calendar"
-        case .allTime: "headphones"
-        case .songsHeard: "music.note"
-        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

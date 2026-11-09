@@ -374,7 +374,7 @@ struct RefreshArtworkRow: View {
                     detail: enrichment.running
                         ? enrichment.line
                         : !features.online ? said("enrichment.refresh.offline") : said("enrichment.refresh.detail", songs),
-                    symbol: "wand.and.stars"
+                    symbol: "photo.on.rectangle.angled"
                 )
             }
             .disabled(!features.online || songs == 0)

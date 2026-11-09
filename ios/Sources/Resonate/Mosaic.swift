@@ -1,38 +1,15 @@
 import ResonateNative
 import SwiftUI
 
-extension MixAccent {
-    var color: Color {
-        switch self {
-        case .mauve: .purple
-        case .blue: .blue
-        case .teal: .teal
-        case .green: .green
-        case .amber: .yellow
-        case .peach: .orange
-        case .red: .red
-        }
-    }
-
-    var ink: Color {
-        switch self {
-        case .mauve, .blue, .red: .white
-        case .teal, .green, .amber, .peach: .black.opacity(0.78)
-        }
-    }
-}
-
 struct MosaicArtwork: View {
     private static let tilesASide = 2
-    private static let markShare: CGFloat = 0.22
-    private static let nameShare: CGFloat = 0.11
-    private static let insetShare: CGFloat = 0.08
-    private static let nameAlpha = 0.62
+    private static let markShare: CGFloat = 0.2
+    private static let nameShare: CGFloat = 0.1
+    private static let insetShare: CGFloat = 0.09
     private static let letteredFrom: CGFloat = 100
+    private static let nameLines = 3
 
-    @Environment(\.colorSchemeContrast) private var contrast
     let covers: [Track]
-    let accents: MixAccents
     let mark: String
     let name: String
     var corner: CGFloat = 12
@@ -43,10 +20,6 @@ struct MosaicArtwork: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(.rect(cornerRadius: corner, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .strokeBorder(.primary.opacity(0.06), lineWidth: 1)
-        }
         .accessibilityIgnoresInvertColors()
         .accessibilityHidden(true)
     }
@@ -70,7 +43,7 @@ struct MosaicArtwork: View {
                                 ArtworkView(track: covers[at], corner: 0).frame(width: tile, height: tile)
                             } else {
                                 Rectangle()
-                                    .fill(at.isMultiple(of: 2) ? accents.from.color : accents.to.color)
+                                    .fill(at.isMultiple(of: 2) ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.quinary))
                                     .frame(width: tile, height: tile)
                             }
                         }
@@ -81,28 +54,24 @@ struct MosaicArtwork: View {
     }
 
     private func lettered(side: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
-            LinearGradient(
-                colors: [accents.from.color, accents.to.color],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            VStack(alignment: .leading, spacing: 0) {
-                Image(systemName: mark)
-                    .font(.system(size: side * Self.markShare, weight: .semibold))
-                    .accessibilityHidden(true)
-                Spacer(minLength: 0)
-                if side >= Self.letteredFrom, !name.isEmpty {
-                    Text(name)
-                        .font(.system(size: side * Self.nameShare, weight: .bold))
-                        .lineLimit(3)
-                        .opacity(contrast == .increased ? 1 : Self.nameAlpha)
-                }
+        let markSide = side * Self.markShare
+        return VStack(alignment: .leading, spacing: 0) {
+            Image(systemName: mark)
+                .resizable()
+                .scaledToFit()
+                .frame(width: markSide, height: markSide, alignment: .topLeading)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
+            if side >= Self.letteredFrom, !name.isEmpty {
+                Text(name)
+                    .font(.system(size: side * Self.nameShare, weight: .semibold))
+                    .lineLimit(Self.nameLines)
+                    .foregroundStyle(.secondary)
             }
-            .foregroundStyle(accents.from.ink)
-            .padding(side * Self.insetShare)
-            .frame(width: side, height: side, alignment: .topLeading)
         }
-        .frame(width: side, height: side)
+        .padding(side * Self.insetShare)
+        .frame(width: side, height: side, alignment: .topLeading)
+        .background(.quaternary)
     }
 }

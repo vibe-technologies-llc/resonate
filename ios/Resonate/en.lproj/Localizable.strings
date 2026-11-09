@@ -254,7 +254,7 @@
 "favourite.remove" = "Remove from favourites";
 "favourites.add.failed" = "Could not add this song to favourites: %@";
 "favourites.browse-songs" = "Browse songs";
-"favourites.empty" = "Keep the songs you love together. Tap a heart on any song or on the player to add it here.";
+"favourites.empty" = "Tap the heart on any song to keep it here.";
 "favourites.remove.failed" = "Could not remove this song from favourites: %@";
 "favourites.search.prompt" = "Search favourites";
 "favourites.title" = "Favourites";
@@ -345,7 +345,7 @@
 "headphone-correction.searching" = "Searching AutoEq…";
 "headphone-correction.title" = "Headphone correction";
 "home.empty" = "Your library is empty";
-"home.empty.detail" = "Add a music folder in Settings to fill your home with mixes, albums and artists.";
+"home.empty.detail" = "Add a music folder in Settings. Its songs, albums and artists appear here once it has been read.";
 "home.greeting.afternoon" = "Good afternoon";
 "home.greeting.evening" = "Good evening";
 "home.greeting.morning" = "Good morning";
@@ -661,7 +661,7 @@
 "mix.reading" = "Reading this mix";
 "mix.show-songs" = "Show songs";
 "mix.yours.favourites" = "Your favourites";
-"mix.yours.favourites.detail" = "Every song you hearted";
+"mix.yours.favourites.detail" = "Every song with a heart";
 "mix.yours.recent" = "Recently played";
 "mix.yours.recent.detail" = "What you listened to last";
 "notices.footer" = "A scan you start and every failure are always told.";
@@ -855,7 +855,7 @@
 "playlist.devices" = "Your devices";
 "playlist.devices.keep-songs" = "Keep its songs here";
 "playlist.edit-search" = "Edit search";
-"playlist.empty" = "Your playlist starts here. Add songs from your library to make it yours.";
+"playlist.empty" = "Add songs to start this playlist.";
 "playlist.export" = "Export playlist";
 "playlist.kind" = "Playlist";
 "playlist.link.forget" = "Forget the link";
@@ -1136,7 +1136,7 @@
 "settings.equaliser.inner.presets" = "Presets";
 "settings.equaliser.inner.reset-curve" = "Reset curve";
 "settings.equaliser.on" = "On · %@";
-"settings.equaliser.summary" = "Shape your sound";
+"settings.equaliser.summary" = "Bands, presets and corrections";
 "settings.equaliser.title" = "Equaliser";
 "settings.erase.confirm" = "Erase all data?";
 "settings.erase.confirm.action" = "Erase everything";
@@ -1358,8 +1358,8 @@
 "song.play-next" = "Play next";
 "song.save-for-later" = "Save for later";
 "songs.empty.choose-folder" = "Choose music folder";
-"songs.empty.detail" = "Choose a music folder to build your library, or put songs in Resonate's folder in the Files app. Your files stay where they are.";
-"songs.empty.title" = "Your music, in its own detail";
+"songs.empty.detail" = "Choose the folder your music is in, or put songs in Resonate's folder in the Files app. Your files stay where they are.";
+"songs.empty.title" = "Add your music";
 "songs.filtered.none" = "No songs match these filters";
 "songs.filtered.none.detail" = "Change or reset the filters to see the rest of your library.";
 "songs.filtered.reset" = "Reset filters";
@@ -1617,7 +1617,7 @@
 "tools.statistics" = "Statistics";
 "tools.statistics.detail" = "Your listening in numbers";
 "tools.suggestions" = "Suggestions";
-"tools.suggestions.detail" = "Rediscover music from your library";
+"tools.suggestions.detail" = "Lists made from your library and listening";
 "tools.title" = "Library tools";
 "tools.undo-tags" = "Undo tag edit";
 "tools.undo-tags.detail" = "Put back the tags you last saved";

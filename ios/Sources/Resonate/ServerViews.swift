@@ -44,11 +44,11 @@ struct ServedActions: ViewModifier {
                 Button("served.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                     library.playServedNext(expanding: uri)
                 }
-                .tint(.blue)
+                .tint(.indigo)
                 Button("served.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                     library.addServedToQueue(expanding: uri)
                 }
-                .tint(.indigo)
+                .tint(.orange)
             }
             .contextMenu {
                 Button("common.play", systemImage: "play") { library.playServed(expanding: uri, shuffled: false) }
@@ -217,7 +217,7 @@ struct ServedStar: View {
             }
         } label: {
             Image(systemName: starred ? "star.fill" : "star")
-                .foregroundStyle(starred ? Color.yellow : Color.secondary)
+                .foregroundStyle(starred ? Color.worn : Color.secondary)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
                 .touchTarget()

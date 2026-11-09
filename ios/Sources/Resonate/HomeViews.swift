@@ -148,9 +148,7 @@ private struct ShuffleAllCard: View {
             ShortcutCard(
                 title: said("home.shuffle-all"),
                 detail: said("counted.songs", library.catalogCount),
-                symbol: "shuffle",
-                from: .indigo,
-                to: .blue
+                symbol: "shuffle"
             )
         }
         .buttonStyle(.plain)

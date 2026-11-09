@@ -45,7 +45,7 @@ struct LibraryToolsView: View {
                     ToolRow(title: said("library.playlists"), detail: said("tools.playlists.detail"), symbol: "music.note.list")
                 }
                 NavigationLink(value: Destination.suggestions) {
-                    ToolRow(title: said("tools.suggestions"), detail: said("tools.suggestions.detail"), symbol: "sparkles")
+                    ToolRow(title: said("tools.suggestions"), detail: said("tools.suggestions.detail"), symbol: "square.stack")
                 }
                 NavigationLink(value: Destination.statistics) {
                     ToolRow(title: said("tools.statistics"), detail: said("tools.statistics.detail"), symbol: "chart.bar")
@@ -254,7 +254,6 @@ struct SuggestedMix: Identifiable, Sendable {
     let detail: String
     let shelfName: String
     let source: Source
-    let accents: MixAccents
     let mark: String
 
     init(list: SuggestedList) {
@@ -263,17 +262,15 @@ struct SuggestedMix: Identifiable, Sendable {
         detail = list.detail
         shelfName = list.shelfName
         source = .search(list.search)
-        accents = list.accents
         mark = Suggestions.symbol(for: list.reason)
     }
 
-    init(id: String, title: String, detail: String, filter: TrackFilter, accents: MixAccents, mark: String) {
+    init(id: String, title: String, detail: String, filter: TrackFilter, mark: String) {
         self.id = id
         self.title = title
         self.detail = detail
         shelfName = Suggestions.yoursShelf
         source = .filter(filter)
-        self.accents = accents
         self.mark = mark
     }
 
@@ -291,8 +288,8 @@ struct SuggestedMix: Identifiable, Sendable {
         recent.descending = true
         recent.played = true
         return [
-            SuggestedMix(id: "your-favourites", title: said("mix.yours.favourites"), detail: said("mix.yours.favourites.detail"), filter: favourites, accents: MixAccents(from: .mauve, to: .red), mark: "heart.fill"),
-            SuggestedMix(id: "recently-played", title: said("mix.yours.recent"), detail: said("mix.yours.recent.detail"), filter: recent, accents: MixAccents(from: .amber, to: .peach), mark: "clock.arrow.circlepath"),
+            SuggestedMix(id: "your-favourites", title: said("mix.yours.favourites"), detail: said("mix.yours.favourites.detail"), filter: favourites, mark: "heart.fill"),
+            SuggestedMix(id: "recently-played", title: said("mix.yours.recent"), detail: said("mix.yours.recent.detail"), filter: recent, mark: "clock.arrow.circlepath"),
         ]
     }
 
@@ -375,7 +372,8 @@ struct SuggestionsView: View {
                     }
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 20)
         }
         .navigationTitle("tools.suggestions")
         .background {
@@ -404,7 +402,7 @@ struct MixView: View {
             if let mix {
                 List {
                     CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
-                        MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: Self.corner)
+                        MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
                     }
                     if let failure {
                         ReadFailure(text: failure) { Task { await load(mix) } }
@@ -425,7 +423,7 @@ struct MixView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title) }
             } else if resolved {
-                ContentUnavailableView("mix.gone", systemImage: "sparkles")
+                ContentUnavailableView("mix.gone", systemImage: "square.stack")
             } else {
                 ProgressView().accessibilityLabel("mix.reading")
             }
@@ -464,6 +462,8 @@ struct MixView: View {
 }
 
 struct SuggestedMixCard: View {
+    private static let corner: CGFloat = 10
+
     @Environment(Library.self) private var library
     let mix: SuggestedMix
     let covers: [Track]
@@ -473,8 +473,7 @@ struct SuggestedMixCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: open) {
-                MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: 16)
-                    .background { HeaderShadow(outline: .rounded(16)) }
+                MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
             }
             .buttonStyle(.plain)
             .accessibilityHidden(true)

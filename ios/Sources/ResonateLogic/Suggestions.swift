@@ -17,7 +17,7 @@ public enum Suggestions {
         case .decade, .genreOfADecade: "calendar"
         case .genre: "guitars"
         case .artist: "music.mic"
-        case .neverHeard: "sparkles"
+        case .neverHeard: "play.slash"
         case .mostPlayed: "chart.bar.fill"
         case .recentlyAdded, .freshArrivals: "clock.fill"
         case .backCatalogue, .oldFlames, .artistLeftBehind: "clock.arrow.circlepath"

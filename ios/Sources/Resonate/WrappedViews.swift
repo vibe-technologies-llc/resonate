@@ -211,7 +211,7 @@ struct WrappedBars: View {
             HStack(alignment: .bottom, spacing: Self.gap) {
                 ForEach(Array(bars.enumerated()), id: \.offset) { _, bar in
                     RoundedRectangle(cornerRadius: Self.gap)
-                        .fill(bar.peak ? Color.accentColor : Color.secondary.opacity(0.4))
+                        .fill(bar.peak ? Color.worn : Color.secondary.opacity(0.4))
                         .frame(height: max(Self.shortest, tallest * Double(bar.sharePermille) / Self.permille))
                         .frame(maxWidth: .infinity)
                         .accessibilityElement()

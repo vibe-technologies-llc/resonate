@@ -6,7 +6,7 @@ import SwiftUI
 
 extension EqualiserPreset {
     private static let marks = [
-        "minus", "speaker.wave.3", "hifispeaker", "water.waves", "music.mic", "sun.max", "sparkles", "cloud", "guitars", "waveform",
+        "minus", "speaker.wave.3", "hifispeaker", "water.waves", "music.mic", "sun.max", "rays", "cloud", "guitars", "waveform",
     ]
 
     static func mark(at place: Int) -> String {

@@ -197,7 +197,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .syncConnection: "point.3.connected.trianglepath.dotted"
         case .syncControl: "dial.medium"
         case .accent: "paintpalette"
-        case .background: "sparkles.rectangle.stack"
+        case .background: "square.2.layers.3d"
         case .searchHistory: "clock.arrow.circlepath"
         case .notices: "bell.badge"
         case .version: "info.circle"

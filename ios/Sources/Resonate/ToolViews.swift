@@ -375,7 +375,7 @@ struct InspectorView: View {
                     Button("inspector.go-to-artist", systemImage: "music.mic") { navigation.open(.artist(shown.artist)) }
                 }
                 if features.online {
-                    Button(said(features.enriching ? "inspector.enriching" : "inspector.enrich"), systemImage: "sparkles") {
+                    Button(said(features.enriching ? "inspector.enriching" : "inspector.enrich"), systemImage: "globe") {
                         features.enrich(shown)
                     }
                     .disabled(features.enriching)

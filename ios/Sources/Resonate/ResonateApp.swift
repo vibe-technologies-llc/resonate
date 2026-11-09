@@ -20,6 +20,7 @@ struct ResonateApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .monospacedDigit()
                 .environment(library)
                 .onAppear { library.start() }
                 .onOpenURL { library.open($0) }

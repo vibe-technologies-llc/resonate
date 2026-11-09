@@ -309,7 +309,7 @@ struct SearchCompletions: View {
                 HStack(spacing: 8) {
                     ForEach(completions, id: \.self) { completion in
                         Button { search.text = completion } label: {
-                            Label(completion, systemImage: "magnifyingglass")
+                            Text(completion)
                                 .font(.subheadline)
                                 .titleLines()
                                 .padding(.horizontal, 12)

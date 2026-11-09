@@ -277,29 +277,35 @@ struct FavouritesRow: View {
 }
 
 struct FavouritesArtwork: View {
-    static let corner = ShelfTile.corner
+    var corner = ShelfTile.rowCorner
 
     var body: some View {
-        ShelfTile(symbol: "heart.fill", from: .pink, to: .purple)
+        ShelfTile(symbol: "heart.fill", corner: corner)
     }
 }
 
 struct ShelfTile: View {
-    static let corner: CGFloat = 10
+    static let rowCorner: CGFloat = 10
+    private static let markShare: CGFloat = 0.34
 
     let symbol: String
-    let from: Color
-    let to: Color
+    var corner = ShelfTile.rowCorner
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.title2)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                LinearGradient(colors: [from, to], startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: .rect(cornerRadius: Self.corner)
-            )
+        Rectangle()
+            .fill(.quaternary)
+            .overlay {
+                GeometryReader { proxy in
+                    let side = min(proxy.size.width, proxy.size.height) * Self.markShare
+                    Image(systemName: symbol)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.tint)
+                        .frame(width: side, height: side)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .clipShape(.rect(cornerRadius: corner, style: .continuous))
             .accessibilityHidden(true)
             .allowsHitTesting(false)
     }
@@ -328,54 +334,35 @@ struct ShortcutCard: View {
     static let corner: CGFloat = 20
     static let spacing: CGFloat = 12
     static let belowTheTitle: CGFloat = 16
-    private static let markOpacity = 0.2
-    private static let markTilt = Angle.degrees(-12)
-    private static let markOverhang: CGFloat = 0.2
-    private static let scrimOpacity = 0.22
 
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 104
-    @ScaledMetric(relativeTo: .headline) private var markSize: CGFloat = 72
+    @Environment(\.isEnabled) private var enabled
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 92
     let title: String
     let detail: String
     let symbol: String
-    let from: Color
-    let to: Color
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
         VStack(alignment: .leading, spacing: 2) {
             Image(systemName: symbol)
-                .font(.title3.weight(.semibold))
+                .font(.title3.weight(.medium))
+                .foregroundStyle(.tint)
                 .accessibilityHidden(true)
-            Spacer(minLength: 12)
+            Spacer(minLength: 10)
             Text(title)
                 .font(.headline)
                 .titleLines()
             Text(detail)
-                .font(.subheadline.weight(.medium))
-                .opacity(0.85)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
                 .titleLines()
         }
-        .foregroundStyle(.white)
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
-        .background {
-            LinearGradient(colors: [from, to], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay {
-                    LinearGradient(colors: [.clear, .black.opacity(Self.scrimOpacity)], startPoint: .center, endPoint: .bottom)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: symbol)
-                        .font(.system(size: markSize, weight: .bold))
-                        .foregroundStyle(.white.opacity(Self.markOpacity))
-                        .rotationEffect(Self.markTilt)
-                        .offset(x: markSize * Self.markOverhang, y: markSize * Self.markOverhang)
-                        .accessibilityHidden(true)
-                }
-                .clipShape(shape)
-        }
+        .background(Color.cardGround, in: shape)
         .contentShape(shape)
+        .opacity(enabled ? 1 : 0.5)
         .containerRelativeFrame(.horizontal, count: typeSize.isAccessibilitySize ? 1 : 2, span: 1, spacing: Self.spacing)
         .accessibilityElement(children: .combine)
     }
@@ -388,9 +375,7 @@ struct FavouritesCard: View {
         ShortcutCard(
             title: said("favourites.title"),
             detail: said("counted.songs", library.favouriteTracks.count),
-            symbol: "heart.fill",
-            from: .pink,
-            to: .purple
+            symbol: "heart.fill"
         )
     }
 }
@@ -402,9 +387,7 @@ private struct AllSongsCard: View {
         ShortcutCard(
             title: said("library.all-songs"),
             detail: said("counted.songs", library.catalogCount),
-            symbol: "music.note",
-            from: .orange,
-            to: .red
+            symbol: "music.note"
         )
     }
 }
@@ -489,7 +472,7 @@ struct PlaylistArtwork: View {
     var body: some View {
         let name = playlist?.name ?? ""
         let held = playlist.flatMap { PlaylistCovers.held(for: $0) }
-        MosaicArtwork(covers: covers ?? held ?? [], accents: NamedAccents.of(name), mark: "music.note.list", name: name, corner: corner)
+        MosaicArtwork(covers: covers ?? held ?? [], mark: "music.note.list", name: name, corner: corner)
             .task(id: "\(playlist?.id ?? 0):\(playlist?.revision ?? 0)") {
                 guard let playlist else { return }
                 if let held = PlaylistCovers.held(for: playlist) {
@@ -1341,8 +1324,8 @@ struct FavouritesView: View {
         let favourites = library.favouriteTracks
         let shown = folded.isEmpty ? favourites : found
         List {
-            CollectionHeader(title: said("favourites.title"), subtitle: "", tracks: favourites, outline: .rounded(FavouritesArtwork.corner)) {
-                FavouritesArtwork()
+            CollectionHeader(title: said("favourites.title"), subtitle: "", tracks: favourites) {
+                FavouritesArtwork(corner: CollectionCover.corner)
             }
             if favourites.isEmpty {
                 VStack(spacing: 12) {
@@ -1466,19 +1449,5 @@ struct FavouritesCountRow: View {
 
     var body: some View {
         FavouritesRow(count: library.favouriteTracks.count)
-    }
-}
-
-@MainActor
-enum NamedAccents {
-    private static let keptAtMost = 512
-    private static var kept: [String: MixAccents] = [:]
-
-    static func of(_ name: String) -> MixAccents {
-        if let held = kept[name] { return held }
-        let accents = namedAccents(name: name)
-        if kept.count >= keptAtMost { kept.removeAll(keepingCapacity: true) }
-        kept[name] = accents
-        return accents
     }
 }
