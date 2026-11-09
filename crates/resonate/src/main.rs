@@ -3637,7 +3637,7 @@ fn items_of(sources: &Sources, location: MediaLocation, minting: &mut Unclaimed)
         return vec![QueueItem::whole(minting.mint(), location)];
     };
     if path.is_dir() {
-        return folder_items(sources, &path, minting, FOLDERS_DEEP);
+        return folder_items(sources, &path, minting, FOLDERS_DEEP, &mut BTreeSet::new());
     }
     if names_a_sheet(&location) {
         return sheet_items(sources, &path, minting);
@@ -3686,11 +3686,19 @@ fn folder_items(
     folder: &Path,
     minting: &mut Unclaimed,
     deeper: usize,
+    walked: &mut BTreeSet<PathBuf>,
 ) -> Vec<QueueItem> {
     let Some(deeper) = deeper.checked_sub(1) else {
         tracing::warn!(folder = %folder.display(), "a folder nested too deep was not queued");
         return Vec::new();
     };
+    let first_time_through = folder
+        .canonicalize()
+        .map_or(true, |canonical| walked.insert(canonical));
+    if !first_time_through {
+        tracing::debug!(folder = %folder.display(), "a folder reached again through a link was queued once");
+        return Vec::new();
+    }
     let (folders, files): (Vec<PathBuf>, Vec<PathBuf>) = listed_in_order(folder)
         .into_iter()
         .partition(|path| path.is_dir());
@@ -3718,7 +3726,7 @@ fn folder_items(
         }
     }
     for inside in &folders {
-        items.extend(folder_items(sources, inside, minting, deeper));
+        items.extend(folder_items(sources, inside, minting, deeper, walked));
     }
     items
 }
@@ -4350,6 +4358,27 @@ mod tests {
         );
 
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_linked_back_to_itself_or_to_a_sibling_is_queued_once() {
+        let folder = env::temp_dir().join(format!("resonate-queued-loop-{}", process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(folder.join("Music/Album")).expect("a scratch folder");
+        fs::write(
+            folder.join("Music/Album/01.wav"),
+            analyse::tests::silent_wave(),
+        )
+        .expect("a wave");
+        std::os::unix::fs::symlink("..", folder.join("Music/Album/Backup")).expect("a link up");
+        std::os::unix::fs::symlink("Album", folder.join("Music/Again")).expect("a sibling link");
+        std::os::unix::fs::symlink(".", folder.join("Music/Here")).expect("a link to itself");
+
+        let queued = queue_items(&[folder.join("Music").into_os_string()]);
+
+        fs::remove_dir_all(&folder).expect("the scratch folder goes");
+        assert_eq!(queued.len(), 1);
     }
 
     #[test]

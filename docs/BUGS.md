@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Library and files
-- [S · 0.7.1] Queuing a folder follows symlinked directories with no memory of where it has
-  been: `folder_items` splits entries with `Path::is_dir`, which follows links, and recurses into
-  each, bounded only by `FOLDERS_DEEP` (32), so a link to the folder or an ancestor
-  (`~/Music/Backup -> ..`, a sync tool's link) queues every song about 33 times, and two such links
-  branch at every level (2^32 walks, a hang and unbounded memory before the window opens); the
-  library scan's `Visited::first_time_through` and `Walking::reaches_a_root` have no counterpart
-  here, no test has a link loop, and a link to a sibling folder queues its songs twice
 - [S · 0.7.1] A trashed file's `DeletionDate` is wrong on the two days a clock changes:
   `trash::deletion_date` reads the time of day as the time elapsed since `Calendar::midnight_of`,
   which is the wall clock only on a 24-hour day, so on the day clocks go forward everything after the

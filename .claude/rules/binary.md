@@ -153,7 +153,7 @@ that name. Every file argument goes through it.
   launch): an M3U, PLS or XSPF becomes the rows it lists (`resonate_library::cuts_listed_in`); a
   folder its audio (`names_audio`, dot-names passed over) in name order, each `.cue` as the rows it
   cuts and the files a sheet cuts not again, then its folders the same way, at most `FOLDERS_DEEP`
-  (32) down. A playlist inside a folder is not followed
+  (32) down, each folder walked once by its canonical path, so a link back up or to a sibling queues nothing twice (`a_folder_linked_back_to_itself_or_to_a_sibling_is_queued_once`). A playlist inside a folder is not followed
   (`a_folder_is_queued_as_the_audio_inside_it_and_its_sheet_as_the_rows_it_cuts`,
   `a_playlist_is_queued_as_the_rows_it_lists`).
 
