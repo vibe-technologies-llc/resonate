@@ -6578,6 +6578,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-signin"
+version = "0.7.0"
+dependencies = [
+ "resonate-core",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "resonate-subsonic"
 version = "0.7.0"
 dependencies = [
