@@ -1,6 +1,6 @@
 pkgbase = resonate-player-git
 	pkgdesc = A high-fidelity music player with native PipeWire output
-	pkgver = 0.1.0.r665.g4d5cb47
+	pkgver = 0.6.0.r2033.g8393d0eb
 	pkgrel = 1
 	url = https://github.com/vibe-technologies-llc/resonate
 	install = resonate.install
@@ -14,6 +14,13 @@ pkgbase = resonate-player-git
 	makedepends = vulkan-headers
 	makedepends = libxkbcommon-x11
 	makedepends = git
+	makedepends = webkit2gtk-4.1
+	options = !lto
+	options = !debug
+	source = resonate::git+https://github.com/vibe-technologies-llc/resonate.git
+	sha256sums = SKIP
+
+pkgname = resonate-player-git
 	depends = pipewire>=0.3.50
 	depends = libpipewire>=0.3.50
 	depends = libxkbcommon
@@ -22,11 +29,16 @@ pkgbase = resonate-player-git
 	depends = freetype2
 	depends = vulkan-icd-loader
 	optdepends = yt-dlp: keeping songs from YouTube Music
+	optdepends = resonate-signin-git: signing in to YouTube Music in a window of its own
 	provides = resonate
 	conflicts = resonate
 	conflicts = resonate-git
-	options = !lto
-	source = resonate::git+https://github.com/vibe-technologies-llc/resonate.git
-	sha256sums = SKIP
 
-pkgname = resonate-player-git
+pkgname = resonate-signin-git
+	pkgdesc = Resonate's YouTube Music sign-in window, on WebKitGTK
+	depends = gcc-libs
+	depends = gtk3
+	depends = webkit2gtk-4.1
+	depends = libsoup3
+	provides = resonate-signin
+	conflicts = resonate-signin

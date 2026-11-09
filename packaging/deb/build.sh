@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-package=${1:?usage: build.sh player|server [output-directory]}
+package=${1:?usage: build.sh player|server|signin [output-directory]}
 output=${2:-$PWD/deb-artifacts}
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -32,7 +32,7 @@ shared_library_dependencies() {
 }
 
 write_control() {
-    local name=$1 section=$2 depends=$3 description=$4 long=$5 suggests=${6:-}
+    local name=$1 section=$2 depends=$3 description=$4 long=$5 suggests=${6:-} recommends=${7:-}
     local size
     size=$(du -sk "$stage" | cut -f1)
     mkdir -p "$stage/DEBIAN"
@@ -45,6 +45,9 @@ write_control() {
         printf 'Priority: optional\n'
         printf 'Installed-Size: %s\n' "$size"
         printf 'Depends: %s\n' "$depends"
+        if [ -n "$recommends" ]; then
+            printf 'Recommends: %s\n' "$recommends"
+        fi
         if [ -n "$suggests" ]; then
             printf 'Suggests: %s\n' "$suggests"
         fi
@@ -85,8 +88,23 @@ build_player() {
     write_control resonate sound "${libraries:+$libraries, }pipewire (>= 0.3.50), libvulkan1" \
         'High-fidelity music player with native PipeWire output' \
         'Resonate plays music through PipeWire with a native Wayland interface. Built for x86-64-v3 processors.' \
-        yt-dlp
+        yt-dlp resonate-signin
     seal resonate
+}
+
+build_signin() {
+    cargo build --locked --release --package resonate-signin
+
+    stage="$work/resonate-signin"
+    install -Dm755 target/release/resonate-signin "$stage/usr/bin/resonate-signin"
+    stage_documents resonate-signin
+
+    local libraries
+    libraries=$(shared_library_dependencies target/release/resonate-signin)
+    write_control resonate-signin sound "$libraries" \
+        "Resonate's YouTube Music sign-in window, on WebKitGTK" \
+        "A window of its own that signs in to YouTube Music on Google's page and keeps the account's cookies for Resonate, so no browser of the listener's is read. Built for x86-64-v3 processors."
+    seal resonate-signin
 }
 
 build_server() {
@@ -116,5 +134,6 @@ build_server() {
 case "$package" in
     player) build_player ;;
     server) build_server ;;
+    signin) build_signin ;;
     *) echo "unknown package: $package" >&2; exit 2 ;;
 esac

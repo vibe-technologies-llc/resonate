@@ -22,7 +22,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, `vaulted.rs`, `supply.rs`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
-| `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs`, `keeps.rs` | the seam, the registry, the last resort, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, a YouTube Music account, a keep's queue, what a delivery is and where it lands |
+| `providers.md` | resonate-providers, resonate-fetch, providers/*, resonate-signin, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs`, `keeps.rs`, `signing_in.rs` | the seam, the registry, the last resort, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, a YouTube Music account and its sign-in window (`resonate-signin`, `signing_in.rs`), a keep's queue, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `musicbrainz.md` | resonate-musicbrainz, the binary's `musicbrainz.rs` and `online.rs`, the phones' `enrichment.rs` and `sync/consulted.rs` | the order a lookup is answered in (kept, mirror, a device, the network), the vocabulary on the wire, kept answers, the compressed and indexed mirror of the export and its search scores, fetching the export, devices consulting each other |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
@@ -68,7 +68,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-six crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Thirty-seven crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -108,6 +108,7 @@ resonate            bin: CLI, tracing, wiring
 
 resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers (UPnP and Google Cast), analysis, lyrics, library seams, online, providers and sync
 resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
+resonate-signin      bin: the YouTube Music sign-in window on wry (the only browser engine), writing a cookie jar; its library (no `window` feature) is the binary's
 resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
 ```
 
@@ -120,6 +121,8 @@ alone on Linux (its own PipeWire client per recording) and core, `resonate-audio
 (capture and loopback on threads of its own, never `resonate-wasapi`); `resonate-analysis` reaches `resonate-dsp`;
 `resonate-sync` reaches core alone and is reached by the binary, `resonate-driven`, `resonate-mobile` and the server;
 `resonate-driven` joins it to the engine and is reached by the binary and `resonate-mobile` alone;
+`resonate-signin` reaches core alone and is reached by the binary alone, never with its `window`
+feature, so `wry`, `tao` and WebKitGTK stay out of the binary's tree;
 `resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and
 the binary alone, and is with `resonate-mobile` the only crate where `unsafe_code` is allowed.
 
@@ -258,7 +261,7 @@ stack's test harness:
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `musicbrainz` (the local copy of MusicBrainz: `--build [--from FOLDER]`, `--remove`, `--search`), `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
-- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`).
+- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`, `sign-in` in the `resonate-signin` window, `sign-out`).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).
 - **Updates:** `update` (asks now whether a newer release is out; the window asks once a day while `check-for-updates` is on).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,

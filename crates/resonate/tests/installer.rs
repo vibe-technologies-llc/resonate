@@ -30,11 +30,12 @@ const SECRET_VARIABLES: [&str; 2] = [
     "RESONATE_WINDOWS_PFX_BASE64",
     "RESONATE_WINDOWS_PFX_PASSWORD",
 ];
-const BUILD_DEFINITIONS: [&str; 7] = [
+const BUILD_DEFINITIONS: [&str; 8] = [
     "AppVersion",
     "NumericVersion",
     "InstallArchitecture",
     "SourceExecutable",
+    "SourceSignIn",
     "RepositoryRoot",
     "OutputDirectory",
     "OutputName",

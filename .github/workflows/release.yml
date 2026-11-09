@@ -75,7 +75,7 @@ jobs:
           dnf install -y git rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-devel
           wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel
           freetype-devel vulkan-headers vulkan-loader-devel systemd-rpm-macros shadow-utils
-          util-linux
+          util-linux webkit2gtk4.1-devel
       - name: Create the build user
         run: useradd --create-home rpm-builder
       - uses: actions/checkout@v7
@@ -117,7 +117,7 @@ jobs:
       - name: Install the build dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential ca-certificates curl git pkg-config clang libclang-dev dpkg-dev libpipewire-0.3-dev libspa-0.2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig-dev libfreetype-dev libvulkan-dev
+          apt-get install -y --no-install-recommends build-essential ca-certificates curl git pkg-config clang libclang-dev dpkg-dev libpipewire-0.3-dev libspa-0.2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig-dev libfreetype-dev libvulkan-dev libwebkit2gtk-4.1-dev
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
@@ -129,6 +129,7 @@ jobs:
         run: |
           packaging/deb/build.sh player "$GITHUB_WORKSPACE/assets"
           packaging/deb/build.sh server "$GITHUB_WORKSPACE/assets"
+          packaging/deb/build.sh signin "$GITHUB_WORKSPACE/assets"
       - name: Name the assets for the release
         run: |
           cd assets
@@ -155,7 +156,7 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed base-devel git rustup clang pipewire libpipewire
           libxkbcommon libxkbcommon-x11 wayland fontconfig freetype2 vulkan-icd-loader
-          vulkan-headers
+          vulkan-headers webkit2gtk-4.1
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.ref }}
@@ -165,6 +166,7 @@ jobs:
         run: |
           git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/resonate-$VERSION.tar.gz"
           git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/server/resonate-server-$VERSION.tar.gz"
+          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/signin/resonate-signin-$VERSION.tar.gz"
       - name: Build the packages
         run: |
           useradd --create-home builder
@@ -173,10 +175,11 @@ jobs:
           runuser -u builder -- rustup toolchain install stable --profile minimal
           (cd /home/builder/checkout/packaging/release && runuser -u builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" makepkg -f --noconfirm)
           (cd /home/builder/checkout/packaging/release/server && runuser -u builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" makepkg -f --noconfirm)
+          (cd /home/builder/checkout/packaging/release/signin && runuser -u builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" makepkg -f --noconfirm)
       - name: Name the assets for the release
         run: |
           mkdir -p assets
-          for file in /home/builder/checkout/packaging/release/*.pkg.tar.zst /home/builder/checkout/packaging/release/server/*.pkg.tar.zst; do
+          for file in /home/builder/checkout/packaging/release/*.pkg.tar.zst /home/builder/checkout/packaging/release/server/*.pkg.tar.zst /home/builder/checkout/packaging/release/signin/*.pkg.tar.zst; do
             cp "$file" "assets/$(basename "$file" | sed 's/-x86_64\.pkg/-x86_64_v3.pkg/')"
           done
       - uses: actions/upload-artifact@v7

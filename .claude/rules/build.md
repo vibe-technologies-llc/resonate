@@ -50,6 +50,9 @@ paths:
   for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
   `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens.
 
+CI and the release jobs install WebKitGTK 4.1 (`webkit2gtk-4.1`, Fedora's `webkit2gtk4.1-devel`,
+Ubuntu's `libwebkit2gtk-4.1-dev`) for `resonate-signin`'s window.
+
 The CI image installs DejaVu fonts so the window's kerning and ellipsis regression can render
 through the platform text system; GPUI's fixed-width mock cannot reproduce a name clipped at its
 shaped width.

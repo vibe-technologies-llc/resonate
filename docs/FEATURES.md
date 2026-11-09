@@ -59,6 +59,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lists no audio endpoint, which is every hosted runner: `play` answers `NoSink` to its first load
   with no device, so it leaves before the console can be driven, and a runner cannot be given an
   endpoint without a driver
+- [S · blocked: hardware] The YouTube Music sign-in window (`resonate-signin`) on WebView2 is
+  cross-checked only: whether Google lets the sign-in through there, whether its HttpOnly cookies
+  are handed over and whether `yt-dlp` reads the jar as it did on Linux; where it fails the window
+  is not offered on Windows (`providers.md`'s *Signing in to YouTube Music in a window*)
 - [S · blocked: certificate] The Windows archives and installers are not Authenticode signed, so
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set

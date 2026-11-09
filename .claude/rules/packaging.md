@@ -24,6 +24,14 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   `Suggests` in the spec and the player's DEB control. Only YouTube Music runs it (browsing the
   account, the poll's last-resort answer and *Keep*), a Flatpak holds none and shows the provider as
   unavailable, and no package ships it (`providers.md`).
+- **`resonate-signin` is recommended, never depended on**, and is its own package: `-git`'s
+  PKGBUILD is split (`resonate-signin-git`, `optdepends` of the player), `release/signin/PKGBUILD`
+  is `resonate-signin` (`optdepends` of the release player), the spec's subpackage
+  `resonate-signin` is `Recommends`, and the DEB script's `signin` builds `resonate-signin`, the
+  player's control `Recommends` it. Each depends on WebKitGTK 4.1; each builds it with `--package
+  resonate-signin` in a `cargo` run apart from the player's. The Windows zip and installer carry
+  `resonate-signin.exe` beside `resonate.exe` (`SourceSignIn`, signed with it). The Flatpak, having
+  no `yt-dlp`, carries none.
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment
   `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
   build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the

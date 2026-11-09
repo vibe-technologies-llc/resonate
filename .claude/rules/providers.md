@@ -8,6 +8,8 @@ paths:
   - "crates/resonate-library/src/supply.rs"
   - "crates/resonate-library/src/filed.rs"
   - "crates/resonate-library/src/keeps.rs"
+  - "crates/resonate-signin/**/*.rs"
+  - "crates/resonate/src/signing_in.rs"
 ---
 
 # Providers
@@ -862,6 +864,46 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
 - **A cookie value is withheld from the logs too.** `Cookies`' `Debug` prints neither browser nor path,
   and `Telling` replaces `Cookies::withheld` (the whole value, the profile, each short of a `~`) in
   every line of stderr before it reaches `tracing`.
+
+## Signing in to YouTube Music in a window
+
+**A separate program owns the browser engine: `resonate-signin`** (`crates/resonate-signin`), the
+only executable linking `wry` (WebKitGTK 4.1 on Linux, WebView2 on Windows) and `tao`, so no package
+of the player gains WebKitGTK. Its library (no `window` feature: no wry, no tao) is the binary's
+dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-com` from the
+`resonate` tree and lets `resonate-signin` reach core alone.
+
+- **What the window does**: `resonate-signin --jar FILE --profile FOLDER` opens
+  `SIGN_IN_PAGE` (Google's sign-in for YouTube, continuing to `music.youtube.com`) on its own
+  `WebContext` profile, with the engine's own user agent, and on every finished page and once a
+  second (`LOOKED_AT_EVERY`) reads the address; on `music.youtube.com` itself (`is_youtube_music`:
+  `https`, that host, no user-info) it reads every cookie, keeps those under `youtube.com` and
+  `google.com` (`kept`: the domain or a subdomain, never a lookalike, and none whose fields hold a
+  tab, CR or LF, which would forge a jar line) and, where `LOGIN_INFO` and `SAPISID` stand under
+  `youtube.com` (`signed_in`; Google's cookies alone are no YouTube sign-in), writes the jar and
+  exits `SIGNED_IN` (0). Closing the window first exits `CLOSED` (3); anything else `FAILED` (1).
+  `Outcome::of` reads the status back.
+- **The jar is Netscape's** (`netscape`: `#HttpOnly_` before an HttpOnly cookie, a session cookie
+  expiring `0`), **written whole, owner-only**: `written` stages `<jar>.staged` under
+  `writer::Held::taken_over` (a second sign-in writing is refused `WouldBlock`), `0600` on Unix
+  before a byte, `sync_all`, rename, folder synced. `Cookie`'s `Debug` withholds the value.
+- **The binary** (`signing_in.rs`, `online`): `the_program` is `resonate-signin` beside
+  `current_exe`, else the first on `PATH`; `Kept::in_the_data_folder` names
+  `youtube-music-cookies.txt` and the profile `youtube-music-sign-in` in `config::data_dir`;
+  `sign_in` runs the program, holds each child by pid so `stop_the_tools` kills it on the way out,
+  and reads the outcome (`YoutubeMusicSignInClosed`, `YoutubeMusicSignInFailed { code }`,
+  `YoutubeMusicSignInNotStarted`); `sign_out` takes jar and profile away, a missing one no failure;
+  `names_the_jar` says whether `youtube-music-cookies` names the window's own jar.
+- **Signing in points `youtube-music-cookies` at the jar**, whatever it named before (a browser is
+  not kept); a cancel or failure leaves the setting as it was; signing out clears the setting only
+  where it names that jar, so a listener's own cookies file is never touched
+  (`a_sign_in_closed_or_failed_leaves_the_setting_as_it_was`,
+  `signing_out_deletes_only_what_the_window_kept`). `yt-dlp` keeps refreshing the jar through
+  `--cookies`, which is wanted.
+- **Checked by hand on Linux** (2026-11-09, Hyprland, WebKitGTK 2.54): Google let the sign-in
+  through, and `yt-dlp` read the jar the window wrote: the account's *Liked Music* and the Premium
+  formats 774 and 141 of `CHECKED_WITH`. WebView2 is cross-checked only; the sign-in there waits on
+  a Windows machine (`docs/FEATURES.md`). How long a jar lasts is not known.
 
 ## Keeping a song from a service
 

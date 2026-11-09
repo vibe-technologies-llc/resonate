@@ -17,14 +17,19 @@ const SERVER_RECIPES: [&str; 4] = [
     "release/server/PKGBUILD",
     DEB_SCRIPT,
 ];
-const RELEASE_RECIPES: [&str; 5] = [
+const RELEASE_RECIPES: [&str; 6] = [
     "resonate.spec",
     "server/resonate-server.spec",
     "release/PKGBUILD",
     "release/server/PKGBUILD",
+    "release/signin/PKGBUILD",
     DEB_SCRIPT,
 ];
-const RELEASE_PKGBUILDS: [&str; 2] = ["release/PKGBUILD", "release/server/PKGBUILD"];
+const RELEASE_PKGBUILDS: [&str; 3] = [
+    "release/PKGBUILD",
+    "release/server/PKGBUILD",
+    "release/signin/PKGBUILD",
+];
 const DEB_SCRIPT: &str = "deb/build.sh";
 const SERVER_FILES: [&str; 2] = ["resonate-server.service", "resonate-server.env"];
 
@@ -276,7 +281,12 @@ fn no_release_recipe_builds_a_debug_package() {
             "{spec} would attach a debuginfo and a debugsource RPM to the release"
         );
     }
-    for recipe in ["PKGBUILD", "release/PKGBUILD", "server/PKGBUILD"] {
+    for recipe in [
+        "PKGBUILD",
+        "release/PKGBUILD",
+        "server/PKGBUILD",
+        "release/signin/PKGBUILD",
+    ] {
         assert!(
             packaging(recipe).contains("'!debug'"),
             "{recipe} would build a -debug package beside the real one"

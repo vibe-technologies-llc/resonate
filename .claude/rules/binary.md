@@ -65,7 +65,13 @@ paths:
   the first interrupt (`signals::leave_when_told`); the walk runs under `cancel_when_told`, the first
   interrupt `KeepCancelled` through `main`, which calls `stop_the_tools`. A window or poll holding the
   lock is `KeepWaitsItsTurn`, what was queued staying queued; a service stopping the pass is
-  `KeepStopped`. `check` prints `YtMusic::check`.
+  `KeepStopped`. `check` prints `YtMusic::check`. **`ytmusic sign-in` opens the sign-in window**
+  (`signed_in_with`, `providers.md`'s *Signing in to YouTube Music in a window*): `OnlineOff`,
+  `YoutubeMusicOff` and `NoSignInProgram` before anything starts, the first interrupt leaving
+  through `signals::leave` (which kills the child), then `youtube-music-cookies` stored as the jar
+  and the check printed; `ytmusic sign-out` (`signed_out_with`) takes the jar and profile away and
+  clears the key only where it names that jar. No running window is told: it reads the account from
+  the file it started with, as before.
 - **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
   <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
   on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows
@@ -393,7 +399,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   browser as `yt-dlp` spells it (`firefox`, `firefox:/path/to/profile`, how a fork such as Zen is
   named), else the path of a Netscape cookies file, which holds a path separator, so a bare word
   is a browser for `yt-dlp` to refuse; `Cookies::read` decides, and `Config`'s `Debug` withholds the
-  value. `yt-dlp` is a path, blank meaning `PATH`. The last feeds `PlaylistToKeep::ordered`.
+  value. A sign-in through the window writes it as the path of its own jar. `yt-dlp` is a path, blank meaning `PATH`. The last feeds `PlaylistToKeep::ordered`.
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
   on. `hosted-services` (default true) lets blank/absent fall back to the hosted services
   (`tracks.monochrome.st`); with it off nothing hosted is registered (`providers.md`).

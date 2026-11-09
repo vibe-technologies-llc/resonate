@@ -1,4 +1,5 @@
-pkgname=resonate-player-git
+pkgbase=resonate-player-git
+pkgname=('resonate-player-git' 'resonate-signin-git')
 _pkgname=resonate
 pkgver=0.6.0.r2033.g8393d0eb
 pkgrel=1
@@ -6,12 +7,8 @@ pkgdesc='A high-fidelity music player with native PipeWire output'
 arch=('x86_64' 'aarch64')
 url='https://github.com/vibe-technologies-llc/resonate'
 license=('AGPL-3.0-or-later')
-depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
-         'freetype2' 'vulkan-icd-loader')
-makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11' 'git')
-optdepends=('yt-dlp: keeping songs from YouTube Music')
-provides=("$_pkgname")
-conflicts=("$_pkgname" 'resonate-git')
+makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11' 'git'
+             'webkit2gtk-4.1')
 options=('!lto' '!debug')
 install="$_pkgname.install"
 source=("$_pkgname::git+$url.git")
@@ -37,6 +34,7 @@ build() {
   export CARGO_TARGET_DIR=target
   export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=native"
   cargo build --frozen --release --workspace --bin resonate
+  cargo build --frozen --release --package resonate-signin
 }
 
 check() {
@@ -46,7 +44,14 @@ check() {
   cargo test --frozen --release --workspace --exclude resonate-ui --no-default-features
 }
 
-package() {
+package_resonate-player-git() {
+  depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
+           'freetype2' 'vulkan-icd-loader')
+  optdepends=('yt-dlp: keeping songs from YouTube Music'
+              'resonate-signin-git: signing in to YouTube Music in a window of its own')
+  provides=("$_pkgname")
+  conflicts=("$_pkgname" 'resonate-git')
+
   cd "$_pkgname"
   local generated
   generated="$(find target/release/build -name "$_pkgname.1" -printf '%h\n' -quit)"
@@ -69,4 +74,16 @@ package() {
   install -Dm644 "$generated/_$_pkgname" "$pkgdir/usr/share/zsh/site-functions/_$_pkgname"
   install -Dm644 "$generated/$_pkgname.fish" \
     "$pkgdir/usr/share/fish/vendor_completions.d/$_pkgname.fish"
+}
+
+package_resonate-signin-git() {
+  pkgdesc="Resonate's YouTube Music sign-in window, on WebKitGTK"
+  depends=('gcc-libs' 'gtk3' 'webkit2gtk-4.1' 'libsoup3')
+  provides=('resonate-signin')
+  conflicts=('resonate-signin')
+
+  cd "$_pkgname"
+  install -Dm755 target/release/resonate-signin "$pkgdir/usr/bin/resonate-signin"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 COPYRIGHT "$pkgdir/usr/share/licenses/$pkgname/COPYRIGHT"
 }

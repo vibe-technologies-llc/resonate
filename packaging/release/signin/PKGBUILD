@@ -1,0 +1,37 @@
+pkgname=resonate-signin
+_pkgname=resonate
+_version=0.7.0
+pkgver=${_version//-/}
+pkgrel=1
+pkgdesc="Resonate's YouTube Music sign-in window, on WebKitGTK (needs an x86-64-v3 CPU)"
+arch=('x86_64')
+url='https://github.com/vibe-technologies-llc/resonate'
+license=('AGPL-3.0-or-later')
+depends=('gcc-libs' 'gtk3' 'webkit2gtk-4.1' 'libsoup3')
+makedepends=('rust' 'cargo' 'clang' 'pkgconf')
+conflicts=("$pkgname-git")
+options=('!lto' '!debug')
+source=("$pkgname-$_version.tar.gz::$url/archive/refs/tags/v$_version.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$_pkgname-$_version"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_pkgname-$_version"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+  export RUSTFLAGS="-C target-cpu=x86-64-v3"
+  cargo build --frozen --release --package resonate-signin
+}
+
+package() {
+  cd "$_pkgname-$_version"
+
+  install -Dm755 "${CARGO_TARGET_DIR:-target}/release/resonate-signin" "$pkgdir/usr/bin/resonate-signin"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 COPYRIGHT "$pkgdir/usr/share/licenses/$pkgname/COPYRIGHT"
+}

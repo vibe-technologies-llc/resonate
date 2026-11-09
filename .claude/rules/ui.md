@@ -1523,7 +1523,19 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `Group::YoutubeMusic` (`views/settings/youtube_music.rs`): the switch, the cookies and `yt-dlp`
   fields, the keep-order switch, the terms in one plain sentence beside them and *Check connection*,
   which asks the `ChecksYoutubeMusic` seam (`Lookups::checks_youtube_music`) on the background executor
-  and toasts what it heard. In the server pane a service that `Serves::keeps_songs` draws a *Keep* mark
+  and toasts what it heard. **It signs in through the sign-in window**: the `SignsInToYoutubeMusic`
+  seam (`Lookups::signs_in_to_youtube_music`, the binary's `signing_in::FromTheWindow`), where it
+  `is_offered` (the program found), leads the action row with *Sign in to YouTube Music*
+  (`youtube-music-sign-in`; *Sign in again* where `names_the_window_jar`, *Signing in…* while it
+  runs on the background executor), greyed like the check; `YoutubeMusicSignIn::SignedIn` puts the
+  jar in the cookies field, the global and the file, moves the sources and runs the check;
+  `Closed` is a note that nothing was kept, the setting untouched. *Sign out*
+  (`youtube-music-sign-out`) stands only beside the window's own jar and clears it. Not offered, the
+  group says to install `resonate-signin` and draws no sign-in
+  (`signing_in_to_youtube_music_names_the_jar_and_checks_the_account`,
+  `a_sign_in_closed_keeps_the_browser_the_settings_named`,
+  `sign_out_is_offered_only_for_what_the_window_kept_and_clears_it`,
+  `without_the_sign_in_program_the_pane_offers_no_sign_in`). In the server pane a service that `Serves::keeps_songs` draws a *Keep* mark
   on a song row (`server-row-keep-<n>`) and *Keep* on a mix's heading (`server-keep`, once its rows are
   read, the name on the row it was opened from carried in `Place::Mix`), and no *Play* where
   `Serves::plays_songs` says no. A press is `LibraryModel::keep` or `keep_mix`, its pass followed through
