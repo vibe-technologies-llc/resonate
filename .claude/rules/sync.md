@@ -51,7 +51,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 - **Hand-encoded, no serde** (`wire.rs`): `Writer`/`Reader` with LEB128 lengths and zigzag signed
   numbers; every length is weighed against what is left before anything is allocated, a count
   against the least each item takes (`Reader::count_of`), so a frame read before the token is checked
-  cannot make the server hold many times its size; a sealed blob shorter than nonce and tag
+  cannot make the server hold many times its size, and a list read off a count reserves at most `RESERVED_AT_MOST` (1 024) items ahead (`wire::reserved`), growing only with what decodes, so a count in a deflated record cannot ask gigabytes of a reader before anything is read; a sealed blob shorter than nonce and tag
   (`SEALED_AT_LEAST`, 28) is `Malformed::Short`; text is at most `LONGEST_TEXT` (`Writer::text` cuts a longer one on a letter, so what a device writes it can read back); a frame ends exactly
   where it says (`Malformed::Trailing`). Frames are a
   4-byte big-endian length and at most `LARGEST_FRAME` (32 MiB) on one bidirectional QUIC stream.
