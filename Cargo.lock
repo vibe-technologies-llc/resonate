@@ -6494,6 +6494,7 @@ dependencies = [
  "resonate-tidal",
  "resonate-upnp",
  "resonate-words",
+ "resonate-words-build",
  "rusqlite",
  "rustix",
  "thiserror 2.0.21",

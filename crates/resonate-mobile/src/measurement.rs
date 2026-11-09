@@ -7,6 +7,7 @@ use resonate_eq::{BuiltIn, Fitting, LARGEST_MEASUREMENT, Response, fit, read_res
 use crate::{
     Error, Result,
     equaliser::{EqualiserImport, imported},
+    words,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,9 +20,9 @@ pub enum MeasuredFile {
 impl fmt::Display for MeasuredFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Measurement => "measurement",
-            Self::Target => "target",
-            Self::Calibration => "calibration",
+            Self::Measurement => words::measurement::measurement(),
+            Self::Target => words::measurement::target(),
+            Self::Calibration => words::measurement::calibration(),
         })
     }
 }

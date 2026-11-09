@@ -20,6 +20,7 @@ use crate::{
         ListenedTo, ListeningDetail,
     },
     stamp::{DocumentStamp, INDEXING_REVISION},
+    words,
 };
 
 struct Figures<'a> {
@@ -153,11 +154,13 @@ const THE_SONGS_HEARD: &str = "SELECT count(DISTINCT l.track) + count(DISTINCT l
 
 fn kilohertz(hertz: i64) -> String {
     let kilohertz = hertz as f64 / 1000.0;
-    if kilohertz.fract() == 0.0 {
-        format!("{kilohertz:.0} kHz")
+    let figure = if kilohertz.fract() == 0.0 {
+        format!("{kilohertz:.0}")
     } else {
-        format!("{kilohertz:.1} kHz")
-    }
+        format!("{kilohertz:.1}")
+    };
+
+    words::statistics::kilohertz(figure)
 }
 
 fn read_error(source: rusqlite::Error) -> Error {
@@ -392,7 +395,7 @@ impl Catalog {
             rates: shares(THE_RATES_HELD, |row| Ok(kilohertz(row.get(0)?)))?,
             genres: shares(THE_GENRES_HELD, |row| row.get(0))?,
             decades: shares(THE_DECADES_HELD, |row| {
-                Ok(format!("{}s", row.get::<_, i64>(0)?))
+                Ok(words::statistics::decade(row.get::<_, i64>(0)?))
             })?,
         })
     }

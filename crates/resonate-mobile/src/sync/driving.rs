@@ -6,9 +6,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{
-    REMOTE_TRUST_ASKED, REMOTE_TRUST_TITLE, REMOTE_TRUST_TOLD, RemoteTrust, ZoneId,
-};
+use resonate_core::{RemoteTrust, ZoneId};
 use resonate_driven::{Driven, RowNames, unnamed};
 use resonate_engine::{Player, QueueItem};
 use resonate_sync::{
@@ -18,6 +16,7 @@ use resonate_sync::{
 use super::the_device;
 use crate::{
     Error, MobilePlayer, Result, Track, catalog::Catalog, documents::document_uri, served::Served,
+    words::driving as said,
 };
 
 const ROWS_KEPT_AT_MOST: usize = 8_192;
@@ -50,6 +49,22 @@ impl From<RemoteTrust> for SyncControl {
     }
 }
 
+impl SyncControl {
+    fn choice(self) -> SyncControlChoice {
+        let (label, meaning) = match self {
+            Self::Everything => (said::everything(), said::everything_means()),
+            Self::Transport => (said::transport(), said::transport_means()),
+            Self::Nothing => (said::nothing(), said::nothing_means()),
+        };
+
+        SyncControlChoice {
+            control: self,
+            label: label.to_owned(),
+            meaning: meaning.to_owned(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct SyncControlChoice {
     pub control: SyncControl,
@@ -68,16 +83,12 @@ pub struct SyncControlOffered {
 #[uniffi::export]
 pub fn sync_control_offered() -> SyncControlOffered {
     SyncControlOffered {
-        title: REMOTE_TRUST_TITLE.to_owned(),
-        asked: REMOTE_TRUST_ASKED.to_owned(),
-        told: REMOTE_TRUST_TOLD.to_owned(),
+        title: said::title().to_owned(),
+        asked: said::asked().to_owned(),
+        told: said::told().to_owned(),
         choices: RemoteTrust::ALL
             .into_iter()
-            .map(|trust| SyncControlChoice {
-                control: trust.into(),
-                label: trust.label().to_owned(),
-                meaning: trust.meaning().to_owned(),
-            })
+            .map(|trust| SyncControl::from(trust).choice())
             .collect(),
     }
 }
