@@ -26,7 +26,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Hearing
-import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
@@ -206,7 +206,7 @@ private fun AnalyseControl(model: AnalysisViewModel, busy: Boolean, done: Boolea
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("analyse"),
             ) {
-                Icon(Icons.Rounded.Insights, null, Modifier.size(ButtonDefaults.IconSize))
+                Icon(Icons.Rounded.QueryStats, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text(
                     stringResource(

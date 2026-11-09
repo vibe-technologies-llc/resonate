@@ -46,6 +46,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -211,7 +213,18 @@ fun ResonateApp(resonate: Resonate) {
                             if (!expansion.shown) {
                                 SnackbarHost(snackbar, modifier = Modifier.padding(bottom = 8.dp))
                             }
-                            Column(Modifier.onSizeChanged { footerHeight = it.height }) {
+                            val ground = MaterialTheme.colorScheme.surface
+                            Column(
+                                Modifier.onSizeChanged { footerHeight = it.height }.drawBehind {
+                                    drawRect(
+                                        Brush.verticalGradient(
+                                            0f to ground.copy(alpha = 0f),
+                                            GROUND_WHOLE_FROM to ground,
+                                            1f to ground,
+                                        )
+                                    )
+                                }
+                            ) {
                                 Banners(showNotice = !expansion.shown)
                                 MiniPlayer(player, expansion)
                             }
@@ -298,3 +311,4 @@ private fun InvitationArrivals() {
 }
 
 private const val SHORT_WINDOW_BELOW_DP = 480
+private const val GROUND_WHOLE_FROM = 0.7f

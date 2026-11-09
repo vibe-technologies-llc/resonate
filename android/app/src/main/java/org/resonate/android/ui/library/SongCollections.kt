@@ -5,7 +5,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -233,7 +232,7 @@ private fun SongCollection(
                             listOf(
                                 MenuEntry.Action(
                                     stringResource(R.string.library_keep_as_playlist),
-                                    Icons.Rounded.AutoAwesome,
+                                    Icons.AutoMirrored.Rounded.PlaylistAdd,
                                     run = keep,
                                 )
                             )

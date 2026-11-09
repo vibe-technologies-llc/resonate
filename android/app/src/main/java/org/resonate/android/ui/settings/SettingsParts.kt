@@ -433,7 +433,6 @@ fun Field(
                     }
                 }
             } else null,
-        shape = MaterialTheme.shapes.large,
         modifier =
             modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
     )

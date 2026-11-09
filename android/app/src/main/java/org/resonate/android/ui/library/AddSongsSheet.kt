@@ -1,5 +1,6 @@
 package org.resonate.android.ui.library
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -145,14 +146,14 @@ fun AddSongsSheet(
                         val picked = track.id in chosen
                         ListItem(
                             modifier =
-                                Modifier.toggleable(value = picked, role = Role.Checkbox) { on ->
-                                    if (on) chosen.add(track.id) else chosen.remove(track.id)
-                                },
-                            colors =
-                                ListItemDefaults.colors(
-                                    containerColor =
-                                        if (picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                                ),
+                                Modifier.background(
+                                        if (picked) MaterialTheme.colorScheme.secondaryContainer
+                                        else Color.Transparent
+                                    )
+                                    .toggleable(value = picked, role = Role.Checkbox) { on ->
+                                        if (on) chosen.add(track.id) else chosen.remove(track.id)
+                                    },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             leadingContent = { Artwork(track, Sizes.rowArt, shape = MaterialTheme.shapes.medium) },
                             supportingContent = {
                                 Text(

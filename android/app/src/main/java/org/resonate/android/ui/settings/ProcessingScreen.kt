@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Healing
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Memory
@@ -25,14 +25,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -43,13 +40,11 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.nativecore.CrossfeedLevel
-import org.resonate.android.ui.components.outlinedTrackColors
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
@@ -59,6 +54,7 @@ import org.resonate.android.R
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
+import org.resonate.android.ui.components.CommitSlider
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.resonateViewModel
 
@@ -202,7 +198,7 @@ private fun Restoration(selected: LossyRestoration, onChoose: (LossyRestoration)
     ListItem(
         onClick = { open = true },
         modifier = Modifier.testTag("restoration"),
-        leadingContent = { SettingIcon(Icons.Rounded.AutoFixHigh) },
+        leadingContent = { SettingIcon(Icons.Rounded.Healing) },
         supportingContent = {
             Column {
                 Text(
@@ -253,15 +249,8 @@ private fun ExperimentalBadge() {
 
 @Composable
 private fun Buffer(stored: Int, onCommit: (Int) -> Unit) {
-    var dragging by remember { mutableStateOf(false) }
-    val slider = remember {
-        SliderState(
-            value = stored.toFloat(),
-            trackRange = BUFFER_LEAST_MS.toFloat()..BUFFER_MOST_MS.toFloat(),
-        )
-    }
-    LaunchedEffect(stored) { if (!dragging) slider.value = stored.toFloat() }
-    val shown = if (dragging) bufferStep(slider.value) else stored
+    var draft by remember { mutableStateOf<Float?>(null) }
+    val shown = draft?.let { bufferStep(it) } ?: stored
     val length = stringResource(R.string.processing_buffer_length)
     val spoken = pluralStringResource(R.plurals.processing_buffer_spoken, shown, shown)
     Column(Modifier.fillMaxWidth()) {
@@ -277,24 +266,17 @@ private fun Buffer(stored: Int, onCommit: (Int) -> Unit) {
                 )
             },
         )
-        Slider(
-            state = slider,
-            colors = outlinedTrackColors(),
-            onValueChange = {
-                dragging = true
-                slider.value = it
-            },
-            onValueChangeFinished = {
-                onCommit(bufferStep(slider.value))
-                dragging = false
-            },
+        CommitSlider(
+            value = stored.toFloat(),
+            onCommit = { onCommit(bufferStep(it)) },
+            onDraft = { draft = it },
+            range = BUFFER_LEAST_MS.toFloat()..BUFFER_MOST_MS.toFloat(),
+            trackHeight = 4.dp,
+            stateText = { spoken },
             modifier =
                 Modifier.fillMaxWidth()
                     .padding(start = 56.dp, end = Sizes.gutter)
-                    .semantics {
-                        contentDescription = length
-                        stateDescription = spoken
-                    }
+                    .semantics { contentDescription = length }
                     .testTag("buffer"),
         )
     }

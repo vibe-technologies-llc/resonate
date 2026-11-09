@@ -27,17 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -67,6 +64,7 @@ import org.resonate.android.ui.components.ArtistPortrait
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.PlayShuffleButtons
 import org.resonate.android.ui.components.PlaylistCover
+import org.resonate.android.ui.components.ResonateMark
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.rememberTitleMaxLines
@@ -177,9 +175,10 @@ fun CoverCard(
     detail: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    titleLines: Int = rememberTitleMaxLines(),
+    detailLines: Int = rememberTitleMaxLines(),
     cover: @Composable () -> Unit,
 ) {
-    val lines = rememberTitleMaxLines()
     Column(
         modifier
             .clip(MaterialTheme.shapes.large)
@@ -191,7 +190,7 @@ fun CoverCard(
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
-            maxLines = lines,
+            maxLines = titleLines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
@@ -200,7 +199,7 @@ fun CoverCard(
                 detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = lines,
+                maxLines = detailLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 4.dp),
             )
@@ -435,16 +434,7 @@ fun Welcome(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = MaterialShapes.Cookie9Sided.toShape(),
-                modifier = Modifier.size(112.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.LibraryMusic, contentDescription = null, modifier = Modifier.size(48.dp))
-                }
-            }
+            ResonateMark(WELCOME_MARK, MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(24.dp))
             Text(
                 stringResource(R.string.library_welcome_title),
@@ -514,3 +504,4 @@ fun LazyListScope.sectionTitle(key: String, title: String, action: String? = nul
 }
 
 private val WELCOME_BUTTON_WIDTH = 216.dp
+private val WELCOME_MARK = 88.dp

@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -235,13 +235,9 @@ fun StatisticsScreen() {
             wrapped?.let { year ->
                 item(key = "wrapped") {
                     Shortcut(
-                        icon = Icons.Rounded.AutoAwesome,
+                        icon = Icons.Rounded.History,
                         title = WrappedWords.entry(words, year.year),
                         detail = stringResource(R.string.stats_wrapped_detail),
-                        container = MaterialTheme.colorScheme.tertiaryContainer,
-                        content = MaterialTheme.colorScheme.onTertiaryContainer,
-                        badge = MaterialTheme.colorScheme.tertiary,
-                        onBadge = MaterialTheme.colorScheme.onTertiary,
                         onClick = { deckOpen = true },
                         modifier =
                             Modifier.fillMaxWidth()

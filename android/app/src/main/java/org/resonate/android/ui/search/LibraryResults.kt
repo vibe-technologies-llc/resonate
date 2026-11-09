@@ -28,7 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Spellcheck
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Explore
@@ -37,7 +37,6 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.AssistChip
@@ -309,13 +308,6 @@ private fun LazyListScope.browse(
                 SuggestionChip(
                     onClick = { search(tip.query) },
                     label = { Text(stringResource(tip.label)) },
-                    icon = {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(AssistChipDefaults.IconSize),
-                        )
-                    },
                     modifier = Modifier.semantics { contentDescription = described },
                 )
             }
@@ -337,8 +329,8 @@ private fun BrowseCard(tile: BrowseTile, modifier: Modifier, onClick: () -> Unit
         shape = MaterialTheme.shapes.large,
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ),
     ) {
         Row(
@@ -616,7 +608,7 @@ private fun LazyListScope.hints(answer: LibraryAnswer, search: (String) -> Unit)
                     },
                     leadingIcon = {
                         Icon(
-                            Icons.Rounded.AutoFixHigh,
+                            Icons.Rounded.Spellcheck,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(AssistChipDefaults.IconSize),
@@ -637,13 +629,6 @@ private fun LazyListScope.hints(answer: LibraryAnswer, search: (String) -> Unit)
                     SuggestionChip(
                         onClick = { search(completion) },
                         label = { Text(completion, maxLines = 1) },
-                        icon = {
-                            Icon(
-                                Icons.Rounded.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(AssistChipDefaults.IconSize),
-                            )
-                        },
                     )
                 }
             }

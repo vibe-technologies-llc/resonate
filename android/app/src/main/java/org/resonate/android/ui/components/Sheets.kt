@@ -24,7 +24,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -89,6 +90,7 @@ import org.resonate.android.ui.navigation.Navigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.words
 
 data class SongSheetRequest(val track: Track, val queueId: ULong? = null, val inPlayer: Boolean = false)
@@ -105,6 +107,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     var editingTags by mutableStateOf<List<Track>?>(null)
     var listening by mutableStateOf(false)
     var sleeping by mutableStateOf(false)
+    var worn by mutableStateOf<ColorScheme?>(null)
 
     fun listen() {
         listening = true
@@ -189,13 +192,15 @@ fun Resonate.shareLink(track: Track, scope: CoroutineScope) {
 @Composable
 fun SheetHost() {
     val sheets = LocalSheets.current
-    sheets.song?.let { request -> SongSheet(request) { sheets.song = null } }
-    sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
-    sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
-    sheets.searching?.let { request -> SavedSearchDialog(request) { sheets.searching = null } }
-    sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
-    sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
-    if (sheets.listening) ListenSheet { sheets.listening = false }
+    ArtworkTheme(sheets.worn ?: MaterialTheme.colorScheme) {
+        sheets.song?.let { request -> SongSheet(request) { sheets.song = null } }
+        sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
+        sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
+        sheets.searching?.let { request -> SavedSearchDialog(request) { sheets.searching = null } }
+        sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
+        sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
+        if (sheets.listening) ListenSheet { sheets.listening = false }
+    }
 }
 
 @Composable
@@ -287,7 +292,7 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             add(SheetAction(Icons.Rounded.Lyrics, words.string(R.string.player_lyrics)) {
                 navigator.open(Screen.Lyrics(track.id))
             })
-            add(SheetAction(Icons.Rounded.Insights, words.string(R.string.analysis_title)) {
+            add(SheetAction(Icons.Rounded.QueryStats, words.string(R.string.analysis_title)) {
                 navigator.open(Screen.Analysis(track.id))
             })
             add(SheetAction(Icons.Rounded.Info, words.string(R.string.details_title)) {

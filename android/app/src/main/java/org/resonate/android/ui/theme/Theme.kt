@@ -42,6 +42,15 @@ import org.resonate.android.ThemeMode
 
 val ResonateViolet = Color(0xFF8772E7)
 
+val WarmGround = Color(0xFF79766F)
+
+val WarmGroundVariant = Color(0xFF7C766A)
+
+enum class Neutrals {
+    WARM,
+    OF_THE_SEED,
+}
+
 val LocalDarkTheme = staticCompositionLocalOf { false }
 
 val LocalPitchBlack = staticCompositionLocalOf { false }
@@ -92,6 +101,8 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
         MaterialExpressiveTheme(
             colorScheme = scheme,
             motionScheme = MotionScheme.expressive(),
+            typography = ResonateTypography,
+            shapes = ResonateShapes,
             content = content,
         )
     }
@@ -105,11 +116,14 @@ fun schemeOf(
     dark: Boolean,
     pitchBlack: Boolean = false,
     contrastLevel: Double = STANDARD_CONTRAST,
+    neutrals: Neutrals = Neutrals.WARM,
 ): ColorScheme =
     dynamicColorScheme(
         seedColor = seed,
         isDark = dark,
         isAmoled = pitchBlack,
+        neutral = WarmGround.takeIf { neutrals == Neutrals.WARM },
+        neutralVariant = WarmGroundVariant.takeIf { neutrals == Neutrals.WARM },
         style = PaletteStyle.TonalSpot,
         contrastLevel = contrastLevel,
     )
@@ -138,6 +152,8 @@ fun ArtworkTheme(seed: Color?, content: @Composable () -> Unit) {
         isAmoled = LocalPitchBlack.current,
         style = PaletteStyle.TonalSpot,
         contrastLevel = LocalContrastLevel.current,
+        typography = ResonateTypography,
+            shapes = ResonateShapes,
         animate = true,
         content = content,
     )
@@ -148,6 +164,8 @@ fun ArtworkTheme(scheme: ColorScheme, content: @Composable () -> Unit) {
     MaterialExpressiveTheme(
         colorScheme = scheme,
         motionScheme = MotionScheme.expressive(),
+        typography = ResonateTypography,
+            shapes = ResonateShapes,
         content = content,
     )
 }
@@ -193,7 +211,10 @@ private data class SchemeAsked(
     val contrast: Double,
 ) {
     fun made(): ColorScheme =
-        schemes[this] ?: schemeOf(seed, dark, pitchBlack, contrast).also { schemes.put(this, it) }
+        schemes[this]
+            ?: schemeOf(seed, dark, pitchBlack, contrast, Neutrals.OF_THE_SEED).also {
+                schemes.put(this, it)
+            }
 }
 
 private val schemes = LruCache<SchemeAsked, ColorScheme>(SCHEMES_KEPT)

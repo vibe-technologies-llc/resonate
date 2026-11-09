@@ -194,7 +194,6 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
     val paste = rememberPasteALink()
     val direction = LocalLayoutDirection.current
     val grid = rememberLazyGridState()
-    val scheme = MaterialTheme.colorScheme
     LaunchedEffect(Unit) { model.refreshPlaylists() }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(150.dp),
@@ -217,10 +216,6 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
                         icon = Icons.Rounded.Favorite,
                         title = stringResource(R.string.library_favourites),
                         detail = pluralStringResource(R.plurals.count_songs, favourites, favourites),
-                        container = scheme.primaryContainer,
-                        content = scheme.onPrimaryContainer,
-                        badge = scheme.primary,
-                        onBadge = scheme.onPrimary,
                         onClick = { navigator.open(Screen.Favourites) },
                         modifier = modifier.testTag("favourites"),
                     )
@@ -232,10 +227,6 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
                         detail =
                             party?.let { TogetherWords.partyLine(words(), it) }
                                 ?: stringResource(R.string.library_listen_together),
-                        container = scheme.tertiaryContainer,
-                        content = scheme.onTertiaryContainer,
-                        badge = scheme.tertiary,
-                        onBadge = scheme.onTertiary,
                         onClick = { navigator.open(Screen.Party) },
                         modifier = modifier.testTag("listening-party"),
                     )

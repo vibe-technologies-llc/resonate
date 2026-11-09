@@ -15,12 +15,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BluetoothAudio
+import androidx.compose.material.icons.rounded.ContentCut
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.SpeakerGroup
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material3.Card
@@ -160,6 +164,7 @@ fun OutputScreen() {
                 item(key = "stream") {
                     SettingRow(
                         title = stringResource(R.string.output_current_stream),
+                        icon = Icons.Rounded.GraphicEq,
                         supporting = outputPathWords(words, open.path),
                         trailing = { Text(outputStreamWords(words, open)) },
                         modifier = Modifier.testTag("output-stream"),
@@ -170,6 +175,7 @@ fun OutputScreen() {
                 item(key = "takes") {
                     SettingRow(
                         title = stringResource(R.string.output_takes),
+                        icon = Icons.Rounded.Tune,
                         supporting = takes,
                         modifier = Modifier.testTag("output-takes"),
                     )
@@ -178,6 +184,7 @@ fun OutputScreen() {
             item(key = "follow") {
                 SwitchRow(
                     title = stringResource(R.string.output_follow_song_rate),
+                    icon = Icons.Rounded.Speed,
                     checked = followsSongRate,
                     onCheckedChange = model::followSongRate,
                     supporting = stringResource(R.string.output_follow_song_rate_note),
@@ -188,6 +195,7 @@ fun OutputScreen() {
                 item(key = "clamped") {
                     SettingRow(
                         title = stringResource(R.string.output_clamped),
+                        icon = Icons.Rounded.ContentCut,
                         supporting = stringResource(R.string.output_clamped_note),
                         trailing = { Text(count) },
                         modifier = Modifier.testTag("clamped-samples"),

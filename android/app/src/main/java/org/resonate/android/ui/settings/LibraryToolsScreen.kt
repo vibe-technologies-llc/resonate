@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -179,7 +180,7 @@ fun LibraryToolsScreen() {
             item(key = "automatic") {
                 SwitchRow(
                     title = stringResource(R.string.tools_automatic),
-                    icon = Icons.Rounded.AutoAwesome,
+                    icon = Icons.Rounded.CloudDownload,
                     supporting = stringResource(R.string.tools_automatic_detail),
                     checked = automatic,
                     onCheckedChange = model::setAutomatic,
@@ -291,7 +292,7 @@ fun LibraryToolsScreen() {
             item(key = "suggestions") {
                 SettingRow(
                     title = stringResource(R.string.tools_suggestions),
-                    icon = Icons.Rounded.AutoAwesome,
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
                     supporting = stringResource(R.string.tools_suggestions_detail),
                     onClick = { navigator.open(Screen.Suggestions) },
                 )

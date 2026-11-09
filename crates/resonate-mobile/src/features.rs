@@ -6,7 +6,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_analysis::{Finding, Watch};
-use resonate_codec::{ImageFormat, probe};
+use resonate_codec::{Container, ImageFormat, probe};
 use resonate_core::{
     Chromaprint, Gate, Mbid, Meter, Metering, TrackId, folded_letters, words_of_a_name,
 };
@@ -463,7 +463,7 @@ impl MobilePlayer {
         let info = probe(&self.sources, &location(&track.uri)?)?;
         Ok(Inspector {
             track,
-            container: info.container.to_string(),
+            container: Container::from_id(info.container).to_string(),
             sample_format: info.spec.format.to_string(),
             seekable: info.is_seekable,
             encoder: info.tags.encoder.unwrap_or_default(),
@@ -1282,7 +1282,7 @@ mod tests {
             let inspected = harness.player.inspector(song.id).expect("an inspector");
 
             assert_eq!(inspected.track.id, song.id);
-            assert!(!inspected.container.is_empty());
+            assert_eq!(inspected.container, "WAVE");
             assert!(!inspected.sample_format.is_empty());
             assert!(inspected.seekable);
             assert_eq!(inspected.encoder, "Exact Audio Copy");

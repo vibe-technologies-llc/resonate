@@ -769,10 +769,10 @@
     <string name="library_unreadable">This could not be loaded</string>
     <string name="library_unreadable_detail">Check the notice below, then try again.</string>
     <string name="library_try_again">Try again</string>
-    <string name="library_welcome_title">Make room for your music</string>
-    <string name="library_welcome_detail">Add a music folder, or use your Downloads, to bring your albums, artists and favourites together.</string>
-    <string name="library_empty_title">A little quiet here</string>
-    <string name="library_empty_detail">Add some songs to make this collection yours.</string>
+    <string name="library_welcome_title">Add your music</string>
+    <string name="library_welcome_detail">Choose the folder your music is in, or use Downloads. Its songs, albums and artists appear here once it has been read.</string>
+    <string name="library_empty_title">No songs yet</string>
+    <string name="library_empty_detail">Songs you add will be listed here.</string>
     <string name="library_order_name">Name</string>
     <string name="library_order_year">Year</string>
     <string name="library_order_recently_added">Recently added</string>
@@ -782,7 +782,7 @@
     <string name="library_your_playlists">Your playlists</string>
     <string name="library_paste_a_link">Paste a link</string>
     <string name="library_no_playlists">No playlists yet</string>
-    <string name="library_playlist_invitation">A mood, a moment, a journey. Make it a playlist.</string>
+    <string name="library_playlist_invitation">Gather songs under a name of your own.</string>
     <string name="library_overline_playlist">Playlist</string>
     <string name="library_favourites_empty">Tap the heart on any song to keep it here.</string>
     <string name="library_made_for_you">Made for you</string>
@@ -836,7 +836,7 @@
     <string name="library_overline_shared">Shared playlist</string>
     <string name="library_playlist_search_matches_nothing">No song in your library matches this search yet.</string>
     <string name="library_playlist_nothing_held">No song of this playlist is in your library yet.</string>
-    <string name="library_playlist_shape">Add songs to shape this playlist.</string>
+    <string name="library_playlist_shape">Add songs to start this playlist.</string>
     <string name="library_playlist_delete_title">Delete “%1$s”?</string>
     <string name="library_playlist_delete_detail">Your music files will stay in your library.</string>
     <string name="library_delete">Delete</string>
@@ -1157,7 +1157,7 @@
     <string name="settings_appearance_title">Appearance</string>
     <string name="settings_notifications_title">Playback notifications</string>
     <string name="settings_version_title">Version</string>
-    <string name="settings_equaliser_detail">Shape your sound</string>
+    <string name="settings_equaliser_detail">Bands, presets and corrections</string>
     <string name="settings_inner_presets">Presets</string>
     <string name="settings_inner_bands">Bands</string>
     <string name="settings_inner_add_band">Add band</string>

@@ -32,12 +32,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -276,8 +274,8 @@ fun CollectionRow(
 fun IconTile(
     icon: ImageVector,
     modifier: Modifier = Modifier,
-    container: Color = MaterialTheme.colorScheme.secondaryContainer,
-    content: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    container: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    content: Color = MaterialTheme.colorScheme.primary,
 ) {
     Surface(color = container, shape = MaterialTheme.shapes.medium, modifier = modifier.size(Sizes.rowArt)) {
         Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = content) }
@@ -289,36 +287,37 @@ fun Shortcut(
     icon: ImageVector,
     title: String,
     detail: String,
-    container: Color,
-    content: Color,
-    badge: Color,
-    onBadge: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
-        color = container,
-        contentColor = content,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier.heightIn(min = 80.dp),
+        color = scheme.surfaceContainerHigh,
+        contentColor = scheme.onSurface,
+        shape = MaterialTheme.shapes.large,
+        modifier = modifier.heightIn(min = 72.dp),
     ) {
         Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                color = badge,
-                contentColor = onBadge,
-                shape = MaterialShapes.Cookie9Sided.toShape(),
-                modifier = Modifier.size(44.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null) }
-            }
-            Spacer(Modifier.width(12.dp))
+            Icon(icon, contentDescription = null, tint = scheme.primary)
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -401,21 +400,13 @@ fun EmptyState(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.size(96.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    icon,
-                    null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(24.dp))
+        Icon(
+            icon,
+            null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(40.dp),
+        )
+        Spacer(Modifier.height(16.dp))
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,

@@ -12,7 +12,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -79,7 +79,7 @@ private val presetIcons: List<ImageVector> =
         Icons.Rounded.Waves,
         Icons.Rounded.MicNone,
         Icons.Rounded.WbSunny,
-        Icons.Rounded.AutoAwesome,
+        Icons.Rounded.Flare,
         Icons.Rounded.Cloud,
         Icons.Rounded.MusicNote,
         Icons.Rounded.GraphicEq,

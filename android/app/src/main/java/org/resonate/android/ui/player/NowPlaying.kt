@@ -64,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -169,6 +170,10 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     val dragState = rememberDraggableState { delta ->
         dragged += delta
         scope.launch { expansion.follow(1f - dragged / height) }
+    }
+    DisposableEffect(sheets, scheme) {
+        sheets.worn = scheme
+        onDispose { sheets.worn = null }
     }
     ArtworkTheme(scheme) {
         val dark = LocalDarkTheme.current
@@ -481,14 +486,14 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
             skips = model.skipActions(words, duration),
         )
     }
-    val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
-    Row(verticalAlignment = Alignment.Top) {
+    val times = MaterialTheme.typography.labelMedium
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             clock(shown.toLong()),
             style = times,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             val line = playing?.track?.quality.orEmpty()
             if (line.isNotEmpty()) {
                 Surface(

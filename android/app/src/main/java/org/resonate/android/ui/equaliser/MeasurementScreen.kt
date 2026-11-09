@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Stop
@@ -264,7 +264,7 @@ fun MeasurementScreen() {
                         contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                         modifier = Modifier.testTag("measurement-fit"),
                     ) {
-                        Icon(Icons.Rounded.Insights, null, Modifier.size(ButtonDefaults.IconSize))
+                        Icon(Icons.AutoMirrored.Rounded.ShowChart, null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                         Text(
                             stringResource(

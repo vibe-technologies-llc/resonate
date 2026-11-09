@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,7 +23,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PersonSearch
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,6 +72,7 @@ import org.resonate.android.ui.components.Artwork
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.components.rememberLargeText
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
@@ -149,7 +153,7 @@ fun DetailsScreen(track: ULong) {
                             enabled = online && !enriching,
                             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                         ) {
-                            Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(ButtonDefaults.IconSize))
+                            Icon(Icons.Rounded.TravelExplore, null, Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                             Text(
                                 stringResource(
@@ -244,29 +248,65 @@ private fun LazyListScope.details(rows: List<Detail>, group: String) {
 @Composable
 private fun DetailRow(detail: Detail) {
     val context = LocalContext.current
-    ListItem(
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        overlineContent = { Text(detail.label) },
-        trailingContent =
+    val stacked = rememberLargeText()
+    val label: @Composable (Modifier) -> Unit = { modifier ->
+        Text(
+            detail.label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier,
+        )
+    }
+    val value: @Composable (Modifier) -> Unit = { modifier ->
+        Text(
+            detail.value,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 6,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier,
+        )
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = DETAIL_ROW_HEIGHT)
+            .padding(start = Sizes.gutter, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (stacked) {
+            Column(
+                Modifier.weight(1f).padding(vertical = 8.dp).semantics(mergeDescendants = true) {}
+            ) {
+                label(Modifier)
+                value(Modifier)
+            }
+        } else {
+            Row(
+                Modifier.weight(1f).padding(vertical = 8.dp).semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.Top,
+            ) {
+                label(Modifier.weight(DETAIL_LABEL_SHARE).padding(top = 2.dp, end = 12.dp))
+                value(Modifier.weight(1f - DETAIL_LABEL_SHARE))
+            }
+        }
+        Box(Modifier.size(COPY_SLOT), contentAlignment = Alignment.Center) {
             if (detail.copyable) {
-                {
-                    IconButton(
-                        onClick = {
-                            context
-                                .getSystemService(ClipboardManager::class.java)
-                                ?.setPrimaryClip(ClipData.newPlainText(detail.label, detail.value))
-                        }
-                    ) {
-                        Icon(
-                            Icons.Rounded.ContentCopy,
-                            contentDescription =
-                                stringResource(R.string.details_copy, detail.label),
-
-                        )
+                IconButton(
+                    onClick = {
+                        context
+                            .getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText(detail.label, detail.value))
                     }
+                ) {
+                    Icon(
+                        Icons.Rounded.ContentCopy,
+                        contentDescription = stringResource(R.string.details_copy, detail.label),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
-            } else null,
-    ) { Text(detail.value, maxLines = 6, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+    }
 }
 
 private fun LazyListScope.artistItems(
@@ -306,3 +346,7 @@ private fun LazyListScope.artistItems(
 }
 
 private val HEADER_ART = 200.dp
+private val DETAIL_ROW_HEIGHT = 44.dp
+private val COPY_SLOT = 48.dp
+
+private const val DETAIL_LABEL_SHARE = 0.36f
