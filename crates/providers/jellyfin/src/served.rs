@@ -274,6 +274,22 @@ pub(crate) struct Authenticated {
 pub(crate) struct Account {
     #[serde(rename = "Id", deserialize_with = "id_spelt")]
     pub(crate) id: String,
+    #[serde(rename = "Name", default)]
+    pub(crate) name: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Initiated {
+    #[serde(rename = "Secret")]
+    pub(crate) secret: String,
+    #[serde(rename = "Code")]
+    pub(crate) code: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Polled {
+    #[serde(rename = "Authenticated", default)]
+    pub(crate) authenticated: bool,
 }
 
 #[cfg(test)]

@@ -20,8 +20,12 @@ use serde::de::DeserializeOwned;
 use ureq::{Agent, Body, http};
 use uuid::Uuid;
 
+pub use crate::quick_connect::{
+    A_QUICK_CONNECT_LAPSES_AFTER, Approving, QUICK_CONNECT_ASKED_EVERY, QuickConnect, SignedIn,
+};
 use crate::served::{Authenticated, ItemDoc, ItemsDoc, found};
 
+mod quick_connect;
 mod served;
 
 const JELLYFIN: &str = "jellyfin";
@@ -118,6 +122,7 @@ enum Call<'a> {
     Post,
     Delete,
     SigningIn(&'a str),
+    Introducing,
 }
 
 fn downloading(patience: Patience) -> Agent {
@@ -180,6 +185,11 @@ impl Jellyfin {
             patience,
             ..self
         }
+    }
+
+    fn as_device(mut self, device: &str) -> Self {
+        self.device = Arc::from(device);
+        self
     }
 
     pub const fn server(&self) -> &Server {
@@ -280,6 +290,21 @@ impl Jellyfin {
                         .build()
                         .send_empty(),
                     None => request.send_empty(),
+                }
+            }
+            Call::Introducing => {
+                let authorization = self.authorization();
+                let request = agent
+                    .get(url)
+                    .header("Authorization", &authorization)
+                    .header("X-Emby-Authorization", &authorization);
+                match timeout {
+                    Some(timeout) => request
+                        .config()
+                        .timeout_global(Some(timeout))
+                        .build()
+                        .call(),
+                    None => request.call(),
                 }
             }
             Call::SigningIn(body) => {
