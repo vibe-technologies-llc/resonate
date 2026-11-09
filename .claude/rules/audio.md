@@ -827,7 +827,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **A zone is a `Player` of its own; `Zones` (`zones.rs`) holds them and is the one way a command
   reaches one.** Each zone has its own queue, place, transport, sleep timer, device and volume, and
   its own PipeWire client and stream (the sink section). `Zones::start` takes the first player (never
-  removed: `Error::FirstZoneStays`); `add` takes the next free number (`Opening::anew`: *Zone N*, the
+  removed: `Error::FirstZoneStays`); `add` takes the next free number (`add` and `open` run one at a time under `Zones::opening`, so two adds at once never take one number: `zones_added_at_once_from_several_threads_each_take_a_number_of_their_own`) (`Opening::anew`: *Zone N*, the
   default device, full volume), `open` a kept one, both through the `Opens` seam the binary fills
   (`open` builds the player from the first zone's `OutputSettings::applied_to` the start config, so
   a zone opened late wears the settings in force; `opened`/`closed` start and end its bus service).

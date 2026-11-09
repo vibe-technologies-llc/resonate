@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use resonate_audio::{Moment, NodeName, SinkId};
 use resonate_core::{Frames, Resumption, Span, Volume, ZoneId, ZoneName};
 
@@ -118,6 +118,7 @@ struct Handed {
 
 pub struct Zones {
     held: RwLock<Vec<Zone>>,
+    opening: Mutex<()>,
     opens: Arc<dyn Opens>,
     revision: AtomicU64,
 }
@@ -131,6 +132,7 @@ impl Zones {
         };
         let zones = Arc::new(Self {
             held: RwLock::new(vec![first.clone()]),
+            opening: Mutex::new(()),
             opens: Arc::clone(&opens),
             revision: AtomicU64::new(0),
         });
@@ -173,11 +175,17 @@ impl Zones {
     }
 
     pub fn add(self: &Arc<Self>) -> Result<Zone> {
+        let alone = self.opening.lock();
         let id = self.next_id().ok_or(Error::NoZoneLeft)?;
-        self.open(&Opening::anew(id))
+        self.open_alone(&Opening::anew(id), alone)
     }
 
     pub fn open(self: &Arc<Self>, opening: &Opening) -> Result<Zone> {
+        let alone = self.opening.lock();
+        self.open_alone(opening, alone)
+    }
+
+    fn open_alone(self: &Arc<Self>, opening: &Opening, alone: MutexGuard<'_, ()>) -> Result<Zone> {
         if let Some(held) = self.zone(opening.id) {
             return Ok(held);
         }
@@ -192,6 +200,7 @@ impl Zones {
             held.push(zone.clone());
             held.sort_by_key(|zone| zone.id);
         }
+        drop(alone);
         self.moved();
         self.opens.opened(self, &zone);
         Ok(zone)

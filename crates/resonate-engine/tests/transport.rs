@@ -1626,6 +1626,33 @@ impl FakeZones {
     }
 }
 
+#[test]
+fn zones_added_at_once_from_several_threads_each_take_a_number_of_their_own() -> Result<()> {
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])]);
+    let zones = opened.started()?;
+
+    let added: Vec<ZoneId> = std::thread::scope(|scope| {
+        let adding: Vec<_> = (0..6)
+            .map(|_| scope.spawn(|| zones.add().map(|zone| zone.id)))
+            .collect();
+        adding
+            .into_iter()
+            .map(|adding| adding.join().expect("an add does not panic"))
+            .collect::<Result<_>>()
+    })?;
+    let mut apart = added.clone();
+    apart.sort();
+    apart.dedup();
+
+    assert_eq!(
+        apart.len(),
+        added.len(),
+        "two adds took one number: {added:?}"
+    );
+    assert_eq!(zones.count(), 7);
+    Ok(())
+}
+
 fn played_from(zones: &Zones, zone: ZoneId, path: &Path) -> Result<()> {
     zones.send(
         zone,

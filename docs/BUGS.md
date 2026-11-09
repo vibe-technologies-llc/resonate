@@ -3,15 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Playback
-- [S · 0.7.1] `Zones::add` can open two zones under one id: `next_id` reads the held ids under a
-  read lock and drops it, `open` checks `zone(id)` and then builds a whole `Player` with no lock held
-  before pushing onto `held`, so two concurrent adds (the window, MCP and a driven control all reach
-  `Zones`) both pick the same id and both push; `zone(id)` and `send` reach the first and the second
-  player and its engine thread are unreachable, `remove` takes one of them, and a device that second
-  player holds looks held by a zone nobody can address; the check and the push belong under one
-  lock
-
 ## Sync and sharing
 - [S · 0.7.1] A shared playlist's other members' records are skipped by the push that races them:
   `pushed` in `shared/service.rs` answers a `Records` frame by moving `kept.cursor` to each entry's
