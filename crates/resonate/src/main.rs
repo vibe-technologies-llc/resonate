@@ -3194,6 +3194,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             signs_in: providers::signs_in(),
             spotify: online::signs_in_to_spotify(&config),
             checks_youtube_music: providers::checks_youtube_music(settings_path(&cli).ok()),
+            signs_in_to_youtube_music: providers::signs_in_to_youtube_music(),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             measurers: equaliser::measured_by(&config),

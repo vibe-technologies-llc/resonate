@@ -54,9 +54,10 @@ pub use crate::{
         Asking, Bindings, CaretBlink, ChecksYoutubeMusic, Continuing, Ephemeral, Followed,
         HandedOff, Measurers, MirrorTold, Mirroring, Newer, Online, Places, Present, Registering,
         RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange,
-        SettingKey, Settings, SettingsCategory, Sourcing, SpotifySignIn, Stored, Supplying,
-        SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing, Tabs,
-        TidalSignIn, Unkept, Updates, WindowButtons, WindowSize, YoutubeMusicConnection,
+        SettingKey, Settings, SettingsCategory, SignsInToYoutubeMusic, Sourcing, SpotifySignIn,
+        Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,
+        Syncing, Tabs, TidalSignIn, Unkept, Updates, WindowButtons, WindowSize,
+        YoutubeMusicConnection, YoutubeMusicSignIn,
     },
     together::{
         PartyReached, PartySeen, PartyStanding, SharedPerson, SharedReach, SharedSeen, Together,

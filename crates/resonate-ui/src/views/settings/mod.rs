@@ -43,7 +43,7 @@ pub(crate) use crate::views::{
             SYNC_SERVER_PLACEHOLDER,
         },
         tidal::{SigningIn, TidalAccount},
-        youtube_music::{CheckingYoutubeMusic, YoutubeMusicField},
+        youtube_music::{CheckingYoutubeMusic, SigningInToYoutubeMusic, YoutubeMusicField},
     },
 };
 use crate::{

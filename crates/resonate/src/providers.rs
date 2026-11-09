@@ -206,6 +206,16 @@ pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::Ch
     }))
 }
 
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn signs_in_to_youtube_music() -> Option<Arc<dyn resonate_ui::SignsInToYoutubeMusic>> {
+    Some(Arc::new(crate::signing_in::FromTheWindow::here()))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+pub fn signs_in_to_youtube_music() -> Option<Arc<dyn resonate_ui::SignsInToYoutubeMusic>> {
+    None
+}
+
 #[cfg(all(feature = "ui", not(feature = "online")))]
 pub fn checks_youtube_music(_settings: Option<PathBuf>) -> Option<resonate_ui::ChecksYoutubeMusic> {
     None

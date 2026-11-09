@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use gpui::{
     AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Stateful,
     Task, Window,
@@ -6,7 +8,7 @@ use gpui::{
 use crate::{
     Notice, ResonateApp, Setting,
     icons::Icon,
-    settings::{Online, YoutubeMusicConnection},
+    settings::{Online, YoutubeMusicConnection, YoutubeMusicSignIn},
     views::{
         field::{Field, Submitted},
         kit,
@@ -43,6 +45,34 @@ const COULD_NOT_CHECK: &str = "YouTube could not be asked just now, so nothing i
                                account. Try again in a while";
 
 const NO_ANSWER: &str = "YouTube Music is checked only while it and Online are on";
+
+const SIGN_IN_LABEL: &str = "Sign in to YouTube Music";
+
+const SIGN_IN_AGAIN_LABEL: &str = "Sign in again";
+
+const SIGNING_IN_LABEL: &str = "Signing in…";
+
+const SIGN_OUT_LABEL: &str = "Sign out";
+
+const SIGNED_IN: &str = "Signed in to YouTube Music";
+
+const SIGN_IN_CLOSED: &str = "The sign-in window was closed, nothing kept";
+
+const SIGN_IN_PROGRAM_MISSING: &str =
+    "resonate-signin is missing, so the sign-in window cannot open";
+
+const SIGN_IN_FAILED: &str = "The sign-in window stopped without signing in";
+
+const SIGNED_OUT: &str = "Signed out of YouTube Music";
+
+const SIGN_OUT_FAILED: &str = "What the sign-in window kept could not be taken away";
+
+const SIGN_IN_NOTE: &str = "Sign in opens a window on Google's sign-in and keeps that account's \
+                            cookies for yt-dlp alone, in Resonate's own folder. Naming a browser \
+                            or a cookies file below is the other way in.";
+
+const NO_SIGN_IN_NOTE: &str = "Install resonate-signin to sign in from here. Until then, name a \
+                               browser or a cookies file below.";
 
 const fn told(connection: YoutubeMusicConnection) -> &'static str {
     match connection {
@@ -84,6 +114,29 @@ impl Default for CheckingYoutubeMusic {
             asking: false,
             task: Task::ready(()),
         }
+    }
+}
+
+pub(crate) struct SigningInToYoutubeMusic {
+    asking: bool,
+    task: Task<()>,
+}
+
+impl Default for SigningInToYoutubeMusic {
+    fn default() -> Self {
+        Self {
+            asking: false,
+            task: Task::ready(()),
+        }
+    }
+}
+
+fn notice_of_the_sign_in(answered: &YoutubeMusicSignIn) -> Notice {
+    match answered {
+        YoutubeMusicSignIn::SignedIn { .. } => Notice::Done(SIGNED_IN.to_owned()),
+        YoutubeMusicSignIn::Closed => Notice::Noted(SIGN_IN_CLOSED.to_owned()),
+        YoutubeMusicSignIn::ProgramMissing => Notice::Trouble(SIGN_IN_PROGRAM_MISSING.to_owned()),
+        YoutubeMusicSignIn::Failed => Notice::Trouble(SIGN_IN_FAILED.to_owned()),
     }
 }
 
@@ -290,6 +343,132 @@ impl RootView {
         });
     }
 
+    fn hold_the_youtube_music_cookies(&mut self, cookies: String, cx: &mut Context<Self>) {
+        let named = YoutubeMusicField::Cookies;
+        self.youtube_music_field(named)
+            .clone()
+            .update(cx, |field, cx| field.hold(cookies.clone(), cx));
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            named.hold(&mut global.online, cookies.clone());
+        });
+        self.store(&named.setting(cookies), cx);
+        self.the_sources_moved(cx);
+    }
+
+    fn sign_in_to_youtube_music(&mut self, cx: &mut Context<Self>) {
+        let Some(signs_in) = cx.global::<ResonateApp>().signs_in_to_youtube_music.clone() else {
+            return;
+        };
+
+        self.youtube_music_sign_in.asking = true;
+        cx.notify();
+        self.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
+            let answered = cx
+                .background_executor()
+                .spawn(async move { signs_in.sign_in() })
+                .await;
+            let told = this.update(cx, |this, cx| {
+                this.youtube_music_sign_in.asking = false;
+                this.report(notice_of_the_sign_in(&answered), cx);
+                if let YoutubeMusicSignIn::SignedIn { cookies } = answered {
+                    this.hold_the_youtube_music_cookies(cookies, cx);
+                    this.check_the_youtube_music_connection(cx);
+                }
+                cx.notify();
+            });
+            let _ = told;
+        });
+    }
+
+    fn sign_out_of_youtube_music(&mut self, cx: &mut Context<Self>) {
+        let Some(signs_in) = cx.global::<ResonateApp>().signs_in_to_youtube_music.clone() else {
+            return;
+        };
+
+        self.youtube_music_sign_in.asking = true;
+        cx.notify();
+        self.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
+            let gone = cx
+                .background_executor()
+                .spawn({
+                    let signs_in = Arc::clone(&signs_in);
+                    async move { signs_in.sign_out() }
+                })
+                .await;
+            let told = this.update(cx, |this, cx| {
+                this.youtube_music_sign_in.asking = false;
+                let held = cx
+                    .global::<ResonateApp>()
+                    .online
+                    .youtube_music_cookies
+                    .clone();
+                if signs_in.names_the_window_jar(&held) {
+                    this.hold_the_youtube_music_cookies(String::new(), cx);
+                }
+                let said = if gone {
+                    Notice::Done(SIGNED_OUT.to_owned())
+                } else {
+                    Notice::Trouble(SIGN_OUT_FAILED.to_owned())
+                };
+                this.report(said, cx);
+                cx.notify();
+            });
+            let _ = told;
+        });
+    }
+
+    fn sign_in_buttons(&self, row: Div, cx: &mut Context<Self>) -> Div {
+        let app = cx.global::<ResonateApp>();
+        let Some(signs_in) = app.signs_in_to_youtube_music.clone() else {
+            return row;
+        };
+        if !signs_in.is_offered() {
+            return row;
+        }
+        let reachable = app.online.enabled && app.online.youtube_music;
+        let kept = signs_in.names_the_window_jar(&app.online.youtube_music_cookies);
+        let asking = self.youtube_music_sign_in.asking;
+        let label = match (asking, kept) {
+            (true, _) => SIGNING_IN_LABEL,
+            (false, true) => SIGN_IN_AGAIN_LABEL,
+            (false, false) => SIGN_IN_LABEL,
+        };
+
+        let row = row.child(action(
+            "youtube-music-sign-in",
+            label,
+            Icon::Link,
+            asking || !reachable,
+            |this, _, cx| this.sign_in_to_youtube_music(cx),
+            self,
+            cx,
+        ));
+        if !kept {
+            return row;
+        }
+        row.child(action(
+            "youtube-music-sign-out",
+            SIGN_OUT_LABEL,
+            Icon::Close,
+            asking,
+            |this, _, cx| this.sign_out_of_youtube_music(cx),
+            self,
+            cx,
+        ))
+    }
+
+    fn sign_in_note(cx: &Context<Self>) -> Option<&'static str> {
+        let signs_in = cx
+            .global::<ResonateApp>()
+            .signs_in_to_youtube_music
+            .as_ref()?;
+        Some(if signs_in.is_offered() {
+            SIGN_IN_NOTE
+        } else {
+            NO_SIGN_IN_NOTE
+        })
+    }
+
     fn check_button(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let app = cx.global::<ResonateApp>();
         let reachable =
@@ -336,19 +515,27 @@ impl RootView {
                 ),
             ));
         }
-        body.child(self.in_the_ring(
-            "youtube-music-keep-order",
-            switch_row(
-                "Keep a playlist in YouTube's order",
-                "Off, its songs stand in the order they land",
-                keeps,
+        let body = body
+            .child(self.in_the_ring(
                 "youtube-music-keep-order",
-            ),
-            move |this, _, cx| this.keep_youtubes_order(!keeps, cx),
-            cx,
-        ))
-        .child(kit::action_row().child(self.check_button(cx)))
-        .note(YOUTUBE_MUSIC_NOTE)
+                switch_row(
+                    "Keep a playlist in YouTube's order",
+                    "Off, its songs stand in the order they land",
+                    keeps,
+                    "youtube-music-keep-order",
+                ),
+                move |this, _, cx| this.keep_youtubes_order(!keeps, cx),
+                cx,
+            ))
+            .child({
+                let row = self.sign_in_buttons(kit::action_row(), cx);
+                row.child(self.check_button(cx))
+            });
+        let body = match Self::sign_in_note(cx) {
+            Some(said) => body.note(said),
+            None => body,
+        };
+        body.note(YOUTUBE_MUSIC_NOTE)
     }
 }
 

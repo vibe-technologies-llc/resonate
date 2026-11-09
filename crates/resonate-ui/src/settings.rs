@@ -902,6 +902,24 @@ pub enum YoutubeMusicConnection {
 
 pub type ChecksYoutubeMusic = Arc<dyn Fn(&Online) -> Option<YoutubeMusicConnection> + Send + Sync>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum YoutubeMusicSignIn {
+    SignedIn { cookies: String },
+    Closed,
+    ProgramMissing,
+    Failed,
+}
+
+pub trait SignsInToYoutubeMusic: Send + Sync {
+    fn is_offered(&self) -> bool;
+
+    fn sign_in(&self) -> YoutubeMusicSignIn;
+
+    fn sign_out(&self) -> bool;
+
+    fn names_the_window_jar(&self, cookies: &str) -> bool;
+}
+
 const TOKEN_NOT_KEPT: &str = "TIDAL's new sign-in couldn't be saved — sign in to TIDAL again once the settings file can be written";
 
 #[derive(Clone)]

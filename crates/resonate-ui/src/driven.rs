@@ -425,6 +425,7 @@ impl Driven {
                 signs_in: None,
                 spotify: None,
                 checks_youtube_music: None,
+                signs_in_to_youtube_music: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),
@@ -5054,6 +5055,176 @@ mod tests {
             assert!(online.youtube_music);
             assert_eq!(online.youtube_music_cookies, "firefox");
         });
+    }
+
+    struct SignsInToYoutubeOnce {
+        offered: bool,
+        answer: crate::YoutubeMusicSignIn,
+        jar: String,
+        asked: std::sync::atomic::AtomicUsize,
+        signed_out: std::sync::atomic::AtomicBool,
+    }
+
+    impl SignsInToYoutubeOnce {
+        fn answering(answer: crate::YoutubeMusicSignIn) -> Arc<Self> {
+            Arc::new(Self {
+                offered: true,
+                answer,
+                jar: "/data/resonate/youtube-music-cookies.txt".to_owned(),
+                asked: std::sync::atomic::AtomicUsize::new(0),
+                signed_out: std::sync::atomic::AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl crate::SignsInToYoutubeMusic for SignsInToYoutubeOnce {
+        fn is_offered(&self) -> bool {
+            self.offered
+        }
+
+        fn sign_in(&self) -> crate::YoutubeMusicSignIn {
+            self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.answer.clone()
+        }
+
+        fn sign_out(&self) -> bool {
+            self.signed_out
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            true
+        }
+
+        fn names_the_window_jar(&self, cookies: &str) -> bool {
+            cookies.trim() == self.jar
+        }
+    }
+
+    fn youtube_music_shown(
+        cx: &mut TestAppContext,
+        signs_in: Option<Arc<SignsInToYoutubeOnce>>,
+        checked: Arc<parking_lot::Mutex<Vec<String>>>,
+    ) -> Driven {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(move |global, _| {
+                global.online.enabled = true;
+                global.signs_in_to_youtube_music =
+                    signs_in.map(|signs_in| signs_in as Arc<dyn crate::SignsInToYoutubeMusic>);
+                global.checks_youtube_music = Some(Arc::new(move |online: &crate::Online| {
+                    checked.lock().push(online.youtube_music_cookies.clone());
+                    Some(crate::YoutubeMusicConnection::Premium)
+                }));
+            });
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("youtube music");
+        driven.settle();
+        driven.click("youtube-music-track");
+        driven.settle();
+        driven
+    }
+
+    #[gpui::test]
+    fn signing_in_to_youtube_music_names_the_jar_and_checks_the_account(cx: &mut TestAppContext) {
+        let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::SignedIn {
+            cookies: "/data/resonate/youtube-music-cookies.txt".to_owned(),
+        });
+        let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+
+        driven.click("youtube-music-sign-in");
+        let heard = Arc::clone(&checked);
+        driven.until(move |_, _| !heard.lock().is_empty());
+
+        assert_eq!(signs_in.asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            *checked.lock(),
+            ["/data/resonate/youtube-music-cookies.txt"]
+        );
+        driven.cx.update(|_, cx| {
+            assert_eq!(
+                cx.global::<ResonateApp>().online.youtube_music_cookies,
+                "/data/resonate/youtube-music-cookies.txt"
+            );
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.youtube_music[0].read(cx).text().to_owned()),
+            "/data/resonate/youtube-music-cookies.txt"
+        );
+    }
+
+    #[gpui::test]
+    fn a_sign_in_closed_keeps_the_browser_the_settings_named(cx: &mut TestAppContext) {
+        let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::Closed);
+        let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+        driven.focus(|root| &root.youtube_music[0]);
+        driven.cx.simulate_input("firefox");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        driven.click("youtube-music-sign-in");
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("nothing kept"))
+        });
+
+        assert!(checked.lock().is_empty());
+        driven.cx.update(|_, cx| {
+            assert_eq!(
+                cx.global::<ResonateApp>().online.youtube_music_cookies,
+                "firefox"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn sign_out_is_offered_only_for_what_the_window_kept_and_clears_it(cx: &mut TestAppContext) {
+        let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::SignedIn {
+            cookies: "/data/resonate/youtube-music-cookies.txt".to_owned(),
+        });
+        let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+        driven.focus(|root| &root.youtube_music[0]);
+        driven.cx.simulate_input("firefox");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(driven.cx.debug_bounds("youtube-music-sign-out").is_none());
+
+        driven.click("youtube-music-sign-in");
+        let heard = Arc::clone(&checked);
+        driven.until(move |_, _| !heard.lock().is_empty());
+        driven.settle();
+        driven.click("youtube-music-sign-out");
+        driven.until(|_, cx| {
+            cx.global::<ResonateApp>()
+                .online
+                .youtube_music_cookies
+                .is_empty()
+        });
+
+        assert!(
+            signs_in
+                .signed_out
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
+        driven.settle();
+        assert!(driven.cx.debug_bounds("youtube-music-sign-out").is_none());
+    }
+
+    #[gpui::test]
+    fn without_the_sign_in_program_the_pane_offers_no_sign_in(cx: &mut TestAppContext) {
+        let missing = Arc::new(SignsInToYoutubeOnce {
+            offered: false,
+            ..Arc::try_unwrap(SignsInToYoutubeOnce::answering(
+                crate::YoutubeMusicSignIn::ProgramMissing,
+            ))
+            .unwrap_or_else(|_| unreachable!())
+        });
+        let mut driven = youtube_music_shown(cx, Some(missing), Arc::default());
+
+        assert!(driven.cx.debug_bounds("youtube-music-sign-in").is_none());
+        assert!(driven.cx.debug_bounds("youtube-music-check").is_some());
     }
 
     #[gpui::test]

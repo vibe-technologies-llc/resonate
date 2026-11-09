@@ -143,6 +143,62 @@ fn gone(removed: io::Result<()>) -> io::Result<()> {
     }
 }
 
+#[cfg(feature = "ui")]
+pub struct FromTheWindow {
+    finds: Box<dyn Fn() -> Option<PathBuf> + Send + Sync>,
+    kept: Option<Kept>,
+}
+
+#[cfg(feature = "ui")]
+impl FromTheWindow {
+    pub fn here() -> Self {
+        Self {
+            finds: Box::new(the_program),
+            kept: Kept::in_the_data_folder().ok(),
+        }
+    }
+}
+
+#[cfg(feature = "ui")]
+impl resonate_ui::SignsInToYoutubeMusic for FromTheWindow {
+    fn is_offered(&self) -> bool {
+        self.kept.is_some() && (self.finds)().is_some()
+    }
+
+    fn sign_in(&self) -> resonate_ui::YoutubeMusicSignIn {
+        use resonate_ui::YoutubeMusicSignIn;
+
+        let (Some(program), Some(kept)) = ((self.finds)(), self.kept.as_ref()) else {
+            return YoutubeMusicSignIn::ProgramMissing;
+        };
+        match sign_in(&program, kept).and_then(|()| kept.jar_named()) {
+            Ok(cookies) => YoutubeMusicSignIn::SignedIn { cookies },
+            Err(Error::YoutubeMusicSignInClosed) => YoutubeMusicSignIn::Closed,
+            Err(error) => {
+                tracing::warn!(%error, "the YouTube Music sign-in did not end signed in");
+                YoutubeMusicSignIn::Failed
+            }
+        }
+    }
+
+    fn sign_out(&self) -> bool {
+        let Some(kept) = self.kept.as_ref() else {
+            return false;
+        };
+        sign_out(kept)
+            .inspect_err(
+                |error| tracing::warn!(%error, "the YouTube Music sign-in was not taken away"),
+            )
+            .is_ok()
+    }
+
+    fn names_the_window_jar(&self, cookies: &str) -> bool {
+        self.kept
+            .as_ref()
+            .is_some_and(|kept| names_the_jar(cookies, kept))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs, process};
@@ -242,6 +298,38 @@ mod tests {
 
         assert!(!kept.jar.exists());
         assert!(!kept.profile.exists());
+    }
+
+    #[cfg(all(unix, feature = "ui"))]
+    #[test]
+    fn the_window_is_told_what_the_sign_in_program_did() {
+        use resonate_ui::{SignsInToYoutubeMusic as _, YoutubeMusicSignIn};
+
+        let folder = scratch("window");
+        let kept = Kept::under(&folder.join("data"));
+        let signing = a_program(&folder, "mkdir -p \"$(dirname \"$2\")\"; : > \"$2\"");
+        let closing = a_program(&folder, "exit 3");
+        let failing = a_program(&folder, "exit 7");
+        let window = |program: Option<PathBuf>| FromTheWindow {
+            finds: Box::new(move || program.clone()),
+            kept: Some(kept.clone()),
+        };
+
+        assert!(!window(None).is_offered());
+        assert_eq!(window(None).sign_in(), YoutubeMusicSignIn::ProgramMissing);
+        assert_eq!(window(Some(closing)).sign_in(), YoutubeMusicSignIn::Closed);
+        assert_eq!(window(Some(failing)).sign_in(), YoutubeMusicSignIn::Failed);
+        let signed = window(Some(signing));
+        assert!(signed.is_offered());
+        assert_eq!(
+            signed.sign_in(),
+            YoutubeMusicSignIn::SignedIn {
+                cookies: kept.jar.display().to_string()
+            }
+        );
+        assert!(signed.names_the_window_jar(&kept.jar.display().to_string()));
+        assert!(signed.sign_out());
+        assert!(!kept.jar.exists());
     }
 
     #[test]
