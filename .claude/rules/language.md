@@ -80,6 +80,32 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   (`views/audit.rs`): `PROPER` names the literals that are names, `NOT_WORDS` the files that hold
   none (markup, font families), and `STILL_TO_MOVE` the files not yet moved, which must shrink to
   nothing; a file it names that holds no prose fails the test too.
+- **Every other crate a listener hears from has one, each a `said_through_the_catalog` module.** A
+  crate whose sources hold little else walks them all through `prose_in` with its `PROPER`
+  (`resonate-core`'s `every_word_core_hands_a_listener_is_said_through_its_catalog`: theme and
+  service names, MusicBrainz's relation keys; `resonate-analysis`'s
+  `every_word_a_study_tells_a_listener_is_said_through_its_catalog`; `resonate-discord`'s
+  `every_word_discord_shows_for_the_player_is_said_through_its_catalog`). A crate full of protocol,
+  SQL or format strings reads only the files that say words through `prose_of` (`SAYS_WORDS`):
+  `resonate-library`'s `every_word_the_library_says_is_said_through_its_catalog` (`said.rs`, which
+  also passes over a literal reading as SQL: `sql_is_told_apart_from_words`),
+  `resonate-mpris`'s `every_word_the_desktop_shows_for_the_player_is_said_through_its_catalog`
+  (`idle.rs`, `notify.rs`), `resonate-sync`'s
+  `every_word_sync_names_for_a_listener_is_said_through_its_catalog` (`change.rs`,
+  `shared/service.rs`), `resonate-eq`'s
+  `every_word_the_equaliser_names_for_a_listener_is_said_through_its_catalog`, `resonate-vault`'s
+  `every_reason_the_vault_gives_a_listener_is_said_through_its_catalog`, `resonate-upnp`'s
+  `every_word_a_renderer_is_shown_by_is_said_through_its_catalog`, `resonate-cast`'s
+  `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-listen`'s
+  `every_word_a_recording_is_named_by_is_said_through_its_catalog` (the PipeWire stream names),
+  `resonate-online`'s `every_word_a_spotify_sign_in_shows_a_listener_is_said_through_its_catalog`,
+  `resonate-ytmusic`'s `every_word_a_youtube_music_account_names_is_said_through_its_catalog` and
+  `resonate-server`'s `every_word_an_invitation_page_says_is_said_through_its_catalog` (the `/s/` and
+  `/p/` pages, whose `lang` is the language spoken). Not words, and left in the code: an error's
+  `Display` and what feeds one (`resonate-engine`'s `CommandKind::as_str`), a codec's or
+  container's name (`resonate-codec`'s `Codec::as_str`), a stored key (`Tell::as_str`,
+  `TagField::as_str`), MCP's tool and prompt descriptions (read by a model, not a listener) and the
+  words a reader matches in another program's output (`yt-dlp`'s, AutoEq's index).
 - **The phones hold the same rule.** Android's `WordsTest` walks `src/main/java` with a Kotlin reader
   of the same heuristic, quiet inside `Log.`, `require`, `check`, `error`, an exception and
   `testTag`, with its own `PROPER` and `STILL_TO_MOVE`. iOS's `test_strings.py` (`words.py`, under

@@ -50,6 +50,11 @@ mod transport;
 mod trash;
 mod wire;
 
+#[cfg_attr(windows, allow(dead_code))]
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
+
 #[cfg(target_os = "linux")]
 pub use gaming::watch_game_mode;
 
@@ -80,3 +85,40 @@ pub use crate::{
     track::{PlaybackStatus, utc_stamp},
     wire::{Call, Fault, WireFault},
 };
+
+#[cfg(test)]
+mod said_through_the_catalog {
+    use std::{fs, path::Path};
+
+    const SAYS_WORDS: [&str; 2] = ["idle.rs", "notify.rs"];
+
+    const PROPER: [&str; 5] = [
+        "org.freedesktop.portal.Desktop",
+        "org.freedesktop.portal.Inhibit",
+        "org.freedesktop.portal.Request",
+        "Inhibit",
+        "Close",
+    ];
+
+    #[test]
+    fn every_word_the_desktop_shows_for_the_player_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+
+        let written: Vec<String> = SAYS_WORDS
+            .iter()
+            .flat_map(|file| {
+                let source = fs::read_to_string(root.join(file)).expect("a file that says words");
+                resonate_words_build::prose_of(&source)
+                    .into_iter()
+                    .filter(|said| !PROPER.contains(&said.text.as_str()))
+                    .map(move |said| format!("{file}:{} {:?}", said.line, said.text))
+            })
+            .collect();
+
+        assert!(
+            written.is_empty(),
+            "words written in the code:\n{}",
+            written.join("\n")
+        );
+    }
+}

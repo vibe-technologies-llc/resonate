@@ -74,8 +74,9 @@ here, add it there.
   words (and a dev-dependency, for the prose check), with `fluent-syntax` and `thiserror` alone. Every
   `only` line in the layering job admits `resonate-words`.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
-  Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`), `jiff` (`Calendar`) and
-  `parking_lot` (`Metering`, whose `Gate` a waiting thread sleeps on).
+  Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`), `jiff` (`Calendar`),
+  `parking_lot` (`Metering`, whose `Gate` a waiting thread sleeps on) and `resonate-words` (the
+  labels, units, month names and Wrapped's sentences core hands every front end).
 - `resonate-codec`, `-dsp`, `-pipewire` never depend on each other. `-dsp` stays off `resonate-eq`
   (the arithmetic is `resonate-core::eq`). `-analysis` reaches `-dsp` for `TruePeakMeter` and the
   Shazam signature's `Resampler`.

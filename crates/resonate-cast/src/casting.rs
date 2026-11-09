@@ -23,6 +23,7 @@ use crate::{
     device,
     link::Link,
     stream::{self, Lanes},
+    words,
 };
 
 const RECEIVER_IDS_FROM: u32 = 0xE000_0000;
@@ -678,7 +679,7 @@ fn sink_of(id: SinkId, device: &Device) -> SinkInfo {
         is_default: false,
         is_hardware: true,
         port: Some(SinkPort {
-            description: format!("Cast receiver at {}", device.at().ip()),
+            description: words::casting::receiver_at(device.at().ip().to_string()),
             plugged: Plugged::Unsaid,
             hardware_volume: HardwareVolume::Always,
             volume: device.volume().map(Volume::to_gain),

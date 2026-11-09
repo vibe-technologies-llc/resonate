@@ -6,11 +6,7 @@ use resonate_providers::{
 };
 use ureq::http::Uri;
 
-use crate::{
-    YtMusic,
-    playlists::{LIKED_SONGS, LIKED_SONGS_ID},
-    search::Row,
-};
+use crate::{YtMusic, playlists::LIKED_SONGS_ID, search::Row, words};
 
 const THE_TITLE: &str = "YouTube Music";
 const PICTURES_ARE_ON: [&str; 3] = [
@@ -122,7 +118,7 @@ impl PlaysInPlace for YtMusic {
     fn mix(&self, id: &Id) -> Result<MixSongs> {
         let listed = self.tool.playlist(id)?;
         let name = if id.as_str() == LIKED_SONGS_ID {
-            LIKED_SONGS.to_owned()
+            words::playlists::liked_songs().to_owned()
         } else {
             listed.name.unwrap_or_else(|| id.to_string())
         };
@@ -167,7 +163,7 @@ impl PlaysInPlace for YtMusic {
 fn liked_songs() -> Option<Mix> {
     Some(Mix {
         id: Id::new(LIKED_SONGS_ID)?,
-        name: LIKED_SONGS.to_owned(),
+        name: words::playlists::liked_songs().to_owned(),
         subtitle: None,
     })
 }

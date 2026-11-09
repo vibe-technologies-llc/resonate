@@ -43,6 +43,10 @@ pub mod wrapped;
 pub mod writer;
 mod zone;
 
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
+
 pub use crate::{
     answer::{
         Answer, Answered, CODES_SHARED_AT_MOST, Figure, HEAVIEST_SHARED_RELEASE,
@@ -85,7 +89,83 @@ pub use crate::{
     time::{FrameSpan, Frames},
     volume::{AppliedGain, Decibels, Gain, Trim, Volume},
     zone::{
-        KeptZone, LONGEST_ZONE_NAME, REMOTE_TRUST_ASKED, REMOTE_TRUST_TITLE, REMOTE_TRUST_TOLD,
-        RemoteTrust, ZoneId, ZoneName,
+        KeptZone, LONGEST_ZONE_NAME, RemoteTrust, ZoneId, ZoneName, remote_trust_asked,
+        remote_trust_title, remote_trust_told,
     },
 };
+
+#[cfg(test)]
+mod said_through_the_catalog {
+    use std::path::Path;
+
+    const PROPER: &[&str] = &[
+        "Resonate",
+        "Midnight",
+        "Graphite",
+        "Plum",
+        "Rosé Pine",
+        "Rosé Pine Moon",
+        "Catppuccin Mocha",
+        "Catppuccin Macchiato",
+        "Catppuccin Frappé",
+        "Nord",
+        "Gruvbox Dark",
+        "Tokyo Night",
+        "Dracula",
+        "One Dark",
+        "Solarized Dark",
+        "High Contrast",
+        "Resonate Light",
+        "High Contrast Light",
+        "Resonate Wrapped",
+        "free streaming",
+        "purchase for download",
+        "purchase for mail-order",
+        "official homepage",
+        "social network",
+        "youtube music",
+        "apple music",
+        "amazon music",
+        "wikimedia commons",
+        "Spotify",
+        "Tidal",
+        "Apple Music",
+        "Deezer",
+        "Qobuz",
+        "Amazon Music",
+        "YouTube",
+        "YouTube Music",
+        "Bandcamp",
+        "SoundCloud",
+        "Beatport",
+        "Discogs",
+        "Wikipedia",
+        "Wikidata",
+        "AllMusic",
+        "Last.fm",
+        "Wikimedia Commons",
+        "Facebook",
+        "Instagram",
+    ];
+
+    #[test]
+    fn every_word_core_hands_a_listener_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let found = resonate_words_build::prose_in(&root, PROPER).expect("core's sources read");
+
+        let written: Vec<String> = found
+            .iter()
+            .flat_map(|(path, prose)| {
+                prose
+                    .iter()
+                    .map(move |said| format!("{}:{} {:?}", path.display(), said.line, said.text))
+            })
+            .collect();
+
+        assert!(
+            written.is_empty(),
+            "words written in the code:\n{}",
+            written.join("\n")
+        );
+    }
+}

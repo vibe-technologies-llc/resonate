@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{Error, Result};
+use crate::{Error, Result, words};
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Decibels(f32);
@@ -71,13 +71,16 @@ impl Trim {
 
 impl fmt::Display for Trim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:+.1} dB", self.decibels().0)
+        f.write_str(&words::volume::decibels(format!(
+            "{:+.1}",
+            self.decibels().0
+        )))
     }
 }
 
 impl fmt::Display for Decibels {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.1} dB", self.0)
+        f.write_str(&words::volume::decibels(format!("{:.1}", self.0)))
     }
 }
 

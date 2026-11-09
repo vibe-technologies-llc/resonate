@@ -20,6 +20,7 @@ use crate::{
     Error, Library, Result,
     db::TrackToVault,
     pass::{Cancelling, ImportHandle, PassHandle, PassKind},
+    words,
 };
 
 const HELD_BACK_LOOKS_AGAIN_AFTER: Duration = Duration::from_millis(100);
@@ -69,10 +70,10 @@ pub enum Passing {
 }
 
 impl Passing {
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::SourceGone => "is not there any more",
-            Self::Unreadable => "could not be read",
+            Self::SourceGone => words::import::source_gone(),
+            Self::Unreadable => words::import::unreadable(),
             Self::Refused(refusal) => refusal.as_str(),
         }
     }

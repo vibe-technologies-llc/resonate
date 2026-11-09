@@ -1,6 +1,6 @@
 use resonate_core::text;
 
-use crate::{Error, Result, apo::read_number};
+use crate::{Error, Result, apo::read_number, words};
 
 pub const LARGEST_MEASUREMENT: usize = 4 * 1024 * 1024;
 pub const POINTS_AT_LEAST: usize = 8;
@@ -37,11 +37,11 @@ pub enum Layout {
 }
 
 impl Layout {
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Rew => "REW text",
-            Self::Headed => "headed CSV",
-            Self::Plain => "plain text",
+            Self::Rew => words::measurement::rew_text(),
+            Self::Headed => words::measurement::headed_csv(),
+            Self::Plain => words::measurement::plain_text(),
         }
     }
 }

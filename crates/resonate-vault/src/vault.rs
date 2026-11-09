@@ -32,7 +32,7 @@ use crate::{
     pcm::{self, Digest},
     standing, transcoded,
     unpacking::{self, Unpacking},
-    wave,
+    wave, words,
 };
 
 pub(crate) const AUDIO: &str = "audio";
@@ -275,15 +275,13 @@ impl Refusal {
         Self::NoSmaller,
     ];
 
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::Empty => "holds no audio",
-            Self::TooLarge => "is larger than a WAVE file holds",
-            Self::NotValidated => "did not read back as what went in",
-            Self::CutFromAnother => "is cut out of a file this build cannot re-encode",
-            Self::NoSmaller => {
-                "would come out no smaller than its share of the file it is cut from"
-            }
+            Self::Empty => words::refusal::empty(),
+            Self::TooLarge => words::refusal::too_large(),
+            Self::NotValidated => words::refusal::not_validated(),
+            Self::CutFromAnother => words::refusal::cut_from_another(),
+            Self::NoSmaller => words::refusal::no_smaller(),
         }
     }
 }

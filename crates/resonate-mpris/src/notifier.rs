@@ -14,7 +14,7 @@ use crate::{
     BusOp, Error, Host, Result,
     blocking::{Connection, Proxy},
     interfaces::Shared,
-    notify::{ACTIONS, Shown, pressed},
+    notify::{Shown, actions, pressed},
 };
 
 const SERVICE: &str = "org.freedesktop.Notifications";
@@ -83,7 +83,7 @@ impl Notifier {
     }
 
     pub(crate) fn show(&self, shown: &Shown) {
-        self.notify(shown, &self.raised, self.offered(), true);
+        self.notify(shown, &self.raised, &self.offered(), true);
     }
 
     pub(crate) fn tell(&self, shown: &Shown) {
@@ -129,8 +129,12 @@ impl Notifier {
         }
     }
 
-    const fn offered(&self) -> &[&str] {
-        if self.actions { &ACTIONS } else { &NO_ACTIONS }
+    fn offered(&self) -> Vec<&'static str> {
+        if self.actions {
+            actions().to_vec()
+        } else {
+            NO_ACTIONS.to_vec()
+        }
     }
 
     pub(crate) fn hush(&self) {

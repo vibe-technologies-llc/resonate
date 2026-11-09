@@ -7,7 +7,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{
-    REMOTE_TRUST_ASKED, REMOTE_TRUST_TITLE, REMOTE_TRUST_TOLD, RemoteTrust, ZoneId,
+    RemoteTrust, ZoneId, remote_trust_asked, remote_trust_title, remote_trust_told,
 };
 use resonate_driven::{Driven, RowNames, unnamed};
 use resonate_engine::{Player, QueueItem};
@@ -68,9 +68,9 @@ pub struct SyncControlOffered {
 #[uniffi::export]
 pub fn sync_control_offered() -> SyncControlOffered {
     SyncControlOffered {
-        title: REMOTE_TRUST_TITLE.to_owned(),
-        asked: REMOTE_TRUST_ASKED.to_owned(),
-        told: REMOTE_TRUST_TOLD.to_owned(),
+        title: remote_trust_title().to_owned(),
+        asked: remote_trust_asked().to_owned(),
+        told: remote_trust_told().to_owned(),
         choices: RemoteTrust::ALL
             .into_iter()
             .map(|trust| SyncControlChoice {

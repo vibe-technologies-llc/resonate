@@ -24,7 +24,7 @@ use crate::{
     sheet::{self, Listed},
     sourced, store, synced,
     undo::{self, Change, Edit, Reach},
-    volumes,
+    volumes, words,
 };
 
 const COLUMNS: &str = "p.id, p.name, p.created, p.modified, p.played, p.plays,
@@ -587,10 +587,7 @@ fn name_of(connection: &Connection, id: PlaylistId) -> Result<String> {
 fn a_free_copy_of(connection: &Connection, name: &str) -> Result<PlaylistName> {
     let mut asked = 1_usize;
     loop {
-        let wanted = match asked {
-            1 => format!("{name} (copy)"),
-            nth => format!("{name} (copy {nth})"),
-        };
+        let wanted = words::playlist::copy_named(name, asked);
         let taken = connection
             .query_row(
                 "SELECT 1 FROM playlists WHERE folded = ?1",

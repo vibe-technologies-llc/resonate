@@ -154,10 +154,10 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
 ## The desktop's calls
 
 - **Own connection and thread; the poll only leaves errands.** `notify.rs` is what a notification
-  says on every platform (`Shown`, `ACTIONS`, `pressed`); `desktop.rs`'s `Errands` run on a `Desk`,
+  says on every platform (`Shown`, `actions`, `pressed`); `desktop.rs`'s `Errands` run on a `Desk`,
   Linux's `desk_bus.rs` (`notifier.rs` raises `org.freedesktop.Notifications` on a track change) or
   Windows's `desk_toast.rs` (toasts, `windows.md`: `toast.rs` writes the XML from the same `Shown`
-  and `ACTIONS`, a press is `notify::pressed` again); `idle.rs` holds the portal's
+  and `actions`, a press is `notify::pressed` again); `idle.rs` holds the portal's
   `org.freedesktop.portal.Inhibit` while there is sound; `desk_bus.rs` makes both on a second
   connection with `DEADLINE` (2 s) `method_timeout` and a thread reading a bounded channel (on the
   poll thread one unanswered call held every property change 25 s). Inhibit is a *level*:
@@ -193,7 +193,7 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   `desktop-entry` hint (blunt for a player otherwise wanted), so `Host::notifies` sits beside
   `Host::attended`, weighed into `Telling::of(attended, notifies)`; a track passed over is still
   *noted* as told. `notify` is a key no flag outranks, under the settings pane's *Desktop* category.
-- **Transport buttons, answered on the raising connection.** `ACTIONS` = Previous, Play/Pause, Next,
+- **Transport buttons, answered on the raising connection.** `actions()` = Previous, Play/Pause, Next (keys and the catalog's `notify` words),
   offered only where `GetCapabilities` answers `actions`. `ActionInvoked` is weighed against the id
   the notification returned (another app's is no command)
   (`a_press_on_a_notification_button_reaches_the_transport`: reruns the binary under

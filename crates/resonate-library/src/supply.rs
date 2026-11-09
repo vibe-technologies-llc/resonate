@@ -468,7 +468,7 @@ fn landed(
             Ok(Landed::Unkept)
         }
         Ok(Keeping::Refused(refusal)) => {
-            tracing::warn!(%taken_from, refused = refusal.as_str(), "a delivered track was refused");
+            tracing::warn!(%taken_from, refused = ?refusal, "a delivered track was refused");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
             Ok(Landed::NotTheSong)
         }

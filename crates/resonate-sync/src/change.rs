@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use resonate_core::{Answer, Recording};
 
-use crate::{DeviceId, Result, key::random_bytes};
+use crate::{DeviceId, Result, key::random_bytes, words};
 
 pub const PLAYLIST_KEY_BYTES: usize = 16;
 const MINTED_KEY_MARK: [u8; 4] = *b"RSK1";
@@ -34,7 +34,7 @@ impl Platform {
             Platform::Android => "Android",
             Platform::Ios => "iOS",
             Platform::Windows => "Windows",
-            Platform::Other => "Device",
+            Platform::Other => words::change::device(),
         }
     }
 }

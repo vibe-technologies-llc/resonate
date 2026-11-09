@@ -1,6 +1,7 @@
 use crate::{
     Result,
     measurement::{Response, read_response},
+    words,
 };
 
 const HARMAN_OVER_EAR_2018: &[u8] = include_bytes!("../targets/harman-over-ear-2018.csv");
@@ -24,11 +25,11 @@ impl BuiltIn {
         }
     }
 
-    pub const fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Flat => "Flat",
-            Self::HarmanOverEar2018 => "Harman over-ear 2018",
-            Self::HarmanInEar2019 => "Harman in-ear 2019",
+            Self::Flat => words::targets::flat(),
+            Self::HarmanOverEar2018 => words::targets::harman_over_ear_2018(),
+            Self::HarmanInEar2019 => words::targets::harman_in_ear_2019(),
         }
     }
 

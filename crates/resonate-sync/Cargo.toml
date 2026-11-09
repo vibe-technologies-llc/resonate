@@ -17,6 +17,7 @@ parking_lot.workspace = true
 quinn.workspace = true
 rcgen.workspace = true
 resonate-core.workspace = true
+resonate-words.workspace = true
 ring.workspace = true
 rusqlite.workspace = true
 rustls = { workspace = true, features = ["ring"] }
@@ -31,8 +32,12 @@ tracing.workspace = true
 webpki-root-certs.workspace = true
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
 proptest.workspace = true
+resonate-words-build.workspace = true
 
 [lints]
 workspace = true

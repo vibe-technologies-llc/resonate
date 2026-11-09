@@ -420,31 +420,31 @@ impl Group {
         matches!(self, Self::LossySources)
     }
 
-    pub(crate) const fn category(self) -> Category {
+    pub(crate) fn category(self) -> Category {
         self.described().category
     }
 
-    pub(crate) const fn page(self) -> Option<Page> {
+    pub(crate) fn page(self) -> Option<Page> {
         self.described().page
     }
 
-    pub(crate) const fn title(self) -> &'static str {
+    pub(crate) fn title(self) -> &'static str {
         self.described().title
     }
 
-    pub(crate) const fn hint(self) -> &'static str {
+    pub(crate) fn hint(self) -> &'static str {
         self.described().hint
     }
 
-    pub(crate) const fn also_called(self) -> &'static str {
+    pub(crate) fn also_called(self) -> &'static str {
         self.described().also_called
     }
 
-    pub(crate) const fn keys(self) -> &'static [SettingKey] {
+    pub(crate) fn keys(self) -> &'static [SettingKey] {
         self.described().keys
     }
 
-    pub(crate) const fn described(self) -> Described {
+    pub(crate) fn described(self) -> Described {
         match self {
             Self::Device => Described {
                 category: Category::Output,
@@ -998,7 +998,7 @@ impl Group {
             Self::SyncControl => Described {
                 category: Category::Sync,
                 page: Some(Page::Devices),
-                title: resonate_core::REMOTE_TRUST_TITLE,
+                title: resonate_core::remote_trust_title(),
                 hint: SYNC_CONTROL_HINT,
                 also_called: "drive driven remote control another device zones queue transport trust consent \
                  play pause skip seek volume",
