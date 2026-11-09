@@ -694,6 +694,15 @@ an attempt cancelled while its code was still being asked never stores the code 
 would wait on (`a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone`,
 `a_cancel_ends_a_sign_in_waiting_for_its_code`).
 
+## Last.fm on a phone
+
+`authorize_lastfm(key, secret)` answers the Last.fm page to allow Resonate on (`online.md`'s
+*Last.fm*), keeping the wait in `Services::lastfm_signing`; `finish_lastfm_authorization` waits on the
+caller's thread, ending on a cancel, the client no longer reaching or the lapse, and answers a
+`LastfmSignedIn` (`name`, `session`) or none; `cancel_lastfm_authorization` ends it. The password
+sign-in (`lastfm_sign_in`) is gone. Both phones open the page in the system browser and keep the
+session as before.
+
 ## Jellyfin Quick Connect
 
 `begin_jellyfin_quick_connect(server)` answers the code (`JellyfinQuickConnect`; `QuickConnectOff`

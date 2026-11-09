@@ -147,14 +147,16 @@ is never named.
   rows. `resonate spotify` reaches a running window (`Followed::Spotify`, `Reloadable::Spotify`)
   (`a_spotify_account_is_signed_in_to_followed_and_let_go_from_its_group_and_offered_only_with_a_client`,
   `a_spotify_sign_in_made_at_the_terminal_reaches_the_window`).
-- **Last.fm is signed in to from its group; the password is typed, sent once and never kept.**
-  `views/settings/lastfm.rs` holds four `Field`s (`LastfmAccount`): API key and secret kept as
-  `lastfm-key`/`lastfm-secret`, user name and password kept nowhere. Enter or *Sign in to Last.fm*
-  asks `Scrobblers::signed_in_to_lastfm` on the background executor; the password is emptied either
-  way, a session is written as `lastfm-session`; a refusal says what could be wrong, anything else
-  that Last.fm was not reached (`last_fm_is_signed_in_to_from_its_group_and_the_password_is_never_kept`).
+- **Last.fm is signed in to on its own page; no password is typed in the window.**
+  `views/settings/lastfm.rs` holds two `Field`s (`LastfmAccount`): API key and secret, kept as
+  `lastfm-key`/`lastfm-secret`. *Sign in to Last.fm* asks `Scrobblers::lastfm_approval` on the
+  background executor, opens the page it answers (`cx.open_url`) and waits on the approval beside
+  *Open the page again* (`lastfm-open-again`) and *Stop* (`lastfm-stop`); a session is written as
+  `lastfm-session`, an end without the allowing is a note that nothing was kept, a refusal says to
+  check the key and secret, anything else that Last.fm was not reached
+  (`last_fm_is_signed_in_to_by_allowing_it_on_its_own_page_and_no_password_is_asked`).
 - **A secret is drawn as marks.** `Field::masked` (Subsonic and Jellyfin password, TIDAL secret and token,
-  AcoustID/AudD/ListenBrainz keys, Last.fm key, secret, password) shapes one `•` per letter; `Shown`
+  AcoustID/AudD/ListenBrainz keys, Last.fm key and secret) shapes one `•` per letter; `Shown`
   maps every offset both ways; copies and cuts nothing.
 - **The caret blinks as the desktop says.** `CaretBlink` on `Stored` and `ResonateApp` (`as_built`
   500 ms; `steady` holds it lit); every field's blink task rereads it each tick. The binary's

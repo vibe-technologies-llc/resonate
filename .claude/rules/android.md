@@ -1208,9 +1208,10 @@ AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load
 bands, every filter kept (`EqualiserImport`), into the curve in use (the bound one on a bound output). ListenBrainz and Last.fm accounts are opt-in,
 validate through their existing seams, and submit counted local listens in batches of 100 with
 independent durable marks advanced only after success. Existing history is included only when
-asked; Last.fm password sign-in saves the returned session, never that password, into the saved
-accounts with the key and secret it was made under, leaving every other unsaved field as typed; the
-password field clears only once the sign-in succeeds, and *Sign out* saves the account without its
+asked; Last.fm is signed in to on its own page (`authorize_lastfm` answers it, the screen opens it
+in the browser and offers *Cancel* and *Open the page again* while `finish_lastfm_authorization`
+waits), and the session it answers is saved into the accounts with the key and secret it was made
+under, leaving every other unsaved field as typed; *Sign out* saves the account without its
 session. *Headphone correction* (`HeadphoneCorrectionScreen`) opens on the curve in use (read before
 its first frame, `currentOf`), searches AutoEq as typing settles or on the keyboard's search, once per
 text (offline, a card says so and the field is off); emptying the field clears the results, applying

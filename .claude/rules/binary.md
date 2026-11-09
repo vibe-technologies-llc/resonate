@@ -220,10 +220,13 @@ what follows describes Unix, where `signals.rs` and termios are used.
   or `q` ending it early is no failure). A key whose command fails ends the loop through the same
   farewell before the error is answered. **It names what plays**: `readout::billing` = the digest's
   title and artist where it is the row's, else the file's stem.
-- **A password prompt restores the terminal on a signal.** `resonate lastfm` reads the password
-  under `signals::leave_when_told`: the first interrupt leaves through `signals::leave`, echo back
-  on; `leaving_on` is that over any signals and any `leaving`
-  (`a_signal_during_a_prompt_leaves_with_its_number`).
+- **`lastfm [--forget]` signs in on Last.fm's own page** (`lastfm.rs`): `OnlineOff` and
+  `NoLastfmApplication` before anything is asked, a key and secret Last.fm refuses `LastfmRefused`;
+  the page is printed and opened where a browser can be (`xdg-open`, `explorer` on Windows; a
+  failure only logged, so it works over SSH), the wait runs under `signals::cancel_when_told`, an end
+  without the allowing is `LastfmSignInEnded`, and the session lands in `lastfm-session`. No password
+  is read: the unechoed prompt is gone. `signals::leaving_on` leaves on any signals through any
+  `leaving` (`a_signal_during_a_prompt_leaves_with_its_number`).
 - **`play` takes a key at a time on a terminal.** `input::KeyAtATime` leaves canonical mode and echo
   via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
@@ -433,7 +436,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   where the file's mtime moved, so a sign-in elsewhere is heard at the next read), cleared by
   `--forget`; `Config`'s `Debug` withholds it.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
-  `lastfm-session`: written by `resonate lastfm --user` or the Accounts category's *Last.fm* group,
+  `lastfm-session`: written by `resonate lastfm` or the Accounts category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
   scrobbled; `Config`'s `Debug` and `Accounts`' print none of them.
 - `shuffle-style` (`random`, `smart`, `albums`; `smart` unless set), `shuffle-spreads-artists`,
