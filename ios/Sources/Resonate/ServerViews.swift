@@ -100,8 +100,8 @@ struct ServedCoverView: View {
                     .accessibilityHidden(true)
             }
             .overlay {
-                if let image {
-                    Image(uiImage: image)
+                if let shown = image ?? library.features.cachedServedCover(load.uri, bucket: load.bucket) {
+                    Image(uiImage: shown)
                         .resizable()
                         .scaledToFill()
                 }
@@ -111,10 +111,12 @@ struct ServedCoverView: View {
             .task(id: load) {
                 let features = library.features
                 if let held = features.cachedServedCover(load.uri, bucket: load.bucket) {
-                    image = held
+                    if image !== held { image = held }
                     return
                 }
-                image = await features.servedCover(load.uri, known: cover, bucket: load.bucket)
+                let found = await features.servedCover(load.uri, known: cover, bucket: load.bucket)
+                guard !Task.isCancelled else { return }
+                if image !== found { image = found }
             }
             .accessibilityIgnoresInvertColors()
             .accessibilityHidden(true)
@@ -190,6 +192,7 @@ struct ServedSongRow: View {
 
 struct ServedStar: View {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let uri: String
     let title: String
@@ -205,6 +208,7 @@ struct ServedStar: View {
     var body: some View {
         Button {
             tapped += 1
+            navigation.feelHeart()
             let enabled = !starred
             starred = enabled
             Task {
@@ -224,7 +228,6 @@ struct ServedStar: View {
                 .buttonShape()
         }
         .buttonStyle(.plain)
-        .sensoryFeedback(.selection, trigger: tapped)
         .accessibilityLabel(said(starred ? "served.star.remove" : "served.star.add", title))
         .accessibilityInputLabels([
             said("served.star.input.favourite"),

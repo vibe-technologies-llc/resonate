@@ -77,6 +77,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   top, the band card fitting under the graph on one screen, the alert asking for an exact
   value, a settings stack kept by an earlier build reopening, and VoiceOver on the handles and the
   sliders
+- [S · blocked: iPhone] The playing row's bars as layers, the lazy shelves and the filter sheet's
+  name lists are proved by their rules, the bars' geometry tests and a clean build, never seen on an
+  iPhone: the bars following the song and settling on a pause, their ink over a cover and in place
+  of a number in both appearances, a shelf row holding its height as cards arrive on Home, Library
+  and Search, the mix shelf's reserved detail line, a pushed name list popping on a choice, and a
+  renderer address added while a song plays
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from

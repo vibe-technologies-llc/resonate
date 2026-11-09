@@ -8,6 +8,35 @@ are in [ROADMAP.md](ROADMAP.md).
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
 
+## iOS
+- [M] The equaliser page re-evaluates every section at each paced drag sample: `EqualiserView.body`
+  reads the draft and hands every section closures made in that body, so a handle or slider drag
+  rebuilds the band chips, the band card, the preamp and the presets twenty times a second; the
+  draft wants an observable only the graph and the band card read, and the sections an action
+  object that compares equal across bodies, as Now Playing's `PlayerAsks` is
+- [M] Songs and the add-songs sheet hand SwiftUI the whole filtered library as one `ForEach`, whose
+  ids are gathered and diffed on the main thread at every publish (several milliseconds past ten
+  thousand songs); the queue is a window (`QueueParts`), these are not
+- [S] An `.inactive` blip (Control Centre, a banner, the App Switcher) flips `Features.foreground`,
+  which nudges the poll, restarts the enrichment watch, the wants loop and the linked-playlist loop
+  (its ten-minute cadence starting over), toggles the visualizer tap and queues a save; they should
+  act on `.background` and back alone, as `cameForward` does
+- [S] The remote-device page rebuilds its list twice a second while the driven device plays:
+  `sync_watch` answers the position played on to the moment asked, so the read never equals what is
+  shown and every zone and visible row is evaluated again; the position wants an observable of its
+  own, as `PlayClock` is, read by the place line and the seek slider. The party page does the same
+  with the round trip it shows
+- [S] `Features.syncStatus` is read whole by views that need one field of it (Home's devices, the
+  pairing sheet's code, a playlist's options, the status banner), so each is evaluated again at
+  every poll while a transfer's byte count moves, and the sync page sorts its devices and keys its
+  transfers again each time
+- [S] Every download job row holds three or four glass buttons, each a glass surface of its own in
+  a scrolling list, and *Download all missing* makes hundreds of rows
+- [S] The moving field behind Now Playing keeps drawing at its full rate under a sheet raised inside
+  the cover (the sleep timer, zones, the playlist picker), beside the sheet's own presentation
+- [S] `LyricLayerView.wake` draws a frame at every clock reading though its display link is already
+  ticking, so a playing word-synced sheet is rendered two or three times a poll
+
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the
   answer is the sample itself) but skipping it saves nothing on a vector unit: the phases are lanes of one

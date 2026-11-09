@@ -46,3 +46,14 @@ struct ShareSongButton: View {
         Button("sharing.share-link", systemImage: "square.and.arrow.up") { library.features.share(track) }
     }
 }
+
+struct SharePlayingSong: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        Button("sharing.share-link", systemImage: "square.and.arrow.up") {
+            guard let track = library.playingTrack else { return }
+            library.features.share(track)
+        }
+    }
+}

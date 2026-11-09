@@ -361,6 +361,7 @@ struct OnlinePlaceholder: View {
 
 struct OnlineSongRow: View {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 44
     let song: SearchSong
     @State private var heldTrack: Track?
@@ -424,7 +425,9 @@ struct OnlineSongRow: View {
                 Button("online.cancel-download") { downloads.cancel(song) }
             }
         }
-        .sensoryFeedback(.success, trigger: standing == .held)
+        .onChange(of: standing == .held) { _, held in
+            if held { navigation.feelLanded() }
+        }
     }
 }
 

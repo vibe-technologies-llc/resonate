@@ -54,12 +54,14 @@ final class DecodedPictures: @unchecked Sendable {
 actor ArtworkCache {
     private static let decodesAtOnce = 4
     private static let lookupsAtOnce = 4
+    private static let fetchesAtOnce = 6
 
     private let pictures = DecodedPictures()
     private let missing = NSCache<NSString, NSNull>()
     private let songs = PicturesOfSongs()
     private let slots = DecodeSlots(decodesAtOnce)
     private let lookups = DecodeSlots(lookupsAtOnce)
+    private let fetches = DecodeSlots(fetchesAtOnce)
     private var flights = Flights<UIImage>()
 
     nonisolated func cached(_ request: ArtworkRequest) -> UIImage? {
@@ -122,11 +124,27 @@ actor ArtworkCache {
         _ request: ArtworkRequest,
         reading: @escaping @Sendable () throws -> Data?
     ) async -> UIImage? {
+        await joined(request) { [slots] in await Self.decoded(request, reading: reading, under: slots) }
+    }
+
+    func fetched(
+        _ request: ArtworkRequest,
+        fetching: @escaping @Sendable () throws -> Data?
+    ) async -> UIImage? {
+        await joined(request) { [slots, fetches] in
+            await Self.decoded(request, fetching: fetching, under: fetches, then: slots)
+        }
+    }
+
+    private func joined(
+        _ request: ArtworkRequest,
+        decoded: @escaping @Sendable () async -> DecodedArtwork?
+    ) async -> UIImage? {
         let name = request.name
         if let picture = pictures.object(forKey: name) { return picture }
         if missing.object(forKey: name) != nil { return nil }
 
-        let task = flights.join(request) { decoding(request, reading: reading) }
+        let task = flights.join(request) { decoding(request, decoded: decoded) }
 
         let image = await withTaskCancellationHandler {
             await task.value
@@ -139,26 +157,47 @@ actor ArtworkCache {
 
     private func decoding(
         _ request: ArtworkRequest,
-        reading: @escaping @Sendable () throws -> Data?
+        decoded: @escaping @Sendable () async -> DecodedArtwork?
     ) -> Task<UIImage?, Never> {
-        let slots = slots
-        let edge = request.bucket.rawValue
-        return Task.detached(priority: .userInitiated) { [weak self] in
-            do {
-                try await slots.acquire()
-            } catch {
-                return nil
-            }
-            let decoded: DecodedArtwork
-            do {
-                decoded = try await Work.onScreen { ArtworkDecoder.decoded(try reading(), edge: edge) }
-            } catch {
-                decoded = .unread
-            }
-            await slots.release()
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let decoded = await decoded() else { return nil }
             await self?.keep(decoded, for: request)
             return decoded.image
         }
+    }
+
+    private static func decoded(
+        _ request: ArtworkRequest,
+        reading: @escaping @Sendable () throws -> Data?,
+        under slots: DecodeSlots
+    ) async -> DecodedArtwork? {
+        let edge = request.bucket.rawValue
+        do {
+            try await slots.acquire()
+        } catch {
+            return nil
+        }
+        let decoded = (try? await Work.onScreen { ArtworkDecoder.decoded(try reading(), edge: edge) }) ?? .unread
+        await slots.release()
+        return decoded
+    }
+
+    private static func decoded(
+        _ request: ArtworkRequest,
+        fetching: @escaping @Sendable () throws -> Data?,
+        under fetches: DecodeSlots,
+        then slots: DecodeSlots
+    ) async -> DecodedArtwork? {
+        do {
+            try await fetches.acquire()
+        } catch {
+            return nil
+        }
+        let fetched = try? await Work.onScreen { FetchedArtwork(bytes: try fetching()) }
+        await fetches.release()
+
+        guard let fetched else { return .unread }
+        return await decoded(request, reading: { fetched.bytes }, under: slots)
     }
 
     private func keep(_ decoded: DecodedArtwork, for request: ArtworkRequest) {
@@ -176,6 +215,10 @@ actor ArtworkCache {
     private func leave(_ request: ArtworkRequest, _ task: Task<UIImage?, Never>) {
         flights.leave(request, task)
     }
+}
+
+private struct FetchedArtwork: Sendable {
+    let bytes: Data?
 }
 
 enum DecodedArtwork: Sendable {

@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
 public struct HeardBands: Equatable, Sendable {
     public static let count = 4
     public static let silentDecibels: Float = -120
@@ -102,5 +106,36 @@ public struct PlayingBars: Equatable, Sendable {
 
     public mutating func rest() {
         heights = Self.still
+    }
+}
+
+public struct PlayingBarsShape: Equatable, Sendable {
+    public static let barWidthShare: CGFloat = 0.2
+    public static let gapShare: CGFloat = 0.14
+
+    public let height: CGFloat
+
+    public init(height: CGFloat) {
+        self.height = height
+    }
+
+    public var barWidth: CGFloat {
+        height * Self.barWidthShare
+    }
+
+    public var gap: CGFloat {
+        height * Self.gapShare
+    }
+
+    public var width: CGFloat {
+        CGFloat(HeardBands.count) * barWidth + CGFloat(HeardBands.count - 1) * gap
+    }
+
+    public func middle(of bar: Int) -> CGFloat {
+        CGFloat(bar) * (barWidth + gap) + barWidth / 2
+    }
+
+    public func barHeight(_ share: Float) -> CGFloat {
+        max(height * CGFloat(share), barWidth)
     }
 }

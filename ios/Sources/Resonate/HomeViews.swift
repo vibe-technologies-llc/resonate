@@ -164,18 +164,16 @@ private struct HomeMixes: View {
 
     var body: some View {
         Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 14) {
-                    ForEach(offered.home) { mix in
-                        SuggestedMixCard(
-                            mix: mix,
-                            covers: (offered.covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
-                            open: { navigation.open(.mix(mix.id)) }
-                        )
-                        .frame(width: cardWidth)
-                    }
+            Shelf(spacing: 14) {
+                ForEach(offered.home) { mix in
+                    SuggestedMixCard(
+                        mix: mix,
+                        covers: (offered.covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
+                        shelved: true,
+                        open: { navigation.open(.mix(mix.id)) }
+                    )
+                    .frame(width: cardWidth)
                 }
-                .padding(.horizontal, 16)
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
             .listRowSeparator(.hidden)

@@ -158,7 +158,12 @@ sync seals its records and talks QUIC (TLS) of its own.
   **Nothing slow shares the transport's lane**: a pause (the headphones leaving included) waits
   behind only the tick and other transport and queue edits. Playlist edits and `documents_moved`
   run on their own ordered lane (`Work.inLibrary`), `sync_start`, `sync_network` and
-  `sync_continue_from` on another (`Work.inSync`, since `sync_start` joins the sync thread), and
+  `sync_continue_from` on another (`Work.inSync`, since `sync_start` joins the sync thread), what may
+  wait on a network renderer's answer on a third (`Work.enqueueInRendering`, `Library.reachRenderers`:
+  the saved renderer and receiver addresses added again once the player is open, *Find renderers*, an
+  address added or removed; adding an address to a network already reaching fetches the renderer's
+  description under 3 s timeouts, which on the transport's lane held the first snapshot of a launch
+  away from the renderer and every tap queued behind an address typed in the zones sheet), and
   the queue read, which costs a record per row, is `Work.aside`, as is applying the room
   correction (decoding up to 64 MiB; choosing, applying, forgetting and restoring one response run
   one after another in a chain of their own, `RoomCorrectionState.queue`). **No `AVAudioSession` call runs on the main actor**: each is
@@ -188,8 +193,12 @@ sync seals its records and talks QUIC (TLS) of its own.
   queue edit wakes the poll when it is answered rather than reading the queue itself, so one edit
   costs one read; a refused edit reads the queue at once, so its optimistic change is put back. `queue()` copies the rows under the player lock and reads their documents
   afterwards, a few hundred to a catalog hold (`mobile.md`).
-  Reads a page waits on (the queue, the catalog, the songs list, the albums and artists) run on
-  `Work.onScreen` (user-initiated); `Work.aside` (utility) is for passes nobody watches. A refresh
+  Reads a page waits on (the queue, the catalog, the songs list, the albums and artists, an album's,
+  artist's, playlist's and mix's own songs, the playlists, the offered mixes, the statistics, the
+  Inspector, the lyrics sheet, a tag editor's fields, a collection action's songs, a playlist
+  mosaic's covers and the add-songs and Favourites filters) run on
+  `Work.onScreen` (user-initiated); `Work.aside` (utility) is for passes nobody watches, and carries
+  the scans, the missing-song pass and whole-song copies a page's read would otherwise wait among. A refresh
   asked while one runs is owed and run once after it (`Library.refreshing`, `refreshOwed`), so a
   run of downloads, landings or enrichment settles reads the catalog twice, not once per ask; the
   catalog's pages are joined and its favourite writes laid over off the main actor, as are
@@ -210,7 +219,10 @@ sync seals its records and talks QUIC (TLS) of its own.
   (`CollectionsListed`) are compared on the lane they are read on and returned as nothing when
   unchanged. A catalog read hands `CatalogShown` the favourites shown before it (`CatalogBefore`),
   so the favourite flags it touches are those whose answer moved or whose song entered the catalog
-  (`flagsMoved`), never every flag made. The three library searches ask again only when a catalog
+  (`flagsMoved`), never every flag made. A queue row removed or moved, and a heart taken under the
+  Favourites filter, change the shown array where it stands inside `withMutation`
+  (`Library.editShownQueue`), never through the property's `get` and `set`, which copied the whole
+  array, every `Track` retained, on the main actor at each swipe. The three library searches ask again only when a catalog
   read changed what is shown. `Features.foreground` acts only on a change, so the scene passing
   through `.inactive` on its way to `.background` nudges no poll twice.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
@@ -527,7 +539,9 @@ sync seals its records and talks QUIC (TLS) of its own.
   holds one route, so a zone is added at the system's device with no route and the footer says the
   zones share that output unless one plays on a renderer (`FEATURES.md`). Its *Network renderers*
   section is a *Find renderers* toggle (`Library.lookForRenderers`, kept as `renderers` in the
-  `library-features` defaults, off by default and applied when the player opens; a failed search
+  `library-features` defaults, off by default and applied on the renderers' lane once the player is
+  open, after the saved addresses: `Library.restoreRenderers` shows the saved lists at once and
+  corrects them by the boundary's answer, and a failed search
   there never fails the opening), counting those found, read every two seconds while it is on and
   the sheet open (`readRenderers`), and an *Add a renderer by address* and *Add a receiver by address* button (`RendererAddressSheet`, an
   `AddressKind` apart: a text field, the list added with a swipe to remove; a Google Cast receiver
@@ -675,10 +689,13 @@ every route change (a pair of headphones at the same rate included), not from th
   (`MovingCover.handedOverWithin`), the pause's spring on the cover (`restedWithin`), a grab of the scrubber or
   the volume row and a volume step heard from outside, none under Reduce Motion or with the scene away;
   SwiftUI's animations otherwise ran at the system's default rate beside the field's 120.
-  **The toolbar holds no closure**: `CloseNowPlaying` and `PlayerMoreMenu(track:asks:)` (its sheet, alert and
+  **The toolbar holds no closure and no song**: `CloseNowPlaying`, `SharePlayingSong` and
+  `PlayerMoreMenu(songPages:asks:)` (its sheet, alert and
   dialog asked through `PlayerAsks`, an observable `NowPlayingView` keeps) compare equal across bodies, so a mode
-  change or a field waking rebuilds no bar button and no `UIMenu`; closures made in each body made SwiftUI
-  build the More menu again in the first frame of every spring. Sleep,
+  change, a field waking or a song change rebuilds no bar button and no `UIMenu`; closures made in each body made SwiftUI
+  build the More menu again in the first frame of every spring, and a menu handed the song was built again in the
+  first frame of every handover. The menu takes only whether the playing song has pages of its own (loaded and not
+  served), and its actions, like the share button's, read `Library.playingTrack` when chosen. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the layout scrolls (*Orientation and iPad*).
 - **A song change hands the cover and the words over, as the desktop does** (`motion.md`'s *The
@@ -815,6 +832,8 @@ every route change (a pair of headphones at the same rate included), not from th
   on Now Playing (whichever is in front, as `DeleteSongsConfirmation` is), and Play next, Add to
   queue and a heart are felt through `Navigation.feelQueued` and `feelHeart`, played by the host's
   `FeltFeedback`; a sheet and two `sensoryFeedback`s per row were set up for every row a fast scroll made.
+  A mix card's Play (`feelQueued`), a served song's star (`feelHeart`) and an online row's download landing
+  (`feelLanded`, from an `onChange` that fires only as the song becomes held) are felt the same way.
 - **Download progress wakes only what shows it** (`DownloadQueue`): the poll reads every job in
   flight and writes `jobs` once a tick, only where it moved (1 s apart while the scene is away), the
   downloads page and its summaries read `jobs`, the toolbar button reads `activeCount`, and a song's
@@ -872,7 +891,14 @@ every route change (a pair of headphones at the same rate included), not from th
   Statistics are Home's), *Saved for later* while not searching, then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
   own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
-  every one as rows with its own search. **Creating and importing a playlist live on the Playlists
+  every one as rows with its own search. **A shelf builds the cards on screen** (`Shelf`,
+  `Layouts.swift`: a `LazyHStack` in a horizontal `ScrollView`, an `HStack` at accessibility text
+  sizes, where titles wrap and a lazy row's height would move as taller cards arrive): the three
+  shelves and Home's *Made for you* use it, since an `HStack` built all twelve cards (four
+  `ArtworkView`s a mosaic and a catalog read a playlist) in the frame its row scrolled in. A mix
+  card on a shelf reserves its detail's two lines (`SuggestedMixCard(shelved:)`, `reservedLines`)
+  so every card of the row is one height, and the Suggestions page's shelves stand in a
+  `LazyVStack`. **Creating and importing a playlist live on the Playlists
   page alone**, in a *New playlist* menu in the toolbar (*Create playlist*, *Import playlist file*)
   beside *Undo last playlist edit*, never among the home's rows; with none, the shelf and the page
   read "No playlists". **A shelf's cover pushes its page as every album and artist entry does**,
@@ -888,7 +914,7 @@ every route change (a pair of headphones at the same rate included), not from th
   the index's own arithmetic, `nil` without an album, which hides *Go to album*). `AlbumView` reads
   `album(key)` and `album_tracks(key)`, `ArtistView` `albums_by(name)` (newest first, year captions),
   `artist_tracks(name)` (folded, so *Bjork* and *Björk* are one page) and `most_played_by(name, 5)`,
-  shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.aside` in a
+  shown as *Top songs* (each row naming its album) until *See all* lists every song, each on `Work.onScreen` in a
   `.task` keyed by `Library.collectionGeneration`, which steps only when a reload of the albums and
   artists reads something other than what is shown (`CollectionsListed`, compared on `Work.onScreen`), and `catalogEpoch`, which steps whenever a catalog read lands that differs from the one shown (the
   comparison, the index and the favourites are worked out on `Work.aside`, `CatalogChanges`,
@@ -1122,7 +1148,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   only, and setting one clears the search. The page opens on the Songs/Albums/Artists picker; songs
   are filtered from the toolbar (`FilterButton`, filled while a filter is set, opening
   `FilterSheet`: genre, artist and album are pickers of the names the filter compares (the track's
-  artist, not an album artist; an album's title, since the filter compares folded equality), Cancel
+  artist, not an album artist; an album's title, since the filter compares folded equality), each a
+  `CataloguePicker`: a `NavigationLink` row showing the choice, which pushes a lazy `List` of *Any* and
+  the names with a check on the chosen one and pops on a choice (`CatalogueChoices`), never a
+  `Picker`, which resolves every option to find the chosen one's label and so built thousands of
+  rows as the sheet rose; Cancel
   closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the picker as a small capsule token
   that clears it. Playlists are reached from the Library tab and Home, Suggestions from Home's *Made for you*,
   online search from the Search tab.
@@ -1279,9 +1309,19 @@ in; it never opens on another colour first.
   scene is active, the song playing and Reduce Motion off, the indicator holds `hearLoudness` and
   reads them every 50 ms into `PlayingBars`, which levels each band against a reference of its own
   (its loudest, falling 0.15 dB a read, never under -60 dB, over a 24 dB span) so the bars move as
-  much at any volume and in any mix, and eases toward each read (70 % of the way up, 35 % down);
-  SwiftUI animates linearly between reads. Paused, or under Reduce Motion, the bars settle on a
-  still pattern (`PlayingBars.still`); silence lets them fall to rest. Held by `PlayingBarsTests`.
+  much at any volume and in any mix, and eases toward each read (70 % of the way up, 35 % down).
+  **The bars are Core Animation layers, never a SwiftUI animation** (`PlayingBarsLayers`,
+  `PlayingBarsLayers.swift`, as the scrubber's fill is): `PlayingBarsView` holds four bottom-anchored
+  layers and a `CADisplayLink` fixed at 20 Hz whose tick reads the bands and adds a linear
+  `CABasicAnimation` on each bar's `bounds.size.height` from its presentation value, so the render
+  server moves the bars between reads; the link exists, and `hearLoudness` is held, only while the
+  view is in a window, so a row scrolled away or a list under the cover stops both. Animated by
+  SwiftUI, four heights were laid out on the main thread at every display frame for as long as a
+  song played, in every list showing the playing row and in Up next over the field. The ink is a
+  value the row passes (`Color.worn` or white), resolved in `updateUIView`; the geometry is
+  `PlayingBarsShape` (`ResonateLogic`). Paused, or under Reduce Motion, the bars settle on a
+  still pattern (`PlayingBars.still`, over 0.3 s, at once under Reduce Motion); silence lets them
+  fall to rest. Held by `PlayingBarsTests`.
 - **Frame rate** follows what is moving (`BackdropView.rate`): 120 fps while playing, 60 paused,
   half that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
   an inactive or backgrounded scene, or a view out of its window, draws nothing. The glass over the
@@ -1470,7 +1510,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   The picture lookup runs at most 4 at once (its own `DecodeSlots`), so a fast scroll never piles
   blocking catalog reads onto the aside queue, and `CGImageSourceCreateThumbnailAtIndex` decodes on
   `Work.onScreen` (user-initiated, apart from `Work.aside`'s utility work) with the bucket as its
-  largest edge, at most 4 at once (`DecodeSlots`, an actor); requests for one key join one task, a view
+  largest edge, at most 4 at once (`DecodeSlots`, an actor); a cover a service serves is fetched first
+  under slots of its own (`ArtworkCache.fetched`, 6 at once) and only then takes a decode slot, since
+  a fetch made inside one held every local cover behind a slow server; requests for one key join one task, a view
   that disappears leaves its wait, and the last to leave cancels a decode still waiting for a
   slot. Pictures are decoded display-ready (`preparingForDisplay`), so nothing converts them on the
   main thread at first draw, and cost their bitmap bytes against 160 MiB (`DecodedPictures`; a 96 px
@@ -1631,7 +1673,8 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   and bucket, asked through `Features.servedCover` (`served_cover`) and held in the same
   `ArtworkCache`, so `ArtworkView` draws it in the queue, the mini player and Now Playing and
   `NowPlaying` hands the same picture to `MPNowPlayingInfoCenter`; `ServedCoverView` draws a cover
-  the browse names by its own cover name. A served row has no heart, no lyrics, no details, analysis,
+  the browse names by its own cover name, the held picture in the frame it appears (its body reads
+  `cachedServedCover` where its own state holds none) and nothing from a load that was cancelled. A served row has no heart, no lyrics, no details, analysis,
   share, tags, playlist or album and artist links (`SongPages`, `SongDestinations`,
   `LyricsPane`, the queue row's menu and *Save queue as playlist* leave it out),
   and removing one from the queue offers no Undo (`ServedTests`). **Its listens are counted by the

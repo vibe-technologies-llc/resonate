@@ -415,29 +415,26 @@ struct PlaylistShelf: View {
     let playlists: [MusicPlaylist]
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
-                ForEach(playlists, id: \.id) { playlist in
-                    NavigationLink(value: Destination.playlist(playlist.id)) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            PlaylistArtwork(playlist: playlist)
-                                .frame(width: edge, height: edge)
-                            Text(playlist.name)
-                                .font(.subheadline.weight(.medium))
-                                .titleLines()
-                            Text(said("counted.songs", Int(playlist.songs)))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .titleLines()
-                        }
-                        .frame(width: edge, alignment: .leading)
-                        .contentShape(.rect)
+        Shelf(spacing: 14) {
+            ForEach(playlists, id: \.id) { playlist in
+                NavigationLink(value: Destination.playlist(playlist.id)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        PlaylistArtwork(playlist: playlist)
+                            .frame(width: edge, height: edge)
+                        Text(playlist.name)
+                            .font(.subheadline.weight(.medium))
+                            .titleLines()
+                        Text(said("counted.songs", Int(playlist.songs)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .titleLines()
                     }
-                    .buttonStyle(.plain)
-                    .collectionActions(.playlist(playlist.id))
+                    .frame(width: edge, alignment: .leading)
+                    .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
+                .collectionActions(.playlist(playlist.id))
             }
-            .padding(.horizontal, 16)
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
         .listRowSeparator(.hidden)
@@ -483,7 +480,7 @@ struct PlaylistArtwork: View {
                 let id = playlist.id
                 let sampled = Self.rowsSampled
                 let shown = Self.coversShown
-                let found = try? await Work.aside { try Self.distinctAlbums(of: native.playlistTracks(id: id, offset: 0, limit: sampled), keeping: shown) }
+                let found = try? await Work.onScreen { try Self.distinctAlbums(of: native.playlistTracks(id: id, offset: 0, limit: sampled), keeping: shown) }
                 guard !Task.isCancelled else { return }
 
                 if let found { PlaylistCovers.keep(found, for: playlist) }
@@ -862,7 +859,7 @@ struct AlbumView: View {
         let rows: [Track]
         let lacking: [SearchSong]
         do {
-            (found, rows, lacking) = try await Work.aside {
+            (found, rows, lacking) = try await Work.onScreen {
                 (try native.album(key: key), try native.albumTracks(key: key), try native.albumSongsNotHeld(key: key))
             }
         } catch {
@@ -1116,7 +1113,7 @@ struct ArtistView: View {
 
     private func readWhatIsLacked(_ native: MobilePlayer) async {
         let name = name
-        guard let (releases, songs) = try? await Work.aside({
+        guard let (releases, songs) = try? await Work.onScreen({
             (try native.artistReleasesNotHeld(name: name), try native.artistSongsNotHeld(name: name))
         }) else { return }
         if releasesLacked != releases { releasesLacked = releases }
@@ -1133,7 +1130,7 @@ struct ArtistView: View {
         let releases: [ReleaseNotHeld]
         let songs: [SearchSong]
         do {
-            (found, rows, played, releases, songs) = try await Work.aside {
+            (found, rows, played, releases, songs) = try await Work.onScreen {
                 (
                     try native.albumsBy(name: name),
                     try native.artistTracks(name: name),
@@ -1287,7 +1284,7 @@ struct UnheldReleaseSheet: View {
             if !release.songsRead {
                 _ = try await Work.aside { try native.learnReleaseSongs(group: group) }
             }
-            songs = try await Work.aside { try native.releaseSongsNotHeld(artist: artist, group: group) }
+            songs = try await Work.onScreen { try native.releaseSongsNotHeld(artist: artist, group: group) }
             read = true
         } catch {
             failed = true
@@ -1355,12 +1352,12 @@ struct FavouritesView: View {
             let epoch = library.favouriteEpoch
             if keyedAt != epoch {
                 let tracks = library.favouriteTracks
-                keyed = (try? await Work.aside { SongKeys.of(tracks) }) ?? keyed
+                keyed = (try? await Work.onScreen { SongKeys.of(tracks) }) ?? keyed
                 guard !Task.isCancelled else { return }
                 keyedAt = epoch
             }
             let keys = keyed
-            let matching = (try? await Work.aside { keys.matching(folded) }) ?? []
+            let matching = (try? await Work.onScreen { keys.matching(folded) }) ?? []
             guard !Task.isCancelled else { return }
             found = matching
             foundFor = folded
@@ -1427,7 +1424,7 @@ struct CollectionActions: ViewModifier {
         Task {
             do {
                 let native = try await library.player()
-                let tracks = try await Work.aside { try source.tracks(native) }
+                let tracks = try await Work.onScreen { try source.tracks(native) }
                 guard !tracks.isEmpty else { return }
                 navigation.feelQueued()
                 action(tracks)

@@ -202,6 +202,10 @@ extension View {
         modifier(TitleLines(lines: lines))
     }
 
+    func reservedLines(_ lines: Int) -> some View {
+        modifier(ReservedLines(lines: lines))
+    }
+
     func buttonShape() -> some View {
         modifier(ButtonShape())
     }
@@ -250,6 +254,19 @@ private struct TitleLines: ViewModifier {
 
     func body(content: Content) -> some View {
         content.lineLimit(size.isAccessibilitySize ? nil : lines)
+    }
+}
+
+private struct ReservedLines: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var size
+    let lines: Int
+
+    func body(content: Content) -> some View {
+        if size.isAccessibilitySize {
+            content.lineLimit(nil)
+        } else {
+            content.lineLimit(lines, reservesSpace: true)
+        }
     }
 }
 

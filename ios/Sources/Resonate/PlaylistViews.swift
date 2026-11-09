@@ -495,7 +495,7 @@ struct AddSongsSheet: View {
             .task(id: library.catalogEpoch) {
                 let tracks = library.allTracks
                 let folded = Self.folded(search)
-                guard let (keys, found) = try? await Work.aside({ () -> (SongKeys, [Track]) in
+                guard let (keys, found) = try? await Work.onScreen({ () -> (SongKeys, [Track]) in
                     let keys = SongKeys.of(tracks)
                     return (keys, keys.matching(folded))
                 }) else { return }
@@ -509,7 +509,7 @@ struct AddSongsSheet: View {
                 guard !Task.isCancelled else { return }
                 let keys = keyed
                 let folded = Self.folded(search)
-                let found = (try? await Work.aside { keys.matching(folded) }) ?? []
+                let found = (try? await Work.onScreen { keys.matching(folded) }) ?? []
                 guard !Task.isCancelled else { return }
                 listed = found
             }

@@ -26,6 +26,10 @@ enum Work {
         label: "org.resonate.secrets",
         qos: .userInitiated
     )
+    private static let renderingQueue = DispatchQueue(
+        label: "org.resonate.rendering",
+        qos: .userInitiated
+    )
     private static let onScreenQueue = DispatchQueue(
         label: "org.resonate.on-screen",
         qos: .userInitiated,
@@ -47,6 +51,10 @@ enum Work {
 
     static func enqueueInOrder(_ body: @escaping @Sendable () -> Void) {
         orderedQueue.async(execute: body)
+    }
+
+    static func enqueueInRendering(_ body: @escaping @Sendable () -> Void) {
+        renderingQueue.async(execute: body)
     }
 
     static func inSaving(_ body: @escaping @Sendable () throws -> Void) async throws {

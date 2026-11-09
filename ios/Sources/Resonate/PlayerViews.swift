@@ -218,13 +218,13 @@ struct NowPlayingView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     CloseNowPlaying()
                 }
-                if let track {
+                if track != nil {
                     ToolbarItem(placement: .topBarTrailing) {
-                        ShareSongButton(track: track)
+                        SharePlayingSong()
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    PlayerMoreMenu(track: track, asks: asks)
+                    PlayerMoreMenu(songPages: track.map { !$0.isServed } ?? false, asks: asks)
                 }
             }
             .sheet(item: $asks.picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
@@ -1472,17 +1472,19 @@ struct CloseNowPlaying: View {
 struct PlayerMoreMenu: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    let track: Track?
+    let songPages: Bool
     let asks: PlayerAsks
 
     var body: some View {
         Menu("player.more", systemImage: "ellipsis") {
-            if let track, !track.isServed {
+            if songPages {
                 Section {
-                    Button("player.add-to-playlist", systemImage: "text.badge.plus") { asks.picked = PickedTracks(tracks: [track]) }
-                    ShareSongButton(track: track)
-                    Button("player.song-details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
-                    Button("player.analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
+                    Button("player.add-to-playlist", systemImage: "text.badge.plus") {
+                        playing { asks.picked = PickedTracks(tracks: [$0]) }
+                    }
+                    SharePlayingSong()
+                    Button("player.song-details", systemImage: "info.circle") { playing { navigation.open(.inspector($0)) } }
+                    Button("player.analyse", systemImage: "waveform.path.ecg") { playing { navigation.open(.analysis($0)) } }
                 }
             }
             if library.queueShape != .empty {
@@ -1508,6 +1510,11 @@ struct PlayerMoreMenu: View {
                 }
             }
         }
+    }
+
+    private func playing(_ act: (Track) -> Void) {
+        guard let track = library.playingTrack else { return }
+        act(track)
     }
 }
 

@@ -338,7 +338,7 @@ struct OfferedMixes: Equatable, Sendable {
         let zone = TimeZone.current
         let identifier = zone.identifier
         let offset = Int32(zone.secondsFromGMT())
-        return try? await Work.aside {
+        return try? await Work.onScreen {
             let lists = try native.suggestedLists(timeZone: identifier, utcOffsetSeconds: offset)
             var covers = Dictionary(uniqueKeysWithValues: lists.map { ($0.id, $0.covers) })
             for mix in SuggestedMix.yours {
@@ -357,7 +357,7 @@ struct SuggestionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 Text("suggestions.lead").foregroundStyle(.secondary)
                 ForEach(offered.shelves, id: \.name) { shelf in
                     Text(shelf.name).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
@@ -447,7 +447,7 @@ struct MixView: View {
     private func load(_ mix: SuggestedMix) async {
         guard let native = try? await library.player() else { return }
         do {
-            let (rows, pictured) = try await Work.aside {
+            let (rows, pictured) = try await Work.onScreen {
                 (try mix.tracks(in: native), try mix.covers(in: native))
             }
             failure = nil
@@ -465,10 +465,11 @@ struct SuggestedMixCard: View {
     private static let corner: CGFloat = 10
 
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     let mix: SuggestedMix
     let covers: [Track]
+    var shelved = false
     let open: () -> Void
-    @State private var played = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -481,7 +482,7 @@ struct SuggestedMixCard: View {
                 Button(action: open) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(mix.title).font(.subheadline.weight(.semibold)).titleLines()
-                        Text(mix.detail).font(.caption).foregroundStyle(.secondary).titleLines(2)
+                        detail
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(.rect)
@@ -499,7 +500,16 @@ struct SuggestedMixCard: View {
             Button("common.shuffle", systemImage: "shuffle") { play(shuffled: true) }
             Button("mix.show-songs", systemImage: "music.note.list", action: open)
         }
-        .sensoryFeedback(.success, trigger: played)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        let words = Text(mix.detail).font(.caption).foregroundStyle(.secondary)
+        if shelved {
+            words.reservedLines(2)
+        } else {
+            words.titleLines(2)
+        }
     }
 
     private func play(shuffled: Bool) {
@@ -507,12 +517,12 @@ struct SuggestedMixCard: View {
         Task {
             do {
                 let native = try await library.player()
-                let tracks = try await Work.aside { try mix.tracks(in: native) }
+                let tracks = try await Work.onScreen { try mix.tracks(in: native) }
                 guard !tracks.isEmpty else {
                     library.notice(said("mix.empty.named", mix.title))
                     return
                 }
-                played += 1
+                navigation.feelQueued()
                 if shuffled { library.shuffle(tracks) } else { library.play(tracks, at: 0) }
             } catch {
                 library.report(error)
@@ -604,13 +614,49 @@ struct CataloguePicker: View {
     let names: [String]
 
     var body: some View {
-        Picker(title, selection: $choice) {
-            Text("filter.any").tag("")
-            if !choice.isEmpty, !names.contains(choice) {
-                Text(choice).tag(choice)
-            }
-            ForEach(names, id: \.self) { Text($0).tag($0) }
+        NavigationLink {
+            CatalogueChoices(title: title, choice: $choice, names: names)
+        } label: {
+            LabeledContent(title, value: choice.isEmpty ? said("filter.any") : choice)
         }
-        .pickerStyle(.navigationLink)
+    }
+}
+
+private struct CatalogueChoices: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    @Binding var choice: String
+    let names: [String]
+
+    var body: some View {
+        List {
+            row(said("filter.any"), choosing: "")
+            if !choice.isEmpty, !names.contains(choice) {
+                row(choice, choosing: choice)
+            }
+            ForEach(names, id: \.self) { row($0, choosing: $0) }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func row(_ label: String, choosing name: String) -> some View {
+        Button {
+            choice = name
+            dismiss()
+        } label: {
+            HStack {
+                Text(label).foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                if choice == name {
+                    Image(systemName: "checkmark")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.tint)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(.rect)
+        }
+        .accessibilityAddTraits(choice == name ? .isSelected : [])
     }
 }

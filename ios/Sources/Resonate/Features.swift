@@ -1009,10 +1009,10 @@ final class Features {
         let side = UInt32(bucket.rawValue)
         guard let native = try? await library.player() else { return nil }
         let accounts = servedAccounts
-        return await artworks.image(request) {
+        return await artworks.fetched(request, fetching: {
             native.serveFrom(accounts: accounts)
             return try native.servedCover(uri: uri, known: known, side: side)
-        }
+        })
     }
 
     func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {
@@ -1064,11 +1064,11 @@ final class Features {
 
     func loadPlaylists() {
         work { [weak self] native in
-            let found = try await Work.aside { try native.playlists() }
+            let found = try await Work.onScreen { try native.playlists() }
             await MainActor.run {
                 if self?.playlists != found { self?.playlists = found }
             }
-            let (profiles, shared) = try await Work.aside { (try native.profilesFollowed(), native.sharedPlaylists()) }
+            let (profiles, shared) = try await Work.onScreen { (try native.profilesFollowed(), native.sharedPlaylists()) }
             if self?.followedProfiles != profiles { self?.followedProfiles = profiles }
             self?.together.adopt(shared)
         }
@@ -1271,7 +1271,7 @@ final class Features {
         let written = playlistRowsWritten
         let shownPlaylists = playlists
         do {
-            let (rows, unchanged, found) = try await Work.aside {
+            let (rows, unchanged, found) = try await Work.onScreen {
                 let rows = try Library.everyPage { try native.playlistTracks(id: id, offset: $0, limit: Library.page) }
                 let found = try native.playlists()
                 return (rows, rows == shown, found == shownPlaylists ? nil : found)
@@ -1295,16 +1295,16 @@ final class Features {
             let identifier = zone.identifier
             let offset = Int32(zone.secondsFromGMT())
             let shown = Features.rankedShown
-            let found = try await Work.aside { try native.statistics(days: days) }
-            let detail = try await Work.aside {
+            let found = try await Work.onScreen { try native.statistics(days: days) }
+            let detail = try await Work.onScreen {
                 try native.listeningDetail(
                     days: days, limit: shown, timeZone: identifier, utcOffsetSeconds: offset)
             }
-            let covers = try await Work.aside { ListenedCovers.of(detail, from: native) }
-            let bars = try await Work.aside { ListeningBar.grouped(detail.days, span: days) }
-            let breakdown = try await Work.aside { try native.libraryBreakdown() }
+            let covers = try await Work.onScreen { ListenedCovers.of(detail, from: native) }
+            let bars = try await Work.onScreen { ListeningBar.grouped(detail.days, span: days) }
+            let breakdown = try await Work.onScreen { try native.libraryBreakdown() }
             let listening: HomeListening? = if days == 0 {
-                try await Work.aside { HomeListening.of(found, detail, covers: covers) }
+                try await Work.onScreen { HomeListening.of(found, detail, covers: covers) }
             } else {
                 nil
             }
@@ -1349,7 +1349,7 @@ final class Features {
             inspectorArtist = .idle
         }
         work { [weak self] native in
-            let found = try await Work.aside { try native.inspector(id: id) }
+            let found = try await Work.onScreen { try native.inspector(id: id) }
             if request == self?.inspectorRequest { self?.inspector = found }
         }
     }
@@ -1375,7 +1375,7 @@ final class Features {
         lyricsLoading = true
         lyricsUnread = nil
         work({ [weak self] native in
-            let sheet = try await Work.aside { try native.lyrics(id: id, refresh: refresh) }
+            let sheet = try await Work.onScreen { try native.lyrics(id: id, refresh: refresh) }
             guard let self, request == lyricRequest else { return }
             lyrics = sheet
         }, finally: { [weak self] in
@@ -1417,7 +1417,7 @@ final class Features {
 
     func songTags(_ ids: [UInt64]) async throws -> [SongTags] {
         let native = try await library.player()
-        return try await Work.aside { try ids.map { try native.songTags(id: $0) } }
+        return try await Work.onScreen { try ids.map { try native.songTags(id: $0) } }
     }
 
     private func writableKind(of name: String) -> Bool {

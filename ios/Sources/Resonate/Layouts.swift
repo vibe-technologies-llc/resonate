@@ -125,3 +125,28 @@ struct GraphFrame: Layout {
         }
     }
 }
+
+struct Shelf<Cards: View>: View {
+    private static var gutter: CGFloat { 16 }
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private let spacing: CGFloat
+    private let cards: Cards
+
+    init(spacing: CGFloat, @ViewBuilder cards: () -> Cards) {
+        self.spacing = spacing
+        self.cards = cards()
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            if typeSize.isAccessibilitySize {
+                HStack(alignment: .top, spacing: spacing) { cards }
+                    .padding(.horizontal, Self.gutter)
+            } else {
+                LazyHStack(alignment: .top, spacing: spacing) { cards }
+                    .padding(.horizontal, Self.gutter)
+            }
+        }
+    }
+}

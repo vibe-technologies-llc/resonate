@@ -97,4 +97,24 @@ import Testing
         bars.rest()
         #expect(bars.heights == PlayingBars.still)
     }
+
+    @Test func theBarsStandFourAcrossTheirWidthWithAGapBetween() {
+        let shape = PlayingBarsShape(height: 14)
+        let lastRightEdge = shape.middle(of: HeardBands.count - 1) + shape.barWidth / 2
+
+        #expect(abs(shape.barWidth - 2.8) < 1e-9)
+        #expect(abs(shape.gap - 1.96) < 1e-9)
+        #expect(abs(shape.middle(of: 0) - shape.barWidth / 2) < 1e-9)
+        #expect(abs(shape.middle(of: 1) - shape.middle(of: 0) - shape.barWidth - shape.gap) < 1e-9)
+        #expect(abs(lastRightEdge - shape.width) < 1e-9)
+    }
+
+    @Test func aBarIsNeverShorterThanItsWidthNorTallerThanItsRow() {
+        let shape = PlayingBarsShape(height: 14)
+
+        #expect(shape.barHeight(0) == shape.barWidth)
+        #expect(shape.barHeight(PlayingBars.resting) == shape.barWidth)
+        #expect(abs(shape.barHeight(0.5) - 7) < 1e-9)
+        #expect(shape.barHeight(1) == shape.height)
+    }
 }

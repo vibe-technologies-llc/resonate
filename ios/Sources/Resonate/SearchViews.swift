@@ -337,30 +337,27 @@ struct AlbumShelf: View {
     var picked: () -> Void = {}
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
-                ForEach(albums, id: \.key) { album in
-                    NavigationLink(value: album.destination) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 10)
-                                .frame(width: edge, height: edge)
-                            Text(lit(album.shownTitle, by: query, in: .album))
-                                .font(.subheadline.weight(.medium))
-                                .titleLines()
-                            Text(lit(album.shownArtist, by: query, in: .artist))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .titleLines()
-                        }
-                        .frame(width: edge, alignment: .leading)
-                        .contentShape(.rect)
+        Shelf(spacing: 14) {
+            ForEach(albums, id: \.key) { album in
+                NavigationLink(value: album.destination) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ArtworkView(track: library.artworkTrack(album.artworkTrack), corner: 10)
+                            .frame(width: edge, height: edge)
+                        Text(lit(album.shownTitle, by: query, in: .album))
+                            .font(.subheadline.weight(.medium))
+                            .titleLines()
+                        Text(lit(album.shownArtist, by: query, in: .artist))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .titleLines()
                     }
-                    .buttonStyle(.plain)
-                    .simultaneousGesture(TapGesture().onEnded { picked() })
-                    .collectionActions(.album(album.key), artist: album.artist)
+                    .frame(width: edge, alignment: .leading)
+                    .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { picked() })
+                .collectionActions(.album(album.key), artist: album.artist)
             }
-            .padding(.horizontal, 16)
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
         .listRowSeparator(.hidden)
@@ -375,29 +372,26 @@ struct ArtistShelf: View {
     var picked: () -> Void = {}
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 16) {
-                ForEach(artists, id: \.name) { artist in
-                    NavigationLink(value: artist.destination) {
-                        VStack(spacing: 6) {
-                            ArtworkView(track: library.artworkTrack(artist.artworkTrack), circle: true)
-                                .frame(width: edge, height: edge)
-                            Text(lit(artist.shownName, by: query, in: .artist))
-                                .font(.subheadline.weight(.medium))
-                                .titleLines()
-                            Text(said("counted.songs", Int(artist.songs)))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(width: edge + 8)
-                        .contentShape(.rect)
+        Shelf(spacing: 16) {
+            ForEach(artists, id: \.name) { artist in
+                NavigationLink(value: artist.destination) {
+                    VStack(spacing: 6) {
+                        ArtworkView(track: library.artworkTrack(artist.artworkTrack), circle: true)
+                            .frame(width: edge, height: edge)
+                        Text(lit(artist.shownName, by: query, in: .artist))
+                            .font(.subheadline.weight(.medium))
+                            .titleLines()
+                        Text(said("counted.songs", Int(artist.songs)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .simultaneousGesture(TapGesture().onEnded { picked() })
-                    .collectionActions(.artist(artist.name))
+                    .frame(width: edge + 8)
+                    .contentShape(.rect)
                 }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { picked() })
+                .collectionActions(.artist(artist.name))
             }
-            .padding(.horizontal, 16)
         }
         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
         .listRowSeparator(.hidden)

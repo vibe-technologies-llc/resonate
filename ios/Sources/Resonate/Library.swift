@@ -389,19 +389,8 @@ final class Library {
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
                 preferences = stored
                 volume = try await Work.inOrder { opened.zones().first { $0.shown }?.volume ?? 1 }
-                let looks = Self.rendererSettings.bool(forKey: Self.looksForRenderersKey)
-                let saved = Self.savedRendererAddresses()
-                let savedReceivers = Self.savedReceiverAddresses()
-                let reached = try await Work.inOrder {
-                    for address in saved { try? opened.addRendererAddress(address: address) }
-                    for address in savedReceivers { try? opened.addReceiverAddress(address: address) }
-                    if looks { try? opened.lookForRenderers(on: true) }
-                    return (opened.lookingForRenderers(), opened.rendererAddresses(), opened.receiverAddresses())
-                }
-                lookingForRenderers = reached.0
-                rendererAddresses = reached.1
-                receiverAddresses = reached.2
                 native = opened
+                restoreRenderers()
                 opened.watchPlayer(watch: PlayerWake(self))
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
                 waiting.forEach { $0.resume(returning: opened) }
@@ -545,8 +534,48 @@ final class Library {
         changeZones { try $0.handOverTo(zone: zone.id) }
     }
 
+    private func restoreRenderers() {
+        let looks = Self.rendererSettings.bool(forKey: Self.looksForRenderersKey)
+        let saved = Self.savedRendererAddresses()
+        let savedReceivers = Self.savedReceiverAddresses()
+        lookingForRenderers = looks
+        rendererAddresses = saved
+        receiverAddresses = savedReceivers
+
+        reachRenderers({ native in
+            for address in saved { try? native.addRendererAddress(address: address) }
+            for address in savedReceivers { try? native.addReceiverAddress(address: address) }
+            if looks { try? native.lookForRenderers(on: true) }
+            return RenderersRestored(
+                looking: native.lookingForRenderers(),
+                addresses: native.rendererAddresses(),
+                receivers: native.receiverAddresses()
+            )
+        }) { [self] restored in
+            lookingForRenderers = restored.looking
+            rendererAddresses = restored.addresses
+            receiverAddresses = restored.receivers
+        }
+    }
+
+    private func reachRenderers<Value: Sendable>(
+        _ action: @escaping @Sendable (MobilePlayer) throws -> Value,
+        then: @escaping @MainActor @Sendable (Value) -> Void
+    ) {
+        guard let native else { return }
+        Work.enqueueInRendering {
+            let answer = Result { try action(native) }
+            Task { @MainActor in
+                switch answer {
+                case .success(let value): then(value)
+                case .failure(let error): self.report(error)
+                }
+            }
+        }
+    }
+
     func lookForRenderers(_ on: Bool) {
-        request({ native in
+        reachRenderers({ native in
             try native.lookForRenderers(on: on)
             return (native.lookingForRenderers(), native.renderers())
         }) { [self] read in
@@ -558,7 +587,7 @@ final class Library {
 
     func addRendererAddress(_ address: String) {
         let typed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        request({ native in
+        reachRenderers({ native in
             let failure: (any Swift.Error)? = {
                 do {
                     try native.addRendererAddress(address: typed)
@@ -575,7 +604,7 @@ final class Library {
     }
 
     func forgetRendererAddress(_ address: String) {
-        request({ native in
+        reachRenderers({ native in
             try native.removeRendererAddress(address: address)
             return RendererAddressesRead(addresses: native.rendererAddresses(), renderers: native.renderers(), failure: nil)
         }) { [self] read in
@@ -585,7 +614,7 @@ final class Library {
 
     func addReceiverAddress(_ address: String) {
         let typed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        request({ native in
+        reachRenderers({ native in
             let failure: (any Swift.Error)? = {
                 do {
                     try native.addReceiverAddress(address: typed)
@@ -602,7 +631,7 @@ final class Library {
     }
 
     func forgetReceiverAddress(_ address: String) {
-        request({ native in
+        reachRenderers({ native in
             try native.removeReceiverAddress(address: address)
             return RendererAddressesRead(addresses: native.receiverAddresses(), renderers: native.renderers(), failure: nil)
         }) { [self] read in
@@ -1047,7 +1076,7 @@ final class Library {
         if !row.isServed, let at = queue.firstIndex(where: { $0.queueId == queueId }) {
             removedFromQueue = RemovedQueueRow(trackId: row.id, at: UInt32(at))
         }
-        queue.removeAll { $0.queueId == queueId }
+        editShownQueue { $0.removeAll { $0.queueId == queueId } }
         if row.isServed {
             editQueue(said("queue.removed")) { try $0.removeFromQueue(queueId: queueId) }
             return
@@ -1066,7 +1095,7 @@ final class Library {
 
     func moveInQueue(from: Int, to: Int) {
         guard queue.indices.contains(from), (0...queue.count).contains(to), to != from, to != from + 1 else { return }
-        queue.move(fromOffsets: IndexSet(integer: from), toOffset: to)
+        editShownQueue { $0.move(fromOffsets: IndexSet(integer: from), toOffset: to) }
         editQueue { try $0.moveInQueue(from: UInt32(from), to: UInt32(to)) }
     }
 
@@ -1148,7 +1177,9 @@ final class Library {
             keepFavourite(marked, at: at)
         }
         if let flag = favouriteFlags[id], flag.on != favourite { flag.on = favourite }
-        if filter.favourites, !favourite, let at = tracks.firstIndex(where: { $0.id == id }) { tracks.remove(at: at) }
+        if filter.favourites, !favourite, let at = keptTracks.firstIndex(where: { $0.id == id }) {
+            withMutation(keyPath: \.tracks) { _ = keptTracks.remove(at: at) }
+        }
         let outsideTheCatalog = catalogIndex[id] == nil
         if outsideTheCatalog, let rows = marked(queue) { queue = rows }
         if outsideTheCatalog, let rows = marked(features.playlistRows) { features.playlistRows = rows }
@@ -1451,6 +1482,12 @@ final class Library {
                 report(error)
             }
         }
+    }
+
+    private func editShownQueue(_ edit: (inout [Track]) -> Void) {
+        let before = keptQueue.count
+        withMutation(keyPath: \.queue) { edit(&keptQueue) }
+        queueMoved(from: before)
     }
 
     private func queueMoved(from rowsBefore: Int) {
@@ -2077,6 +2114,12 @@ final class FolderCovers {
             tally.lost(.cover, firstSong, error)
         }
     }
+}
+
+struct RenderersRestored: Sendable {
+    let looking: Bool
+    let addresses: [String]
+    let receivers: [String]
 }
 
 struct RendererAddressesRead: Sendable {

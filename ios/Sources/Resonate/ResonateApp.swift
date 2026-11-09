@@ -64,6 +64,7 @@ final class Navigation {
     var addingToPlaylist: PickedTracks?
     private(set) var queuedFelt = 0
     private(set) var heartFelt = 0
+    private(set) var landedFelt = 0
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
     var librarySection = LibrarySection.home
@@ -78,6 +79,10 @@ final class Navigation {
 
     func feelHeart() {
         heartFelt += 1
+    }
+
+    func feelLanded() {
+        landedFelt += 1
     }
 
     func path(_ root: Root) -> Binding<[Destination]> {
