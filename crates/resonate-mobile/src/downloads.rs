@@ -27,6 +27,7 @@ use crate::{
     error::DownloadOp,
     features::SearchSong,
     partials::{Partial, Partials},
+    words,
 };
 
 const JOBS_SETTLED_KEPT: usize = 16;
@@ -79,10 +80,10 @@ impl fmt::Display for MusicProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Monochrome => "Monochrome",
-            Self::Subsonic => "The Subsonic server",
+            Self::Subsonic => words::downloads::subsonic(),
             Self::Tidal => "TIDAL",
-            Self::HifiApi => "The hifi-api server",
-            Self::Jellyfin => "The Jellyfin server",
+            Self::HifiApi => words::downloads::hifi_api(),
+            Self::Jellyfin => words::downloads::jellyfin(),
         })
     }
 }

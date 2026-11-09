@@ -20,6 +20,7 @@ use crate::{
     catalog::{Catalog, read},
     features::{TrackFilter, TrackOrder},
     mixes::KeptOffer,
+    words,
 };
 
 pub(crate) const LISTED_AT_MOST: u32 = 500;
@@ -33,7 +34,6 @@ const COMPLETIONS_AT_MOST: usize = 6;
 const LETTERS_A_PIECE_INSIDE_A_WORD_NEEDS: usize = 3;
 
 const BETWEEN_KEY_PARTS: char = '\u{1f}';
-const VARIOUS_ARTISTS: &str = "Various artists";
 
 const MILLISECONDS_A_SECOND: f64 = 1_000.0;
 
@@ -1284,10 +1284,12 @@ impl AlbumGroup {
         owners.sort_unstable();
         owners.dedup();
         if owners.len() > 1 {
+            let various = words::search::various_artists();
+
             self.various_artists = true;
-            self.artist = VARIOUS_ARTISTS.to_owned();
-            self.artist_name = Name::of(VARIOUS_ARTISTS);
-            self.filed_artist = folded_letters(VARIOUS_ARTISTS);
+            self.artist = various.to_owned();
+            self.artist_name = Name::of(various);
+            self.filed_artist = folded_letters(various);
         }
 
         self.year = held().filter_map(|row| row.year).min();
@@ -2695,7 +2697,7 @@ mod tests {
 
         assert_eq!(albums.len(), 2);
         assert_eq!(witcher.songs, 3);
-        assert_eq!(witcher.artist, VARIOUS_ARTISTS);
+        assert_eq!(witcher.artist, words::search::various_artists());
         assert!(witcher.various_artists);
         assert_eq!(reached.len(), 3);
     }

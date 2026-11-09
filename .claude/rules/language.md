@@ -79,7 +79,12 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   `expect` and `tracing` calls. `resonate-ui`'s is `every_word_the_window_shows_is_said_through_its_catalog`
   (`views/audit.rs`): `PROPER` names the literals that are names, `NOT_WORDS` the files that hold
   none (markup, font families), and `STILL_TO_MOVE` the files not yet moved, which must shrink to
-  nothing; a file it names that holds no prose fails the test too.
+  nothing; a file it names that holds no prose fails the test too. `resonate-mobile`'s is
+  `every_word_the_phones_show_is_said_through_the_catalog` (`language.rs`), with nothing left to
+  move: `PROPER` names the services, platforms and sink names, `ONLY_UNDER_TEST` the test-only
+  files, and a literal opening on an SQL keyword is a statement, not words. An `#[error(...)]`
+  message is an attribute the walk passes over, so every `Error` sentence there is read by eye:
+  each is `words::errors::…` or a `failure.rs` function, never a literal.
 - **The phones hold the same rule.** Android's `WordsTest` walks `src/main/java` with a Kotlin reader
   of the same heuristic, quiet inside `Log.`, `require`, `check`, `error`, an exception and
   `testTag`, with its own `PROPER` and `STILL_TO_MOVE`. iOS's `test_strings.py` (`words.py`, under

@@ -47,6 +47,9 @@ mod tagging;
 mod together;
 mod vanished;
 mod watching;
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
 mod wrapped;
 mod zoning;
 

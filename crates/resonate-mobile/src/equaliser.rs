@@ -8,7 +8,7 @@ use resonate_core::{
     },
 };
 
-use crate::{Error, MobilePlayer, Result};
+use crate::{Error, MobilePlayer, Result, words};
 
 pub const EQUALISER_CENTRES: [f64; 10] = [
     31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
@@ -96,70 +96,70 @@ pub struct EqualiserPreset {
 type OctaveGains = [f32; EQUALISER_CENTRES.len()];
 
 struct Preset {
-    name: &'static str,
-    detail: &'static str,
+    name: fn() -> &'static str,
+    detail: fn() -> &'static str,
     preamp_db: f32,
     octaves: Option<OctaveGains>,
 }
 
 const PRESETS: [Preset; 10] = [
     Preset {
-        name: "Flat",
-        detail: "An uncoloured starting point.",
+        name: words::equaliser::flat,
+        detail: words::equaliser::flat_detail,
         preamp_db: 0.0,
         octaves: None,
     },
     Preset {
-        name: "Bass boost",
-        detail: "More weight and punch in the low end.",
+        name: words::equaliser::bass_boost,
+        detail: words::equaliser::bass_boost_detail,
         preamp_db: -6.0,
         octaves: Some([4.0, 4.0, 2.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0]),
     },
     Preset {
-        name: "Bass only",
-        detail: "More bass. Mids, treble and output gain stay unchanged.",
+        name: words::equaliser::bass_only,
+        detail: words::equaliser::bass_only_detail,
         preamp_db: 0.0,
         octaves: Some([4.0, 4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     },
     Preset {
-        name: "Bass cut",
-        detail: "Less rumble, with the rest left clear.",
+        name: words::equaliser::bass_cut,
+        detail: words::equaliser::bass_cut_detail,
         preamp_db: 0.0,
         octaves: Some([-5.0, -4.0, -3.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     },
     Preset {
-        name: "Vocals",
-        detail: "Bring voices and lead instruments forward.",
+        name: words::equaliser::vocals,
+        detail: words::equaliser::vocals_detail,
         preamp_db: -5.0,
         octaves: Some([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 3.0, 1.0, 0.0, -1.0]),
     },
     Preset {
-        name: "Warm",
-        detail: "Fuller lows and a softer top end.",
+        name: words::equaliser::warm,
+        detail: words::equaliser::warm_detail,
         preamp_db: -5.0,
         octaves: Some([2.0, 3.0, 2.0, 1.0, 0.0, 0.0, -1.0, -2.0, -2.0, -2.0]),
     },
     Preset {
-        name: "Bright",
-        detail: "A little more sparkle and detail.",
+        name: words::equaliser::bright,
+        detail: words::equaliser::bright_detail,
         preamp_db: -5.0,
         octaves: Some([-1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 2.0]),
     },
     Preset {
-        name: "Treble cut",
-        detail: "Softer highs for harsh recordings, with the rest left clear.",
+        name: words::equaliser::treble_cut,
+        detail: words::equaliser::treble_cut_detail,
         preamp_db: 0.0,
         octaves: Some([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -3.0, -4.0, -5.0]),
     },
     Preset {
-        name: "Rock",
-        detail: "Punchy lows, crisp guitars and drums.",
+        name: words::equaliser::rock,
+        detail: words::equaliser::rock_detail,
         preamp_db: -5.0,
         octaves: Some([3.0, 2.0, 0.0, -1.0, -2.0, 0.0, 2.0, 3.0, 3.0, 2.0]),
     },
     Preset {
-        name: "Electronic",
-        detail: "Deep bass with a lively, open top end.",
+        name: words::equaliser::electronic,
+        detail: words::equaliser::electronic_detail,
         preamp_db: -6.0,
         octaves: Some([4.0, 3.0, 1.0, 0.0, -2.0, -1.0, 1.0, 2.0, 3.0, 3.0]),
     },
@@ -170,12 +170,12 @@ impl Preset {
         let curve = self
             .octaves
             .map_or_else(EqualiserCurve::default, |gains| EqualiserCurve {
-                name: self.name.to_owned(),
+                name: (self.name)().to_owned(),
                 ..EqualiserCurve::ten_bands(self.preamp_db, &gains)
             });
         EqualiserPreset {
-            name: self.name.to_owned(),
-            detail: self.detail.to_owned(),
+            name: (self.name)().to_owned(),
+            detail: (self.detail)().to_owned(),
             curve,
         }
     }

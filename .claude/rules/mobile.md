@@ -50,6 +50,16 @@ the service, `DownloadOp`'s says what the download could not be), never a debug 
 `downloads::failure_of` is the one reading of a provider's error into those variants, for a find, an
 opening and the TIDAL sign-in alike.
 
+**Every sentence comes out of the crate's catalog** (`words/en/*.ftl`, one area per subject:
+`errors` for each variant and the op words its `Display` reads, `failure`, `measurement`,
+`downloads`, `equaliser` for the presets' names and lines, `statistics`, `search`, `sync`,
+`driving` for `sync_control_offered`): a variant's `#[error]` calls its `words::errors` function
+with the typed fields as the variables, a count chooses its form by a Fluent selector, and a
+figure whose precision matters (a frequency, a decibel) is passed formatted. A foreign error a
+sentence carries (`{ $source }`) and the words another crate hands over (`LookupOp::asked_for`,
+`SpotifySignInFailure`, a `resonate_core::Error` passed as `Domain`, `Reason::says`, a Wrapped
+slide, a built-in target's label, a service's title) are that crate's own.
+
 **The sentence is said in the phone's language** (`language.md`): `speak_languages(tags)`
 (`language.rs`) takes the platform's preferred languages, settles on the first spoken here
 (`resonate_words::negotiated`, English otherwise), makes it the process's and answers its tag, so
@@ -741,7 +751,9 @@ step would move them.
 
 ## Checks
 
-`cargo test -p resonate-mobile` runs on the host. The queue edit tests drive a real engine over
+`cargo test -p resonate-mobile` runs on the host.
+`every_word_the_phones_show_is_said_through_the_catalog` refuses a prose literal anywhere in the
+crate's sources (`language.md`'s *The checks*). The queue edit tests drive a real engine over
 a backend with no device (a paused queue never binds a stream; `Harness::sounding` lists one sink
 whose stream nothing pulls, for a queue that plays) and WAVE documents through the
 `content` provider; that `Harness` (`harness.rs`, test-only) is shared by the organise, inspector,

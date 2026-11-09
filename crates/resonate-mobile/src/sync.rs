@@ -38,6 +38,7 @@ use crate::{
     playlists,
     saved_searches::{StoredQuery, write_stored_query},
     vanished::is_vanished,
+    words,
 };
 
 mod answers;
@@ -67,7 +68,6 @@ const THIS_PLATFORM: Platform = Platform::Ios;
 const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
 const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 const PLAYLIST_NAME_BYTES_AT_MOST: usize = 255;
-const UNNAMED_PLAYLIST: &str = "Synced";
 const NANOS_A_SECOND: i64 = 1_000_000_000;
 const COMPARED_AT_ONCE: usize = 64 * 1024;
 pub(crate) const RECORDING_COLUMNS: &str = "d.title, d.artist, d.album, d.recording, d.duration_ms";
@@ -1785,7 +1785,7 @@ fn a_free_name(
 ) -> rusqlite::Result<String> {
     let trimmed = name.trim();
     let wanted: String = if trimmed.is_empty() {
-        UNNAMED_PLAYLIST
+        words::sync::unnamed_playlist()
     } else {
         trimmed
     }
