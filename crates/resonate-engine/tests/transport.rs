@@ -2317,6 +2317,40 @@ fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_q
 }
 
 #[test]
+fn a_seat_taken_up_over_an_empty_queue_leaves_it_empty_with_its_shuffle_as_it_was() -> Result<()> {
+    let tree = Tree::new();
+    let told = tree.write("told.wav", &pcm(24, RATE as usize * 10).file);
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    first.request(Command::SetShuffle(true))?.wait()?;
+    let seat = Seat::on(Arc::clone(&first));
+    let row = Resumable {
+        location: MediaLocation::local(told),
+        span: None,
+        held: None,
+    };
+
+    assert!(seat.take_up(
+        std::slice::from_ref(&row),
+        Duration::ZERO,
+        Moment::now(),
+        false
+    )?);
+    assert!(!first.state().shuffle);
+    assert_eq!(first.queue().len(), 1);
+
+    seat.put_back()?;
+    wait_for(
+        &first,
+        |player| player.queue().is_empty() && player.state().shuffle,
+        "the empty queue and shuffle to come back",
+    );
+    assert!(first.state().current.is_none());
+    Ok(())
+}
+
+#[test]
 fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_not_near_its_end()
 -> Result<()> {
     let tree = Tree::new();

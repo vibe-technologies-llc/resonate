@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback
-- [S · 0.7.1] Leaving a listening party with an empty queue of your own leaves the party's last
-  song behind: `Seat::put_back` answers an empty `before.resumption` with `Command::Clear`, which
-  keeps the row at the cursor by design and `stop` leaves the cursor on, so the guest who came only
-  to listen ends with one stopped party row; the same branch never sends `SetShuffle`, and `take_up`
-  loaded the party with shuffle off, so a guest who had shuffle on returns with it off (`Before`
-  keeps `repeat` and not shuffle); the branch that restores a non-empty queue is right, and the
-  only `put_back` test starts from one
 - [S · 0.7.1] `Zones::add` can open two zones under one id: `next_id` reads the held ids under a
   read lock and drops it, `open` checks `zone(id)` and then builds a whole `Player` with no lock held
   before pushing onto `held`, so two concurrent adds (the window, MCP and a driven control all reach

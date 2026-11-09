@@ -98,7 +98,7 @@ one room. A song whose copies differ (another master, leading silence) lines up 
 
 **The saved queue stays the one from before the party, so even a crash resumes it**: `Together::following`
 stops `keep_the_queue` for the zone, and on the phones `save_zone` skips it. Handoff reads what is kept,
-so it hands on the same queue. `Seat::put_back` restores queue and repeat on leaving, the room ending or
+so it hands on the same queue. `Seat::put_back` restores queue, shuffle and repeat on leaving (an empty queue comes back empty, through the same `Resume`), the room ending or
 being turned out. A song added to the queue during a party (from any front end, the CLI or the bus) is
 taken back out and asks the host (`PartySeat::added_here`, `PartySaid::Ask`).
 

@@ -294,10 +294,6 @@ impl Seat {
 
         self.player.send(Command::Stop)?;
         self.player.send(Command::SetRepeat(before.repeat))?;
-        if before.resumption.is_empty() {
-            return self.player.send(Command::Clear);
-        }
-
         self.player.send(Command::Resume(before.resumption))
     }
 
