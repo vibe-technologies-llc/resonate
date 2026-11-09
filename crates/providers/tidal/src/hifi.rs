@@ -337,13 +337,12 @@ fn relayed_download(
                     held,
                     resumed_after,
                 ),
-                None if status == 200 => Some(Ranged::continuing(
+                None => Some(Ranged::continuing(
                     agent.clone(),
                     url.to_owned(),
                     response,
                     resumed_after,
                 )),
-                None => None,
             };
             match ranged {
                 Some(ranged) => Ok(Reopened::Reading(

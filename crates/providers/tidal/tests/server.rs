@@ -1542,6 +1542,36 @@ fn a_keyed_hifi_api_has_the_server_download_the_track_and_sends_its_secret_to_it
 }
 
 #[test]
+fn a_keyed_server_answering_a_plain_ask_as_partial_content_is_read_and_asked_once() {
+    let served = b"fLaC-sent-as-partial-content".to_vec();
+    let whole = served.clone();
+    let fake = hifi_server(
+        move |asked, _, _| match (asked.path.as_str(), &asked.range) {
+            ("/file/", None) => Canned {
+                status: 206,
+                headers: vec![(
+                    "Content-Range",
+                    format!("bytes 0-{}/{}", whole.len() - 1, whole.len()),
+                )],
+                ..Canned::media(&whole)
+            },
+            _ => Canned::refused(404, "{}"),
+        },
+    );
+
+    let keyed = fake.hifi().with_secret("hush-secret");
+    let (_, _, bytes) = streamed(keyed.find(&by_isrc()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(bytes, served);
+    let files = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| asked.path == "/file/")
+        .count();
+    assert_eq!(files, 1);
+}
+
+#[test]
 fn a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_stopped() {
     let song = b"fLaC-a-song-the-connection-drops-half-way-through".to_vec();
     let served = song.clone();

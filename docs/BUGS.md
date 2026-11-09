@@ -3,13 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Downloads
-- [S · 0.7.1] A hifi-api server that answers 206 to a request with no `Range` makes
-  `relayed_download` call itself without end: with nothing held a 206 matches neither the `200`
-  arm nor `continuing_held`, `ranged` is `None` and the fall-through is `relayed_download(…, None)`,
-  the same request again, until the stack overflows and the release build aborts (Subsonic and
-  Monochrome read any 2xx through `Ranged::continuing`)
-
 ## Library and files
 - [S · 0.7.1] Queuing a folder follows symlinked directories with no memory of where it has
   been: `folder_items` splits entries with `Path::is_dir`, which follows links, and recurses into
