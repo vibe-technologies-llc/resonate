@@ -7,6 +7,7 @@ mod desktop;
 mod equaliser;
 mod filters;
 mod find;
+mod jellyfin;
 mod lastfm;
 mod library;
 mod online;
@@ -35,6 +36,7 @@ pub(crate) use crate::views::{
         curve::{HeldBand, Plotted},
         equaliser::{Fitting, marked_at},
         find::{Category, Group, Page},
+        jellyfin::QuickConnecting,
         lastfm::{LastfmAccount, LastfmSigning},
         spotify::SpotifyState,
         subsonic::{Account, Service},

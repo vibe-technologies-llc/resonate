@@ -208,6 +208,81 @@ pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::Ch
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]
+#[derive(Default)]
+struct QuickConnects {
+    waiting: parking_lot::Mutex<
+        Option<(
+            resonate_jellyfin::QuickConnect,
+            resonate_jellyfin::Approving,
+        )>,
+    >,
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+impl resonate_ui::SignsInToJellyfin for QuickConnects {
+    fn begun(&self, address: &str) -> resonate_ui::JellyfinBegun {
+        use resonate_ui::JellyfinBegun;
+
+        let asking = resonate_jellyfin::QuickConnect::at(address);
+        match asking.offered() {
+            Ok(true) => {}
+            Ok(false) => return JellyfinBegun::Off,
+            Err(error) => {
+                tracing::warn!(%error, "the Jellyfin server could not be asked about Quick Connect");
+                return JellyfinBegun::Failed;
+            }
+        }
+        match asking.begun() {
+            Ok(approving) => {
+                let code = approving.code.clone();
+                *self.waiting.lock() = Some((asking, approving));
+                JellyfinBegun::Code(code)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the Jellyfin server gave no Quick Connect code");
+                JellyfinBegun::Failed
+            }
+        }
+    }
+
+    fn approved(&self, stopped: &std::sync::atomic::AtomicBool) -> resonate_ui::JellyfinSignIn {
+        use std::sync::atomic::Ordering;
+
+        use resonate_providers::Error as Refused;
+        use resonate_ui::{JellyfinSession, JellyfinSignIn};
+
+        let Some((asking, approving)) = self.waiting.lock().take() else {
+            return JellyfinSignIn::Failed;
+        };
+        match asking.approved(&approving, &|| stopped.load(Ordering::SeqCst)) {
+            Ok(Some(signed)) => JellyfinSignIn::SignedIn(JellyfinSession {
+                token: signed.session.token,
+                user_id: signed.session.user,
+                device: signed.session.device,
+                name: signed.name,
+            }),
+            Ok(None) => JellyfinSignIn::Stopped,
+            Err(Refused::AuthorizationLapsed { .. }) => JellyfinSignIn::Lapsed,
+            Err(Refused::AuthorizationDenied { .. }) => JellyfinSignIn::Denied,
+            Err(error) => {
+                tracing::warn!(%error, "the Jellyfin Quick Connect did not end signed in");
+                JellyfinSignIn::Failed
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn signs_in_to_jellyfin() -> Option<Arc<dyn resonate_ui::SignsInToJellyfin>> {
+    Some(Arc::new(QuickConnects::default()))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+pub fn signs_in_to_jellyfin() -> Option<Arc<dyn resonate_ui::SignsInToJellyfin>> {
+    None
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
 pub fn signs_in_to_youtube_music() -> Option<Arc<dyn resonate_ui::SignsInToYoutubeMusic>> {
     Some(Arc::new(crate::signing_in::FromTheWindow::here()))
 }

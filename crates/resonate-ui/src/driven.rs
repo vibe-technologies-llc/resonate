@@ -426,6 +426,7 @@ impl Driven {
                 spotify: None,
                 checks_youtube_music: None,
                 signs_in_to_youtube_music: None,
+                signs_in_to_jellyfin: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),
@@ -5054,6 +5055,190 @@ mod tests {
             let online = &cx.global::<ResonateApp>().online;
             assert!(online.youtube_music);
             assert_eq!(online.youtube_music_cookies, "firefox");
+        });
+    }
+
+    struct QuickConnectsOnce {
+        begun: crate::JellyfinBegun,
+        answer: crate::JellyfinSignIn,
+        asked: parking_lot::Mutex<Vec<String>>,
+    }
+
+    impl QuickConnectsOnce {
+        fn answering(begun: crate::JellyfinBegun, answer: crate::JellyfinSignIn) -> Arc<Self> {
+            Arc::new(Self {
+                begun,
+                answer,
+                asked: parking_lot::Mutex::default(),
+            })
+        }
+    }
+
+    impl crate::SignsInToJellyfin for QuickConnectsOnce {
+        fn begun(&self, address: &str) -> crate::JellyfinBegun {
+            self.asked.lock().push(address.to_owned());
+            self.begun.clone()
+        }
+
+        fn approved(&self, _: &AtomicBool) -> crate::JellyfinSignIn {
+            self.answer.clone()
+        }
+    }
+
+    fn a_session() -> crate::JellyfinSession {
+        crate::JellyfinSession {
+            token: "token-1".to_owned(),
+            user_id: "0a1b".to_owned(),
+            device: "device-1".to_owned(),
+            name: "listener".to_owned(),
+        }
+    }
+
+    fn jellyfin_shown(cx: &mut TestAppContext, signs_in: Arc<QuickConnectsOnce>) -> Driven {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(move |global, _| {
+                global.online.enabled = true;
+                global.signs_in_to_jellyfin = Some(signs_in as Arc<dyn crate::SignsInToJellyfin>);
+            });
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("jellyfin");
+        driven.settle();
+        for (nth, typed) in [(0, "http://music.local:8096"), (2, "sesame")] {
+            driven.focus(move |root| &root.jellyfin[nth]);
+            driven.cx.simulate_input(typed);
+            driven.cx.simulate_keystrokes("enter");
+            driven.settle();
+        }
+        driven
+    }
+
+    #[gpui::test]
+    fn a_jellyfin_code_approved_elsewhere_signs_in_and_empties_the_password(
+        cx: &mut TestAppContext,
+    ) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::SignedIn(a_session()),
+        );
+        let mut driven = jellyfin_shown(cx, Arc::clone(&signs_in));
+
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
+
+        assert_eq!(*signs_in.asked.lock(), ["http://music.local:8096"]);
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert_eq!(online.jellyfin_user_id, "0a1b");
+            assert_eq!(online.jellyfin_device, "device-1");
+            assert_eq!(online.jellyfin_user, "listener");
+            assert!(online.jellyfin_password.is_empty());
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.jellyfin[2].read(cx).text().to_owned()),
+            ""
+        );
+        assert_eq!(
+            driven.read(|root, cx| root.jellyfin[1].read(cx).text().to_owned()),
+            "listener"
+        );
+    }
+
+    #[gpui::test]
+    fn a_jellyfin_code_that_lapsed_keeps_nothing(cx: &mut TestAppContext) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::Lapsed,
+        );
+        let mut driven = jellyfin_shown(cx, signs_in);
+
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("lapsed"))
+        });
+
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert!(online.jellyfin_token.is_empty());
+            assert_eq!(online.jellyfin_password, "sesame");
+        });
+    }
+
+    #[gpui::test]
+    fn a_server_without_quick_connect_says_so_and_keeps_the_password(cx: &mut TestAppContext) {
+        let signs_in =
+            QuickConnectsOnce::answering(crate::JellyfinBegun::Off, crate::JellyfinSignIn::Failed);
+        let mut driven = jellyfin_shown(cx, signs_in);
+
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("Quick Connect off"))
+        });
+
+        driven.cx.update(|_, cx| {
+            assert_eq!(
+                cx.global::<ResonateApp>().online.jellyfin_password,
+                "sesame"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_code_waiting_is_shown_and_cancel_stops_the_wait(cx: &mut TestAppContext) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::Stopped,
+        );
+        let mut driven = jellyfin_shown(cx, signs_in);
+        let stopped = driven.cx.update(|_, cx| {
+            driven.root.update(cx, |root, cx| {
+                root.jellyfin_quick.shown_waiting("123456".to_owned());
+                cx.notify();
+                root.jellyfin_quick.stopping()
+            })
+        });
+        driven.settle();
+
+        assert!(
+            driven
+                .cx
+                .debug_bounds("jellyfin-quick-connect-code")
+                .is_some()
+        );
+        driven.click("jellyfin-quick-connect-cancel");
+
+        assert!(stopped.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(
+            driven
+                .cx
+                .debug_bounds("jellyfin-quick-connect-code")
+                .is_none()
+        );
+    }
+
+    #[gpui::test]
+    fn a_password_typed_after_a_quick_connect_lets_the_kept_session_go(cx: &mut TestAppContext) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::SignedIn(a_session()),
+        );
+        let mut driven = jellyfin_shown(cx, signs_in);
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
+
+        driven.focus(|root| &root.jellyfin[2]);
+        driven.cx.simulate_input("another");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert!(online.jellyfin_token.is_empty());
+            assert!(online.jellyfin_device.is_empty());
+            assert_eq!(online.jellyfin_password, "another");
         });
     }
 

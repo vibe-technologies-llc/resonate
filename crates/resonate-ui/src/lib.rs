@@ -52,9 +52,10 @@ pub use crate::{
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves, Serving},
     settings::{
         Asking, Bindings, CaretBlink, ChecksYoutubeMusic, Continuing, Ephemeral, Followed,
-        HandedOff, Measurers, MirrorTold, Mirroring, Newer, Online, Places, Present, Registering,
-        RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange,
-        SettingKey, Settings, SettingsCategory, SignsInToYoutubeMusic, Sourcing, SpotifySignIn,
+        HandedOff, JellyfinBegun, JellyfinSession, JellyfinSignIn, Measurers, MirrorTold,
+        Mirroring, Newer, Online, Places, Present, Registering, RemoteKey, RemoteRowShown,
+        RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange, SettingKey, Settings,
+        SettingsCategory, SignsInToJellyfin, SignsInToYoutubeMusic, Sourcing, SpotifySignIn,
         Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,
         Syncing, Tabs, TidalSignIn, Unkept, Updates, WindowButtons, WindowSize,
         YoutubeMusicConnection, YoutubeMusicSignIn,

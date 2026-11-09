@@ -923,6 +923,47 @@ pub enum YoutubeMusicConnection {
 
 pub type ChecksYoutubeMusic = Arc<dyn Fn(&Online) -> Option<YoutubeMusicConnection> + Send + Sync>;
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct JellyfinSession {
+    pub token: String,
+    pub user_id: String,
+    pub device: String,
+    pub name: String,
+}
+
+impl fmt::Debug for JellyfinSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JellyfinSession")
+            .field("token", &"<withheld>")
+            .field("user_id", &self.user_id)
+            .field("device", &self.device)
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JellyfinBegun {
+    Code(String),
+    Off,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JellyfinSignIn {
+    SignedIn(JellyfinSession),
+    Lapsed,
+    Denied,
+    Stopped,
+    Failed,
+}
+
+pub trait SignsInToJellyfin: Send + Sync {
+    fn begun(&self, address: &str) -> JellyfinBegun;
+
+    fn approved(&self, stopped: &AtomicBool) -> JellyfinSignIn;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum YoutubeMusicSignIn {
     SignedIn { cookies: String },
