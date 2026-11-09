@@ -3,15 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Library and files
-- [S · 0.7.1] A trashed file's `DeletionDate` is wrong on the two days a clock changes:
-  `trash::deletion_date` reads the time of day as the time elapsed since `Calendar::midnight_of`,
-  which is the wall clock only on a 24-hour day, so on the day clocks go forward everything after the
-  gap is stamped an hour early and on the day they go back a deletion between 23:00 and 24:00 is
-  written `T24:30:00`, which is no `.trashinfo` date and which a strict trash viewer or restore tool
-  shows undated or refuses (`Calendar::minute_of_the_day` already honours the offset at that moment;
-  the seconds are the epoch's modulo 60)
-
 ## Tags in the files
 - [M · 0.7.1] A tag write that outgrows its head lengthens the file under a decoder that has it
   open: `Saving::lengthened_in_place` and `insert::lengthened` open whole filesystem blocks at

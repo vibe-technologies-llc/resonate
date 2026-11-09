@@ -42,7 +42,7 @@ pub(crate) fn send(file: &Path, data_home: Option<&Path>, at: SystemTime) -> Res
     let held =
         fs::symlink_metadata(file).map_err(|source| trash_fault(TrashOp::Stat, file, source))?;
     let bin = bin_for(file, held.dev(), data_home)?;
-    let date = deletion_date(at);
+    let date = deletion_date(&Calendar::local(), at);
 
     let name = file.file_name().ok_or_else(|| Error::NoTrashFor {
         path: file.to_path_buf(),
@@ -163,22 +163,18 @@ fn percent_encoded(path: &Path) -> String {
     encoded
 }
 
-fn deletion_date(at: SystemTime) -> String {
-    let calendar = Calendar::local();
-    let day = calendar.day_of(at);
+fn deletion_date(calendar: &Calendar, at: SystemTime) -> String {
     let date = calendar.date_at(at);
-    let since_midnight = at
-        .duration_since(calendar.midnight_of(day))
-        .map_or(0, |elapsed| elapsed.as_secs());
+    let into_the_day = u64::from(calendar.second_of_the_day(at));
 
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
         date.year,
         date.month,
         date.day,
-        since_midnight / SECONDS_PER_HOUR,
-        since_midnight % SECONDS_PER_HOUR / SECONDS_PER_MINUTE,
-        since_midnight % SECONDS_PER_MINUTE
+        into_the_day / SECONDS_PER_HOUR,
+        into_the_day % SECONDS_PER_HOUR / SECONDS_PER_MINUTE,
+        into_the_day % SECONDS_PER_MINUTE
     )
 }
 
@@ -187,5 +183,32 @@ fn trash_fault(op: TrashOp, path: &Path, source: io::Error) -> Error {
         op,
         path: path.to_path_buf(),
         source,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    fn at(seconds: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+    }
+
+    #[test]
+    fn a_deletion_on_a_day_the_clocks_change_is_dated_by_the_wall_clock() {
+        let berlin = Calendar::named("Europe/Berlin").expect("a zone database");
+        let noon_after_the_clocks_went_forward = at(1_774_778_400);
+        let half_past_eleven_after_they_went_back = at(1_792_967_400);
+
+        assert_eq!(
+            deletion_date(&berlin, noon_after_the_clocks_went_forward),
+            "2026-03-29T12:00:00"
+        );
+        assert_eq!(
+            deletion_date(&berlin, half_past_eleven_after_they_went_back),
+            "2026-10-25T23:30:00"
+        );
     }
 }

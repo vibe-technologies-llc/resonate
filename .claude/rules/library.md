@@ -1412,7 +1412,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
 - **A deleted track goes to the trash with its own sidecars; its listens stay in the totals.**
   `Library::delete_tracks` (`deleted.rs`): `Walk` guard; distinct paths of the tracks
   (`Error::UnknownTrack` for an unheld id); each file moved to the freedesktop trash
-  (`trash::send`, hand-written to the Trash spec, pure Rust; already gone = removed; refused:
+  (`trash::send`, hand-written to the Trash spec, pure Rust, its `DeletionDate` the wall clock at that moment, `Calendar::second_of_the_day`, so a day the clocks change is dated as the clock read; already gone = removed; refused:
   logged, `Deleted::kept`, rows left). **A desktop's trash can stand in**: `Library::trash_through`
   takes a `Trashes` (answering a `Removal`) that replaces the hand-written bin for every file and
   sidecar, so a sandbox whose own `XDG_DATA_HOME` is not the desktop's trash does not hide a

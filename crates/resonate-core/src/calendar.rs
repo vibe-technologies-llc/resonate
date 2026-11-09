@@ -56,11 +56,15 @@ impl Calendar {
     }
 
     pub fn minute_of_the_day(&self, at: SystemTime) -> u32 {
+        self.second_of_the_day(at) / 60
+    }
+
+    pub fn second_of_the_day(&self, at: SystemTime) -> u32 {
         let seconds = seconds_since_the_epoch(at);
         let into_the_day = seconds
             .saturating_add(self.offset_at(seconds))
             .rem_euclid(SECONDS_PER_DAY);
-        u32::try_from(into_the_day / 60).unwrap_or_default()
+        u32::try_from(into_the_day).unwrap_or_default()
     }
 
     fn day_at(&self, seconds: i64) -> i64 {
