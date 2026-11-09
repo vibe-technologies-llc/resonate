@@ -121,6 +121,17 @@ is never named.
     (`a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is`).
   - A server address must begin `http://` or `https://` with a host (`reads_as_a_server`); else a
     toast, nothing stored.
+- **Jellyfin is signed in to with Quick Connect from its group** (`views/settings/jellyfin.rs`): the
+  `SignsInToJellyfin` seam (`Lookups::signs_in_to_jellyfin`, the binary's `QuickConnects`;
+  `JellyfinBegun`, `JellyfinSignIn`, `JellyfinSession` with its token withheld) behind *Sign in with
+  Quick Connect* (`jellyfin-quick-connect`) beside an address not under `/emby`; the code
+  (`jellyfin-quick-connect-code`) waits beside *Cancel* (`jellyfin-quick-connect-cancel`) and the
+  sentence to approve it, and signed in the user field holds the server's name for the user, the
+  password field empties and the three session settings are written. Quick Connect off is a note that
+  keeps the password; a password typed, the address changed or the account forgotten lets the session
+  go (`let_go_of_the_jellyfin_session`;
+  `a_jellyfin_code_approved_elsewhere_signs_in_and_empties_the_password`,
+  `a_password_typed_after_a_quick_connect_lets_the_kept_session_go`).
 - **A Spotify account is signed in to, followed and let go from its group, and offered only with a
   client ID.** `views/settings/spotify.rs` holds one `Field` (`spotify-client-id`, an app the listener
   registered). `SignsInToSpotify` is the seam, `Lookups::spotify` the binary's

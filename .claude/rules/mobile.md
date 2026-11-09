@@ -694,6 +694,18 @@ an attempt cancelled while its code was still being asked never stores the code 
 would wait on (`a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone`,
 `a_cancel_ends_a_sign_in_waiting_for_its_code`).
 
+## Jellyfin Quick Connect
+
+`begin_jellyfin_quick_connect(server)` answers the code (`JellyfinQuickConnect`; `QuickConnectOff`
+where the server has it off or is Emby), `finish_jellyfin_quick_connect` waits on the caller's thread
+for a `JellyfinSession` (token, user id, device, name) or a cancel, and `cancel_jellyfin_quick_connect`
+moves the attempt number on, as TIDAL's sign-in does. `DownloadAccount` carries `token`, `user_id` and
+`device` (`#[uniffi(default = "")]`, so a front end's construction stands); `is_ready` takes a server
+and either a login or the whole session, and `reached()` hands it to the provider as `KeptSession`.
+Both phones keep the three sealed beside the other fields (Android's records stay version 2, the keys
+optional; iOS's keychain item decodes them as optional), save the account on approval with the
+server's user name and no password, and let the session go when a password is typed.
+
 ## Downloads keep what they received
 
 `downloads.rs` writes a resumable offer into `partials.rs`' folder (`download-partials/` under the

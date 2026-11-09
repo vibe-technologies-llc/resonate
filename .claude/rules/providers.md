@@ -505,6 +505,30 @@ catalog is the server's, browsed through its API and never copied into `resonate
   `ProviderOp::SignIn`. `Server`'s `Debug` prints `<withheld>`, `Session` has no `Debug`, and
   `told` keeps ureq's address-printing errors out of the log, as Subsonic's does
   (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
+- **Quick Connect signs in with no password** (`quick_connect.rs`, Jellyfin 10.8+): `QuickConnect::at`
+  asks `QuickConnect/Enabled` (`offered`: false for an address under `/emby`, a refusal below 500 or
+  any answer but `true`, so a proxy's page is no offer), `begun` posts `QuickConnect/Initiate` with the
+  `MediaBrowser` authorization (`Call::SigningIn`; a `405` asks again by `GET`, `Call::Introducing`)
+  and answers the `Code` (`Approving`'s `Debug` withholds the secret), and `approved` polls
+  `QuickConnect/Connect?secret=` every `QUICK_CONNECT_ASKED_EVERY` (5 s) until `Authenticated`, then posts
+  the secret to `Users/AuthenticateWithQuickConnect` and answers a `SignedIn`: the `KeptSession`
+  (token, user id, and the device id the code was asked under) and the user's name. A secret the server
+  forgot (404) or a wait past `A_QUICK_CONNECT_LAPSES_AFTER` (10 minutes) is `AuthorizationLapsed`, a
+  401/403 at `Initiate` `AuthorizationDenied`, a cancel heard within a tenth of a second `Ok(None)`, and
+  a poll the server did not answer is asked again (`a_code_approved_elsewhere_signs_in_and_yields_the_session_the_device_was_issued`,
+  `a_code_never_approved_lapses_and_keeps_nothing`, `a_cancel_ends_the_wait_and_keeps_nothing`,
+  `quick_connect_is_not_offered_by_emby_or_a_server_with_it_off_or_one_answering_a_page`,
+  `an_older_server_is_begun_with_get`).
+- **A kept session stands in place of the password.** `Server::kept` (`KeptSession`, its token
+  withheld): the provider names the kept device in its authorization, takes the session without asking
+  `AuthenticateByName`, and a 401 is `Unwelcome` under `ProviderOp::SignIn` (away), never a sign-in by
+  name, since no password stands beside it
+  (`a_kept_session_is_asked_with_its_token_and_never_signs_in`,
+  `a_kept_token_turned_away_is_the_account_turned_away_and_not_a_new_sign_in`). The binary keeps it as
+  `jellyfin-token`, `jellyfin-user-id` and `jellyfin-device` (`binary.md`); an account is ready with an
+  address and either user and password or the whole session, and **a token and a password never both
+  stand**: a Quick Connect sign-in clears `jellyfin-password` and writes the user's name into
+  `jellyfin-user`, and a password typed, an address changed or the account forgotten lets the session go.
 - **Emby is the same client under `/emby`.** The address is tried as given and, where the sign-in
   is answered 404 and the address does not already end in `/emby`, under `/emby`; the route that
   answered is the session's root and its `Flavour`. No other call differs, so Emby is no second

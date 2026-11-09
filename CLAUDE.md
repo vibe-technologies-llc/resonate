@@ -261,7 +261,7 @@ stack's test harness:
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `musicbrainz` (the local copy of MusicBrainz: `--build [--from FOLDER]`, `--remove`, `--search`), `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome, YouTube Music; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
-- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`, `sign-in` in the `resonate-signin` window, `sign-out`).
+- **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `jellyfin` (Quick Connect sign-in, `--forget`), `lastfm` (scrobbling sign-in), `spotify` (sign in to an app of the listener's, follow or move the account), `ytmusic` (`keep URL`, `check`, `sign-in` in the `resonate-signin` window, `sign-out`).
 - **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).
 - **Updates:** `update` (asks now whether a newer release is out; the window asks once a day while `check-for-updates` is on).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,

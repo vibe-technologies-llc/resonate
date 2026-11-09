@@ -53,6 +53,13 @@ paths:
   `SpotifySignInLapsed`. `--forget` clears the token and `Library::let_go_of_the_profile`: each
   playlist kept from the account keeps its rows and forgets its link, or the next refresh of a public
   one would mirror what the public page holds (`online.md`'s *A Spotify account*).
+- **`jellyfin [--forget]` signs in to the `jellyfin` server with Quick Connect** (`jellyfin.rs`):
+  `OnlineOff`, `NoJellyfinServer` and `QuickConnectOff` (Emby, or Quick Connect off) before a code is
+  asked; the code is printed with where to approve it, the first interrupt cancels
+  (`JellyfinSignInCancelled`), and one `config::edit` keeps `jellyfin-token`, `jellyfin-user-id`,
+  `jellyfin-device` and the user's name in `jellyfin-user` and clears `jellyfin-password`
+  (`a_quick_connect_sign_in_keeps_the_session_and_lets_go_of_the_password`); `--forget` clears the
+  three. No running window is told (no `Reloadable`), as `ytmusic sign-in`.
 - **`ytmusic keep URL` and `ytmusic check` are the terminal's YouTube Music** (`ytmusic.rs`, online
   alone; a build without it is `NoServed`). `keep_of` reads a song link (`watch?v=`, a `youtu.be`
   address whose path reads as a video; a `watch` link naming a list too is the song) or a `playlist?list=` on `music.youtube.com` or
