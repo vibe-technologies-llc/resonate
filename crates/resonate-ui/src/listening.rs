@@ -94,17 +94,17 @@ enum Then {
 impl std::fmt::Debug for Stage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Idle => "Idle",
-            Self::Recording { .. } => "Recording",
-            Self::Asking => "Asking",
-            Self::Found(_) => "Found",
-            Self::Unknown => "Unknown",
-            Self::Silent => "Silent",
-            Self::CaptureFailed => "CaptureFailed",
-            Self::Unreached => "Unreached",
-            Self::Refused => "Refused",
-            Self::Offline => "Offline",
-            Self::NoService => "NoService",
+            Self::Idle => stringify!(Idle),
+            Self::Recording { .. } => stringify!(Recording),
+            Self::Asking => stringify!(Asking),
+            Self::Found(_) => stringify!(Found),
+            Self::Unknown => stringify!(Unknown),
+            Self::Silent => stringify!(Silent),
+            Self::CaptureFailed => stringify!(CaptureFailed),
+            Self::Unreached => stringify!(Unreached),
+            Self::Refused => stringify!(Refused),
+            Self::Offline => stringify!(Offline),
+            Self::NoService => stringify!(NoService),
         })
     }
 }

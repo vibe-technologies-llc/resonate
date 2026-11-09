@@ -202,44 +202,28 @@ mod tests {
 mod words {
     use std::path::Path;
 
-    const PROPER: &[&str] = &[];
+    const PROPER: &[&str] = &["Resonate", "PipeWire", "Windows", "Shazam", "AudD"];
 
-    const NOT_WORDS: &[&str] = &[];
-
-    const STILL_TO_MOVE: &[&str] = &[
-        "app.rs",
-        "downloads.rs",
-        "equaliser.rs",
+    const NOT_WORDS: &[&str] = &[
         "fonts.rs",
         "icons.rs",
-        "keys.rs",
         "launcher.rs",
-        "listening.rs",
-        "lyrics.rs",
-        "models.rs",
+        "wrapped_card/markup.rs",
+    ];
+
+    const STILL_TO_MOVE: &[&str] = &[
+        "keys.rs",
         "serving.rs",
-        "settings.rs",
-        "system.rs",
-        "toast.rs",
-        "views/analysis.rs",
-        "views/announcing.rs",
-        "views/better.rs",
         "views/browser.rs",
         "views/chrome.rs",
         "views/dropping.rs",
         "views/favourites.rs",
-        "views/inspector.rs",
-        "views/listen.rs",
         "views/listing.rs",
-        "views/lyrics.rs",
         "views/matching.rs",
         "views/menu.rs",
         "views/missing.rs",
-        "views/party.rs",
-        "views/party_offer.rs",
         "views/playlists.rs",
         "views/queue.rs",
-        "views/remote.rs",
         "views/reorder.rs",
         "views/root.rs",
         "views/search.rs",
@@ -262,16 +246,9 @@ mod words {
         "views/settings/sync.rs",
         "views/settings/tidal.rs",
         "views/settings/youtube_music.rs",
-        "views/sharing.rs",
-        "views/slider.rs",
         "views/sorting.rs",
-        "views/statistics.rs",
-        "views/suggestions.rs",
         "views/transport.rs",
-        "views/visualiser.rs",
-        "views/wrapped.rs",
         "views/zones.rs",
-        "wrapped_card.rs",
     ];
 
     #[test]

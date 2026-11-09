@@ -3,24 +3,15 @@ use gpui::{Context, Div, SharedString, div, prelude::*, px, rgb};
 use crate::{
     Notice, ResonateApp,
     icons::Icon,
-    motion, theme,
+    keys, motion, theme,
     views::{
         kit,
         root::{Pane, RootView},
         sheets,
         spoken::Spoken as _,
     },
+    words,
 };
-
-const ASKING: &str = "Join this listening party?";
-
-const THIS_COMPUTER: &str = "this computer";
-
-const NOT_JOINING_HINT: &str = keyed!("Stay as you are", key!(leave));
-
-const JOIN_HINT: &str = "Stop what plays and follow the party instead";
-
-const COULD_NOT_JOIN: &str = "That party could not be joined";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TakesOver {
@@ -32,19 +23,17 @@ impl TakesOver {
         Self { zone }
     }
 
-    pub(crate) const fn asking(&self) -> &'static str {
-        ASKING
+    pub(crate) fn asking(&self) -> &'static str {
+        words::party_offer::asking()
     }
 
     pub(crate) fn saying(&self) -> String {
         let named = match &self.zone {
-            Some(zone) => format!("the zone {zone}"),
-            None => THIS_COMPUTER.to_owned(),
+            Some(zone) => words::party_offer::the_zone(zone),
+            None => words::party_offer::this_computer().to_owned(),
         };
 
-        format!(
-            "A link asks {named} to stop what it plays and follow someone's party instead. Join only if you were invited."
-        )
+        words::party_offer::saying(named)
     }
 }
 
@@ -66,7 +55,10 @@ impl RootView {
         };
         cx.notify();
         let Some(together) = cx.global::<ResonateApp>().together.clone() else {
-            self.report(Notice::Trouble(COULD_NOT_JOIN.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::party_offer::could_not_join().to_owned()),
+                cx,
+            );
             return;
         };
         let zone = self.switcher.selected();
@@ -78,7 +70,10 @@ impl RootView {
                 if worked {
                     this.set_pane(Pane::Party, cx);
                 } else {
-                    this.report(Notice::Trouble(COULD_NOT_JOIN.to_owned()), cx);
+                    this.report(
+                        Notice::Trouble(words::party_offer::could_not_join().to_owned()),
+                        cx,
+                    );
                 }
                 cx.notify();
             });
@@ -121,8 +116,8 @@ impl RootView {
                         kit::button(
                             sheets::NOT_JOINING,
                             None,
-                            "Cancel",
-                            NOT_JOINING_HINT,
+                            words::party_offer::cancel(),
+                            keys::keyed(words::party_offer::not_joining(), &[key!(leave)]),
                             kit::Tone::Outlined,
                         ),
                         |this, _, cx| this.not_joining_the_party(cx),
@@ -132,8 +127,8 @@ impl RootView {
                         kit::button(
                             "join-the-party",
                             Some(Icon::Party),
-                            "Join",
-                            JOIN_HINT,
+                            words::party_offer::join(),
+                            words::party_offer::join_hint(),
                             kit::Tone::Primary,
                         ),
                         |this, _, cx| this.join_the_offered_party(cx),

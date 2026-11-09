@@ -18,7 +18,7 @@ use crate::{
     measure::{Measures, Unmeasured},
     models::Notice,
     settings::Carry,
-    toast,
+    toast, words,
 };
 
 pub const CURVE_COLUMNS: usize = 192;
@@ -49,15 +49,15 @@ impl Curve {
     pub fn spoken(&self) -> String {
         match self {
             Self::Kept(name) => name.to_string(),
-            Self::Own(Some(_)) => "This device's own curve".to_owned(),
-            Self::Own(None) => "Every other device's own curve".to_owned(),
+            Self::Own(Some(_)) => words::equaliser::this_devices_own_curve().to_owned(),
+            Self::Own(None) => words::equaliser::every_other_devices_own_curve().to_owned(),
         }
     }
 
     pub fn file_name(&self) -> String {
         match self {
             Self::Kept(name) => format!("{name}.txt"),
-            Self::Own(_) => "own curve.txt".to_owned(),
+            Self::Own(_) => words::equaliser::own_curve_file().to_owned(),
         }
     }
 
@@ -94,7 +94,7 @@ pub struct Placed {
 fn fitted_said(name: &ProfileName, aimed_at: &str, measured: &Measured) -> String {
     let passed_over = match measured.passed_over {
         0 => String::new(),
-        lines => format!("; {lines} lines of the measurement were passed over"),
+        lines => words::equaliser::measurement_lines_passed_over(lines),
     };
     format!(
         "{}{passed_over}",
@@ -103,15 +103,14 @@ fn fitted_said(name: &ProfileName, aimed_at: &str, measured: &Measured) -> Strin
 }
 
 fn fit_said(name: &ProfileName, aimed_at: &str, fitted: &Fitted) -> String {
-    format!(
-        "Kept {name}, {} bands fitted toward {aimed_at}: {:.1} dB off before and {:.1} dB after",
+    words::equaliser::fitted(
+        format!("{:.1}", fitted.off_by_db_after),
+        aimed_at,
         fitted.profile.bands().len(),
-        fitted.off_by_db_before,
-        fitted.off_by_db_after,
+        format!("{:.1}", fitted.off_by_db_before),
+        name.as_str(),
     )
 }
-
-const MEASURED_LIVE: &str = "measured";
 
 #[derive(Debug, Error)]
 enum Missed {
@@ -132,38 +131,31 @@ pub struct Sounding {
 fn missed_the_room(error: &Missed) -> Notice {
     match error {
         Missed::Heard(unmeasured) if unmeasured.is_stopped() => {
-            Notice::Noted("The measurement was stopped; nothing was kept".to_owned())
+            Notice::Noted(words::equaliser::measurement_stopped().to_owned())
         }
-        Missed::Heard(unmeasured) if unmeasured.is_silence() => Notice::Trouble(
-            "Nothing was heard — check the microphone is on and the output can be heard".to_owned(),
-        ),
+        Missed::Heard(unmeasured) if unmeasured.is_silence() => {
+            Notice::Trouble(words::equaliser::nothing_heard().to_owned())
+        }
         Missed::Heard(unmeasured) if unmeasured.is_a_missing_output() => {
-            Notice::Trouble("The output to play the sweep through isn't there".to_owned())
+            Notice::Trouble(words::equaliser::no_output_for_the_sweep().to_owned())
         }
-        Missed::Heard(_) => Notice::Trouble("Couldn't play the sweep and hear it".to_owned()),
-        Missed::Fitted(error) => toast::eq_could_not("fit that measurement", error),
+        Missed::Heard(_) => Notice::Trouble(words::equaliser::sweep_unheard().to_owned()),
+        Missed::Fitted(error) => {
+            toast::eq_could_not(words::equaliser::fit_that_measurement(), error)
+        }
     }
 }
 
 fn caveats(kept: &resonate_eq::Kept) -> String {
     let mut said = String::new();
     if kept.passed_over > 0 {
-        said.push_str(&format!(
-            "; {} lines this build does not read were passed over",
-            kept.passed_over
-        ));
+        said.push_str(&words::equaliser::lines_passed_over(kept.passed_over));
     }
     if kept.approximated > 0 {
-        said.push_str(&format!(
-            "; {} filters name a rolloff it reads as second order",
-            kept.approximated
-        ));
+        said.push_str(&words::equaliser::rolloffs_approximated(kept.approximated));
     }
     if kept.clamped > 0 {
-        said.push_str(&format!(
-            "; {} values past what it holds were held to its limits",
-            kept.clamped
-        ));
+        said.push_str(&words::equaliser::values_clamped(kept.clamped));
     }
     said
 }
@@ -513,15 +505,17 @@ impl EqualiserModel {
         match held.unwrap_or_else(|| curve.read(&self.store)) {
             Ok(Some(profile)) => self.shown = Some((curve, profile)),
             Ok(None) => {
-                self.notice = Some(Notice::Trouble(format!(
-                    "{} is bound but not kept here",
-                    curve.spoken()
+                self.notice = Some(Notice::Trouble(words::equaliser::bound_but_not_kept(
+                    curve.spoken(),
                 )));
                 self.shown = None;
             }
             Err(error) => {
                 self.shown = None;
-                self.notice = Some(toast::eq_could_not("read that profile", &error));
+                self.notice = Some(toast::eq_could_not(
+                    words::equaliser::read_that_profile(),
+                    &error,
+                ));
             }
         }
         self.step();
@@ -558,7 +552,10 @@ impl EqualiserModel {
         if let Some((curve, profile)) = self.shown.as_ref()
             && let Err(error) = curve.keep(&self.store, profile)
         {
-            self.notice = Some(toast::eq_could_not("save the curve", &error));
+            self.notice = Some(toast::eq_could_not(
+                words::equaliser::save_the_curve(),
+                &error,
+            ));
         }
     }
 
@@ -664,7 +661,7 @@ impl EqualiserModel {
             && let Err(error) = self.carry_the_own_curve(carry)
         {
             self.notice = Some(toast::eq_could_not(
-                "carry the curve to the renamed device",
+                words::equaliser::carry_the_curve(),
                 &error,
             ));
             return false;
@@ -774,9 +771,7 @@ impl EqualiserModel {
         let (_, profile) = self.shown.as_mut()?;
         if let Err(error) = profile.push(a_band_at(placed)) {
             tracing::debug!(%error, "a band was pressed onto a full curve");
-            self.notice = Some(Notice::Trouble(format!(
-                "a curve holds at most {MAX_BANDS} bands"
-            )));
+            self.notice = Some(Notice::Trouble(words::equaliser::bands_at_most(MAX_BANDS)));
             return None;
         }
         let row = profile.bands().len().checked_sub(1)?;
@@ -933,7 +928,10 @@ impl EqualiserModel {
             let outcome = this.update(cx, |this, cx| {
                 this.unsaved = false;
                 if let Err(error) = written {
-                    this.notice = Some(toast::eq_could_not("save the curve", &error));
+                    this.notice = Some(toast::eq_could_not(
+                        words::equaliser::save_the_curve(),
+                        &error,
+                    ));
                     cx.notify();
                 }
             });
@@ -955,19 +953,18 @@ impl EqualiserModel {
                     this.replaced(&name);
                     this.reread(Curve::Kept(name.clone()));
                     let said = if kept.converted {
-                        format!(
-                            "kept a graphic curve as {name}, fitted to {} bands here and again \
-                             at the rate each stream plays at",
-                            kept.profile.bands().len()
-                        )
+                        words::equaliser::kept_graphic(kept.profile.bands().len(), name.as_str())
                     } else {
-                        format!("Kept {name}, {} bands", kept.profile.bands().len())
+                        words::equaliser::kept_with_bands(kept.profile.bands().len(), name.as_str())
                     };
                     this.notice = Some(Notice::Done(format!("{said}{}", caveats(&kept))));
                     cx.notify();
                 }
                 Err(error) => {
-                    this.notice = Some(toast::eq_could_not("import that profile", &error));
+                    this.notice = Some(toast::eq_could_not(
+                        words::equaliser::import_that_profile(),
+                        &error,
+                    ));
                     cx.notify();
                 }
             });
@@ -1005,7 +1002,10 @@ impl EqualiserModel {
                         this.notice = Some(Notice::Done(fitted_said(&name, &aimed_at, &measured)));
                     }
                     Err(error) => {
-                        this.notice = Some(toast::eq_could_not("fit that measurement", &error));
+                        this.notice = Some(toast::eq_could_not(
+                            words::equaliser::fit_that_measurement(),
+                            &error,
+                        ));
                     }
                 }
                 cx.notify();
@@ -1046,7 +1046,8 @@ impl EqualiserModel {
                     let target = goal.response().map_err(Missed::Fitted)?;
                     let fitted =
                         fit(&heard, &target, &Fitting::default()).map_err(Missed::Fitted)?;
-                    let name = called.unwrap_or_else(|| ProfileName::after(MEASURED_LIVE));
+                    let name =
+                        called.unwrap_or_else(|| ProfileName::after(words::equaliser::measured()));
                     Store::at(folder)
                         .keep(&name, &fitted.profile)
                         .map_err(Missed::Fitted)?;
@@ -1094,8 +1095,10 @@ impl EqualiserModel {
 
             let outcome = this.update(cx, |this, cx| {
                 this.notice = Some(match written {
-                    Ok(()) => Notice::Done(format!("Wrote {name} out")),
-                    Err(error) => toast::eq_could_not("export the profile", &error),
+                    Ok(()) => Notice::Done(words::equaliser::wrote_out(name.as_str())),
+                    Err(error) => {
+                        toast::eq_could_not(words::equaliser::export_the_profile(), &error)
+                    }
                 });
                 cx.notify();
             });
@@ -1112,10 +1115,15 @@ impl EqualiserModel {
         match self.store.keep(&name, &profile) {
             Ok(_) => {
                 self.reload();
-                self.notice = Some(Notice::Done(format!("Kept the curve as {name}")));
+                self.notice = Some(Notice::Done(words::equaliser::kept_the_curve_as(
+                    name.as_str(),
+                )));
             }
             Err(error) => {
-                self.notice = Some(toast::eq_could_not("keep the curve as a profile", &error));
+                self.notice = Some(toast::eq_could_not(
+                    words::equaliser::keep_as_a_profile(),
+                    &error,
+                ));
             }
         }
         cx.notify();
@@ -1138,11 +1146,16 @@ impl EqualiserModel {
                 self.reload();
                 self.step();
                 self.notice = Some(Notice::Done(match curve {
-                    Curve::Kept(name) => format!("Discarded {name}"),
-                    Curve::Own(_) => "Discarded the device's own curve".to_owned(),
+                    Curve::Kept(name) => words::equaliser::discarded(name.as_str()),
+                    Curve::Own(_) => words::equaliser::discarded_the_own_curve().to_owned(),
                 }));
             }
-            Err(error) => self.notice = Some(toast::eq_could_not("discard that curve", &error)),
+            Err(error) => {
+                self.notice = Some(toast::eq_could_not(
+                    words::equaliser::discard_that_curve(),
+                    &error,
+                ))
+            }
         }
         cx.notify();
     }
@@ -1193,7 +1206,10 @@ impl EqualiserModel {
                         }
                     }
                     Err(error) => {
-                        this.notice = Some(toast::eq_could_not("read the AutoEq catalogue", &error))
+                        this.notice = Some(toast::eq_could_not(
+                            words::equaliser::read_the_catalogue(),
+                            &error,
+                        ))
                     }
                 }
                 cx.notify();
@@ -1248,16 +1264,16 @@ impl EqualiserModel {
                 match fetched {
                     Ok(Some((name, profile))) => {
                         this.reload();
-                        this.notice = Some(Notice::Done(format!(
-                            "kept {name}, {} bands",
-                            profile.bands().len()
+                        this.notice = Some(Notice::Done(words::equaliser::kept_from_autoeq(
+                            profile.bands().len(),
+                            name.as_str(),
                         )));
                         this.replaced(&name);
                         this.step();
                     }
                     Ok(None) => {
                         this.notice = Some(Notice::Trouble(
-                            "AutoEq has no measurement for that device".to_owned(),
+                            words::equaliser::no_autoeq_measurement().to_owned(),
                         ));
                     }
                     Err(error) => {
@@ -1359,9 +1375,9 @@ fn grouped_in_thousands(number: &str) -> bool {
 
 fn refused(cell: Cell) -> String {
     match cell {
-        Cell::Frequency => "a band sits between 1 Hz and 40 kHz".to_owned(),
-        Cell::Gain => "a band's gain sits between -40 and +40 dB".to_owned(),
-        Cell::Q => "a Q sits between 0.10 and 40.00".to_owned(),
+        Cell::Frequency => words::equaliser::frequency_refused().to_owned(),
+        Cell::Gain => words::equaliser::gain_refused().to_owned(),
+        Cell::Q => words::equaliser::q_refused().to_owned(),
     }
 }
 

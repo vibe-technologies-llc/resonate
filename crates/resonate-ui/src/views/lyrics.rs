@@ -25,68 +25,8 @@ use crate::{
         spoken::{Placed, Spoken},
         transport::Playing,
     },
+    words,
 };
-
-const THE_LYRICS: &str = "Lyrics";
-
-const COPY_LINE: &str = "Copy this line";
-
-const COPY_SHEET: &str = "Copy the whole sheet";
-
-const SEEK_TO_IT: &str = "Play from this line";
-
-const NOTHING_PLAYING: &str = "Nothing playing";
-
-const PLAY_TO_FOLLOW: &str = "Play a track and its words follow it here.";
-
-const SEARCHING: &str = "Looking for lyrics…";
-
-const SEARCHING_MORE: &str = "Each lyric source is asked in turn for this track.";
-
-const UNSOURCED: &str = "No lyric source";
-
-const UNSOURCED_MORE: &str =
-    "None is configured, so nothing is looked up. Choose one in the settings.";
-
-const MISSING: &str = "No lyrics found";
-
-const SIDECAR_HINT: &str = "No source had lyrics for this track. The pane also reads an .lrc or \
-                            .txt beside the file or in a Lyrics folder next to it, and lyrics \
-                            embedded in its tags.";
-
-const FOLLOW_HINT: &str = "Follow the track again — a scroll of your own holds the pane where you \
-                           left it";
-
-const PRESS_HINT: &str = "Press any line to jump the transport to the moment it is sung at. A \
-                          scroll of your own holds the pane where you leave it until Follow puts \
-                          it back on the track.";
-
-const EARLIER_HINT: &str = "Earlier — the words come a tenth of a second sooner, for a sheet \
-                            that runs late. Kept for this track.";
-
-const LATER_HINT: &str = "Later — the words come a tenth of a second later, for a sheet that runs \
-                          early. Kept for this track.";
-
-const PUT_BACK_HINT: &str = "How far the words are moved, minus for sooner and plus for later. \
-                             Press to put them back on the sheet's own timing.";
-
-const WORD_SYNCED: &str = "Word-synced";
-
-const SYNCED: &str = "Synced";
-
-const UNSYNCED: &str = "Unsynced";
-
-const BY: &str = "by";
-
-const WORDS_BY: &str = "Words by";
-
-const SHEET_BY: &str = "Sheet by";
-
-const LAID_DOWN_WITH: &str = "Laid down with";
-
-const FROM_THE_RECORD: &str = "From";
-
-const END_OF_LYRICS: &str = "End of lyrics";
 
 const BREATH_DOTS: usize = 3;
 
@@ -190,7 +130,11 @@ impl RootView {
         let digest = model.digest();
 
         let Some(current) = state.current else {
-            return kit::empty(Icon::Lyrics, NOTHING_PLAYING, Some(PLAY_TO_FOLLOW));
+            return kit::empty(
+                Icon::Lyrics,
+                words::lyrics_pane::nothing_playing(),
+                Some(words::lyrics_pane::play_to_follow()),
+            );
         };
         let playing = self.playing(&state, digest.as_deref(), cx);
         let now = Instant::now();
@@ -227,13 +171,21 @@ impl RootView {
 
         let body = match &look {
             Look::Searching if quiet => quietly(moving),
-            Look::Searching => kit::empty(Icon::Lyrics, SEARCHING, Some(SEARCHING_MORE)),
-            Look::Nothing | Look::Missing if sourced => {
-                kit::empty(Icon::Lyrics, MISSING, Some(SIDECAR_HINT))
-            }
-            Look::Nothing | Look::Missing => {
-                kit::empty(Icon::Lyrics, UNSOURCED, Some(UNSOURCED_MORE))
-            }
+            Look::Searching => kit::empty(
+                Icon::Lyrics,
+                words::lyrics_pane::searching(),
+                Some(words::lyrics_pane::searching_more()),
+            ),
+            Look::Nothing | Look::Missing if sourced => kit::empty(
+                Icon::Lyrics,
+                words::lyrics_pane::missing(),
+                Some(words::lyrics_pane::sidecar_hint()),
+            ),
+            Look::Nothing | Look::Missing => kit::empty(
+                Icon::Lyrics,
+                words::lyrics_pane::unsourced(),
+                Some(words::lyrics_pane::unsourced_more()),
+            ),
             Look::Refused(notice) => notice_of(notice.clone()),
             Look::Found(_) => {
                 self.lyric_lines(position, now, synced, moving || (synced && sounding), cx)
@@ -264,8 +216,8 @@ impl RootView {
                                 kit::button(
                                     "follow-lyrics",
                                     Some(Icon::Lyrics),
-                                    "Follow",
-                                    FOLLOW_HINT,
+                                    words::lyrics_pane::follow(),
+                                    words::lyrics_pane::follow_hint(),
                                     Tone::Outlined,
                                 ),
                                 |this, _, cx| {
@@ -304,7 +256,10 @@ impl RootView {
                         .when(synced, |actions| {
                             actions
                                 .child(self.lyric_timing(ahead, cx))
-                                .child(hint::explains("lyric-press", PRESS_HINT))
+                                .child(hint::explains(
+                                    "lyric-press",
+                                    words::lyrics_pane::press_hint(),
+                                ))
                         })
                         .when_some(attribution(look), |actions, attributed| {
                             actions
@@ -329,7 +284,11 @@ impl RootView {
                 .into_any_element(),
             false => self
                 .in_the_pane_ring(
-                    kit::stepper_reading_put_back("lyrics-ahead", said_ahead(ahead), PUT_BACK_HINT),
+                    kit::stepper_reading_put_back(
+                        "lyrics-ahead",
+                        said_ahead(ahead),
+                        words::lyrics_pane::put_back_hint(),
+                    ),
                     |this, _, cx| {
                         this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
                     },
@@ -340,7 +299,11 @@ impl RootView {
 
         kit::stepper()
             .child(self.in_the_pane_ring(
-                kit::step("lyrics-earlier", Icon::Minus, EARLIER_HINT),
+                kit::step(
+                    "lyrics-earlier",
+                    Icon::Minus,
+                    words::lyrics_pane::earlier_hint(),
+                ),
                 move |this, _, cx| {
                     this.nudge_the_lyrics(ahead.earlier(), cx);
                 },
@@ -348,7 +311,7 @@ impl RootView {
             ))
             .child(reading)
             .child(self.in_the_pane_ring(
-                kit::step("lyrics-later", Icon::Plus, LATER_HINT),
+                kit::step("lyrics-later", Icon::Plus, words::lyrics_pane::later_hint()),
                 move |this, _, cx| {
                     this.nudge_the_lyrics(ahead.later(), cx);
                 },
@@ -448,7 +411,7 @@ impl RootView {
 
         let column = div()
             .id("lyric-sheet")
-            .named_as(Role::List, THE_LYRICS, "")
+            .named_as(Role::List, words::lyrics_pane::the_lyrics(), "")
             .track_scroll(&scroll)
             .overflow_y_scroll()
             .on_scroll(cx.listener(|this, _: &ScrollEvent, _, cx| {
@@ -636,7 +599,7 @@ impl RootView {
                           cx: &Context<RootView>| {
             this.copies_a_lyric(where_at, words, cx).apart().does(
                 Icon::Lyrics,
-                SEEK_TO_IT,
+                words::lyrics_pane::seek_to_it(),
                 move |this, _, cx| this.seek_to_the_words(at, cx),
             )
         };
@@ -708,14 +671,22 @@ impl RootView {
             .when_some(
                 (!words.trim().is_empty()).then_some(words),
                 |menu, words| {
-                    menu.does(Icon::Export, COPY_LINE, move |_, _, cx| {
-                        clipboard::copy(words.clone(), cx);
-                    })
+                    menu.does(
+                        Icon::Export,
+                        words::lyrics_pane::copy_line(),
+                        move |_, _, cx| {
+                            clipboard::copy(words.clone(), cx);
+                        },
+                    )
                 },
             )
-            .does(Icon::Export, COPY_SHEET, move |_, _, cx| {
-                clipboard::copy(whole.clone(), cx);
-            })
+            .does(
+                Icon::Export,
+                words::lyrics_pane::copy_sheet(),
+                move |_, _, cx| {
+                    clipboard::copy(whole.clone(), cx);
+                },
+            )
     }
 
     fn wanted_lyrics(
@@ -848,9 +819,9 @@ fn attribution(look: &Look) -> Option<Attributed> {
         return None;
     };
     let timed = match lyrics.detail() {
-        Detail::Words => WORD_SYNCED,
-        Detail::Lines => SYNCED,
-        Detail::Unsynced => UNSYNCED,
+        Detail::Words => words::lyrics_pane::word_synced(),
+        Detail::Lines => words::lyrics_pane::synced(),
+        Detail::Unsynced => words::lyrics_pane::unsynced(),
     };
 
     Some(Attributed {
@@ -868,21 +839,21 @@ fn credited(credits: &Credits) -> Option<Credit> {
         .or(credits.words_by.as_deref())
         .map(str::to_owned)
         .or_else(|| laid_down.clone())
-        .map(|whoever| format!("{BY} {whoever}"))?;
+        .map(words::lyrics_pane::by)?;
     let whole: Vec<String> = [
         credits
             .words_by
             .as_deref()
-            .map(|words| format!("{WORDS_BY} {words}.")),
+            .map(words::lyrics_pane::words_by),
         credits
             .sheet_by
             .as_deref()
-            .map(|sheet| format!("{SHEET_BY} {sheet}.")),
-        laid_down.map(|editor| format!("{LAID_DOWN_WITH} {editor}.")),
+            .map(words::lyrics_pane::sheet_by),
+        laid_down.map(words::lyrics_pane::laid_down_with),
         credits
             .album
             .as_deref()
-            .map(|album| format!("{FROM_THE_RECORD} {album}.")),
+            .map(words::lyrics_pane::from_the_record),
     ]
     .into_iter()
     .flatten()
@@ -937,7 +908,7 @@ fn end_of_the_words(ending: Ending, measures: Measures) -> Div {
                         .text_size(measures.label_words)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(theme::muted()))
-                        .child(END_OF_LYRICS),
+                        .child(words::lyrics_pane::end_of_lyrics()),
                 )
                 .child(rule()),
         )
@@ -1057,7 +1028,7 @@ fn said_ahead(ahead: LyricsAhead) -> String {
         sooner if sooner > 0 => "−",
         _ => "+",
     };
-    format!("{sign}{:.1} s", seconds.abs())
+    words::lyrics_pane::seconds_ahead(format!("{:.1}", seconds.abs()), sign)
 }
 
 #[cfg(test)]

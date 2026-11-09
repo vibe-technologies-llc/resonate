@@ -16,6 +16,7 @@ use crate::{
         RootView, focus,
         spoken::{Spoken, Urgency},
     },
+    words,
 };
 
 const LINGERS_IN_STEPS_OF: Duration = Duration::from_millis(100);
@@ -344,8 +345,8 @@ pub(crate) fn drawn(
 
 pub(crate) fn could_not(doing: &str, error: &resonate_library::Error) -> Notice {
     Notice::Trouble(match standing_in_the_way(error) {
-        Some(why) => format!("Couldn't {doing} — {why}"),
-        None => format!("Couldn't {doing}"),
+        Some(why) => words::toast::could_not_because(doing, why),
+        None => words::toast::could_not(doing),
     })
 }
 
@@ -354,26 +355,24 @@ fn standing_in_the_way(error: &resonate_library::Error) -> Option<String> {
 
     let why = match error {
         Library::UnknownLayoutField { field } => {
-            return Some(format!(
-                "the layout asks for {field}, which a track isn't known by"
-            ));
+            return Some(words::toast::unknown_layout_field(field.to_string()));
         }
-        Library::LayoutSyntax { .. } => "a brace in the layout isn't closed or doubled",
-        Library::LayoutEscapes { .. } => "the layout reaches outside the folder it files under",
-        Library::AlreadyWalking => "another library task is still running",
-        Library::AlreadyAsking { .. } => "another Resonate is already asking the same services",
-        Library::Unreachable { .. } => "the service couldn't be reached",
-        Library::Refused { .. } => "the service turned the request down",
-        Library::Io { .. } | Library::Move { .. } => "a file couldn't be read or written",
-        Library::NoVault => "there's no vault yet",
-        Library::DestinationNotADirectory { .. } => "the music folder isn't there",
-        Library::DuplicatePlaylist { .. } => "a playlist already has that name",
-        Library::UnnamedPlaylist => "it needs a name",
-        Library::RootNotADirectory { .. } => "that isn't a folder",
-        Library::RootInsideRoot { .. } => "that folder is already in the library",
-        Library::NotARoot { .. } => "that folder isn't in the library",
+        Library::LayoutSyntax { .. } => words::toast::layout_syntax(),
+        Library::LayoutEscapes { .. } => words::toast::layout_escapes(),
+        Library::AlreadyWalking => words::toast::already_walking(),
+        Library::AlreadyAsking { .. } => words::toast::already_asking(),
+        Library::Unreachable { .. } => words::toast::unreachable(),
+        Library::Refused { .. } => words::toast::refused(),
+        Library::Io { .. } | Library::Move { .. } => words::toast::unreadable_or_unwritten(),
+        Library::NoVault => words::toast::no_vault(),
+        Library::DestinationNotADirectory { .. } => words::toast::no_music_folder(),
+        Library::DuplicatePlaylist { .. } => words::toast::duplicate_playlist(),
+        Library::UnnamedPlaylist => words::toast::unnamed_playlist(),
+        Library::RootNotADirectory { .. } => words::toast::not_a_folder(),
+        Library::RootInsideRoot { .. } => words::toast::root_inside_root(),
+        Library::NotARoot { .. } => words::toast::not_a_root(),
         Library::NotAPlaylistFile { .. } | Library::UnreadablePlaylistFile { .. } => {
-            "that file isn't a playlist Resonate can read"
+            words::toast::not_a_playlist_file()
         }
         _ => return None,
     };
@@ -384,82 +383,78 @@ pub(crate) fn eq_could_not(doing: &str, error: &resonate_eq::Error) -> Notice {
     use resonate_eq::Error as Eq;
 
     let why = match error {
-        Eq::Unreachable { .. } => Some("AutoEq couldn't be reached"),
-        Eq::Refused { .. } => Some("AutoEq turned the request down"),
-        Eq::Unreadable { .. } => Some("AutoEq's answer couldn't be read"),
-        Eq::Store { .. } => Some("the profile file couldn't be read or written"),
-        Eq::NotAProfile { .. } => Some("that file isn't an equaliser profile"),
-        Eq::NoSuchProfile => Some("that profile isn't kept any more"),
-        Eq::NameNotUsable => Some("that name can't be used for a profile"),
-        Eq::TooLarge { .. } => Some("the file is too large"),
-        Eq::TooManyLines { .. } => Some("the file holds too many lines"),
-        Eq::MeasurementTooLarge { .. } => Some("the file is too large to be a measurement"),
-        Eq::NoMeasuredPoints => Some("no line of that file reads as a frequency and a level"),
-        Eq::TooFewMeasuredPoints { .. } => Some("that file holds too few points"),
-        Eq::ResponseMissesTheMidBand { .. } => {
-            Some("the measurement and its target must both reach from 500 Hz to 2 kHz")
-        }
-        Eq::NothingToCorrect { .. } => Some("that measurement already sits on its target"),
+        Eq::Unreachable { .. } => Some(words::toast::autoeq_unreachable()),
+        Eq::Refused { .. } => Some(words::toast::autoeq_refused()),
+        Eq::Unreadable { .. } => Some(words::toast::autoeq_unreadable()),
+        Eq::Store { .. } => Some(words::toast::profile_store()),
+        Eq::NotAProfile { .. } => Some(words::toast::not_a_profile()),
+        Eq::NoSuchProfile => Some(words::toast::no_such_profile()),
+        Eq::NameNotUsable => Some(words::toast::name_not_usable()),
+        Eq::TooLarge { .. } => Some(words::toast::too_large()),
+        Eq::TooManyLines { .. } => Some(words::toast::too_many_lines()),
+        Eq::MeasurementTooLarge { .. } => Some(words::toast::measurement_too_large()),
+        Eq::NoMeasuredPoints => Some(words::toast::no_measured_points()),
+        Eq::TooFewMeasuredPoints { .. } => Some(words::toast::too_few_measured_points()),
+        Eq::ResponseMissesTheMidBand { .. } => Some(words::toast::misses_the_mid_band()),
+        Eq::NothingToCorrect { .. } => Some(words::toast::nothing_to_correct()),
         _ => None,
     };
     Notice::Trouble(match why {
-        Some(why) => format!("Couldn't {doing} — {why}"),
-        None => format!("Couldn't {doing}"),
+        Some(why) => words::toast::could_not_because(doing, why),
+        None => words::toast::could_not(doing),
     })
 }
 
 pub(crate) fn would_not_play(cause: Cause, title: &str) -> String {
     match cause {
-        Cause::Unreadable => format!("Couldn't find “{title}” — it may have been moved or deleted"),
-        Cause::Unsupported => format!("“{title}” is in a format Resonate can't play"),
-        Cause::Damaged => format!("Couldn't play “{title}” — the file looks damaged"),
-        Cause::CannotSeek => format!("Couldn't jump around in “{title}”"),
+        Cause::Unreadable => words::toast::not_found(title),
+        Cause::Unsupported => words::toast::unsupported(title),
+        Cause::Damaged => words::toast::damaged(title),
+        Cause::CannotSeek => words::toast::cannot_seek_in(title),
         cause => plainly(cause).to_owned(),
     }
 }
 
-pub(crate) const fn waits_for_a_device(cause: Cause) -> &'static str {
+pub(crate) fn waits_for_a_device(cause: Cause) -> &'static str {
     match cause {
-        Cause::NoDevice => {
-            "No speakers or headphones to play through — playing on once one is there"
-        }
-        _ => "The audio device stopped playing — playing on once one is there",
+        Cause::NoDevice => words::toast::waits_for_a_device(),
+        _ => words::toast::waits_for_the_device(),
     }
 }
 
 pub(crate) fn would_not_do(command: CommandKind, cause: Cause) -> String {
     match cause {
         Cause::Unreadable | Cause::Unsupported | Cause::Damaged => {
-            "That track couldn't be opened".to_owned()
+            words::toast::could_not_open().to_owned()
         }
-        Cause::CannotSeek => "This track can't be skipped through".to_owned(),
+        Cause::CannotSeek => words::toast::cannot_seek().to_owned(),
         Cause::NothingPlaying => match command {
             CommandKind::Pause | CommandKind::Seek | CommandKind::SeekBy => {
-                "Nothing is playing right now".to_owned()
+                words::toast::nothing_playing().to_owned()
             }
-            _ => "There's nothing in the queue to play".to_owned(),
+            _ => words::toast::nothing_queued().to_owned(),
         },
         cause => plainly(cause).to_owned(),
     }
 }
 
-const fn plainly(cause: Cause) -> &'static str {
+fn plainly(cause: Cause) -> &'static str {
     match cause {
-        Cause::NoDevice => "No speakers or headphones to play through",
-        Cause::DeviceGone => "The audio device was unplugged or switched off",
-        Cause::SoundServer => "Lost touch with the sound system — trying again",
-        Cause::DeviceRefused => "The audio device wouldn't play this track's format",
-        Cause::QueueMoved => "The queue changed before that could happen",
-        Cause::PlayerStopped => "The player stopped responding — restart Resonate",
-        Cause::NothingPlaying => "Nothing is playing right now",
-        Cause::CannotSeek => "This track can't be skipped through",
-        Cause::Unreadable => "A track couldn't be found",
-        Cause::Unsupported => "A track is in a format Resonate can't play",
-        Cause::Damaged => "A track couldn't be played",
-        Cause::HeldByAnotherZone => "Another zone plays that device bit-perfect",
-        Cause::ZoneRefused => "That zone is no longer there",
-        Cause::NotHandedOver => "The other zone didn't take the playback over",
-        Cause::NothingToCompare => "The two sides of the listening test can't be told apart here",
+        Cause::NoDevice => words::toast::no_device(),
+        Cause::DeviceGone => words::toast::device_gone(),
+        Cause::SoundServer => words::toast::sound_server(),
+        Cause::DeviceRefused => words::toast::device_refused(),
+        Cause::QueueMoved => words::toast::queue_moved(),
+        Cause::PlayerStopped => words::toast::player_stopped(),
+        Cause::NothingPlaying => words::toast::nothing_playing(),
+        Cause::CannotSeek => words::toast::cannot_seek(),
+        Cause::Unreadable => words::toast::a_track_not_found(),
+        Cause::Unsupported => words::toast::a_track_unsupported(),
+        Cause::Damaged => words::toast::a_track_damaged(),
+        Cause::HeldByAnotherZone => words::toast::held_by_another_zone(),
+        Cause::ZoneRefused => words::toast::zone_refused(),
+        Cause::NotHandedOver => words::toast::not_handed_over(),
+        Cause::NothingToCompare => words::toast::nothing_to_compare(),
     }
 }
 

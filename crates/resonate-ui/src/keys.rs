@@ -1,3 +1,5 @@
+use crate::words;
+
 macro_rules! key {
     (play_pause) => {
         "space"
@@ -184,10 +186,24 @@ macro_rules! keyed {
     };
 }
 
+pub(crate) fn keyed(what: &str, ways: &[&str]) -> String {
+    words::keys::keyed(ways_said(ways), what)
+}
+
+fn ways_said(ways: &[&str]) -> String {
+    match ways {
+        [] => String::new(),
+        [only] => (*only).to_owned(),
+        [one, other] => words::keys::either(*one, *other),
+        [first, rest @ ..] => words::keys::among(*first, ways_said(rest)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use gpui::KeyBinding;
 
+    use super::keyed;
     use crate::app;
 
     const NAMED: [&str; 50] = [
@@ -273,6 +289,19 @@ mod tests {
         );
         assert_eq!(
             keyed!("Reach further", "home", "end", "pageup"),
+            "Reach further — home, end or pageup"
+        );
+    }
+
+    #[test]
+    fn a_hint_said_through_the_catalog_names_what_it_does_and_then_its_keys() {
+        assert_eq!(keyed("Play", &[key!(play_pause)]), "Play — space");
+        assert_eq!(
+            keyed("Louder", &["the wheel", key!(louder)]),
+            "Louder — the wheel or ctrl-up"
+        );
+        assert_eq!(
+            keyed("Reach further", &["home", "end", "pageup"]),
             "Reach further — home, end or pageup"
         );
     }

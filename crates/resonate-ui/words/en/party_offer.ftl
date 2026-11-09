@@ -1,0 +1,9 @@
+asking = Join this listening party?
+this-computer = this computer
+the-zone = the zone { $zone }
+saying = A link asks { $named } to stop what it plays and follow someone's party instead. Join only if you were invited.
+not-joining = Stay as you are
+join-hint = Stop what plays and follow the party instead
+could-not-join = That party could not be joined
+cancel = Cancel
+join = Join

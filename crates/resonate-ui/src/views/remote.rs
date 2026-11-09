@@ -18,6 +18,7 @@ use crate::{
         scrollbar::Scrollbars,
         spoken::Spoken,
     },
+    words,
 };
 
 const READ_EVERY: Duration = Duration::from_secs(1);
@@ -182,9 +183,9 @@ impl RootView {
         };
         let collapsed = self.remote_collapsed;
         let label = if collapsed {
-            "Expand other devices"
+            words::remote::expand()
         } else {
-            "Collapse other devices"
+            words::remote::collapse()
         };
         let mut heading = kit::button(
             "toggle-other-devices",
@@ -193,7 +194,7 @@ impl RootView {
             } else {
                 Icon::ChevronDown
             }),
-            "Other devices",
+            words::remote::other_devices(),
             label,
             kit::Tone::Ghost,
         )
@@ -345,9 +346,9 @@ impl RootView {
         let device = &song.device;
         let id = format!("remote-{}-{at}", device.id);
         let state = if song.zone.sounding {
-            "Playing"
+            words::remote::playing()
         } else {
-            "Paused"
+            words::remote::paused()
         };
         let mark = match device.platform {
             SyncedPlatform::Android | SyncedPlatform::Ios => Icon::Phone,
@@ -407,7 +408,7 @@ impl RootView {
             (
                 "previous",
                 Icon::Previous,
-                "Previous song",
+                words::remote::previous_song(),
                 RemoteKey::Previous,
             ),
             (
@@ -417,13 +418,22 @@ impl RootView {
                 } else {
                     Icon::Play
                 },
-                if song.zone.sounding { "Pause" } else { "Play" },
+                if song.zone.sounding {
+                    words::remote::pause()
+                } else {
+                    words::remote::play()
+                },
                 RemoteKey::Toggle,
             ),
-            ("next", Icon::Next, "Next song", RemoteKey::Next),
+            (
+                "next",
+                Icon::Next,
+                words::remote::next_song(),
+                RemoteKey::Next,
+            ),
         ] {
             let named = format!("{id}-{which}");
-            let saying = format!("{label} on {} · {}", device.name, song.zone.name);
+            let saying = words::remote::control_on(&device.name, label, &song.zone.name);
             let button = if key == RemoteKey::Toggle {
                 kit::lit_mark(SharedString::from(named.clone()), icon, saying)
                     .rounded_full()

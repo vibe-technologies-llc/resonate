@@ -85,15 +85,15 @@ const SEEK_STEP_SECONDS: i64 = 5;
 
 const SEEK_FURTHER_SECONDS: i64 = 30;
 
-pub(crate) const WINDOW_CONTEXT: &str = "Resonate";
-pub(crate) const SEARCH_CONTEXT: &str = "Search";
-pub(crate) const CONTROL_CONTEXT: &str = "Control";
+pub(crate) const WINDOW_CONTEXT: &str = stringify!(Resonate);
+pub(crate) const SEARCH_CONTEXT: &str = stringify!(Search);
+pub(crate) const CONTROL_CONTEXT: &str = stringify!(Control);
 
-pub(crate) const BAND_CONTEXT: &str = "Band";
+pub(crate) const BAND_CONTEXT: &str = stringify!(Band);
 
-pub(crate) const RAIL_CONTEXT: &str = "Rail";
+pub(crate) const RAIL_CONTEXT: &str = stringify!(Rail);
 
-pub(crate) const ORDER_CONTEXT: &str = "Ordering";
+pub(crate) const ORDER_CONTEXT: &str = stringify!(Ordering);
 
 actions!(
     resonate,

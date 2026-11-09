@@ -78,8 +78,11 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   beside a space once `{…}` placeholders are taken out) outside tests, attributes, panics, asserts,
   `expect` and `tracing` calls. `resonate-ui`'s is `every_word_the_window_shows_is_said_through_its_catalog`
   (`views/audit.rs`): `PROPER` names the literals that are names, `NOT_WORDS` the files that hold
-  none (markup, font families), and `STILL_TO_MOVE` the files not yet moved, which must shrink to
-  nothing; a file it names that holds no prose fails the test too. `resonate-mobile`'s is
+  none (markup, font families; a file mixing markup and words keeps its markup in a module of its
+  own, as `wrapped_card/markup.rs`), and `STILL_TO_MOVE` the files not yet moved, which must shrink
+  to nothing; a file it names that holds no prose fails the test too. A string that is a code
+  identifier and never shown (a key context, a `Debug` name) is written `stringify!(Search)`, so
+  `PROPER` never has to name a word another file shows. `resonate-mobile`'s is
   `every_word_the_phones_show_is_said_through_the_catalog` (`language.rs`), with nothing left to
   move: `PROPER` names the services, platforms and sink names, `ONLY_UNDER_TEST` the test-only
   files, and a literal opening on an SQL keyword is a statement, not words. An `#[error(...)]`
