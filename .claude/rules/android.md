@@ -519,7 +519,7 @@ curve's name and *Every output* or the output keeping it, *Off · Original sound
 <output>* while the route is known (`SwitchRow`s); the graph, always shown (`EqualiserGraph` in an
 `EqualiserCard`, its height 10/16 of its width held to 180 to 340 dp, `graphHeightDp`, the level labels
 in a gutter of their own, `GraphFrame.gutter`, so no handle covers them); the band chips `1 … n`
-(`BandChips`, a `LazyRow` keeping the chosen chip in view) with *Add band* fixed at its end; the chosen
+(`BandChips`, a `LazyRow` keeping the chosen chip in view, faded over its last 48 dp while it scrolls on, `fadedTowardTheEnd`, so a chip cut by the edge reads as more to come) with *Add band* fixed at its end, a tonal `AssistChip` as tall as the band chips; the chosen
 band's card docked under them (`BandCard`); *Preamp* (*Level*, its value, *Fit* and the note *Fit brings
 the queue's loudest peak to full scale.*); *Presets* (a `LazyRow` of `FilterChip`s opening on the chosen
 one, its line beneath, or *Your own sound, shaped on the graph above.*); *Corrections*, rows to the

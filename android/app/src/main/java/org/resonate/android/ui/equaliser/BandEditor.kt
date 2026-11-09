@@ -19,10 +19,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,10 +37,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
@@ -68,7 +76,10 @@ fun BandChips(
             state = state,
             contentPadding = PaddingValues(start = Sizes.gutter, end = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.weight(1f).testTag("band-chips"),
+            modifier =
+                Modifier.weight(1f)
+                    .fadedTowardTheEnd(state.canScrollForward)
+                    .testTag("band-chips"),
         ) {
             itemsIndexed(curve.bands) { index, band ->
                 FilterChip(
@@ -83,18 +94,50 @@ fun BandChips(
                 )
             }
         }
-        FilledTonalButton(
+        AssistChip(
             onClick = onAdd,
             enabled = curve.bands.size < bounds.bandsAtMost,
-            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-            modifier = Modifier.testTag("add-band"),
-        ) {
-            Icon(Icons.Rounded.Add, null, Modifier.size(ButtonDefaults.IconSize))
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text("Add band")
-        }
+            label = { Text("Add band") },
+            leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(AssistChipDefaults.IconSize)) },
+            colors =
+                AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ),
+            border = null,
+            modifier = Modifier.padding(start = 8.dp).testTag("add-band"),
+        )
     }
 }
+
+private val CHIPS_FADE_OVER = 48.dp
+
+private fun Modifier.fadedTowardTheEnd(more: Boolean): Modifier =
+    if (!more) {
+        this
+    } else {
+        graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val fade = CHIPS_FADE_OVER.toPx()
+                val (from, to) =
+                    if (layoutDirection == LayoutDirection.Ltr) {
+                        size.width - fade to size.width
+                    } else {
+                        fade to 0f
+                    }
+                drawRect(
+                    Brush.horizontalGradient(
+                        0f to Color.Black,
+                        1f to Color.Transparent,
+                        startX = from,
+                        endX = to,
+                    ),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+    }
 
 @Composable
 fun BandCard(
