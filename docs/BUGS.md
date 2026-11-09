@@ -3,17 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Sync and sharing
-- [M · 0.7.1] The server reads a session's frames faster than it handles them: each session and
-  room spawns `read_frames` into an `unbounded_channel`, the frame cap, record limit and store work
-  run in the select loop, and while that loop waits on a write to a client that reads nothing the
-  reader keeps draining the stream, so a client with one space of its own appends a few MiB, reconnects
-  from the start and stops reading, then floods `Relaying` and `Relay` frames (neither counts toward
-  `frames_per_minute`, a zero-length datagram costs the byte bucket nothing and adds nothing to the
-  target's backlog) and server memory grows at its upload rate while QUIC keep-alives hold the
-  connection; the hub's one-mebibyte bound for what a client does not read has no counterpart on the
-  way in (a bounded channel for the reader, a write timeout, and a cost for every relayed frame)
-
 ## Network devices
 - [S · 0.7.1] A UPnP renderer or Cast receiver can abort the player with one number: `clock_of`
   in `resonate-upnp` parses `RelTime`'s seconds as an `f64`, refuses only the non-finite and

@@ -21,7 +21,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::{
         Semaphore,
-        mpsc::{UnboundedSender, unbounded_channel},
+        mpsc::{Sender, channel},
     },
     time::{Instant, interval, timeout},
 };
@@ -29,7 +29,7 @@ use tokio::{
 use crate::{
     Error, PemOp, Result,
     guard::{Admitted, Allowance, Guard},
-    hub::{Hub, Joined, Notice},
+    hub::{Hub, Joined, Notice, relayed_weight},
     pages,
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
@@ -41,6 +41,7 @@ const KEEP_EVERY: Duration = Duration::from_secs(30);
 const SILENT_FOR: Duration = Duration::from_secs(90);
 const RECORDS_PER_FRAME: usize = 256;
 const RECORD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
+const FRAMES_READ_AHEAD: usize = 4;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 const A_PAGE_ASKED_AGAIN_AFTER: Duration = Duration::from_millis(5);
 const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(60 * 60);
@@ -587,7 +588,7 @@ impl Server {
         send.send(&FromServer::RoomWelcome { members, host }.encoded())
             .await?;
 
-        let (frames_in, mut frames) = unbounded_channel();
+        let (frames_in, mut frames) = channel(FRAMES_READ_AHEAD);
         let reading = tokio::spawn(read_frames(recv, frames_in));
         let mut window = Instant::now();
         let mut counted = 0_u32;
@@ -697,7 +698,7 @@ impl Server {
             send.send(&FromServer::Closed { sealed }.encoded()).await?;
         }
 
-        let (frames_in, mut frames) = unbounded_channel();
+        let (frames_in, mut frames) = channel(FRAMES_READ_AHEAD);
         let reading = tokio::spawn(read_frames(recv, frames_in));
         let mut window = Instant::now();
         let mut counted = 0_u32;
@@ -713,14 +714,8 @@ impl Server {
                         break Ok(());
                     };
                     let frame = match frame {
-                        ToServer::Relaying => {
-                            if self.limits.relay_bytes_per_second > 0 {
-                                self.hub.relaying(space, device, session);
-                            }
-                            continue;
-                        }
                         ToServer::Relay { to, datagram } => {
-                            if allowance.spend(datagram.len()) {
+                            if allowance.spend(relayed_weight(datagram.len())) {
                                 self.hub.relay(space, device, to, datagram);
                             }
                             continue;
@@ -745,8 +740,12 @@ impl Server {
                         | ToServer::RoomSay { .. }
                         | ToServer::RoomPing { .. }
                         | ToServer::RoomKick { .. }
-                        | ToServer::Relaying
                         | ToServer::Relay { .. } => {}
+                        ToServer::Relaying => {
+                            if self.limits.relay_bytes_per_second > 0 {
+                                self.hub.relaying(space, device, session);
+                            }
+                        }
                         ToServer::Close { sealed } => self.close(&mut send, space, sealed).await?,
                         ToServer::Append { blobs } => self.append(&mut send, space, device, blobs).await?,
                         ToServer::Compact { through, parts } => self.compact(&mut send, space, through, parts).await?,
@@ -764,7 +763,7 @@ impl Server {
                     Some(Notice::Arrived(other)) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
                     Some(Notice::Left(other)) => send.send(&FromServer::Left { device: other }.encoded()).await?,
                     Some(Notice::Relayed { from, datagram }) => {
-                        backlog.fetch_sub(datagram.len(), Ordering::Relaxed);
+                        backlog.fetch_sub(relayed_weight(datagram.len()), Ordering::Relaxed);
                         send.send(&FromServer::Relayed { from, datagram }.encoded()).await?;
                     }
                     Some(Notice::Punched { device: from, address, sealed }) => {
@@ -939,7 +938,7 @@ async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {
     Ok(())
 }
 
-async fn read_frames(mut recv: Reader, frames: UnboundedSender<Result<ToServer>>) {
+async fn read_frames(mut recv: Reader, frames: Sender<Result<ToServer>>) {
     loop {
         let frame = match recv.read().await {
             Ok(Some(bytes)) => ToServer::decoded(&bytes).map_err(Error::from),
@@ -947,7 +946,7 @@ async fn read_frames(mut recv: Reader, frames: UnboundedSender<Result<ToServer>>
             Err(error) => Err(Error::from(error)),
         };
         let failed = frame.is_err();
-        if frames.send(frame).is_err() || failed {
+        if frames.send(frame).await.is_err() || failed {
             return;
         }
     }

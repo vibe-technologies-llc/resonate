@@ -169,20 +169,26 @@ impl Hub {
             return false;
         };
         let held = asked.backlog.load(Ordering::Relaxed);
-        if !asked.relaying || held + datagram.len() > RELAY_BACKLOG_BYTES_AT_MOST {
+        let weight = relayed_weight(datagram.len());
+        if !asked.relaying || held + weight > RELAY_BACKLOG_BYTES_AT_MOST {
             return false;
         }
-        asked.backlog.fetch_add(datagram.len(), Ordering::Relaxed);
-        let length = datagram.len();
+        asked.backlog.fetch_add(weight, Ordering::Relaxed);
         let sent = asked
             .notices
             .send(Notice::Relayed { from, datagram })
             .is_ok();
         if !sent {
-            asked.backlog.fetch_sub(length, Ordering::Relaxed);
+            asked.backlog.fetch_sub(weight, Ordering::Relaxed);
         }
         sent
     }
+}
+
+pub const A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST: usize = 64;
+
+pub fn relayed_weight(length: usize) -> usize {
+    length.max(A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST)
 }
 
 #[cfg(test)]
@@ -265,7 +271,26 @@ mod tests {
             })
         );
         assert_eq!(desk.backlog.load(Ordering::Relaxed), 0);
-        assert_eq!(phone.backlog.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            phone.backlog.load(Ordering::Relaxed),
+            A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST
+        );
+    }
+
+    #[test]
+    fn empty_datagrams_fill_a_backlog_as_surely_as_full_ones() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+        hub.relaying(SPACE, PHONE, phone.session);
+
+        let fitting = RELAY_BACKLOG_BYTES_AT_MOST / A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST;
+        let taken = (0..fitting)
+            .filter(|_| hub.relay(SPACE, DESK, PHONE, Vec::new()))
+            .count();
+
+        assert_eq!(taken, fitting);
+        assert!(!hub.relay(SPACE, DESK, PHONE, Vec::new()));
     }
 
     #[test]

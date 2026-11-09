@@ -34,6 +34,7 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 ## Sessions
 
+- **A session reads at most `FRAMES_READ_AHEAD` (4) frames ahead of handling them**: `read_frames` hands them over a bounded channel, so while the session waits on a write to a client that reads nothing, its reader stops and QUIC's flow control holds the client back, rather than the server holding whatever it sends.
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
   then the stream ends.
 - **Catch-up is snapshot then records past the cursor**, in frames of at most 256 records or 4 MiB;
@@ -157,7 +158,7 @@ and keeps nothing: the datagram is QUIC between two devices, sealed by their han
 
 - **A device may have `--relay-bytes-per-second` (2 MiB) relayed**, a token bucket of one second's
   worth (`relay::Bucket`); what exceeds it is dropped, not refused, so the session lives and QUIC
-  slows itself. `0` relays nothing and ignores `Relaying`.
+  slows itself. Every datagram weighs at least `A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST` (64 bytes, `hub::relayed_weight`) in the bucket and in the target's backlog, so a flood of empty datagrams spends both. `Relaying` is an ordinary frame and counts toward `--frames-per-minute`. `0` relays nothing and ignores `Relaying`.
 - **A target holds at most `RELAY_BACKLOG_BYTES_AT_MOST` (256 KiB) unread**; the rest is dropped, so
   a slow reader costs the server a bounded queue. A `Relaying` from a session since replaced does not
   count (`a_relay_declared_by_a_session_that_was_replaced_does_not_count`).
