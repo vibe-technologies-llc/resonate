@@ -39,6 +39,8 @@ paths:
   - "ios/Sources/ResonateLogic/Measurement.swift"
   - "android/app/src/main/java/org/resonate/android/RoomCorrectionState.kt"
   - "ios/Sources/Resonate/EqualiserGraph.swift"
+  - "ios/Sources/Resonate/EqualiserView.swift"
+  - "ios/Sources/ResonateLogic/EqualiserEditing.swift"
 ---
 
 # The equaliser
@@ -635,7 +637,7 @@ tested.
   right, finished, `chance_percent`, `significant`, the verdicts, the levels and the arm heard,
   none for X); `end_listening_test()` sends the preferences' own `Equalisation` back
   (`PlaybackPreferences::equalisation`, the one `commands` builds). Both phones draw it on the
-  equaliser's *Listening test* page with the desktop's wording (Android `ListeningTestScreen`; the
+  equaliser's *Listening test* page with the desktop's wording (Android `ListeningTestScreen`, iOS `ListeningTestView`; the
   words are `ListeningTestView.kt` and `ListeningTestWords.swift`, held by `ListeningTestViewTest` and
   `ListeningTestWordsTests`) and end it when that page is left or the test is ended; an edit of the curve sends the real curve and so ends the comparison in all but
   name. **A setting is tested through `begin_setting_test(setting, trials)`** (blocking: restoration
