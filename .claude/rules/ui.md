@@ -391,7 +391,8 @@ is never named.
   without a monospace look, and `kit::figure` (body face, `text_xs`, muted) is the one way to draw
   one. JetBrains Mono (`theme::mono`) is drawn only through `kit::code`, for a string read character
   by character: the sync pairing code, the inspector's MusicBrainz ids, ISRC, barcode and catalogue
-  number (`inspector::CODES`) and a container's box kinds. Neither face is embedded, so **the drawn family is
+  number (`inspector::CODES`) and a container's box kinds. Neither face is embedded: every package brings
+  them (`packaging.md`), and a build run from the checkout finds what the machine has, so **the drawn family is
   settled once against the machine**: `fonts::settle` walks a ladder per face (Inter, Adwaita Sans,
   Cantarell, ...; JetBrains Mono, Adwaita Mono, ...) against `cx.text_system().all_font_names()` at
   start; neither ladder offers a family the other does (test); a machine with none keeps the wanted

@@ -20,6 +20,13 @@ list; `resonate-config.toml.5`, the settings file's manual, is written by hand a
 `binary.md` for what holds its keys in step). Desktop
 entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 
+- **Inter and JetBrains Mono come with every package**, since the window draws in them and embeds
+  neither (`ui.md`): `inter-font` and `ttf-jetbrains-mono` in both Arch recipes (and `.SRCINFO`),
+  `rsms-inter-fonts` and `jetbrains-mono-fonts` required by the spec, `fonts-inter` a DEB `Depends`
+  and `fonts-jetbrains-mono` only `Recommends` (Debian dropped it from testing in May 2026, so a hard
+  dependency could leave the player uninstallable there), and the Flatpak builds each from its
+  release archive, checksummed, into `/app/share/fonts` (the runtime holds neither)
+  (`every_package_brings_the_reading_face_and_the_face_for_codes`).
 - **`yt-dlp` is suggested, never depended on**: `optdepends` in both Arch recipes (and `.SRCINFO`),
   `Suggests` in the spec and the player's DEB control. Only YouTube Music runs it (browsing the
   account, the poll's last-resort answer and *Keep*), a Flatpak holds none and shows the provider as

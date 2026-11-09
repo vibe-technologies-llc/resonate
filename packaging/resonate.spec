@@ -24,6 +24,8 @@ BuildRequires:  vulkan-loader-devel
 BuildRequires:  wayland-devel
 Requires:       pipewire >= 0.3.50
 Requires:       vulkan-loader
+Requires:       rsms-inter-fonts
+Requires:       jetbrains-mono-fonts
 Suggests:       yt-dlp
 
 %description
