@@ -18,19 +18,19 @@ struct LyricsView: View {
                 }
             }
             .background(BackdropView(track: track))
-            .navigationTitle(track?.shownTitle ?? "Lyrics")
+            .navigationTitle(track?.shownTitle ?? said("lyrics.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if let track {
                     Menu {
                         if features.online {
-                            Button("Refresh", systemImage: "arrow.clockwise") { features.loadLyrics(track.id, refresh: true) }
+                            Button("lyrics.refresh", systemImage: "arrow.clockwise") { features.loadLyrics(track.id, refresh: true) }
                         }
-                        Button("Add lyrics…", systemImage: "text.badge.plus") {
+                        Button("lyrics.add", systemImage: "text.badge.plus") {
                             writing = LyricWriting(track: track)
                         }
                     } label: {
-                        Label("Lyrics options", systemImage: "ellipsis")
+                        Label("lyrics.options", systemImage: "ellipsis")
                     }
                 }
             }
@@ -59,7 +59,7 @@ struct LyricWriter: View {
                         .font(.body.monospaced())
                         .frame(minHeight: 240)
                         .autocorrectionDisabled()
-                        .accessibilityLabel("Lyrics")
+                        .accessibilityLabel("lyrics.title")
                     PasteButton(payloadType: String.self) { pasted in
                         guard let first = pasted.first else { return }
                         Task { @MainActor in text = first }
@@ -67,19 +67,19 @@ struct LyricWriter: View {
                 } header: {
                     Text(track.shownTitle)
                 } footer: {
-                    Text("Type or paste the words. Lines timed as LRC, such as [01:23.45], are followed as the song plays; plain lines are shown as they are.")
+                    Text("lyrics.writer.footer")
                 }
             }
-            .navigationTitle("Lyrics")
+            .navigationTitle("lyrics.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("common.cancel") {
                         if blank { dismiss() } else { discarding = true }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button("common.save") {
                         library.features.keepLyricText(track.id, text)
                         dismiss()
                     }
@@ -98,9 +98,9 @@ extension View {
         discard: @escaping () -> Void
     ) -> some View {
         interactiveDismissDisabled(edited)
-            .confirmationDialog("Discard your changes?", isPresented: asking, titleVisibility: .visible) {
-                Button("Discard changes", role: .destructive, action: discard)
-                Button("Keep editing", role: .cancel) {}
+            .confirmationDialog("edits.discard.question", isPresented: asking, titleVisibility: .visible) {
+                Button("edits.discard", role: .destructive, action: discard)
+                Button("edits.keep", role: .cancel) {}
             }
     }
 }
@@ -160,13 +160,13 @@ struct AnalysisView: View {
                 }
             } else {
                 ContentUnavailableView(
-                    "Choose a song to analyse",
+                    "analysis.none.title",
                     systemImage: "waveform.path.ecg",
-                    description: Text("Play a song, or open Analyse from a song's details.")
+                    description: Text("analysis.none.description")
                 )
             }
         }
-        .navigationTitle("Analysis")
+        .navigationTitle("analysis.title")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: track?.id) {
             guard let track, features.analysis?.trackId != track.id else { return }
@@ -185,16 +185,16 @@ struct AnalysisProgress: View {
         let features = library.features
         if features.analysisBusy {
             if let progress = features.analysisProgress {
-                ProgressView(value: progress) { Text("Analysing audio…") }
+                ProgressView(value: progress) { Text("analysis.analysing") }
             } else {
                 HStack(spacing: 12) {
                     ProgressView().accessibilityHidden(true)
-                    Text("Analysing audio…")
+                    Text("analysis.analysing")
                 }
             }
-            Button("Cancel analysis", role: .destructive) { features.cancelAnalysis() }
+            Button("analysis.cancel", role: .destructive) { features.cancelAnalysis() }
         } else {
-            Button(analysed ? "Analyse again" : "Analyse") { features.analyse(track.id) }
+            Button(said(analysed ? "analysis.again" : "analysis.analyse")) { features.analyse(track.id) }
         }
     }
 }
@@ -204,45 +204,56 @@ struct AnalysisReportSections: View {
     private static let spectrumFloorDb: Float = 120
 
     var body: some View {
-        Section("Source audio") {
-            LabeledContent("Assessment", value: report.verdict)
+        Section("analysis.source") {
+            LabeledContent("analysis.assessment", value: report.verdict)
             ForEach(report.findings, id: \.self) { Text($0).font(.footnote) }
         }
-        Section("Waveform") {
+        Section("analysis.waveform") {
             SignalPlot(
                 values: report.waveform,
                 mirrored: true,
-                label: "Waveform",
-                spoken: "Peak \(Self.level(report.peak, unit: "dBFS")). Assessment: \(report.verdict)"
+                label: said("analysis.waveform"),
+                spoken: said("analysis.waveform.spoken", Self.dbfs(report.peak), report.verdict)
             )
             .frame(height: 120)
         }
-        Section("Spectrum") {
+        Section("analysis.spectrum") {
             SignalPlot(
                 values: Self.spectrumHeights(report.spectrum),
                 fittedToPeak: false,
-                label: "Spectrum",
-                spoken: "Assessment: \(report.verdict)"
+                label: said("analysis.spectrum"),
+                spoken: said("analysis.spectrum.spoken", report.verdict)
             )
             .frame(height: 120)
             if let last = report.spectrum.indices.last {
-                LabeledContent("Range", value: String(format: "0 – %.1f kHz", Double(report.spectrumStepHz) * Double(last) / 1000))
+                LabeledContent("analysis.range", value: said("analysis.range.value", String(format: "%.1f", Double(report.spectrumStepHz) * Double(last) / 1000)))
             }
         }
-        Section("Levels") {
-            LabeledContent("Integrated loudness", value: report.loudnessLufs.map { String(format: "%.1f LUFS", $0) } ?? "Not measurable")
-            LabeledContent("Dynamic range", value: report.dynamicRange.map { "DR\($0)" } ?? "Not measurable")
-            LabeledContent("Peak", value: Self.level(report.peak, unit: "dBFS"))
-            LabeledContent("True peak", value: Self.level(report.truePeak, unit: "dBTP"))
-            LabeledContent("RMS", value: Self.level(report.rms, unit: "dBFS"))
-            LabeledContent("Clipped samples", value: "\(report.clipped)")
-            LabeledContent("Bits in use", value: report.bitsInUse.map { "\($0)" } ?? "Unknown")
+        Section("analysis.levels") {
+            LabeledContent(
+                "analysis.loudness",
+                value: report.loudnessLufs.map { said("analysis.loudness.value", String(format: "%.1f", $0)) } ?? said("analysis.not-measurable")
+            )
+            LabeledContent("analysis.dynamic-range", value: report.dynamicRange.map { "DR\($0)" } ?? said("analysis.not-measurable"))
+            LabeledContent("analysis.peak", value: Self.dbfs(report.peak))
+            LabeledContent("analysis.true-peak", value: Self.dbtp(report.truePeak))
+            LabeledContent("analysis.rms", value: Self.dbfs(report.rms))
+            LabeledContent("analysis.clipped", value: "\(report.clipped)")
+            LabeledContent("analysis.bits-in-use", value: report.bitsInUse.map { "\($0)" } ?? said("common.unknown"))
         }
     }
 
-    private static func level(_ linear: Float, unit: String) -> String {
-        guard linear > 0, linear.isFinite else { return "Silent" }
-        return String(format: "%.2f", 20 * log10(Double(linear))) + " " + unit
+    private static func dbfs(_ linear: Float) -> String {
+        decibels(linear).map { said("analysis.level.dbfs", $0) } ?? said("analysis.level.silent")
+    }
+
+    private static func dbtp(_ linear: Float) -> String {
+        decibels(linear).map { said("analysis.level.dbtp", $0) } ?? said("analysis.level.silent")
+    }
+
+    private static func decibels(_ linear: Float) -> String? {
+        guard linear > 0, linear.isFinite else { return nil }
+        return String(format: "%.2f", 20 * log10(Double(linear)))
     }
 
     private static func spectrumHeights(_ levels: [Float]) -> [Float] {
@@ -262,21 +273,21 @@ struct RecognitionSection: View {
         let features = library.features
         Section {
             if !features.online {
-                Text("Enable online features in Settings to identify recordings.").foregroundStyle(.secondary)
+                Text("recognition.offline").foregroundStyle(.secondary)
             } else {
-                SecureField("AcoustID key (optional)", text: $key)
-                Button("Save recognition key") { features.saveRecognitionKey(key) }
+                SecureField("recognition.key", text: $key)
+                Button("recognition.key.save") { features.saveRecognitionKey(key) }
                     .disabled(key == features.recognitionKey)
-                Button(features.recognitionBusy ? "Identifying…" : "Identify by sound") { features.recognise(track.id) }
+                Button(said(features.recognitionBusy ? "recognition.identifying" : "recognition.identify")) { features.recognise(track.id) }
                     .disabled(features.recognitionBusy)
                 ForEach(features.recognition, id: \.song.recording) { candidate in
                     RecognitionRow(candidate: candidate)
                 }
             }
         } header: {
-            Text("Identify this recording")
+            Text("recognition.title")
         } footer: {
-            Text("Recognition sends an audio signature to Shazam. With your AcoustID key it sends the whole-song fingerprint to AcoustID instead, and the library is studied and recognised in the background while online lookups run, which fills the misnamed search.")
+            Text("recognition.footer")
         }
         .onChange(of: features.recognitionKey, initial: true) { _, saved in key = saved }
     }
@@ -289,9 +300,9 @@ struct RecognitionRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(candidate.song.title).font(.body.weight(.medium))
             Text("\(candidate.song.artist) · \(candidate.song.album)").font(.subheadline).foregroundStyle(.secondary)
-            Text("\(candidate.score)% match").font(.caption).foregroundStyle(.tint)
+            Text(said("recognition.match", Int(candidate.score))).font(.caption).foregroundStyle(.tint)
             if let page = URL(string: "https://musicbrainz.org/recording/\(candidate.song.recording)") {
-                Link("View recording", destination: page).font(.subheadline)
+                Link("recognition.view", destination: page).font(.subheadline)
             }
         }
     }
@@ -310,7 +321,7 @@ struct VisualizerView: View {
         }
         .padding()
         .background(BackdropView(track: library.playingTrack))
-        .navigationTitle("Live waveform")
+        .navigationTitle("visualizer.title")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { library.features.visualize(true) }
         .onDisappear { library.features.visualize(false) }
@@ -323,9 +334,14 @@ struct LiveSignal: View {
     var body: some View {
         let samples = library.features.samples
         if library.transport != .playing, samples.isEmpty {
-            ContentUnavailableView("Play a song to see its sound", systemImage: "waveform")
+            ContentUnavailableView("visualizer.idle", systemImage: "waveform")
         } else {
-            SignalPlot(values: samples, mirrored: true, label: "Live waveform", spoken: library.transport == .playing ? "Playing" : "Paused")
+            SignalPlot(
+                values: samples,
+                mirrored: true,
+                label: said("visualizer.title"),
+                spoken: said(library.transport == .playing ? "visualizer.playing" : "visualizer.paused")
+            )
                 .frame(maxWidth: .infinity, maxHeight: 320)
                 .padding()
                 .glassEffect(.regular, in: .rect(cornerRadius: 24))
@@ -346,29 +362,29 @@ struct InspectorView: View {
         ThemedList {
             InspectorCover(track: shown)
             Section {
-                Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
+                Button("inspector.add-to-playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
                 if features.tagsWritable(shown) {
-                    Button("Edit tags", systemImage: "pencil") { navigation.editTags([shown]) }
+                    Button("inspector.edit-tags", systemImage: "pencil") { navigation.editTags([shown]) }
                 }
-                Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(shown)) }
-                Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(shown)) }
+                Button("inspector.lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(shown)) }
+                Button("inspector.analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(shown)) }
                 if let albumPage = shown.albumPage {
-                    Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
+                    Button("inspector.go-to-album", systemImage: "square.stack") { navigation.open(albumPage) }
                 }
                 if !shown.artist.isEmpty {
-                    Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(shown.artist)) }
+                    Button("inspector.go-to-artist", systemImage: "music.mic") { navigation.open(.artist(shown.artist)) }
                 }
                 if features.online {
-                    Button(features.enriching ? "Enriching…" : "Enrich metadata, artwork and lyrics", systemImage: "sparkles") {
+                    Button(said(features.enriching ? "inspector.enriching" : "inspector.enrich"), systemImage: "sparkles") {
                         features.enrich(shown)
                     }
                     .disabled(features.enriching)
-                    Button("Artist details", systemImage: "music.mic") { features.loadArtist(shown.id) }
+                    Button("inspector.artist-details", systemImage: "music.mic") { features.loadArtist(shown.id) }
                 }
             }
             InspectorTags(track: shown, inspector: inspector)
             InspectorAudio(track: shown, inspector: inspector)
-            Section("Document") {
+            Section("inspector.document") {
                 Text(shown.uri)
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
@@ -414,30 +430,30 @@ struct InspectorTags: View {
     let inspector: Inspector?
 
     var body: some View {
-        Section("Tags") {
-            LabeledContent("Album", value: Self.tagged(track.album))
-            LabeledContent("Album artist", value: Self.tagged(track.albumArtist))
-            LabeledContent("Genre", value: Self.tagged(track.genre))
-            LabeledContent("Date", value: Self.tagged(track.date))
-            LabeledContent("Track", value: track.trackNumber.map { "\($0)" } ?? "Not tagged")
-            LabeledContent("Disc", value: track.discNumber.map { "\($0)" } ?? "Not tagged")
-            identifier("Recording ID", track.recording)
-            identifier("Release ID", track.release)
+        Section("inspector.tags") {
+            LabeledContent("inspector.album", value: Self.tagged(track.album))
+            LabeledContent("inspector.album-artist", value: Self.tagged(track.albumArtist))
+            LabeledContent("inspector.genre", value: Self.tagged(track.genre))
+            LabeledContent("inspector.date", value: Self.tagged(track.date))
+            LabeledContent("inspector.track", value: track.trackNumber.map { "\($0)" } ?? said("inspector.not-tagged"))
+            LabeledContent("inspector.disc", value: track.discNumber.map { "\($0)" } ?? said("inspector.not-tagged"))
+            identifier(said("inspector.recording-id"), track.recording)
+            identifier(said("inspector.release-id"), track.release)
             if let inspector {
                 LabeledContent("ISRC", value: Self.tagged(inspector.isrc))
-                if !inspector.copyright.isEmpty { LabeledContent("Copyright", value: inspector.copyright) }
-                if !inspector.comment.isEmpty { LabeledContent("Comment", value: inspector.comment) }
+                if !inspector.copyright.isEmpty { LabeledContent("inspector.copyright", value: inspector.copyright) }
+                if !inspector.comment.isEmpty { LabeledContent("inspector.comment", value: inspector.comment) }
             }
         }
     }
 
     static func tagged(_ value: String) -> String {
-        value.isEmpty ? "Not tagged" : value
+        value.isEmpty ? said("inspector.not-tagged") : value
     }
 
     private func identifier(_ title: String, _ value: String?) -> some View {
         LabeledContent(title) {
-            Text(value ?? "Not identified")
+            Text(value ?? said("inspector.not-identified"))
                 .font(value == nil ? .body : .footnote.monospaced())
                 .textSelection(.enabled)
         }
@@ -449,21 +465,21 @@ struct InspectorAudio: View {
     let inspector: Inspector?
 
     var body: some View {
-        Section("Audio") {
-            LabeledContent("Codec", value: track.codec)
-            LabeledContent("Sample rate", value: "\(track.rate) Hz")
-            LabeledContent("Bit depth", value: track.bits.map { "\($0)-bit" } ?? "Unknown")
-            LabeledContent("Channels", value: "\(track.channels)")
-            LabeledContent("Duration", value: clock(track.durationMs))
+        Section("inspector.audio") {
+            LabeledContent("inspector.codec", value: track.codec)
+            LabeledContent("inspector.sample-rate", value: said("inspector.sample-rate.value", Int(track.rate)))
+            LabeledContent("inspector.bit-depth", value: track.bits.map { said("inspector.bit-depth.value", Int($0)) } ?? said("common.unknown"))
+            LabeledContent("inspector.channels", value: "\(track.channels)")
+            LabeledContent("inspector.duration", value: clock(track.durationMs))
             if let inspector {
-                LabeledContent("Container", value: inspector.container)
-                LabeledContent("Decoded format", value: inspector.sampleFormat)
-                LabeledContent("Seekable", value: inspector.seekable ? "Yes" : "No")
-                LabeledContent("Encoder", value: InspectorTags.tagged(inspector.encoder))
+                LabeledContent("inspector.container", value: inspector.container)
+                LabeledContent("inspector.decoded-format", value: inspector.sampleFormat)
+                LabeledContent("inspector.seekable", value: said(inspector.seekable ? "common.yes" : "common.no"))
+                LabeledContent("inspector.encoder", value: InspectorTags.tagged(inspector.encoder))
             } else {
                 HStack(spacing: 12) {
                     ProgressView().accessibilityHidden(true)
-                    Text("Reading the file…").foregroundStyle(.secondary)
+                    Text("inspector.reading").foregroundStyle(.secondary)
                 }
             }
         }
@@ -481,7 +497,7 @@ struct InspectorArtist: View {
             Section {
                 HStack(spacing: 12) {
                     ProgressView().accessibilityHidden(true)
-                    Text("Looking up the artist…").foregroundStyle(.secondary)
+                    Text("inspector.artist.looking").foregroundStyle(.secondary)
                 }
             }
         case .found(let artist):
@@ -489,9 +505,9 @@ struct InspectorArtist: View {
         case .missing:
             Section {
                 ContentUnavailableView(
-                    "No artist details found",
+                    "inspector.artist.none.title",
                     systemImage: "music.mic",
-                    description: Text("MusicBrainz knows nothing more about this artist.")
+                    description: Text("inspector.artist.none.description")
                 )
             }
         }
@@ -513,10 +529,10 @@ struct ArtistInformationSection: View {
                     .frame(maxHeight: 220)
                     .clipShape(.rect(cornerRadius: 16))
             }
-            if !artist.kind.isEmpty { LabeledContent("Kind", value: artist.kind) }
-            if !artist.country.isEmpty { LabeledContent("Country", value: artist.country) }
-            if !artist.area.isEmpty { LabeledContent("Area", value: artist.area) }
-            if !artist.genres.isEmpty { LabeledContent("Genres", value: artist.genres.joined(separator: ", ")) }
+            if !artist.kind.isEmpty { LabeledContent("inspector.artist.kind", value: artist.kind) }
+            if !artist.country.isEmpty { LabeledContent("inspector.artist.country", value: artist.country) }
+            if !artist.area.isEmpty { LabeledContent("inspector.artist.area", value: artist.area) }
+            if !artist.genres.isEmpty { LabeledContent("inspector.artist.genres", value: artist.genres.joined(separator: ", ")) }
             ForEach(artist.links, id: \.self) { link in
                 if let url = URL(string: link) {
                     Link(url.host() ?? link, destination: url)

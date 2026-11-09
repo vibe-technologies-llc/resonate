@@ -10,9 +10,9 @@ struct DownloadsButton: View {
         NavigationLink {
             DownloadsView().modifier(ThemedPage())
         } label: {
-            Label("Downloads", systemImage: active > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
+            Label("downloads.title", systemImage: active > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
         }
-        .accessibilityValue(active > 0 ? "\(active) active" : "")
+        .accessibilityValue(active > 0 ? said("downloads.active", active) : "")
         .simultaneousGesture(TapGesture().onEnded { Keyboard.stow() })
     }
 }
@@ -44,10 +44,10 @@ struct DownloadProviderPrompt: View {
                 NavigationLink {
                     ProviderView().modifier(ThemedPage())
                 } label: {
-                    Label("Set up a download source", systemImage: "arrow.down.circle")
+                    Label("downloads.source.set-up", systemImage: "arrow.down.circle")
                 }
             } footer: {
-                Text("No download source is ready. Switch one on and fill in what it needs.")
+                Text("downloads.source.none-ready")
             }
         }
     }
@@ -62,7 +62,7 @@ struct DownloadSummary: View {
         let waiting = jobs.filter { $0.state == .waiting }.count
         let fractions = running.compactMap(\.fraction)
         VStack(alignment: .leading, spacing: 6) {
-            Label("Downloads", systemImage: "arrow.down.circle")
+            Label("downloads.title", systemImage: "arrow.down.circle")
             Text(detail(running: running.count, waiting: waiting))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -73,9 +73,9 @@ struct DownloadSummary: View {
             }
             if !running.isEmpty {
                 if fractions.isEmpty {
-                    ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
+                    ProgressView().progressViewStyle(.linear).accessibilityLabel("downloads.downloading")
                 } else {
-                    ProgressView(value: fractions.reduce(0, +) / Double(fractions.count)).accessibilityLabel("Downloading")
+                    ProgressView(value: fractions.reduce(0, +) / Double(fractions.count)).accessibilityLabel("downloads.downloading")
                 }
             }
         }
@@ -83,11 +83,11 @@ struct DownloadSummary: View {
 
     private func detail(running: Int, waiting: Int) -> String {
         guard running + waiting == 0 else {
-            return ["\(running) downloading", waiting > 0 ? "\(waiting) waiting" : nil].compactMap { $0 }.joined(separator: " · ")
+            return [said("downloads.summary.running", running), waiting > 0 ? said("downloads.summary.waiting", waiting) : nil].compactMap { $0 }.joined(separator: " · ")
         }
         let done = jobs.filter { if case .done = $0.state { true } else { false } }.count
         let failed = jobs.filter { if case .failed = $0.state { true } else { false } }.count
-        return ["\(done) downloaded", failed > 0 ? "\(failed) failed" : nil].compactMap { $0 }.joined(separator: " · ")
+        return [said("downloads.summary.done", done), failed > 0 ? said("downloads.summary.failed", failed) : nil].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -100,9 +100,9 @@ struct DownloadsView: View {
             DownloadProviderPrompt()
             if downloads.jobs.isEmpty {
                 ContentUnavailableView(
-                    "No downloads",
+                    "downloads.empty.title",
                     systemImage: "arrow.down.circle",
-                    description: Text("Songs you download from Online search or Saved for later appear here.")
+                    description: Text("downloads.empty.detail")
                 )
             }
             if let line = ConnectionMeters.line(waiting: downloads.waitsOnTheMeter) {
@@ -114,16 +114,16 @@ struct DownloadsView: View {
             ForEach(downloads.jobs) { DownloadJobRow(job: $0) }
             if let folder = downloads.rememberedFolder {
                 Section {
-                    LabeledContent("Saved to", value: folder.name)
-                    Button("Ask for a folder each time") { downloads.forgetFolder() }
+                    LabeledContent("downloads.folder.saved-to", value: folder.name)
+                    Button("downloads.folder.forget") { downloads.forgetFolder() }
                 }
             }
         }
-        .navigationTitle("Downloads")
+        .navigationTitle("downloads.title")
         .toolbar {
             if downloads.jobs.contains(where: \.state.settled) {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear finished") { downloads.clearSettled() }
+                    Button("downloads.clear-finished") { downloads.clearSettled() }
                 }
             }
         }
@@ -148,7 +148,7 @@ struct DownloadJobRow: View {
             .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 6) {
                 Text(job.song.title).font(.body.weight(.medium)).titleLines()
-                Text([job.song.artist, job.provider.map { "from \($0.title)" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([job.song.artist, job.provider.map { said("downloads.job.from", $0.title) }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .titleLines()
@@ -163,23 +163,23 @@ struct DownloadJobRow: View {
         switch job.state {
         case .waiting, .finding, .downloading, .validating:
             progress
-            Button("Cancel", role: .destructive) { downloads.cancel(job.id) }
+            Button("common.cancel", role: .destructive) { downloads.cancel(job.id) }
                 .buttonStyle(.glass)
         case .done(let track):
             HStack {
-                Button("Play") { library.play([track], at: 0) }
+                Button("common.play") { library.play([track], at: 0) }
                 if let albumPage = track.albumPage {
-                    Button("Go to album") { navigation.open(albumPage) }
+                    Button("downloads.job.go-to-album") { navigation.open(albumPage) }
                 }
             }
             .buttonStyle(.glass)
         case .failed(let reason):
             Text(reason).font(.footnote).foregroundStyle(Color.failure)
-            Button("Try again") { downloads.retry(job.id) }
+            Button("common.try-again") { downloads.retry(job.id) }
                 .buttonStyle(.glass)
         case .cancelled:
-            Text("Cancelled").font(.footnote).foregroundStyle(.secondary)
-            Button("Try again") { downloads.retry(job.id) }
+            Text("downloads.job.cancelled").font(.footnote).foregroundStyle(.secondary)
+            Button("common.try-again") { downloads.retry(job.id) }
                 .buttonStyle(.glass)
         }
     }
@@ -188,22 +188,22 @@ struct DownloadJobRow: View {
     private var progress: some View {
         switch job.state {
         case .waiting:
-            Text("Waiting").font(.footnote).foregroundStyle(.secondary)
+            Text("downloads.job.waiting").font(.footnote).foregroundStyle(.secondary)
         case .finding:
-            ProgressView().progressViewStyle(.linear).accessibilityLabel("Finding a match")
-            Text("Finding a match").font(.footnote).foregroundStyle(.secondary)
+            ProgressView().progressViewStyle(.linear).accessibilityLabel("downloads.job.finding")
+            Text("downloads.job.finding").font(.footnote).foregroundStyle(.secondary)
         case .validating:
-            ProgressView().progressViewStyle(.linear).accessibilityLabel("Checking the download")
-            Text("Checking the download").font(.footnote).foregroundStyle(.secondary)
+            ProgressView().progressViewStyle(.linear).accessibilityLabel("downloads.job.validating")
+            Text("downloads.job.validating").font(.footnote).foregroundStyle(.secondary)
         default:
             if let fraction = job.fraction {
-                ProgressView(value: fraction).accessibilityLabel("Download progress")
+                ProgressView(value: fraction).accessibilityLabel("downloads.job.progress")
                 Text(fraction.formatted(.percent.precision(.fractionLength(0))))
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
             } else {
-                ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
-                Text("\(Int64(clamping: job.received).formatted(.byteCount(style: .file))) received")
+                ProgressView().progressViewStyle(.linear).accessibilityLabel("downloads.downloading")
+                Text(said("downloads.job.received", Int64(clamping: job.received).formatted(.byteCount(style: .file))))
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -238,9 +238,9 @@ struct DownloadFolderSheet: View {
         NavigationStack {
             List {
                 if destinations.isEmpty {
-                    Text("Add a music folder with write access first.")
+                    Text("downloads.folder.none-writable")
                 }
-                Section("Choose a music folder") {
+                Section("downloads.folder.choose") {
                     ForEach(destinations) { folder in
                         Button(folder.name) {
                             downloads.choose(folder, remember: remember)
@@ -249,14 +249,14 @@ struct DownloadFolderSheet: View {
                     }
                 }
                 Section {
-                    Toggle("Remember this folder", isOn: $remember)
+                    Toggle("downloads.folder.remember", isOn: $remember)
                 } footer: {
-                    Text("Later downloads go straight to this folder. Downloads lets you choose again.")
+                    Text("downloads.folder.remember.footer")
                 }
             }
-            .navigationTitle(songs.count == 1 ? "Download \(songs[0].title)" : "Download \(counted(songs.count, "song"))")
+            .navigationTitle(songs.count == 1 ? said("downloads.folder.title.one", songs[0].title) : said("downloads.folder.title", songs.count))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("common.cancel") { dismiss() } } }
         }
         .presentationDetents([.medium, .large])
     }
@@ -272,23 +272,23 @@ struct WantedView: View {
         let missing = features.wanted.filter { !$0.held }.map(\.song)
         ThemedList {
             Section {
-                Text("Keep recordings you want and download them when one of your providers has a match.").foregroundStyle(.secondary)
-                Toggle("Missing from library only", isOn: $missingOnly)
-                Toggle("Download saved songs automatically", isOn: Bindable(features.downloads).asksForWants)
+                Text("wanted.intro").foregroundStyle(.secondary)
+                Toggle("wanted.missing-only", isOn: $missingOnly)
+                Toggle("wanted.automatic", isOn: Bindable(features.downloads).asksForWants)
                 if !features.online {
-                    Text("Enable online features in Settings to download music.")
+                    Text("wanted.online-off")
                 } else if !missing.isEmpty {
-                    Button("Download all missing", systemImage: "arrow.down.circle") { features.downloads.enqueue(missing) }
+                    Button("wanted.download-all", systemImage: "arrow.down.circle") { features.downloads.enqueue(missing) }
                 }
             }
             DownloadProgress()
             if shown.isEmpty {
-                Text(features.wanted.isEmpty ? "Save a recording from Online search to find it here." : "All saved recordings are in your library.")
+                Text(said(features.wanted.isEmpty ? "wanted.empty" : "wanted.all-held"))
                     .foregroundStyle(.secondary)
             }
             ForEach(shown, id: \.id) { WantedRow(wanted: $0) }
         }
-        .navigationTitle("Saved for later")
+        .navigationTitle("wanted.title")
         .refreshable { await features.rereadWanted() }
         .onAppear { features.loadWanted() }
         .downloadDestinationPrompt()
@@ -313,14 +313,14 @@ struct WantedRow: View {
                     .foregroundStyle(.secondary)
                     .titleLines()
                 if wanted.held {
-                    Label("In your library", systemImage: "checkmark.circle.fill")
+                    Label("wanted.held", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.tint)
                 }
             }
             Spacer(minLength: 0)
             if !wanted.held, features.online {
-                Button("Download", systemImage: "arrow.down.circle") { features.downloads.enqueue([song]) }
+                Button("wanted.download", systemImage: "arrow.down.circle") { features.downloads.enqueue([song]) }
                     .labelStyle(.iconOnly)
                     .font(.title2)
                     .buttonStyle(.borderless)
@@ -328,14 +328,14 @@ struct WantedRow: View {
             }
         }
         .swipeActions {
-            Button("Remove", role: .destructive) { features.removeWanted(wanted.id) }
+            Button("common.remove", role: .destructive) { features.removeWanted(wanted.id) }
                 .tint(.red)
         }
     }
 }
 
 func providersDetail(_ asked: [DownloadAccount]) -> String {
-    asked.isEmpty ? "Set up a download source" : asked.map(\.provider.title).joined(separator: " · ")
+    asked.isEmpty ? said("downloads.source.set-up") : asked.map(\.provider.title).joined(separator: " · ")
 }
 
 struct ProviderView: View {
@@ -345,29 +345,29 @@ struct ProviderView: View {
         let providers = library.features.providers
         ThemedForm {
             Section {
-                LabeledContent("Asked for each song", value: providers.asked.isEmpty ? "None ready" : providersDetail(providers.asked))
+                LabeledContent("providers.asked", value: providers.asked.isEmpty ? said("providers.asked.none") : providersDetail(providers.asked))
             } footer: {
-                Text("Every provider that is on and ready is asked, in the order below: your own server, then your TIDAL subscription, then the hosted services. An earlier provider's match is taken over a later one's when it answers within a few seconds. Songs are matched by recording codes, or by title, artist and duration. Credentials are kept in the iOS keychain on this device only.")
+                Text("providers.asked.footer")
             }
             Section {
                 Toggle(isOn: Binding(get: { library.features.hostedServices }, set: { library.features.setHostedServices($0) })) {
-                    Text("Ask the hosted services")
+                    Text("providers.hosted")
                 }
             } footer: {
-                Text("A Monochrome or hifi-api provider with no server address is asked at the hosted service unless this is off.")
+                Text("providers.hosted.footer")
             }
             Section {
                 Toggle(isOn: Binding(get: { library.features.stallDownloadsOnMetered }, set: { library.features.setStallDownloadsOnMetered($0) })) {
-                    Text("Wait on a metered connection")
+                    Text("providers.metered")
                 }
             } footer: {
-                Text("Downloads pause until the network is not metered: cellular, a Personal Hotspot or Low Data Mode.")
+                Text("providers.metered.footer")
             }
             ForEach(MusicProvider.every, id: \.self) { provider in
                 ProviderSection(saved: providers.account(provider), on: providers.isOn(provider))
             }
         }
-        .navigationTitle("Download sources")
+        .navigationTitle("providers.title")
     }
 }
 
@@ -395,7 +395,7 @@ struct ProviderSection: View {
             }
             if on {
                 ProviderFields(account: $account)
-                Button("Save \(provider.title)") { features.saveProviderAccount(account.trimmed) }
+                Button(said("providers.save", provider.title)) { features.saveProviderAccount(account.trimmed) }
                     .disabled(account.trimmed == saved)
             }
         } footer: {
@@ -415,7 +415,7 @@ struct ProviderStatus: View {
     let on: Bool
 
     var body: some View {
-        Text(on ? account.readiness.title(for: account) : "Off")
+        Text(on ? account.readiness.title(for: account) : said("providers.off"))
             .font(.footnote)
             .foregroundStyle(tint)
     }
@@ -435,30 +435,30 @@ struct ProviderFields: View {
         let features = library.features
         switch account.provider {
         case .monochrome:
-            serverField("Server URL (blank uses the hosted service)")
+            serverField(said("providers.field.server.hosted"))
         case .hifiApi:
-            serverField("Server URL (blank uses the hosted service)")
-            SecureField("Key for your own server (optional)", text: $account.password)
+            serverField(said("providers.field.server.hosted"))
+            SecureField("providers.field.key", text: $account.password)
         case .subsonic, .jellyfin:
-            serverField("Server URL")
-            TextField("Username", text: $account.user)
+            serverField(said("providers.field.server"))
+            TextField("providers.field.username", text: $account.user)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            SecureField("Password", text: $account.password)
+            SecureField("providers.field.password", text: $account.password)
         case .tidal:
-            TextField("TIDAL client ID", text: $account.clientId)
+            TextField("providers.field.tidal-client", text: $account.clientId)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            SecureField("Client secret (if required)", text: $account.clientSecret)
-            SecureField("Refresh token", text: $account.refreshToken)
-            Button(features.tidalBusy ? "Waiting for TIDAL…" : "Sign in with TIDAL") { features.authorizeTidal(account.trimmed) }
+            SecureField("providers.field.client-secret", text: $account.clientSecret)
+            SecureField("providers.field.refresh-token", text: $account.refreshToken)
+            Button(said(features.tidalBusy ? "providers.tidal.waiting" : "providers.tidal.sign-in")) { features.authorizeTidal(account.trimmed) }
                 .disabled(account.clientId.trimmingCharacters(in: .whitespaces).isEmpty || features.tidalBusy)
             if features.tidalBusy {
-                Button("Cancel sign-in", role: .cancel) { features.cancelTidalAuthorization() }
+                Button("providers.tidal.cancel", role: .cancel) { features.cancelTidalAuthorization() }
             }
             if let request = features.tidalAuthorization {
-                Text("Enter code: \(request.userCode)").font(.title3.weight(.semibold)).textSelection(.enabled)
-                Button("Open TIDAL authorization") {
+                Text(said("providers.tidal.code", request.userCode)).font(.title3.weight(.semibold)).textSelection(.enabled)
+                Button("providers.tidal.open") {
                     if let url = URL(string: request.verifyAt) { openURL(url) }
                 }
             }
@@ -477,12 +477,12 @@ extension ProviderReadiness {
     func title(for account: DownloadAccount) -> String {
         switch self {
         case .ready where account.provider == .monochrome || account.provider == .hifiApi:
-            account.usesItsOwnServer ? "Ready · your server" : "Ready · hosted service"
-        case .ready: "Ready"
-        case .missingServer: "Missing server"
-        case .missingLogin: "Missing username or password"
-        case .missingClient: "Missing client ID"
-        case .needsSignIn: "Needs sign-in"
+            said(account.usesItsOwnServer ? "providers.ready.own" : "providers.ready.hosted")
+        case .ready: said("providers.ready")
+        case .missingServer: said("providers.missing.server")
+        case .missingLogin: said("providers.missing.login")
+        case .missingClient: said("providers.missing.client")
+        case .needsSignIn: said("providers.missing.sign-in")
         }
     }
 }
@@ -490,11 +490,11 @@ extension ProviderReadiness {
 extension MusicProvider {
     var purpose: String {
         switch self {
-        case .subsonic: "Your own Subsonic, Navidrome or compatible server, sending its original files."
-        case .jellyfin: "Your own Jellyfin or Emby server, browsed and played where it is."
-        case .tidal: "Your TIDAL subscription, lossless only, signed in with your own client ID."
-        case .hifiApi: "TIDAL through a hifi-api server."
-        case .monochrome: "The track streamer behind Monochrome."
+        case .subsonic: said("providers.purpose.subsonic")
+        case .jellyfin: said("providers.purpose.jellyfin")
+        case .tidal: said("providers.purpose.tidal")
+        case .hifiApi: said("providers.purpose.hifi-api")
+        case .monochrome: said("providers.purpose.monochrome")
         }
     }
 }

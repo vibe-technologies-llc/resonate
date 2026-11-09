@@ -84,7 +84,7 @@ struct LibrarySidebar: View {
                 .tag(section)
         }
         .listStyle(.sidebar)
-        .navigationTitle("Library")
+        .navigationTitle("layouts.library")
     }
 }
 

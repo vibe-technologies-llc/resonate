@@ -6,7 +6,7 @@ public enum Suggestions {
 
     public static let homeShelves: Set<SuggestionShelf> = [.forYou, .rediscover, .listening]
 
-    public static let yoursShelf = "Yours"
+    public static var yoursShelf: String { said("suggestions.shelf.yours") }
 
     public static func home(_ lists: [SuggestedList]) -> [SuggestedList] {
         Array(lists.filter { homeShelves.contains($0.shelf) }.prefix(homeAtMost))

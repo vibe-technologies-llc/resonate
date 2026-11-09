@@ -60,32 +60,32 @@ public final class Tally: @unchecked Sendable {
     }
 
     public var summary: String {
-        lock.withLock { "Read \(counted(read, "song"))" + trouble }
+        lock.withLock { said("tally.read", read) + trouble }
     }
 
     public var foundSummary: String {
-        lock.withLock { "Found \(counted(read, "new or changed song"))" + trouble }
+        lock.withLock { said("tally.found", read) + trouble }
     }
 
     public var stoppedSummary: String {
-        lock.withLock { "Stopped reading after \(counted(read, "song"))" + trouble }
+        lock.withLock { said("tally.stopped", read) + trouble }
     }
 
     private var trouble: String {
         var told = ""
         if unreached > 0 {
-            told += "; \(counted(unreached, "folder")) could not be read" + (firstUnreached.map { " (\($0))" } ?? "")
+            told += "; " + said("tally.unreached", unreached) + (firstUnreached.map { " (\($0))" } ?? "")
         }
         if unreadable > 0 {
-            told += "; \(unreadable) unreadable" + (firstUnreadable.map { " (\($0))" } ?? "")
+            told += "; " + said("tally.unreadable", unreadable) + (firstUnreadable.map { " (\($0))" } ?? "")
         }
         let covers = companions[.cover] ?? 0
         let sheets = companions[.lyrics] ?? 0
         if covers + sheets > 0 {
-            let lost = [covers > 0 ? counted(covers, "cover") : nil, sheets > 0 ? counted(sheets, "lyrics sheet") : nil]
-                .compactMap { $0 }
-                .joined(separator: " and ")
-            told += "; \(lost) could not be kept" + (firstCompanion.map { " (\($0))" } ?? "")
+            let coversLost = said("counted.covers", covers)
+            let sheetsLost = said("counted.lyrics-sheets", sheets)
+            let lost = covers == 0 ? sheetsLost : sheets == 0 ? coversLost : said("tally.lost.both", coversLost, sheetsLost)
+            told += "; " + said("tally.lost", lost) + (firstCompanion.map { " (\($0))" } ?? "")
         }
         return told
     }

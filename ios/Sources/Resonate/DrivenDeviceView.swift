@@ -11,12 +11,12 @@ struct DrivenDevicePage: View {
         if let device = status?.devices.first(where: { $0.id == id }) {
             DrivenDeviceView(device: device)
         } else if status == nil {
-            ProgressView("Finding the device…")
+            ProgressView("driven.finding")
         } else {
             ContentUnavailableView(
-                "This device is no longer paired",
+                "driven.unpaired",
                 systemImage: "iphone.slash",
-                description: Text("Pair it again from Device sync.")
+                description: Text("driven.unpaired.detail")
             )
         }
     }
@@ -35,10 +35,10 @@ struct DrivenDeviceView: View {
         List {
             switch shown?.standing {
             case nil, .waiting:
-                Text("Asking \(device.name) what it plays…")
+                Text(said("driven.asking", device.name))
                     .foregroundStyle(.secondary)
             case .refused:
-                Text("\(device.name) does not let others drive it, or cannot be driven.")
+                Text(said("driven.refused", device.name))
                     .foregroundStyle(.secondary)
             case .mirrored:
                 ForEach(shown?.zones ?? [], id: \.zone) { zone in
@@ -46,7 +46,7 @@ struct DrivenDeviceView: View {
                         zoneRows(zone)
                     }
                     if !zone.rows.isEmpty {
-                        Section("Queue of \(zone.queueLength)") {
+                        Section(said("driven.queue", Int(zone.queueLength))) {
                             queueRows(zone)
                         }
                     }
@@ -77,11 +77,11 @@ struct DrivenDeviceView: View {
             }
         }
         HStack(spacing: 24) {
-            control("Previous song", "backward.fill", zone, .previous)
-            control(sounding ? "Pause" : "Play", sounding ? "pause.fill" : "play.fill", zone, .toggle)
-            control("Next song", "forward.fill", zone, .next)
-            control("Quieter", "speaker.minus.fill", zone, .volume(permille: zone.volumePermille > Self.volumeStep ? zone.volumePermille - Self.volumeStep : 0))
-            control("Louder", "speaker.plus.fill", zone, .volume(permille: min(Self.wholeVolume, zone.volumePermille + Self.volumeStep)))
+            control(said("driven.previous"), "backward.fill", zone, .previous)
+            control(said(sounding ? "common.pause" : "common.play"), sounding ? "pause.fill" : "play.fill", zone, .toggle)
+            control(said("driven.next"), "forward.fill", zone, .next)
+            control(said("driven.quieter"), "speaker.minus.fill", zone, .volume(permille: zone.volumePermille > Self.volumeStep ? zone.volumePermille - Self.volumeStep : 0))
+            control(said("driven.louder"), "speaker.plus.fill", zone, .volume(permille: min(Self.wholeVolume, zone.volumePermille + Self.volumeStep)))
         }
         .buttonStyle(.borderless)
         .frame(maxWidth: .infinity)
@@ -100,23 +100,23 @@ struct DrivenDeviceView: View {
             }
             .buttonStyle(.plain)
             .swipeActions(edge: .trailing) {
-                Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+                Button("driven.queue.remove", systemImage: "minus.circle", role: .destructive) {
                     press(zone.zone, .remove(row: row))
                 }
                 .tint(.red)
             }
             .contextMenu {
                 if let up {
-                    Button("Move up", systemImage: "arrow.up") { press(zone.zone, up) }
+                    Button("driven.queue.move-up", systemImage: "arrow.up") { press(zone.zone, up) }
                 }
                 if let down {
-                    Button("Move down", systemImage: "arrow.down") { press(zone.zone, down) }
+                    Button("driven.queue.move-down", systemImage: "arrow.down") { press(zone.zone, down) }
                 }
-                Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+                Button("driven.queue.remove", systemImage: "minus.circle", role: .destructive) {
                     press(zone.zone, .remove(row: row))
                 }
             }
-            .accessibilityAction(named: "Remove from queue") { press(zone.zone, .remove(row: row)) }
+            .accessibilityAction(named: "driven.queue.remove") { press(zone.zone, .remove(row: row)) }
         }
     }
 
@@ -161,9 +161,9 @@ struct DrivenDeviceView: View {
     }
 
     static func song(_ zone: RemoteZoneState) -> String {
-        guard let playing = zone.playingRow, playing >= zone.firstRow else { return "Nothing playing" }
+        guard let playing = zone.playingRow, playing >= zone.firstRow else { return said("driven.nothing-playing") }
         let index = Int(playing - zone.firstRow)
-        guard index < zone.rows.count else { return "Nothing playing" }
+        guard index < zone.rows.count else { return said("driven.nothing-playing") }
         return billed(zone.rows[index])
     }
 
@@ -187,12 +187,12 @@ struct DrivenDeviceView: View {
     static func refusal(_ answer: RemoteAnswer) -> String? {
         switch answer {
         case .done: nil
-        case .untrusted: "That device does not let others do that"
-        case .uncontrollable: "That device plays nothing another can drive"
-        case .noSuchZone: "That zone is gone"
-        case .noSuchRow: "That song is no longer in its queue"
-        case .failed: "The other device could not do that"
-        case .unanswered: "The other device did not answer"
+        case .untrusted: said("driven.refusal.untrusted")
+        case .uncontrollable: said("driven.refusal.uncontrollable")
+        case .noSuchZone: said("driven.refusal.no-such-zone")
+        case .noSuchRow: said("driven.refusal.no-such-row")
+        case .failed: said("driven.refusal.failed")
+        case .unanswered: said("driven.refusal.unanswered")
         }
     }
 }
@@ -229,7 +229,7 @@ private struct DrivenSeek: View {
 
     var body: some View {
         CommittingSlider(
-            title: "Position",
+            title: said("driven.position"),
             value: min(Double(positionMillis), Double(lengthMillis)) / 1000,
             range: 0...(Double(lengthMillis) / 1000),
             step: 1,

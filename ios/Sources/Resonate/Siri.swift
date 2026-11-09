@@ -19,7 +19,7 @@ struct ResumePlaybackIntent: AudioPlaybackIntent {
             return .result(dialog: try await Spoken.shuffleEverything(in: library, from: native))
         }
         library.resume()
-        return .result(dialog: "Resuming \(current.title).")
+        return .result(dialog: "\(said("siri.resuming", current.title))")
     }
 }
 
@@ -41,7 +41,7 @@ struct PlayFromLibraryIntent: AudioPlaybackIntent {
         let wanted = try await Work.aside { try Wanted.matching(asked, from: native) }
 
         guard !wanted.tracks.isEmpty else {
-            return .result(dialog: "Nothing in your library matches “\(asked)”.")
+            return .result(dialog: "\(said("siri.nothing-matches", asked))")
         }
         library.play(wanted.tracks, at: 0)
         return .result(dialog: "\(wanted.announced)")
@@ -80,10 +80,10 @@ struct PlayFavouritesIntent: AudioPlaybackIntent {
         let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: chosen, offset: $0, limit: Library.page) } }
 
         guard !tracks.isEmpty else {
-            return .result(dialog: "You have no favourite songs yet.")
+            return .result(dialog: "\(said("siri.favourites.none"))")
         }
         library.play(tracks, at: 0)
-        return .result(dialog: "Playing your favourites.")
+        return .result(dialog: "\(said("siri.favourites.playing"))")
     }
 }
 
@@ -148,9 +148,9 @@ enum Spoken {
         let everything = defaultTrackFilter()
         let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: everything, offset: $0, limit: Library.page) } }
 
-        guard !tracks.isEmpty else { return "Your library has no songs yet." }
+        guard !tracks.isEmpty else { return "\(said("siri.shuffle.empty"))" }
         library.shuffle(tracks)
-        return "Shuffling your library."
+        return "\(said("siri.shuffle.shuffling"))"
     }
 }
 
@@ -164,17 +164,17 @@ struct Wanted: Sendable {
 
         if let playlist = try native.playlists().first(where: { $0.name.searchFolded == folded }) {
             let tracks = try Library.everyPage { try native.playlistTracks(id: playlist.id, offset: $0, limit: Library.page) }
-            return Wanted(tracks: tracks, announced: "Playing your playlist \(playlist.name).")
+            return Wanted(tracks: tracks, announced: said("siri.playing.playlist", playlist.name))
         }
 
         let found = try native.searchLibrary(text: asked, limit: SearchModel.mostSongs)
         if let artist = found.artists.first(where: { $0.name.searchFolded == folded }) {
-            return Wanted(tracks: try native.artistTracks(name: artist.name), announced: "Playing \(artist.shownName).")
+            return Wanted(tracks: try native.artistTracks(name: artist.name), announced: said("siri.playing.artist", artist.shownName))
         }
         if let album = found.albums.first(where: { $0.title.searchFolded == folded }) {
-            return Wanted(tracks: try native.albumTracks(key: album.key), announced: "Playing \(album.shownTitle) by \(album.shownArtist).")
+            return Wanted(tracks: try native.albumTracks(key: album.key), announced: said("siri.playing.album", album.shownTitle, album.shownArtist))
         }
         guard let first = found.tracks.first else { return Wanted(tracks: [], announced: "") }
-        return Wanted(tracks: found.tracks, announced: "Playing \(first.title).")
+        return Wanted(tracks: found.tracks, announced: said("siri.playing.song", first.title))
     }
 }

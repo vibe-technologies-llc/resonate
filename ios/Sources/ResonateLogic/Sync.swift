@@ -21,10 +21,10 @@ public enum SyncActivity: Equatable {
 
 public func fetchingHeading(downloading: UInt32, waiting: UInt32) -> String {
     let counts = [
-        downloading > 0 ? "\(downloading) downloading" : nil,
-        waiting > 0 ? "\(waiting) waiting" : nil,
+        downloading > 0 ? said("sync.fetching.downloading", Int(downloading)) : nil,
+        waiting > 0 ? said("sync.fetching.waiting", Int(waiting)) : nil,
     ].compactMap { $0 }
-    return (["Fetching"] + counts).joined(separator: " · ")
+    return ([said("sync.fetching")] + counts).joined(separator: " · ")
 }
 
 public struct ContinuedProgress: Equatable {
@@ -45,30 +45,30 @@ public struct ContinuedProgress: Equatable {
         return ContinuedProgress(
             done: Int64(clamping: received),
             total: Int64(clamping: size),
-            subtitle: counted(active.count, "song") + " left"
+            subtitle: said("sync.progress.left", active.count)
         )
     }
 }
 
 public func syncStanding(_ status: SyncStatus?, config: SyncConfig?, online: Bool) -> String {
-    guard let config, config.enabled else { return "Off" }
-    if !online, !config.nearbyOnly { return "Waiting for online features" }
+    guard let config, config.enabled else { return said("sync.standing.off") }
+    if !online, !config.nearbyOnly { return said("sync.standing.waiting-for-online") }
     let others = status?.devices.filter { !$0.thisDevice } ?? []
     let nearby = others.filter(\.nearby).count
     let reached = others.filter(\.online).count
     switch status?.standing {
     case .connected:
-        return reached == 0 ? "No other device online" : "\(counted(reached, "device")) online"
+        return reached == 0 ? said("sync.standing.connected.alone") : said("sync.standing.connected", reached)
     case .nearby:
-        return nearby == 0 ? "Looking on this network" : "\(counted(nearby, "device")) on this network"
+        return nearby == 0 ? said("sync.standing.nearby.looking") : said("sync.standing.nearby", nearby)
     case .unreachable:
-        return nearby == 0 ? "Can't reach the server" : "Server unreachable · \(counted(nearby, "device")) on this network"
+        return nearby == 0 ? said("sync.standing.unreachable") : said("sync.standing.unreachable.nearby", nearby)
     case .refused:
-        return "The server refused this iPhone"
+        return said("sync.standing.refused")
     case .connecting:
-        return nearby == 0 ? "Connecting…" : "Connecting · \(counted(nearby, "device")) on this network"
+        return nearby == 0 ? said("sync.standing.connecting") : said("sync.standing.connecting.nearby", nearby)
     case .off, nil:
-        return "Starting…"
+        return said("sync.standing.starting")
     }
 }
 
@@ -125,7 +125,7 @@ public enum SyncAnswer: Equatable {
         if status.standing == .off {
             return .forget
         } else if activity == .syncing, status.settled {
-            return .tell(others.isEmpty ? "Synced · no other device is online" : "Synced with \(counted(others.count, "device"))")
+            return .tell(others.isEmpty ? said("sync.answer.alone") : said("sync.answer.synced", others.count))
         } else if status.standing == .refused || (status.standing == .unreachable && others.isEmpty) {
             return .tell(syncStanding(status, config: config, online: online))
         } else if waited >= givesUpAfter {
@@ -140,8 +140,8 @@ public enum LandingDestination: Equatable {
     case away
     case nowhere
 
-    public static let awayText = "The folder songs from your devices go to cannot be reached; they wait until it can"
-    public static let nowhereText = "Add a music folder with write access to keep songs from your devices"
+    public static var awayText: String { said("sync.landing.away") }
+    public static var nowhereText: String { said("sync.landing.nowhere") }
 
     public static func of(_ folders: [MusicFolder], chosen: String?) -> LandingDestination {
         guard let folder = folders.first(where: { $0.id == chosen && $0.writable }) ?? folders.first(where: \.writable) else {

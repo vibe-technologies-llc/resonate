@@ -30,15 +30,15 @@ public enum ZonePlan {
     }
 
     public static func rendererLine(host: String, viaCast: Bool) -> String {
-        viaCast ? "Google Cast · \(host)" : host
+        viaCast ? said("zones.renderer.cast", host) : host
     }
 
     public static func line(_ transport: Transport, playing: String?, on renderer: String? = nil) -> String {
         let doing = switch transport {
-        case .playing: playing.map { "Playing \($0)" } ?? "Playing"
-        case .loading: "Opening a song"
-        case .paused: playing.map { "Paused on \($0)" } ?? "Paused"
-        case .stopped: "Stopped"
+        case .playing: playing.map { said("zones.line.playing-song", $0) } ?? said("zones.line.playing")
+        case .loading: said("zones.line.loading")
+        case .paused: playing.map { said("zones.line.paused-on", $0) } ?? said("zones.line.paused")
+        case .stopped: said("zones.line.stopped")
         }
         return renderer.map { "\($0) · \(doing)" } ?? doing
     }

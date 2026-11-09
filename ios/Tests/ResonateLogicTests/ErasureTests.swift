@@ -119,7 +119,7 @@ import Testing
 
         #expect(
             left.sentences == [
-                "1 song could not be deleted and stay in their folders, which Resonate keeps.",
+                "1 song could not be deleted and stays in its folder, which Resonate keeps.",
                 "3 files of the app's own could not be deleted.",
                 "1 saved key could not be deleted.",
             ]

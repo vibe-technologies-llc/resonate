@@ -10,6 +10,7 @@ english = ios / "Resonate/en.lproj"
 SAID_FOR_THE_LOG = (
     "log.",
     "log(",
+    "logLines(",
     "Logger(",
     "print(",
     "fatalError(",
@@ -18,7 +19,43 @@ SAID_FOR_THE_LOG = (
     "assert(",
     "assertionFailure(",
 )
-KEYED_BY = ("String(localized:", "Text(", "LocalizedStringKey(", "LocalizedStringResource(")
+DECLARED_FOR_THE_SYSTEM = ("IntentDescription(", "@Parameter(", "AppShortcut(")
+DECLARED_AFTER = ("LocalizedStringResource =",)
+KEYED_BY = (
+    "said(",
+    "String(localized:",
+    "Text(",
+    "LocalizedStringKey(",
+    "LocalizedStringResource(",
+    "Button(",
+    "Label(",
+    "Toggle(",
+    "Section(",
+    "Picker(",
+    "TextField(",
+    "SecureField(",
+    "Menu(",
+    "LabeledContent(",
+    "ContentUnavailableView(",
+    "Link(",
+    "NavigationLink(",
+    "ShareLink(",
+    "Stepper(",
+    "Tab(",
+    "ProgressView(",
+    "PasteButton(",
+    ".navigationTitle(",
+    ".accessibilityLabel(",
+    ".accessibilityHint(",
+    ".accessibilityValue(",
+    ".accessibilityAction(",
+    ".alert(",
+    ".confirmationDialog(",
+    ".searchable(",
+    ".help(",
+    ".badge(",
+)
+NOT_A_KEY_AFTER = ("systemImage:", "systemName:", "image:")
 KEY = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$")
 ENTRY = re.compile(r'^"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)";$')
 
@@ -111,8 +148,8 @@ class Lexer:
                     if ahead < len(self.source) and self.source[ahead] == "{":
                         self.quiet.append(self.depth)
                 self.leave(self.keying)
-            elif any(self.starts(marker) and not self.named_before(marker) for marker in SAID_FOR_THE_LOG):
-                marker = next(marker for marker in SAID_FOR_THE_LOG if self.starts(marker))
+            elif any(self.starts(marker) and not self.named_before(marker) for marker in SAID_FOR_THE_LOG + DECLARED_FOR_THE_SYSTEM):
+                marker = next(marker for marker in SAID_FOR_THE_LOG + DECLARED_FOR_THE_SYSTEM if self.starts(marker))
                 for _ in range(len(marker) - 1):
                     self.step()
                 self.quiet.append(self.depth)
@@ -128,8 +165,18 @@ class Lexer:
         before = self.source[self.at - 1] if self.at else ""
         return before.isalnum() or before == "_" or (marker[0].islower() and before == "")
 
+    def preceded_by(self, labels):
+        return self.source[max(0, self.at - 64) : self.at].rstrip().endswith(labels)
+
+    def argument_labelled(self, labels):
+        before = self.source[max(0, self.at - 160) : self.at]
+        cut = max(before.rfind(","), before.rfind("("))
+        return before[cut + 1 :].lstrip().startswith(labels)
+
     def string(self, raw, multiline):
         started = self.line
+        declared = self.preceded_by(DECLARED_AFTER)
+        keyed = bool(self.keying) and not self.argument_labelled(NOT_A_KEY_AFTER)
         hashes = 0
         while self.peek() == "#":
             self.step()
@@ -154,8 +201,8 @@ class Lexer:
             else:
                 text.append(self.step())
         self.at = min(len(self.source), self.at + len(closing))
-        if not self.quiet:
-            self.found.append(Literal(started, "".join(text), bool(self.keying)))
+        if not self.quiet and not declared:
+            self.found.append(Literal(started, "".join(text), keyed))
 
 
 def literals_of(source):

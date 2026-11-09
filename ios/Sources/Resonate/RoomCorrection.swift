@@ -205,7 +205,7 @@ final class RoomCorrectionState {
 
     private func gone() {
         remember(on: false)
-        library.notice("The room response is no longer kept, so room correction stays off")
+        library.notice(said("room.gone"))
     }
 
     private func remember(on: Bool) {
@@ -261,16 +261,16 @@ struct RoomCorrectionView: View {
             Section {
                 if let name = room.name {
                     Toggle(isOn: Binding(get: { room.on }, set: { room.turn($0) })) {
-                        ToolRow(title: "Correct for the room", detail: room.kept.map(Self.described).map { "\(name) · \($0)" } ?? name, symbol: "waveform.path")
+                        ToolRow(title: said("room.correct"), detail: room.kept.map(Self.described).map { "\(name) · \($0)" } ?? name, symbol: "waveform.path")
                     }
                     .disabled(room.reading)
                 }
                 if let left = room.left {
-                    LabeledContent("Left speaker", value: left.lastPathComponent)
+                    LabeledContent("room.left-speaker", value: left.lastPathComponent)
                     Button { choosingRight = true } label: {
                         ToolRow(
-                            title: room.reading ? "Reading…" : "Choose the right speaker's response…",
-                            detail: "As heard at both ears",
+                            title: said(room.reading ? "room.reading" : "room.choose-right"),
+                            detail: said("room.choose-right.detail"),
                             symbol: "waveform.path"
                         )
                     }
@@ -281,13 +281,13 @@ struct RoomCorrectionView: View {
                         case .failure(let failure): library.report(failure)
                         }
                     }
-                    Button("Cancel", systemImage: "xmark") { room.cancelPair() }
+                    Button("common.cancel", systemImage: "xmark") { room.cancelPair() }
                         .disabled(room.reading)
                 } else {
                     Button { choosing = true } label: {
                         ToolRow(
-                            title: room.reading ? "Reading…" : chosen ? "Choose another response…" : "Choose a response…",
-                            detail: "An impulse response or a SOFA set",
+                            title: said(room.reading ? "room.reading" : chosen ? "room.choose-another" : "room.choose"),
+                            detail: said("room.choose.detail"),
                             symbol: "doc.badge.plus"
                         )
                     }
@@ -299,7 +299,7 @@ struct RoomCorrectionView: View {
                         }
                     }
                     Button { choosingLeft = true } label: {
-                        ToolRow(title: "Choose a pair…", detail: "The left speaker's response, then the right's", symbol: "hifispeaker.2")
+                        ToolRow(title: said("room.choose-pair"), detail: said("room.choose-pair.detail"), symbol: "hifispeaker.2")
                     }
                     .disabled(room.reading)
                     .fileImporter(isPresented: $choosingLeft, allowedContentTypes: Self.responseTypes) { result in
@@ -311,14 +311,14 @@ struct RoomCorrectionView: View {
                 }
                 if chosen {
                     Button(role: .destructive) { forgetting = true } label: {
-                        ToolRow(title: "Forget the response", detail: "Room correction turns off", symbol: "trash", ink: Color.failure)
+                        ToolRow(title: said("room.forget-response"), detail: said("room.forget-response.detail"), symbol: "trash", ink: Color.failure)
                     }
                     .disabled(room.reading)
                 }
             } header: {
-                Text("The response")
+                Text("room.response")
             } footer: {
-                Text("Convolved before the equaliser on every output, and lowered where it would lift the music past full scale. A four-channel file or a pair is a two-by-two (binaural) response.")
+                Text("room.response.footer")
             }
             if chosen {
                 Section {
@@ -326,40 +326,46 @@ struct RoomCorrectionView: View {
                         value: Binding(get: { room.angle }, set: { room.speak(at: $0) }),
                         in: Int(RoomCorrectionState.limits.angleLeastDegrees)...Int(RoomCorrectionState.limits.angleMostDegrees)
                     ) {
-                        LabeledContent("Speaker angle", value: "\(room.angle)°")
+                        LabeledContent("room.speaker-angle", value: "\(room.angle)°")
                     }
                     .accessibilityIdentifier("speaker-angle")
                     Stepper(
                         value: Binding(get: { room.elevation }, set: { room.raise(to: $0) }),
                         in: Int(RoomCorrectionState.limits.elevationLeastDegrees)...Int(RoomCorrectionState.limits.elevationMostDegrees)
                     ) {
-                        LabeledContent("Speaker elevation", value: "\(room.elevation)°")
+                        LabeledContent("room.speaker-elevation", value: "\(room.elevation)°")
                     }
                     .accessibilityIdentifier("speaker-elevation")
                     Stepper(
                         value: Binding(get: { room.yaw }, set: { room.turn(to: $0) }),
                         in: Int(RoomCorrectionState.limits.yawLeastDegrees)...Int(RoomCorrectionState.limits.yawMostDegrees)
                     ) {
-                        LabeledContent("Head turned", value: "\(room.yaw)°")
+                        LabeledContent("room.head-turned", value: "\(room.yaw)°")
                     }
                     .accessibilityIdentifier("head-yaw")
                 } header: {
-                    Text("The speakers")
+                    Text("room.speakers")
                 } footer: {
-                    Text("Where the speakers stand either side of the front and above the ears, and how far your head is turned. A SOFA set is read from the measurements around them.")
+                    Text("room.speakers.footer")
                 }
             }
         }
-        .navigationTitle("Room correction")
-        .confirmationDialog("Forget the room correction?", isPresented: $forgetting, titleVisibility: .visible) {
-            Button("Forget", role: .destructive) { room.forget() }
+        .navigationTitle("room.title")
+        .confirmationDialog("room.forget.question", isPresented: $forgetting, titleVisibility: .visible) {
+            Button("room.forget", role: .destructive) { room.forget() }
         }
     }
 
     private static func described(_ kept: RoomCorrection) -> String {
-        let channels = kept.channels == 1 ? "Mono" : kept.channels == 2 ? "Stereo" : kept.channels == 4 ? "Two-by-two (binaural)" : "\(kept.channels) channels"
-        let rate = String(format: "%g kHz", Double(kept.rate) / 1000)
-        let length = String(format: "%.2f s", Double(kept.lengthMs) / 1000)
+        let channels =
+            switch kept.channels {
+            case 1: said("room.channels.mono")
+            case 2: said("room.channels.stereo")
+            case 4: said("room.channels.binaural")
+            default: said("room.channels", Int(kept.channels))
+            }
+        let rate = said("room.rate", String(format: "%g", Double(kept.rate) / 1000))
+        let length = said("room.length", String(format: "%.2f", Double(kept.lengthMs) / 1000))
         return "\(channels) · \(rate) · \(length)"
     }
 }

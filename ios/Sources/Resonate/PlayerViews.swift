@@ -59,15 +59,15 @@ struct MiniPlayer: View {
             }
             HStack(spacing: expanded ? 12 : 0) {
                 Button { skip(forward: false) } label: {
-                    Label("Previous", systemImage: "backward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
+                    Label("player.previous", systemImage: "backward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
                 }
-                .accessibilityInputLabels(["Previous", "Previous song", "Back"])
+                .accessibilityInputLabels([said("player.previous"), said("player.previous.input.song"), said("player.previous.input.back")])
                 .modifier(RidesWithThePlayButton(shown: expanded))
                 PlayButton(transport: library.transport)
                 Button { skip(forward: true) } label: {
-                    Label("Next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
+                    Label("player.next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
                 }
-                .accessibilityInputLabels(["Next", "Next song", "Skip"])
+                .accessibilityInputLabels([said("player.next"), said("player.next.input.song"), said("player.next.input.skip")])
                 .modifier(RidesWithThePlayButton(shown: expanded))
             }
         }
@@ -84,9 +84,9 @@ struct MiniPlayer: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(track.map { "\($0.shownTitle), \($0.shownArtist)" } ?? "")
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Open now playing") { navigation.nowPlaying = true }
-        .accessibilityAction(named: "Previous") { skip(forward: false) }
-        .accessibilityAction(named: "Next") { skip(forward: true) }
+        .accessibilityAction(named: "player.open") { navigation.nowPlaying = true }
+        .accessibilityAction(named: "player.previous") { skip(forward: false) }
+        .accessibilityAction(named: "player.next") { skip(forward: true) }
     }
 
     private var swipes: some Gesture {
@@ -151,8 +151,10 @@ struct PlayButton: View {
         .modifier(GlassWhen(enabled: large))
         .sensoryFeedback(.impact(weight: .medium), trigger: pressed)
         .keyboardShortcut(large ? KeyboardShortcut(.space, modifiers: []) : nil)
-        .accessibilityLabel(playingish ? "Pause" : "Play")
-        .accessibilityInputLabels(["Play", "Pause", "Play pause", "Resume"])
+        .accessibilityLabel(said(playingish ? "player.pause" : "player.play"))
+        .accessibilityInputLabels([
+            said("player.play"), said("player.pause"), said("player.play.input.play-pause"), said("player.play.input.resume"),
+        ])
     }
 }
 
@@ -226,13 +228,13 @@ struct NowPlayingView: View {
                 }
             }
             .sheet(item: $asks.picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
-            .alert("Save queue as playlist", isPresented: $asks.savingQueue) {
-                PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue.filter { !$0.isServed }) }
+            .alert("player.queue.save", isPresented: $asks.savingQueue) {
+                PlaylistNameField(confirm: said("common.save")) { library.features.createPlaylist($0, with: library.queue.filter { !$0.isServed }) }
             }
-            .confirmationDialog("Clear the queue?", isPresented: $asks.clearingQueue, titleVisibility: .visible) {
-                Button("Clear queue", role: .destructive) { library.clearQueue() }
+            .confirmationDialog("player.queue.clear.question", isPresented: $asks.clearingQueue, titleVisibility: .visible) {
+                Button("player.queue.clear", role: .destructive) { library.clearQueue() }
             } message: {
-                Text("Songs up next and in your history are removed. The playing song keeps playing.")
+                Text("player.queue.clear.message")
             }
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
             .modifier(PlaylistPickerHost(insidePlayer: true))
@@ -627,7 +629,7 @@ struct PlayerTitles: View {
                     }
                 }
             } else {
-                Text("Nothing playing")
+                Text("player.nothing-playing")
                     .font(.title2.weight(.bold))
                     .titleLines(2)
             }
@@ -650,7 +652,7 @@ struct SongMenu<Label: View>: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .tint(Color.primary)
-            .accessibilityHint("Goes to the album or the artist")
+            .accessibilityHint("player.song-menu.hint")
         } else {
             label()
         }
@@ -667,10 +669,10 @@ struct SongDestinations: View {
 
     var body: some View {
         if let albumPage = track.albumPage {
-            Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
+            Button("player.go-to-album", systemImage: "square.stack") { navigation.open(albumPage) }
         }
         if !track.artist.isEmpty {
-            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
+            Button("player.go-to-artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
         }
     }
 }
@@ -703,7 +705,7 @@ struct CompactTitles: View {
                 .accessibilityElement(children: .combine)
             }
         } else {
-            Text("Nothing playing").font(.headline).titleLines()
+            Text("player.nothing-playing").font(.headline).titleLines()
         }
     }
 }
@@ -775,8 +777,8 @@ struct PlayerScrubber: View {
             .frame(height: Self.grabbedHeight)
             .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             .accessibilityElement()
-            .accessibilityLabel("Song position")
-            .accessibilityValue("\(clock(UInt64(shown))) of \(clock(timing.durationMs))")
+            .accessibilityLabel("player.position")
+            .accessibilityValue(said("player.position.value", clock(UInt64(shown)), clock(timing.durationMs)))
             .accessibilityAdjustableAction { direction in
                 let step = direction == .increment ? Self.stepMs : -Self.stepMs
                 commit(min(max(shown + step, 0), duration))
@@ -839,9 +841,9 @@ struct PlayerScrubber: View {
 
     private func seekKeys(from shown: Double, of duration: Double) -> some View {
         HStack {
-            Button("Back 10 seconds") { commit(min(max(shown - Self.stepMs, 0), duration)) }
+            Button("player.seek.back") { commit(min(max(shown - Self.stepMs, 0), duration)) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-            Button("Forward 10 seconds") { commit(min(max(shown + Self.stepMs, 0), duration)) }
+            Button("player.seek.forward") { commit(min(max(shown + Self.stepMs, 0), duration)) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
         }
         .opacity(0)
@@ -950,14 +952,14 @@ struct QualityLine: View {
     private static func line(_ track: Track?, output: UInt32) -> String {
         guard let track else { return " " }
         var parts = [track.codec]
-        if let bits = track.bits { parts.append("\(bits)-bit") }
+        if let bits = track.bits { parts.append(said("player.quality.bits", Int(bits))) }
         if track.rate > 0 { parts.append(kilohertz(track.rate)) }
-        if output > 0 { parts.append("Output \(kilohertz(output))") }
+        if output > 0 { parts.append(said("player.quality.output", kilohertz(output))) }
         return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private static func kilohertz(_ rate: UInt32) -> String {
-        String(format: "%g kHz", Double(rate) / 1000)
+        said("player.quality.rate", String(format: "%g", Double(rate) / 1000))
     }
 }
 
@@ -1073,35 +1075,35 @@ struct TransportRow: View {
         let repeating = library.repeatMode
         GlassEffectContainer(spacing: 24) {
             HStack(spacing: 0) {
-                Button { library.setShuffle(!shuffled) } label: { Label("Shuffle", systemImage: "shuffle").touchTarget().buttonShape() }
+                Button { library.setShuffle(!shuffled) } label: { Label("player.shuffle", systemImage: "shuffle").touchTarget().buttonShape() }
                     .modeInk(shuffled)
                     .modeMark(shuffled)
                     .motion(Flip.animation, value: shuffled)
                     .accessibilityAddTraits(.isToggle)
-                    .accessibilityValue(shuffled ? "On" : "Off")
-                    .accessibilityInputLabels(["Shuffle", "Shuffle songs"])
+                    .accessibilityValue(said(shuffled ? "common.on" : "common.off"))
+                    .accessibilityInputLabels([said("player.shuffle"), said("player.shuffle.input.songs")])
                     .frame(maxWidth: .infinity)
                 Button {
                     skipped += 1
                     library.previous()
                 } label: {
-                    Label("Previous", systemImage: "backward.fill").touchTarget().buttonShape()
+                    Label("player.previous", systemImage: "backward.fill").touchTarget().buttonShape()
                 }
                 .font(.title)
-                .accessibilityInputLabels(["Previous", "Previous song", "Back"])
+                .accessibilityInputLabels([said("player.previous"), said("player.previous.input.song"), said("player.previous.input.back")])
                 .frame(maxWidth: .infinity)
                 PlayButton(transport: library.transport, large: true)
                 Button {
                     skipped += 1
                     library.next()
                 } label: {
-                    Label("Next", systemImage: "forward.fill").touchTarget().buttonShape()
+                    Label("player.next", systemImage: "forward.fill").touchTarget().buttonShape()
                 }
                 .font(.title)
-                .accessibilityInputLabels(["Next", "Next song", "Skip"])
+                .accessibilityInputLabels([said("player.next"), said("player.next.input.song"), said("player.next.input.skip")])
                 .frame(maxWidth: .infinity)
                 Button { library.setRepeat(repeating.following) } label: {
-                    Label("Repeat", systemImage: repeating.symbol)
+                    Label("player.repeat", systemImage: repeating.symbol)
                         .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                         .touchTarget()
                         .buttonShape()
@@ -1111,7 +1113,7 @@ struct TransportRow: View {
                     .motion(Flip.animation, value: repeating)
                     .accessibilityAddTraits(.isToggle)
                     .accessibilityValue(repeating.spoken)
-                    .accessibilityInputLabels(["Repeat", "Repeat songs"])
+                    .accessibilityInputLabels([said("player.repeat"), said("player.repeat.input.songs")])
                     .frame(maxWidth: .infinity)
             }
             .labelStyle(.iconOnly)
@@ -1138,15 +1140,15 @@ struct SleepCountdown: View {
                     .nowPlayingInk()
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Opens the sleep timer")
+            .accessibilityHint("player.sleep.hint")
         }
     }
 
     static func text(_ timer: SleepTimer?, remaining: UInt64?) -> String? {
         switch timer {
-        case .after: "Pausing in \(clock((remaining ?? 0) + 999))"
-        case .endOfTrack: "Pauses at the end of this song"
-        case .endOfQueue: "Pauses at the end of the queue"
+        case .after: said("player.sleep.pausing-in", clock((remaining ?? 0) + 999))
+        case .endOfTrack: said("player.sleep.end-of-song.pauses")
+        case .endOfQueue: said("player.sleep.end-of-queue.pauses")
         case nil: nil
         }
     }
@@ -1204,7 +1206,7 @@ struct VolumeRow: View {
             Image(systemName: "speaker.wave.3.fill").nowPlayingInk().accessibilityHidden(true)
         }
         .accessibilityElement()
-        .accessibilityLabel("Volume")
+        .accessibilityLabel("player.volume")
         .accessibilityValue(Text(Double(shown), format: .percent.precision(.fractionLength(0))))
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? Self.step : -Self.step
@@ -1402,12 +1404,12 @@ struct PlayerModes: View {
     var body: some View {
         GlassEffectContainer(spacing: 20) {
             HStack(spacing: 20) {
-                toggle(.lyrics, title: "Lyrics", symbol: "quote.bubble")
+                toggle(.lyrics, title: said("player.mode.lyrics"), symbol: "quote.bubble")
                 RoutePicker()
                     .frame(width: edge, height: edge)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("AirPlay")
-                toggle(.queue, title: "Up next", symbol: "list.bullet")
+                toggle(.queue, title: said("player.mode.up-next"), symbol: "list.bullet")
             }
         }
         .sensoryFeedback(.selection, trigger: switched)
@@ -1430,8 +1432,8 @@ struct PlayerModes: View {
         .buttonStyle(.plain)
         .modeMark(active && differentiate)
         .accessibilityAddTraits(.isToggle)
-        .accessibilityValue(active ? "On" : "Off")
-        .accessibilityInputLabels([title, "Show \(title)"])
+        .accessibilityValue(said(active ? "common.on" : "common.off"))
+        .accessibilityInputLabels([title, said("player.mode.show", title)])
     }
 }
 
@@ -1463,7 +1465,7 @@ struct CloseNowPlaying: View {
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        Button("Close", systemImage: "chevron.down") { navigation.nowPlaying = false }
+        Button("common.close", systemImage: "chevron.down") { navigation.nowPlaying = false }
     }
 }
 
@@ -1474,33 +1476,33 @@ struct PlayerMoreMenu: View {
     let asks: PlayerAsks
 
     var body: some View {
-        Menu("More", systemImage: "ellipsis") {
+        Menu("player.more", systemImage: "ellipsis") {
             if let track, !track.isServed {
                 Section {
-                    Button("Add to playlist", systemImage: "text.badge.plus") { asks.picked = PickedTracks(tracks: [track]) }
+                    Button("player.add-to-playlist", systemImage: "text.badge.plus") { asks.picked = PickedTracks(tracks: [track]) }
                     ShareSongButton(track: track)
-                    Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
-                    Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
+                    Button("player.song-details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
+                    Button("player.analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
                 }
             }
             if library.queueShape != .empty {
-                Section("Queue") {
-                    Button("Save queue as playlist", systemImage: "text.badge.plus") { asks.savingQueue = true }
-                    Button("Clear queue", systemImage: "trash", role: .destructive) { asks.clearingQueue = true }
+                Section("player.queue") {
+                    Button("player.queue.save", systemImage: "text.badge.plus") { asks.savingQueue = true }
+                    Button("player.queue.clear", systemImage: "trash", role: .destructive) { asks.clearingQueue = true }
                         .disabled(library.queueShape == .one)
                 }
             }
             Section {
-                Button("Sleep timer", systemImage: library.sleepTimer == nil ? "moon.zzz" : "moon.zzz.fill") {
+                Button("player.sleep-timer", systemImage: library.sleepTimer == nil ? "moon.zzz" : "moon.zzz.fill") {
                     navigation.sleepTimer = true
                 }
-                Button("Zones", systemImage: "hifispeaker.2") { navigation.zones = true }
-                Button("Equaliser", systemImage: "slider.vertical.3") {
+                Button("player.zones", systemImage: "hifispeaker.2") { navigation.zones = true }
+                Button("player.equaliser", systemImage: "slider.vertical.3") {
                     navigation.tab = .settings
                     navigation.open(.sound)
                 }
-                Button("Visualizer", systemImage: "waveform") { navigation.open(.visualizer) }
-                Button("Output", systemImage: "hifispeaker") {
+                Button("player.visualizer", systemImage: "waveform") { navigation.open(.visualizer) }
+                Button("player.output", systemImage: "hifispeaker") {
                     navigation.tab = .settings
                     navigation.open(.output)
                 }
@@ -1578,7 +1580,7 @@ struct QueueSections: View {
         let playing = library.playingQueueRow
         Group {
             if rows.isEmpty {
-                Text("Your queue is empty").secondaryInk()
+                Text("player.queue.empty").secondaryInk()
             } else if let playing {
                 let parts = QueueParts(
                     rows: rows.count,
@@ -1590,9 +1592,9 @@ struct QueueSections: View {
                 let placing = NextPlacement(playing: playing, next: parts.next)
                 if playing > 0 {
                     Section {
-                        QueueHeading(title: "History")
+                        QueueHeading(title: said("player.queue.history"))
                         if parts.history.lowerBound > 0 {
-                            moreRows(parts.history.lowerBound == 1 ? "1 earlier song" : "\(parts.history.lowerBound) earlier songs") {
+                            moreRows(said("player.queue.earlier", parts.history.lowerBound)) {
                                 heard += Self.widenedBy
                             }
                         }
@@ -1600,14 +1602,14 @@ struct QueueSections: View {
                     }
                 }
                 Section {
-                    QueueHeading(title: "Now playing").id(playingRowId)
+                    QueueHeading(title: said("player.queue.now-playing")).id(playingRowId)
                     QueueRow(row: rows[playing], current: true, edited: $edited)
                 }
                 if parts.next.isEmpty {
                     Section {
-                        QueueHeading(title: "Up next")
+                        QueueHeading(title: said("player.queue.up-next"))
                         if parts.rest.isEmpty, parts.beyond == 0 {
-                            Text("Nothing more to play").secondaryInk()
+                            Text("player.queue.nothing-more").secondaryInk()
                         } else {
                             rowsOf(rows, parts.rest, placing: placing)
                         }
@@ -1617,10 +1619,10 @@ struct QueueSections: View {
                     }
                 } else {
                     Section {
-                        QueueHeading(title: "Playing next")
+                        QueueHeading(title: said("player.queue.playing-next"))
                         joinedRows(rows, parts, placing: placing)
                         if parts.rest.isEmpty, parts.beyond == 0 {
-                            Text("Nothing more to play").secondaryInk()
+                            Text("player.queue.nothing-more").secondaryInk()
                         }
                         if parts.beyond > 0 {
                             further(parts.beyond)
@@ -1630,7 +1632,7 @@ struct QueueSections: View {
             } else {
                 let shown = min(rows.count, ahead)
                 Section {
-                    QueueHeading(title: "Up next")
+                    QueueHeading(title: said("player.queue.up-next"))
                     rowsOf(rows, 0..<shown, placing: nil)
                     if rows.count > shown {
                         further(rows.count - shown)
@@ -1642,7 +1644,7 @@ struct QueueSections: View {
     }
 
     private func further(_ count: Int) -> some View {
-        moreRows(count == 1 ? "1 more song" : "\(count) more songs") { ahead += Self.widenedBy }
+        moreRows(said("player.queue.more", count)) { ahead += Self.widenedBy }
     }
 
     private func moreRows(_ title: String, _ widen: @escaping () -> Void) -> some View {
@@ -1650,14 +1652,14 @@ struct QueueSections: View {
             HStack {
                 Text(title)
                 Spacer()
-                Text("Show").font(.footnote.weight(.semibold))
+                Text("player.queue.show").font(.footnote.weight(.semibold))
             }
             .secondaryInk()
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .listRowBackground(Color.clear)
-        .accessibilityHint("Shows more of the queue")
+        .accessibilityHint("player.queue.show.hint")
     }
 
     private func rowsOf(_ rows: [Track], _ range: Range<Int>, placing: NextPlacement?) -> some View {
@@ -1686,7 +1688,7 @@ struct QueueSections: View {
             case .row:
                 queueRow(entry, placing: placing)
             case .joint:
-                QueueHeading(title: "Continue playing")
+                QueueHeading(title: said("player.queue.continue-playing"))
                     .moveDisabled(true)
                     .deleteDisabled(true)
             }
@@ -1768,7 +1770,7 @@ struct QueueRow: View {
             library.jump(to: row)
         }
         .swipeActions(edge: .trailing) {
-            Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+            Button("player.queue.remove", systemImage: "minus.circle", role: .destructive) {
                 edited += 1
                 library.removeFromQueue(row)
             }
@@ -1777,7 +1779,7 @@ struct QueueRow: View {
         .contextMenu {
             if let movesToNext {
                 Section {
-                    Button("Move to Playing next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                    Button("player.queue.move-to-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                         edited += 1
                         library.moveInQueue(from: movesToNext.from, to: movesToNext.to)
                     }
@@ -1785,17 +1787,17 @@ struct QueueRow: View {
             }
             if !row.isServed {
                 Section {
-                    Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                    Button(said(favourite ? "favourite.remove" : "favourite.add"), systemImage: favourite ? "heart.slash" : "heart") {
                         library.setFavourite(row, !favourite)
                     }
-                    Button("Add to playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([row]) }
+                    Button("player.add-to-playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([row]) }
                 }
                 Section {
                     SongPages(track: row)
                 }
             }
             Section {
-                Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {
+                Button("player.queue.remove", systemImage: "minus.circle", role: .destructive) {
                     edited += 1
                     library.removeFromQueue(row)
                 }
@@ -1813,7 +1815,7 @@ struct HandoffRows: View {
                 library.features.continueFrom(handoff)
             } label: {
                 Label(
-                    "Continue \(counted(Int(handoff.songs), "song")) from \(handoff.device)\(handoff.playing ? " · playing" : "")",
+                    said(handoff.playing ? "player.handoff.playing" : "player.handoff", Int(handoff.songs), handoff.device),
                     systemImage: "arrow.triangle.2.circlepath"
                 )
             }
@@ -1850,16 +1852,16 @@ struct SleepTimerSheet: View {
                 }
                 Section {
                     ForEach(Self.minutes, id: \.self) { minutes in
-                        Button("\(minutes) minutes") { set(.after(seconds: minutes * 60)) }
+                        Button(said("counted.minutes", Int(minutes))) { set(.after(seconds: minutes * 60)) }
                     }
-                    Button("End of song") { set(.endOfTrack) }
-                    Button("End of queue") { set(.endOfQueue) }
+                    Button("player.sleep.end-of-song") { set(.endOfTrack) }
+                    Button("player.sleep.end-of-queue") { set(.endOfQueue) }
                 }
                 if timer != nil {
-                    Button("Cancel timer", role: .destructive) { set(nil) }
+                    Button("player.sleep.cancel", role: .destructive) { set(nil) }
                 }
             }
-            .navigationTitle("Sleep timer")
+            .navigationTitle("player.sleep-timer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1882,7 +1884,7 @@ struct SleepTimerState: View {
         if let text = SleepCountdown.text(library.sleepTimer, remaining: library.clock.sleepRemainingMs) {
             Text(text).font(.headline.monospacedDigit())
         } else {
-            Text("No timer set").foregroundStyle(.secondary)
+            Text("player.sleep.none").foregroundStyle(.secondary)
         }
     }
 }

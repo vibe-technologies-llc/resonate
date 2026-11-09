@@ -12,19 +12,28 @@ extension EqualiserFilter {
 
     public var label: String {
         switch self {
-        case .peaking: "Peak"
-        case .lowShelf: "Low shelf"
-        case .highShelf: "High shelf"
-        case .lowPass: "Low pass"
-        case .highPass: "High pass"
-        case .notch: "Notch"
-        case .bandPass: "Band pass"
-        case .allPass: "All pass"
+        case .peaking: said("equaliser.filter.peak")
+        case .lowShelf: said("equaliser.filter.low-shelf")
+        case .highShelf: said("equaliser.filter.high-shelf")
+        case .lowPass: said("equaliser.filter.low-pass")
+        case .highPass: said("equaliser.filter.high-pass")
+        case .notch: said("equaliser.filter.notch")
+        case .bandPass: said("equaliser.filter.band-pass")
+        case .allPass: said("equaliser.filter.all-pass")
         }
     }
 
     public var gainUnused: String {
-        "Not used by \(label.lowercased())"
+        switch self {
+        case .peaking: said("equaliser.filter.peak.gain-unused")
+        case .lowShelf: said("equaliser.filter.low-shelf.gain-unused")
+        case .highShelf: said("equaliser.filter.high-shelf.gain-unused")
+        case .lowPass: said("equaliser.filter.low-pass.gain-unused")
+        case .highPass: said("equaliser.filter.high-pass.gain-unused")
+        case .notch: said("equaliser.filter.notch.gain-unused")
+        case .bandPass: said("equaliser.filter.band-pass.gain-unused")
+        case .allPass: said("equaliser.filter.all-pass.gain-unused")
+        }
     }
 
     public var usesGain: Bool {
@@ -40,12 +49,12 @@ extension EqualiserCurve {
 
     public var summary: String {
         if !name.isEmpty { return name }
-        return bands.isEmpty ? "Flat" : "Custom curve · \(counted(bands.count, "band"))"
+        return bands.isEmpty ? said("equaliser.curve.flat") : said("equaliser.curve.custom", bands.count)
     }
 
     public var presetName: String {
         let flat = preampDb == 0 && bands.allSatisfy { $0.filter.usesGain && $0.gainDb == 0 }
-        return flat ? "Flat" : name
+        return flat ? said("equaliser.curve.flat") : name
     }
 
     public func level(of band: EqualiserBand) -> Float {
@@ -68,25 +77,25 @@ public enum EqualiserUnits {
 
     public static func hertz(_ frequency: Float) -> String {
         frequency >= 1000
-            ? String(format: frequency >= 10_000 ? "%.1f kHz" : "%.2f kHz", frequency / 1000)
-            : String(format: frequency >= 100 ? "%.0f Hz" : "%.1f Hz", frequency)
+            ? said("units.khz", String(format: frequency >= 10_000 ? "%.1f" : "%.2f", frequency / 1000))
+            : said("units.hz", String(format: frequency >= 100 ? "%.0f" : "%.1f", frequency))
     }
 
     public static func decibels(_ gain: Float) -> String {
-        String(format: "%+.1f dB", gain)
+        said("units.db", String(format: "%+.1f", gain))
     }
 
     public static func range(of hertz: Float) -> String {
         switch hertz {
-        case ..<60: "Sub-bass"
-        case ..<180: "Bass"
-        case ..<400: "Warmth"
-        case ..<900: "Low mids"
-        case ..<1800: "Mids"
-        case ..<3500: "Vocals"
-        case ..<6000: "Presence"
-        case ..<12000: "Treble"
-        default: "Air"
+        case ..<60: said("equaliser.range.sub-bass")
+        case ..<180: said("equaliser.range.bass")
+        case ..<400: said("equaliser.range.warmth")
+        case ..<900: said("equaliser.range.low-mids")
+        case ..<1800: said("equaliser.range.mids")
+        case ..<3500: said("equaliser.range.vocals")
+        case ..<6000: said("equaliser.range.presence")
+        case ..<12000: said("equaliser.range.treble")
+        default: said("equaliser.range.air")
         }
     }
 

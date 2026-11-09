@@ -5,20 +5,12 @@ import ResonateNative
 import SwiftUI
 
 extension EqualiserPreset {
-    var mark: String {
-        switch name {
-        case "Flat": "minus"
-        case "Bass boost": "speaker.wave.3"
-        case "Bass only": "hifispeaker"
-        case "Bass cut": "water.waves"
-        case "Vocals": "music.mic"
-        case "Warm": "sun.max"
-        case "Bright": "sparkles"
-        case "Treble cut": "cloud"
-        case "Rock": "guitars"
-        case "Electronic": "waveform"
-        default: "slider.horizontal.3"
-        }
+    private static let marks = [
+        "minus", "speaker.wave.3", "hifispeaker", "water.waves", "music.mic", "sun.max", "sparkles", "cloud", "guitars", "waveform",
+    ]
+
+    static func mark(at place: Int) -> String {
+        marks.indices.contains(place) ? marks[place] : "slider.horizontal.3"
     }
 }
 
@@ -81,7 +73,7 @@ struct EqualiserGraph: View {
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
         .sensoryFeedback(.selection, trigger: releases)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Equaliser curve")
+        .accessibilityLabel("equaliser.graph.curve")
     }
 
     private func grab(_ handle: EqualiserHandle, span: Float) {
@@ -182,7 +174,7 @@ private struct EqualiserHandleView: View {
             .frame(width: handle.reach.width, height: handle.reach.height)
             .contentShape(.rect)
             .accessibilityElement()
-            .accessibilityLabel("Band \(handle.band + 1), \(band.filter.label) at \(EqualiserUnits.hertz(band.frequencyHz))")
+            .accessibilityLabel(said("equaliser.graph.band", handle.band + 1, band.filter.label, EqualiserUnits.hertz(band.frequencyHz)))
             .accessibilityValue(
                 band.filter.usesGain
                     ? "\(EqualiserUnits.decibels(band.gainDb)), \(EqualiserUnits.q(band.q))"
@@ -195,11 +187,11 @@ private struct EqualiserHandleView: View {
             }
             .accessibilityActions {
                 if band.filter.usesGain {
-                    Button("Raise the gain") { nudge(BandNudge.level(band, up: true, limits: limits)) }
-                    Button("Lower the gain") { nudge(BandNudge.level(band, up: false, limits: limits)) }
+                    Button("equaliser.graph.gain.raise") { nudge(BandNudge.level(band, up: true, limits: limits)) }
+                    Button("equaliser.graph.gain.lower") { nudge(BandNudge.level(band, up: false, limits: limits)) }
                 }
-                Button("Raise the frequency") { nudge(BandNudge.frequency(band, up: true, limits: limits)) }
-                Button("Lower the frequency") { nudge(BandNudge.frequency(band, up: false, limits: limits)) }
+                Button("equaliser.graph.frequency.raise") { nudge(BandNudge.frequency(band, up: true, limits: limits)) }
+                Button("equaliser.graph.frequency.lower") { nudge(BandNudge.frequency(band, up: false, limits: limits)) }
             }
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named(EqualiserGraph.space))
@@ -312,7 +304,7 @@ struct EqualiserGrid: View, Equatable {
             )
             if zero || abs(level) == scale.span {
                 context.draw(
-                    Text(zero ? "0 dB" : String(format: "%+.0f", level)).font(.caption2).foregroundStyle(.secondary),
+                    Text(zero ? said("equaliser.graph.zero-db") : String(format: "%+.0f", level)).font(.caption2).foregroundStyle(.secondary),
                     at: CGPoint(x: 3, y: y + (level == scale.span ? 2 : -2)),
                     anchor: level == scale.span ? .topLeading : .bottomLeading
                 )

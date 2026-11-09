@@ -6,17 +6,17 @@ public enum ListenedTime {
         let minutes = Int(milliseconds / 60_000)
         let hours = minutes / 60
         let rest = minutes % 60
-        if hours == 0 { return counted(rest, "minute") }
-        if rest == 0 { return counted(hours, "hour") }
-        return "\(counted(hours, "hour")) \(counted(rest, "minute"))"
+        if hours == 0 { return said("counted.minutes", rest) }
+        if rest == 0 { return said("counted.hours", hours) }
+        return "\(said("counted.hours", hours)) \(said("counted.minutes", rest))"
     }
 
     public static func brief(_ milliseconds: UInt64) -> String {
         let minutes = Int(milliseconds / 60_000)
-        if minutes < 60 { return "\(minutes) min" }
+        if minutes < 60 { return said("listening.brief.minutes", minutes) }
         let hours = minutes / 60
-        if hours < 100 { return "\(hours) h \(minutes % 60) min" }
-        return "\(hours) h"
+        if hours < 100 { return said("listening.brief.hours-minutes", hours, minutes % 60) }
+        return said("listening.brief.hours", hours)
     }
 }
 
@@ -40,10 +40,10 @@ public enum ListeningTrend: Equatable, Sendable {
 
     public var words: String {
         switch self {
-        case .steady: "about the same as the week before"
-        case .up(let percent): "up \(percent)% on the week before"
-        case .down(let percent): "down \(percent)% on the week before"
-        case .moreThanDouble: "more than double the week before"
+        case .steady: said("listening.trend.steady")
+        case .up(let percent): said("listening.trend.up", percent)
+        case .down(let percent): said("listening.trend.down", percent)
+        case .moreThanDouble: said("listening.trend.more-than-double")
         }
     }
 }
@@ -109,11 +109,32 @@ public struct ListeningGlance: Equatable, Sendable {
     public static let daysShown = 7
     public static let runShownFrom = 2
     public static let habitShownFromDaysHeard = 7
-    private static let thisWeeksName = "Last 7 days"
-    private static let allTimeName = "All time"
-    private static let nothingHeardHeadline = "No plays yet"
-    private static let nothingHeardDetail = "Play a song for half its length, or four minutes, to count a play."
-    private static let daysOfTheWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    private static var thisWeeksName: String { said("listening.glance.this-week") }
+    private static var allTimeName: String { said("listening.glance.all-time") }
+    private static var nothingHeardHeadline: String { said("listening.glance.nothing-heard") }
+    private static var nothingHeardDetail: String { said("listening.glance.nothing-heard.detail") }
+    private static var daysOfTheWeek: [String] {
+        [
+            said("listening.weekday.sunday"),
+            said("listening.weekday.monday"),
+            said("listening.weekday.tuesday"),
+            said("listening.weekday.wednesday"),
+            said("listening.weekday.thursday"),
+            said("listening.weekday.friday"),
+            said("listening.weekday.saturday"),
+        ]
+    }
+    private static var everyDayOfTheWeek: [String] {
+        [
+            said("listening.weekdays.sunday"),
+            said("listening.weekdays.monday"),
+            said("listening.weekdays.tuesday"),
+            said("listening.weekdays.wednesday"),
+            said("listening.weekdays.thursday"),
+            said("listening.weekdays.friday"),
+            said("listening.weekdays.saturday"),
+        ]
+    }
 
     public let standing: Standing
     public let week: [Day]
@@ -156,12 +177,13 @@ public struct ListeningGlance: Equatable, Sendable {
                 headline: nothingHeardHeadline,
                 detail: nothingHeardDetail,
                 facts: [],
-                spoken: "\(nothingHeardHeadline). \(nothingHeardDetail)"
+                spoken: sentenced([nothingHeardHeadline, nothingHeardDetail])
             )
         }
 
         guard thisWeekMs > 0 else {
-            let detail = lastHeard.map { "Nothing this week · last heard \(dated($0, today: today, calendar: calendar))" } ?? "Nothing this week"
+            let detail = lastHeard.map { said("listening.glance.resting.last-heard", dated($0, today: today, calendar: calendar)) }
+                ?? said("listening.glance.resting")
             let facts = [
                 weekdayFact(weekday),
                 songsHeardFact(heard),
@@ -174,23 +196,23 @@ public struct ListeningGlance: Equatable, Sendable {
                 headline: ListenedTime.brief(heard.listenedMs),
                 detail: detail,
                 facts: facts,
-                spoken: said([
-                    "All time, \(ListenedTime.spoken(heard.listenedMs)) listened, \(counted(Int(heard.plays), "play"))",
+                spoken: sentenced([
+                    said("listening.glance.resting.spoken", ListenedTime.spoken(heard.listenedMs), Int(heard.plays)),
                     detail.replacingOccurrences(of: " · ", with: ", "),
                 ] + facts.map(\.spoken))
             )
         }
 
-        let pace = "\(ListenedTime.brief(averageMs)) a day"
+        let pace = said("listening.glance.a-day", ListenedTime.brief(averageMs))
         let facts = [
             runFact(run),
             weekdayFact(weekday),
             allTimeFact(heard),
             songsHeardFact(heard),
         ].compactMap { $0 }
-        let spokenPace = "\(ListenedTime.spoken(averageMs)) a day" + (trend.map { ", \($0.words)" } ?? "")
+        let spokenPace = said("listening.glance.a-day", ListenedTime.spoken(averageMs)) + (trend.map { ", \($0.words)" } ?? "")
         let busiest = week.max { $0.listenedMs < $1.listenedMs }.map { day in
-            "The most was \(dayName(day.starts, calendar: calendar)), \(ListenedTime.spoken(day.listenedMs))"
+            said("listening.glance.busiest", dayName(day.starts, calendar: calendar), ListenedTime.spoken(day.listenedMs))
         }
         return ListeningGlance(
             standing: .heardThisWeek,
@@ -200,15 +222,15 @@ public struct ListeningGlance: Equatable, Sendable {
             headline: ListenedTime.brief(thisWeekMs),
             detail: ([pace] + (trend.map { [$0.words] } ?? [])).joined(separator: " · "),
             facts: facts,
-            spoken: said([
-                "Last 7 days, \(ListenedTime.spoken(thisWeekMs)) listened",
+            spoken: sentenced([
+                said("listening.glance.this-week.spoken", ListenedTime.spoken(thisWeekMs)),
                 spokenPace,
                 busiest,
             ].compactMap { $0 } + facts.map(\.spoken))
         )
     }
 
-    private static func said(_ sentences: [String]) -> String {
+    private static func sentenced(_ sentences: [String]) -> String {
         sentences.joined(separator: ". ")
     }
 
@@ -272,27 +294,44 @@ public struct ListeningGlance: Equatable, Sendable {
 
     private static func runFact(_ run: Int) -> Fact? {
         guard run >= runShownFrom else { return nil }
-        return Fact(kind: .run, value: "\(run) days", caption: "in a row", spoken: "\(run) days in a row")
+        return Fact(
+            kind: .run,
+            value: said("listening.fact.run", run),
+            caption: said("listening.fact.run.caption"),
+            spoken: said("listening.fact.run.spoken", run)
+        )
     }
 
     private static func weekdayFact(_ weekday: Int?) -> Fact? {
         guard let weekday else { return nil }
-        let name = "\(daysOfTheWeek[weekday - 1])s"
-        return Fact(kind: .weekday, value: name, caption: "heard most", spoken: "Heard most on \(name)")
+        let name = everyDayOfTheWeek[weekday - 1]
+        return Fact(
+            kind: .weekday,
+            value: name,
+            caption: said("listening.fact.weekday.caption"),
+            spoken: said("listening.fact.weekday.spoken", name)
+        )
     }
 
     private static func allTimeFact(_ heard: Heard) -> Fact {
-        let plays = counted(Int(heard.plays), "play")
+        let plays = Int(heard.plays)
         return Fact(
             kind: .allTime,
             value: ListenedTime.brief(heard.listenedMs),
-            caption: "in all · \(plays)",
-            spoken: "\(ListenedTime.spoken(heard.listenedMs)) in all, \(plays)"
+            caption: said("listening.fact.all-time.caption", plays),
+            spoken: said("listening.fact.all-time.spoken", ListenedTime.spoken(heard.listenedMs), plays)
         )
     }
 
     private static func songsHeardFact(_ heard: Heard) -> Fact {
-        let reading = heard.songsHeard <= heard.songs ? "\(heard.songsHeard) of \(heard.songs)" : "\(heard.songsHeard)"
-        return Fact(kind: .songsHeard, value: reading, caption: "songs heard", spoken: "\(reading) songs heard")
+        let reading = heard.songsHeard <= heard.songs
+            ? said("listening.fact.songs-heard.of", Int(heard.songsHeard), Int(heard.songs))
+            : "\(heard.songsHeard)"
+        return Fact(
+            kind: .songsHeard,
+            value: reading,
+            caption: said("listening.fact.songs-heard.caption"),
+            spoken: said("listening.fact.songs-heard.spoken", reading)
+        )
     }
 }

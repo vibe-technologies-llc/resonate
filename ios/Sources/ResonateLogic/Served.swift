@@ -88,19 +88,19 @@ public struct ServedPlace: Hashable, Codable, Sendable {
 }
 
 extension ServedArtist {
-    public var shownName: String { name.isEmpty ? "Unknown artist" : name }
+    public var shownName: String { name.isEmpty ? said("library.unknown.artist") : name }
 
-    public var line: String? { albums.map { counted(Int($0), "album") } }
+    public var line: String? { albums.map { said("counted.albums", Int($0)) } }
 }
 
 extension ServedAlbum {
-    public var shownName: String { name.isEmpty ? "Unknown album" : name }
+    public var shownName: String { name.isEmpty ? said("library.unknown.album") : name }
 
     public var line: String {
         [
             artist.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 },
             year.map { String($0) },
-            songs.map { counted(Int($0), "song") },
+            songs.map { said("counted.songs", Int($0)) },
         ]
         .compactMap { $0 }
         .joined(separator: " · ")
@@ -108,7 +108,7 @@ extension ServedAlbum {
 }
 
 extension ServedSong {
-    public var shownTitle: String { title.isEmpty ? "Unknown song" : title }
+    public var shownTitle: String { title.isEmpty ? said("library.unknown.song") : title }
 
     public func line(withAlbum: Bool) -> String {
         [
@@ -128,9 +128,9 @@ extension ServedFound {
 
     public var summary: String {
         [
-            artists.isEmpty ? nil : counted(artists.count, "artist"),
-            albums.isEmpty ? nil : counted(albums.count, "album"),
-            songs.isEmpty ? nil : counted(songs.count, "song"),
+            artists.isEmpty ? nil : said("counted.artists", artists.count),
+            albums.isEmpty ? nil : said("counted.albums", albums.count),
+            songs.isEmpty ? nil : said("counted.songs", songs.count),
         ]
         .compactMap { $0 }
         .joined(separator: " · ")
@@ -139,8 +139,10 @@ extension ServedFound {
 
 public func servedSummary(of songs: [ServedSong]) -> String {
     let lengths = songs.compactMap(\.durationMs)
-    guard !lengths.isEmpty else { return counted(songs.count, "song") }
-    let minutes = lengths.reduce(0, +) / 60_000
-    let length = minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
-    return "\(counted(songs.count, "song")) · \(length)"
+    guard !lengths.isEmpty else { return said("counted.songs", songs.count) }
+    let minutes = Int(lengths.reduce(0, +) / 60_000)
+    let length = minutes >= 60
+        ? said("served.length.hours-minutes", minutes / 60, minutes % 60)
+        : said("served.length.minutes", minutes)
+    return "\(said("counted.songs", songs.count)) · \(length)"
 }

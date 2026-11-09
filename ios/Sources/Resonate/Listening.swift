@@ -82,7 +82,7 @@ final class Listening {
             do {
                 try await Work.inSecrets { try store.writeAuddToken(token) }
                 auddToken = token
-                library.notice(token.isEmpty ? "AudD will no longer be asked" : "AudD will be asked when Shazam does not know a song")
+                library.notice(said(token.isEmpty ? "listen.audd.forgotten" : "listen.audd.kept"))
             } catch {
                 library.report(error)
             }

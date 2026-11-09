@@ -13,7 +13,7 @@ final class MeasuredCorrectionState {
 
     @ObservationIgnored private var measuring: Task<Void, Never>?
 
-    nonisolated private static let measuredName = "Measured"
+    nonisolated private static var measuredName: String { said("measured-correction.name") }
 
     private(set) var view = MeasurementView.of(measurementOffers())
 
@@ -148,11 +148,11 @@ struct MicrophoneMeasurementView: View {
                         Text(name).tag(Self.documentTag)
                     }
                 } label: {
-                    ToolRow(title: "Fit toward", detail: "The response the bands aim for", symbol: "scope")
+                    ToolRow(title: said("measured-correction.fit-toward"), detail: said("measured-correction.fit-toward.detail"), symbol: "scope")
                 }
                 .disabled(view.fitting)
                 Button { choosingTarget = true } label: {
-                    ToolRow(title: "Choose a target file…", detail: "A response of your own to aim for", symbol: "doc.text")
+                    ToolRow(title: said("measured-correction.target.choose"), detail: said("measured-correction.target.choose.detail"), symbol: "doc.text")
                 }
                 .disabled(view.fitting)
                 .fileImporter(isPresented: $choosingTarget, allowedContentTypes: Self.fileTypes) { result in
@@ -162,11 +162,11 @@ struct MicrophoneMeasurementView: View {
                     }
                 }
             } header: {
-                Text("Target")
+                Text("measured-correction.target")
             }
             Section {
                 Button { choosingMeasurement = true } label: {
-                    ToolRow(title: "Fit a measurement…", detail: "AutoEq's CSV or REW's exported text", symbol: "waveform.path.ecg")
+                    ToolRow(title: said("measured-correction.fit-file"), detail: said("measured-correction.fit-file.detail"), symbol: "waveform.path.ecg")
                 }
                 .disabled(view.fitting || view.aim == nil)
                 .fileImporter(isPresented: $choosingMeasurement, allowedContentTypes: Self.fileTypes) { result in
@@ -176,7 +176,7 @@ struct MicrophoneMeasurementView: View {
                     }
                 }
             } header: {
-                Text("A measurement file")
+                Text("measured-correction.file")
             } footer: {
                 if let said = view.said { Text(said) }
             }
@@ -184,15 +184,19 @@ struct MicrophoneMeasurementView: View {
                 if view.sounding {
                     HStack(spacing: 12) {
                         ProgressView().accessibilityHidden(true)
-                        Text("Measuring…")
+                        Text("measured-correction.measuring")
                         Spacer(minLength: 0)
-                        Button("Stop", role: .cancel) { measured.stopMeasuring() }
+                        Button("measured-correction.stop", role: .cancel) { measured.stopMeasuring() }
                             .buttonStyle(.bordered)
                             .buttonBorderShape(.capsule)
                     }
                 } else {
                     Button { measured.measure() } label: {
-                        ToolRow(title: view.fitting ? "Fitting…" : "Measure", detail: "Pauses the music and plays a sweep through the speaker", symbol: "mic")
+                        ToolRow(
+                            title: said(view.fitting ? "measured-correction.fitting" : "measured-correction.measure"),
+                            detail: said("measured-correction.measure.detail"),
+                            symbol: "mic"
+                        )
                     }
                     .disabled(view.fitting || view.aim == nil)
                 }
@@ -200,23 +204,23 @@ struct MicrophoneMeasurementView: View {
                     Button {
                         if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
                     } label: {
-                        ToolRow(title: "Allow the microphone", detail: "Resonate needs it to hear the sweep. Open Settings", symbol: "mic.slash")
+                        ToolRow(title: said("measured-correction.allow"), detail: said("measured-correction.allow.detail"), symbol: "mic.slash")
                     }
                 }
             } header: {
-                Text("The microphone")
+                Text("measured-correction.microphone")
             } footer: {
-                Text("Hold the iPhone where your ears would be and keep the room quiet while the sweep plays.")
+                Text("measured-correction.microphone.footer")
             }
             Section {
                 if let calibration = view.calibration {
                     Text(calibration.name)
-                    Button("Forget the calibration", systemImage: "xmark.circle") { measured.forgetCalibration() }
+                    Button("measured-correction.calibration.forget", systemImage: "xmark.circle") { measured.forgetCalibration() }
                         .disabled(view.fitting)
                 } else {
-                    Text("None, so the microphone is taken flat")
+                    Text("measured-correction.calibration.none")
                         .foregroundStyle(.secondary)
-                    Button("Choose a calibration…", systemImage: "doc.text") { choosingCalibration = true }
+                    Button("measured-correction.calibration.choose", systemImage: "doc.text") { choosingCalibration = true }
                         .disabled(view.fitting)
                         .fileImporter(isPresented: $choosingCalibration, allowedContentTypes: Self.fileTypes) { result in
                             switch result {
@@ -226,10 +230,10 @@ struct MicrophoneMeasurementView: View {
                         }
                 }
             } header: {
-                Text("Microphone calibration")
+                Text("measured-correction.calibration")
             }
         }
-        .navigationTitle("Measure with a microphone")
+        .navigationTitle("measured-correction.title")
         .onDisappear { measured.stopMeasuring() }
     }
 

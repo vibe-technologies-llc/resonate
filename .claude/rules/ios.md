@@ -28,15 +28,29 @@ None of this is in CI: the SDK cannot be fetched without the listener's Apple ID
 ## Words
 
 Every word the app shows is said through `Resonate/en.lproj` (`language.md`): `Localizable.strings`
-keyed by dotted names, `Localizable.stringsdict` for a count, `InfoPlist.strings` for the name and
-the permission prompts. They are plain text, so no string-catalog compiler is needed on Linux;
-`xtool.yml`'s `resources` copies the folder to the bundle root, `Package.swift` sets
-`defaultLocalization: "en"` and `Info.plist` names `en` as `CFBundleDevelopmentRegion` and in
-`CFBundleLocalizations`. `Library` tells the boundary `Locale.preferredLanguages`
-(`speak_languages`) on the transport's lane just before the player opens; iOS ends an app whose
-language changes, so the next open tells it again. `test_strings.py` (`words.py`) refuses a prose
-literal in a file not on its `STILL_TO_MOVE` list, a dotted key the Swift names that the strings do
-not hold, and a prompt `InfoPlist.strings` says otherwise than `Info.plist`.
+keyed by dotted names (`area.thing`), `Localizable.stringsdict` for a count (`NSStringPluralRuleType`,
+`one` and `other`; a sentence holding a count is one key, its count a variable of the format),
+`InfoPlist.strings` for the name and the permission prompts. They are plain text, so no
+string-catalog compiler is needed on Linux; `xtool.yml`'s `resources` copies the folder to the
+bundle root, `Package.swift` sets `defaultLocalization: "en"` and `Info.plist` names `en` as
+`CFBundleDevelopmentRegion` and in `CFBundleLocalizations`. A view names a key as the first argument
+of a SwiftUI initialiser taking a `LocalizedStringKey` (`Text("queue.clear")`, `Button`, `Label`,
+`Section`, `.navigationTitle`, an alert's title); everywhere else, and wherever there are
+arguments or a choice between keys, the words are `said(key, arguments...)` (`ResonateLogic`'s
+`Said.swift`). On iOS it reads `Bundle.main` and formats with `Locale.current`, so a stringsdict
+plural applies; on the Linux host it reads `Resonate/en.lproj` from the source tree
+(`HostWording`, which chooses `one` or `other` itself, since corelibs Foundation's bundle reads no
+strings table and has no `String(localized:bundle:)`), so the host tests assert the same English
+with nothing to fill in. A word is said when shown, never kept in a `static let`; a figure whose
+precision matters is formatted before it is passed (`%@`), so no locale moves its decimal point.
+App Intents' titles, descriptions, parameters and phrases stay literal for `intents.py`
+(`words.py` passes over their declarations); their dialogs are said. `Library` tells the boundary
+`Locale.preferredLanguages` (`speak_languages`) on the transport's lane just before the player
+opens; iOS ends an app whose language changes, so the next open tells it again.
+`test_strings.py` (`words.py`) refuses a prose literal outside `PROPER` (proper names) and
+`NOT_WORDS` (the backdrop shader's source), a key named where it is said that the strings do not
+hold, a key named anywhere else (it would show raw), a key nothing names, a count that is not a
+plural of `one` and `other`, and a prompt `InfoPlist.strings` says otherwise than `Info.plist`.
 
 ## Releasing for sideloading
 

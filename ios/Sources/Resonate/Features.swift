@@ -52,7 +52,7 @@ final class Features {
     @ObservationIgnored lazy var listeningTest = ListeningTestState(library: library)
     @ObservationIgnored lazy var together = TogetherState(library: library)
     @ObservationIgnored private lazy var transfers = BackgroundHold(
-        name: "Fetching songs from your devices",
+        name: said("sync.background.fetching"),
         continued: BackgroundHold.transfers,
         expired: { [unowned self] in transferHoldLapsed = true }
     )
@@ -373,24 +373,24 @@ final class Features {
             do {
                 let count = try await aside(native) { try $0.submitScrobbles(account: account, playing: fresh) }
                 lastPlaying = playing
-                if count > 0 { scrobbleStatus = "Submitted \(counted(Int(count), "listen"))" }
+                if count > 0 { scrobbleStatus = said("scrobbling.submitted", Int(count)) }
             } catch {
                 scrobbleStatus = explained(error)
             }
             do {
                 let told = try await aside(native) { try $0.tellLoves(account: account) }
-                if let said = Self.said(told) { scrobbleStatus = said }
+                if let sentence = Self.sentence(told) { scrobbleStatus = sentence }
             } catch {
                 scrobbleStatus = explained(error)
             }
         }
     }
 
-    private static func said(_ told: FavouritesTold) -> String? {
+    private static func sentence(_ told: FavouritesTold) -> String? {
         let parts = [
-            told.loved > 0 ? "loved \(counted(Int(told.loved), "favourite"))" : nil,
-            told.takenBack > 0 ? "took back \(counted(Int(told.takenBack), "love"))" : nil,
-            told.refused > 0 ? "\(counted(Int(told.refused), "love")) refused" : nil,
+            told.loved > 0 ? said("scrobbling.told.loved", Int(told.loved)) : nil,
+            told.takenBack > 0 ? said("scrobbling.told.taken-back", Int(told.takenBack)) : nil,
+            told.refused > 0 ? said("scrobbling.told.refused", Int(told.refused)) : nil,
         ].compactMap { $0 }
         guard let first = parts.first else { return nil }
         let sentence = parts.joined(separator: ", ")
@@ -477,7 +477,7 @@ final class Features {
     func joinSync(_ code: String) {
         guard var config = syncConfig else {
             joinWaiting = code
-            library.notice("Joining as soon as this iPhone's settings are read")
+            library.notice(said("sync.join.waiting"))
             return
         }
         joinWaiting = nil
@@ -488,11 +488,11 @@ final class Features {
 
     func offerPairing(_ link: String) {
         guard let code = syncCodeInLink(link: link) else {
-            library.notice("That link holds no pairing code")
+            library.notice(said("sync.join.no-code"))
             return
         }
         guard code != syncStatus?.code, code != syncConfig?.key else {
-            library.notice("This iPhone already syncs with those devices")
+            library.notice(said("sync.join.already"))
             return
         }
         pairingOffered = code
@@ -519,7 +519,7 @@ final class Features {
             }
             guard let self else { return }
             if syncStatus != status { syncStatus = status }
-            library.notice(names.count == 1 ? "Removed \(names[0])" : "Removed \(counted(names.count, "device"))")
+            library.notice(names.count == 1 ? said("sync.devices.removed.one", names[0]) : said("sync.devices.removed", names.count))
         }
     }
 
@@ -543,7 +543,7 @@ final class Features {
         work { [weak self] native in
             let asked = try await Work.aside { try native.syncFetchMissing(playlist: id, device: known) }
             self?.library.notice(
-                asked > 0 ? "Asking \(name) for \(counted(Int(asked), "song"))" : "\(name) has nothing this playlist lacks"
+                asked > 0 ? said("sync.playlist.asking", name, Int(asked)) : said("sync.playlist.nothing-lacking", name)
             )
         }
     }
@@ -565,7 +565,7 @@ final class Features {
             let loaded = try await Work.inSync { try native.syncContinueFrom(device: known) }
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                library.notice("Continuing \(counted(Int(loaded), "song")) from \(device)")
+                library.notice(said("sync.handoff.continuing", Int(loaded), device))
                 if handoff.playing {
                     library.nowPlaying.activate()
                     library.request { try $0.play() }
@@ -812,7 +812,7 @@ final class Features {
                     }
                 }
                 if landedSongs > 0, !transferring, landing == nil {
-                    library.noticeUnasked("Kept \(counted(landedSongs, "song")) from your devices")
+                    library.noticeUnasked(said("sync.landed", landedSongs))
                     landedSongs = 0
                 }
                 if syncHandoffs != handoffs { syncHandoffs = handoffs }
@@ -1250,7 +1250,7 @@ final class Features {
             let (undone, found) = try await Work.inLibrary { (try native.undoPlaylist(), try native.playlists()) }
             guard let self else { return }
             adoptPlaylists(found, native)
-            library.notice(undone ? "Undid the last playlist edit" : "There is no playlist edit to undo")
+            library.notice(said(undone ? "playlists.undo.done" : "playlists.undo.nothing"))
         }
     }
 
@@ -1408,11 +1408,11 @@ final class Features {
     }
 
     private static func told(kept sheet: LyricSheet?, over before: LyricSheet?) -> String {
-        guard let sheet, !sheet.lines.isEmpty else { return "Those lyrics could not be read" }
+        guard let sheet, !sheet.lines.isEmpty else { return said("lyrics.kept.unreadable") }
         if let before, !before.lines.isEmpty, sheet == before {
-            return "The lyrics this song has are as detailed, so they stay"
+            return said("lyrics.kept.as-detailed")
         }
-        return "Lyrics kept"
+        return said("lyrics.kept")
     }
 
     func songTags(_ ids: [UInt64]) async throws -> [SongTags] {
@@ -1458,7 +1458,7 @@ final class Features {
             let found = try await Work.aside { try native.shareLink(id: id) }
             guard request == self?.shareRequest else { return }
             guard let link = found.flatMap({ URL(string: $0) }) else {
-                self?.library.notice("There is no link to share for “\(title)”")
+                self?.library.notice(said("share.no-link", title))
                 return
             }
             self?.sharing = SharedLink(title: title, url: link)
@@ -1479,11 +1479,11 @@ final class Features {
         tagsUndoable = !native.tagsToUndo().isEmpty
         if told.written > 0 { await library.refresh() }
         if let failure = told.failure {
-            library.report(TagFailure(text: told.written > 0 ? "\(failure) (\(counted(Int(told.failed), "song")) left as they were)" : failure))
+            library.report(TagFailure(text: told.written > 0 ? said("tags.failed.some", failure, Int(told.failed)) : failure))
         } else if told.written > 0 {
-            library.notice(undoing ? "Put back the tags of \(counted(Int(told.written), "song"))" : "Saved the tags of \(counted(Int(told.written), "song"))")
+            library.notice(undoing ? said("tags.undone", Int(told.written)) : said("tags.saved", Int(told.written)))
         } else {
-            library.notice("Nothing to change")
+            library.notice(said("tags.nothing"))
         }
     }
 
@@ -1505,7 +1505,7 @@ final class Features {
     private func file(_ folder: String, _ moves: [FiledSong], undoing: Bool) {
         let folders = library.folders
         organising = true
-        if library.scanning { library.notice("Filing songs once the scan ends") }
+        if library.scanning { library.notice(said("organise.waiting")) }
         library.afterScans { [weak self] in
             guard let self else { return }
             defer { organising = false }
@@ -1515,9 +1515,8 @@ final class Features {
                 try await Work.inLibrary { try native.documentsMoved(moved: filed.moved) }
                 organiseUndo = undoing || filed.back.isEmpty ? nil : (folder, filed.back)
                 await library.refresh()
-                let moved = counted(filed.moved.count, "song")
-                let said = undoing ? "Put \(moved) back where they were" : "Filed \(moved)"
-                library.notice(filed.failed > 0 ? "\(said); \(counted(filed.failed, "song")) could not be moved" : said)
+                let moved = undoing ? said("organise.put-back", filed.moved.count) : said("organise.filed", filed.moved.count)
+                library.notice(filed.failed > 0 ? said("organise.unmoved", moved, filed.failed) : moved)
             } catch is CancellationError {
             } catch {
                 library.report(error)
@@ -1548,7 +1547,7 @@ final class Features {
             let found = try await Work.aside { try native.recogniseTrack(id: id, acoustidKey: key) }
             guard let self, request == recognitionRequest else { return }
             recognition = found
-            if found.isEmpty { library.notice("No recording could be identified from this audio") }
+            if found.isEmpty { library.notice(said("analysis.recognition.none")) }
         }, finally: { [weak self] in
             if request == self?.recognitionRequest { self?.recognitionBusy = false }
         })
@@ -1628,7 +1627,7 @@ final class Features {
             let found = try await Work.aside { try native.autoEqProfile(id: id) }
             guard let self else { return }
             guard let found else {
-                library.notice("No correction could be read for \(device.name)")
+                library.notice(said("equaliser.autoeq.unread", device.name))
                 return
             }
             load(found)
@@ -1664,13 +1663,13 @@ final class Features {
     }
 
     private static func loaded(_ found: EqualiserImport) -> String {
-        let name = found.curve.name.isEmpty ? "Profile" : found.curve.name
-        var said = ["Loaded \(name): \(counted(found.curve.bands.count, "band"))"]
-        if found.converted { said.append("fitted from a graphic curve") }
-        if found.passedOver > 0 { said.append("\(counted(Int(found.passedOver), "line")) passed over") }
-        if found.approximated > 0 { said.append("\(counted(Int(found.approximated), "filter")) approximated") }
-        if found.clamped > 0 { said.append("\(counted(Int(found.clamped), "value")) held to the limits") }
-        return said.joined(separator: " · ")
+        let name = found.curve.name.isEmpty ? said("equaliser.loaded.unnamed") : found.curve.name
+        var parts = [said("equaliser.loaded", name, found.curve.bands.count)]
+        if found.converted { parts.append(said("equaliser.loaded.converted")) }
+        if found.passedOver > 0 { parts.append(said("equaliser.loaded.passed-over", Int(found.passedOver))) }
+        if found.approximated > 0 { parts.append(said("equaliser.loaded.approximated", Int(found.approximated))) }
+        if found.clamped > 0 { parts.append(said("equaliser.loaded.clamped", Int(found.clamped))) }
+        return parts.joined(separator: " · ")
     }
 
     func saveScrobbling(_ account: ScrobbleAccount, includeHistory: Bool) {
@@ -1689,7 +1688,7 @@ final class Features {
 
     private func scrobblingSaved(_ account: ScrobbleAccount, replacing previous: ScrobbleAccount?, includeHistory: Bool) {
         scrobbleAccount = account
-        scrobbleStatus = "Scrobbling accounts saved"
+        scrobbleStatus = said("scrobbling.saved")
 
         let listenbrainzStarts = !account.listenbrainzToken.isEmpty
             && (previous?.listenbrainzToken != account.listenbrainzToken || includeHistory)
@@ -1704,7 +1703,7 @@ final class Features {
                     if lastfmStarts { try native.startScrobbling(service: .lastFm, includeHistory: includeHistory) }
                 }
             } catch {
-                self?.scrobbleStatus = "Accounts saved, but scrobbling could not start: \(explained(error))"
+                self?.scrobbleStatus = said("scrobbling.saved.not-started", explained(error))
                 throw error
             }
         }
@@ -1728,7 +1727,7 @@ final class Features {
             let kept = signedIn
             try await Work.inSecrets { try store?.writeScrobbling(kept) }
             self?.scrobbleAccount = signedIn
-            self?.scrobbleStatus = "Signed in to Last.fm"
+            self?.scrobbleStatus = said("scrobbling.lastfm.signed-in")
             try await Work.aside { try native.startScrobbling(service: .lastFm, includeHistory: false) }
         }
     }
@@ -1751,7 +1750,7 @@ final class Features {
             updated.refreshToken = token
 
             try await keepProviderAccount(updated)
-            library.notice("Signed in to TIDAL")
+            library.notice(said("providers.tidal.signed-in"))
         }, finally: { [weak self] in
             guard let self, tidalRequest == request else { return }
             tidalBusy = false
@@ -1771,7 +1770,7 @@ final class Features {
         Task {
             do {
                 try await keepProviderAccount(account)
-                library.notice("\(account.provider.title) saved")
+                library.notice(said("providers.saved", account.provider.title))
             } catch {
                 library.report(error)
             }
@@ -1832,9 +1831,9 @@ final class Features {
             let (count, failure) = (outcome.saved, outcome.failure)
             await self?.refreshWanted(native)
             if let failure {
-                self?.library.report(failure, after: "Saved \(count) of \(counted(songs.count, "recording")) for later")
+                self?.library.report(failure, after: said("wanted.saved.some", Int(count), songs.count))
             } else {
-                self?.library.notice("Saved \(counted(Int(count), "recording")) for later")
+                self?.library.notice(said("wanted.saved", Int(count)))
             }
         }
     }
@@ -1881,7 +1880,7 @@ final class Features {
             }
             await MainActor.run {
                 self?.playlists = found
-                self?.library.notice("Imported \(counted(Int(imported.matched), "local song")); \(imported.missing) still missing")
+                self?.library.notice(said("online.imported", Int(imported.matched), Int(imported.missing)))
             }
         }
     }

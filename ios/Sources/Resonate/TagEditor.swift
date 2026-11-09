@@ -35,21 +35,21 @@ struct TagEditorSheet: View {
         NavigationStack {
             Form {
                 if writableTracks == nil {
-                    Section { ProgressView().accessibilityLabel("Reading tags").frame(maxWidth: .infinity) }
+                    Section { ProgressView().accessibilityLabel("tags.reading").frame(maxWidth: .infinity) }
                 } else if writable.isEmpty {
                     Section {
-                        Text("Tags of this kind of file cannot be written.").foregroundStyle(.secondary)
+                        Text("tags.unwritable").foregroundStyle(.secondary)
                     }
                 } else if let failure {
                     Section { ReadFailure(text: failure) { Task { await load(writable) } } }
                 } else if !loaded {
-                    Section { ProgressView().accessibilityLabel("Reading tags").frame(maxWidth: .infinity) }
+                    Section { ProgressView().accessibilityLabel("tags.reading").frame(maxWidth: .infinity) }
                 } else {
                     Section {
                         ForEach(names.filter { !$0.numbered }, id: \.self) { field($0) }
                     } footer: {
                         if tracks.count > 1 {
-                            Text("Fields left as they are stay as each song has them; a field marked Mixed changes only once you type into it.")
+                            Text("tags.several.footer")
                         }
                     }
                     Section {
@@ -62,15 +62,15 @@ struct TagEditorSheet: View {
                             field(.discTotal)
                         }
                     } header: {
-                        Text("Numbers")
+                        Text("tags.numbers")
                     } footer: {
                         if writable.count < tracks.count {
-                            Text("\(counted(tracks.count - writable.count, "song")) cannot be written and will be left alone.")
+                            Text(said("tags.some-unwritable", tracks.count - writable.count))
                         }
                     }
                 }
             }
-            .navigationTitle(tracks.count == 1 ? "Edit tags" : "Edit \(counted(tracks.count, "song"))")
+            .navigationTitle(said("tags.title", tracks.count))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -79,7 +79,7 @@ struct TagEditorSheet: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", role: .confirm) {
+                    Button("common.save", role: .confirm) {
                         features.editTags(writable, change)
                         dismiss()
                     }
@@ -106,13 +106,13 @@ struct TagEditorSheet: View {
         let clearing = emptied.contains(name)
         return LabeledContent(name.label) {
             HStack {
-                TextField(clearing ? "Will be cleared" : mixed.contains(name) ? "Mixed" : name.label, text: binding)
+                TextField(clearing ? said("tags.will-clear") : mixed.contains(name) ? said("tags.mixed") : name.label, text: binding)
                     .multilineTextAlignment(.trailing)
                     .keyboardType(name.numbered ? .numberPad : .default)
                     .textInputAutocapitalization(name.numbered ? .never : .words)
                     .autocorrectionDisabled()
                 if mixed.contains(name), (shown[name] ?? "").isEmpty {
-                    Button(clearing ? "Keep each song's" : "Clear on every song", systemImage: clearing ? "arrow.uturn.backward.circle" : "xmark.circle") {
+                    Button(said(clearing ? "tags.keep-each" : "tags.clear-every"), systemImage: clearing ? "arrow.uturn.backward.circle" : "xmark.circle") {
                         if clearing { emptied.remove(name) } else { emptied.insert(name) }
                     }
                     .labelStyle(.iconOnly)

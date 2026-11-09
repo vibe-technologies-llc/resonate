@@ -14,9 +14,9 @@ struct OnlineSearchContent: View {
 
         if text.isEmpty {
             ContentUnavailableView(
-                "Search online",
+                "online.start.title",
                 systemImage: "globe",
-                description: Text("Find songs, artists, albums and shared music. Paste a shared link to open it.")
+                description: Text("online.start.detail")
             )
             .listRowSeparator(.hidden)
         } else if let service = profileLinkService(text: text) {
@@ -74,12 +74,12 @@ struct OnlineNothingFound: View {
     var body: some View {
         let link = OnlineAsked.isLink(text)
         ContentUnavailableView(
-            link ? "No music could be read from this link" : "No results for “\(text)”",
+            link ? said("online.none.link") : said("online.none.results", said("common.quoted", text)),
             systemImage: link ? "link" : "magnifyingglass",
-            description: Text(link ? "Check the link, or search by name instead." : "Check the spelling, or try fewer words.")
+            description: Text(said(link ? "online.none.link.hint" : "search.none.hint"))
         )
         .listRowSeparator(.hidden)
-        .announced(link ? "No music could be read from this link" : "No results for \(text)")
+        .announced(link ? said("online.none.link") : said("online.none.results", text))
     }
 }
 
@@ -98,9 +98,13 @@ struct OnlinePending: View {
     }
 
     private var label: String {
-        if OnlineAsked.isLink(text) { return "Opening the link…" }
-        guard let awaited else { return "Searching…" }
-        return "Searching \(awaited.rawValue)…"
+        if OnlineAsked.isLink(text) { return said("online.pending.link") }
+        guard let awaited else { return said("online.pending") }
+        return switch awaited {
+        case .songs: said("online.pending.songs")
+        case .albums: said("online.pending.albums")
+        case .artists: said("online.pending.artists")
+        }
     }
 }
 
@@ -123,7 +127,7 @@ struct OnlineTopSections: View {
                     OnlineSongRow(song: shown[index])
                 }
             } header: {
-                SeeAllLink(title: "Songs", more: songs.count > Self.topSongs) { OnlineSongsPage(songs: songs) }
+                SeeAllLink(title: said("online.songs"), more: songs.count > Self.topSongs) { OnlineSongsPage(songs: songs) }
             }
         }
         if let albums = found.albums, !albums.isEmpty {
@@ -133,7 +137,7 @@ struct OnlineTopSections: View {
                     .themedRows()
                 }
             } header: {
-                SeeAllLink(title: "Albums", more: albums.count > Self.topCollections) { OnlineAlbumsPage(albums: albums) }
+                SeeAllLink(title: said("online.albums"), more: albums.count > Self.topCollections) { OnlineAlbumsPage(albums: albums) }
             }
         }
         if let artists = found.artists, !artists.isEmpty {
@@ -143,7 +147,7 @@ struct OnlineTopSections: View {
                     .themedRows()
                 }
             } header: {
-                SeeAllLink(title: "Artists", more: artists.count > Self.topCollections) { OnlineArtistsPage(artists: artists) }
+                SeeAllLink(title: said("online.artists"), more: artists.count > Self.topCollections) { OnlineArtistsPage(artists: artists) }
             }
         }
     }
@@ -160,7 +164,7 @@ struct SeeAllLink<Page: View>: View {
             Spacer()
             if more {
                 NavigationLink(destination: page) {
-                    Text("See all").touchTarget()
+                    Text("search.see-all").touchTarget()
                 }
                 .font(.subheadline)
                 .textCase(nil)
@@ -178,7 +182,7 @@ struct OnlineSongsPage: View {
             OnlineSongsSection(songs: songs, actions: $actions).themedRows()
         }
         .listStyle(.plain)
-        .navigationTitle("Songs")
+        .navigationTitle("online.songs")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { DownloadsButton() } }
         .onlineSongActions($actions)
     }
@@ -193,7 +197,7 @@ struct OnlineAlbumsPage: View {
                 .themedRows()
         }
         .listStyle(.plain)
-        .navigationTitle("Albums")
+        .navigationTitle("online.albums")
     }
 }
 
@@ -206,7 +210,7 @@ struct OnlineArtistsPage: View {
                 .themedRows()
         }
         .listStyle(.plain)
-        .navigationTitle("Artists")
+        .navigationTitle("online.artists")
     }
 }
 
@@ -216,7 +220,7 @@ struct OnlineLinkSections: View {
     @Binding var actions: OnlineSongActions
 
     var body: some View {
-        let heading = collection.name.isEmpty ? "Shared music" : collection.name
+        let heading = collection.name.isEmpty ? said("online.shared-music") : collection.name
         if !collection.artists.isEmpty {
             Section(heading) {
                 ForEach(collection.artists, id: \.id) { artist in
@@ -265,11 +269,11 @@ struct OnlineSongPresentations: ViewModifier {
         content
             .downloadDestinationPrompt()
             .alert(title, isPresented: $actions.importing) {
-                TextField("Playlist name", text: $actions.importName)
-                Button("Cancel", role: .cancel) {}
-                Button("Import") {
+                TextField("online.import.name", text: $actions.importName)
+                Button("common.cancel", role: .cancel) {}
+                Button("online.import.go") {
                     let typed = actions.importName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let name = typed.isEmpty ? "Shared music" : typed
+                    let name = typed.isEmpty ? said("online.shared-music") : typed
                     if let linked = actions.importedLink {
                         library.features.importLinkedPlaylist(
                             link: linked.link, name: name, songs: actions.importedSongs, keptInStep: linked.keptInStep)
@@ -283,13 +287,13 @@ struct OnlineSongPresentations: ViewModifier {
     }
 
     private var title: String {
-        guard let linked = actions.importedLink, linked.keptInStep else { return "Import matching local songs" }
+        guard let linked = actions.importedLink, linked.keptInStep else { return said("online.import.title") }
         return LinkedPlaylistWords.keepInStep(linked.service)
     }
 
     private var message: String {
         guard let linked = actions.importedLink, linked.keptInStep else {
-            return "Songs already in your library are added in the shared order. Save the remaining recordings for later to download them."
+            return said("online.import.message")
         }
         return LinkedPlaylistWords.keepingExplained(linked.service)
     }
@@ -307,20 +311,20 @@ struct OnlineSongsSection: View {
         let features = library.features
         Section {
             if collected, !songs.isEmpty {
-                Button("Save all for later", systemImage: "bookmark") { features.saveWanted(songs) }
+                Button("online.save-all", systemImage: "bookmark") { features.saveWanted(songs) }
                 if let link, let service = playlistLinkService(text: link) {
                     Menu {
-                        Button("Import once", systemImage: "square.and.arrow.down") {
+                        Button("online.import.once", systemImage: "square.and.arrow.down") {
                             importing(ImportedLink(link: link, service: service, keptInStep: false))
                         }
                         Button(LinkedPlaylistWords.keepInStep(service), systemImage: "arrow.triangle.2.circlepath") {
                             importing(ImportedLink(link: link, service: service, keptInStep: true))
                         }
                     } label: {
-                        Label("Import as playlist", systemImage: "text.badge.plus")
+                        Label("online.import.as-playlist", systemImage: "text.badge.plus")
                     }
                 } else {
-                    Button("Import local matches as playlist", systemImage: "text.badge.plus") { importing(nil) }
+                    Button("online.import.local-matches", systemImage: "text.badge.plus") { importing(nil) }
                 }
             }
             ForEach(songs.indices, id: \.self) { index in
@@ -395,7 +399,7 @@ struct OnlineSongRow: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .accessibilityHint(track != nil ? "Plays the song" : standing.startsOnTap ? "Downloads the song" : "")
+            .accessibilityHint(track != nil ? said("online.song.plays.hint") : standing.startsOnTap ? said("online.song.downloads.hint") : "")
             DownloadBadge(standing: standing) { downloads.cancel(song) }
         }
         .task(id: "\(song.id):\(library.catalogCount)") {
@@ -406,18 +410,18 @@ struct OnlineSongRow: View {
             if heldSong != song.id { heldSong = song.id }
         }
         .swipeActions(edge: .trailing) {
-            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+            Button("online.save", systemImage: "bookmark") { features.saveWanted([song]) }
                 .tint(.indigo)
         }
         .contextMenu {
-            Button("Download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
+            Button("wanted.download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
                 .disabled(!standing.startsOnTap)
-            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+            Button("online.save", systemImage: "bookmark") { features.saveWanted([song]) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityActions {
             if standing.cancellable {
-                Button("Cancel download") { downloads.cancel(song) }
+                Button("online.cancel-download") { downloads.cancel(song) }
             }
         }
         .sensoryFeedback(.success, trigger: standing == .held)
@@ -437,23 +441,23 @@ struct OnlineSongCaption: View {
             case .available:
                 EmptyView()
             case .waiting:
-                Text("Waiting").font(.caption).foregroundStyle(.secondary)
+                Text("downloads.job.waiting").font(.caption).foregroundStyle(.secondary)
             case .running(let fraction):
                 if let fraction {
                     Text(fraction.formatted(.percent.precision(.fractionLength(0))))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Finding a match").font(.caption).foregroundStyle(.secondary)
+                    Text("downloads.job.finding").font(.caption).foregroundStyle(.secondary)
                 }
             case .held:
-                Label("In your library", systemImage: "checkmark.circle.fill")
+                Label("wanted.held", systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.tint)
             case .failed(let reason):
                 Text(reason).font(.caption).foregroundStyle(Color.failure).titleLines()
             case .cancelled:
-                Text("Cancelled").font(.caption).foregroundStyle(.secondary)
+                Text("downloads.job.cancelled").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -472,7 +476,7 @@ struct DownloadBadge: View {
                 ProgressView().accessibilityHidden(true).touchTarget().buttonShape()
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cancel download")
+            .accessibilityLabel("online.cancel-download")
         case .running(let fraction):
             Button(action: stop) {
                 Group {
@@ -494,7 +498,7 @@ struct DownloadBadge: View {
                 .buttonShape()
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cancel download")
+            .accessibilityLabel("online.cancel-download")
         case .held:
             glyph("checkmark.circle.fill").foregroundStyle(.tint)
         case .failed, .cancelled:
@@ -548,7 +552,7 @@ struct OnlineReleaseRow: View {
             OnlinePlaceholder(symbol: "opticaldisc")
             VStack(alignment: .leading, spacing: 2) {
                 Text(release.title).font(.body.weight(.medium)).titleLines()
-                Text([release.date, release.country, release.songs > 0 ? counted(Int(release.songs), "song") : "View track list"]
+                Text([release.date, release.country, release.songs > 0 ? said("counted.songs", Int(release.songs)) : said("online.release.track-list")]
                     .filter { !$0.isEmpty }
                     .joined(separator: " · "))
                     .font(.subheadline)
@@ -572,25 +576,25 @@ struct OnlineArtistPage: View {
     var body: some View {
         ThemedList {
             if let details { ArtistInformationSection(artist: details) }
-            Section("Albums") {
+            Section("online.albums") {
                 ForEach(albums, id: \.id) { album in
                     NavigationLink { OnlineAlbumPage(album: album) } label: { OnlineAlbumRow(album: album) }
                     .themedRows()
                 }
                 if let next {
-                    Button(readingMore ? "Reading more releases…" : "More releases") {
+                    Button(said(readingMore ? "online.artist.reading-more" : "online.artist.more")) {
                         Task { await readMore(from: next) }
                     }
                     .disabled(readingMore)
                 }
                 if failed {
-                    ReadFailure(text: "The albums could not be read.") { Task { await readArtist() } }
+                    ReadFailure(text: said("online.artist.unread")) { Task { await readArtist() } }
                 } else if read, albums.isEmpty {
-                    Text("No albums by this artist were found.").foregroundStyle(.secondary)
+                    Text("online.artist.none").foregroundStyle(.secondary)
                 }
             }
         }
-        .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
+        .overlay { if !read, !failed { ProgressView().accessibilityLabel("online.loading") } }
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await readArtist() }
@@ -644,19 +648,19 @@ struct OnlineAlbumPage: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Section("Releases") {
+            Section("online.album.releases") {
                 ForEach(releases, id: \.id) { release in
                     NavigationLink { OnlineReleasePage(release: release) } label: { OnlineReleaseRow(release: release) }
                 }
                 if failed {
-                    ReadFailure(text: "The releases could not be read.") { Task { await readReleases() } }
+                    ReadFailure(text: said("online.album.unread")) { Task { await readReleases() } }
                 } else if read, releases.isEmpty {
-                    Text("No releases of this album were found.").foregroundStyle(.secondary)
+                    Text("online.album.none").foregroundStyle(.secondary)
                 }
             }
         }
-        .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
-        .navigationTitle("Album")
+        .overlay { if !read, !failed { ProgressView().accessibilityLabel("online.loading") } }
+        .navigationTitle("online.album.title")
         .navigationBarTitleDisplayMode(.inline)
         .task { await readReleases() }
     }
@@ -686,12 +690,12 @@ struct OnlineReleasePage: View {
         ThemedList {
             OnlineSongsSection(songs: songs, heading: release.title, collected: true, actions: $actions)
             if failed {
-                ReadFailure(text: "The songs could not be read.") { Task { await readSongs() } }
+                ReadFailure(text: said("online.release.unread")) { Task { await readSongs() } }
             } else if read, songs.isEmpty {
-                Text("No songs on this release were found.").foregroundStyle(.secondary)
+                Text("online.release.none").foregroundStyle(.secondary)
             }
         }
-        .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
+        .overlay { if !read, !failed { ProgressView().accessibilityLabel("online.loading") } }
         .navigationTitle(release.title)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { DownloadsButton() } }
         .navigationBarTitleDisplayMode(.inline)

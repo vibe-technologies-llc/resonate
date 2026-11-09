@@ -33,9 +33,9 @@ struct ZonesSheet: View {
     private var addressesFooter: String {
         let added = library.rendererAddresses.count + library.receiverAddresses.count
         if added == 0 {
-            return "A network that hides its renderers from a search, or an iPhone signed for free, reaches a renderer by the address of its description and a Google Cast receiver by its address or name."
+            return said("zones.addresses.none")
         }
-        return "\(added) added by address."
+        return said("zones.addresses.added", added)
     }
 
     var body: some View {
@@ -63,26 +63,26 @@ struct ZonesSheet: View {
                         .contextMenu { actions(for: zone, shown: shown) }
                         .swipeActions {
                             if ZonePlan.mayRemove(zone.id) {
-                                Button("Remove", role: .destructive) { removing = zone }
+                                Button("common.remove", role: .destructive) { removing = zone }
                                     .tint(.red)
                             }
                         }
                     }
                 } footer: {
-                    Text("Each zone plays a queue of its own. iOS sends every zone to the one route it chose, so zones here share that output unless one plays on a renderer.")
+                    Text("zones.footer")
                 }
                 Section {
-                    Button("Add a zone", systemImage: "plus") { library.addZone() }
+                    Button("zones.add", systemImage: "plus") { library.addZone() }
                 }
                 Section {
                     Toggle(isOn: Binding(get: { library.lookingForRenderers }, set: { library.lookForRenderers($0) })) {
-                        Text("Find renderers")
-                        Text(library.lookingForRenderers ? "\(library.renderers.count) found on this network" : "Streamers, amplifiers and Cast receivers on this network, as outputs for a zone")
+                        Text("zones.renderers.find")
+                        Text(library.lookingForRenderers ? said("zones.renderers.found", library.renderers.count) : said("zones.renderers.find.detail"))
                     }
-                    Button("Add a renderer by address", systemImage: "plus") { addressing = true }
-                    Button("Add a receiver by address", systemImage: "plus") { addressingReceiver = true }
+                    Button("zones.renderers.add-by-address", systemImage: "plus") { addressing = true }
+                    Button("zones.receivers.add-by-address", systemImage: "plus") { addressingReceiver = true }
                 } header: {
-                    Text("Network renderers")
+                    Text("zones.renderers")
                 } footer: {
                     Text(addressesFooter)
                 }
@@ -101,39 +101,39 @@ struct ZonesSheet: View {
             )) {
                 if let zone = choosing { RendererPicker(zone: zone).sheetSized() }
             }
-            .navigationTitle("Zones")
+            .navigationTitle("zones.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(role: .close) { dismiss() }
                 }
             }
-            .alert("Rename zone", isPresented: Binding(
+            .alert("zones.rename.title", isPresented: Binding(
                 get: { renaming != nil },
                 set: { if !$0 { renaming = nil } }
             )) {
-                TextField("Zone name", text: $name)
-                Button("Save") {
+                TextField("zones.rename.field", text: $name)
+                Button("common.save") {
                     if let zone = renaming { library.renameZone(zone, to: name) }
                     renaming = nil
                 }
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button("Cancel", role: .cancel) { renaming = nil }
+                Button("common.cancel", role: .cancel) { renaming = nil }
             }
             .confirmationDialog(
-                "Remove \(removing?.name ?? "")?",
+                said("zones.remove.confirm", removing?.name ?? ""),
                 isPresented: Binding(
                     get: { removing != nil },
                     set: { if !$0 { removing = nil } }
                 ),
                 titleVisibility: .visible
             ) {
-                Button("Remove", role: .destructive) {
+                Button("common.remove", role: .destructive) {
                     if let zone = removing { library.removeZone(zone) }
                     removing = nil
                 }
             } message: {
-                Text("Its queue goes with it and it stops playing.")
+                Text("zones.remove.confirm.message")
             }
         }
     }
@@ -141,18 +141,18 @@ struct ZonesSheet: View {
     @ViewBuilder
     private func actions(for zone: PlayerZone, shown: UInt32?) -> some View {
         if let shown, ZonePlan.mayHandOver(to: zone.id, shown: shown, shownHolds: !library.queue.isEmpty) {
-            Button("Hand the song over here", systemImage: "arrow.right.circle") { library.handOver(to: zone) }
+            Button("zones.hand-over", systemImage: "arrow.right.circle") { library.handOver(to: zone) }
         }
-        Button("Play on a renderer", systemImage: "hifispeaker") { choosing = zone }
+        Button("zones.play-on-renderer", systemImage: "hifispeaker") { choosing = zone }
         if zone.renderer != nil {
-            Button("Play on this iPhone", systemImage: "iphone") { library.playZone(zone, on: nil) }
+            Button("zones.play-on-iphone", systemImage: "iphone") { library.playZone(zone, on: nil) }
         }
-        Button("Rename", systemImage: "pencil") {
+        Button("common.rename", systemImage: "pencil") {
             name = zone.name
             renaming = zone
         }
         if ZonePlan.mayRemove(zone.id) {
-            Button("Remove", systemImage: "trash", role: .destructive) { removing = zone }
+            Button("common.remove", systemImage: "trash", role: .destructive) { removing = zone }
         }
     }
 }
@@ -167,10 +167,10 @@ struct RendererPicker: View {
         NavigationStack {
             List {
                 if !library.lookingForRenderers, library.rendererAddresses.isEmpty, library.receiverAddresses.isEmpty, library.renderers.isEmpty {
-                    Text("Turn on Find renderers, or add one by its address, to reach renderers and receivers.")
+                    Text("zones.renderers.off")
                         .foregroundStyle(.secondary)
                 } else if library.renderers.isEmpty {
-                    Text("No renderer or receiver has answered yet.")
+                    Text("zones.renderers.none")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(library.renderers, id: \.node) { renderer in
@@ -194,7 +194,7 @@ struct RendererPicker: View {
                     }
                 }
             }
-            .navigationTitle("Play \(zone.name) on")
+            .navigationTitle(said("zones.renderer-picker.title", zone.name))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -212,22 +212,22 @@ enum AddressKind {
 
     var title: String {
         switch self {
-        case .renderer: "Add a renderer by address"
-        case .receiver: "Add a receiver by address"
+        case .renderer: said("zones.renderers.add-by-address")
+        case .receiver: said("zones.receivers.add-by-address")
         }
     }
 
     var field: String {
         switch self {
         case .renderer: "http://192.168.1.20:49152/description.xml"
-        case .receiver: "192.168.1.30 or living-room.local"
+        case .receiver: said("zones.receivers.address-prompt")
         }
     }
 
     var header: String {
         switch self {
-        case .renderer: "Description address"
-        case .receiver: "Address or host name"
+        case .renderer: said("zones.renderers.address")
+        case .receiver: said("zones.receivers.address")
         }
     }
 }
@@ -258,7 +258,7 @@ struct RendererAddressSheet: View {
                         .focused($focused)
                         .submitLabel(.done)
                         .onSubmit(add)
-                    Button("Add", action: add)
+                    Button("common.add", action: add)
                         .disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 } header: {
                     Text(kind.header)
@@ -268,11 +268,11 @@ struct RendererAddressSheet: View {
                         ForEach(held, id: \.self) { address in
                             Text(address)
                                 .swipeActions {
-                                    Button("Remove", role: .destructive) { forget(address) }
+                                    Button("common.remove", role: .destructive) { forget(address) }
                                 }
                         }
                     } header: {
-                        Text("Added")
+                        Text("zones.addresses.added-header")
                     }
                 }
             }

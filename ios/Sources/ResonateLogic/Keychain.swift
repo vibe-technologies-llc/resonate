@@ -11,8 +11,8 @@ public enum KeychainFailure: Swift.Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .refused(let status): "The keychain refused the secret (\(status))"
-        case .unread(let status): "The keychain could not be read (\(status))"
+        case .refused(let status): said("keychain.refused", Int(status))
+        case .unread(let status): said("keychain.unread", Int(status))
         }
     }
 }

@@ -24,41 +24,40 @@ public enum OpenedLink: Equatable {
 
 public enum TogetherGate {
     public static func sharedPlaylists(syncOn: Bool, online: Bool, nearbyOnly: Bool) -> String? {
-        if !syncOn { return "Sync must be on to share playlists" }
-        if nearbyOnly { return "This iPhone syncs on this network only, so playlists can't be shared" }
-        if !online { return "Online features must be on to share playlists" }
+        if !syncOn { return said("together.gate.shared.sync-off") }
+        if nearbyOnly { return said("together.gate.shared.nearby-only") }
+        if !online { return said("together.gate.shared.offline") }
         return nil
     }
 
     public static func party(online: Bool, nearbyOnly: Bool) -> String? {
-        if !online { return "Online features must be on to hold a party" }
-        if nearbyOnly { return "This iPhone syncs on this network only, so it can't reach a party" }
+        if !online { return said("together.gate.party.offline") }
+        if nearbyOnly { return said("together.gate.party.nearby-only") }
         return nil
     }
 }
 
 public enum TogetherWords {
-    public static let unreadableLink = "That link could not be read"
-    public static let notAnInvitation = "The clipboard holds no shared playlist or party link"
-    public static let pressAgain = "Press again"
-    public static let joinThisPartyAsks = "Join this listening party?"
-    public static let joinThisPartySays =
-        "A link asks this iPhone to stop what it plays and follow someone's party instead. Join only if you were invited."
+    public static var unreadableLink: String { said("together.link.unreadable") }
+    public static var notAnInvitation: String { said("together.link.not-an-invitation") }
+    public static var pressAgain: String { said("together.press-again") }
+    public static var joinThisPartyAsks: String { said("together.join-party.ask") }
+    public static var joinThisPartySays: String { said("together.join-party.says") }
 
     public static func person(_ person: TogetherPerson) -> String {
-        let name = person.isMe ? "You" : person.name.isEmpty ? "Someone" : person.name
-        return person.isHost ? "\(name) · Host" : name
+        let name = person.isMe ? said("together.person.you") : person.name.isEmpty ? said("together.person.someone") : person.name
+        return person.isHost ? said("together.person.host", name) : name
     }
 }
 
 public enum SharedPlaylistWords {
-    public static let editLink = "Anyone with this link can edit"
-    public static let followLink = "Anyone with this link can follow"
-    public static let following = "You follow this playlist. Whoever shared it decides what is on it."
+    public static var editLink: String { said("shared.link.edit") }
+    public static var followLink: String { said("shared.link.follow") }
+    public static var following: String { said("shared.following") }
     public static let notHeldNamedAtMost = 5
 
     public static func kind(mayEdit: Bool) -> String {
-        mayEdit ? "Shared" : "Followed"
+        mayEdit ? said("shared.kind.shared") : said("shared.kind.followed")
     }
 
     public static func mayEdit(shared: Bool?, followed: Bool) -> Bool {
@@ -72,46 +71,46 @@ public enum SharedPlaylistWords {
 
     public static func reach(_ reach: SharedPlaylistReach) -> String? {
         switch reach {
-        case .waiting: "Reaching the server…"
+        case .waiting: said("together.server.reaching")
         case .reached: nil
-        case .unreached: "The server cannot be reached. Edits are kept and go when it can."
-        case .serverTooOld: "The server is too old to keep shared playlists."
-        case .turnedAway: "The server turned this playlist away."
-        case .noServer: "This device is set to use no server, so nothing can be shared."
+        case .unreached: said("shared.reach.unreached")
+        case .serverTooOld: said("shared.reach.too-old")
+        case .turnedAway: said("shared.reach.turned-away")
+        case .noServer: said("shared.reach.no-server")
         }
     }
 
     public static func notHeld(_ titles: [String]) -> (named: [String], more: String?) {
         let left = titles.count - notHeldNamedAtMost
-        return (Array(titles.prefix(notHeldNamedAtMost)), left > 0 ? "and \(left) more" : nil)
+        return (Array(titles.prefix(notHeldNamedAtMost)), left > 0 ? said("shared.not-held.more", left) : nil)
     }
 }
 
 public enum PartyWords {
-    public static let guestAsks = "Adding a song to the queue asks the host."
-    public static let songNotHeld = "You don't have that song to play"
+    public static var guestAsks: String { said("party.guest-asks") }
+    public static var songNotHeld: String { said("party.song-not-held") }
 
     public static func following(_ following: PartyFollowing) -> String {
         switch following {
-        case .waitingForTheHost: "Waiting for the host to play something"
-        case .finding: "Looking for this song"
-        case .notHeld: "You don't have this song, so you sit it out"
-        case .cannotStartMidSong: "This song can't start part way through here, so you join at the next"
-        case .satOut: "Paused here; press play to rejoin"
-        case .hostPaused: "The host has paused"
-        case .inStep: "In step with the host"
+        case .waitingForTheHost: said("party.following.waiting")
+        case .finding: said("party.following.finding")
+        case .notHeld: said("party.following.not-held")
+        case .cannotStartMidSong: said("party.following.cannot-start-mid-song")
+        case .satOut: said("party.following.sat-out")
+        case .hostPaused: said("party.following.host-paused")
+        case .inStep: said("party.following.in-step")
         }
     }
 
     public static func connection(_ connection: PartyConnection) -> String? {
         switch connection {
-        case .connecting: "Reaching the server…"
+        case .connecting: said("together.server.reaching")
         case .here: nil
-        case .reconnecting: "Lost the server; trying again…"
-        case .ended: "The party is over"
-        case .noSuchParty: "That party has ended, or was never begun"
-        case .turnedAway: "The server turned that link away"
-        case .serverTooOld: "The server is too old to hold parties"
+        case .reconnecting: said("party.connection.reconnecting")
+        case .ended: said("party.connection.ended")
+        case .noSuchParty: said("party.connection.no-such-party")
+        case .turnedAway: said("party.connection.turned-away")
+        case .serverTooOld: said("party.connection.too-old")
         }
     }
 
@@ -123,7 +122,7 @@ public enum PartyWords {
     }
 
     public static func roundTrip(_ milliseconds: UInt64?) -> String? {
-        milliseconds.map { "The server answers in \($0) ms" }
+        milliseconds.map { said("party.round-trip", Int($0)) }
     }
 }
 
