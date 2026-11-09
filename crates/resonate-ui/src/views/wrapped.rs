@@ -6,7 +6,7 @@ use gpui::{
 };
 use resonate_core::{
     Calendar,
-    wrapped::{REVIEW_NAME, Slide, SlideBar, SlideRow, YearReview, year_worth_showing},
+    wrapped::{REVIEW_NAME, Slide, SlideBar, SlideKind, SlideRow, YearReview, year_worth_showing},
 };
 use resonate_library::{HistoryKept, Library};
 
@@ -243,7 +243,7 @@ impl RootView {
                 slide,
                 |body, slide| {
                     body.child(motion::faded_in(
-                        slide_drawn(&slide),
+                        slide_drawn(&slide, &deck.review),
                         ("wrapped-slide", deck.at),
                         motion::HANDS_OVER,
                     ))
@@ -352,43 +352,87 @@ fn named_file(path: &std::path::Path) -> String {
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
 }
 
-fn slide_drawn(slide: &Slide) -> Stateful<Div> {
+fn slide_drawn(slide: &Slide, review: &YearReview) -> Stateful<Div> {
     let headline = SharedString::from(slide.headline.clone());
+    let tallied = slide.kind == SlideKind::Whole && review.holds_anything();
+    let says_little = slide.rows.is_empty() && slide.bars.is_empty();
+    let headline_size = if says_little {
+        theme::text_lyric()
+    } else {
+        theme::text_title()
+    };
+    let detail = slide.detail.clone().filter(|_| !tallied);
 
     div()
         .id("wrapped-slide-body")
         .flex()
         .flex_col()
         .gap_3()
-        .min_h(px(theme::chart_height() * 2.0))
+        .size_full()
+        .when(says_little, |body| body.justify_center().gap_4())
         .overflow_y_scroll()
         .child(kit::eyebrow(slide.eyebrow.clone()))
         .child(
             div()
                 .id("wrapped-headline")
                 .headed(1, &slide.headline)
-                .text_size(px(theme::text_title()))
-                .line_height(px(theme::text_title() * 1.15))
+                .text_size(px(headline_size))
+                .line_height(px(headline_size * 1.15))
                 .font_weight(FontWeight::BOLD)
                 .text_color(rgb(theme::text()))
                 .child(headline),
         )
-        .when_some(slide.detail.clone(), |body, detail| {
+        .when_some(detail, |body, detail| {
             body.child(
                 div()
                     .id("wrapped-detail")
                     .read_plainly(&detail)
-                    .text_size(px(theme::text_base()))
+                    .text_size(px(theme::text_lg()))
                     .text_color(rgb(theme::muted()))
                     .child(SharedString::from(detail)),
             )
         })
+        .when(tallied, |body| body.child(tallies_drawn(review)))
         .when(!slide.rows.is_empty(), |body| {
             body.child(rows_drawn(&slide.rows))
         })
         .when(!slide.bars.is_empty(), |body| {
             body.child(bars_drawn(&slide.bars))
         })
+}
+
+fn tallies_drawn(review: &YearReview) -> Stateful<Div> {
+    let tallies = [
+        ("Plays", review.plays),
+        ("Songs", review.songs),
+        ("Artists", review.artists),
+        ("Albums", review.albums),
+        ("Days", u64::from(review.rhythm.days_heard)),
+    ];
+
+    let mut drawn = div().id("wrapped-tallies").flex().w_full().gap_2();
+    for (at, (named, count)) in tallies.into_iter().enumerate() {
+        let reading = count.to_string();
+
+        drawn = drawn.child(
+            kit::card()
+                .id(("wrapped-tally", at))
+                .read_plainly(&format!("{named}: {reading}"))
+                .flex_1()
+                .min_w(px(0.0))
+                .gap_1()
+                .p_3()
+                .child(kit::eyebrow(named))
+                .child(
+                    kit::figure(reading)
+                        .text_size(px(theme::text_xl()))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(theme::text())),
+                ),
+        );
+    }
+
+    drawn
 }
 
 fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
