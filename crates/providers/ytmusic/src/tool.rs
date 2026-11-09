@@ -350,6 +350,18 @@ impl From<io::Error> for Starting {
     }
 }
 
+#[cfg(windows)]
+fn without_a_console_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn without_a_console_window(_command: &mut Command) {}
+
 struct Reaped(Arc<Mutex<Child>>);
 
 impl Reaped {
@@ -358,6 +370,7 @@ impl Reaped {
         if living.stopped {
             return Err(Starting::Io(ErrorKind::Interrupted.into()));
         }
+        without_a_console_window(command);
         let child = Arc::new(Mutex::new(command.spawn().map_err(Starting::NotRun)?));
         living.children.retain(|held| held.strong_count() > 0);
         living.children.push(Arc::downgrade(&child));
