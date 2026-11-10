@@ -14,7 +14,8 @@ paths:
 ## CI
 
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
-  (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers): clippy (default
+  (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
+  the repository and nothing more, `permissions: contents: read`): clippy (default
   features, the workspace headless, the binary without `ui` and with each feature alone, so code
   dead without a feature is warned), headless tests of every crate but the window (the job
   reruns the MPRIS bus tests under `dbus-run-session`, which a plain `cargo test` skips) and, in
