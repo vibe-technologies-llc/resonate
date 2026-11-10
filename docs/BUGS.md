@@ -3,6 +3,15 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
+## Sync
+- [M · 0.8.1] A device whose songs were deleted as a sync began fetched every song twice once
+  another device spread them again (three devices holding everything, two cleared, one used as the
+  source): the deletion was not yet registered when the pass decided what to fetch. Not reproduced
+  yet by a loopback run of a phone syncing from two senders (clearing outside the app, deleting in
+  the app, restarting the sync mid-transfer, a fresh launch); still to try is a delete landing while
+  a pass is underway on each deletion path, and whether the double is two files (`Name (1)`), two
+  rows for one file, or only the fetching count
+
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
