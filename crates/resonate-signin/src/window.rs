@@ -23,6 +23,8 @@ const WIDTH: f64 = 480.0;
 
 const HEIGHT: f64 = 720.0;
 
+const THE_ENGINE_KEEPS_NO_PROFILE_OF_OURS: bool = cfg!(target_os = "macos");
+
 #[derive(Clone, Copy, Debug)]
 enum Woken {
     Loaded,
@@ -45,6 +47,7 @@ pub fn sign_in(jar: PathBuf, profile: PathBuf) -> Result<Infallible> {
         .map_err(|source| Error::Window { source })?;
     let mut context = WebContext::new(Some(profile));
     let builder = WebViewBuilder::new_with_web_context(&mut context)
+        .with_incognito(THE_ENGINE_KEEPS_NO_PROFILE_OF_OURS)
         .with_url(SIGN_IN_PAGE)
         .with_on_page_load_handler(told_when_loaded(event_loop.create_proxy()));
     let webview = built(builder, &window)?;
