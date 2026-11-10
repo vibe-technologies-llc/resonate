@@ -14,7 +14,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
-#[cfg(windows)]
+#[cfg(not(target_os = "linux"))]
 use resonate_core::writer::{self, Writer};
 use resonate_core::{MediaLocation, TrackId};
 use resonate_engine::{CoverArt, QueueRows};
@@ -25,7 +25,7 @@ const COVERS_KEPT: usize = 8;
 
 const QUEUED_COVERS_KEPT: usize = 32;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 const RUNNING_PROCESSES: &str = "/proc";
 
 const RUNTIME_FOLDER: &str = "XDG_RUNTIME_DIR";
@@ -38,7 +38,7 @@ const READ_BY_US_ALONE: u32 = 0o600;
 
 const STAGED: &str = ".laying";
 
-#[cfg(windows)]
+#[cfg(not(target_os = "linux"))]
 const HELD_WHILE_LAID: &str = ".held";
 
 #[derive(Default)]
@@ -261,7 +261,7 @@ impl Default for Folder {
     }
 }
 
-#[cfg(windows)]
+#[cfg(not(target_os = "linux"))]
 fn sweep_the_departed(temporary: &Path) {
     let Ok(entries) = fs::read_dir(temporary) else {
         return;
@@ -281,7 +281,7 @@ fn sweep_the_departed(temporary: &Path) {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn sweep_the_departed(temporary: &Path) {
     let Ok(entries) = fs::read_dir(temporary) else {
         return;
@@ -304,23 +304,33 @@ fn laid_down_by(name: &str) -> Option<u32> {
     pid.parse().ok()
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 type Marked = ();
 
-#[cfg(windows)]
+#[cfg(not(target_os = "linux"))]
 type Marked = writer::Held;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn made_ours(folder: &Path) -> io::Result<Marked> {
+    made_for_us_alone(folder)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn made_ours(folder: &Path) -> io::Result<Marked> {
+    made_for_us_alone(folder)?;
+    writer::Held::made(&folder.join(HELD_WHILE_LAID))
+}
+
+#[cfg(unix)]
+fn made_for_us_alone(folder: &Path) -> io::Result<()> {
     use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt as _};
 
     DirBuilder::new().mode(OURS_ALONE).create(folder)
 }
 
 #[cfg(windows)]
-fn made_ours(folder: &Path) -> io::Result<Marked> {
-    fs::DirBuilder::new().create(folder)?;
-    writer::Held::made(&folder.join(HELD_WHILE_LAID))
+fn made_for_us_alone(folder: &Path) -> io::Result<()> {
+    fs::DirBuilder::new().create(folder)
 }
 
 fn lay_down(path: &Path, bytes: &[u8]) -> io::Result<()> {

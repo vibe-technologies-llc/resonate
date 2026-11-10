@@ -1,4 +1,4 @@
-#![cfg(unix)]
+#![cfg(all(unix, not(target_os = "macos")))]
 
 use std::{
     env, fs,

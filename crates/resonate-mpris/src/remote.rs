@@ -143,12 +143,12 @@ impl Session {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     fn without_a_bus(error: Error) -> Result<Self> {
         Err(error)
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn without_a_bus(error: Error) -> Result<Self> {
         tracing::debug!(%error, "no session bus; players are looked for on their pipes");
         Ok(Self { bus: None })
@@ -161,6 +161,8 @@ impl Session {
         }
         #[cfg(windows)]
         players.extend(crate::pipe::serving()?);
+        #[cfg(target_os = "macos")]
+        players.extend(crate::socket::serving()?);
         players.sort_by(|first, second| first.0.as_str().cmp(second.0.as_str()));
 
         Ok(players

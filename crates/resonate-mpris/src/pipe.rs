@@ -3,7 +3,7 @@ use std::{
     path::Path,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -23,6 +23,7 @@ use zbus::names::WellKnownName;
 use crate::{
     Error, PipeOp, Result,
     answering::Answering,
+    listening::{Serves, accepting},
     peer::{Peer, PipePeer},
     registry::{self, Claim},
     remote::ANSWERS_WITHIN,
@@ -31,12 +32,8 @@ use crate::{
 
 const PIPE_FOLDER: &str = r"\\.\pipe\";
 const SYSTEM_AND_OWNER_ONLY: &str = "D:P(A;;GA;;;SY)(A;;GA;;;OW)";
-const CONNECTIONS_AT_MOST: usize = 32;
-const ACCEPT_FAILURES_AT_MOST: u32 = 5;
-const ACCEPT_RETRY_AFTER: Duration = Duration::from_millis(100);
 const WAKE_WITHIN: Duration = Duration::from_millis(500);
 const ACCEPT_THREAD: &str = "resonate-mpris-pipe";
-const CONNECTION_THREAD: &str = "resonate-mpris-pipe-connection";
 
 type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 type Listener = PipeListener<pipe_mode::Bytes, pipe_mode::Bytes>;
@@ -94,13 +91,14 @@ pub(crate) struct Serving {
     name: WellKnownName<'static>,
     player: String,
     stop: Arc<AtomicBool>,
-    answering: Arc<Answering>,
+    answering: Arc<dyn Serves<Stream>>,
     thread: Option<JoinHandle<()>>,
     claim: Option<Claim>,
 }
 
 impl Serving {
     pub(crate) fn start(zone: ZoneId, answering: Arc<Answering>) -> Result<Self> {
+        let answering: Arc<dyn Serves<Stream>> = answering;
         let folder = registry::players_folder();
         let mut last = None;
 
@@ -147,7 +145,7 @@ impl Serving {
         player: String,
         claim: Claim,
         listener: Listener,
-        answering: Arc<Answering>,
+        answering: Arc<dyn Serves<Stream>>,
     ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
@@ -155,7 +153,7 @@ impl Serving {
             let answering = Arc::clone(&answering);
             thread::Builder::new()
                 .name(ACCEPT_THREAD.to_owned())
-                .spawn(move || accepting(&listener, &answering, &stop))
+                .spawn(move || accepting(|| listener.accept(), &answering, &stop))
                 .map_err(|source| Error::pipe(PipeOp::Spawn, source))?
         };
 
@@ -191,55 +189,6 @@ impl Serving {
 impl Drop for Serving {
     fn drop(&mut self) {
         self.rest();
-    }
-}
-
-fn accepting(listener: &Listener, answering: &Arc<Answering>, stop: &AtomicBool) {
-    let open = Arc::new(AtomicUsize::new(0));
-    let mut failures = 0;
-
-    loop {
-        let accepted = listener.accept();
-        if stop.load(Ordering::Acquire) {
-            return;
-        }
-        let stream = match accepted {
-            Ok(stream) => {
-                failures = 0;
-                stream
-            }
-            Err(error) => {
-                failures += 1;
-                tracing::debug!(%error, "a client of the pipe was not accepted");
-                if failures >= ACCEPT_FAILURES_AT_MOST {
-                    tracing::warn!("the pipe has stopped accepting clients");
-                    return;
-                }
-                thread::sleep(ACCEPT_RETRY_AFTER);
-                continue;
-            }
-        };
-
-        if open.fetch_add(1, Ordering::AcqRel) >= CONNECTIONS_AT_MOST {
-            open.fetch_sub(1, Ordering::AcqRel);
-            tracing::debug!("a client of the pipe was turned away: too many are connected");
-            continue;
-        }
-
-        let answering = Arc::clone(answering);
-        let counted = Arc::clone(&open);
-        let spawned = thread::Builder::new()
-            .name(CONNECTION_THREAD.to_owned())
-            .spawn(move || {
-                if let Err(error) = answering.serve(stream) {
-                    tracing::debug!(%error, "a client of the pipe was let go");
-                }
-                counted.fetch_sub(1, Ordering::AcqRel);
-            });
-        if spawned.is_err() {
-            open.fetch_sub(1, Ordering::AcqRel);
-            tracing::warn!("a client of the pipe could not be given a thread");
-        }
     }
 }
 

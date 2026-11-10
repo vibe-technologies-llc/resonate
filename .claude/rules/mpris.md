@@ -16,6 +16,16 @@ metered*) and the first zone is published to and commanded from the System Media
 Controls (*The media transport* below, `windows.md`). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
 the client a second `resonate` reaches a first through.
 
+**It compiles for macOS too, where the bus is tried and not found.** A Mac's players are served and
+reached on a Unix socket (`socket.rs`, *The client's second wire*) exactly as Windows's are on a
+pipe: `Mpris::served` and `Session::open` fall back under `cfg(any(windows, target_os = "macos"))`,
+so one launch finds the window another opened, hands it its files and raises it, and `queue`,
+`players`, `sleep` and a subcommand's `Reload` reach it. The portal trash is not compiled there
+(`rustix`'s `OFlags::PATH` is not Apple's; a Mac's Trash is the binary's, `binary.md`). No toast,
+notification, idle inhibit or metered reading is made on a Mac by this crate: the bus `Desk` is
+opened only by the bus loop, which a Mac never reaches, `watch_the_meter` ends at once with no
+system bus (the connection stays `Unknown`), and the binary's `awake.rs` keeps the machine awake.
+
 ## What it sees
 
 - **zbus 6 has no blocking API; `blocking.rs` is ours.** It wraps the async `Connection`, `Proxy`,
@@ -106,7 +116,9 @@ demand and never announced. Ids:
   unfinished cover). A poll reuses a laid cover only where the row *and* the catalog's `Arc` of the
   picture match. Writes happen outside the lock every `Metadata` read takes (`Pictures::drawn`),
   under their own. Last `COVERS_KEPT` (8) held; `Mpris::shutdown` removes the folder; the next run
-  sweeps `resonate-art-<pid>-*` of dead processes (on Windows, with no `/proc`, a folder holds a
+  sweeps `resonate-art-<pid>-*` of dead processes (by `/proc/<pid>` on Linux alone; everywhere else,
+  Windows and macOS having no `/proc` and a sweep that read its absence as every other player dead
+  taking living players' covers, a folder holds a
   `.held` file under `writer::Held` for its life and is swept where `writer_of` reads it `Gone`). A queued row's cover is laid only when a client
   asks for it, kept apart (`Shared::row_art`, `Pictures::queued_uri`), at most `QUEUED_COVERS_KEPT`
   (32): past that, no cover named rather than one a later row would remove.
@@ -280,7 +292,7 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   (`PlayingNext` counts them). A run goes in calls of `ROWS_A_CALL` (128) rows, back to front
   against one anchor, so each stays inside the client's 2 s timeout; a failure after some landed is
   `Error::QueuedPartway { landed, asked }`. The fallback adds back to front against one anchor.
-  `Session` is one bus connection (on Windows none, only the pipe registry) a long-lived client (MCP) reuses through `found_in`, `listed_in`
+  `Session` is one bus connection (on Windows and macOS none where no bus answers, only the registry of players) a long-lived client (MCP) reuses through `found_in`, `listed_in`
   and `named_in`; `found`, `listed` and `named` open their own.
 - **`resonate queue --playlist <NAME>` hands a playlist over as its rows** (`ActivatePlaylist`
   replaces a queue). A search-filled playlist is read via `Library::playlist_entries`, so queued as
@@ -341,6 +353,32 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
   for good, so no later call reads an earlier call's reply (`peer::tests`).
 - **`registry.rs` is the portable discovery** (a held file per player in a folder, `Held` and
   `writer_of`, tested on every host) and `pipe.rs` the `interprocess` half, `cfg(windows)`.
+- **`listening.rs` is the accept loop both transports share** (`accepting`, over a closure that
+  accepts and a `Serves<S>` that `Answering` fills): at most `CONNECTIONS_AT_MOST` (32) clients at
+  once, each on a thread of its own, a client refused costing the rest nothing and a listener that
+  refuses `ACCEPT_FAILURES_AT_MOST` (5) times in a row given up on
+  (`every_client_accepted_is_served_and_a_refused_one_costs_the_rest_nothing`,
+  `a_listener_that_keeps_refusing_is_given_up_on`).
+- **`socket.rs` is a Mac's transport, over `std::os::unix::net` and no further dependency**
+  (compiled for macOS and, for its tests, on every Unix). The registry's folder there is
+  `~/Library/Caches/resonate/players` (`registry::players_folder_of_a_mac`; the temporary folder's
+  `resonate-players` only with no `HOME`), never `$TMPDIR`, whose files macOS sweeps after days
+  unread. `kept_to_this_user` makes it `0700` and refuses to serve in one another user owns or can
+  reach (`PermissionDenied` as `PipeOp::Claim`). **The claim is the authority, the socket only
+  where it listens**: `Serving::start_in` takes the name's `Claim` first (the held file, so a
+  second player moves on to its `instance` name), unlinks whatever socket stands at the name's
+  path (stale, since the claim is held), binds and narrows it to `0600`; Windows listens first
+  because a pipe's namespace is global, here the folder is private. A socket is named `socket` and
+  what follows `org.mpris.MediaPlayer2.resonate` in the player's name (`socket`, `socket.zone2`,
+  `socket.instance4242.zone2`), never the whole name, since `sun_path` holds 103 bytes on a Mac
+  (`the_longest_name_a_player_is_likely_to_take_still_binds_under_a_long_home_on_a_mac`); a home
+  long enough to pass it fails the bind as `PipeOp::Listen` and the player runs unserved. A client
+  lists the registry and connects to each name's socket (`serving_in`); a player whose socket does
+  not answer is passed over. `rest` wakes the accept by connecting to itself, removes the socket
+  and lets the claim go; a Mac's `terminate:` drops nothing, so the next claimant's unlink is what
+  clears a socket left behind (`a_player_is_reached_on_the_socket_beside_its_claim_and_leaves_neither_behind`,
+  `a_socket_a_dead_player_left_is_taken_over_by_the_next_to_claim_its_name`,
+  `a_folder_others_can_reach_is_refused_rather_than_served_in`).
 
 - **The desktop's own preferences are read at start and watched after** (`preferences.rs`, `desktop_preferences`, `watch_the_desktop`): `org.freedesktop.appearance` `contrast`, `reduced-motion` and `color-scheme` over the portal, GNOME's `enable-animations` as the fallback for motion, the text scale from GNOME's `text-scaling-factor` else KDE's `font` point size over ten, each answered within 300 ms or `Unsaid`; the binary seeds High Contrast and Reduce motion from the start read only where the listener stored neither, and the colour scheme and text scale follow `SettingChanged` on a `resonate-desktop` thread (`ui.md`).
 

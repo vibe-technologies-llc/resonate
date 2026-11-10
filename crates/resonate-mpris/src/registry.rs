@@ -1,4 +1,4 @@
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use std::env;
 use std::{
     fs, io,
@@ -9,20 +9,44 @@ use resonate_core::writer::{Held, Writer, writer_of};
 
 use crate::remote::names_this_build;
 
+#[cfg(any(windows, test))]
 const PIPE_STEM: &str = "resonate";
+#[cfg(any(windows, test))]
 const UNNAMED_USER: &str = "user";
 const NO_STAMP: u32 = 0;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos", test))]
 const FOLDER: &str = "resonate-players";
 #[cfg(windows)]
 const USER_VARIABLE: &str = "USERNAME";
+#[cfg(target_os = "macos")]
+const HOME_VARIABLE: &str = "HOME";
+#[cfg(any(target_os = "macos", test))]
+const BESIDE_WHAT_A_MAC_CAN_MAKE_AGAIN: &str = "Library/Caches/resonate/players";
 
 #[cfg(windows)]
 pub(crate) fn players_folder() -> PathBuf {
     env::temp_dir().join(FOLDER)
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) fn players_folder() -> PathBuf {
+    let home = env::var_os(HOME_VARIABLE)
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from);
+
+    players_folder_of_a_mac(home.as_deref(), &env::temp_dir())
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn players_folder_of_a_mac(home: Option<&Path>, temporary: &Path) -> PathBuf {
+    match home {
+        Some(home) => home.join(BESIDE_WHAT_A_MAC_CAN_MAKE_AGAIN),
+        None => temporary.join(FOLDER),
+    }
+}
+
+#[cfg(any(windows, test))]
 pub(crate) fn pipe_name(user: &str, player: &str) -> String {
     let user: String = user
         .chars()
@@ -194,6 +218,18 @@ mod tests {
         assert!(living.is_empty());
         assert!(!path.exists());
         assert!(Claim::make(&folder.0, BUS_NAME).is_ok());
+    }
+
+    #[test]
+    fn a_macs_players_are_kept_under_its_caches_and_under_the_temporary_folder_with_no_home() {
+        assert_eq!(
+            players_folder_of_a_mac(Some(Path::new("/Users/ada")), Path::new("/tmp")),
+            Path::new("/Users/ada/Library/Caches/resonate/players")
+        );
+        assert_eq!(
+            players_folder_of_a_mac(None, Path::new("/tmp")),
+            Path::new("/tmp/resonate-players")
+        );
     }
 
     #[test]

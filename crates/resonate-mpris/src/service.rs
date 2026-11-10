@@ -100,13 +100,20 @@ pub struct Mpris {
 
 enum Service {
     Bus(OnTheBus),
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     Pipe(OnThePipe),
 }
 
 #[cfg(windows)]
+type Serving = crate::pipe::Serving;
+
+#[cfg(target_os = "macos")]
+type Serving = crate::socket::Serving;
+
+#[cfg(any(windows, target_os = "macos"))]
 struct OnThePipe {
-    serving: crate::pipe::Serving,
+    serving: Serving,
+    #[cfg(windows)]
     toasts: Option<JoinHandle<()>>,
 }
 
@@ -145,7 +152,7 @@ impl Mpris {
         })
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     fn served(
         zone: ZoneId,
         shared: &Arc<Shared>,
@@ -156,7 +163,7 @@ impl Mpris {
         OnTheBus::start(zone, shared, playlists, told, stop).map(Service::Bus)
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn served(
         zone: ZoneId,
         shared: &Arc<Shared>,
@@ -172,9 +179,12 @@ impl Mpris {
                     Arc::clone(shared),
                     playlists,
                 ));
-                let serving = crate::pipe::Serving::start(zone, answering)?;
-                let toasts = toasting(shared, told, stop);
-                Ok(Service::Pipe(OnThePipe { serving, toasts }))
+                let serving = Serving::start(zone, answering)?;
+                Ok(Service::Pipe(OnThePipe {
+                    serving,
+                    #[cfg(windows)]
+                    toasts: toasting(shared, told, stop),
+                }))
             }
         }
     }
@@ -182,7 +192,7 @@ impl Mpris {
     pub fn name(&self) -> WellKnownName<'static> {
         match &self.service {
             Service::Bus(bus) => bus.claimed.name(),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             Service::Pipe(pipe) => pipe.serving.name(),
         }
     }
@@ -190,7 +200,7 @@ impl Mpris {
     pub fn unique_name(&self) -> Option<OwnedUniqueName> {
         match &self.service {
             Service::Bus(bus) => bus.connection.as_ref()?.unique_name().cloned(),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             Service::Pipe(_) => None,
         }
     }
@@ -209,7 +219,7 @@ impl Mpris {
         self.stop.store(true, Ordering::Release);
         match &mut self.service {
             Service::Bus(bus) => bus.rest(),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             Service::Pipe(pipe) => pipe.rest(),
         }
         #[cfg(windows)]
@@ -220,9 +230,10 @@ impl Mpris {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl OnThePipe {
     fn rest(&mut self) {
+        #[cfg(windows)]
         if let Some(toasts) = self.toasts.take() {
             let _ = toasts.join();
         }
