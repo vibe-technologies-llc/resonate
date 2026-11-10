@@ -15,6 +15,7 @@ final class AppearanceState {
     private static let strengthKey = "backgroundStrength"
     private static let intensityKey = "nowPlayingIntensity"
     static let defaultStrength = 0.4
+    static let defaultMoving = true
     static let defaultIntensity = Double(BackdropTone.neutralIntensity)
 
     @ObservationIgnored private let settings = UserDefaults(suiteName: "appearance") ?? .standard
@@ -58,13 +59,22 @@ final class AppearanceState {
         tint = Self.tint(of: chosen)
         ink = Self.ink(of: chosen)
         themedBackground = settings.object(forKey: Self.backgroundKey) as? Bool ?? true
-        movingBackground = settings.object(forKey: Self.movingKey) as? Bool ?? true
+        movingBackground = settings.object(forKey: Self.movingKey) as? Bool ?? Self.defaultMoving
         backgroundStrength = settings.object(forKey: Self.strengthKey) as? Double ?? Self.defaultStrength
         nowPlayingIntensity = settings.object(forKey: Self.intensityKey) as? Double ?? Self.defaultIntensity
         iconChange = Task { [weak self] in
             guard let self else { return }
             await showIcon(of: accent)
         }
+    }
+
+    var backgroundAtDefault: Bool {
+        movingBackground == Self.defaultMoving && backgroundStrength == Self.defaultStrength
+    }
+
+    func resetBackground() {
+        movingBackground = Self.defaultMoving
+        backgroundStrength = Self.defaultStrength
     }
 
     private func keepLevelsSoon() {
@@ -428,6 +438,9 @@ struct BackgroundView: View {
                                 .accessibilityValue(Text(appearance.backgroundStrength, format: .percent.precision(.fractionLength(0))))
                             Text("appearance.background.vivid").font(.caption).foregroundStyle(.secondary)
                         }
+                    }
+                    if !appearance.backgroundAtDefault {
+                        Button("appearance.background.reset") { appearance.resetBackground() }
                     }
                 }
             } footer: {
