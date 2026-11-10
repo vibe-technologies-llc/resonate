@@ -4481,6 +4481,11 @@ impl LibraryModel {
         self.named.entries().count()
     }
 
+    #[cfg(test)]
+    pub(crate) fn is_drawing_covers(&self) -> bool {
+        !self.decoding.is_empty()
+    }
+
     pub fn track_of(&mut self, item: &QueueItem) -> Option<Track> {
         if let Some(held) = self.named.get(&item.id)
             && held.names(item)

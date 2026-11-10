@@ -138,7 +138,7 @@ struct Lexed {
 }
 
 fn lexed(source: &str) -> Lexed {
-    let letters: Vec<char> = source.chars().collect();
+    let letters: Vec<char> = source.replace("\r\n", "\n").chars().collect();
     let mut code = String::with_capacity(source.len());
     let mut literals = Vec::new();
     let mut line = 0;
@@ -475,6 +475,21 @@ mod tests {
                 "A raw \"quoted\" line",
                 "Said across lines"
             ]
+        );
+    }
+
+    #[test]
+    fn a_literal_continued_across_windows_line_endings_reads_as_one_line() {
+        let found = prose_of(
+            "fn a() -> &'static str {\r\n    \"[{{\\\r\n     \\\"name\\\":1}}]\"\r\n}\r\nfn b() -> &'static str {\r\n    \"Two words\"\r\n}\r\n",
+        );
+
+        assert_eq!(
+            found,
+            [Prose {
+                line: 6,
+                text: "Two words".to_owned()
+            }]
         );
     }
 

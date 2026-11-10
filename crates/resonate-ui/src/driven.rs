@@ -2297,7 +2297,7 @@ mod tests {
         };
 
         assert!(!drawn(&mut driven));
-        driven.settle();
+        driven.until(|root, cx| !root.library.read(cx).is_drawing_covers());
         assert!(!drawn(&mut driven), "an album with no cover drew one");
 
         library
@@ -2313,7 +2313,7 @@ mod tests {
             root.library.update(cx, |model, cx| model.reload(cx));
         });
         drawn(&mut driven);
-        driven.settle();
+        driven.until(|root, cx| !root.library.read(cx).is_drawing_covers());
 
         assert!(
             drawn(&mut driven),

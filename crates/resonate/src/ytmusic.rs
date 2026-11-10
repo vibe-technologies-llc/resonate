@@ -647,6 +647,7 @@ mod tests {
             time::{Duration, Instant},
         };
 
+        use parking_lot::RwLockReadGuard;
         use resonate_library::{DeliveryFolder, Layout};
         use resonate_ytmusic::{Cookies, Tool};
 
@@ -696,7 +697,10 @@ mod tests {
             wave
         }
 
-        struct Folder(PathBuf);
+        struct Folder {
+            path: PathBuf,
+            _uninterrupted: RwLockReadGuard<'static, ()>,
+        }
 
         impl Folder {
             fn holding_a_tool(body: &str) -> Self {
@@ -717,20 +721,23 @@ mod tests {
                 fs::set_permissions(&program, fs::Permissions::from_mode(EXECUTABLE))
                     .expect("the fake tool made executable");
                 runs_once_no_fork_holds_it_open(&program);
-                Self(folder)
+                Self {
+                    path: folder,
+                    _uninterrupted: crate::signing_in::INTERRUPTING_THE_TOOLS.read(),
+                }
             }
 
             fn path(&self) -> &Path {
-                &self.0
+                &self.path
             }
 
             fn music(&self) -> Arc<YtMusic> {
-                let tool = Tool::new(Some(self.0.join("yt-dlp")), Cookies::None);
+                let tool = Tool::new(Some(self.path.join("yt-dlp")), Cookies::None);
                 Arc::new(YtMusic::new(tool))
             }
 
             fn asked(&self) -> Vec<String> {
-                fs::read_to_string(self.0.join("asked"))
+                fs::read_to_string(self.path.join("asked"))
                     .unwrap_or_default()
                     .lines()
                     .map(str::to_owned)
@@ -740,7 +747,7 @@ mod tests {
 
         impl Drop for Folder {
             fn drop(&mut self) {
-                let _ = fs::remove_dir_all(&self.0);
+                let _ = fs::remove_dir_all(&self.path);
             }
         }
 

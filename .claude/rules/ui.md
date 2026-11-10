@@ -1508,11 +1508,16 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   the reference and only stops `enrich` starting (`has_reference`); the shared client hears the switch
   at once (`online.md`); `AnalysisModel::reach` stops recognition asks while off.
 - **A file changed under a root while the window runs is followed on its own; one taken away is
-  forgotten at once, not scanned for.** `resonate_library::RootsWatch` = recursive inotify watch (via
-  `notify`):
+  forgotten at once, not scanned for.** `resonate_library::RootsWatch` = recursive watch (inotify,
+  FSEvents on a Mac, via `notify`):
   - *Gone* (audio file or folder removed): handed out by `taken_away` once `GONE_QUIET_FOR` (250 ms)
     has passed, never while a change under the roots is settling (a rename is a path gone and changed
-    at once; the scan follows the file instead of forgetting and recounting it).
+    at once; the scan follows the file instead of forgetting and recounting it). **FSEvents names
+    neither side of a rename and folds a file's flags together**, so an event is weighed against the
+    disc: a rename (`RenameMode::Any`) naming no path that still stands is the side taken away, and a
+    making or writing naming none says nothing, so a file written and removed within one FSEvents
+    latency does not hold its removal back as a change
+    (`a_rename_that_names_neither_side_and_a_making_since_undone_are_weighed_against_the_disc`).
   - *Changed* (audio file or sheet made, written or renamed in; a folder made or renamed in; a sheet
     taken away): `settled` hands the root out once quiet for `ROOTS_QUIET_FOR` (2 s), or once its first
     change has waited `DEFERRED_AT_MOST` (5 minutes)

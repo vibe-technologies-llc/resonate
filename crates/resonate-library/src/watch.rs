@@ -187,15 +187,24 @@ fn heard_as(event: &Event) -> Heard {
         .paths
         .iter()
         .all(|path| scan::is_audio(path) || path.extension().is_none());
+    let no_longer_standing = event
+        .paths
+        .iter()
+        .all(|path| path.symlink_metadata().is_err());
     let taken_away = match event.kind {
         EventKind::Remove(RemoveKind::Folder)
         | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => true,
+        EventKind::Modify(ModifyKind::Name(RenameMode::Any)) => no_longer_standing,
         EventKind::Remove(_) => audio_or_a_folder,
         _ => false,
     };
+    let made_or_written = matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_));
 
     if taken_away && !a_sheet {
         return Heard::Gone;
+    }
+    if made_or_written && no_longer_standing {
+        return Heard::Unread;
     }
     if moves_what_a_scan_reads(event) {
         return Heard::Changed;
@@ -381,6 +390,38 @@ mod tests {
             settled_within(&watch, HEARD_WITHIN),
             vec![covered.path.clone()],
             "the root watched before the cap stopped hearing"
+        );
+    }
+
+    #[test]
+    fn a_rename_that_names_neither_side_and_a_making_since_undone_are_weighed_against_the_disc() {
+        let scratch = Scratch::new("undirected");
+        let before = scratch.path.join("album/echoes.flac");
+        let after = scratch.path.join("album/06 Echoes.flac");
+        fs::write(&after, b"fLaC").expect("a file");
+        let roots = std::slice::from_ref(&scratch.path);
+        let renamed = EventKind::Modify(ModifyKind::Name(RenameMode::Any));
+        let heard = Mutex::new(Moved::default());
+
+        heard_under(
+            roots,
+            &Event::new(EventKind::Create(CreateKind::File)).add_path(before.clone()),
+            &heard,
+        );
+        assert!(
+            heard.lock().last.is_none(),
+            "a file made and taken away before it was heard held back what was taken away"
+        );
+
+        heard_under(roots, &Event::new(renamed).add_path(before.clone()), &heard);
+        heard_under(roots, &Event::new(renamed).add_path(after), &heard);
+
+        let moved = heard.lock();
+        assert_eq!(moved.gone.keys().collect::<Vec<_>>(), [&before]);
+        assert_eq!(
+            moved.roots.iter().collect::<Vec<_>>(),
+            [&scratch.path],
+            "the side a rename left was not left to the scan"
         );
     }
 

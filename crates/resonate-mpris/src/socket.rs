@@ -244,7 +244,7 @@ mod tests {
 
     impl Folder {
         fn new(name: &str) -> Self {
-            let path = env::temp_dir().join(format!("resonate-socket-{}-{name}", process::id()));
+            let path = env::temp_dir().join(format!("rs-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
             Self(path)
         }

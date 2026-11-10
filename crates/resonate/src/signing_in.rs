@@ -19,6 +19,9 @@ pub const PROGRAM: &str = "resonate-signin.exe";
 #[cfg(not(windows))]
 pub const PROGRAM: &str = "resonate-signin";
 
+#[cfg(test)]
+pub static INTERRUPTING_THE_TOOLS: parking_lot::RwLock<()> = parking_lot::RwLock::new(());
+
 const JAR: &str = "youtube-music-cookies.txt";
 
 const PROFILE: &str = "youtube-music-sign-in";
@@ -286,6 +289,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn each_ending_of_the_sign_in_program_is_its_own_answer() {
+        let _interrupting = INTERRUPTING_THE_TOOLS.write();
+
         let folder = scratch("endings");
         let kept = Kept::under(&folder);
 
@@ -316,6 +321,8 @@ mod tests {
     fn the_windows_profile_is_made_owner_only_before_the_window_opens() {
         use std::os::unix::fs::PermissionsExt as _;
 
+        let _interrupting = INTERRUPTING_THE_TOOLS.write();
+
         let folder = scratch("profile");
         let kept = Kept::under(&folder.join("data"));
         fs::create_dir_all(&kept.profile).expect("a profile left open");
@@ -334,6 +341,8 @@ mod tests {
 
     #[test]
     fn signing_out_takes_away_the_jar_and_the_profile_and_a_second_time_is_no_failure() {
+        let _interrupting = INTERRUPTING_THE_TOOLS.write();
+
         let folder = scratch("out");
         let kept = Kept::under(&folder);
         fs::write(&kept.jar, "jar").expect("a jar");
@@ -350,6 +359,8 @@ mod tests {
     #[test]
     fn the_window_is_told_what_the_sign_in_program_did() {
         use resonate_ui::{SignsInToYoutubeMusic as _, YoutubeMusicSignIn};
+
+        let _interrupting = INTERRUPTING_THE_TOOLS.write();
 
         let folder = scratch("window");
         let kept = Kept::under(&folder.join("data"));
