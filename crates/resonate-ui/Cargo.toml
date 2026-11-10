@@ -34,6 +34,9 @@ unicode-segmentation.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui_platform = { workspace = true, features = ["font-kit", "runtime_shaders"] }
+
 [build-dependencies]
 resonate-words-build.workspace = true
 

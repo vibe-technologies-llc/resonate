@@ -2041,10 +2041,12 @@ mod tests {
     use super::*;
     use crate::views::spoken::{self, node_of};
 
+    #[cfg(not(target_os = "macos"))]
     struct Names {
         layouts: Vec<gpui::TextLayout>,
     }
 
+    #[cfg(not(target_os = "macos"))]
     impl gpui::Render for Names {
         fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
             self.layouts.clear();
@@ -2074,6 +2076,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[gpui::test]
     fn names_that_fit_stay_whole_and_long_names_end_in_an_ellipsis(cx: &mut gpui::TestAppContext) {
         let platform = gpui_platform::current_platform(true);

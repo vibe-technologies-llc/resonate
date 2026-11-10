@@ -224,7 +224,9 @@ impl RootView {
             .when_else(
                 typed,
                 |field| field.child(self.clear_filter(cx)),
-                |field| field.child(kit::figure("ctrl-,").text_color(rgb(theme::faint()))),
+                |field| {
+                    field.child(kit::figure(key!(find_a_setting)).text_color(rgb(theme::faint())))
+                },
             )
             .on_click(cx.listener(|this, _, window, cx| {
                 this.finding

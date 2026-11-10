@@ -484,7 +484,7 @@ impl Driven {
                 first_read: None,
                 copying: Copying::default(),
             });
-            cx.bind_keys(app::bindings());
+            cx.bind_keys(app::bindings(cx.platform_info().os));
         });
         let (root, cx) = cx.add_window_view(RootView::new);
         let mut cx = cx.clone();
@@ -683,7 +683,7 @@ mod tests {
         views::{
             menu::{Menu, Offered},
             reorder::{Listed, Shift},
-            settings::curve::Plot,
+            settings::{Group, curve::Plot},
             visualiser::Showing,
         },
         words,
@@ -907,7 +907,7 @@ mod tests {
         driven.settle();
 
         driven.click("band-gain-0");
-        driven.cx.simulate_keystrokes("ctrl-z");
+        driven.cx.simulate_keystrokes("secondary-z");
         driven.settle();
 
         let (held, written) = driven.read(|root, cx| {
@@ -930,7 +930,7 @@ mod tests {
         with_a_band_at(&mut driven, 1059.46);
 
         driven.click("band-frequency-0");
-        driven.cx.simulate_keystrokes("ctrl-a");
+        driven.cx.simulate_keystrokes("secondary-a");
         driven.cx.simulate_input("2000");
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
@@ -954,14 +954,14 @@ mod tests {
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
         driven.focus(|root| &root.search);
         driven.cx.simulate_input("dark");
-        driven.cx.simulate_keystrokes("ctrl-a");
+        driven.cx.simulate_keystrokes("secondary-a");
         driven.cx.simulate_input("x");
         assert_eq!(
             driven.read(|root, cx| root.search.read(cx).text().to_owned()),
             "x"
         );
 
-        driven.cx.simulate_keystrokes("ctrl-z");
+        driven.cx.simulate_keystrokes("secondary-z");
 
         assert_eq!(
             driven.read(|root, cx| root.search.read(cx).text().to_owned()),
@@ -2878,11 +2878,11 @@ mod tests {
         driven.read(|root, _| root.reaching(Shift::Listing(Listed::Tracks)))
     }
 
-    const CONTROL: Modifiers = Modifiers {
-        control: true,
+    const HELD_TO_CHOOSE_APART: Modifiers = Modifiers {
+        control: !cfg!(target_os = "macos"),
         alt: false,
         shift: false,
-        platform: false,
+        platform: cfg!(target_os = "macos"),
         function: false,
     };
 
@@ -2916,8 +2916,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
         let ids = listed_ids(&mut driven);
 
-        driven.click_with(named("track", ids[0].get()), CONTROL);
-        driven.click_with(named("track", ids[2].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[2].get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
@@ -2925,7 +2925,7 @@ mod tests {
             0
         );
 
-        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [2]);
         assert_eq!(
@@ -2943,7 +2943,7 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
         let ids = listed_ids(&mut driven);
 
-        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
         driven.click_with(
             named("track", ids[3].get()),
             Modifiers {
@@ -2972,7 +2972,7 @@ mod tests {
 
         driven
             .cx
-            .simulate_keystrokes("down ctrl-shift-down ctrl-shift-down");
+            .simulate_keystrokes("down secondary-shift-down secondary-shift-down");
 
         assert_eq!(chosen_rows(&mut driven), [0]);
         assert_eq!(
@@ -3003,8 +3003,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
         let ids = listed_ids(&mut driven);
 
-        driven.click_with(named("track", ids[3].get()), CONTROL);
-        driven.click_with(named("track", ids[1].get()), CONTROL);
+        driven.click_with(named("track", ids[3].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[1].get()), HELD_TO_CHOOSE_APART);
         let from = driven.centre_of(named("track", ids[1].get()));
         let onto = driven.centre_of("queue");
         driven.drag(from, onto);
@@ -3022,8 +3022,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
         let ids = listed_ids(&mut driven);
 
-        driven.click_with(named("track", ids[0].get()), CONTROL);
-        driven.click_with(named("track", ids[1].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[1].get()), HELD_TO_CHOOSE_APART);
         let from = driven.centre_of(named("track", ids[3].get()));
         let onto = driven.centre_of("queue");
         driven.drag(from, onto);
@@ -3042,7 +3042,7 @@ mod tests {
 
         driven
             .cx
-            .simulate_keystrokes("down ctrl-shift-down ctrl-space down");
+            .simulate_keystrokes("down secondary-shift-down ctrl-space down");
 
         assert_eq!(chosen_rows(&mut driven), [2]);
     }
@@ -3058,7 +3058,7 @@ mod tests {
 
         driven
             .cx
-            .simulate_keystrokes("down ctrl-shift-down ctrl-shift-down ctrl-space menu");
+            .simulate_keystrokes("down secondary-shift-down secondary-shift-down ctrl-space menu");
         assert!(driven.read(|root, _| root.menu.is_some()));
 
         driven.cx.simulate_keystrokes("down down enter");
@@ -3082,8 +3082,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).albums_listed() == 3);
         let albums = driven.read(|root, cx| root.library.read(cx).albums());
 
-        driven.click_with(named("album", albums[0].id.get()), CONTROL);
-        driven.click_with(named("album", albums[2].id.get()), CONTROL);
+        driven.click_with(named("album", albums[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("album", albums[2].id.get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
@@ -3165,8 +3165,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 4);
         let ids = favourites_listed(&mut driven);
 
-        driven.click_with(named("track", ids[3].get()), CONTROL);
-        driven.click_with(named("track", ids[1].get()), CONTROL);
+        driven.click_with(named("track", ids[3].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[1].get()), HELD_TO_CHOOSE_APART);
 
         (driven, library, ids)
     }
@@ -3202,7 +3202,7 @@ mod tests {
 
         driven
             .cx
-            .simulate_keystrokes("down ctrl-shift-down ctrl-shift-down ctrl-space");
+            .simulate_keystrokes("down secondary-shift-down secondary-shift-down ctrl-space");
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
     }
@@ -3275,8 +3275,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
         let ids = listed_ids(&mut driven);
 
-        driven.click_with(named("track", ids[0].get()), CONTROL);
-        driven.click_with(named("track", ids[2].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[2].get()), HELD_TO_CHOOSE_APART);
         driven.right_click(named("track", ids[0].get()));
         let labels = menu_labels(&mut driven);
 
@@ -3322,8 +3322,8 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        driven.click_with(named("track", ids[2].get()), CONTROL);
-        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[2].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(driven.read(|root, _| root.pane), Pane::Suggestions);
@@ -3358,8 +3358,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
         let artists = driven.read(|root, cx| root.library.read(cx).artists());
 
-        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
-        driven.click_with(named("artist", artists[2].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("artist", artists[2].id.get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(driven.read(|root, _| root.pane), Pane::Artists);
@@ -3416,8 +3416,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
         let artists = driven.read(|root, cx| root.library.read(cx).artists());
 
-        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
-        driven.click_with(named("artist", artists[1].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("artist", artists[1].id.get()), HELD_TO_CHOOSE_APART);
         driven.right_click(named("artist", artists[0].id.get()));
 
         assert_eq!(
@@ -3514,8 +3514,8 @@ mod tests {
         let (mut driven, library) = favourites_with_shelves(cx, &folder);
         let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
 
-        driven.click_with(named("artist", artists[2].id.get()), CONTROL);
-        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[2].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
@@ -3561,8 +3561,8 @@ mod tests {
         let (mut driven, library) = favourites_with_shelves(cx, &folder);
         let albums = driven.read(|root, cx| root.library.read(cx).favourite_albums());
 
-        driven.click_with(named("album", albums[1].id.get()), CONTROL);
-        driven.click_with(named("album", albums[2].id.get()), CONTROL);
+        driven.click_with(named("album", albums[1].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("album", albums[2].id.get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [1, 2]);
         assert_eq!(
@@ -3589,7 +3589,7 @@ mod tests {
         let (mut driven, _library) = favourites_with_shelves(cx, &folder);
         let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
 
-        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
         driven.click_with(
             named("artist", artists[2].id.get()),
             Modifiers {
@@ -3724,7 +3724,7 @@ mod tests {
 
         driven
             .cx
-            .simulate_keystrokes("down up up ctrl-shift-down ctrl-shift-down ctrl-space");
+            .simulate_keystrokes("down up up secondary-shift-down secondary-shift-down ctrl-space");
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
@@ -3757,7 +3757,7 @@ mod tests {
 
         driven
             .cx
-            .simulate_keystrokes("down up ctrl-shift-down ctrl-space menu");
+            .simulate_keystrokes("down up secondary-shift-down ctrl-space menu");
         driven.settle();
 
         assert_eq!(chosen_rows(&mut driven), [0, 1]);
@@ -3829,8 +3829,8 @@ mod tests {
         let (mut driven, _library) = favourites_with_shelves(cx, &folder);
         let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
 
-        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
-        driven.click_with(named("artist", artists[1].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("artist", artists[1].id.get()), HELD_TO_CHOOSE_APART);
         driven.cx.simulate_keystrokes("right");
 
         assert_eq!(chosen_rows(&mut driven), [2]);
@@ -3844,8 +3844,8 @@ mod tests {
         let (mut driven, _library) = favourites_with_shelves(cx, &folder);
         let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
 
-        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
-        driven.click_with(named("artist", artists[1].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("artist", artists[1].id.get()), HELD_TO_CHOOSE_APART);
         driven.right_click(named("artist", artists[0].id.get()));
         pressed_in_the_menu(&mut driven, words::menu::unfavour());
         driven.until(|root, cx| root.library.read(cx).favourited().artists == 1);
@@ -3896,8 +3896,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
         let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
 
-        driven.click_with(named("playlist", listed[0].id.get()), CONTROL);
-        driven.click_with(named("playlist", listed[2].id.get()), CONTROL);
+        driven.click_with(named("playlist", listed[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("playlist", listed[2].id.get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(driven.read(|root, cx| root.library.read(cx).opened()), None);
@@ -3973,8 +3973,8 @@ mod tests {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
 
-        driven.click_with(named("entry", 0), CONTROL);
-        driven.click_with(named("entry", 2), CONTROL);
+        driven.click_with(named("entry", 0), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("entry", 2), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
@@ -4004,8 +4004,8 @@ mod tests {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
 
-        driven.click_with(named("entry", 0), CONTROL);
-        driven.click_with(named("entry", 2), CONTROL);
+        driven.click_with(named("entry", 0), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("entry", 2), HELD_TO_CHOOSE_APART);
         driven.cx.simulate_keystrokes("delete");
         driven.until(|root, cx| root.library.read(cx).entries().len() == 3);
 
@@ -4027,8 +4027,8 @@ mod tests {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
 
-        driven.click_with(named("entry", 0), CONTROL);
-        driven.click_with(named("entry", 2), CONTROL);
+        driven.click_with(named("entry", 0), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("entry", 2), HELD_TO_CHOOSE_APART);
         let from = driven.centre_of(named("entry", 0));
         let onto = driven.centre_of(named("entry", 4));
         driven.drag(from, onto);
@@ -4067,8 +4067,8 @@ mod tests {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
 
-        driven.click_with(named("entry", 0), CONTROL);
-        driven.click_with(named("entry", 2), CONTROL);
+        driven.click_with(named("entry", 0), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("entry", 2), HELD_TO_CHOOSE_APART);
         driven.cx.simulate_keystrokes("alt-down");
         driven.until(|root, cx| {
             root.library
@@ -4109,8 +4109,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).listing().len() == 3);
         let ids = listed_ids(&mut driven);
 
-        driven.click_with(named("track", ids[0].get()), CONTROL);
-        driven.click_with(named("track", ids[2].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("track", ids[2].get()), HELD_TO_CHOOSE_APART);
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
@@ -4146,7 +4146,12 @@ mod tests {
         });
 
         driven.focus(|root| &root.search);
-        for key in ["down", "ctrl-shift-down", "ctrl-shift-down", "ctrl-space"] {
+        for key in [
+            "down",
+            "secondary-shift-down",
+            "secondary-shift-down",
+            "ctrl-space",
+        ] {
             driven.cx.simulate_keystrokes(key);
             driven.settle();
         }
@@ -4169,8 +4174,8 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
         let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
 
-        driven.click_with(named("playlist", listed[0].id.get()), CONTROL);
-        driven.click_with(named("playlist", listed[1].id.get()), CONTROL);
+        driven.click_with(named("playlist", listed[0].id.get()), HELD_TO_CHOOSE_APART);
+        driven.click_with(named("playlist", listed[1].id.get()), HELD_TO_CHOOSE_APART);
         driven.right_click(named("playlist", listed[0].id.get()));
 
         assert_eq!(
@@ -4265,7 +4270,7 @@ mod tests {
         driven.cx.update(|_, cx| {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string("rush of".to_owned()));
         });
-        driven.cx.simulate_keystrokes("ctrl-v");
+        driven.cx.simulate_keystrokes("secondary-v");
         driven.settle();
 
         assert_eq!(
@@ -4279,7 +4284,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
-        driven.cx.simulate_keystrokes("ctrl-f");
+        driven.cx.simulate_keystrokes("secondary-f");
         driven.settle();
         let lit = |driven: &mut Driven| driven.read(|root, cx| root.search.read(cx).caret_is_lit());
         let mut seen_dark = false;
@@ -4673,7 +4678,7 @@ mod tests {
         assert_eq!(driven.read(session), "");
 
         driven.focus(|root| &root.lastfm[1]);
-        driven.cx.simulate_keystrokes("ctrl-a backspace");
+        driven.cx.simulate_keystrokes("secondary-a backspace");
         type_into(&mut driven, 1, "a secret");
         driven.cx.simulate_keystrokes("enter");
         driven.click("lastfm-sign-in");
@@ -6266,12 +6271,14 @@ mod tests {
         pressed_until(&mut driven, "sample-rate", 0, |settings| {
             settings.prefer_bit_perfect
         });
-        pressed_until(&mut driven, "graph-rate", 0, |settings| {
-            settings.force_graph_rate
-        });
-        pressed_until(&mut driven, "graph-rate", 1, |settings| {
-            !settings.force_graph_rate
-        });
+        if Group::GraphRate.is_offered() {
+            pressed_until(&mut driven, "graph-rate", 0, |settings| {
+                settings.force_graph_rate
+            });
+            pressed_until(&mut driven, "graph-rate", 1, |settings| {
+                !settings.force_graph_rate
+            });
+        }
         for (index, millis) in [100, 250, 500, 1_000].into_iter().enumerate() {
             pressed_until(&mut driven, "buffer", index, |settings| {
                 settings.buffer == Duration::from_millis(millis)
@@ -6349,6 +6356,9 @@ mod tests {
     fn the_bluetooth_choices_appear_with_the_switch_and_each_reaches_the_engine(
         cx: &mut TestAppContext,
     ) {
+        if !Group::Bluetooth.is_offered() {
+            return;
+        }
         let mut driven = Driven::open(cx, catalog());
         showing_settings(&mut driven, SettingsCategory::Output);
         let wake = |driven: &mut Driven| {

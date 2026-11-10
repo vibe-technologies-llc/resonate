@@ -54,7 +54,10 @@ where the file held offsets, in the same record layout. Its output was compared 
 ## gpui
 
 - **gpui and `gpui_platform` are git dependencies of Zed's `main`, pinned by `rev`**, since the
-  published 0.2.2 is long stale. `gpui_platform` carries the platform backends (`wayland` only);
+  published 0.2.2 is long stale. `gpui_platform` carries the platform backends (`wayland` only on
+  Linux; on macOS `resonate-ui` adds `font-kit`, without which `gpui_macos` draws no text, and
+  `runtime_shaders`, which compiles the Metal shaders as the window opens so a build needs no Metal
+  toolchain);
   `resonate-ui` builds its `Application` through `gpui_platform::application()`. A bump moves both
   revs together, and `cargo test -p resonate-ui` is the check: the test scheduler refuses a wake
   from another thread, so `Driven::built_over` and the clipboard tests call

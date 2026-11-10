@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     collections::BTreeSet,
+    future,
     num::NonZeroUsize,
     path::PathBuf,
     rc::Rc,
@@ -11,8 +12,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use gpui::{
-    App, AppContext as _, Bounds, Context, Global, KeyBinding, Task, TitlebarOptions, WindowBounds,
-    WindowDecorations, WindowOptions, actions, px, size,
+    App, AppContext as _, Bounds, Context, Global, KeyBinding, OperatingSystem, Task,
+    TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
     Appearance, ArtistsDrawn, DesktopLook, FrameSpan, Frames, HeadYaw, MediaLocation, Presence,
@@ -49,7 +50,7 @@ use crate::{
         SignsInToYoutubeMusic, Sourcing, Stored, Tabs, WindowButtons, WindowSize,
     },
     theme, toast,
-    views::{dropping::Copying, field},
+    views::{chrome, dropping::Copying, field},
 };
 
 const APP_ID: &str = "resonate";
@@ -148,6 +149,14 @@ actions!(
         TabOnward,
         Listen,
         Quit,
+        About,
+        Hide,
+        HideOthers,
+        ShowAll,
+        Minimise,
+        Zoom,
+        CloseTheWindow,
+        ToggleFullScreen,
         BandHigher,
         BandLower,
         BandLouder,
@@ -854,7 +863,7 @@ const BACK_KEY: &str = "back";
 
 const MENU_KEY: &str = "menu";
 
-fn answering_anywhere() -> Vec<KeyBinding> {
+fn answering_to_the_keys_a_keyboard_carries() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new(PLAY_KEY, TogglePlayPause, None),
         KeyBinding::new(PAUSE_KEY, Pause, None),
@@ -863,64 +872,86 @@ fn answering_anywhere() -> Vec<KeyBinding> {
         KeyBinding::new(PREVIOUS_TRACK_KEY, Previous, None),
         KeyBinding::new(FORWARD_KEY, Next, None),
         KeyBinding::new(BACK_KEY, Previous, None),
-        KeyBinding::new("ctrl-shift-right", Next, None),
-        KeyBinding::new("ctrl-shift-left", Previous, None),
-        KeyBinding::new("ctrl-f", FocusSearch, None),
+    ]
+}
+
+fn answering_as_a_mac_expects() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("cmd-h", Hide, None),
+        KeyBinding::new("alt-cmd-h", HideOthers, None),
+        KeyBinding::new("cmd-m", Minimise, None),
+        KeyBinding::new("cmd-w", CloseTheWindow, None),
+        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+    ]
+}
+
+fn answering_anywhere(system: OperatingSystem) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new(chord!(next_anywhere).on(system), Next, None),
+        KeyBinding::new(chord!(previous_anywhere).on(system), Previous, None),
+        KeyBinding::new(chord!(find).on(system), FocusSearch, None),
         KeyBinding::new("tab", ReachNext, None),
         KeyBinding::new("shift-tab", ReachPrevious, None),
-        KeyBinding::new("ctrl-tab", NextPane, None),
-        KeyBinding::new("ctrl-shift-tab", PreviousPane, None),
-        KeyBinding::new("ctrl-comma", FocusFilter, None),
-        KeyBinding::new(key!(listen), Listen, None),
-        KeyBinding::new(key!(quit), Quit, None),
+        KeyBinding::new(chord!(next_pane).on(system), NextPane, None),
+        KeyBinding::new(chord!(previous_pane).on(system), PreviousPane, None),
+        KeyBinding::new(chord!(find_a_setting).on(system), FocusFilter, None),
+        KeyBinding::new(chord!(listen).on(system), Listen, None),
+        KeyBinding::new(chord!(quit).on(system), Quit, None),
     ]
 }
 
-fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
+fn answering_away_from_a_field(typed: Option<&str>, system: OperatingSystem) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new(key!(play_pause), PlayPauseUnlessTyping, typed),
-        KeyBinding::new(key!(stop), Stop, typed),
-        KeyBinding::new(key!(seek), SeekForward, typed),
-        KeyBinding::new(key!(seek_back), SeekBackward, typed),
-        KeyBinding::new(key!(seek_further), SeekFurtherForward, typed),
-        KeyBinding::new(key!(seek_further_back), SeekFurtherBackward, typed),
-        KeyBinding::new(key!(mute), ToggleMute, typed),
-        KeyBinding::new(key!(queue), ToggleQueue, typed),
-        KeyBinding::new(key!(hold_the_picture), HoldThePicture, typed),
-        KeyBinding::new(key!(next), Next, typed),
-        KeyBinding::new(key!(previous), Previous, typed),
-        KeyBinding::new(key!(shuffle), ToggleShuffle, typed),
-        KeyBinding::new(key!(repeat), CycleRepeat, typed),
-        KeyBinding::new(key!(louder), VolumeUp, typed),
-        KeyBinding::new(key!(quieter), VolumeDown, typed),
-        KeyBinding::new(key!(reach_above), ReachAbove, typed),
-        KeyBinding::new(key!(reach_below), ReachBelow, typed),
-        KeyBinding::new(key!(widen_above), WidenAbove, typed),
-        KeyBinding::new(key!(widen_below), WidenBelow, typed),
-        KeyBinding::new(key!(reach_first), ReachFirst, typed),
-        KeyBinding::new(key!(reach_last), ReachLast, typed),
-        KeyBinding::new(key!(reach_page_above), ReachPageAbove, typed),
-        KeyBinding::new(key!(reach_page_below), ReachPageBelow, typed),
-        KeyBinding::new(key!(reach_everything), ReachEverything, typed),
-        KeyBinding::new(key!(choose_reached), ChooseReached, typed),
-        KeyBinding::new(key!(hop_above), HopAbove, typed),
-        KeyBinding::new(key!(hop_below), HopBelow, typed),
-        KeyBinding::new(key!(drop_reached), DropReached, typed),
-        KeyBinding::new(key!(raise_row), RaiseRow, typed),
-        KeyBinding::new(key!(lower_row), LowerRow, typed),
-        KeyBinding::new(key!(play_reached), PlayReached, typed),
-        KeyBinding::new(key!(open_menu), OpenTheMenu, typed),
+        KeyBinding::new(chord!(play_pause).on(system), PlayPauseUnlessTyping, typed),
+        KeyBinding::new(chord!(stop).on(system), Stop, typed),
+        KeyBinding::new(chord!(seek).on(system), SeekForward, typed),
+        KeyBinding::new(chord!(seek_back).on(system), SeekBackward, typed),
+        KeyBinding::new(chord!(seek_further).on(system), SeekFurtherForward, typed),
+        KeyBinding::new(
+            chord!(seek_further_back).on(system),
+            SeekFurtherBackward,
+            typed,
+        ),
+        KeyBinding::new(chord!(mute).on(system), ToggleMute, typed),
+        KeyBinding::new(chord!(queue).on(system), ToggleQueue, typed),
+        KeyBinding::new(chord!(hold_the_picture).on(system), HoldThePicture, typed),
+        KeyBinding::new(chord!(next).on(system), Next, typed),
+        KeyBinding::new(chord!(previous).on(system), Previous, typed),
+        KeyBinding::new(chord!(shuffle).on(system), ToggleShuffle, typed),
+        KeyBinding::new(chord!(repeat).on(system), CycleRepeat, typed),
+        KeyBinding::new(chord!(louder).on(system), VolumeUp, typed),
+        KeyBinding::new(chord!(quieter).on(system), VolumeDown, typed),
+        KeyBinding::new(chord!(reach_above).on(system), ReachAbove, typed),
+        KeyBinding::new(chord!(reach_below).on(system), ReachBelow, typed),
+        KeyBinding::new(chord!(widen_above).on(system), WidenAbove, typed),
+        KeyBinding::new(chord!(widen_below).on(system), WidenBelow, typed),
+        KeyBinding::new(chord!(reach_first).on(system), ReachFirst, typed),
+        KeyBinding::new(chord!(reach_last).on(system), ReachLast, typed),
+        KeyBinding::new(chord!(reach_page_above).on(system), ReachPageAbove, typed),
+        KeyBinding::new(chord!(reach_page_below).on(system), ReachPageBelow, typed),
+        KeyBinding::new(chord!(reach_everything).on(system), ReachEverything, typed),
+        KeyBinding::new(chord!(choose_reached).on(system), ChooseReached, typed),
+        KeyBinding::new(chord!(hop_above).on(system), HopAbove, typed),
+        KeyBinding::new(chord!(hop_below).on(system), HopBelow, typed),
+        KeyBinding::new(chord!(drop_reached).on(system), DropReached, typed),
+        KeyBinding::new(chord!(raise_row).on(system), RaiseRow, typed),
+        KeyBinding::new(chord!(lower_row).on(system), LowerRow, typed),
+        KeyBinding::new(chord!(play_reached).on(system), PlayReached, typed),
+        KeyBinding::new(chord!(open_menu).on(system), OpenTheMenu, typed),
         KeyBinding::new(MENU_KEY, OpenTheMenu, typed),
-        KeyBinding::new(key!(undo), UndoEdit, typed),
-        KeyBinding::new(key!(redo), RedoEdit, typed),
-        KeyBinding::new("ctrl-y", RedoEdit, typed),
-        KeyBinding::new(key!(paste), PasteAway, typed),
+        KeyBinding::new(chord!(undo).on(system), UndoEdit, typed),
+        KeyBinding::new(chord!(redo).on(system), RedoEdit, typed),
+        KeyBinding::new(chord!(redo_also).on(system), RedoEdit, typed),
+        KeyBinding::new(chord!(paste).on(system), PasteAway, typed),
     ]
 }
 
-fn answering_where_the_caret_is(on_a_control: Option<&str>) -> Vec<KeyBinding> {
+fn answering_where_the_caret_is(
+    on_a_control: Option<&str>,
+    system: OperatingSystem,
+) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new(key!(leave), LeaveSearch, Some(SEARCH_CONTEXT)),
+        KeyBinding::new(chord!(leave).on(system), LeaveSearch, Some(SEARCH_CONTEXT)),
         KeyBinding::new("down", GoToTheResults, Some(SEARCH_CONTEXT)),
         KeyBinding::new("tab", TabOnward, Some(SEARCH_CONTEXT)),
         KeyBinding::new("space", PressControl, on_a_control),
@@ -929,48 +960,65 @@ fn answering_where_the_caret_is(on_a_control: Option<&str>) -> Vec<KeyBinding> {
     ]
 }
 
-fn answering_on_a_band(on_a_band: Option<&str>) -> Vec<KeyBinding> {
+fn answering_on_a_band(on_a_band: Option<&str>, system: OperatingSystem) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new(key!(band_higher), BandHigher, on_a_band),
-        KeyBinding::new(key!(band_lower), BandLower, on_a_band),
-        KeyBinding::new(key!(band_louder), BandLouder, on_a_band),
-        KeyBinding::new(key!(band_quieter), BandQuieter, on_a_band),
-        KeyBinding::new(key!(band_narrower), BandNarrower, on_a_band),
-        KeyBinding::new(key!(band_wider), BandWider, on_a_band),
+        KeyBinding::new(chord!(band_higher).on(system), BandHigher, on_a_band),
+        KeyBinding::new(chord!(band_lower).on(system), BandLower, on_a_band),
+        KeyBinding::new(chord!(band_louder).on(system), BandLouder, on_a_band),
+        KeyBinding::new(chord!(band_quieter).on(system), BandQuieter, on_a_band),
+        KeyBinding::new(chord!(band_narrower).on(system), BandNarrower, on_a_band),
+        KeyBinding::new(chord!(band_wider).on(system), BandWider, on_a_band),
     ]
 }
 
-fn answering_on_a_rail(on_a_rail: Option<&str>) -> Vec<KeyBinding> {
+fn answering_on_a_rail(on_a_rail: Option<&str>, system: OperatingSystem) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new(key!(rail_on), RailOn, on_a_rail),
-        KeyBinding::new(key!(rail_back), RailBack, on_a_rail),
-        KeyBinding::new(key!(rail_up), RailOn, on_a_rail),
-        KeyBinding::new(key!(rail_down), RailBack, on_a_rail),
+        KeyBinding::new(chord!(rail_on).on(system), RailOn, on_a_rail),
+        KeyBinding::new(chord!(rail_back).on(system), RailBack, on_a_rail),
+        KeyBinding::new(chord!(rail_up).on(system), RailOn, on_a_rail),
+        KeyBinding::new(chord!(rail_down).on(system), RailBack, on_a_rail),
     ]
 }
 
-fn answering_in_the_order(in_the_order: Option<&str>) -> Vec<KeyBinding> {
+fn answering_in_the_order(in_the_order: Option<&str>, system: OperatingSystem) -> Vec<KeyBinding> {
     vec![
-        KeyBinding::new(key!(order_above), OrderAbove, in_the_order),
-        KeyBinding::new(key!(order_below), OrderBelow, in_the_order),
-        KeyBinding::new(key!(order_first), OrderFirst, in_the_order),
-        KeyBinding::new(key!(order_last), OrderLast, in_the_order),
-        KeyBinding::new(key!(read_the_first_way), ReadTheFirstWay, in_the_order),
-        KeyBinding::new(key!(read_the_other_way), ReadTheOtherWay, in_the_order),
-        KeyBinding::new(key!(take_the_order), TakeTheOrder, in_the_order),
+        KeyBinding::new(chord!(order_above).on(system), OrderAbove, in_the_order),
+        KeyBinding::new(chord!(order_below).on(system), OrderBelow, in_the_order),
+        KeyBinding::new(chord!(order_first).on(system), OrderFirst, in_the_order),
+        KeyBinding::new(chord!(order_last).on(system), OrderLast, in_the_order),
+        KeyBinding::new(
+            chord!(read_the_first_way).on(system),
+            ReadTheFirstWay,
+            in_the_order,
+        ),
+        KeyBinding::new(
+            chord!(read_the_other_way).on(system),
+            ReadTheOtherWay,
+            in_the_order,
+        ),
+        KeyBinding::new(
+            chord!(take_the_order).on(system),
+            TakeTheOrder,
+            in_the_order,
+        ),
     ]
 }
 
-pub(crate) fn bindings() -> Vec<KeyBinding> {
+pub(crate) fn bindings(system: OperatingSystem) -> Vec<KeyBinding> {
     let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
-    let mut bindings = answering_anywhere();
-    bindings.extend(answering_away_from_a_field(Some(&away_from_search)));
-    bindings.extend(answering_where_the_caret_is(Some(CONTROL_CONTEXT)));
-    bindings.extend(answering_on_a_band(Some(BAND_CONTEXT)));
-    bindings.extend(answering_on_a_rail(Some(RAIL_CONTEXT)));
-    bindings.extend(answering_in_the_order(Some(ORDER_CONTEXT)));
-    bindings.extend(field::bindings());
+    let mut bindings = if system == OperatingSystem::Mac {
+        answering_as_a_mac_expects()
+    } else {
+        answering_to_the_keys_a_keyboard_carries()
+    };
+    bindings.extend(answering_anywhere(system));
+    bindings.extend(answering_away_from_a_field(Some(&away_from_search), system));
+    bindings.extend(answering_where_the_caret_is(Some(CONTROL_CONTEXT), system));
+    bindings.extend(answering_on_a_band(Some(BAND_CONTEXT), system));
+    bindings.extend(answering_on_a_rail(Some(RAIL_CONTEXT), system));
+    bindings.extend(answering_in_the_order(Some(ORDER_CONTEXT), system));
+    bindings.extend(field::bindings(system));
     bindings
 }
 
@@ -989,6 +1037,24 @@ pub struct Bus {
     pub followed: Receiver<Followed>,
     pub look: DesktopLook,
     pub desktop: Receiver<DesktopLook>,
+    pub opened: Sender<Vec<String>>,
+}
+
+pub type Leaving = Box<dyn FnOnce()>;
+
+struct LeftOnce(RefCell<Option<Leaving>>);
+
+impl LeftOnce {
+    fn by(leaving: Leaving) -> Rc<Self> {
+        Rc::new(Self(RefCell::new(Some(leaving))))
+    }
+
+    fn leave(&self) {
+        let leaving = self.0.borrow_mut().take();
+        if let Some(leaving) = leaving {
+            leaving();
+        }
+    }
 }
 
 fn follow_the_desktop_when_told(told: Receiver<DesktopLook>, cx: &mut App) {
@@ -1104,6 +1170,7 @@ pub fn run(
     stored: Stored,
     appearance: Appearance,
     bus: Bus,
+    leaving: Leaving,
 ) -> Result<()> {
     let first_read = FirstRead::start(&library);
     let winding_down = Arc::clone(&library);
@@ -1116,9 +1183,37 @@ pub fn run(
     let failure = Rc::new(RefCell::new(None));
     let recorded = Rc::clone(&failure);
 
+    let left = LeftOnce::by(Box::new(move || {
+        if !copying_when_closed.wind_down(WIND_DOWN_WITHIN) {
+            tracing::warn!("a copy of dropped songs was still running when the window left");
+        }
+        if !winding_down.wind_down(WIND_DOWN_WITHIN) {
+            tracing::warn!("a library pass was still running when the window left");
+        }
+        leaving();
+    }));
+    let left_as_the_app_quits = Rc::clone(&left);
+
     let application = gpui_platform::application().with_assets(icons::Embedded);
+    let opened = bus.opened.clone();
+    application.on_open_urls(move |links| {
+        if opened.send(links).is_err() {
+            tracing::warn!("nothing takes what the system opens any more");
+        }
+    });
 
     application.run(move |cx: &mut App| {
+        cx.on_app_quit(move |_| {
+            left_as_the_app_quits.leave();
+            future::ready(())
+        })
+        .detach();
+        let carried = crate::fonts::bundled();
+        if !carried.is_empty()
+            && let Err(error) = cx.text_system().add_fonts(carried)
+        {
+            tracing::warn!(?error, "the fonts the application carries could not be loaded");
+        }
         crate::fonts::settle(&cx.text_system().all_font_names());
         cx.set_global(Drawer::new());
         cx.set_global(ResonateApp {
@@ -1190,7 +1285,8 @@ pub fn run(
             copying,
         });
         cx.set_reduce_motion(stored.reduced_motion);
-        cx.bind_keys(bindings());
+        cx.bind_keys(bindings(cx.platform_info().os));
+        crate::app_menu::lay_out(cx);
         cx.activate(true);
         close_when_asked(bus.quit, cx);
         raise_when_asked(bus.raise, cx);
@@ -1209,8 +1305,8 @@ pub fn run(
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions {
                 title: Some(WINDOW_TITLE.into()),
-                appears_transparent: cfg!(windows),
-                ..TitlebarOptions::default()
+                appears_transparent: chrome::THE_HEADER_STANDS_IN_THE_TITLE_BAR,
+                traffic_light_position: chrome::traffic_lights_placed(),
             }),
             window_decorations: Some(WindowDecorations::Client),
             window_min_size: Some(size(
@@ -1234,12 +1330,7 @@ pub fn run(
         }
     });
 
-    if !copying_when_closed.wind_down(WIND_DOWN_WITHIN) {
-        tracing::warn!("a copy of dropped songs was still running when the window left");
-    }
-    if !winding_down.wind_down(WIND_DOWN_WITHIN) {
-        tracing::warn!("a library pass was still running when the window left");
-    }
+    left.leave();
 
     match failure.borrow_mut().take() {
         Some(error) => Err(error),
@@ -1343,6 +1434,20 @@ mod tests {
     }
 
     #[test]
+    fn what_is_done_on_leaving_is_done_once_whichever_way_the_window_leaves() {
+        let done = Rc::new(std::cell::Cell::new(0));
+        let counted = Rc::clone(&done);
+        let left = LeftOnce::by(Box::new(move || counted.set(counted.get() + 1)));
+        let as_the_app_quits = Rc::clone(&left);
+
+        as_the_app_quits.leave();
+        left.leave();
+        as_the_app_quits.leave();
+
+        assert_eq!(done.get(), 1);
+    }
+
+    #[test]
     fn the_transport_keys_answer_away_from_the_field_and_not_inside_it() {
         let away = away_from_search();
 
@@ -1416,39 +1521,165 @@ mod tests {
         }
     }
 
+    const SYSTEMS: [OperatingSystem; 3] = [
+        OperatingSystem::Linux,
+        OperatingSystem::Windows,
+        OperatingSystem::Mac,
+    ];
+
+    fn spelt(binding: &KeyBinding, system: OperatingSystem) -> String {
+        binding
+            .keystrokes()
+            .iter()
+            .map(|stroke| stroke.unparse(system))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn done_by(binding: &KeyBinding) -> &'static str {
+        binding
+            .action()
+            .name()
+            .rsplit("::")
+            .next()
+            .expect("an action is named")
+    }
+
+    fn bound_to(keys: &'static str, system: OperatingSystem) -> Vec<&'static str> {
+        let named = Keystroke::parse(keys)
+            .unwrap_or_else(|_| panic!("{keys} is not a keystroke gpui can read"))
+            .unparse(system);
+
+        bindings(system)
+            .iter()
+            .filter(|binding| spelt(binding, system) == named)
+            .map(done_by)
+            .collect()
+    }
+
     #[test]
     fn every_binding_the_window_carries_is_one_gpui_can_read() {
-        assert!(bindings().len() > 20);
+        for system in SYSTEMS {
+            assert!(bindings(system).len() > 20);
+        }
     }
 
     #[test]
     fn every_key_not_named_to_answer_anywhere_is_dead_while_a_caret_is_held() {
         let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
-        for binding in answering_away_from_a_field(Some(&away_from_search)) {
-            let keys = format!("{:?}", binding.keystrokes());
-            let predicate = binding
-                .predicate()
-                .unwrap_or_else(|| panic!("{keys} is bound away from a field with no predicate"));
+        for system in SYSTEMS {
+            for binding in answering_away_from_a_field(Some(&away_from_search), system) {
+                let keys = format!("{:?}", binding.keystrokes());
+                let predicate = binding.predicate().unwrap_or_else(|| {
+                    panic!("{keys} is bound away from a field with no predicate")
+                });
 
-            assert!(
-                predicate.depth_of(&in_the_search_field()).is_none(),
-                "{keys} fires while the caret is in a field"
-            );
-            assert!(
-                predicate.depth_of(&on_a_control()).is_none(),
-                "{keys} fires while a settings control holds the caret"
-            );
-            assert!(
-                predicate.depth_of(&at_rest()).is_some(),
-                "{keys} answers nowhere at all"
-            );
+                assert!(
+                    predicate.depth_of(&in_the_search_field()).is_none(),
+                    "{keys} fires while the caret is in a field"
+                );
+                assert!(
+                    predicate.depth_of(&on_a_control()).is_none(),
+                    "{keys} fires while a settings control holds the caret"
+                );
+                assert!(
+                    predicate.depth_of(&at_rest()).is_some(),
+                    "{keys} answers nowhere at all"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_chord_answers_twice_where_the_same_things_hold_the_caret_on_any_system() {
+        for system in SYSTEMS {
+            let mut seen = AHashSet::new();
+
+            for binding in bindings(system) {
+                let held = binding
+                    .predicate()
+                    .map(|predicate| format!("{predicate:?}"))
+                    .unwrap_or_default();
+                let keys = spelt(&binding, system);
+
+                assert!(
+                    seen.insert((held.clone(), keys.clone())),
+                    "{keys} is bound twice under {held:?} on {system:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_chords_a_mac_keeps_for_itself_do_what_the_system_says_and_nothing_else() {
+        let mac = OperatingSystem::Mac;
+
+        assert_eq!(bound_to("cmd-h", mac), ["Hide"]);
+        assert_eq!(bound_to("alt-cmd-h", mac), ["HideOthers"]);
+        assert_eq!(bound_to("cmd-m", mac), ["Minimise"]);
+        assert_eq!(bound_to("cmd-w", mac), ["CloseTheWindow"]);
+        assert_eq!(bound_to("cmd-q", mac), ["Quit"]);
+        assert_eq!(bound_to("cmd-,", mac), ["FocusFilter"]);
+        assert_eq!(bound_to("ctrl-cmd-f", mac), ["ToggleFullScreen"]);
+        assert!(bound_to("cmd-space", mac).is_empty());
+        assert!(bound_to("cmd-tab", mac).is_empty());
+        assert!(bound_to("cmd-shift-tab", mac).is_empty());
+    }
+
+    #[test]
+    fn a_mac_steers_with_command_and_leaves_control_to_the_chords_command_cannot_take() {
+        let mac = OperatingSystem::Mac;
+
+        assert_eq!(bound_to("cmd-u", mac), ["ToggleQueue"]);
+        assert_eq!(bound_to("cmd-s", mac), ["Stop"]);
+        assert_eq!(bound_to("cmd-f", mac), ["FocusSearch"]);
+        assert_eq!(bound_to("cmd-up", mac), ["VolumeUp"]);
+        assert_eq!(bound_to("ctrl-m", mac), ["ToggleMute"]);
+        assert_eq!(bound_to("ctrl-space", mac), ["ChooseReached"]);
+        assert_eq!(bound_to("ctrl-tab", mac), ["NextPane"]);
+        assert!(bound_to("ctrl-u", mac).is_empty());
+        assert!(bound_to("ctrl-s", mac).is_empty());
+        assert!(bound_to("ctrl-q", mac).is_empty());
+    }
+
+    #[test]
+    fn nothing_a_mac_alone_binds_is_bound_anywhere_else() {
+        for system in [OperatingSystem::Linux, OperatingSystem::Windows] {
+            for binding in bindings(system) {
+                assert!(
+                    binding
+                        .keystrokes()
+                        .iter()
+                        .all(|stroke| !stroke.modifiers().platform),
+                    "{} takes the system's own key on {system:?}",
+                    spelt(&binding, system)
+                );
+            }
+
+            assert_eq!(bound_to("ctrl-u", system), ["ToggleQueue"]);
+            assert_eq!(bound_to("ctrl-,", system), ["FocusFilter"]);
+            assert_eq!(bound_to("ctrl-h", system), ["ToggleShuffle"]);
+        }
+    }
+
+    #[test]
+    fn a_mac_binds_none_of_the_keys_only_another_keyboard_carries() {
+        for named in [
+            PLAY_KEY,
+            PAUSE_KEY,
+            STOP_KEY,
+            NEXT_TRACK_KEY,
+            PREVIOUS_TRACK_KEY,
+        ] {
+            assert!(bound_to(named, OperatingSystem::Mac).is_empty());
+            assert_eq!(bound_to(named, OperatingSystem::Linux).len(), 1);
         }
     }
 
     #[test]
     fn the_arrows_in_the_sort_pop_up_are_its_own_before_they_are_the_windows() {
-        let keymap = gpui::Keymap::new(bindings());
+        let keymap = gpui::Keymap::new(bindings(OperatingSystem::Linux));
         let window = KeyContext::parse(WINDOW_CONTEXT).expect("the window names itself");
         let pop_up = KeyContext::parse(ORDER_CONTEXT).expect("the pop-up names itself");
         let control = KeyContext::parse(CONTROL_CONTEXT).expect("the control names itself");
@@ -1486,7 +1717,7 @@ mod tests {
 
     #[test]
     fn down_and_tab_in_a_field_are_the_fields_own_before_they_are_the_windows() {
-        let keymap = gpui::Keymap::new(bindings());
+        let keymap = gpui::Keymap::new(bindings(OperatingSystem::Linux));
         for (key, wanted) in [("down", "GoToTheResults"), ("tab", "TabOnward")] {
             let typed = [Keystroke::parse(key).expect("a key gpui reads")];
             let (found, _) = keymap.bindings_for_input(&typed, &in_the_search_field());
@@ -1503,11 +1734,13 @@ mod tests {
 
     #[test]
     fn the_keys_that_answer_anywhere_are_the_ones_a_field_could_never_want() {
-        for binding in answering_anywhere() {
-            assert!(
-                binding.predicate().is_none(),
-                "a key named to answer anywhere carries a predicate"
-            );
+        for system in SYSTEMS {
+            for binding in answering_anywhere(system) {
+                assert!(
+                    binding.predicate().is_none(),
+                    "a key named to answer anywhere carries a predicate"
+                );
+            }
         }
     }
 

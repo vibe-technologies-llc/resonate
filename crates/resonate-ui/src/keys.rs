@@ -1,171 +1,316 @@
+use std::{borrow::Cow, sync::OnceLock};
+
+use gpui::OperatingSystem;
+
 use crate::words;
 
-macro_rules! key {
+macro_rules! secondary {
+    ($keys:literal) => {
+        crate::keys::Chord::apart(concat!("cmd-", $keys), concat!("ctrl-", $keys))
+    };
+}
+
+macro_rules! alike {
+    ($keys:literal) => {
+        crate::keys::Chord::alike($keys)
+    };
+}
+
+macro_rules! chord {
     (play_pause) => {
-        "space"
+        alike!("space")
     };
     (previous) => {
-        "ctrl-left"
+        secondary!("left")
     };
     (next) => {
-        "ctrl-right"
+        secondary!("right")
     };
     (louder) => {
-        "ctrl-up"
+        secondary!("up")
     };
     (quieter) => {
-        "ctrl-down"
+        secondary!("down")
     };
     (mute) => {
-        "ctrl-m"
+        alike!("ctrl-m")
     };
     (seek) => {
-        "right"
+        alike!("right")
     };
     (seek_back) => {
-        "left"
+        alike!("left")
     };
     (seek_further) => {
-        "shift-right"
+        alike!("shift-right")
     };
     (seek_further_back) => {
-        "shift-left"
+        alike!("shift-left")
     };
     (queue) => {
-        "ctrl-u"
+        secondary!("u")
     };
     (stop) => {
-        "ctrl-s"
+        secondary!("s")
     };
     (shuffle) => {
-        "ctrl-h"
+        alike!("ctrl-h")
     };
     (repeat) => {
-        "ctrl-r"
+        secondary!("r")
     };
     (listen) => {
-        "ctrl-l"
+        secondary!("l")
     };
     (hold_the_picture) => {
-        "ctrl-p"
+        secondary!("p")
     };
     (quit) => {
-        "ctrl-q"
+        secondary!("q")
     };
     (leave) => {
-        "escape"
+        alike!("escape")
     };
     (undo) => {
-        "ctrl-z"
+        secondary!("z")
     };
     (paste) => {
-        "ctrl-v"
+        secondary!("v")
     };
     (redo) => {
-        "ctrl-shift-z"
+        secondary!("shift-z")
     };
     (reach_above) => {
-        "up"
+        alike!("up")
     };
     (reach_below) => {
-        "down"
+        alike!("down")
     };
     (widen_above) => {
-        "shift-up"
+        alike!("shift-up")
     };
     (widen_below) => {
-        "shift-down"
+        alike!("shift-down")
     };
     (reach_first) => {
-        "home"
+        alike!("home")
     };
     (reach_last) => {
-        "end"
+        alike!("end")
     };
     (reach_page_above) => {
-        "pageup"
+        alike!("pageup")
     };
     (reach_page_below) => {
-        "pagedown"
+        alike!("pagedown")
     };
     (reach_everything) => {
-        "ctrl-a"
+        secondary!("a")
     };
     (choose_reached) => {
-        "ctrl-space"
+        alike!("ctrl-space")
     };
     (hop_above) => {
-        "ctrl-shift-up"
+        secondary!("shift-up")
     };
     (hop_below) => {
-        "ctrl-shift-down"
+        secondary!("shift-down")
     };
     (raise_row) => {
-        "alt-up"
+        alike!("alt-up")
     };
     (lower_row) => {
-        "alt-down"
+        alike!("alt-down")
     };
     (play_reached) => {
-        "enter"
+        alike!("enter")
     };
     (drop_reached) => {
-        "delete"
+        alike!("delete")
     };
     (open_menu) => {
-        "shift-f10"
+        alike!("shift-f10")
     };
     (band_higher) => {
-        "right"
+        alike!("right")
     };
     (band_lower) => {
-        "left"
+        alike!("left")
     };
     (band_louder) => {
-        "up"
+        alike!("up")
     };
     (band_quieter) => {
-        "down"
+        alike!("down")
     };
     (band_narrower) => {
-        "shift-up"
+        alike!("shift-up")
     };
     (band_wider) => {
-        "shift-down"
+        alike!("shift-down")
     };
     (rail_on) => {
-        "right"
+        alike!("right")
     };
     (rail_back) => {
-        "left"
+        alike!("left")
     };
     (rail_up) => {
-        "up"
+        alike!("up")
     };
     (rail_down) => {
-        "down"
+        alike!("down")
     };
     (order_above) => {
-        "up"
+        alike!("up")
     };
     (order_below) => {
-        "down"
+        alike!("down")
     };
     (order_first) => {
-        "home"
+        alike!("home")
     };
     (order_last) => {
-        "end"
+        alike!("end")
     };
     (read_the_first_way) => {
-        "left"
+        alike!("left")
     };
     (read_the_other_way) => {
-        "right"
+        alike!("right")
     };
     (take_the_order) => {
-        "enter"
+        alike!("enter")
     };
+    (next_anywhere) => {
+        secondary!("shift-right")
+    };
+    (previous_anywhere) => {
+        secondary!("shift-left")
+    };
+    (find) => {
+        secondary!("f")
+    };
+    (find_a_setting) => {
+        secondary!(",")
+    };
+    (next_pane) => {
+        alike!("ctrl-tab")
+    };
+    (previous_pane) => {
+        alike!("ctrl-shift-tab")
+    };
+    (redo_also) => {
+        secondary!("y")
+    };
+    (cut) => {
+        secondary!("x")
+    };
+    (copy) => {
+        secondary!("c")
+    };
+    (select_everything) => {
+        secondary!("a")
+    };
+    (word_left) => {
+        crate::keys::Chord::apart("alt-left", "ctrl-left")
+    };
+    (word_right) => {
+        crate::keys::Chord::apart("alt-right", "ctrl-right")
+    };
+    (select_word_left) => {
+        crate::keys::Chord::apart("alt-shift-left", "ctrl-shift-left")
+    };
+    (select_word_right) => {
+        crate::keys::Chord::apart("alt-shift-right", "ctrl-shift-right")
+    };
+    (delete_word_back) => {
+        crate::keys::Chord::apart("alt-backspace", "ctrl-backspace")
+    };
+    (delete_word_forward) => {
+        crate::keys::Chord::apart("alt-delete", "ctrl-delete")
+    };
+}
+
+macro_rules! key {
+    ($name:ident) => {{
+        static SHOWN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        crate::keys::shown(chord!($name), &SHOWN)
+    }};
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Chord {
+    on_a_mac: &'static str,
+    elsewhere: &'static str,
+}
+
+impl Chord {
+    pub(crate) const fn alike(keys: &'static str) -> Self {
+        Self {
+            on_a_mac: keys,
+            elsewhere: keys,
+        }
+    }
+
+    pub(crate) const fn apart(on_a_mac: &'static str, elsewhere: &'static str) -> Self {
+        Self {
+            on_a_mac,
+            elsewhere,
+        }
+    }
+
+    pub(crate) fn on(self, system: OperatingSystem) -> &'static str {
+        if system == OperatingSystem::Mac {
+            self.on_a_mac
+        } else {
+            self.elsewhere
+        }
+    }
+}
+
+pub(crate) fn shown(chord: Chord, kept: &'static OnceLock<String>) -> &'static str {
+    if cfg!(target_os = "macos") {
+        kept.get_or_init(|| in_apples_marks(chord.on_a_mac))
+    } else {
+        chord.elsewhere
+    }
+}
+
+const HELD_IN_APPLES_ORDER: [(&str, char); 4] =
+    [("ctrl", '⌃'), ("alt", '⌥'), ("shift", '⇧'), ("cmd", '⌘')];
+
+fn in_apples_marks(keys: &str) -> String {
+    let (held, key) = keys.rsplit_once('-').unwrap_or(("", keys));
+
+    let mut marks: String = HELD_IN_APPLES_ORDER
+        .iter()
+        .filter(|(named, _)| held.split('-').any(|part| part == *named))
+        .map(|(_, mark)| *mark)
+        .collect();
+    marks.push_str(&key_as_apple_marks_it(key));
+    marks
+}
+
+fn key_as_apple_marks_it(key: &str) -> Cow<'static, str> {
+    let marked = match key {
+        "left" => "←",
+        "right" => "→",
+        "up" => "↑",
+        "down" => "↓",
+        "escape" => "⎋",
+        "tab" => "⇥",
+        "enter" => "↩",
+        "backspace" => "⌫",
+        "delete" => "⌦",
+        "home" => "↖",
+        "end" => "↘",
+        "pageup" => "⇞",
+        "pagedown" => "⇟",
+        "space" => words::keys::space(),
+        lettered => return Cow::Owned(lettered.to_uppercase()),
+    };
+    Cow::Borrowed(marked)
 }
 
 pub(crate) fn keyed(what: &str, ways: &[&str]) -> String {
@@ -183,90 +328,164 @@ fn ways_said(ways: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use gpui::KeyBinding;
+    use gpui::{KeyBinding, Keystroke, OperatingSystem};
 
-    use super::keyed;
+    use super::{Chord, in_apples_marks, keyed};
     use crate::app;
 
-    const NAMED: [&str; 50] = [
-        key!(play_pause),
-        key!(previous),
-        key!(next),
-        key!(louder),
-        key!(quieter),
-        key!(mute),
-        key!(seek_further),
-        key!(seek_further_back),
-        key!(queue),
-        key!(stop),
-        key!(shuffle),
-        key!(repeat),
-        key!(listen),
-        key!(hold_the_picture),
-        key!(quit),
-        key!(leave),
-        key!(undo),
-        key!(paste),
-        key!(redo),
-        key!(reach_above),
-        key!(reach_below),
-        key!(widen_above),
-        key!(widen_below),
-        key!(reach_first),
-        key!(reach_last),
-        key!(reach_page_above),
-        key!(reach_page_below),
-        key!(reach_everything),
-        key!(raise_row),
-        key!(lower_row),
-        key!(play_reached),
-        key!(drop_reached),
-        key!(open_menu),
-        key!(band_higher),
-        key!(band_lower),
-        key!(band_louder),
-        key!(band_quieter),
-        key!(band_narrower),
-        key!(band_wider),
-        key!(rail_on),
-        key!(rail_back),
-        key!(rail_up),
-        key!(rail_down),
-        key!(order_above),
-        key!(order_below),
-        key!(order_first),
-        key!(order_last),
-        key!(read_the_first_way),
-        key!(read_the_other_way),
-        key!(take_the_order),
+    const NAMED: [Chord; 54] = [
+        chord!(play_pause),
+        chord!(previous),
+        chord!(next),
+        chord!(louder),
+        chord!(quieter),
+        chord!(mute),
+        chord!(seek_further),
+        chord!(seek_further_back),
+        chord!(queue),
+        chord!(stop),
+        chord!(shuffle),
+        chord!(repeat),
+        chord!(listen),
+        chord!(hold_the_picture),
+        chord!(quit),
+        chord!(leave),
+        chord!(undo),
+        chord!(paste),
+        chord!(redo),
+        chord!(reach_above),
+        chord!(reach_below),
+        chord!(widen_above),
+        chord!(widen_below),
+        chord!(reach_first),
+        chord!(reach_last),
+        chord!(reach_page_above),
+        chord!(reach_page_below),
+        chord!(reach_everything),
+        chord!(raise_row),
+        chord!(lower_row),
+        chord!(play_reached),
+        chord!(drop_reached),
+        chord!(open_menu),
+        chord!(band_higher),
+        chord!(band_lower),
+        chord!(band_louder),
+        chord!(band_quieter),
+        chord!(band_narrower),
+        chord!(band_wider),
+        chord!(rail_on),
+        chord!(rail_back),
+        chord!(rail_up),
+        chord!(rail_down),
+        chord!(order_above),
+        chord!(order_below),
+        chord!(order_first),
+        chord!(order_last),
+        chord!(read_the_first_way),
+        chord!(read_the_other_way),
+        chord!(take_the_order),
+        chord!(find),
+        chord!(find_a_setting),
+        chord!(cut),
+        chord!(copy),
     ];
 
+    const SYSTEMS: [OperatingSystem; 3] = [
+        OperatingSystem::Linux,
+        OperatingSystem::Windows,
+        OperatingSystem::Mac,
+    ];
+
+    fn spelt(keys: &'static str, system: OperatingSystem) -> String {
+        Keystroke::parse(keys)
+            .unwrap_or_else(|_| panic!("{keys} is not a keystroke gpui can read"))
+            .unparse(system)
+    }
+
     #[test]
-    fn every_key_a_hint_names_is_a_key_something_is_bound_to() {
-        let bound: Vec<String> = app::bindings()
-            .iter()
-            .map(|binding: &KeyBinding| {
-                binding
-                    .keystrokes()
-                    .iter()
-                    .map(|stroke| stroke.unparse(gpui::OperatingSystem::Linux))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
-            .collect();
-        for named in NAMED {
-            assert!(
-                bound.iter().any(|stroke| stroke == named),
-                "a hint names {named}, which nothing is bound to"
-            );
+    fn every_key_a_hint_names_is_a_key_something_is_bound_to_on_every_system() {
+        for system in SYSTEMS {
+            let bound: Vec<String> = app::bindings(system)
+                .iter()
+                .map(|binding: &KeyBinding| {
+                    binding
+                        .keystrokes()
+                        .iter()
+                        .map(|stroke| stroke.unparse(system))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect();
+
+            for named in NAMED {
+                let named = spelt(named.on(system), system);
+
+                assert!(
+                    bound.contains(&named),
+                    "a hint names {named} on {system:?}, which nothing is bound to there"
+                );
+            }
         }
     }
 
     #[test]
-    fn a_hint_said_through_the_catalog_names_what_it_does_and_then_its_keys() {
-        assert_eq!(keyed("Play", &[key!(play_pause)]), "Play — space");
+    fn a_key_is_named_away_from_a_mac_as_it_was_before_a_mac_was_built_for() {
+        for (chord, named) in [
+            (chord!(play_pause), "space"),
+            (chord!(previous), "ctrl-left"),
+            (chord!(louder), "ctrl-up"),
+            (chord!(mute), "ctrl-m"),
+            (chord!(shuffle), "ctrl-h"),
+            (chord!(queue), "ctrl-u"),
+            (chord!(redo), "ctrl-shift-z"),
+            (chord!(hop_above), "ctrl-shift-up"),
+            (chord!(choose_reached), "ctrl-space"),
+            (chord!(open_menu), "shift-f10"),
+            (chord!(find), "ctrl-f"),
+            (chord!(find_a_setting), "ctrl-,"),
+            (chord!(cut), "ctrl-x"),
+        ] {
+            assert_eq!(chord.on(OperatingSystem::Linux), named);
+            assert_eq!(chord.on(OperatingSystem::Windows), named);
+        }
+    }
+
+    #[test]
+    fn a_mac_takes_command_where_the_rest_take_control_and_keeps_the_chords_the_system_owns() {
+        assert_eq!(chord!(queue).on(OperatingSystem::Mac), "cmd-u");
+        assert_eq!(chord!(redo).on(OperatingSystem::Mac), "cmd-shift-z");
+        assert_eq!(chord!(find_a_setting).on(OperatingSystem::Mac), "cmd-,");
+
+        assert_eq!(chord!(mute).on(OperatingSystem::Mac), "ctrl-m");
+        assert_eq!(chord!(shuffle).on(OperatingSystem::Mac), "ctrl-h");
         assert_eq!(
-            keyed("Louder", &["the wheel", key!(louder)]),
+            chord!(choose_reached).on(OperatingSystem::Mac),
+            "ctrl-space"
+        );
+        assert_eq!(chord!(next_pane).on(OperatingSystem::Mac), "ctrl-tab");
+    }
+
+    #[test]
+    fn a_mac_is_shown_its_keys_in_apples_marks_and_apples_order() {
+        assert_eq!(in_apples_marks("cmd-u"), "⌘U");
+        assert_eq!(in_apples_marks("cmd-shift-z"), "⇧⌘Z");
+        assert_eq!(in_apples_marks("ctrl-cmd-f"), "⌃⌘F");
+        assert_eq!(in_apples_marks("alt-cmd-h"), "⌥⌘H");
+        assert_eq!(in_apples_marks("ctrl-m"), "⌃M");
+        assert_eq!(in_apples_marks("alt-up"), "⌥↑");
+        assert_eq!(in_apples_marks("cmd-left"), "⌘←");
+        assert_eq!(in_apples_marks("cmd-,"), "⌘,");
+        assert_eq!(in_apples_marks("shift-f10"), "⇧F10");
+        assert_eq!(in_apples_marks("escape"), "⎋");
+        assert_eq!(in_apples_marks("space"), "Space");
+        assert_eq!(in_apples_marks("ctrl-space"), "⌃Space");
+    }
+
+    #[test]
+    fn a_hint_said_through_the_catalog_names_what_it_does_and_then_its_keys() {
+        assert_eq!(keyed("Play", &["space"]), "Play — space");
+        assert_eq!(
+            keyed("Louder", &["the wheel", "ctrl-up"]),
             "Louder — the wheel or ctrl-up"
         );
         assert_eq!(

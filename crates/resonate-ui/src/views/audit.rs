@@ -212,6 +212,7 @@ mod words {
         "AudD",
         "AutoEq",
         "Clean",
+        "Core Audio",
         "Discord",
         "Explicit",
         "Jellyfin",

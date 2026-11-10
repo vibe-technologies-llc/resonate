@@ -3228,6 +3228,30 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         &zones,
         resonate_driven::ByTheirTags,
     ));
+    let syncing_for_the_window = syncing.for_the_window();
+    #[cfg(feature = "sync")]
+    let together_for_the_window = together
+        .as_ref()
+        .map(|_| together::for_the_window(&library));
+    #[cfg(not(feature = "sync"))]
+    let together_for_the_window = None;
+    let (opening, opened) = crossbeam_channel::unbounded();
+    queue_what_the_system_opens(opened, served.clone());
+    let present = Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>;
+    let leaving: resonate_ui::Leaving = {
+        let zones = Arc::clone(&zones);
+        Box::new(move || {
+            providers::stop_the_tools();
+            drop(presenter);
+            syncing.leave();
+            #[cfg(feature = "sync")]
+            party_room::out_of_the_window();
+            #[cfg(feature = "sync")]
+            drop(together);
+            submitting.leave();
+            zones.leave();
+        })
+    };
     let outcome = resonate_ui::run(
         Arc::clone(&zones),
         Arc::clone(&library),
@@ -3346,7 +3370,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             remember_settings_category: config.remembers_settings_category(),
             last_settings_category: config.remembered_settings_category(),
             presence: config.presence(),
-            present: Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>,
+            present,
             renderers,
             synchronised: resonate_ui::Synchronised {
                 enabled: config.sync.unwrap_or(true),
@@ -3357,13 +3381,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 songs: config.sync_songs.unwrap_or_default(),
                 control: config.sync_control.unwrap_or_default(),
             },
-            syncing: syncing.for_the_window(),
-            #[cfg(feature = "sync")]
-            together: together
-                .as_ref()
-                .map(|_| together::for_the_window(&library)),
-            #[cfg(not(feature = "sync"))]
-            together: None,
+            syncing: syncing_for_the_window,
+            together: together_for_the_window,
             reads_as_a_code: sync::code_reader(),
             launcher: Arc::new(launcher::Icons::start()),
             updates: updates_checked(&config),
@@ -3378,19 +3397,53 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             raise: raising,
             attention: attending,
             followed,
+            opened: opening,
         },
+        leaving,
     );
-    providers::stop_the_tools();
-    drop(presenter);
-    syncing.leave();
-    #[cfg(feature = "sync")]
-    party_room::out_of_the_window();
-    #[cfg(feature = "sync")]
-    drop(together);
-    submitting.leave();
-    zones.leave();
     outcome?;
     Ok(())
+}
+
+#[cfg(feature = "ui")]
+const WHAT_IS_OPENED_WAITS_FOR_THE_WINDOW: Duration = Duration::from_secs(15);
+
+#[cfg(feature = "ui")]
+const THE_WINDOW_IS_LOOKED_FOR_EVERY: Duration = Duration::from_millis(100);
+
+#[cfg(feature = "ui")]
+fn queue_what_the_system_opens(opened: crossbeam_channel::Receiver<Vec<String>>, served: Served) {
+    let spawned = thread::Builder::new()
+        .name("resonate-opened".to_owned())
+        .spawn(move || {
+            for links in opened {
+                let arguments: Vec<OsString> = links.into_iter().map(OsString::from).collect();
+                let Some(window) = the_window_once_it_answers() else {
+                    tracing::warn!("no window answered for what the system opened");
+                    continue;
+                };
+                if let Err(error) = queued_in(&window, &arguments, &served) {
+                    tracing::warn!(%error, "what the system opened was not queued");
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::warn!(%error, "nothing listens for what the system opens");
+    }
+}
+
+#[cfg(feature = "ui")]
+fn the_window_once_it_answers() -> Option<Running> {
+    let deadline = std::time::Instant::now() + WHAT_IS_OPENED_WAITS_FOR_THE_WINDOW;
+    loop {
+        if let Some(window) = Running::a_window().ok().flatten() {
+            return Some(window);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(THE_WINDOW_IS_LOOKED_FOR_EVERY);
+    }
 }
 
 #[cfg(feature = "ui")]
@@ -3480,6 +3533,13 @@ fn handed_to(
         tracing::warn!(%error, "the window already open did not take the settings given");
         told!("{}", words::main::untuned());
     }
+    queued_in(window, arguments, served)?;
+    said!("{}", words::main::handed(window.name().to_string()));
+    Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn queued_in(window: &Running, arguments: &[OsString], served: &Served) -> Result<()> {
     let (invitations, arguments): (Vec<&OsString>, Vec<&OsString>) = arguments
         .iter()
         .partition(|argument| names_an_invitation(argument));
@@ -3503,7 +3563,6 @@ fn handed_to(
         )?;
     }
     window.raise()?;
-    said!("{}", words::main::handed(window.name().to_string()));
     Ok(())
 }
 

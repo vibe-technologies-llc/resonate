@@ -5,7 +5,8 @@ paths:
 
 # The window
 
-`resonate-ui` is GPUI on Wayland. Depends on engine, library, lyrics, `resonate-listen`; not on
+`resonate-ui` is GPUI: on Wayland, and the same window on Windows (`windows.md`) and macOS
+(`macos.md`). Depends on engine, library, lyrics, `resonate-listen`; not on
 `resonate-codec` or image decoding (`image` only for the frame gpui's `RenderImage` is built of). A
 `Reference` arrives only as the trait object the binary hands `run` in `Lookups`; the online crate
 is never named.
@@ -17,9 +18,27 @@ is never named.
   (`the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does`).
 - **The window is its own titlebar.** `WindowDecorations::Client`; the header draws
   minimise/maximise/close, drags the window, opens the compositor's window menu; under
-  `Decorations::Server` neither controls nor drag handlers render, except on Windows, where the
-  caption is always the window's own and the system presses it (`chrome::the_caption_is_ours`,
-  `windows.md`).
+  `Decorations::Server` neither controls nor drag handlers render, except where the header stands
+  in the system's title bar (`chrome::THE_HEADER_STANDS_IN_THE_TITLE_BAR`, which is
+  `TitlebarOptions::appears_transparent`): on Windows the caption is the window's own and the system
+  presses it (`windows.md`); on macOS the system draws its traffic lights inside the header, which
+  only moves the window. Who draws the controls and what moves the window are two questions:
+  `chrome::the_window_controls_are_ours` (never on macOS) and `chrome::the_header_moves_the_window`.
+  - **On macOS the traffic lights stand in the header.** `chrome::traffic_lights_placed` is
+    `TitlebarOptions::traffic_light_position`: `TRAFFIC_LIGHTS_FROM_THE_EDGE` (16) in and mid-height
+    of `theme::header_height()` (19 down at the middling text size, a light being
+    `A_TRAFFIC_LIGHT_IS_TALL`, 14), since gpui makes the title bar a light's height plus twice that
+    drop. The wordmark is inset by `chrome::room_for_the_traffic_lights` (70: the lights' 54 and
+    the 16 before them) inside its own column, so the search field stays centred, and by nothing
+    while the window fills the screen, where the system hides the lights. A press on the bar is
+    noted and the first move after it calls `Window::start_window_move`; a double press is
+    `Window::titlebar_double_click`, which does what the system's setting says; a right press opens
+    nothing. The place is set as the window opens, so a text size changed while it is open leaves
+    the lights where they stood until the next start. `WindowDecorations::Client` is ignored there
+    (`Decorations::Server`), so `chrome::frame` draws no border, rounding or shadow of its own
+    (`the_traffic_lights_stand_mid_height_of_the_header_whatever_its_size`,
+    `the_header_keeps_room_for_the_traffic_lights_only_while_the_system_draws_them`). Never seen on
+    a Mac (`macos.md`).
   - Header: `theme::header_height()`, three columns; wordmark and controls each take sidebar width
     less padding, so the search field (at most `theme::search_width()`) centres on the window.
     Control = `theme::WINDOW_CONTROL` (31, odd so the mark centres on a whole pixel) square.
@@ -46,9 +65,45 @@ is never named.
   - **All four marks are icons, not glyphs** (`Icon::WindowMinimise`, `WindowMaximise`,
     `WindowRestore`, `WindowClose`), strokes one device pixel at drawn size, lit via
     `icons::lit_on_hover`, all `theme::WINDOW_MARK` less overlap across.
-- **Closing removes the window; quitting follows, never the reverse.** Close control, `ctrl-q` and
-  the bus's `Quit` call `Window::remove_window`; `app.rs` quits once the last window closed
-  (`App::quit` under a live window logs *window not found*).
+- **Closing removes the window; quitting follows, never the reverse.** Close control, the quit key
+  (`ctrl-q`, ⌘Q on macOS), the menu's *Close* and *Quit* and the bus's `Quit` call
+  `Window::remove_window`; `app.rs` quits once the last window closed (`App::quit` under a live
+  window logs *window not found*).
+- **What is done on leaving is done once, from gpui's own quit.** `run` takes a `Leaving`, the
+  binary's teardown (the tools, the presence, sync, the party room, shared playlists, submitting,
+  the zones), and runs it after its own two `wind_down`s from a `cx.on_app_quit` observer, or
+  after `Application::run` returns where that came first (`LeftOnce`): on macOS `run` never
+  returns, the system ending the process inside `terminate:`, so anything written after it was
+  never run there (`what_is_done_on_leaving_is_done_once_whichever_way_the_window_leaves`).
+- **What the system opens is handed to the window as a second launch hands it.**
+  `Application::on_open_urls` (a file opened from Finder, a `resonate://` link) sends each batch
+  down `Bus::opened`; the binary's `resonate-opened` thread waits for the window to answer
+  (`WHAT_IS_OPENED_WAITS_FOR_THE_WINDOW`, 15 s, for a cold start) and queues it through
+  `queued_in`, the half of `handed_to` after the tuning, so an invitation link is taken as an
+  argument is. Only macOS sends any.
+- **The menu bar is data, laid out on every system and kept by macOS alone.** `app_menu::lay_out`
+  calls `cx.set_menus` after the keys are bound (gpui reads each item's key off the keymap, the
+  earliest binding of its action): *Resonate* (About, Settings…, Services, Hide, Hide others, Show
+  all, Quit), *Edit* (Cut, Copy, Paste, Select all, as `OsAction`s over the field's actions, so
+  the system's own panels take ⌘V), *Playback* (Play or pause, Stop, Next, Previous, Shuffle,
+  Repeat, Louder, Quieter, Mute), *View* (Queue, Search, Listen, Full screen) and *Window*
+  (Minimise, Zoom, Close), its words `words/en/app_menu.ftl`. `Hide`, `HideOthers` and `ShowAll`
+  are answered by the app (`cx.on_action`), `About` (the About category), `Minimise`, `Zoom`,
+  `CloseTheWindow` and `ToggleFullScreen` by `RootView` beside `Quit`. **A menu item fires
+  whatever holds the caret**, gpui's menu dispatch reading no key context, so: *Undo* and *Redo*
+  are left out (they would walk a library edit back while a field is typed in); *Play or pause* is
+  `TogglePlayPause`, which a Mac binds to no key, never `PlayPauseUnlessTyping`'s `space`; and no
+  action in the menu is bound to a key without Command or Control
+  (`a_key_the_menu_shows_beside_an_item_is_never_one_a_listener_types`). The *Window* menu is
+  found by gpui under the literal name `Window`
+  (`the_menu_a_mac_lists_its_windows_under_is_named_as_gpui_looks_for_it`), so a language that
+  renames it loses the system's window list.
+- **A group that says nothing on a system is not offered there.** `Group::is_offered` leaves it
+  out of the pane and of the settings search: *Graph rate* and *Bluetooth* are PipeWire's alone
+  (hidden on Windows and macOS); *Notifications*, *Metered connections* and *Window buttons* are
+  hidden on macOS, where nothing notifies, no meter is read and the system draws the buttons
+  (`a_group_that_says_nothing_on_a_system_is_not_offered_there`). The sound system a sentence
+  names is `system::sound_system!`: *PipeWire*, *Windows* or *Core Audio*.
 - **The sidebar scrolls its middle and keeps its foot.** `RootView::sidebar` holds the tabs in an
   `overflow_y_scroll` region tracked by `sidebar_scroll`, with a `Scrollbars` bar over its edge; the
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
@@ -227,9 +282,12 @@ is never named.
 - **Media keys are a fallback, not the feature.** A desktop grabbing transport keys calls MPRIS; where
   none is grabbed the key reaches the window. gpui names an unmapped keysym by lowercasing
   `xkb_keysym_get_name`: `xf86audioplay`, `xf86audiopause`, `xf86audiostop`, `xf86audionext`,
-  `xf86audioprev`; `XF86Back`/`Forward` map to `back`/`forward`. All seven are in
-  `answering_anywhere`; `app.rs`'s test pins the names against `Keystroke::parse` (an unreadable name
-  binds to nothing, silently).
+  `xf86audioprev`; `XF86Back`/`Forward` map to `back`/`forward`. All seven are
+  `answering_to_the_keys_a_keyboard_carries`; `app.rs`'s test pins the names against
+  `Keystroke::parse` (an unreadable name binds to nothing, silently). **None is bound on macOS**:
+  gpui reads no system-defined event there, so the keys never reach a window (Now Playing answers
+  them, `macos.md`), and a name bound would be shown beside a menu item as its key
+  (`a_mac_binds_none_of_the_keys_only_another_keyboard_carries`).
 - **Typing at a list no search narrows jumps through it.** The search narrows tracks, albums, artists,
   playlists-index and opened-playlist panes; the queue narrows on nothing, so `RootView::typed`
   routes a keystroke there to `TypeAhead` first. `jumped` prefers a row *starting with* the letters,
@@ -262,9 +320,12 @@ is never named.
     never reaches the query.
   - **Which predicate a key carries is structural**: `answering_anywhere` (none),
     `answering_away_from_a_field` (`!Search && !Control`), `answering_where_the_caret_is` (control
-    context), `answering_on_a_band` (`BAND_CONTEXT`) are four lists; `bindings` concatenates them with
-    `field::bindings`. A new key goes in one;
-    `every_key_not_named_to_answer_anywhere_is_dead_while_a_caret_is_held` walks the second.
+    context), `answering_on_a_band` (`BAND_CONTEXT`) are four lists; `bindings(system)` concatenates
+    them with `field::bindings(system)`, behind the keys a keyboard carries or, on macOS,
+    `answering_as_a_mac_expects` (below). A new key goes in one;
+    `every_key_not_named_to_answer_anywhere_is_dead_while_a_caret_is_held` walks the second on
+    every system, and no chord stands twice under one predicate
+    (`no_chord_answers_twice_where_the_same_things_hold_the_caret_on_any_system`).
   - Escape blurs and clears, closing the naming row before clearing a search; a press outside blurs
     via `on_mouse_down_out`. `ctrl-f` takes focus deliberately (no predicate) and selects what is
     there.
@@ -412,7 +473,10 @@ is never named.
   one. JetBrains Mono (`theme::mono`) is drawn only through `kit::code`, for a string read character
   by character: the sync pairing code, the inspector's MusicBrainz ids, ISRC, barcode and catalogue
   number (`inspector::codes`) and a container's box kinds. Neither face is embedded: every package brings
-  them (`packaging.md`), and a build run from the checkout finds what the machine has, so **the drawn family is
+  them (`packaging.md`), and a build run from the checkout finds what the machine has (on macOS the
+  application carries them: `fonts::bundled` reads every font file of `Contents/Resources/Fonts`
+  beside the executable into `TextSystem::add_fonts` before the ladders are walked, and each ladder
+  ends on a face macOS has, Helvetica Neue and Menlo), so **the drawn family is
   settled once against the machine**: `fonts::settle` walks a ladder per face (Inter, Adwaita Sans,
   Cantarell, ...; JetBrains Mono, Adwaita Mono, ...) against `cx.text_system().all_font_names()` at
   start; neither ladder offers a family the other does (test); a machine with none keeps the wanted
@@ -761,14 +825,41 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   element lighting something inside it. A set, not one slot (the pointer over the artist under a cover
   is over both). `set_pane` and `show_everything` empty it; the pointer leaving the window empties it
   via `pointer_watch`.
-- **A hint names its key one way, and the key is the one bound.** `keys.rs` is `key!` (`key!(play_pause)`
-  = `space`); `app::bindings` binds through the same `key!`. The wording is what the key does, an em
-  dash, the ways (last two joined by *or*): `Louder — the wheel or ctrl-up`; a hint saying more joins
-  such sentences with full stops, a described state first. A hint from a catalog takes each key as a
-  variable (`play-hint = Play — { $keys }`, said as `words::transport::play_hint(key!(play_pause))`),
-  so the key stays the bound one and the words around it translate; `keys::keyed(what, &[ways])`
-  writes the same shape through `keys.ftl` where the words come from elsewhere
-  (`every_key_a_hint_names_is_a_key_something_is_bound_to`).
+- **A hint names its key one way, and the key is the one bound.** `keys.rs` is `chord!`
+  (`chord!(queue)` is a `Chord`: what a Mac presses and what every other system does, both
+  literals) and `key!`, the same chord as a hint shows it (`key!(play_pause)` = `space`);
+  `app::bindings(system)` binds `chord!(..).on(system)`, the system being `cx.platform_info().os`.
+  The wording is what the key does, an em dash, the ways (last two joined by *or*): `Louder — the
+  wheel or ctrl-up`; a hint saying more joins such sentences with full stops, a described state
+  first. A hint from a catalog takes each key as a variable (`play-hint = Play — { $keys }`, said as
+  `words::transport::play_hint(key!(play_pause))`), so the key stays the bound one and the words
+  around it translate; `keys::keyed(what, &[ways])` writes the same shape through `keys.ftl` where
+  the words come from elsewhere; the keys written in the search field, the settings filter and the
+  search field's menu are `key!` too
+  (`every_key_a_hint_names_is_a_key_something_is_bound_to_on_every_system`).
+- **A Mac steers with Command where the rest steer with Control.** A chord written `secondary!` is
+  `cmd-` on macOS and `ctrl-` elsewhere, and what is written `ctrl-` stays Control everywhere: mute
+  (`ctrl-m`), shuffle (`ctrl-h`), choosing a reached row apart (`ctrl-space`) and the panes
+  (`ctrl-tab`, `ctrl-shift-tab`), whose Command forms are the system's (Minimise, Hide, Spotlight,
+  the app switcher). macOS alone binds `answering_as_a_mac_expects`: Hide (⌘H), Hide others
+  (⌥⌘H), Minimise (⌘M), Close (⌘W) and Full screen (⌃⌘F); ⌘Q is the quit key and ⌘, the settings
+  filter (`secondary-,`: gpui names that key `,` on every system, so the `ctrl-comma` once bound
+  answered nothing). In a field a Mac moves and deletes by word with Option, reaches either end
+  with Command and its arrows, and takes Emacs' `ctrl-a`, `e`, `b`, `f`, `d` and `h`
+  (`field::edited_as_a_mac_expects`). A press that chooses rows apart reads
+  `Modifiers::secondary`. **A hint shows a Mac its keys in Apple's marks and Apple's order**
+  (`keys::shown`: `⌘U`, `⇧⌘Z`, `⌃M`, `⌥↑`, *Space* from `keys.ftl`; one `OnceLock` per `key!`),
+  and is the bound string itself everywhere else, byte for byte what it was. **Both spellings are
+  literals chosen at run time, never `KeyBinding::load`**: `load` resolves gpui's `secondary-` but
+  also maps every key through the platform's keyboard mapper, which `KeyBinding::new` does not and
+  which would move what Windows binds, and two literals let the tests read the Mac's keymap on any
+  machine (`the_chords_a_mac_keeps_for_itself_do_what_the_system_says_and_nothing_else`,
+  `a_mac_steers_with_command_and_leaves_control_to_the_chords_command_cannot_take`,
+  `nothing_a_mac_alone_binds_is_bound_anywhere_else`,
+  `a_mac_is_shown_its_keys_in_apples_marks_and_apples_order`,
+  `on_a_mac_command_steers_the_window_and_control_is_left_to_the_chords_command_cannot_take`,
+  which opens the window under `TestAppContext::set_platform_info`). The tests press
+  `secondary-` chords, which gpui's `simulate_keystrokes` resolves for the machine they run on.
 - **A control names itself through one seam, and the seam lets go.** `hint::Names` is the only place a
   tooltip is attached (a test walks the crate's sources): gpui's plain `tooltip`, never
   `hoverable_tooltip` (neither press nor scroll takes that one down). `hint::asking` is one atomic

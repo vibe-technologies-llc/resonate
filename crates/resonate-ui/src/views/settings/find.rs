@@ -392,7 +392,20 @@ impl Group {
     ];
 
     pub(crate) const fn is_offered(self) -> bool {
-        !cfg!(windows) || !matches!(self, Self::GraphRate | Self::Bluetooth)
+        self.is_offered_where(
+            !cfg!(any(windows, target_os = "macos")),
+            cfg!(target_os = "macos"),
+        )
+    }
+
+    const fn is_offered_where(self, played_through_pipewire: bool, on_a_mac: bool) -> bool {
+        let is_pipewires_own = matches!(self, Self::GraphRate | Self::Bluetooth);
+        let says_nothing_on_a_mac = matches!(
+            self,
+            Self::Notifications | Self::Metered | Self::WindowButtons
+        );
+
+        (played_through_pipewire || !is_pipewires_own) && !(on_a_mac && says_nothing_on_a_mac)
     }
 
     pub(crate) const fn is_experimental(self) -> bool {
@@ -1288,6 +1301,23 @@ fn sample_rate_hint() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_group_that_says_nothing_on_a_system_is_not_offered_there() {
+        for group in [Group::GraphRate, Group::Bluetooth] {
+            assert!(group.is_offered_where(true, false));
+            assert!(!group.is_offered_where(false, false));
+            assert!(!group.is_offered_where(false, true));
+        }
+        for group in [Group::Notifications, Group::Metered, Group::WindowButtons] {
+            assert!(group.is_offered_where(true, false));
+            assert!(group.is_offered_where(false, false));
+            assert!(!group.is_offered_where(false, true));
+        }
+        for group in [Group::Device, Group::Colour, Group::Discord] {
+            assert!(group.is_offered_where(false, true));
+        }
+    }
 
     #[test]
     fn every_group_stands_in_exactly_one_category_and_every_category_holds_one() {

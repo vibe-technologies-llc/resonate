@@ -4,9 +4,10 @@ use gpui::{
     App, Bounds, ContentMask, Context, CursorStyle, DispatchPhase, Element, ElementId,
     ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
     GlobalElementId, InputHandler, InspectorElementId, IntoElement, KeyBinding, LayoutId,
-    LineLayout, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
-    Point, Render, Role, ShapedLine, SharedString, Style, Task, TextAlign, TextRun, UTF16Selection,
-    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
+    LineLayout, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, OperatingSystem,
+    PaintQuad, Pixels, Point, Render, Role, ShapedLine, SharedString, Style, Task, TextAlign,
+    TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px,
+    relative, rgb, rgba, size,
 };
 
 use crate::{
@@ -92,34 +93,69 @@ impl Shown {
     }
 }
 
-pub(crate) fn bindings() -> Vec<KeyBinding> {
+pub(crate) fn bindings(system: OperatingSystem) -> Vec<KeyBinding> {
     let inside = Some(SEARCH_CONTEXT);
 
-    vec![
+    let mut bindings = vec![
         KeyBinding::new("left", CaretLeft, inside),
         KeyBinding::new("right", CaretRight, inside),
-        KeyBinding::new("ctrl-left", CaretWordLeft, inside),
-        KeyBinding::new("ctrl-right", CaretWordRight, inside),
+        KeyBinding::new(chord!(word_left).on(system), CaretWordLeft, inside),
+        KeyBinding::new(chord!(word_right).on(system), CaretWordRight, inside),
         KeyBinding::new("home", CaretToStart, inside),
         KeyBinding::new("end", CaretToEnd, inside),
         KeyBinding::new("shift-left", SelectLeft, inside),
         KeyBinding::new("shift-right", SelectRight, inside),
-        KeyBinding::new("ctrl-shift-left", SelectWordLeft, inside),
-        KeyBinding::new("ctrl-shift-right", SelectWordRight, inside),
+        KeyBinding::new(chord!(select_word_left).on(system), SelectWordLeft, inside),
+        KeyBinding::new(
+            chord!(select_word_right).on(system),
+            SelectWordRight,
+            inside,
+        ),
         KeyBinding::new("shift-home", SelectToStart, inside),
         KeyBinding::new("shift-end", SelectToEnd, inside),
-        KeyBinding::new("ctrl-a", SelectEverything, inside),
+        KeyBinding::new(
+            chord!(select_everything).on(system),
+            SelectEverything,
+            inside,
+        ),
         KeyBinding::new("backspace", DeleteBackward, inside),
         KeyBinding::new("delete", DeleteForward, inside),
-        KeyBinding::new("ctrl-backspace", DeleteWordBackward, inside),
-        KeyBinding::new("ctrl-delete", DeleteWordForward, inside),
-        KeyBinding::new("ctrl-c", CopySelection, inside),
-        KeyBinding::new("ctrl-x", CutSelection, inside),
-        KeyBinding::new("ctrl-v", PasteClipboard, inside),
-        KeyBinding::new("ctrl-z", Undo, inside),
-        KeyBinding::new("ctrl-shift-z", Redo, inside),
-        KeyBinding::new("ctrl-y", Redo, inside),
+        KeyBinding::new(
+            chord!(delete_word_back).on(system),
+            DeleteWordBackward,
+            inside,
+        ),
+        KeyBinding::new(
+            chord!(delete_word_forward).on(system),
+            DeleteWordForward,
+            inside,
+        ),
+        KeyBinding::new(chord!(copy).on(system), CopySelection, inside),
+        KeyBinding::new(chord!(cut).on(system), CutSelection, inside),
+        KeyBinding::new(chord!(paste).on(system), PasteClipboard, inside),
+        KeyBinding::new(chord!(undo).on(system), Undo, inside),
+        KeyBinding::new(chord!(redo).on(system), Redo, inside),
+        KeyBinding::new(chord!(redo_also).on(system), Redo, inside),
         KeyBinding::new("enter", Submit, inside),
+    ];
+    if system == OperatingSystem::Mac {
+        bindings.extend(edited_as_a_mac_expects(inside));
+    }
+    bindings
+}
+
+fn edited_as_a_mac_expects(inside: Option<&str>) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("cmd-left", CaretToStart, inside),
+        KeyBinding::new("cmd-right", CaretToEnd, inside),
+        KeyBinding::new("cmd-shift-left", SelectToStart, inside),
+        KeyBinding::new("cmd-shift-right", SelectToEnd, inside),
+        KeyBinding::new("ctrl-a", CaretToStart, inside),
+        KeyBinding::new("ctrl-e", CaretToEnd, inside),
+        KeyBinding::new("ctrl-b", CaretLeft, inside),
+        KeyBinding::new("ctrl-f", CaretRight, inside),
+        KeyBinding::new("ctrl-d", DeleteForward, inside),
+        KeyBinding::new("ctrl-h", DeleteBackward, inside),
     ]
 }
 

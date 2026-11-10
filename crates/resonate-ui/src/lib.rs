@@ -3,6 +3,7 @@ mod keys;
 mod analysis;
 mod analysis_plot;
 mod app;
+mod app_menu;
 #[cfg(target_os = "linux")]
 mod clipboard;
 #[cfg(not(target_os = "linux"))]
@@ -41,7 +42,7 @@ mod words {
 mod wrapped_card;
 
 pub use crate::{
-    app::{Bus, Lookups, PlayerModel, ResonateApp, run},
+    app::{Bus, Leaving, Lookups, PlayerModel, ResonateApp, run},
     equaliser::{Curve, EqualiserModel, Sounding},
     error::{Error, Result, WindowKind},
     launcher::{AppIcon, Launcher},

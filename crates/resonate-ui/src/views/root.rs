@@ -36,14 +36,15 @@ use crate::{
     Selection, Setting, SettingChange, SettingKey, Tabs, WindowSize,
     analysis::AnalysisModel,
     app::{
-        ChooseReached, CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults,
-        HoldThePicture, HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen, LowerRow, Next,
-        NextPane, OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping, PlayReached, Previous,
-        PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst,
-        ReachLast, ReachNext, ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit,
-        SeekBackward, SeekForward, SeekFurtherBackward, SeekFurtherForward, Stop, TabOnward,
-        ToggleMute, TogglePlayPause, ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp,
-        WINDOW_CONTEXT, WidenAbove, WidenBelow, attend, seek_further, seek_step,
+        About, ChooseReached, CloseTheWindow, CycleRepeat, DropReached, FocusFilter, FocusSearch,
+        GoToTheResults, HoldThePicture, HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen,
+        LowerRow, Minimise, Next, NextPane, OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping,
+        PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow,
+        ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove, ReachPageBelow,
+        ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
+        SeekFurtherForward, Stop, TabOnward, ToggleFullScreen, ToggleMute, TogglePlayPause,
+        ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove,
+        WidenBelow, Zoom, attend, seek_further, seek_step,
     },
     downloads::{self, Download, Fetching},
     format,
@@ -2290,6 +2291,11 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = String::new());
     }
 
+    fn say_what_this_is(&mut self, cx: &mut Context<Self>) {
+        self.set_pane(Pane::Settings, cx);
+        self.show_settings(Category::About, cx);
+    }
+
     pub(crate) fn focus_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_pane(Pane::Settings, cx);
         self.finding
@@ -2602,7 +2608,8 @@ impl RootView {
         modifiers: Modifiers,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !shift.chooses_apart() || !(modifiers.control || modifiers.shift) {
+        let apart = modifiers.secondary(cx);
+        if !shift.chooses_apart() || !(apart || modifiers.shift) {
             return false;
         }
         let choosable = self.choosable_rows(shift, cx);
@@ -2617,7 +2624,7 @@ impl RootView {
             .filter(|reach| reach.shift == shift)
             .and_then(|reach| reach.within(choosable));
         self.reach = Some(match held {
-            Some(reach) if modifiers.control => reach.toggled(row),
+            Some(reach) if apart => reach.toggled(row),
             Some(reach) => reach.widened_to(row),
             None => Reach::at(shift, row),
         });
@@ -4792,7 +4799,8 @@ impl RootView {
     }
 
     fn header(&self, window: &Window, cx: &mut Context<Self>) -> Div {
-        let caption_is_ours = chrome::the_caption_is_ours(window);
+        let moves_the_window = chrome::the_header_moves_the_window(window);
+        let controls_are_ours = chrome::the_window_controls_are_ours(window);
         let corners = chrome::rounded_within_the_frame(window);
 
         div()
@@ -4807,8 +4815,8 @@ impl RootView {
             .rounded_tl(corners.top_left)
             .rounded_tr(corners.top_right)
             .bg(rgb(theme::surface()))
-            .when(caption_is_ours, chrome::titlebar)
-            .child(self.wordmark())
+            .when(moves_the_window, chrome::titlebar)
+            .child(self.wordmark(window))
             .child(
                 div()
                     .flex()
@@ -4841,19 +4849,22 @@ impl RootView {
                     .w(px(theme::sidebar_width() - 32.0))
                     .justify_end()
                     .child(self.zone_switcher(cx))
-                    .when(caption_is_ours, |bar| {
+                    .when(controls_are_ours, |bar| {
                         bar.child(self.window_controls(window, cx))
                     }),
             )
     }
 
-    fn wordmark(&self) -> Div {
+    fn wordmark(&self, window: &Window) -> Div {
         div()
             .flex()
             .flex_none()
             .items_center()
             .gap_2()
             .w(px(theme::sidebar_width() - 32.0))
+            .when_some(chrome::room_for_the_traffic_lights(window), |mark, room| {
+                mark.pl(room).overflow_hidden()
+            })
             .child(
                 div()
                     .flex()
@@ -4926,7 +4937,7 @@ impl RootView {
             .child(self.search.clone())
             .when(!empty, |field| field.child(self.clear_search(cx)))
             .when(empty && !searching, |field| {
-                field.child(kit::figure("ctrl-f").text_color(rgb(theme::faint())))
+                field.child(kit::figure(key!(find)).text_color(rgb(theme::faint())))
             })
             .child(hint::explains("search-terms", words::root::search_hint()));
 
@@ -4940,7 +4951,7 @@ impl RootView {
                         menu.under(
                             Icon::Rename,
                             words::root::cut(),
-                            "ctrl-x",
+                            key!(cut),
                             |this, window, cx| {
                                 this.search.update(cx, |field, cx| field.cuts(window, cx));
                             },
@@ -4948,7 +4959,7 @@ impl RootView {
                         .under(
                             Icon::Export,
                             words::root::copy(),
-                            "ctrl-c",
+                            key!(copy),
                             |this, window, cx| {
                                 this.search.update(cx, |field, cx| field.copies(window, cx));
                             },
@@ -4957,7 +4968,7 @@ impl RootView {
                     .under(
                         Icon::Import,
                         words::root::paste(),
-                        "ctrl-v",
+                        key!(paste),
                         |this, window, cx| {
                             this.search.update(cx, |field, cx| field.pastes(window, cx));
                         },
@@ -4965,7 +4976,7 @@ impl RootView {
                     .under(
                         Icon::Check,
                         words::root::select_all(),
-                        "ctrl-a",
+                        key!(select_everything),
                         |this, window, cx| {
                             this.search
                                 .update(cx, |field, cx| field.selects_everything(window, cx));
@@ -6190,6 +6201,17 @@ impl Render for RootView {
                 }
             }))
             .on_action(|_: &Quit, window: &mut Window, _: &mut App| window.remove_window())
+            .on_action(|_: &CloseTheWindow, window: &mut Window, _: &mut App| {
+                window.remove_window();
+            })
+            .on_action(|_: &Minimise, window: &mut Window, _: &mut App| {
+                window.minimize_window();
+            })
+            .on_action(|_: &Zoom, window: &mut Window, _: &mut App| window.zoom_window())
+            .on_action(|_: &ToggleFullScreen, window: &mut Window, _: &mut App| {
+                window.toggle_fullscreen();
+            })
+            .on_action(cx.listener(|this, _: &About, _, cx| this.say_what_this_is(cx)))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 this.typed(event, window, cx);
             }))
@@ -6832,12 +6854,13 @@ mod tests {
     mod driven {
         use std::{path::PathBuf, sync::Arc};
 
-        use gpui::TestAppContext;
+        use gpui::{OperatingSystem, PlatformInfo, PlatformTarget, TestAppContext};
         use resonate_core::{Span, Volume};
         use resonate_library::{Cut, Direction, Library, PlaylistOrder};
 
         use crate::{
-            Followed, Notice, ResonateApp,
+            Followed, Notice, ResonateApp, SettingsCategory,
+            app::About,
             driven::{Driven, Folder},
             toast,
             views::{
@@ -6955,7 +6978,7 @@ mod tests {
             nothing_behind_the_sheet_answers_to(
                 driven,
                 rows,
-                "delete enter backspace alt-up down ctrl-z",
+                "delete enter backspace alt-up down secondary-z",
             );
         }
 
@@ -7032,7 +7055,7 @@ mod tests {
             nothing_behind_the_sheet_answers_to(
                 &mut driven,
                 3,
-                "delete backspace alt-up down ctrl-z",
+                "delete backspace alt-up down secondary-z",
             );
         }
 
@@ -7060,7 +7083,7 @@ mod tests {
             nothing_behind_the_sheet_answers_to(
                 &mut driven,
                 3,
-                "delete backspace alt-up down ctrl-z",
+                "delete backspace alt-up down secondary-z",
             );
 
             driven.cx.simulate_keystrokes("escape");
@@ -7235,7 +7258,11 @@ mod tests {
             driven.cx.simulate_keystrokes("down down");
             offering_a_party(&mut driven);
             driven.focus_the_window();
-            nothing_behind_the_sheet_answers_to(&mut driven, 3, "backspace alt-up down ctrl-z");
+            nothing_behind_the_sheet_answers_to(
+                &mut driven,
+                3,
+                "backspace alt-up down secondary-z",
+            );
 
             driven.cx.simulate_keystrokes("escape");
             driven.settle();
@@ -7341,6 +7368,55 @@ mod tests {
             assert!(driven.read(|_, cx| !RootView::noticed(cx)));
         }
 
+        const ON_A_MAC: PlatformInfo = PlatformInfo {
+            os: OperatingSystem::Mac,
+            target: PlatformTarget::Native,
+        };
+
+        #[gpui::test]
+        fn on_a_mac_command_steers_the_window_and_control_is_left_to_the_chords_command_cannot_take(
+            cx: &mut TestAppContext,
+        ) {
+            cx.set_platform_info(ON_A_MAC);
+            let mut driven = Driven::open(cx, catalog());
+            driven.focus_the_window();
+            let behind = driven.read(|root, _| root.pane);
+
+            driven.cx.simulate_keystrokes("ctrl-u");
+            assert_eq!(driven.read(|root, _| root.pane), behind);
+
+            driven.cx.simulate_keystrokes("cmd-u");
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
+
+            driven.cx.simulate_keystrokes("secondary-u");
+            assert_eq!(driven.read(|root, _| root.pane), behind);
+
+            driven.cx.simulate_keystrokes("cmd-,");
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
+            assert!(
+                driven.cx.update(|window, cx| driven
+                    .root
+                    .read(cx)
+                    .finding
+                    .read(cx)
+                    .is_focused(window))
+            );
+        }
+
+        #[gpui::test]
+        fn the_menus_about_opens_the_about_category_whatever_stood_there(cx: &mut TestAppContext) {
+            let mut driven = Driven::open(cx, catalog());
+            driven.focus_the_window();
+
+            driven.cx.dispatch_action(About);
+
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
+            assert_eq!(
+                driven.read(|root, _| root.settings_category),
+                SettingsCategory::About
+            );
+        }
+
         #[gpui::test]
         fn a_key_opens_the_queue_and_the_same_key_goes_back_to_the_pane_it_covered(
             cx: &mut TestAppContext,
@@ -7349,10 +7425,10 @@ mod tests {
             driven.focus_the_window();
             let behind = driven.read(|root, _| root.pane);
 
-            driven.cx.simulate_keystrokes("ctrl-u");
+            driven.cx.simulate_keystrokes("secondary-u");
             assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
 
-            driven.cx.simulate_keystrokes("ctrl-u");
+            driven.cx.simulate_keystrokes("secondary-u");
             assert_eq!(driven.read(|root, _| root.pane), behind);
         }
 

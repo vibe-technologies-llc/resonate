@@ -2,9 +2,9 @@ use std::cell::Cell;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Role, SharedString,
-    Size, Stateful, Svg, Tiling, Window, WindowControlArea, canvas, div, point, prelude::*, px,
-    rgb,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ResizeEdge, Role,
+    SharedString, Size, Stateful, Svg, Tiling, Window, WindowControlArea, canvas, div, point,
+    prelude::*, px, rgb,
 };
 
 use crate::{
@@ -23,10 +23,44 @@ const RIM_BEYOND_THE_REACH: f32 = 1.0;
 
 thread_local! {
     static EDGE_UNDER_THE_POINTER: Cell<Option<ResizeEdge>> = const { Cell::new(None) };
+    static PRESSED_ON_THE_BAR: Cell<bool> = const { Cell::new(false) };
 }
 const CONTROL_GROUP: &str = "window-control";
 
 const THE_SYSTEM_PRESSES_THE_CAPTION: bool = cfg!(windows);
+
+const THE_SYSTEM_DRAWS_THE_CONTROLS: bool = cfg!(target_os = "macos");
+
+pub(crate) const THE_HEADER_STANDS_IN_THE_TITLE_BAR: bool =
+    THE_SYSTEM_PRESSES_THE_CAPTION || THE_SYSTEM_DRAWS_THE_CONTROLS;
+
+const TRAFFIC_LIGHTS_FROM_THE_EDGE: f32 = 16.0;
+
+const A_TRAFFIC_LIGHT_IS_TALL: f32 = 14.0;
+
+const THE_TRAFFIC_LIGHTS_ARE_WIDE: f32 = 54.0;
+
+const A_DOUBLE_PRESS: usize = 2;
+
+pub(crate) fn traffic_lights_placed() -> Option<Point<Pixels>> {
+    THE_SYSTEM_DRAWS_THE_CONTROLS.then(|| traffic_lights_within(theme::header_height()))
+}
+
+fn traffic_lights_within(header: f32) -> Point<Pixels> {
+    point(
+        px(TRAFFIC_LIGHTS_FROM_THE_EDGE),
+        px(((header - A_TRAFFIC_LIGHT_IS_TALL) / 2.0).floor()),
+    )
+}
+
+pub(crate) fn room_for_the_traffic_lights(window: &Window) -> Option<Pixels> {
+    room_kept_for_the_lights(THE_SYSTEM_DRAWS_THE_CONTROLS, window.is_fullscreen())
+}
+
+fn room_kept_for_the_lights(drawn_by_the_system: bool, fills_the_screen: bool) -> Option<Pixels> {
+    (drawn_by_the_system && !fills_the_screen)
+        .then(|| px(THE_TRAFFIC_LIGHTS_ARE_WIDE + TRAFFIC_LIGHTS_FROM_THE_EDGE))
+}
 
 #[derive(Clone, Copy)]
 enum Control {
@@ -155,13 +189,41 @@ pub(crate) fn client_side(window: &Window) -> bool {
     matches!(window.window_decorations(), Decorations::Client { .. })
 }
 
-pub(crate) fn the_caption_is_ours(window: &Window) -> bool {
+pub(crate) fn the_window_controls_are_ours(window: &Window) -> bool {
     THE_SYSTEM_PRESSES_THE_CAPTION || client_side(window)
+}
+
+pub(crate) fn the_header_moves_the_window(window: &Window) -> bool {
+    THE_HEADER_STANDS_IN_THE_TITLE_BAR || client_side(window)
+}
+
+fn moved_as_a_mac_moves_it(bar: Div) -> Div {
+    bar.on_mouse_down(MouseButton::Left, |event: &MouseDownEvent, window, _| {
+        let twice = event.click_count == A_DOUBLE_PRESS;
+        PRESSED_ON_THE_BAR.set(!twice);
+        if twice {
+            window.titlebar_double_click();
+        }
+    })
+    .on_mouse_up(MouseButton::Left, |_: &MouseUpEvent, _, _| {
+        PRESSED_ON_THE_BAR.set(false);
+    })
+    .on_mouse_up_out(MouseButton::Left, |_: &MouseUpEvent, _, _| {
+        PRESSED_ON_THE_BAR.set(false);
+    })
+    .on_mouse_move(|_: &MouseMoveEvent, window, _| {
+        if PRESSED_ON_THE_BAR.replace(false) {
+            window.start_window_move();
+        }
+    })
 }
 
 pub(crate) fn titlebar(bar: Div) -> Div {
     if THE_SYSTEM_PRESSES_THE_CAPTION {
         return bar.window_control_area(WindowControlArea::Drag);
+    }
+    if THE_SYSTEM_DRAWS_THE_CONTROLS {
+        return moved_as_a_mac_moves_it(bar);
     }
     bar.on_mouse_down(
         MouseButton::Left,
@@ -364,6 +426,23 @@ mod tests {
             },
             held,
         )
+    }
+
+    #[test]
+    fn the_traffic_lights_stand_mid_height_of_the_header_whatever_its_size() {
+        let at_rest = traffic_lights_within(52.0);
+        let at_twice_the_text = traffic_lights_within(104.0);
+
+        assert_eq!(at_rest, point(px(16.0), px(19.0)));
+        assert_eq!(at_twice_the_text, point(px(16.0), px(45.0)));
+    }
+
+    #[test]
+    fn the_header_keeps_room_for_the_traffic_lights_only_while_the_system_draws_them() {
+        assert_eq!(room_kept_for_the_lights(true, false), Some(px(70.0)));
+        assert_eq!(room_kept_for_the_lights(true, true), None);
+        assert_eq!(room_kept_for_the_lights(false, false), None);
+        assert_eq!(room_kept_for_the_lights(false, true), None);
     }
 
     #[test]

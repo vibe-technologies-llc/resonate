@@ -1,4 +1,4 @@
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 macro_rules! sound_system {
     () => {
         "PipeWire"
@@ -9,6 +9,13 @@ macro_rules! sound_system {
 macro_rules! sound_system {
     () => {
         "Windows"
+    };
+}
+
+#[cfg(target_os = "macos")]
+macro_rules! sound_system {
+    () => {
+        "Core Audio"
     };
 }
 
