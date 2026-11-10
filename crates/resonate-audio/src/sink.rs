@@ -15,6 +15,16 @@ impl SinkId {
     }
 }
 
+const FNV_OFFSET: u32 = 0x811C_9DC5;
+const FNV_PRIME: u32 = 0x0100_0193;
+
+pub fn sink_id_of(node: &NodeName) -> SinkId {
+    let hash = node.as_str().bytes().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(FNV_PRIME)
+    });
+    SinkId::new(hash)
+}
+
 impl fmt::Display for SinkId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)

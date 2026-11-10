@@ -1,4 +1,4 @@
-use resonate_audio::{SinkChange, SinkInfo};
+use crate::{SinkChange, SinkInfo};
 
 pub fn changes_between(before: &[SinkInfo], after: &[SinkInfo]) -> Vec<SinkChange> {
     let mut changes = Vec::new();
@@ -29,9 +29,8 @@ pub fn changes_between(before: &[SinkInfo], after: &[SinkInfo]) -> Vec<SinkChang
 
 #[cfg(test)]
 mod tests {
-    use resonate_audio::{NodeName, SinkId};
-
     use super::*;
+    use crate::{NodeName, SinkId};
 
     fn sink(id: u32, is_default: bool) -> SinkInfo {
         SinkInfo {
@@ -81,8 +80,9 @@ mod tests {
 
     #[test]
     fn a_volume_or_mute_turned_from_elsewhere_is_told_as_turned() {
-        use resonate_audio::{HardwareVolume, Plugged, SinkPort};
         use resonate_core::Gain;
+
+        use crate::{HardwareVolume, Plugged, SinkPort};
 
         let port = |volume: f32, muted: bool| SinkPort {
             description: "Speakers".to_owned(),

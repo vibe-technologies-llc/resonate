@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, io, sync::LazyLock};
 use parking_lot::Mutex;
 use resonate_audio::{
     Error, HardwareVolume, Operation, Plugged, SinkFormats, SinkInfo, SinkPort, SinkResult,
+    gain_of, sink_id_of,
 };
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate};
 use resonate_win32::EndpointVolume;
@@ -13,8 +14,7 @@ use wasapi::{
 
 use crate::{
     formats::{Wire, format_of, formats_taken, mask_of, rates_of, wire_of},
-    level::gain_of,
-    ways::{Way, node_of, sink_id_of},
+    ways::{Way, node_of},
 };
 
 const DEVICE_IN_USE: i32 = i32::from_ne_bytes(0x8889_000A_u32.to_ne_bytes());

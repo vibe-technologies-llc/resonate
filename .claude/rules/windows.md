@@ -104,9 +104,11 @@ exists (*The Win32 exception*, below).
   (`Beside` over the backend) use it, so the binary names no PipeWire and its Windows tree holds
   none of PipeWire, Wayland, `rustix` or `signal-hook` (the layering job).
 - **`resonate-wasapi` is `resonate-audio`'s `Backend` over the `wasapi` crate** and reaches core,
-  audio and (on Windows) `resonate-win32` alone. Its portable halves compile and are tested everywhere (`ways`, `formats`, `changes`,
-  `fill`, `clock`, `level`, `reshaping`, `watching`); `device`, `stream`, `render`, `priority` and
-  `backend` are `cfg(windows)`.
+  audio and (on Windows) `resonate-win32` alone. Its portable halves compile and are tested everywhere (`ways`, `formats`,
+  `fill`, `clock`); `device`, `stream`, `render`, `priority` and
+  `backend` are `cfg(windows)`. **What every desktop backend past PipeWire does the same way is
+  `resonate-audio`'s** and reexported here: `sink_id_of`, `changes_between`, `watch` and `Pace`,
+  `refusal_of`, `scalar_of` and `gain_of`, `left_aligned` (`resonate-coreaudio` is the other user).
 - **An endpoint is two sinks.** `wasapi:<endpoint id>` plays through the Windows mixer in shared mode
   (event-driven, `autoconvert` on, offered at the mix format alone) and is the default sink when the
   endpoint is; `wasapi-exclusive:<endpoint id>` ("<name> (WASAPI exclusive)") takes the device in
@@ -150,7 +152,7 @@ exists (*The Win32 exception*, below).
   `thread-priority`'s `Max` stands in.
 - **Devices are told by the system and checked by a poll.** The watcher thread registers the
   `wasapi` crate's endpoint notification client (added, removed, state, default and property
-  changes), whose callbacks only nudge a one-slot channel; `watching::watch` waits on the nudge or
+  changes), whose callbacks only nudge a one-slot channel; `resonate_audio::watch` waits on the nudge or
   `Pace::ENDPOINTS`' two seconds, lets a burst settle for 100 ms, surveys once and tells the
   difference through `changes_between` (added, removed, default moved, formats or mix rate moved,
   and `Turned` where the endpoint's volume or mute moved), the one difference computation for both.
@@ -164,7 +166,7 @@ exists (*The Win32 exception*, below).
   support says the device turns its own volume, else `No`), so `device-volume` hands the slider to
   the device only where that keeps the stream bit-perfect: in exclusive mode a software endpoint
   volume is not applied at all, and in shared mode it is the mixer's. The level is the endpoint's
-  scalar, which is the Windows slider's position, and the slider is ours (`level::scalar_of` is
+  scalar, which is the Windows slider's position, and the slider is ours (`resonate_audio::scalar_of` is
   `Volume::heard_at`, `gain_of` its inverse), so both sliders stand at the same place and a level
   sent reads back within float rounding at any height
   (`a_level_sent_reads_back_far_within_half_a_devices_step_however_low`): the engine's echo test

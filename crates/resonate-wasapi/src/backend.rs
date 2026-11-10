@@ -8,7 +8,8 @@ use std::{
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
-    Backend, Error, Opener, Operation, SinkChange, SinkId, SinkInfo, SinkResult, Surveyor,
+    Backend, Error, Opener, Operation, Pace, SinkChange, SinkId, SinkInfo, SinkResult, Surveyor,
+    scalar_of, watch,
 };
 use resonate_core::Gain;
 use resonate_win32::{EndpointVolume, Level, VolumeWatch};
@@ -16,9 +17,7 @@ use wasapi::{DeviceEnumerator, DeviceEventCallbacks, DeviceEventRegistration};
 
 use crate::{
     device::{enter_the_apartment, enumerate, level_error},
-    level::scalar_of,
     stream::{Known, Opens},
-    watching::{Pace, watch},
     ways::endpoint_of,
 };
 

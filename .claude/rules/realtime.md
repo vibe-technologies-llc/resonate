@@ -4,6 +4,7 @@ paths:
   - "crates/resonate-mobile/src/output/oboe_render.rs"
   - "crates/resonate-mobile/src/output/oboe_frames.rs"
   - "crates/resonate-audio/src/handover.rs"
+  - "crates/resonate-audio/src/aligned.rs"
   - "crates/resonate-wasapi/src/fill.rs"
   - "crates/resonate-wasapi/src/render.rs"
   - "crates/resonate-mobile/src/output/remote_io_render.rs"
@@ -36,7 +37,7 @@ In the RT modules and everything they call:
   off-thread via an SPSC queue whose atomic overflow counter surfaces as `RtFault::Dropped`. Only
   `Underrun` and `Dropped` exist (what the ring raises), so `collect_faults` matches exhaustively.
 
-Twelve RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+Thirteen RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
 clippy::unreachable, clippy::indexing_slicing)]` (allocation, locks, `assert!`, unguarded division
 rest on this discipline alone):
 
@@ -51,10 +52,13 @@ rest on this discipline alone):
   never drops a source (it takes nothing while the way back is full). `Handing`, on the stream's
   side, lets the spent go and reports room. Oboe's `Rendering`, RemoteIO's `Rendering` and WASAPI's
   `Playing` all read `Fed::source` (`resonate-mobile` reexports it as `output::handover`).
+- `resonate-audio/src/aligned.rs`: `left_aligned` shifts each 24-bit word of a buffer against the
+  top of its 32-bit container in place, for the devices that carry it there (WASAPI's 24-in-32, the
+  HAL's 32-bit client format).
 - `resonate-wasapi/src/fill.rs` and `render.rs`: the WASAPI render cycle (`windows.md`).
   `fill_buffer` takes the quantum the device has room for out of the source into a scratch buffer
   allocated when the stream opened, zeroes a short fill, shifts a 24-bit word against the top of its
-  32-bit container and reports how many frames were music; `Playing::cycle` then hands the scratch
+  32-bit container (`left_aligned`) and reports how many frames were music; `Playing::cycle` then hands the scratch
   to `AudioRenderClient::write_to_device`, which is `GetBuffer`, a copy and `ReleaseBuffer`, so the
   cycle allocates nothing. `fill.rs` and `clock.rs` (the audio clock's arithmetic) are portable and
   tested on every host. The cycle runs on the stream's own thread, woken by the endpoint's event, and

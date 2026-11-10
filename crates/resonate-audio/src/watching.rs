@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, never, select};
-use resonate_audio::{SinkChange, SinkInfo};
 
-use crate::changes::changes_between;
+use crate::{SinkChange, SinkInfo, changes::changes_between};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pace {
@@ -74,9 +73,9 @@ mod tests {
     };
 
     use crossbeam_channel::{bounded, unbounded};
-    use resonate_audio::{NodeName, SinkId};
 
     use super::*;
+    use crate::{NodeName, SinkId};
 
     const ANSWERED_WITHIN: Duration = Duration::from_secs(5);
     const NEVER_DUE: Pace = Pace {

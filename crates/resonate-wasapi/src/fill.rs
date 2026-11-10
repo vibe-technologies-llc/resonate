@@ -8,11 +8,8 @@
 
 use std::num::NonZeroUsize;
 
-use resonate_audio::{AudioSource, Stamp};
+use resonate_audio::{AudioSource, Stamp, left_aligned};
 use resonate_core::SampleFormat;
-
-const WORD_BYTES: usize = 4;
-const LEFT_ALIGNED_BY_BITS: u32 = 8;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Filled {
@@ -46,14 +43,6 @@ pub fn fill_buffer(
     Filled {
         frames: wanted,
         heard: filled / frame_bytes,
-    }
-}
-
-fn left_aligned(window: &mut [u8]) {
-    let (words, _) = window.as_chunks_mut::<WORD_BYTES>();
-    for word in words {
-        let shifted = i32::from_le_bytes(*word) << LEFT_ALIGNED_BY_BITS;
-        *word = shifted.to_le_bytes();
     }
 }
 

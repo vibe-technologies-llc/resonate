@@ -7,6 +7,7 @@ use resonate_audio::{
     SinkStream, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, Unreshapable,
     Words,
     handover::{Fed, Handing, fed_from},
+    refusal_of,
 };
 use resonate_core::{Frames, SampleFormat};
 use resonate_win32::PerformanceCounter;
@@ -17,7 +18,6 @@ use crate::{
     formats::wire_of,
     priority::Priority,
     render::Playing,
-    reshaping::refusal_of,
     ways::{Way, endpoint_of},
 };
 

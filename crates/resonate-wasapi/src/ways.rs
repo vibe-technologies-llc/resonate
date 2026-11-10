@@ -1,9 +1,7 @@
-use resonate_audio::{NodeName, SinkId};
+use resonate_audio::NodeName;
 
 const SHARED_PREFIX: &str = "wasapi:";
 const EXCLUSIVE_PREFIX: &str = "wasapi-exclusive:";
-const FNV_OFFSET: u32 = 0x811C_9DC5;
-const FNV_PRIME: u32 = 0x0100_0193;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Way {
@@ -41,15 +39,10 @@ pub fn endpoint_of(node: &NodeName) -> Option<(Way, &str)> {
         })
 }
 
-pub fn sink_id_of(node: &NodeName) -> SinkId {
-    let hash = node.as_str().bytes().fold(FNV_OFFSET, |hash, byte| {
-        (hash ^ u32::from(byte)).wrapping_mul(FNV_PRIME)
-    });
-    SinkId::new(hash)
-}
-
 #[cfg(test)]
 mod tests {
+    use resonate_audio::sink_id_of;
+
     use super::*;
 
     #[test]

@@ -1,4 +1,4 @@
-use resonate_audio::{StreamRequest, Unreshapable};
+use crate::{StreamRequest, Unreshapable};
 
 pub fn refusal_of(open: &StreamRequest, asked: &StreamRequest) -> Option<Unreshapable> {
     if asked.target != open.target {
@@ -14,10 +14,10 @@ pub fn refusal_of(open: &StreamRequest, asked: &StreamRequest) -> Option<Unresha
 mod tests {
     use std::time::Duration;
 
-    use resonate_audio::{LatencyRequest, MediaRole, SinkId};
     use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 
     use super::*;
+    use crate::{LatencyRequest, MediaRole, SinkId};
 
     fn request() -> StreamRequest {
         StreamRequest {
