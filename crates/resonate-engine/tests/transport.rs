@@ -9743,9 +9743,9 @@ fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
     play_until(
         &player,
         &graph,
-        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
-        |player, _| paused(player),
-        "the sleep timer to pause the transport",
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| paused(player) && !graph.active,
+        "the sleep timer to pause the transport and the graph to stand down",
     );
     let heard = left_channel(&graph.lock().played);
 
@@ -11623,6 +11623,7 @@ fn switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_
     let stride = frame_bytes(SampleFormat::S16);
 
     let switched = switched_back_and_forth(&player, &graph, stride, contest)?;
+    let underruns = player.state().output.map_or(0, |output| output.underruns);
 
     let graph = graph.lock();
     let left = left_of_the_graph(&graph.played);
@@ -11630,7 +11631,7 @@ fn switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_
     let climbs = steepest_the_sine_climbs() * f64::from(RATE) / 48_000.0;
     assert!(
         every_period_holds_its_peak(&left, switched.from, period, SINE_PEAK),
-        "a period after the audition began fell from the sine's peak: a gap, or two arms out of step blended"
+        "a period after the audition began fell from the sine's peak: a gap, or two arms out of step blended ({underruns} underruns)"
     );
     assert!(
         steepest_step(&left[switched.from..]) < climbs * A_STEP_MAY_PASS_THE_SINE_BY,

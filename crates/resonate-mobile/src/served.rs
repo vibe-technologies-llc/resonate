@@ -633,13 +633,23 @@ mod tests {
         if reader.read_line(&mut asked).is_err() {
             return;
         }
+        let mut body_bytes = 0;
         loop {
             let mut header = String::new();
             match reader.read_line(&mut header) {
                 Ok(0) | Err(_) => return,
                 Ok(_) if header == "\r\n" => break,
-                Ok(_) => {}
+                Ok(_) => {
+                    if let Some((name, value)) = header.split_once(':')
+                        && name.eq_ignore_ascii_case("content-length")
+                    {
+                        body_bytes = value.trim().parse().unwrap_or(0);
+                    }
+                }
             }
+        }
+        if io::copy(&mut (&mut reader).take(body_bytes), &mut io::sink()).is_err() {
+            return;
         }
         asked_log.lock().push(asked.clone());
         let (kind, body): (&str, Vec<u8>) = if asked.contains("/Users/AuthenticateByName") {
