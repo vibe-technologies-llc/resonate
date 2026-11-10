@@ -492,7 +492,9 @@ impl MobilePlayer {
             .iter()
             .filter(|document| named_alike(&waiting.received.name, &document.name))
         {
-            if !self.holds_the_same_bytes(&document.uri, &waiting.path) {
+            if !self.holds_the_same_bytes(&document.uri, &waiting.path)
+                && !self.holds_the_same_audio(&document.uri, waiting.file)
+            {
                 continue;
             }
             let track = self.indexed_download(
@@ -873,6 +875,20 @@ impl MobilePlayer {
             return false;
         }
         bytes_alike(media.stream, file).unwrap_or(false)
+    }
+
+    fn holds_the_same_audio(&self, uri: &str, file: Option<WholeFile>) -> bool {
+        let Some(file) = file else {
+            return false;
+        };
+        location(uri)
+            .ok()
+            .and_then(|at| probe_scanned(&self.sources, &at).ok())
+            .is_some_and(|scanned| {
+                scanned.packets.map(|packets| packets.0) == Some(file.packets)
+                    && scanned.info.duration.map(|frames| frames.get()) == Some(file.frames)
+                    && scanned.info.spec.rate.hz() == file.rate
+            })
     }
 
     fn forget_received(&self, id: u64, path: &Path) -> Result<()> {
@@ -2887,6 +2903,129 @@ mod tests {
         assert!(player.sync_received().expect("none waiting").is_empty());
         assert!(held);
         assert_eq!(player.song_uris().expect("the songs").len(), 1);
+    }
+
+    fn landed_by_the_front_end(player: &MobilePlayer, folder: &Path) -> Vec<Track> {
+        use std::os::fd::IntoRawFd;
+
+        let mut landed = Vec::new();
+        for received in player.sync_received().expect("the waiting songs") {
+            let standing = fs::read_dir(folder)
+                .expect("the music folder")
+                .flatten()
+                .filter(|entry| entry.path().is_file())
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .map(|name| StandingDocument {
+                    uri: format!("content://test/{name}"),
+                    name,
+                })
+                .collect();
+            if let Some(track) = player
+                .sync_receive_standing(received.id, standing)
+                .expect("compared")
+            {
+                landed.push(track);
+                continue;
+            }
+            let name = free_name_in(folder, &received.name);
+            let descriptor = File::create(folder.join(&name))
+                .expect("a destination")
+                .into_raw_fd();
+            landed.push(
+                player
+                    .sync_receive(received.id, descriptor, format!("content://test/{name}"))
+                    .expect("a landed song"),
+            );
+        }
+        landed
+    }
+
+    fn free_name_in(folder: &Path, name: &str) -> String {
+        let (stem, extension) = name.rsplit_once('.').expect("an extension");
+        (0..)
+            .map(|nth| match nth {
+                0 => name.to_owned(),
+                nth => format!("{stem} ({nth}).{extension}"),
+            })
+            .find(|candidate| !folder.join(candidate).exists())
+            .expect("a free name")
+    }
+
+    fn retagged(mut song: Vec<u8>) -> Vec<u8> {
+        let tag = b"retagged";
+        song.extend_from_slice(b"JUNK");
+        song.extend_from_slice(&(tag.len() as u32).to_le_bytes());
+        song.extend_from_slice(tag);
+        let riff = (song.len() - 8) as u32;
+        song[4..8].copy_from_slice(&riff.to_le_bytes());
+        song
+    }
+
+    fn files_in(folder: &Path) -> usize {
+        fs::read_dir(folder)
+            .expect("the music folder")
+            .flatten()
+            .filter(|entry| entry.path().is_file())
+            .count()
+    }
+
+    #[test]
+    fn a_song_landed_again_where_it_was_deleted_before_the_deletion_was_forgotten_stays_held() {
+        let folder = folder("landed-again");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let first = landed_by_the_front_end(&player, &folder);
+        fs::remove_file(folder.join(&first[0].name)).expect("deleted by the front end");
+
+        let lacked = !documents.holds(&hunter).expect("an answer");
+        landed_waiting(&documents, &folder, &hunter);
+        let again = landed_by_the_front_end(&player, &folder);
+        let forgotten = player
+            .forget_deleted_songs(vec![first[0].id])
+            .expect("a deletion");
+        let held = documents.holds(&hunter).expect("an answer");
+        let marked = documents.deleted_here(&hunter).expect("an answer");
+        landed_waiting(&documents, &folder, &hunter);
+        let spread_again = player.sync_received().expect("the waiting songs");
+        let songs = player.song_uris().expect("the songs");
+        let files = files_in(&folder);
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(lacked);
+        assert_eq!(again[0].uri, first[0].uri);
+        assert_eq!(forgotten.forgotten, 0);
+        assert!(
+            held,
+            "the song landed again was forgotten with its deletion"
+        );
+        assert!(!marked);
+        assert!(spread_again.is_empty());
+        assert_eq!(songs, vec![first[0].uri.clone()]);
+        assert_eq!(files, 1);
+    }
+
+    #[test]
+    fn a_song_whose_audio_stands_at_its_name_in_other_bytes_is_taken_as_that_file() {
+        let folder = folder("standing-audio");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let name = player.sync_received().expect("the waiting songs")[0]
+            .name
+            .clone();
+        fs::write(folder.join(&name), retagged(crate::harness::silence()))
+            .expect("the same audio retagged");
+
+        let landed = landed_by_the_front_end(&player, &folder);
+        let held = documents.holds(&hunter).expect("an answer");
+        let files = files_in(&folder);
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(landed.len(), 1);
+        assert_eq!(landed[0].uri, format!("content://test/{name}"));
+        assert!(held);
+        assert_eq!(files, 1);
     }
 
     #[test]
