@@ -407,7 +407,15 @@ mod tests {
         ));
     }
 
-    fn a_sign_in_folder(name: &str) -> (PathBuf, PathBuf, Kept) {
+    struct SigningIn {
+        folder: PathBuf,
+        settings: PathBuf,
+        kept: Kept,
+        _interrupting: parking_lot::RwLockWriteGuard<'static, ()>,
+    }
+
+    fn a_sign_in_folder(name: &str) -> SigningIn {
+        let interrupting = crate::signing_in::INTERRUPTING_THE_TOOLS.write();
         let folder = std::env::temp_dir().join(format!(
             "resonate-ytmusic-sign-in-{}-{name}",
             std::process::id()
@@ -421,7 +429,12 @@ mod tests {
         )
         .expect("the settings");
         let kept = Kept::under(&folder.join("data"));
-        (folder, settings, kept)
+        SigningIn {
+            folder,
+            settings,
+            kept,
+            _interrupting: interrupting,
+        }
     }
 
     #[cfg(unix)]
@@ -452,7 +465,12 @@ mod tests {
     #[test]
     fn a_sign_in_with_online_or_youtube_music_off_or_no_program_is_refused_before_anything_starts()
     {
-        let (folder, settings, kept) = a_sign_in_folder("refused");
+        let SigningIn {
+            folder,
+            settings,
+            kept,
+            _interrupting,
+        } = a_sign_in_folder("refused");
         let program = Some(folder.join("never-run"));
         let offline = Config {
             online: Some(false),
@@ -477,7 +495,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_sign_in_closed_or_failed_leaves_the_setting_as_it_was() {
-        let (folder, settings, kept) = a_sign_in_folder("closed");
+        let SigningIn {
+            folder,
+            settings,
+            kept,
+            _interrupting,
+        } = a_sign_in_folder("closed");
         let before = std::fs::read_to_string(&settings).expect("the settings");
 
         for says in ["exit 3", "exit 1 # failed"] {
@@ -493,7 +516,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_sign_in_names_the_jar_in_the_settings_in_place_of_a_browser() {
-        let (folder, settings, kept) = a_sign_in_folder("signed-in");
+        let SigningIn {
+            folder,
+            settings,
+            kept,
+            _interrupting,
+        } = a_sign_in_folder("signed-in");
         let program = a_sign_in_program(&folder, "mkdir -p \"$(dirname \"$2\")\"; : > \"$2\"");
 
         let named =
@@ -510,7 +538,12 @@ mod tests {
 
     #[test]
     fn signing_out_deletes_only_what_the_window_kept() {
-        let (folder, settings, kept) = a_sign_in_folder("out");
+        let SigningIn {
+            folder,
+            settings,
+            kept,
+            _interrupting,
+        } = a_sign_in_folder("out");
         let own = folder.join("cookies.txt");
         std::fs::write(&own, "the listener's").expect("their cookies");
         std::fs::create_dir_all(&kept.profile).expect("a profile");
