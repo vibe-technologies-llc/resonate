@@ -168,9 +168,12 @@ jobs:
           git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/server/resonate-server-$VERSION.tar.gz"
           git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/signin/resonate-signin-$VERSION.tar.gz"
       - name: Build the packages
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
           useradd --create-home builder
           cp -r "$GITHUB_WORKSPACE" /home/builder/checkout
+          sed -i "s/^_version=.*/_version=$VERSION/" /home/builder/checkout/packaging/release/PKGBUILD /home/builder/checkout/packaging/release/server/PKGBUILD /home/builder/checkout/packaging/release/signin/PKGBUILD
           chown -R builder:builder /home/builder
           runuser -u builder -- rustup toolchain install stable --profile minimal
           (cd /home/builder/checkout/packaging/release && runuser -u builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" makepkg -f --noconfirm)

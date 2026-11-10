@@ -41,7 +41,8 @@ paths:
   (pre-release when the tag has `-rc`, `-beta` or `-alpha`). The workflow sets `RESONATE_RELEASES` to `github.repository` for every job, so each release asset names the repository it asks about newer releases (`online.md`'s *The latest release*). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
-  `git archive` of the tag, the `packaging/release/` recipes), `windows-zip` (`windows-latest`, a matrix of
+  `git archive` of the tag, the `packaging/release/` recipes, each set to the released version first so
+  a recipe left behind still builds the tag), `windows-zip` (`windows-latest`, a matrix of
   `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`: the zip and the Inno Setup installer, signed where the certificate secrets exist) and `android-apk`; `publish` collects
   every artifact, fills the winget and Scoop manifests from the Windows files (`fill-manifests.sh`), writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
   release is immutable. Everything but the APK and the Windows ARM64 archive is x86-64-v3
