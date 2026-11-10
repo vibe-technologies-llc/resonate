@@ -25,6 +25,8 @@ so one launch finds the window another opened, hands it its files and raises it,
 notification, idle inhibit or metered reading is made on a Mac by this crate: the bus `Desk` is
 opened only by the bus loop, which a Mac never reaches, `watch_the_meter` ends at once with no
 system bus (the connection stays `Unknown`), and the binary's `awake.rs` keeps the machine awake.
+The first zone is published to and commanded from the system's Now Playing (*The media transport*
+below, `macos.md`).
 
 ## What it sees
 
@@ -253,6 +255,13 @@ shuffle and repeat to their setters), so the rules of *A method does what the sp
 media key too. Why the first zone and not the zone shown: it is the zone the plain bus name, BlueZ
 and `resonate play` already mean, and following the window's choice would need the front end
 through a second seam.
+
+**On macOS the same thread tells the system's Now Playing** (`nowplaying.rs`, over
+`resonate_apple::NowPlaying`; `macos.md` has the threads): the same `snapshot`, `controls_of` and
+`Moved::between`, a press arriving as an `Asked` through a bounded channel the loop waits on in
+place of its sleep, each answered by the same `PlayerInterface` methods. Now Playing has no call
+for shuffle or repeat, so `transport.rs` compiles those and the Windows codes for Windows and the
+tests alone. The crate reaches `resonate-apple` on macOS for this and nothing else.
 
 ## Is the connection metered
 

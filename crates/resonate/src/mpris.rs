@@ -28,6 +28,7 @@ const IDENTITY: &str = "Resonate";
 const DESKTOP_ENTRY: &str = "resonate";
 const SANDBOXED_AS: &str = "FLATPAK_ID";
 const OPENS_IN_FRONT: bool = true;
+const NOW_PLAYING_NEEDS_A_WINDOW: bool = cfg!(target_os = "macos");
 const MIME_TYPES: [&str; 20] = [
     "audio/flac",
     "audio/x-flac",
@@ -200,7 +201,7 @@ impl Host for Desktop {
     }
 
     fn answers_media_keys(&self) -> bool {
-        self.is_the_first_zone()
+        self.is_the_first_zone() && (!NOW_PLAYING_NEEDS_A_WINDOW || self.serving.raise.is_some())
     }
 
     fn quit(&self) {

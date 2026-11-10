@@ -7283,6 +7283,7 @@ dependencies = [
  "crossbeam-channel",
  "interprocess",
  "parking_lot 0.13.0",
+ "resonate-apple",
  "resonate-codec",
  "resonate-core",
  "resonate-engine",

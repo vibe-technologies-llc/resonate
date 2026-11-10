@@ -1,9 +1,17 @@
+#[cfg(any(windows, target_os = "macos"))]
+use std::time::Duration;
+
 use resonate_core::Frames;
-use resonate_engine::{PlaybackState, RepeatMode, TagSet};
+#[cfg(any(windows, test))]
+use resonate_engine::RepeatMode;
+use resonate_engine::{PlaybackState, TagSet};
 
 use crate::track::{PlaybackStatus, micros};
 
 const TICKS_PER_MICRO: i64 = 10;
+
+#[cfg(any(windows, target_os = "macos"))]
+pub(crate) const TIMELINE_EVERY: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Status {
@@ -25,6 +33,7 @@ impl Status {
         }
     }
 
+    #[cfg(any(windows, test))]
     pub(crate) const fn code(self) -> i32 {
         match self {
             Self::Closed => 0,
@@ -61,6 +70,7 @@ impl Buttons {
     }
 }
 
+#[cfg(any(windows, test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Pressed {
     Play,
@@ -70,6 +80,7 @@ pub(crate) enum Pressed {
     Previous,
 }
 
+#[cfg(any(windows, test))]
 impl Pressed {
     pub(crate) const fn of(button: i32) -> Option<Self> {
         match button {
@@ -83,6 +94,7 @@ impl Pressed {
     }
 }
 
+#[cfg(any(windows, test))]
 pub(crate) const fn repeat_code(repeat: RepeatMode) -> i32 {
     match repeat {
         RepeatMode::Off => 0,
@@ -91,6 +103,7 @@ pub(crate) const fn repeat_code(repeat: RepeatMode) -> i32 {
     }
 }
 
+#[cfg(any(windows, test))]
 pub(crate) const fn repeat_asked(code: i32) -> Option<RepeatMode> {
     match code {
         0 => Some(RepeatMode::Off),
@@ -104,6 +117,7 @@ pub(crate) fn ticks(frames: Frames, rate: u32) -> i64 {
     micros(frames, rate).saturating_mul(TICKS_PER_MICRO)
 }
 
+#[cfg(any(windows, test))]
 pub(crate) const fn micros_of_ticks(ticks: i64) -> i64 {
     ticks / TICKS_PER_MICRO
 }
@@ -132,6 +146,7 @@ impl Timeline {
         }
     }
 
+    #[cfg(any(windows, test))]
     pub(crate) const fn seek_end(self) -> i64 {
         if self.seekable { self.end } else { 0 }
     }
@@ -167,7 +182,9 @@ impl Displayed {
 pub(crate) struct Controls {
     pub(crate) status: Option<Status>,
     pub(crate) buttons: Buttons,
+    #[cfg(any(windows, test))]
     pub(crate) shuffle: bool,
+    #[cfg(any(windows, test))]
     pub(crate) repeat: Option<RepeatMode>,
     pub(crate) displayed: Option<Displayed>,
     pub(crate) timeline: Option<Timeline>,
@@ -176,7 +193,9 @@ pub(crate) struct Controls {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Moved {
     pub(crate) status: bool,
+    #[cfg(any(windows, test))]
     pub(crate) buttons: bool,
+    #[cfg(any(windows, test))]
     pub(crate) modes: bool,
     pub(crate) displayed: bool,
     pub(crate) timeline: bool,
@@ -195,7 +214,9 @@ impl Moved {
 
         Self {
             status: before.status != now.status,
+            #[cfg(any(windows, test))]
             buttons: before.buttons != now.buttons,
+            #[cfg(any(windows, test))]
             modes: before.shuffle != now.shuffle || before.repeat != now.repeat,
             displayed,
             timeline: timeline || displayed || before.status != now.status,

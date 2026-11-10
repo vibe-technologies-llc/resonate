@@ -46,7 +46,7 @@ inside its block, so it is `Send` and `Sync` and may be dropped on any thread. `
 by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
 is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature. It is
 reached by `resonate-coreaudio`, on macOS `resonate-listen` (the microphone and the measuring
-sweep) and, on iOS, `resonate-mobile` alone.
+sweep) and `resonate-mpris` (Now Playing, `macos.md`) and, on iOS, `resonate-mobile` alone.
 
 `resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
@@ -126,7 +126,7 @@ here, add it there.
   on macOS, never `resonate-coreaudio` there (its dev-dependency, pinning the node names the same
   way; `-dsp` because the HAL's input unit does not resample, so a microphone at another rate is
   brought to the clip's 48 kHz through `Resampler`; recognisers that reach HTTP are `resonate-online`'s, handed in by the
-  binary). `resonate-mpris`: no gpui, no library.
+  binary). `resonate-mpris`: no gpui, no library; on macOS it reaches `resonate-apple`.
 - `resonate-ui`: no `resonate-codec`, no image decoding of its own; `resonate-codec::Drawing`
   decodes and scales cover art to a `Raster`.
 - `resonate-online`: composed only by the CLI/desktop binary and the mobile boundary.

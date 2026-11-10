@@ -1,8 +1,4 @@
-use std::{
-    os::windows::ffi::OsStrExt,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{os::windows::ffi::OsStrExt, sync::Arc, time::Instant};
 
 use resonate_core::MediaLocation;
 use windows::{
@@ -23,12 +19,10 @@ use crate::{
     interfaces::{PlayerInterface, Shared},
     track::{loop_status, track_path},
     transport::{
-        Controls, Displayed, Moved, Pressed, Status, Timeline, micros_of_ticks, repeat_asked,
-        repeat_code,
+        Controls, Displayed, Moved, Pressed, Status, TIMELINE_EVERY, Timeline, micros_of_ticks,
+        repeat_asked, repeat_code,
     },
 };
-
-const TIMELINE_EVERY: Duration = Duration::from_secs(1);
 
 pub(crate) struct Transport {
     _player: MediaPlayer,

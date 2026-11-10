@@ -92,7 +92,7 @@ impl Teller {
 pub struct Mpris {
     tells: Sender<Told>,
     service: Service,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     transport: Option<JoinHandle<()>>,
     stop: Arc<AtomicBool>,
     shared: Arc<Shared>,
@@ -139,13 +139,13 @@ impl Mpris {
         let stop = Arc::new(AtomicBool::new(false));
         let (tells, told) = bounded(WAITING_TELLS);
         let service = Self::served(zone, &shared, playlists, &told, &stop)?;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let transport = transporting(&shared, &stop);
 
         Ok(Self {
             tells,
             service,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             transport,
             stop,
             shared,
@@ -222,7 +222,7 @@ impl Mpris {
             #[cfg(any(windows, target_os = "macos"))]
             Service::Pipe(pipe) => pipe.rest(),
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         if let Some(transport) = self.transport.take() {
             let _ = transport.join();
         }
@@ -263,7 +263,7 @@ fn toasting(
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn transporting(shared: &Arc<Shared>, stop: &Arc<AtomicBool>) -> Option<JoinHandle<()>> {
     if !shared.host.answers_media_keys() {
         return None;
@@ -277,7 +277,7 @@ fn transporting(shared: &Arc<Shared>, stop: &Arc<AtomicBool>) -> Option<JoinHand
     match spawned {
         Ok(transport) => Some(transport),
         Err(error) => {
-            tracing::warn!(%error, "media keys and the Windows media controls are unavailable");
+            tracing::warn!(%error, "media keys and the system's media controls are unavailable");
             None
         }
     }
@@ -314,7 +314,25 @@ fn transport_what_plays(shared: &Arc<Shared>, stop: &AtomicBool) {
     transport.close();
 }
 
-#[cfg(windows)]
+#[cfg(target_os = "macos")]
+fn transport_what_plays(shared: &Arc<Shared>, stop: &AtomicBool) {
+    let mut transport = crate::nowplaying::Transport::open(shared);
+
+    let mut watched = snapshot(shared, None, None);
+    transport.tell(controls_of(&watched), true);
+
+    while !stop.load(Ordering::Acquire) {
+        transport.answer_within(POLL);
+
+        let next = snapshot(shared, None, Some(&watched));
+        transport.tell(controls_of(&next), watched.seeks != next.seeks);
+        watched = next;
+    }
+
+    transport.close();
+}
+
+#[cfg(any(windows, target_os = "macos"))]
 fn controls_of(now: &Watched) -> crate::transport::Controls {
     use crate::transport::{Buttons, Controls, Displayed, Status, Timeline};
 
@@ -344,7 +362,9 @@ fn controls_of(now: &Watched) -> crate::transport::Controls {
             now.can_go_next,
             now.can_go_previous,
         ),
+        #[cfg(any(windows, test))]
         shuffle: now.shuffle,
+        #[cfg(any(windows, test))]
         repeat: Some(now.repeat),
         displayed,
         timeline,

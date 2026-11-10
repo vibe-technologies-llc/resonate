@@ -31,6 +31,8 @@ mod metered;
 #[cfg(unix)]
 mod notifier;
 mod notify;
+#[cfg(target_os = "macos")]
+mod nowplaying;
 mod peer;
 #[cfg(windows)]
 mod pipe;
@@ -48,7 +50,7 @@ mod socket;
 mod toast;
 mod track;
 mod tracklist;
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 mod transport;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod trash;
