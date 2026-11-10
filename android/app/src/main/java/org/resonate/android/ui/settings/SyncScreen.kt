@@ -76,6 +76,7 @@ import kotlinx.coroutines.withContext
 import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
 import org.resonate.android.R
+import org.resonate.android.SyncLanding
 import org.resonate.android.nativecore.DevicePlatform
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.SyncConfig
@@ -103,6 +104,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     val folder = features.syncFolder
     val folders = features.folders
     val notice = features.syncNotice
+    val keeping = features.syncKeeping
     val online = features.online
     val askedAt = resonate.syncAskedAt
     val inBackground = features.syncsInBackground
@@ -182,6 +184,7 @@ fun SyncScreen() {
     val chosen by model.folder.collectAsStateWithLifecycle()
     val folders by model.folders.collectAsStateWithLifecycle()
     val notice by model.notice.collectAsStateWithLifecycle()
+    val keeping by model.keeping.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     val askedAt by model.askedAt.collectAsStateWithLifecycle()
     val inBackground by model.inBackground.collectAsStateWithLifecycle()
@@ -235,12 +238,27 @@ fun SyncScreen() {
                     )
                 }
             }
-            if (transfers.isNotEmpty()) {
+            if (transfers.isNotEmpty() || keeping > 0) {
                 item(key = "transfers-header") {
                     SectionHeader(
                         transfersHeader(words, status?.downloading ?: 0u, status?.waiting ?: 0u)
                     )
                 }
+            }
+            if (keeping > 0) {
+                item(key = "keeping") {
+                    SettingRow(
+                        title = SyncLanding.keeping(words, keeping),
+                        icon = Icons.Rounded.Download,
+                        supporting = destination?.name,
+                        modifier = Modifier.testTag("sync-keeping"),
+                    )
+                    Box(Modifier.fillMaxWidth().padding(start = 56.dp, end = Sizes.gutter, bottom = 8.dp)) {
+                        LinearWavyProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                }
+            }
+            if (transfers.isNotEmpty()) {
                 transfers.forEachIndexed { index, transfer ->
                     item(key = "transfer-$index") {
                         val progress = transferProgress(transfer)
