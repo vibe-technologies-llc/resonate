@@ -4027,6 +4027,7 @@ mod tests {
 
             hearing(&harness, &printer);
             let marked = unstudied(&harness);
+            fs::remove_file(harness.folder.join("a.wav")).expect("deleted by the front end");
             harness
                 .player
                 .forget_deleted_songs(vec![song])

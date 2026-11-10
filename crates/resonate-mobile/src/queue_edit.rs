@@ -404,6 +404,7 @@ mod tests {
         let harness = Harness::new();
         harness.resumed("abc", 0, 0);
         let gone = harness.song('b').id;
+        std::fs::remove_file(harness.folder.join("b.wav")).expect("deleted by the front end");
         let playlist = harness
             .player
             .create_playlist("Evening".into())
@@ -444,6 +445,7 @@ mod tests {
         let apart = "bc".repeat(70);
         harness.resumed(&format!("d{apart}"), 0, 0);
         let gone = harness.song('b').id;
+        std::fs::remove_file(harness.folder.join("b.wav")).expect("deleted by the front end");
 
         let forgotten = harness
             .player

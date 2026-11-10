@@ -371,7 +371,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   The Inspector's artist portrait is decoded once off the main thread, at the 768 px page bucket, when it arrives. Landing a received song backs off per song
   (`landingRefused`), never pausing the rest (`android.md`). Each landing first hands
   `sync_receive_standing` the files of the folder's root whose names begin with the song's stem
-  (`Folders.standing`), so a file of the same bytes standing at the name is taken rather than a
+  (`Folders.standing`), so a file of the same bytes or the same audio standing at the name is taken rather than a
   `name (n)` made beside it; the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
   writable folder, else the first writable one), and one that is not readable holds the songs back
   with a notice rather than sending them to another folder (`LandingDestinationTests`).

@@ -565,7 +565,9 @@ will not open is left out of the holdings.
   and every key `songs_received` noted against its file, the spellings a sender's ledger names it by
   (`synced::note_deleted`, `deleting.rs`'s `deletion_noted`), written in the delete's own
   transaction before the row and its `songs_received` go. **Folding a numbered or identical copy
-  into its twin marks nothing** (`deleted::Why::Folded`, `fold_into`: the song is still held), and
+  into its twin marks nothing** (`deleted::Why::Folded`, `fold_into`: the song is still held), nor
+  does a phone's row whose document opens again by the time it is forgotten, which is a landing a
+  pass made at the freed name before the delete reached the catalog (`android.md`), and
   neither does a file found gone, which is the lost file the entry above fetches again. A
   recording the sender names with a spelling no key of the deleted row or `songs_received` covers
   can still be fetched again, as it was before the mark. The seam is `Catalog::deleted_here`,

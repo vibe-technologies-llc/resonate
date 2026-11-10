@@ -65,7 +65,11 @@ impl MobilePlayer {
     }
 
     pub fn forget_deleted_songs(&self, ids: Vec<u64>) -> Result<SongsForgotten> {
-        let gone = self.held_uris(&ids);
+        let gone = self
+            .held_uris(&ids)
+            .into_iter()
+            .filter(|(_, uri)| !self.stands_again(uri))
+            .collect::<BTreeMap<_, _>>();
         let left_the_queue = self.drop_from_queue(&gone.values().cloned().collect());
 
         let forgotten = self
@@ -118,6 +122,10 @@ impl MobilePlayer {
 
     fn measured(&self, uri: &str) -> Option<u64> {
         self.opened(uri)?.byte_len()
+    }
+
+    fn stands_again(&self, uri: &str) -> bool {
+        location(uri).is_ok_and(|at| self.sources.open(&at).is_ok())
     }
 
     fn held_uris(&self, ids: &[u64]) -> BTreeMap<u64, String> {
