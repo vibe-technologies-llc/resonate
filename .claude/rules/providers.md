@@ -908,7 +908,8 @@ dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-co
 
 - **What the window does**: `resonate-signin --jar FILE --profile FOLDER` opens
   `SIGN_IN_PAGE` (Google's sign-in for YouTube, continuing to `music.youtube.com`) on its own
-  `WebContext` profile, with the engine's own user agent, and on every finished page and once a
+  `WebContext` profile (on macOS a non-persistent store, WKWebView taking no data directory, so
+  the jar is all that is kept), with the engine's own user agent, and on every finished page and once a
   second (`LOOKED_AT_EVERY`) reads the address; on `music.youtube.com` itself (`is_youtube_music`:
   `https`, that host, no user-info) it reads every cookie, keeps those under `youtube.com` and
   `google.com` (`kept`: the domain or a subdomain, never a lookalike, and none whose fields hold a

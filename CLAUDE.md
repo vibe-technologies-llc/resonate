@@ -10,12 +10,12 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
-| `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
+| `ios.md` | `ios/**`, the RemoteIO output, resonate-apple's unit | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
-| `realtime.md` | engine, pipewire, the Oboe and RemoteIO callbacks, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
+| `realtime.md` | engine, pipewire, the Oboe and AudioUnit callbacks, the Core Audio fill, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, zones, sleep, resumption, what is published, DSP, sink |
-| `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` and its two wires (the bus, a Windows pipe) |
+| `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` and its wires (the bus, a Windows pipe, a Mac's socket) |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
 | `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage and convolver, `impulse.rs`, `sofa.rs`, `autoeq.rs`, the equaliser panes, the phones' `equaliser.rs`, `measurement.rs`, `room.rs` and graph | the vocabulary, the biquads, the per-sink binding, the formats, a measurement of your own fitted to a target, AutoEq, the phones' curve, measurement fit and room correction |
@@ -37,10 +37,11 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
 | `windows.md` | resonate-wasapi, resonate-win32, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, `volume_mounts`, the library's `reach.rs`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the Win32 exception, loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
+| `macos.md` | resonate-apple, resonate-coreaudio, the macOS capture of resonate-listen, the mpris crate's `socket.rs` and `nowplaying.rs`, the binary's `awake.rs`, `trashing.rs`, the window's keys, menu and chrome, `packaging/macos/**` | how a Mac is checked with none here, the Apple exception, where each part is written, Now Playing and media keys, what is not on macOS yet, the disk image |
 
 ## Project
 
-Resonate: a music player for audio enthusiasts, Linux first, with a Windows port; high-fidelity, high-performance
+Resonate: a music player for audio enthusiasts, Linux first, with Windows and macOS ports; high-fidelity, high-performance
 playback is the guiding constraint.
 
 - A **native PipeWire client** (not PulseAudio/ALSA compatibility) that reads the sink's advertised
@@ -48,6 +49,8 @@ playback is the guiding constraint.
   hardware allows.
 - A **GPUI** front end, native on Wayland.
 - A **Windows** build of the same window and engine, playing through WASAPI (`windows.md`).
+- A **macOS** build of the same window and engine for Apple Silicon, playing through Core Audio,
+  cross-checked and built in CI and never yet run on a Mac (`macos.md`).
 - An **Android 13+ Jetpack Compose** front end (Material 3), with the same Rust playback engine,
   opened and run from the `android/` project in Android Studio.
 - An **iOS 26+ SwiftUI** front end on the same engine and boundary, built, signed and installed from
@@ -69,7 +72,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-nine crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
+Forty-one crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
 leaf every crate that says words reaches; `resonate-codec`, `resonate-dsp` and `resonate-pipewire`
 never depend on each other; `resonate-engine` joins them.
 
@@ -86,7 +89,8 @@ resonate            bin: CLI, tracing, wiring
   │     ├── resonate-dsp      resample, gain, dither
   │     ├── resonate-audio    backend contracts, sink vocabulary and streams
   │     ├── resonate-pipewire Linux sink enumeration, negotiation, stream
-  │     └── resonate-wasapi   Windows endpoints, shared and exclusive streams
+  │     ├── resonate-wasapi   Windows endpoints, shared and exclusive streams
+  │     └── resonate-coreaudio macOS devices, shared and hog-mode streams; the AudioUnit fill iOS shares
   ├── resonate-upnp       UPnP AV renderers on the network as sinks beside PipeWire's
   ├── resonate-cast       Google Cast receivers as sinks beside them, over UPnP's paced stream
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
@@ -106,6 +110,7 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   ├── providers/ytmusic   resonate-ytmusic, songs kept from a YouTube Music account through yt-dlp  [`online`]
   ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec)
+  ├── resonate-apple      the Core Audio, AudioToolbox and MediaPlayer calls no safe crate wraps, safe API  (macOS and iOS; under coreaudio, listen, mpris, mobile)
   ├── resonate-core       domain vocabulary
   └── resonate-words      the word catalogs, the language spoken  (`resonate-words-build` writes each crate's functions from its `.ftl`)
 
@@ -121,13 +126,16 @@ the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `res
 (over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
 hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`) and is reached by the binary and `resonate-mobile` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
-(capture and loopback on threads of its own, never `resonate-wasapi`); `resonate-analysis` reaches `resonate-dsp`;
+(capture and loopback on threads of its own, never `resonate-wasapi`) and core, `resonate-audio`, `resonate-apple` and `resonate-dsp` on macOS
+(a microphone through the HAL input unit, never `resonate-coreaudio`); `resonate-analysis` reaches `resonate-dsp`;
 `resonate-sync` reaches core alone and is reached by the binary, `resonate-driven`, `resonate-mobile` and the server;
 `resonate-driven` joins it to the engine and is reached by the binary and `resonate-mobile` alone;
 `resonate-signin` reaches core and `resonate-words` alone and is reached by the binary alone, never with its `window`
 feature, so `wry`, `tao` and WebKitGTK stay out of the binary's tree;
 `resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and
-the binary alone, and is with `resonate-mobile` the only crate where `unsafe_code` is allowed.
+the binary alone; `resonate-apple` reaches none either and is reached by `resonate-coreaudio`, `resonate-listen`
+and `resonate-mpris` on macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS; those two and
+`resonate-mobile` are the only crates where `unsafe_code` is allowed.
 
 Invariants the layering protects (the rules files have the rest):
 
@@ -144,7 +152,7 @@ Invariants the layering protects (the rules files have the rest):
   (`audio.md`): the window shows one at a time, each is its own MPRIS player (`mpris.md`), each
   queue is kept under its `ZoneId`; the phones' boundary holds one too, its calls addressing the
   zone shown (`mobile.md`).
-- **The engine reaches the graph through `resonate-audio::Backend`, never `PipeWire`**: `Player::with_backend` takes
+- **The engine reaches the graph through `resonate-audio::Backend`, never `PipeWire`** (`engine::desktop_backend` is the one place PipeWire, WASAPI or Core Audio is named): `Player::with_backend` takes
   any other, so `crates/resonate-engine/tests/transport.rs` drives a transport with no daemon.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`**,
   so one service serves `resonate play` and the window (`mpris.md`).
@@ -211,6 +219,13 @@ Invariants the layering protects (the rules files have the rest):
   The same with `--target aarch64-pc-windows-msvc` is Windows on ARM64 (`rustup target add` first;
   `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job checks it.
 
+- `RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo clippy --target aarch64-apple-darwin --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets -- -D warnings`:
+  the macOS build, type-checked from Linux against the SDK `xtool setup` built
+  (`~/.swiftpm/swift-sdks/darwin.artifactbundle/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk`),
+  after `rustup target add aarch64-apple-darwin`; gpui's shader source is written on a Mac alone, so an
+  empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI builds and
+  tests it natively in the `macos` job. `packaging/macos/build.sh` builds the disk image on a Mac.
+
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare
   `cargo run` opens the window.
@@ -233,7 +248,7 @@ Invariants the layering protects (the rules files have the rest):
   `cargo bench -p resonate-analysis --bench study` times a whole pass (`analysis.md`).
   `cargo build --profile profiling`: release with symbols.
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
-  `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), the reconnect, `formats` and
+  `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), `resonate-coreaudio --test stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS=required` makes a skip a failure), the reconnect, `formats` and
   `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris --test bus` (session
   bus; notification and headset presses run under `dbus-run-session`); `resonate-codec --test
   encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp --test restoration`

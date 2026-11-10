@@ -55,11 +55,17 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   refused without the multicast entitlement have not been seen
 
 ## iOS
-- [S · blocked: iPhone] The RemoteIO `CoreAudio` toolbox (the unsafe `AudioComponentInstanceNew`,
+- [S · blocked: iPhone] `resonate-apple`'s `AudioToolbox` (the unsafe `AudioComponentInstanceNew`,
   `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`
-  shell stay iOS-only; the unit's sequence, the output thread and the panic catch are proved on the
-  host over fakes, so what no test has run is Apple's answer to the calls (that the format is
-  accepted, the callback is called with the `Rendering`, a stop disposes cleanly)
+  shells are compiled for Apple targets alone; the unit's sequence, the output thread and the panic
+  catch are proved on the host over fakes, so what no test has run is Apple's answer to the calls
+  (that the format is accepted, the callback is called with the `Rendering`, a stop disposes
+  cleanly), and the RemoteIO output has not been heard on an iPhone since those calls moved out of
+  `resonate-mobile`
+- [M · blocked: hardware] The Core Audio tests (`resonate-coreaudio --test stream`: a tone through
+  the shared sink, a hog-mode rate switch and its restoration, a 24-bit ramp read back bit for bit
+  through a loopback device) need an output device, and the hog and bit-exact halves a device named
+  *BlackHole*; they skip without one, so they have run nowhere
 - [S · blocked: Xcode's processor] `ios/app-intents.py` is held by a fixture of `Siri.swift`'s const
   values and its own output, never by Apple's: it was compared with `appintentsmetadataprocessor`
   by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),

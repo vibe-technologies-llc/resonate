@@ -68,9 +68,49 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
 
 ## macOS parity
-- [L · blocked: hardware] There is no macOS desktop build: GPUI draws natively there and the iOS
-  RemoteIO output is close to a CoreAudio sink beside PipeWire's and WASAPI's, but no Mac exists
-  here to hear it on, so it would ship as Windows did, cross-checked and never played
+- [L · blocked: hardware] The macOS build has never run on a Mac: it is type-checked from Linux and
+  built and tested on a hosted runner (`macos.md`). Only hardware settles hog mode (taking a
+  device, moving its nominal rate and then its physical format, each read back within 1.5 s, and
+  putting all three back), whether the HAL unit takes 16-bit and packed 32-bit client words and
+  carries 24 bits through its Float32 path exactly, the callback's host time as the moment a buffer
+  reaches the device, a device's volume and mute (element 0 or the stereo pair, and whether a
+  settable scalar is the device's own), listeners for hot-plug and a rate another program moved, a
+  microphone through the HAL input unit and its permission prompt, the measuring sweep, Now Playing
+  (whether setting the playback state alone makes an unbundled process the Now Playing app, the
+  media keys, the cover, the seek bar), the window (shaders compiled at start, the header beside the
+  traffic lights and their size on macOS 26, dragging and double click on it, the bundle's fonts
+  found by family, the menu's key equivalents while a field holds the caret, Control-Space against
+  the system's input-source switch), files and `resonate://` links from Finder at a cold start, the
+  socket a second launch reaches the window on (and its path under an unusually long home), Finder's
+  Trash through `trashItemAtURL` and its *Put Back*, the machine kept awake, the language list,
+  FAT and exFAT volumes named portably, the YouTube Music sign-in window on WKWebView, and the disk
+  image (Gatekeeper on an ad-hoc signature, the document types and the link scheme registering,
+  the icon)
+- [M] macOS tells nothing of a song change: no notification is raised (UserNotifications needs a
+  bundle and the listener's permission, and nothing calls it)
+- [M] The desktop's sound cannot be recorded on macOS (`Listening::Desktop` is
+  `Error::DesktopUnheard`, the Listen pane offers the microphone alone): a Core Audio process tap
+  (macOS 14.2) is not built
+- [S] macOS never knows a metered connection (`Meter::Unknown`, so nothing is held back): the
+  Network framework's path monitor is not read
+- [S] The exclusive sink on macOS offers no 32-bit integer word and no layout past stereo, and asks
+  for no buffer size: the HAL unit's Float32 path holds 24 bits, a true integer mode (an IOProc on
+  an unmixable format) is not built, and a device of more channels plays as its preferred pair
+- [S] Closing the window on macOS quits; playing on with it closed, as a Mac's players do, is not
+  built, and `resonate play` answers no media key there (it runs no main loop)
+- [S] The menu bar has no Undo or Redo (a menu item is dispatched outside the focused field's
+  context, so it would undo a library edit while a field holds the caret) and *Play or pause* shows
+  no key
+- [S] A window started from Finder has the system's short `PATH`, so a Homebrew `yt-dlp` is found
+  only where its path is set in the settings
+- [S] Tag writes on APFS copy where they could clone (`clonefile` has no safe wrapper here), and a
+  name an HFS+ volume hands back decomposed is not composed
+- [S] There is no Homebrew cask and no Intel build: the release is one Apple Silicon disk image
+- [S · blocked: certificate] The macOS disk image is signed ad hoc and not notarised, so Gatekeeper
+  refuses a first run until it is opened from *Privacy & Security*: no Developer ID exists.
+  `sign.sh` and `release.yml` sign and notarise once `MACOS_CERTIFICATE_BASE64`,
+  `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_BASE64`, `MACOS_NOTARY_KEY_ID` and
+  `MACOS_NOTARY_ISSUER` are set
 
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while

@@ -1,6 +1,6 @@
 # Resonate
 
-A music player for audio enthusiasts, targeting Linux first (with a Windows port), with
+A music player for audio enthusiasts, targeting Linux first (with Windows and macOS ports), with
 high-fidelity, high-performance playback as the guiding constraint.
 
 - A **native PipeWire client** rather than a PulseAudio or ALSA compatibility layer. It reads the
@@ -30,7 +30,8 @@ high-fidelity, high-performance playback as the guiding constraint.
 - Optional **Discord presence** and a **Model Context Protocol** server that hands the catalog and
   the running player to a language model.
 
-On Windows the sound goes through WASAPI instead (see *Windows* below). Until the first release is
+On Windows the sound goes through WASAPI instead and on macOS through Core Audio (see *Windows* and
+*macOS* below). Until the first release is
 published, build from source.
 
 ## Building
@@ -58,6 +59,26 @@ the Windows mixer, the same name marked *(WASAPI exclusive)* takes the device fo
 the song's own rate and word. Desktop integration (media keys, notifications), microphone and
 loopback capture, Discord and remote control of a running window are not on Windows yet; the
 roadmap lists them (`docs/FEATURES.md`). Nothing here has been heard on a real Windows machine yet.
+
+## macOS
+
+A release disk image, `resonate-<version>-aarch64-macos.dmg`, holds `Resonate.app` for Apple
+Silicon and macOS 13 or later. It is signed ad hoc and not notarised, so the first run is opened
+from *Privacy & Security*; the image's `README.txt` says how. To build it on a Mac with Xcode's
+command line tools and a current Rust:
+
+```
+./packaging/macos/build.sh
+```
+
+Settings and the catalog live in `~/Library/Application Support/resonate`, studies in
+`~/Library/Caches/resonate`. `resonate sinks` lists every output twice: the plain name plays through
+the system's mixer at the device's rate, the same name marked *(exclusive)* takes the device in hog
+mode and moves it to the song's own rate and word. The window steers with Command, has a menu bar
+and answers the media keys through Now Playing. Notifications, metered-connection detection and
+recording the desktop's sound are not on macOS yet; the roadmap lists them (`docs/FEATURES.md`).
+Nothing here has run on a real Mac yet: it is type-checked from Linux and built and tested on a
+hosted runner.
 
 ## Building on Linux
 

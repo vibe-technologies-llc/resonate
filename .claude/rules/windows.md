@@ -317,7 +317,7 @@ exists (*The Win32 exception*, below).
   other process it is freed and its window closes; started from a shell, the shell shares it and
   the window's log stays there.
 - **The window draws its own caption.** gpui's Windows backend reports `Decorations::Server`, so
-  `chrome::the_caption_is_ours` is true on Windows whatever the decorations say, and the window
+  `chrome::the_window_controls_are_ours` and `chrome::the_header_moves_the_window` are true on Windows whatever the decorations say, and the window
   opens with `TitlebarOptions::appears_transparent` (gpui then hides the system caption and keeps
   the resize frame). `THE_SYSTEM_PRESSES_THE_CAPTION`: the header is `WindowControlArea::Drag`
   (Windows moves the window, zooms on a double press and opens the system menu on a right press,
