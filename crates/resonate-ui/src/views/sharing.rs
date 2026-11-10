@@ -1,13 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use gpui::{
-    BoxShadow, Context, Div, FontWeight, SharedString, div, point, prelude::*, px, relative, rgb,
-    rgba,
-};
+use gpui::{Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb};
 use resonate_core::PlaylistId;
 
 use crate::{
-    Notice, ResonateApp, clipboard, motion, theme,
+    Notice, ResonateApp, clipboard,
+    icons::Icon,
+    keys, motion, theme,
     together::{SharedPerson, SharedReach, SharedSeen, Together},
     views::{
         kit::{self, EndsInAnEllipsis as _, Tone},
@@ -16,45 +15,10 @@ use crate::{
         sheets,
         spoken::Spoken,
     },
+    words,
 };
 
-const SHARE_LABEL: &str = "Share this playlist";
-
-const CLOSE_HINT: &str = keyed!("Close", key!(leave));
-
-const SHARE_HINT: &str = "Make this playlist one other people can follow or edit with you";
-
-const COPY_FOLLOW_HINT: &str = "Copy the link someone can follow this playlist by";
-
-const COPY_EDIT_HINT: &str = "Copy the link someone can edit this playlist with";
-
-const RESET_HINT: &str = "Make new links, so the ones given out reach nothing";
-
-const LEAVE_HINT: &str = "Stop sharing this playlist here; its songs stay as your own list";
-
-const REMOVE_HINT: &str = "Take this person off the list; everyone else moves to new links";
-
-const PRESS_AGAIN: &str = "Press again";
-
-const NOT_SHARED: &str = "Anyone with a link can follow it or edit it with you, with no account. \
-                          The server keeps it sealed and cannot read it, and everyone plays their \
-                          own copy of each song.";
-
-const FOLLOW_LINK: &str = "Anyone with this link can follow";
-
-const EDIT_LINK: &str = "Anyone with this link can edit";
-
-const FOLLOWING: &str = "You follow this playlist. Whoever shared it decides what is on it.";
-
-const NOT_SEEN_YET: &str = "This playlist could not be shared. Is Online on?";
-
-const SCAN_TO_FOLLOW: &str = "Scan to follow";
-
 const SCANNED_SIDE: f32 = 132.0;
-
-const A_NAMELESS_PERSON: &str = "Someone";
-
-const YOU: &str = "You";
 
 const SHEET_REDRAWN_EVERY: Duration = Duration::from_millis(1_000);
 
@@ -76,25 +40,21 @@ pub(crate) struct Sharing {
 
 fn reach_said(reach: SharedReach) -> Option<&'static str> {
     match reach {
-        SharedReach::Waiting => Some("Reaching the server…"),
+        SharedReach::Waiting => Some(words::sharing::reaching_the_server()),
         SharedReach::Reached => None,
-        SharedReach::Unreached => {
-            Some("The server cannot be reached. Edits are kept and go when it can.")
-        }
-        SharedReach::ServerTooOld => Some("The server is too old to keep shared playlists."),
-        SharedReach::TurnedAway => Some("The server turned this playlist away."),
-        SharedReach::NoServer => {
-            Some("This device is set to use no server, so nothing can be shared.")
-        }
+        SharedReach::Unreached => Some(words::sharing::unreached()),
+        SharedReach::ServerTooOld => Some(words::sharing::server_too_old()),
+        SharedReach::TurnedAway => Some(words::sharing::turned_away()),
+        SharedReach::NoServer => Some(words::sharing::no_server()),
     }
 }
 
 fn person_said(person: &SharedPerson) -> SharedString {
     if person.me {
-        return SharedString::new_static(YOU);
+        return SharedString::new_static(words::sharing::you());
     }
     if person.name.is_empty() {
-        return SharedString::new_static(A_NAMELESS_PERSON);
+        return SharedString::new_static(words::sharing::a_nameless_person());
     }
 
     SharedString::from(person.name.clone())
@@ -138,28 +98,13 @@ impl RootView {
             .as_ref()
             .and_then(|together| together.seen(sharing.playlist));
 
-        let mut card = div()
+        let mut card = kit::sheet()
             .id("sharing-sheet")
-            .dialog(SHARE_LABEL)
+            .dialog(words::sharing::share_label())
             .track_focus(&self.sheet_panels.holding(sheets::SHARING_PANEL, cx))
-            .flex()
-            .flex_col()
-            .gap_4()
             .w(px(theme::wrapped_width()))
             .max_h(relative(0.94))
             .overflow_y_scroll()
-            .p_6()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_sharing(cx)));
 
         card = match seen {
@@ -167,15 +112,7 @@ impl RootView {
             None => card.child(self.unshared_body(&sharing, together.is_some(), cx)),
         };
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "sharing-sheet-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "sharing-sheet-arrives"))
     }
 
     fn unshared_body(&self, sharing: &Sharing, can_share: bool, cx: &mut Context<Self>) -> Div {
@@ -185,21 +122,31 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(heading(SHARE_LABEL))
-            .child(said(if can_share { NOT_SHARED } else { NOT_SEEN_YET }))
+            .child(heading(words::sharing::share_label()))
+            .child(said(if can_share {
+                words::sharing::not_shared()
+            } else {
+                words::sharing::not_seen_yet()
+            }))
             .child(
                 div()
                     .flex()
                     .justify_end()
                     .gap_2()
                     .child(self.in_the_pane_ring(
-                        kit::button("sharing-close", None, "Close", CLOSE_HINT, Tone::Ghost),
+                        close_button(),
                         |this, _, cx| this.close_sharing(cx),
                         cx,
                     ))
                     .when(can_share, |row| {
                         row.child(self.in_the_pane_ring(
-                            kit::button("sharing-start", None, "Share", SHARE_HINT, Tone::Primary),
+                            kit::button(
+                                "sharing-start",
+                                None,
+                                words::sharing::share(),
+                                words::sharing::share_hint(),
+                                Tone::Primary,
+                            ),
                             move |this, _, cx| this.begin_sharing(playlist, cx),
                             cx,
                         ))
@@ -223,25 +170,25 @@ impl RootView {
             if let Some(link) = seen.edit_link.clone() {
                 body = body.child(self.link_row(
                     "sharing-copy-edit",
-                    EDIT_LINK,
+                    words::sharing::edit_link(),
                     link,
-                    COPY_EDIT_HINT,
+                    words::sharing::copy_edit_hint(),
                     cx,
                 ));
             }
             body = body.child(self.link_row(
                 "sharing-copy-follow",
-                FOLLOW_LINK,
+                words::sharing::follow_link(),
                 seen.view_link.clone(),
-                COPY_FOLLOW_HINT,
+                words::sharing::copy_follow_hint(),
                 cx,
             ));
         } else {
-            body = body.child(said(FOLLOWING));
+            body = body.child(said(words::sharing::following()));
         }
 
         body = body
-            .child(said(SCAN_TO_FOLLOW))
+            .child(said(words::sharing::scan_to_follow()))
             .child(div().size(px(SCANNED_SIDE)).child(scanned(&seen.view_link)));
 
         if !seen.people.is_empty() {
@@ -249,7 +196,7 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(kit::eyebrow("People"));
+                .child(kit::eyebrow(words::sharing::people()));
             for (at, person) in seen.people.iter().enumerate() {
                 people = people.child(self.person_row(at, person, sharing, seen.may_edit, cx));
             }
@@ -266,9 +213,9 @@ impl RootView {
                 .join(", ");
             let more = seen.unheld.len().saturating_sub(UNHELD_NAMED_AT_MOST);
             let line = if more > 0 {
-                format!("Not in your library: {named} and {more} more")
+                words::sharing::unheld_and_more(more, named)
             } else {
-                format!("Not in your library: {named}")
+                words::sharing::unheld(named)
             };
             body = body.child(said(line));
         }
@@ -288,11 +235,11 @@ impl RootView {
                             "sharing-reset",
                             None,
                             if reset_armed {
-                                PRESS_AGAIN
+                                words::sharing::press_again()
                             } else {
-                                "Make new links"
+                                words::sharing::make_new_links()
                             },
-                            RESET_HINT,
+                            words::sharing::reset_hint(),
                             Tone::Ghost,
                         ),
                         move |this, _, cx| this.press_reset(playlist, cx),
@@ -303,15 +250,19 @@ impl RootView {
                     kit::button(
                         "sharing-leave",
                         None,
-                        if leave_armed { PRESS_AGAIN } else { "Leave" },
-                        LEAVE_HINT,
+                        if leave_armed {
+                            words::sharing::press_again()
+                        } else {
+                            words::sharing::leave()
+                        },
+                        words::sharing::leave_hint(),
                         Tone::Destructive,
                     ),
                     move |this, _, cx| this.press_leave(playlist, cx),
                     cx,
                 ))
                 .child(self.in_the_pane_ring(
-                    kit::button("sharing-close", None, "Close", CLOSE_HINT, Tone::Ghost),
+                    close_button(),
                     |this, _, cx| this.close_sharing(cx),
                     cx,
                 )),
@@ -342,10 +293,10 @@ impl RootView {
                     .child(kit::figure(link).truncate().ends_in_an_ellipsis()),
             )
             .child(self.in_the_pane_ring(
-                kit::button(id, None, "Copy", hint, Tone::Outlined),
+                kit::button(id, None, words::sharing::copy(), hint, Tone::Outlined),
                 move |this, _, cx| {
                     clipboard::copy(copied.clone(), cx);
-                    this.report(Notice::Done("The link is on the clipboard".to_owned()), cx);
+                    this.report(Notice::Done(words::sharing::link_copied().to_owned()), cx);
                 },
                 cx,
             ))
@@ -383,8 +334,12 @@ impl RootView {
                     kit::button(
                         ("sharing-remove", at),
                         None,
-                        if armed { PRESS_AGAIN } else { "Remove" },
-                        REMOVE_HINT,
+                        if armed {
+                            words::sharing::press_again()
+                        } else {
+                            words::sharing::remove()
+                        },
+                        words::sharing::remove_hint(),
                         Tone::Ghost,
                     ),
                     move |this, _, cx| this.press_remove(playlist, id, cx),
@@ -401,7 +356,7 @@ impl RootView {
         run_it(
             cx,
             move || together.share(playlist),
-            "Couldn't share this playlist",
+            words::sharing::could_not_share(),
             None,
         );
     }
@@ -417,8 +372,8 @@ impl RootView {
         run_it(
             cx,
             move || together.reset(playlist, None),
-            "Couldn't reach the server to make new links",
-            Some("The old links reach nothing now"),
+            words::sharing::could_not_reset(),
+            Some(words::sharing::reset()),
         );
     }
 
@@ -434,8 +389,8 @@ impl RootView {
         run_it(
             cx,
             move || together.leave(playlist),
-            "Couldn't leave this playlist",
-            Some("You left; its songs stay here as your own playlist"),
+            words::sharing::could_not_leave(),
+            Some(words::sharing::left()),
         );
     }
 
@@ -450,8 +405,8 @@ impl RootView {
         run_it(
             cx,
             move || together.reset(playlist, Some(person)),
-            "Couldn't reach the server to take them off",
-            Some("They no longer reach this playlist"),
+            words::sharing::could_not_remove(),
+            Some(words::sharing::removed()),
         );
     }
 
@@ -473,7 +428,7 @@ impl RootView {
     pub(crate) fn accept_an_invitation(&mut self, link: &str, cx: &mut Context<Self>) {
         let Some(together) = together_of(cx) else {
             self.report(
-                Notice::Trouble("This build shares nothing with other people".to_owned()),
+                Notice::Trouble(words::sharing::shares_nothing().to_owned()),
                 cx,
             );
             return;
@@ -483,8 +438,8 @@ impl RootView {
         run_it(
             cx,
             move || together.accept(&link),
-            "That link could not be read",
-            Some("Joined; it appears here once it arrives"),
+            words::sharing::could_not_accept(),
+            Some(words::sharing::accepted()),
         );
     }
 }
@@ -516,16 +471,18 @@ fn run_it(
     .detach();
 }
 
-fn heading(text: impl Into<SharedString>) -> impl IntoElement {
-    let text = text.into();
+fn close_button() -> Stateful<Div> {
+    kit::button(
+        "sharing-close",
+        None,
+        words::sharing::close(),
+        keys::keyed(words::sharing::close(), &[key!(leave)]),
+        Tone::Ghost,
+    )
+}
 
-    div()
-        .id("sharing-heading")
-        .headed(2, &text)
-        .text_size(px(theme::text_lg()))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(rgb(theme::text()))
-        .child(text)
+fn heading(text: impl Into<SharedString>) -> impl IntoElement {
+    kit::sheet_heading("sharing-heading", Icon::Share, theme::accent(), text)
 }
 
 fn said(text: impl Into<SharedString>) -> Div {
@@ -547,9 +504,9 @@ mod tests {
             me,
         };
 
-        assert_eq!(person_said(&person("", false)), A_NAMELESS_PERSON);
+        assert_eq!(person_said(&person("", false)), "Someone");
         assert_eq!(person_said(&person("Ada", false)), "Ada");
-        assert_eq!(person_said(&person("Ada", true)), YOU);
+        assert_eq!(person_said(&person("Ada", true)), "You");
     }
 
     #[test]

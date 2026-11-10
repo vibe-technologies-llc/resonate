@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -62,13 +64,15 @@ import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.DownloadPlan
 import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Sizes
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.words
 
 data class DownloadShown(
     val status: String,
@@ -90,7 +94,12 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
                 when {
                     status == null -> null
                     !running && status == hidden -> null
-                    else -> DownloadShown(status, running, DownloadPlan.meterLine(waiting))
+                    else ->
+                        DownloadShown(
+                            status,
+                            running,
+                            DownloadPlan.meterLine(resonate.library.words, waiting),
+                        )
                 }
             }
             .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
@@ -163,8 +172,11 @@ private fun rememberedAmong(chosen: String?, all: List<MusicFolder>): MusicFolde
 fun downloadFolders(folders: List<MusicFolder>): List<MusicFolder> =
     folders.filter { it.readable && it.writable && it.uri != MusicDocuments.downloads }
 
-fun megabytes(bytes: ULong): String =
-    String.format(Locale.ROOT, "%.1f MB", bytes.toDouble() / 1_048_576)
+fun megabytes(words: Words, bytes: ULong): String =
+    words.string(
+        R.string.search_megabytes,
+        String.format(Locale.ROOT, "%.1f", bytes.toDouble() / 1_048_576),
+    )
 
 @Composable
 fun DownloadCard(downloads: Downloads, modifier: Modifier = Modifier) {
@@ -201,10 +213,15 @@ fun DownloadCard(downloads: Downloads, modifier: Modifier = Modifier) {
                     } else null,
                 trailingContent = {
                     if (current.running) {
-                        TextButton(onClick = downloads::cancel) { Text("Cancel") }
+                        TextButton(onClick = downloads::cancel) {
+                            Text(stringResource(R.string.download_cancel))
+                        }
                     } else {
                         IconButton(onClick = downloads::dismiss) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Dismiss")
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.download_dismiss),
+                            )
                         }
                     }
                 },
@@ -223,7 +240,7 @@ fun DownloadCard(downloads: Downloads, modifier: Modifier = Modifier) {
 @Composable
 private fun DownloadedBytes(downloads: Downloads) {
     val bytes by downloads.bytes.collectAsStateWithLifecycle()
-    Text(megabytes(bytes))
+    Text(megabytes(words(), bytes))
 }
 
 @Composable
@@ -246,8 +263,9 @@ fun DownloadChooser(songs: List<SearchSong>, downloads: Downloads, dismiss: () -
                 .testTag("download-chooser")
         ) {
             Text(
-                if (songs.size == 1) "Download “${songs.single().title}”"
-                else "Download ${counted(songs.size, "song")}",
+                if (songs.size == 1)
+                    stringResource(R.string.download_one, songs.single().title)
+                else pluralStringResource(R.plurals.download_songs, songs.size, songs.size),
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -255,23 +273,28 @@ fun DownloadChooser(songs: List<SearchSong>, downloads: Downloads, dismiss: () -
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (!ready) "Set up a download provider first."
-                else "Choose the music folder they should land in.",
+                stringResource(
+                    if (!ready) R.string.download_set_up_first else R.string.download_choose_folder
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Spacer(Modifier.height(8.dp))
             if (!ready) {
-                ChooserRow(Icons.Rounded.Key, "Download providers", "Sign in to TIDAL, Subsonic or another source") {
+                ChooserRow(
+                    Icons.Rounded.Key,
+                    stringResource(R.string.download_providers),
+                    stringResource(R.string.download_providers_detail),
+                ) {
                     dismiss()
                     navigator.open(Screen.Providers)
                 }
             } else {
                 ChooserRow(
                     Icons.Rounded.Download,
-                    "Downloads",
-                    "Save directly in your Downloads folder",
+                    stringResource(R.string.download_into_downloads),
+                    stringResource(R.string.download_into_downloads_detail),
                 ) {
                     downloads.intoDownloads(songs, remember)
                     dismiss()
@@ -292,13 +315,19 @@ fun DownloadChooser(songs: List<SearchSong>, downloads: Downloads, dismiss: () -
                             )
                             .testTag("remember-folder"),
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    supportingContent = { Text("Later downloads go straight to the folder you choose.") },
+                    supportingContent = {
+                        Text(stringResource(R.string.download_remember_folder_detail))
+                    },
                     trailingContent = { Switch(checked = remember, onCheckedChange = null) },
                 ) {
-                    Text("Remember this folder")
+                    Text(stringResource(R.string.download_remember_folder))
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                ChooserRow(Icons.Rounded.Add, "Add music folder", "Choose another folder to download into") {
+                ChooserRow(
+                    Icons.Rounded.Add,
+                    stringResource(R.string.download_add_folder),
+                    stringResource(R.string.download_add_folder_detail),
+                ) {
                     dismiss()
                     host.chooseFolder()
                 }

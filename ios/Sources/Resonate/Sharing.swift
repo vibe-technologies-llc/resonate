@@ -43,6 +43,6 @@ struct ShareSongButton: View {
     let track: Track
 
     var body: some View {
-        Button("Share link", systemImage: "square.and.arrow.up") { library.features.share(track) }
+        Button("sharing.share-link", systemImage: "square.and.arrow.up") { library.features.share(track) }
     }
 }

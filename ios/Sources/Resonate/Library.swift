@@ -376,7 +376,8 @@ final class Library {
         polling = Task { [weak self] in
             do {
                 async let opening = Work.inOrder {
-                    try MobilePlayer(folder: folder, documents: documents)
+                    _ = speakLanguages(tags: Locale.preferredLanguages)
+                    return try MobilePlayer(folder: folder, documents: documents)
                 }
                 async let routed = Work.inSession { OutputRoute.current }
                 let opened = try await opening
@@ -902,14 +903,14 @@ final class Library {
 
     func playServedNext(_ uris: [String]) {
         guard !uris.isEmpty else { return }
-        editQueue(uris.count == 1 ? "Playing next" : "Playing \(counted(uris.count, "song")) next") {
+        editQueue(said("queue.playing-next", uris.count)) {
             try $0.playServedNext(uris: uris)
         }
     }
 
     func addServedToQueue(_ uris: [String]) {
         guard !uris.isEmpty else { return }
-        editQueue(uris.count == 1 ? "Added to queue" : "Added \(counted(uris.count, "song")) to queue") {
+        editQueue(said("queue.added", uris.count)) {
             try $0.addServedToQueue(uris: uris)
         }
     }
@@ -1028,7 +1029,7 @@ final class Library {
     func playNext(_ rows: [Track]) {
         let ids = rows.map(\.id)
         guard !ids.isEmpty else { return }
-        editQueue(rows.count == 1 ? "Playing next" : "Playing \(counted(rows.count, "song")) next") {
+        editQueue(said("queue.playing-next", rows.count)) {
             try $0.playNext(ids: ids)
         }
     }
@@ -1036,7 +1037,7 @@ final class Library {
     func addToQueue(_ rows: [Track]) {
         let ids = rows.map(\.id)
         guard !ids.isEmpty else { return }
-        editQueue(rows.count == 1 ? "Added to queue" : "Added \(counted(rows.count, "song")) to queue") {
+        editQueue(said("queue.added", rows.count)) {
             try $0.addToQueue(ids: ids)
         }
     }
@@ -1048,11 +1049,11 @@ final class Library {
         }
         queue.removeAll { $0.queueId == queueId }
         if row.isServed {
-            editQueue("Removed from queue") { try $0.removeFromQueue(queueId: queueId) }
+            editQueue(said("queue.removed")) { try $0.removeFromQueue(queueId: queueId) }
             return
         }
         editQueue { try $0.removeFromQueue(queueId: queueId) } offering: {
-            self.show("Removed from queue", as: .notice, offering: .restoreQueueRow)
+            self.show(said("queue.removed"), as: .notice, offering: .restoreQueueRow)
         }
     }
 
@@ -1060,7 +1061,7 @@ final class Library {
         guard let removed = removedFromQueue else { return }
         removedFromQueue = nil
         dismissStatus()
-        editQueue("Back in the queue") { try $0.insertInQueue(ids: [removed.trackId], at: removed.at) }
+        editQueue(said("queue.restored")) { try $0.insertInQueue(ids: [removed.trackId], at: removed.at) }
     }
 
     func moveInQueue(from: Int, to: Int) {
@@ -1125,8 +1126,7 @@ final class Library {
             favouriteWrites[id] = nil
             markFavourite(id, !favourite)
             show(
-                (favourite ? "Could not add this song to favourites: " : "Could not remove this song from favourites: ")
-                    + explained(failure),
+                favourite ? said("favourites.add.failed", explained(failure)) : said("favourites.remove.failed", explained(failure)),
                 as: .failure
             )
         }
@@ -1220,7 +1220,7 @@ final class Library {
         if forgotten.id == route?.id { followRoute() }
         guard let kept else { return }
         forgottenEqualiser = ForgottenEqualiser(route: forgotten, curve: kept)
-        show("Forgot the curve for \(forgotten.name)", as: .notice, offering: .restoreEqualiser)
+        show(said("equaliser.route.forgotten", forgotten.name), as: .notice, offering: .restoreEqualiser)
     }
 
     private func restoreEqualiser() {
@@ -1230,7 +1230,7 @@ final class Library {
         preferencesStore.bind(forgotten.route, to: forgotten.curve)
         boundRoutes = preferencesStore.boundRoutes()
         if forgotten.route.id == route?.id { followRoute() }
-        notice("Curve back for \(forgotten.route.name)")
+        notice(said("equaliser.route.restored", forgotten.route.name))
     }
 
     private func followRoute() {
@@ -1808,8 +1808,8 @@ final class Library {
                 features.loadPlaylists()
                 features.playlistToShow = imported.id
                 notice(imported.missing == 0
-                    ? "Imported \(imported.name): \(counted(Int(imported.matched), "song"))"
-                    : "Imported \(imported.name): \(Int(imported.matched)) of \(Int(imported.matched + imported.missing)) songs found in your library")
+                    ? said("playlists.imported.all", imported.name, Int(imported.matched))
+                    : said("playlists.imported.some", imported.name, Int(imported.matched), Int(imported.matched + imported.missing)))
             } catch {
                 report(error)
             }
@@ -1863,8 +1863,7 @@ final class Library {
         await features.reloadOpenPlaylist()
         if changed.hidden > 0 {
             let fetching = features.syncConfig.map { $0.enabled && ($0.everything || $0.favourites || $0.playlists) } ?? false
-            let gone = changed.hidden == 1 ? "1 song whose file is gone was hidden" : "\(changed.hidden) songs whose files are gone were hidden"
-            noticeUnasked(gone + (fetching ? " · fetching from your devices" : ""))
+            noticeUnasked(fetching ? said("library.hidden-gone.fetching", Int(changed.hidden)) : said("library.hidden-gone", Int(changed.hidden)))
         }
         return changed
     }
@@ -1931,7 +1930,7 @@ final class Library {
         guard !erasing else { return }
         erasing = true
         let documents = folders
-        let holding = UIApplication.shared.beginBackgroundTask(withName: "Erasing your data")
+        let holding = UIApplication.shared.beginBackgroundTask(withName: said("erasing.background"))
         Task {
             let opened: MobilePlayer
             var songs: [String]
@@ -2010,9 +2009,9 @@ enum RepeatMode: CaseIterable {
 
     var spoken: String {
         switch self {
-        case .off: "Off"
-        case .all: "All songs"
-        case .one: "This song"
+        case .off: said("player.repeat.off")
+        case .all: said("player.repeat.all")
+        case .one: said("player.repeat.one")
         }
     }
 }

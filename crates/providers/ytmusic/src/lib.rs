@@ -4,6 +4,10 @@ mod playlists;
 mod search;
 mod tool;
 
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
+
 use std::{
     io::{self, Read},
     sync::Arc,
@@ -373,6 +377,37 @@ impl Provider for YtMusic {
             extension: Extension::new(tier.extension())?,
             opening: self.opening(video, tier, formats.length),
         }))
+    }
+}
+
+#[cfg(test)]
+mod said_through_the_catalog {
+    use std::{fs, path::Path};
+
+    const SAYS_WORDS: [&str; 2] = ["in_place.rs", "playlists.rs"];
+
+    const PROPER: [&str; 2] = ["YouTube Music", " - Topic"];
+
+    #[test]
+    fn every_word_a_youtube_music_account_names_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+
+        let written: Vec<String> = SAYS_WORDS
+            .iter()
+            .flat_map(|file| {
+                let source = fs::read_to_string(root.join(file)).expect("a file that says words");
+                resonate_words_build::prose_of(&source)
+                    .into_iter()
+                    .filter(|said| !PROPER.contains(&said.text.as_str()))
+                    .map(move |said| format!("{file}:{} {:?}", said.line, said.text))
+            })
+            .collect();
+
+        assert!(
+            written.is_empty(),
+            "words written in the code:\n{}",
+            written.join("\n")
+        );
     }
 }
 

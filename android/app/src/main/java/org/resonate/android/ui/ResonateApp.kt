@@ -1,5 +1,6 @@
 package org.resonate.android.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -45,10 +46,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
@@ -57,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.NavDisplay
 import org.resonate.android.ArrivalPage
-import org.resonate.android.TogetherWords
+import org.resonate.android.R
 import org.resonate.android.ui.components.ArtworkClock
 import org.resonate.android.ui.components.Banners
 import org.resonate.android.ui.components.FollowArtworkChanges
@@ -81,14 +85,31 @@ import org.resonate.android.ui.player.rememberPlayerExpansion
 import org.resonate.android.ui.settings.ConfirmDialog
 import org.resonate.android.ui.theme.ResonateTheme
 
-private class Destination(val label: String, val selected: ImageVector, val unselected: ImageVector)
+private class Destination(
+    @StringRes val label: Int,
+    val tag: String,
+    val selected: ImageVector,
+    val unselected: ImageVector,
+)
 
 private val destinations =
     mapOf(
-        Screen.Home to Destination("Home", Icons.Rounded.Home, Icons.Outlined.Home),
+        Screen.Home to
+            Destination(R.string.shell_tab_home, "home", Icons.Rounded.Home, Icons.Outlined.Home),
         Screen.Library to
-            Destination("Library", Icons.Rounded.LibraryMusic, Icons.Outlined.LibraryMusic),
-        Screen.Search to Destination("Search", Icons.Rounded.Search, Icons.Outlined.Search),
+            Destination(
+                R.string.shell_tab_library,
+                "library",
+                Icons.Rounded.LibraryMusic,
+                Icons.Outlined.LibraryMusic,
+            ),
+        Screen.Search to
+            Destination(
+                R.string.shell_tab_search,
+                "search",
+                Icons.Rounded.Search,
+                Icons.Outlined.Search,
+            ),
     )
 
 @Composable
@@ -147,9 +168,9 @@ fun ResonateApp(resonate: Resonate) {
                                         contentDescription = null,
                                     )
                                 },
-                                label = { Text(destination.label) },
+                                label = { Text(stringResource(destination.label)) },
                                 navigationSuiteType = suite,
-                                modifier = Modifier.testTag("tab-${destination.label.lowercase()}"),
+                                modifier = Modifier.testTag("tab-${destination.tag}"),
                             )
                         }
                     },
@@ -192,7 +213,18 @@ fun ResonateApp(resonate: Resonate) {
                             if (!expansion.shown) {
                                 SnackbarHost(snackbar, modifier = Modifier.padding(bottom = 8.dp))
                             }
-                            Column(Modifier.onSizeChanged { footerHeight = it.height }) {
+                            val ground = MaterialTheme.colorScheme.surface
+                            Column(
+                                Modifier.onSizeChanged { footerHeight = it.height }.drawBehind {
+                                    drawRect(
+                                        Brush.verticalGradient(
+                                            0f to ground.copy(alpha = 0f),
+                                            GROUND_WHOLE_FROM to ground,
+                                            1f to ground,
+                                        )
+                                    )
+                                }
+                            ) {
                                 Banners(showNotice = !expansion.shown)
                                 MiniPlayer(player, expansion)
                             }
@@ -230,13 +262,11 @@ private fun PairingOffer() {
     val offered = code ?: return
     val leaving = config?.key?.isNotEmpty() == true
     ConfirmDialog(
-        title = "Join these devices?",
+        title = stringResource(R.string.shell_join_devices_asks),
         text =
-            if (leaving)
-                "A link asks this phone to leave the devices it syncs with now and sync with the devices of the code $offered. Join only if that is your code or one you were given."
-            else
-                "A link asks this phone to share its playlists, favourites and history with the devices of the code $offered. Join only if that is your code or one you were given.",
-        confirm = "Join",
+            if (leaving) stringResource(R.string.shell_join_devices_leaving, offered)
+            else stringResource(R.string.shell_join_devices_says, offered),
+        confirm = stringResource(R.string.shell_join),
         icon = Icons.Rounded.GroupAdd,
         onConfirm = {
             features.joinSync(offered)
@@ -252,9 +282,9 @@ private fun PartyOffer() {
     val link by together.partyOffered.collectAsStateWithLifecycle()
     val offered = link ?: return
     ConfirmDialog(
-        title = TogetherWords.JOIN_THIS_PARTY_ASKS,
-        text = TogetherWords.JOIN_THIS_PARTY_SAYS,
-        confirm = "Join",
+        title = stringResource(R.string.together_join_party_asks),
+        text = stringResource(R.string.together_join_party_says),
+        confirm = stringResource(R.string.shell_join),
         icon = Icons.Rounded.Headphones,
         onConfirm = { together.arrive(offered) },
         onDismiss = { together.partyOffered.value = null },
@@ -281,3 +311,4 @@ private fun InvitationArrivals() {
 }
 
 private const val SHORT_WINDOW_BELOW_DP = 480
+private const val GROUND_WHOLE_FROM = 0.7f

@@ -8,7 +8,9 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.R
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.rememberServedCover
 import org.resonate.android.ui.library.ArtistLink
@@ -23,6 +25,7 @@ import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.rememberSeedOf
+import org.resonate.android.words
 
 private const val SEED_EDGE = 96
 
@@ -35,9 +38,10 @@ fun ServedArtistScreen(screen: Screen.ServedArtist) {
     val actions = rememberServerActions()
     val loaded by model.albums.collectAsStateWithLifecycle()
     val seed = rememberSeedOf(rememberServedCover(screen.uri, screen.cover, SEED_EDGE))
+    val name = screen.name.ifBlank { stringResource(R.string.unknown_artist) }
     ArtworkTheme(seed) {
         CollectionPage(
-            screen.name.ifBlank { "Unknown artist" },
+            name,
             loaded,
             model.retry::again,
             tag = "served-artist-page",
@@ -45,23 +49,29 @@ fun ServedArtistScreen(screen: Screen.ServedArtist) {
                 OverflowMenu(
                     listOf(
                         listOf(
-                            MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) {
+                            MenuEntry.Action(
+                                stringResource(R.string.server_play_next),
+                                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            ) {
                                 actions.playNext(screen.uri)
                             },
-                            MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) {
+                            MenuEntry.Action(
+                                stringResource(R.string.server_add_to_queue),
+                                Icons.AutoMirrored.Rounded.QueueMusic,
+                            ) {
                                 actions.addToQueue(screen.uri)
                             },
                         )
                     ),
-                    description = "Artist options",
+                    description = stringResource(R.string.server_artist_options),
                 )
             },
         ) { albums ->
             item("header") {
                 CollectionHeader(
-                    title = screen.name.ifBlank { "Unknown artist" },
-                    overline = "Artist",
-                    summary = artistSummary(albums),
+                    title = name,
+                    overline = stringResource(R.string.server_artist),
+                    summary = artistSummary(words(), albums),
                     onPlay = { actions.play(screen.uri) },
                     onShuffle = { actions.shuffle(screen.uri) },
                     playable = albums.isNotEmpty(),
@@ -77,9 +87,11 @@ fun ServedArtistScreen(screen: Screen.ServedArtist) {
                 }
             }
             if (albums.isEmpty()) {
-                item("empty") { EmptyCollection(detail = "Nothing is listed for this artist.") }
+                item("empty") {
+                    EmptyCollection(detail = stringResource(R.string.server_artist_empty))
+                }
             } else {
-                item("albums-title") { SectionHeader("Albums") }
+                item("albums-title") { SectionHeader(stringResource(R.string.server_albums)) }
                 item("albums") {
                     Shelf(albums, key = { it.uri }) { album ->
                         ServedAlbumCard(album, onClick = { navigator.open(album.screen()) })
@@ -97,7 +109,7 @@ fun ServedAlbumScreen(screen: Screen.ServedAlbum) {
     }
     val actions = rememberServerActions()
     val loaded by model.songs.collectAsStateWithLifecycle()
-    val title = screen.name.ifBlank { "Unknown album" }
+    val title = screen.name.ifBlank { stringResource(R.string.server_unknown_album) }
     val seed = rememberSeedOf(rememberServedCover(screen.uri, screen.cover, SEED_EDGE))
     ArtworkTheme(seed) {
         CollectionPage(
@@ -109,23 +121,29 @@ fun ServedAlbumScreen(screen: Screen.ServedAlbum) {
                 OverflowMenu(
                     listOf(
                         listOf(
-                            MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) {
+                            MenuEntry.Action(
+                                stringResource(R.string.server_play_next),
+                                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            ) {
                                 actions.playNext(screen.uri)
                             },
-                            MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) {
+                            MenuEntry.Action(
+                                stringResource(R.string.server_add_to_queue),
+                                Icons.AutoMirrored.Rounded.QueueMusic,
+                            ) {
                                 actions.addToQueue(screen.uri)
                             },
                         )
                     ),
-                    description = "Album options",
+                    description = stringResource(R.string.server_album_options),
                 )
             },
         ) { shown ->
             item("header") {
                 CollectionHeader(
                     title = title,
-                    overline = "Album",
-                    summary = albumSummary(shown),
+                    overline = stringResource(R.string.server_album),
+                    summary = albumSummary(words(), shown),
                     onPlay = { actions.play(screen.uri) },
                     onShuffle = { actions.shuffle(screen.uri) },
                     playable = shown.isNotEmpty(),
@@ -141,7 +159,11 @@ fun ServedAlbumScreen(screen: Screen.ServedAlbum) {
                     )
                 }
             }
-            if (shown.isEmpty()) item("empty") { EmptyCollection(detail = "Nothing is listed for this album.") }
+            if (shown.isEmpty()) {
+                item("empty") {
+                    EmptyCollection(detail = stringResource(R.string.server_album_empty))
+                }
+            }
             shown.forEachIndexed { index, song ->
                 item("row:$index:${song.uri}") {
                     ServedSongRow(

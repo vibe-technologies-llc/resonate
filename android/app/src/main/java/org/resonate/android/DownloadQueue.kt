@@ -205,7 +205,7 @@ class DownloadQueue(
             change(key) {
                 it.copy(
                     state = if (said) DownloadState.CANCELLED else DownloadState.FAILED,
-                    failure = failure.message ?: "Download failed",
+                    failure = failure.message ?: library.words.string(R.string.transfer_failed),
                 )
             }
             if (!said) library.report(failure)
@@ -239,10 +239,13 @@ class DownloadQueue(
         return settings.edit().putStringSet(JOURNAL_KEY, left).commit()
     }
 
+    private fun journalNotCleared(): String =
+        context.getString(R.string.transfer_journal_not_cleared)
+
     private fun discard(uri: Uri) {
         try {
             MusicDocuments.delete(context, uri)
-            check(forgetJournal(uri)) { JOURNAL_NOT_CLEARED }
+            check(forgetJournal(uri)) { journalNotCleared() }
         } catch (failure: Exception) {
             library.report(failure)
         }
@@ -266,10 +269,10 @@ class DownloadQueue(
                 MusicDocuments.settleLeftover(context, uri, value in stranded)
                 if (value == legacy) {
                     check(settings.edit().remove(LEGACY_JOURNAL_KEY).commit()) {
-                        JOURNAL_NOT_CLEARED
+                        journalNotCleared()
                     }
                 }
-                check(forgetJournal(uri)) { JOURNAL_NOT_CLEARED }
+                check(forgetJournal(uri)) { journalNotCleared() }
             } catch (failure: Exception) {
                 library.report(failure)
             }
@@ -282,7 +285,6 @@ class DownloadQueue(
         const val JOURNAL_KEY = "unfinished-downloads"
         const val LEGACY_JOURNAL_KEY = "unfinished-download"
         const val SERVICE_STARTS_WITHIN_MS = 10_000L
-        const val JOURNAL_NOT_CLEARED = "The download journal could not be cleared"
     }
 }
 

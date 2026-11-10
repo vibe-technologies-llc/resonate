@@ -21,7 +21,7 @@ use resonate_core::{
 use crate::{
     Error, Result,
     pass::{Cancelling, PassHandle, PassKind, TakeInHandle},
-    unreplacing,
+    unreplacing, words,
 };
 
 const SHEET_EXTENSION: &str = "cue";
@@ -162,16 +162,16 @@ pub enum Passing {
 }
 
 impl Passing {
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::SourceGone => "is not there any more",
-            Self::Unreadable => "could not be read",
-            Self::NotAudio => "is not a format the library reads",
-            Self::NothingInside => "holds no audio",
-            Self::AlreadyThere => "is already in the folder",
-            Self::AlreadyHeld => "is already in the folder, byte for byte",
-            Self::Unwritable => "could not be written to the folder",
-            Self::Unverified => "did not read back the same as it was sent",
+            Self::SourceGone => words::take_in::source_gone(),
+            Self::Unreadable => words::take_in::unreadable(),
+            Self::NotAudio => words::take_in::not_audio(),
+            Self::NothingInside => words::take_in::nothing_inside(),
+            Self::AlreadyThere => words::take_in::already_there(),
+            Self::AlreadyHeld => words::take_in::already_held(),
+            Self::Unwritable => words::take_in::unwritable(),
+            Self::Unverified => words::take_in::unverified(),
         }
     }
 

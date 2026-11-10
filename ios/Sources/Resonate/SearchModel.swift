@@ -4,12 +4,21 @@ import ResonateNative
 import SwiftUI
 
 enum SearchScope: String, CaseIterable, Identifiable, Sendable {
-    case top = "Top"
-    case songs = "Songs"
-    case albums = "Albums"
-    case artists = "Artists"
+    case top
+    case songs
+    case albums
+    case artists
 
     var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .top: said("search.scope.top")
+        case .songs: said("search.scope.songs")
+        case .albums: said("search.scope.albums")
+        case .artists: said("search.scope.artists")
+        }
+    }
 }
 
 private struct LitAsked: Hashable {

@@ -1,5 +1,8 @@
 package org.resonate.android.ui.library
 
+import androidx.annotation.StringRes
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.ui.kilohertz
@@ -14,25 +17,29 @@ enum class FilterPart {
     UNPLAYED,
 }
 
-val TrackOrder.label: String
+@get:StringRes
+val TrackOrder.label: Int
     get() =
         when (this) {
-            TrackOrder.TITLE -> "Title"
-            TrackOrder.ALBUM -> "Album"
-            TrackOrder.ARTIST -> "Artist"
-            TrackOrder.DURATION -> "Length"
-            TrackOrder.ADDED -> "Date added"
-            TrackOrder.PLAYS -> "Most played"
-            TrackOrder.PLAYED -> "Last played"
+            TrackOrder.TITLE -> R.string.library_order_title
+            TrackOrder.ALBUM -> R.string.library_order_album
+            TrackOrder.ARTIST -> R.string.library_order_artist
+            TrackOrder.DURATION -> R.string.library_order_length
+            TrackOrder.ADDED -> R.string.library_order_added
+            TrackOrder.PLAYS -> R.string.library_order_most_played
+            TrackOrder.PLAYED -> R.string.library_order_last_played
         }
 
 val sampleRates = listOf(0u, 44_100u, 88_200u, 96_000u, 192_000u)
 
 val bitDepths = listOf(0u, 16u, 24u, 32u)
 
-fun rateLabel(rate: UInt): String = if (rate == 0u) "Any" else kilohertz(rate)
+fun rateLabel(words: Words, rate: UInt): String =
+    if (rate == 0u) words.string(R.string.library_filter_any) else kilohertz(words, rate)
 
-fun depthLabel(bits: UInt): String = if (bits == 0u) "Any" else "$bits bit"
+fun depthLabel(words: Words, bits: UInt): String =
+    if (bits == 0u) words.string(R.string.library_filter_any)
+    else words.string(R.string.unit_bits, bits.toInt())
 
 fun TrackFilter.parts(): List<FilterPart> =
     FilterPart.entries.filter { part ->
@@ -47,15 +54,15 @@ fun TrackFilter.parts(): List<FilterPart> =
         }
     }
 
-fun TrackFilter.label(part: FilterPart): String =
+fun TrackFilter.label(words: Words, part: FilterPart): String =
     when (part) {
         FilterPart.GENRE -> genre
         FilterPart.ARTIST -> artist
         FilterPart.ALBUM -> album
-        FilterPart.RATE -> "${kilohertz(minimumRate)} or more"
-        FilterPart.DEPTH -> "$minimumBits bit or more"
-        FilterPart.FAVOURITES -> "Favourites"
-        FilterPart.UNPLAYED -> "Never played"
+        FilterPart.RATE -> words.string(R.string.library_filter_rate_at_least, kilohertz(words, minimumRate))
+        FilterPart.DEPTH -> words.string(R.string.library_filter_bits_at_least, minimumBits.toInt())
+        FilterPart.FAVOURITES -> words.string(R.string.library_filter_favourites)
+        FilterPart.UNPLAYED -> words.string(R.string.library_filter_unplayed)
     }
 
 fun TrackFilter.without(part: FilterPart): TrackFilter =
@@ -75,7 +82,9 @@ fun TrackFilter.trimmed(): TrackFilter =
 val TrackFilter.ordered: Boolean
     get() = order != TrackOrder.TITLE || descending
 
-fun TrackFilter.orderLabel(): String = if (descending) "${order.label}, descending" else order.label
+fun TrackFilter.orderLabel(words: Words): String =
+    if (descending) words.string(R.string.library_order_descending, words.string(order.label))
+    else words.string(order.label)
 
 fun suggestions(values: Sequence<String>, typed: String, atMost: Int = 6): List<String> {
     val wanted = typed.trim()

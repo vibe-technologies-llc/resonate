@@ -2,6 +2,8 @@ package org.resonate.android.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.resonate.android.English
+import org.resonate.android.R
 
 class WordsTest {
     @Test
@@ -20,22 +22,21 @@ class WordsTest {
 
     @Test
     fun lengthsReadAsMinutesAndHours() {
-        assertEquals("under a minute", length(59_000uL))
-        assertEquals("42 min", length(2_520_000uL))
-        assertEquals("2 hr 5 min", length(7_500_000uL))
+        assertEquals("under a minute", length(English, 59_000uL))
+        assertEquals("42 min", length(English, 2_520_000uL))
+        assertEquals("2 hr 5 min", length(English, 7_500_000uL))
     }
 
     @Test
     fun ratesReadInKilohertz() {
-        assertEquals("44.1 kHz", kilohertz(44_100u))
-        assertEquals("96 kHz", kilohertz(96_000u))
+        assertEquals("44.1 kHz", kilohertz(English, 44_100u))
+        assertEquals("96 kHz", kilohertz(English, 96_000u))
     }
 
     @Test
     fun countsTakeTheirPlural() {
-        assertEquals("1 song", counted(1, "song"))
-        assertEquals("3 songs", counted(3, "song"))
-        assertEquals("2 libraries", counted(2, "library", "libraries"))
+        assertEquals("1 song", English.plural(R.plurals.count_songs, 1, 1))
+        assertEquals("3 songs", English.plural(R.plurals.count_songs, 3, 3))
     }
 
     @Test

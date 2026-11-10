@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::notify::{ACTIONS, Shown};
+use crate::notify::{Shown, actions};
 
 const LINES_UNDER_THE_TITLE_AT_MOST: usize = 2;
 
@@ -29,7 +29,7 @@ pub(crate) fn document(shown: &Shown, buttons: Buttons) -> String {
 
     if buttons == Buttons::Offered {
         xml.push_str("<actions>");
-        for [key, label] in ACTIONS.as_chunks::<2>().0 {
+        for [key, label] in actions().as_chunks::<2>().0 {
             let _ = write!(
                 xml,
                 r#"<action content="{}" arguments="{}" activationType="foreground"/>"#,

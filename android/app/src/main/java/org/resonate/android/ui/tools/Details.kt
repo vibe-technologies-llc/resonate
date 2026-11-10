@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,7 +23,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PersonSearch
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +62,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.Track
@@ -66,9 +72,11 @@ import org.resonate.android.ui.components.Artwork
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.components.rememberLargeText
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.words
 
 sealed interface InspectorState {
     data object Reading : InspectorState
@@ -122,7 +130,8 @@ fun DetailsScreen(track: ULong) {
     val online by model.online.collectAsStateWithLifecycle()
     val enriching by model.enriching.collectAsStateWithLifecycle()
     var askedArtist by rememberSaveable { mutableStateOf(false) }
-    Page("Song details") { padding ->
+    val words = words()
+    Page(stringResource(R.string.details_title)) { padding ->
         if (song == null) {
             MissingSong(padding)
             return@Page
@@ -144,9 +153,14 @@ fun DetailsScreen(track: ULong) {
                             enabled = online && !enriching,
                             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                         ) {
-                            Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(ButtonDefaults.IconSize))
+                            Icon(Icons.Rounded.TravelExplore, null, Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text(if (enriching) "Finding…" else "Find artwork and details")
+                            Text(
+                                stringResource(
+                                    if (enriching) R.string.details_finding
+                                    else R.string.details_find
+                                )
+                            )
                         }
                         if (online) {
                             OutlinedButton(
@@ -158,12 +172,12 @@ fun DetailsScreen(track: ULong) {
                             ) {
                                 Icon(Icons.Rounded.PersonSearch, null, Modifier.size(ButtonDefaults.IconSize))
                                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                                Text("Look up artist")
+                                Text(stringResource(R.string.details_look_up_artist))
                             }
                         }
                     }
                 }
-                item(key = "audio") { SectionHeader("Audio") }
+                item(key = "audio") { SectionHeader(stringResource(R.string.details_audio)) }
                 when (reading) {
                     InspectorState.Reading ->
                         item(key = "reading") {
@@ -175,18 +189,26 @@ fun DetailsScreen(track: ULong) {
                         item(key = "unread") {
                             ListItem(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                supportingContent = { Text("Showing what the library knows of it.") },
-                                trailingContent = { TextButton(onClick = model::read) { Text("Try again") } },
-                            ) { Text("The file could not be read") }
+                                supportingContent = {
+                                    Text(stringResource(R.string.details_unread_detail))
+                                },
+                                trailingContent = {
+                                    TextButton(onClick = model::read) {
+                                        Text(stringResource(R.string.details_try_again))
+                                    }
+                                },
+                            ) {
+                                Text(stringResource(R.string.details_unread))
+                            }
                         }
                     is InspectorState.Read -> Unit
                 }
-                details(technicalDetails(song, inspector), "audio")
-                item(key = "tags") { SectionHeader("Tags") }
-                details(taggedDetails(song, inspector), "tags")
+                details(technicalDetails(words, song, inspector), "audio")
+                item(key = "tags") { SectionHeader(stringResource(R.string.details_tags)) }
+                details(taggedDetails(words, song, inspector), "tags")
                 val found = artist
                 if (askedArtist && found != null) {
-                    artistItems(found, model::open)
+                    artistItems(words, found, model::open)
                 }
             }
         }
@@ -226,34 +248,84 @@ private fun LazyListScope.details(rows: List<Detail>, group: String) {
 @Composable
 private fun DetailRow(detail: Detail) {
     val context = LocalContext.current
-    ListItem(
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        overlineContent = { Text(detail.label) },
-        trailingContent =
+    val stacked = rememberLargeText()
+    val label: @Composable (Modifier) -> Unit = { modifier ->
+        Text(
+            detail.label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier,
+        )
+    }
+    val value: @Composable (Modifier) -> Unit = { modifier ->
+        Text(
+            detail.value,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 6,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier,
+        )
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = DETAIL_ROW_HEIGHT)
+            .padding(start = Sizes.gutter, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (stacked) {
+            Column(
+                Modifier.weight(1f).padding(vertical = 8.dp).semantics(mergeDescendants = true) {}
+            ) {
+                label(Modifier)
+                value(Modifier)
+            }
+        } else {
+            Row(
+                Modifier.weight(1f).padding(vertical = 8.dp).semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.Top,
+            ) {
+                label(Modifier.weight(DETAIL_LABEL_SHARE).padding(top = 2.dp, end = 12.dp))
+                value(Modifier.weight(1f - DETAIL_LABEL_SHARE))
+            }
+        }
+        Box(Modifier.size(COPY_SLOT), contentAlignment = Alignment.Center) {
             if (detail.copyable) {
-                {
-                    IconButton(
-                        onClick = {
-                            context
-                                .getSystemService(ClipboardManager::class.java)
-                                ?.setPrimaryClip(ClipData.newPlainText(detail.label, detail.value))
-                        }
-                    ) {
-                        Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy ${detail.label}")
+                IconButton(
+                    onClick = {
+                        context
+                            .getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText(detail.label, detail.value))
                     }
+                ) {
+                    Icon(
+                        Icons.Rounded.ContentCopy,
+                        contentDescription = stringResource(R.string.details_copy, detail.label),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
-            } else null,
-    ) { Text(detail.value, maxLines = 6, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+    }
 }
 
-private fun LazyListScope.artistItems(artist: ArtistInformation, open: (String) -> Unit) {
-    item(key = "artist") { SectionHeader(artist.name.ifBlank { "Artist" }) }
+private fun LazyListScope.artistItems(
+    words: Words,
+    artist: ArtistInformation,
+    open: (String) -> Unit,
+) {
+    item(key = "artist") {
+        SectionHeader(artist.name.ifBlank { stringResource(R.string.details_artist) })
+    }
     val rows =
         listOf(
-                Detail("Type", artist.kind),
-                Detail("Country", artist.country),
-                Detail("Area", artist.area),
-                Detail("Genres", artist.genres.joinToString(", ")),
+                Detail(words.string(R.string.details_artist_type), artist.kind),
+                Detail(words.string(R.string.details_artist_country), artist.country),
+                Detail(words.string(R.string.details_artist_area), artist.area),
+                Detail(
+                    words.string(R.string.details_artist_genres),
+                    artist.genres.joinToString(", "),
+                ),
             )
             .filter { it.value.isNotBlank() }
     details(rows, "artist")
@@ -262,9 +334,19 @@ private fun LazyListScope.artistItems(artist: ArtistInformation, open: (String) 
             onClick = { open(link) },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             supportingContent = { Text(link, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Open link") },
+            trailingContent = {
+                Icon(
+                    Icons.AutoMirrored.Rounded.OpenInNew,
+                    contentDescription = stringResource(R.string.details_open_link),
+                )
+            },
+
         ) { Text(Uri.parse(link).host ?: link, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 
 private val HEADER_ART = 200.dp
+private val DETAIL_ROW_HEIGHT = 44.dp
+private val COPY_SLOT = 48.dp
+
+private const val DETAIL_LABEL_SHARE = 0.36f

@@ -31,9 +31,11 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
 import org.resonate.android.nativecore.ServedAlbum
 import org.resonate.android.nativecore.ServedArtist
 import org.resonate.android.nativecore.ServedSong
@@ -46,6 +48,7 @@ import org.resonate.android.ui.library.MenuEntry
 import org.resonate.android.ui.library.OverflowMenu
 import org.resonate.android.ui.library.Shelves
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.words
 
 @Composable
 fun ServedCover(
@@ -77,11 +80,19 @@ fun ServedMenu(uri: String, actions: ServerActions, description: String) {
     OverflowMenu(
         listOf(
             listOf(
-                MenuEntry.Action("Play", Icons.Rounded.PlayArrow) { actions.play(uri) },
-                MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) {
+                MenuEntry.Action(stringResource(R.string.server_play), Icons.Rounded.PlayArrow) {
+                    actions.play(uri)
+                },
+                MenuEntry.Action(
+                    stringResource(R.string.server_play_next),
+                    Icons.AutoMirrored.Rounded.PlaylistPlay,
+                ) {
                     actions.playNext(uri)
                 },
-                MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) {
+                MenuEntry.Action(
+                    stringResource(R.string.server_add_to_queue),
+                    Icons.AutoMirrored.Rounded.QueueMusic,
+                ) {
                     actions.addToQueue(uri)
                 },
             )
@@ -90,15 +101,15 @@ fun ServedMenu(uri: String, actions: ServerActions, description: String) {
     )
 }
 
-fun ServedArtist.screen(): Screen.ServedArtist = Screen.ServedArtist(uri, shownName, cover)
+fun ServedArtist.screen(): Screen.ServedArtist = Screen.ServedArtist(uri, name, cover)
 
-fun ServedAlbum.screen(): Screen.ServedAlbum = Screen.ServedAlbum(uri, shownName, artist.orEmpty(), cover)
+fun ServedAlbum.screen(): Screen.ServedAlbum = Screen.ServedAlbum(uri, name, artist.orEmpty(), cover)
 
 @Composable
 fun ServedArtistRow(artist: ServedArtist, onClick: () -> Unit, actions: ServerActions) {
     CollectionRow(
         title = artist.shownName,
-        supporting = artistLine(artist),
+        supporting = artistLine(words(), artist),
         onClick = onClick,
         leading = {
             ServedCover(
@@ -109,7 +120,13 @@ fun ServedArtistRow(artist: ServedArtist, onClick: () -> Unit, actions: ServerAc
                 placeholder = Icons.Rounded.Person,
             )
         },
-        trailing = { ServedMenu(artist.uri, actions, "Options for ${artist.shownName}") },
+        trailing = {
+            ServedMenu(
+                artist.uri,
+                actions,
+                stringResource(R.string.server_options_for, artist.shownName),
+            )
+        },
         modifier = Modifier.testTag("served-artist"),
     )
 }
@@ -118,10 +135,16 @@ fun ServedArtistRow(artist: ServedArtist, onClick: () -> Unit, actions: ServerAc
 fun ServedAlbumRow(album: ServedAlbum, onClick: () -> Unit, actions: ServerActions) {
     CollectionRow(
         title = album.shownName,
-        supporting = albumLine(album).ifBlank { null },
+        supporting = albumLine(words(), album).ifBlank { null },
         onClick = onClick,
         leading = { ServedCover(album.uri, album.cover, Sizes.rowArt) },
-        trailing = { ServedMenu(album.uri, actions, "Options for ${album.shownName}") },
+        trailing = {
+            ServedMenu(
+                album.uri,
+                actions,
+                stringResource(R.string.server_options_for, album.shownName),
+            )
+        },
         modifier = Modifier.testTag("served-album"),
     )
 }
@@ -130,7 +153,7 @@ fun ServedAlbumRow(album: ServedAlbum, onClick: () -> Unit, actions: ServerActio
 fun ServedAlbumCard(album: ServedAlbum, onClick: () -> Unit, modifier: Modifier = Modifier) {
     CoverCard(
         title = album.shownName,
-        detail = albumLine(album).ifBlank { null },
+        detail = albumLine(words(), album).ifBlank { null },
         onClick = onClick,
         modifier = modifier.width(Shelves.albumWidth).testTag("served-album"),
     ) {
@@ -166,7 +189,11 @@ fun ServedSongRow(
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ServedStar(song, actions)
-                ServedMenu(song.uri, actions, "Options for ${song.shownTitle}")
+                ServedMenu(
+                    song.uri,
+                    actions,
+                    stringResource(R.string.server_options_for, song.shownTitle),
+                )
             }
         },
         modifier = Modifier.testTag("served-song"),
@@ -188,8 +215,10 @@ fun ServedStar(song: ServedSong, actions: ServerActions) {
         Icon(
             if (starred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
             contentDescription =
-                if (starred) "Remove ${song.shownTitle} from favourites"
-                else "Add ${song.shownTitle} to favourites",
+                stringResource(
+                    if (starred) R.string.server_unstar else R.string.server_star,
+                    song.shownTitle,
+                ),
             tint =
                 if (starred) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,

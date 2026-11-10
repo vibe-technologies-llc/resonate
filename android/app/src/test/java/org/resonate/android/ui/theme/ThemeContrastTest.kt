@@ -21,17 +21,32 @@ class ThemeContrastTest {
 
     private fun variants(contrast: Double): List<Variant> {
         val seeds =
-            Accent.entries.map { it.label to Color(0xFF000000.toInt() or it.hex) } +
+            Accent.entries.map { it.name to Color(0xFF000000.toInt() or it.hex) } +
                 ("Wallpaper" to wallpaperStandIn)
         return seeds.flatMap { (name, seed) ->
-            listOf(
-                Variant("$name light", schemeOf(seed, dark = false, contrastLevel = contrast)),
-                Variant("$name dark", schemeOf(seed, dark = true, contrastLevel = contrast)),
-                Variant(
-                    "$name pitch black",
-                    schemeOf(seed, dark = true, pitchBlack = true, contrastLevel = contrast),
-                ),
-            )
+            Neutrals.entries.flatMap { neutrals ->
+                val worn = "$name on ${neutrals.name.lowercase()}"
+                listOf(
+                    Variant(
+                        "$worn light",
+                        schemeOf(seed, dark = false, contrastLevel = contrast, neutrals = neutrals),
+                    ),
+                    Variant(
+                        "$worn dark",
+                        schemeOf(seed, dark = true, contrastLevel = contrast, neutrals = neutrals),
+                    ),
+                    Variant(
+                        "$worn pitch black",
+                        schemeOf(
+                            seed,
+                            dark = true,
+                            pitchBlack = true,
+                            contrastLevel = contrast,
+                            neutrals = neutrals,
+                        ),
+                    ),
+                )
+            }
         }
     }
 

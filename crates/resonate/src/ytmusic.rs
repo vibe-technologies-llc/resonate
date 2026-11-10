@@ -17,10 +17,10 @@ use crate::{
     Error, Result,
     cli::YtmusicArgs,
     config::{self, Config},
-    counted,
     error::ConfigKey,
     providers, signals,
     signing_in::{self, Kept},
+    words,
 };
 
 const AFTER_THE_SCHEME: &str = "://";
@@ -121,8 +121,8 @@ fn queue_the_song(music: &YtMusic, video: &VideoId, library: &Library) -> Result
     })?;
     let title = song.title.clone();
     match library.keep_song(to_keep(music.scheme(), song))? {
-        KeptSong::Queued => said!("{title} is queued"),
-        KeptSong::AlreadyHeld(_) => said!("{title} is already held, so nothing was queued"),
+        KeptSong::Queued => said!("{}", words::ytmusic::queued(&title)),
+        KeptSong::AlreadyHeld(_) => said!("{}", words::ytmusic::already_held(&title)),
     }
     Ok(())
 }
@@ -145,17 +145,10 @@ fn queue_the_playlist(music: &YtMusic, list: &Id, ordered: bool, library: &Libra
 }
 
 fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
-    let held = format!(
-        "{name}: {} queued, {} already held",
-        counted(kept.queued as u64, "song", "songs"),
-        counted(kept.held as u64, "song", "songs"),
-    );
+    let held = words::ytmusic::list_kept(kept.held, name, kept.queued);
     match left_out {
         0 => held,
-        left_out => format!(
-            "{held}, {} left out with no title",
-            counted(left_out as u64, "song", "songs")
-        ),
+        left_out => words::ytmusic::left_out(held, left_out),
     }
 }
 
@@ -185,10 +178,8 @@ fn walked_until_told(library: &Library, music: Arc<YtMusic>) -> Result<()> {
     let _interrupting = signals::cancel_when_told(move || told.store(true, Ordering::Relaxed));
     let summary = walked(library, music, &stopping)?;
     said!(
-        "landed {} | gone {} | unkept {}",
-        summary.landed,
-        summary.gone,
-        summary.unkept
+        "{}",
+        words::ytmusic::walked(summary.gone, summary.landed, summary.unkept)
     );
     if stopping.load(Ordering::Relaxed) {
         return Err(Error::KeepCancelled);
@@ -228,16 +219,14 @@ fn keep(
     walked_until_told(&library, music)
 }
 
-const fn connection_said(connection: Connection) -> &'static str {
+fn connection_said(connection: Connection) -> &'static str {
     match connection {
-        Connection::Premium => "Premium formats available",
-        Connection::SignedInWithoutPremium => "signed in, but this account has no Premium formats",
-        Connection::NotSignedIn => "not signed in",
-        Connection::ToolMissing => "yt-dlp could not be run; it is a separate install",
-        Connection::CheckSongGone => {
-            "the song this check asks about has left YouTube, so nothing could be told"
-        }
-        Connection::CouldNotCheck => "YouTube could not be asked just now; try again in a while",
+        Connection::Premium => words::ytmusic::premium(),
+        Connection::SignedInWithoutPremium => words::ytmusic::without_premium(),
+        Connection::NotSignedIn => words::ytmusic::not_signed_in(),
+        Connection::ToolMissing => words::ytmusic::tool_missing(),
+        Connection::CheckSongGone => words::ytmusic::check_song_gone(),
+        Connection::CouldNotCheck => words::ytmusic::could_not_check(),
     }
 }
 
@@ -263,9 +252,7 @@ fn signed_in_with(
     let program = program.ok_or(Error::NoSignInProgram)?;
     let settings = settings.ok_or(Error::NoConfigDir)?;
     let named = kept.jar_named()?;
-    said!(
-        "a window is open on Google's sign-in: sign in there, and it closes itself once YouTube Music is reached"
-    );
+    said!("{}", words::ytmusic::window_open());
     signing_in::sign_in(&program, kept)?;
     config::store(settings, ConfigKey::YoutubeMusicCookies, named.as_str())?;
     Ok(named)
@@ -280,7 +267,7 @@ fn sign_in(config: &Config, settings: Option<PathBuf>) -> Result<()> {
         signing_in::the_program(),
         &kept,
     )?;
-    said!("signed in to YouTube Music; youtube-music-cookies names the window's own cookies now");
+    said!("{}", words::ytmusic::signed_in());
     let checked = Config {
         youtube_music_cookies: Some(named),
         ..config.clone()
@@ -307,13 +294,9 @@ fn signed_out_with(config: &Config, settings: Option<&Path>, kept: &Kept) -> Res
 fn sign_out(config: &Config, settings: Option<PathBuf>) -> Result<()> {
     let kept = Kept::in_the_data_folder()?;
     if signed_out_with(config, settings.as_deref(), &kept)? {
-        said!(
-            "signed out of YouTube Music: the window's cookies and profile are gone, and youtube-music-cookies with them"
-        );
+        said!("{}", words::ytmusic::signed_out());
     } else {
-        said!(
-            "the sign-in window's cookies and profile are gone; youtube-music-cookies names something else and is left as it was"
-        );
+        said!("{}", words::ytmusic::window_forgotten());
     }
     Ok(())
 }

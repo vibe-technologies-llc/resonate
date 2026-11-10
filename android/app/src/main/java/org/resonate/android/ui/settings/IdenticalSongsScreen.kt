@@ -21,6 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.MusicDocuments
+import org.resonate.android.R
 import org.resonate.android.nativecore.IdenticalSongs
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.Resonate
@@ -43,7 +46,6 @@ import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TrackRow
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownTitle
 
@@ -93,7 +95,12 @@ class IdenticalSongsViewModel(private val resonate: Resonate) : ViewModel() {
             mutableState.value =
                 found.fold(
                     { IdenticalState.Found(it) },
-                    { IdenticalState.Failed(it.message ?: "The songs could not be compared") },
+                    {
+                        IdenticalState.Failed(
+                            it.message
+                                ?: resonate.library.words.string(R.string.identical_failed)
+                        )
+                    },
                 )
         }
     }
@@ -123,8 +130,12 @@ class IdenticalSongsViewModel(private val resonate: Resonate) : ViewModel() {
             resonate.features.folders.value.firstOrNull {
                 track.uri.startsWith(MusicDocuments.prefix(it.uri))
             }
-        return listOfNotNull(folder?.name, track.name).joinToString(" › ") +
-            if (folder != null && !folder.writable) " · read-only" else ""
+        val path = listOfNotNull(folder?.name, track.name).joinToString(" › ")
+        return if (folder != null && !folder.writable) {
+            resonate.library.words.string(R.string.identical_read_only, path)
+        } else {
+            path
+        }
     }
 }
 
@@ -137,8 +148,10 @@ fun IdenticalSongsScreen() {
     var confirming by rememberSaveable { mutableStateOf(false) }
     val found = (state as? IdenticalState.Found)?.sets.orEmpty()
     val copies = keptAfterChoices(found, chosen).sumOf { it.copies.size }
+    val keptWord = stringResource(R.string.identical_kept)
+    val deletedWord = stringResource(R.string.identical_deleted)
     Page(
-        "Identical songs",
+        stringResource(R.string.identical_title),
         actions = {
             if (copies > 0) {
                 TextButton(
@@ -146,7 +159,10 @@ fun IdenticalSongsScreen() {
                     enabled = !deleting,
                     modifier = Modifier.testTag("delete-copies"),
                 ) {
-                    Text("Delete copies", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        stringResource(R.string.identical_delete_copies),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         },
@@ -160,9 +176,9 @@ fun IdenticalSongsScreen() {
                 Box(Modifier.fillMaxSize().padding(padding)) {
                     EmptyState(
                         Icons.Rounded.DeleteOutline,
-                        "The songs could not be compared",
+                        stringResource(R.string.identical_failed),
                         detail = shown.text,
-                        action = "Try again",
+                        action = stringResource(R.string.identical_try_again),
                         onAction = model::find,
                     )
                 }
@@ -171,8 +187,8 @@ fun IdenticalSongsScreen() {
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         EmptyState(
                             Icons.Rounded.CheckCircle,
-                            "No identical songs",
-                            detail = "No two songs in your library are the same file.",
+                            stringResource(R.string.identical_none),
+                            detail = stringResource(R.string.identical_none_detail),
                         )
                     }
                 } else {
@@ -191,7 +207,7 @@ fun IdenticalSongsScreen() {
                                     supporting = model.place(track),
                                     modifier =
                                         Modifier.semantics {
-                                            stateDescription = if (kept) "Kept" else "Deleted"
+                                            stateDescription = if (kept) keptWord else deletedWord
                                         },
                                     trailing = {
                                         Icon(
@@ -206,7 +222,7 @@ fun IdenticalSongsScreen() {
                             }
                             item(key = "hint-${set.kept.id}") {
                                 Text(
-                                    "Tap the copy to keep. The others are deleted.",
+                                    stringResource(R.string.identical_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
@@ -219,10 +235,9 @@ fun IdenticalSongsScreen() {
     }
     if (confirming) {
         ConfirmDialog(
-            title = "Delete ${counted(copies, "file")}?",
-            text =
-                "Each song keeps one file. The other files are deleted from your phone, and their plays, favourites and playlist places move to the copy kept.",
-            confirm = "Delete ${counted(copies, "file")}",
+            title = pluralStringResource(R.plurals.identical_delete_title, copies, copies),
+            text = stringResource(R.string.identical_delete_text),
+            confirm = pluralStringResource(R.plurals.identical_delete_confirm, copies, copies),
             icon = Icons.Rounded.DeleteOutline,
             destructive = true,
             onConfirm = model::deleteCopies,

@@ -16,7 +16,7 @@ use resonate_engine::{
     Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
 };
 
-use crate::{Error, MobilePlayer, Result};
+use crate::{Error, MobilePlayer, Result, words};
 
 pub const IMPULSE_BYTES_AT_MOST: usize = 64 * 1024 * 1024;
 pub const IMPULSE_CHUNK_BYTES: u32 = 1024 * 1024;
@@ -59,9 +59,9 @@ pub enum ImpulseOp {
 impl fmt::Display for ImpulseOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Keep => "kept",
-            Self::Find => "found",
-            Self::Remove => "removed",
+            Self::Keep => words::errors::impulse_kept(),
+            Self::Find => words::errors::impulse_found(),
+            Self::Remove => words::errors::impulse_removed(),
         })
     }
 }

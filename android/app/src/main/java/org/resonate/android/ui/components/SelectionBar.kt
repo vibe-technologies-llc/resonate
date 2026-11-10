@@ -25,12 +25,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import org.resonate.android.R
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.library.MenuEntry
 import org.resonate.android.ui.library.OverflowMenu
 import org.resonate.android.ui.library.addToQueue
@@ -58,7 +60,7 @@ fun SongSelectionBar(
     TopAppBar(
         title = {
             Text(
-                "${tracks.size} selected",
+                pluralStringResource(R.plurals.selection_count, tracks.size, tracks.size),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
         },
@@ -66,12 +68,12 @@ fun SongSelectionBar(
         windowInsets = windowInsets,
         navigationIcon = {
             IconButton(onClick = onClose, modifier = Modifier.testTag("selection-close")) {
-                Icon(Icons.Rounded.Close, contentDescription = "Clear selection")
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.selection_clear))
             }
         },
         actions = {
             IconButton(onClick = onSelectAll, modifier = Modifier.testTag("selection-all")) {
-                Icon(Icons.Rounded.SelectAll, contentDescription = "Select all")
+                Icon(Icons.Rounded.SelectAll, contentDescription = stringResource(R.string.selection_all))
             }
             IconButton(
                 onClick = {
@@ -80,7 +82,7 @@ fun SongSelectionBar(
                 },
                 modifier = Modifier.testTag("selection-play"),
             ) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = "Play")
+                Icon(Icons.Rounded.PlayArrow, contentDescription = stringResource(R.string.rows_play))
             }
             IconButton(
                 onClick = {
@@ -89,7 +91,10 @@ fun SongSelectionBar(
                 },
                 modifier = Modifier.testTag("selection-playlist"),
             ) {
-                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = "Add to playlist")
+                Icon(
+                    Icons.AutoMirrored.Rounded.PlaylistAdd,
+                    contentDescription = stringResource(R.string.library_add_to_playlist),
+                )
             }
             IconButton(
                 onClick = {
@@ -100,17 +105,26 @@ fun SongSelectionBar(
             ) {
                 Icon(
                     if (loved) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = if (loved) "Remove from favourites" else "Add to favourites",
+                    contentDescription =
+                        stringResource(
+                            if (loved) R.string.selection_unfavourite else R.string.selection_favourite
+                        ),
                 )
             }
             OverflowMenu(
                 listOf(
                     listOf(
-                        MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) {
+                        MenuEntry.Action(
+                            stringResource(R.string.library_play_next),
+                            Icons.AutoMirrored.Rounded.PlaylistPlay,
+                        ) {
                             resonate.playNext(live)
                             onClose()
                         },
-                        MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) {
+                        MenuEntry.Action(
+                            stringResource(R.string.library_add_to_queue),
+                            Icons.AutoMirrored.Rounded.QueueMusic,
+                        ) {
                             resonate.addToQueue(live)
                             onClose()
                         },
@@ -124,7 +138,7 @@ fun SongSelectionBar(
                         },
                         if (deletable)
                             MenuEntry.Action(
-                                if (live.size == 1) "Delete song" else "Delete ${counted(live.size, "song")}",
+                                pluralStringResource(R.plurals.selection_delete, live.size, live.size),
                                 Icons.Rounded.DeleteOutline,
                                 destructive = true,
                             ) {
@@ -134,7 +148,7 @@ fun SongSelectionBar(
                         else null,
                     ),
                 ),
-                description = "More actions",
+                description = stringResource(R.string.selection_more_actions),
             )
         },
         colors =

@@ -5,7 +5,7 @@ use gpui::{
     accesskit::{ActionData, Invalid, Live, Node, NodeId, TextPosition, TextSelection},
 };
 
-use crate::format;
+use crate::words;
 
 const THE_KEYS_FOLLOW: &str = " — ";
 
@@ -41,11 +41,7 @@ pub(crate) fn song(title: &str, artist: Option<&str>) -> SharedString {
 }
 
 pub(crate) fn artist(name: &str, albums: usize, tracks: usize) -> SharedString {
-    SharedString::from(format!(
-        "{name}, {}, {}",
-        format::counted(albums, "album", "albums"),
-        format::counted(tracks, "track", "tracks")
-    ))
+    SharedString::from(words::spoken::artist(albums, name, tracks))
 }
 
 pub(crate) fn joined<'a>(parts: impl IntoIterator<Item = &'a str>) -> SharedString {

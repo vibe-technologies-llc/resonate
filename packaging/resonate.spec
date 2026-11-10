@@ -25,7 +25,10 @@ BuildRequires:  wayland-devel
 BuildRequires:  webkit2gtk4.1-devel
 Requires:       pipewire >= 0.3.50
 Requires:       vulkan-loader
+Requires:       rsms-inter-fonts
+Requires:       jetbrains-mono-fonts
 Suggests:       yt-dlp
+Suggests:       deno
 Recommends:     resonate-signin
 
 %description

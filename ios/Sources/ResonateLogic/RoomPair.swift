@@ -2,7 +2,7 @@ import Foundation
 
 public enum RoomPair {
     public static func name(left: String, right: String) -> String {
-        "\(stem(of: left)) and \(stem(of: right))"
+        said("room.pair.name", stem(of: left), stem(of: right))
     }
 
     public static func stem(of file: String) -> String {

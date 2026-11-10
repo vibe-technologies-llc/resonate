@@ -5,7 +5,7 @@ use resonate_core::SourceId;
 use crate::{
     AlbumLink, AlbumNames, ArtistLink, Barcode, CoverArt, Isrc, Link, LinkNames, LinkedPlaylist,
     LinkedProfile, Mbid, PlaylistLink, ProfileLink, Relation, Result, Service, SongLink,
-    SongsAsked,
+    SongsAsked, words,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -463,34 +463,34 @@ pub enum LookupOp {
 }
 
 impl LookupOp {
-    pub const fn asked_for(self) -> &'static str {
+    pub fn asked_for(self) -> &'static str {
         match self {
-            Self::ShareFile => "a public file upload",
-            Self::Release => "a release",
-            Self::FindRelease => "a release search",
-            Self::Recording => "a recording",
-            Self::Isrc => "a recording by its ISRC",
-            Self::FindRecording => "a recording search",
-            Self::ReleaseGroup => "a release group",
-            Self::FindReleaseGroup => "a release group search",
-            Self::Artist => "an artist",
-            Self::FindArtist => "an artist search",
-            Self::ReleaseGroupsOfArtist => "the releases of an artist",
-            Self::ReleasesOfGroup => "the pressings of a release",
-            Self::ReleasesOfArtist => "the pressings of an artist",
-            Self::Cover => "a cover",
-            Self::Portrait => "a portrait",
-            Self::Lyrics => "lyrics",
-            Self::Devices => "the measured devices",
-            Self::Correction => "a measured correction",
-            Self::Recognise => "a recognition",
-            Self::Submit => "a submission of what was heard",
-            Self::Love => "a favourite told to a listening service",
-            Self::Token => "a check of a listening service's token",
-            Self::StreamLink => "a look for where a track streams",
-            Self::SpotifyAccount => "a sign-in to the Spotify account",
-            Self::FollowLink => "what a link names",
-            Self::LatestRelease => "the latest release of Resonate",
+            Self::ShareFile => words::reference::share_file(),
+            Self::Release => words::reference::release(),
+            Self::FindRelease => words::reference::find_release(),
+            Self::Recording => words::reference::recording(),
+            Self::Isrc => words::reference::isrc(),
+            Self::FindRecording => words::reference::find_recording(),
+            Self::ReleaseGroup => words::reference::release_group(),
+            Self::FindReleaseGroup => words::reference::find_release_group(),
+            Self::Artist => words::reference::artist(),
+            Self::FindArtist => words::reference::find_artist(),
+            Self::ReleaseGroupsOfArtist => words::reference::release_groups_of_artist(),
+            Self::ReleasesOfGroup => words::reference::releases_of_group(),
+            Self::ReleasesOfArtist => words::reference::releases_of_artist(),
+            Self::Cover => words::reference::cover(),
+            Self::Portrait => words::reference::portrait(),
+            Self::Lyrics => words::reference::lyrics(),
+            Self::Devices => words::reference::devices(),
+            Self::Correction => words::reference::correction(),
+            Self::Recognise => words::reference::recognise(),
+            Self::Submit => words::reference::submit(),
+            Self::Love => words::reference::love(),
+            Self::Token => words::reference::token(),
+            Self::StreamLink => words::reference::stream_link(),
+            Self::SpotifyAccount => words::reference::spotify_account(),
+            Self::FollowLink => words::reference::follow_link(),
+            Self::LatestRelease => words::reference::latest_release(),
         }
     }
 }

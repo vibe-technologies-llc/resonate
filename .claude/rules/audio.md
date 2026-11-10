@@ -441,6 +441,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   amplitude, `ahead` = rendered but not yet in the ring, so the boundary lands on the exact frame.
   The heard level walks to the wanted one over `FADED_OVER`; a frame rendered at the heard level is
   untouched. The gain stage steps; the ring is the only ramp. The DoP ring is never trimmed.
+  **A frame is never raised past `RAISED_AT_MOST` (4, 12 dB) times the level it was rendered at:**
+  the heard level walked is held under it, since a raise lifts the word's rounding and dither with
+  the music (a volume scrolled up from zero raised frames rendered a millionth of full scale into
+  full-scale noise). Past it the rest is heard as frames rendered at the new level arrive, the heard
+  level walking on from where it was held, so the climb from silence never passes its target
+  (`a_level_raised_fast_from_near_silence_climbs_to_its_target_and_never_past_it`,
+  `a_volume_scrolled_up_fast_from_zero_is_never_heard_louder_than_where_it_lands`).
 - **An equaliser change is heard within a few pulls, not a ring later: what the ring holds is
   rendered again from the frames that made it and spliced in.** Not on the pull side: the ring
   carries sink words after dither, so the callback would run biquads, guard, dither and the

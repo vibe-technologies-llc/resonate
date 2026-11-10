@@ -4,9 +4,8 @@ use resonate_library::{Library, MissingTrack, UnheldRelease, Want};
 use crate::{
     Error, Result,
     cli::WantsArgs,
-    counted,
     error::{Given, Named},
-    folded_name,
+    folded_name, words,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -64,7 +63,7 @@ fn missing_matching(
 }
 
 fn shown_of(title: &str, album: &str) -> String {
-    format!("{title} on {album}")
+    words::wanting::on(album, title)
 }
 
 pub fn want(library: &Library, title: &str, narrowing: Narrowing<'_>) -> Result<()> {
@@ -73,7 +72,10 @@ pub fn want(library: &Library, title: &str, narrowing: Narrowing<'_>) -> Result<
 
     library.want_release_tracks(&rows)?;
     for track in &found {
-        said!("wanted {}", shown_of(&track.title, &track.album_title));
+        said!(
+            "{}",
+            words::wanting::wanted(shown_of(&track.title, &track.album_title))
+        );
     }
     Ok(())
 }
@@ -83,12 +85,12 @@ pub fn dismiss(library: &Library, title: &str, narrowing: Narrowing<'_>) -> Resu
 
     for track in &found {
         library.dismiss_missing(track.release_track)?;
-        said!("dismissed {}", shown_of(&track.title, &track.album_title));
+        said!(
+            "{}",
+            words::wanting::dismissed(shown_of(&track.title, &track.album_title))
+        );
     }
-    said!(
-        "{} dismissed, --bring-back lists them again",
-        counted(found.len() as u64, "missing track", "missing tracks")
-    );
+    said!("{}", words::wanting::tracks_dismissed(found.len()));
     Ok(())
 }
 
@@ -108,12 +110,12 @@ pub fn dismiss_release(library: &Library, title: &str, artist: Option<&str>) -> 
     }
     for release in &found {
         library.dismiss_release(release.artist, &release.mbid)?;
-        said!("dismissed {} by {}", release.title, release.artist_name);
+        said!(
+            "{}",
+            words::wanting::dismissed_by(&release.artist_name, &release.title)
+        );
     }
-    said!(
-        "{} dismissed, --bring-back lists them again",
-        counted(found.len() as u64, "release", "releases")
-    );
+    said!("{}", words::wanting::releases_dismissed(found.len()));
     Ok(())
 }
 
@@ -135,8 +137,8 @@ pub fn unwant(library: &Library, title: &str, narrowing: Narrowing<'_>) -> Resul
     for want in &found {
         library.unwant(want.id)?;
         said!(
-            "no longer wanted: {}",
-            shown_of(&want.title, &want.album_title)
+            "{}",
+            words::wanting::no_longer_wanted(shown_of(&want.title, &want.album_title))
         );
     }
     Ok(())

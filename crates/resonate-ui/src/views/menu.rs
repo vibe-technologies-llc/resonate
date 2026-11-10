@@ -28,13 +28,13 @@ use crate::{
         root::RootView,
         spoken::{self, Placed, Spoken},
     },
+    words,
 };
 
 const MENU_GROUP: &str = "menu-entry";
 const OPENED_IN_FROM_THE_ROWS_EDGE: f32 = 24.0;
 const BESIDE_ITS_ROW: f32 = 4.0;
 const PANEL_PADDING: f32 = 4.0;
-const OPEN_BENEATH: &str = "Opens a menu";
 const STAYS_OPEN_FOR_THE_POINTER_CROSSING: Duration = Duration::from_millis(250);
 
 type Doing = dyn Fn(&mut RootView, &mut Window, &mut Context<RootView>);
@@ -642,7 +642,7 @@ impl RootView {
                 Role::MenuItem,
                 &entry.label,
                 if matches!(entry.takes, Takes::Opens { .. }) {
-                    OPEN_BENEATH
+                    words::menu::open_beneath()
                 } else {
                     ""
                 },
@@ -778,7 +778,7 @@ fn menu_panel(id: &'static str) -> Stateful<Div> {
 }
 
 fn apart() -> Div {
-    div().my_1().mx_2().h(px(1.0)).bg(rgb(theme::border()))
+    kit::rule().my_1().mx_2()
 }
 
 pub(crate) fn opens_a_reachable_menu(
@@ -849,53 +849,6 @@ pub(crate) fn opens_a_menu(
         )
 }
 
-pub(crate) const PLAY: &str = "Play";
-pub(crate) const PLAY_NEXT: &str = "Play next";
-pub(crate) const ADD_TO_QUEUE: &str = "Add to queue";
-pub(crate) const ADD_TO_PLAYLIST: &str = "Add to playlist…";
-pub(crate) const GO_TO: &str = "Go to";
-pub(crate) const COPY: &str = "Copy";
-pub(crate) const REMOVE: &str = "Remove";
-pub(crate) const OTHER_COPIES: &str = "Other copies";
-pub(crate) const GO_TO_ARTIST: &str = "Artist";
-pub(crate) const GO_TO_ALBUM: &str = "Album";
-pub(crate) const COPY_PATH: &str = "File path";
-
-pub(crate) const COPY_PATHS: &str = "File paths";
-
-pub(crate) const IDENTIFY: &str = "Identify";
-
-pub(crate) const SHOW_THE_ARTIST: &str = "Show the artist";
-
-pub(crate) const HIDE_EACH: &str = "Hide from library";
-
-pub(crate) const SHOW_EACH: &str = "Show in library";
-pub(crate) const COPY_TITLE: &str = "Title";
-pub(crate) const COPY_ARTIST: &str = "Artist name";
-pub(crate) const COPY_ALBUM: &str = "Album name";
-pub(crate) const SHOW_IN_FOLDER: &str = "Show in the file manager";
-pub(crate) const TAKE_OUT: &str = "Take out of the queue";
-pub(crate) const REMOVE_ROW: &str = "Take out of the playlist";
-pub(crate) const MAGNIFY: &str = "See the cover whole";
-pub(crate) const INSPECT: &str = "Show in the inspector";
-pub(crate) const FORGET_DELIVERY: &str = "Forget this delivery";
-pub(crate) const OPEN_ALBUM: &str = "Show this album";
-pub(crate) const OPEN_ARTIST: &str = "Show this artist";
-pub(crate) const FAVOUR: &str = "Add to favourites";
-pub(crate) const UNFAVOUR: &str = "Take out of favourites";
-pub(crate) const SHARE: &str = "Share";
-pub(crate) const FIND_ANOTHER_VERSION: &str = "Find another version";
-
-pub(crate) const SHARE_EACH: &str = "Share each";
-
-pub(crate) const DELETE_FROM_DISK: &str = "Delete from disk…";
-pub(crate) const PIN: &str = "Pin to the top";
-pub(crate) const UNPIN: &str = "Stop pinning";
-pub(crate) const RENAME: &str = "Rename";
-pub(crate) const DUPLICATE: &str = "Duplicate";
-pub(crate) const EXPORT: &str = "Export";
-pub(crate) const DISCARD: &str = "Discard";
-
 impl Menu {
     pub(crate) fn queues(
         self,
@@ -905,19 +858,31 @@ impl Menu {
         let next = rows.clone();
         let last = rows;
 
-        self.under(Icon::Play, PLAY, "enter", plays)
-            .does(Icon::QueueNext, PLAY_NEXT, move |this, _, cx| {
-                this.queue(&next(), Placement::Next, cx);
-            })
-            .does(Icon::QueueLast, ADD_TO_QUEUE, move |this, _, cx| {
-                this.queue(&last(), Placement::Queued, cx);
-            })
+        self.under(Icon::Play, words::menu::play(), "enter", plays)
+            .does(
+                Icon::QueueNext,
+                words::menu::play_next(),
+                move |this, _, cx| {
+                    this.queue(&next(), Placement::Next, cx);
+                },
+            )
+            .does(
+                Icon::QueueLast,
+                words::menu::add_to_queue(),
+                move |this, _, cx| {
+                    this.queue(&last(), Placement::Queued, cx);
+                },
+            )
     }
 
     pub(crate) fn holds(self, rows: impl Fn() -> Held + 'static) -> Self {
-        self.does(Icon::Plus, ADD_TO_PLAYLIST, move |this, window, cx| {
-            this.hold_for_a_playlist(rows(), window, cx);
-        })
+        self.does(
+            Icon::Plus,
+            words::menu::add_to_playlist(),
+            move |this, window, cx| {
+                this.hold_for_a_playlist(rows(), window, cx);
+            },
+        )
     }
 
     pub(crate) fn reaches(
@@ -926,34 +891,43 @@ impl Menu {
         album: Option<AlbumId>,
         artist: Option<ArtistId>,
     ) -> Self {
-        self.apart().nests(Icon::Next, GO_TO, move |mut menu| {
-            if let Some(artist) = artist {
-                menu = menu.does(Icon::Artists, GO_TO_ARTIST, move |this, _, cx| {
-                    let now = this.library.read(cx).standing_of(track);
-                    let artist = now.map_or(Some(artist), |(_, artist)| artist);
-                    if let Some(artist) = artist {
-                        this.opened(Selection::Artist(artist), cx);
-                    }
-                });
-            }
-            if let Some(album) = album {
-                menu = menu.does(Icon::Albums, GO_TO_ALBUM, move |this, _, cx| {
-                    let now = this.library.read(cx).standing_of(track);
-                    let album = now.map_or(Some(album), |(album, _)| album);
-                    if let Some(album) = album {
-                        this.opened(Selection::Album(album), cx);
-                    }
-                });
-            }
+        self.apart()
+            .nests(Icon::Next, words::menu::go_to(), move |mut menu| {
+                if let Some(artist) = artist {
+                    menu = menu.does(
+                        Icon::Artists,
+                        words::menu::go_to_artist(),
+                        move |this, _, cx| {
+                            let now = this.library.read(cx).standing_of(track);
+                            let artist = now.map_or(Some(artist), |(_, artist)| artist);
+                            if let Some(artist) = artist {
+                                this.opened(Selection::Artist(artist), cx);
+                            }
+                        },
+                    );
+                }
+                if let Some(album) = album {
+                    menu = menu.does(
+                        Icon::Albums,
+                        words::menu::go_to_album(),
+                        move |this, _, cx| {
+                            let now = this.library.read(cx).standing_of(track);
+                            let album = now.map_or(Some(album), |(album, _)| album);
+                            if let Some(album) = album {
+                                this.opened(Selection::Album(album), cx);
+                            }
+                        },
+                    );
+                }
 
-            menu
-        })
+                menu
+            })
     }
 
     pub(crate) fn favours(self, what: Favoured, already: bool) -> Self {
         let (icon, label) = match already {
-            true => (Icon::Favourited, UNFAVOUR),
-            false => (Icon::Favourite, FAVOUR),
+            true => (Icon::Favourited, words::menu::unfavour()),
+            false => (Icon::Favourite, words::menu::favour()),
         };
 
         self.does(icon, label, move |this, _, cx| {
@@ -963,36 +937,40 @@ impl Menu {
     }
 
     pub(crate) fn looks_for_versions(self, track: Track, at: Point<Pixels>) -> Self {
-        self.nests(Icon::Search, FIND_ANOTHER_VERSION, move |mut menu| {
-            let title = resonate_core::titles::without_its_rating(&track.title).to_owned();
-            let artist = track.artist.clone().unwrap_or_default();
-            for version in ["Clean", "Explicit"] {
-                let query = format!("{title} {artist} {version}");
-                menu = menu.does(
-                    Icon::Search,
-                    format!("Look for {version} version"),
-                    move |this, window, cx| {
+        self.nests(
+            Icon::Search,
+            words::menu::find_another_version(),
+            move |mut menu| {
+                let title = resonate_core::titles::without_its_rating(&track.title).to_owned();
+                let artist = track.artist.clone().unwrap_or_default();
+                let versions = [
+                    ("Clean", words::menu::look_for_clean()),
+                    ("Explicit", words::menu::look_for_explicit()),
+                ];
+                for (version, label) in versions {
+                    let query = format!("{title} {artist} {version}");
+                    menu = menu.does(Icon::Search, label, move |this, window, cx| {
                         this.search_instead(query.clone(), window, cx);
-                    },
-                );
-            }
-            menu.does(
-                Icon::Search,
-                better::FIND_A_BETTER_VERSION,
-                move |this, _, cx| this.look_for_a_better_version(track.clone(), at, cx),
-            )
-        })
+                    });
+                }
+                menu.does(
+                    Icon::Search,
+                    better::find_a_better_version(),
+                    move |this, _, cx| this.look_for_a_better_version(track.clone(), at, cx),
+                )
+            },
+        )
     }
 
     pub(crate) fn shares(self, track: TrackId) -> Self {
-        self.nests(Icon::Share, SHARE, move |menu| {
+        self.nests(Icon::Share, words::menu::share(), move |menu| {
             menu.does(Icon::Share, "song.link", move |this, _, cx| {
                 this.library
                     .update(cx, |library, cx| library.share(track, cx));
             })
             .does(
                 Icon::Share,
-                "Upload file to Catbox (public)",
+                words::menu::upload_to_catbox(),
                 move |this, _, cx| {
                     this.library
                         .update(cx, |library, cx| library.share_file(track, cx));
@@ -1004,22 +982,30 @@ impl Menu {
     pub(crate) fn offers_the_other_copies(self, (own, copies): (Track, Vec<Track>)) -> Self {
         let labels = copy_labels(&own, &copies);
 
-        self.nests(Icon::Tracks, OTHER_COPIES, move |mut menu| {
-            for (copy, label) in copies.into_iter().zip(labels) {
-                let playing: Arc<[Track]> = Arc::from([copy]);
-                menu = menu.does(Icon::Play, label, move |this, _, cx| {
-                    this.play(&playing, 0, cx);
-                });
-            }
-            menu
-        })
+        self.nests(
+            Icon::Tracks,
+            words::menu::other_copies(),
+            move |mut menu| {
+                for (copy, label) in copies.into_iter().zip(labels) {
+                    let playing: Arc<[Track]> = Arc::from([copy]);
+                    menu = menu.does(Icon::Play, label, move |this, _, cx| {
+                        this.play(&playing, 0, cx);
+                    });
+                }
+                menu
+            },
+        )
     }
 
     pub(crate) fn shares_each(self, tracks: Vec<TrackId>) -> Self {
-        self.does(Icon::Share, SHARE_EACH, move |this, _, cx| {
-            this.library
-                .update(cx, |library, cx| library.share_each(tracks.clone(), cx));
-        })
+        self.does(
+            Icon::Share,
+            words::menu::share_each(),
+            move |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.share_each(tracks.clone(), cx));
+            },
+        )
     }
 
     pub(crate) fn offers_the_files(self, paths: Vec<PathBuf>) -> Self {
@@ -1034,28 +1020,32 @@ impl Menu {
             .join("\n");
         let shown = one_file_in_each_folder(&paths);
 
-        self.nests(Icon::Export, COPY, move |menu| {
-            menu.does(Icon::Rename, COPY_PATHS, move |_, _, cx| {
+        self.nests(Icon::Export, words::menu::copy(), move |menu| {
+            menu.does(Icon::Rename, words::menu::copy_paths(), move |_, _, cx| {
                 clipboard::copy(written.clone(), cx);
             })
         })
-        .does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
-            for path in &shown {
-                cx.reveal_path(path);
-            }
-        })
+        .does(
+            Icon::Folder,
+            words::menu::show_in_folder(),
+            move |_, _, cx| {
+                for path in &shown {
+                    cx.reveal_path(path);
+                }
+            },
+        )
     }
 
     pub(crate) fn offers_the_file(self, location: &MediaLocation, names: Called) -> Self {
         let path = location.locator().as_path().map(Path::to_path_buf);
         let shown = path.clone();
 
-        self.nests(Icon::Export, COPY, move |menu| {
+        self.nests(Icon::Export, words::menu::copy(), move |menu| {
             let menu = match path {
                 Some(path) => {
                     let written = path.to_string_lossy().into_owned();
 
-                    menu.does(Icon::Rename, COPY_PATH, move |_, _, cx| {
+                    menu.does(Icon::Rename, words::menu::copy_path(), move |_, _, cx| {
                         clipboard::copy(written.clone(), cx);
                     })
                 }
@@ -1063,9 +1053,9 @@ impl Menu {
             };
 
             [
-                (COPY_TITLE, Some(names.title)),
-                (COPY_ARTIST, Some(names.artist)),
-                (COPY_ALBUM, names.album),
+                (words::menu::copy_title(), Some(names.title)),
+                (words::menu::copy_artist(), Some(names.artist)),
+                (words::menu::copy_album(), names.album),
             ]
             .into_iter()
             .filter_map(|(label, name)| {
@@ -1079,9 +1069,13 @@ impl Menu {
             })
         })
         .when_some(shown, |menu, shown| {
-            menu.does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
-                cx.reveal_path(&shown);
-            })
+            menu.does(
+                Icon::Folder,
+                words::menu::show_in_folder(),
+                move |_, _, cx| {
+                    cx.reveal_path(&shown);
+                },
+            )
         })
     }
 }
@@ -1120,8 +1114,8 @@ fn copy_labels(own: &Track, copies: &[Track]) -> Vec<String> {
             let shared =
                 *kind == own_kind || kinds.iter().filter(|other| *other == kind).count() > 1;
             match where_it_is(copy).filter(|_| shared) {
-                Some(place) => format!("Play the {kind} copy in {place}"),
-                None => format!("Play the {kind} copy"),
+                Some(place) => words::menu::play_the_copy_in(kind.as_str(), place),
+                None => words::menu::play_the_copy(kind.as_str()),
             }
         })
         .collect()
@@ -1200,12 +1194,9 @@ mod tests {
     fn a_menu_with_a_menu_beneath() -> Menu {
         two_entries()
             .apart()
-            .nests(Icon::Export, COPY, |menu| {
-                menu.does(Icon::Rename, COPY_TITLE, |_, _, _| {}).does(
-                    Icon::Rename,
-                    COPY_ARTIST,
-                    |_, _, _| {},
-                )
+            .nests(Icon::Export, words::menu::copy(), |menu| {
+                menu.does(Icon::Rename, words::menu::copy_title(), |_, _, _| {})
+                    .does(Icon::Rename, words::menu::copy_artist(), |_, _, _| {})
             })
             .apart()
     }
@@ -1263,7 +1254,7 @@ mod tests {
     fn a_menu_opens_with_no_line_left_at_its_foot_and_an_empty_nest_is_not_offered() {
         let menu = two_entries()
             .apart()
-            .nests(Icon::Export, COPY, |menu| menu)
+            .nests(Icon::Export, words::menu::copy(), |menu| menu)
             .apart()
             .without_a_last_line();
 
@@ -1276,7 +1267,10 @@ mod tests {
         let menu = a_menu_with_a_menu_beneath();
 
         assert_eq!(menu.offering("Play"), Some(Offered::Here(0)));
-        assert_eq!(menu.offering(COPY_ARTIST), Some(Offered::Beneath(3, 1)));
+        assert_eq!(
+            menu.offering(words::menu::copy_artist()),
+            Some(Offered::Beneath(3, 1))
+        );
         assert_eq!(menu.offering("Nothing like it"), None);
     }
 

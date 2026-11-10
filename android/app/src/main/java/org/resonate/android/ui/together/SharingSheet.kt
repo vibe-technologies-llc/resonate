@@ -24,6 +24,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import org.resonate.android.R
 import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.TogetherPerson
@@ -43,14 +45,11 @@ import org.resonate.android.ui.settings.ButtonRow
 import org.resonate.android.ui.settings.Note
 import org.resonate.android.ui.settings.NoticeCard
 import org.resonate.android.ui.settings.SettingRow
+import org.resonate.android.words
 
 private const val SHEET_READ_EVERY_MS = 1_000L
 private const val RESET_KEY = "reset"
 private const val LEAVE_KEY = "leave"
-private const val NOT_SHARED_YET =
-    "Anyone with a link can follow it or edit it with you, with no account. " +
-        "The server keeps it sealed and cannot read it. Everyone plays their own copy of each song."
-private const val FOLLOWING = "You follow this playlist. Whoever shared it decides what is on it."
 
 private fun TogetherPerson.key(): String = id.joinToString("")
 
@@ -62,6 +61,7 @@ fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
     val config by resonate.features.syncConfig.collectAsStateWithLifecycle()
     val online by resonate.features.online.collectAsStateWithLifecycle()
     val list = lists.firstOrNull { it.playlist == id }
+    val words = words()
     val held = list != null
     LaunchedEffect(id) {
         while (true) {
@@ -88,7 +88,7 @@ fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
             if (list == null) {
                 val needs =
                     config?.let {
-                        TogetherWords.sharingNeedsSync(it.enabled, it.nearbyOnly, online)
+                        TogetherWords.sharingNeedsSync(words, it.enabled, it.nearbyOnly, online)
                     }
                 NotShared(needs, onDismiss) { together.share(id) }
             } else {
@@ -110,15 +110,15 @@ private fun NotShared(needs: String?, onDismiss: () -> Unit, onShare: () -> Unit
                     navigator.open(Screen.Sync)
                 }
             ) {
-                Text("Open Devices")
+                Text(stringResource(R.string.sharing_open_devices))
             }
         }
         return
     }
-    Note(NOT_SHARED_YET)
+    Note(stringResource(R.string.sharing_not_shared_yet))
     ButtonRow {
         FilledTonalButton(onClick = onShare, modifier = Modifier.testTag("share-playlist")) {
-            Text("Share this playlist")
+            Text(stringResource(R.string.sharing_share_this_playlist))
         }
     }
 }
@@ -127,34 +127,35 @@ private fun NotShared(needs: String?, onDismiss: () -> Unit, onShare: () -> Unit
 private fun Shared(id: ULong, list: SharedPlaylist, onDismiss: () -> Unit) {
     val together = LocalResonate.current.features.together
     val press = rememberSecondPress()
-    TogetherWords.reach(list.reach)?.let { said ->
+    val words = words()
+    TogetherWords.reach(words, list.reach)?.let { said ->
         NoticeCard(
             Icons.Rounded.ErrorOutline,
             said,
             Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("sharing-reach"),
         )
     }
-    if (!list.mayEdit) Note(FOLLOWING)
+    if (!list.mayEdit) Note(stringResource(R.string.sharing_following))
     list.editLink?.let { link ->
         InvitationLink(
-            "Anyone with this link can edit",
+            stringResource(R.string.sharing_edit_link_says),
             link,
-            "Edit “${list.name}” with me",
+            stringResource(R.string.sharing_edit_link_title, list.name),
             "edit",
         )
     }
     InvitationLink(
-        "Anyone with this link can follow",
+        stringResource(R.string.sharing_follow_link_says),
         list.followLink,
-        "Follow “${list.name}”",
+        stringResource(R.string.sharing_follow_link_title, list.name),
         "follow",
     )
     if (list.people.isNotEmpty()) {
-        SectionHeader("People")
+        SectionHeader(stringResource(R.string.together_people))
         list.people.forEach { person ->
             val key = person.key()
             SettingRow(
-                title = TogetherWords.person(person),
+                title = TogetherWords.person(words, person),
                 icon = Icons.Rounded.Person,
                 trailing =
                     if (list.mayEdit && !person.isMe) {
@@ -163,14 +164,16 @@ private fun Shared(id: ULong, list: SharedPlaylist, onDismiss: () -> Unit) {
                                 onClick = { press.press(key) { together.reset(id, person.id) } },
                                 modifier = Modifier.testTag("sharing-remove"),
                             ) {
-                                Text(press.label(key, "Remove"))
+                                Text(press.label(key, stringResource(R.string.sharing_remove)))
                             }
                         }
                     } else null,
             )
         }
     }
-    TogetherWords.notHeld(list.notHeld)?.let { Note(it, Modifier.testTag("sharing-not-held")) }
+    TogetherWords.notHeld(words, list.notHeld)?.let {
+        Note(it, Modifier.testTag("sharing-not-held"))
+    }
     ButtonRow {
         if (list.mayEdit) {
             TextButton(
@@ -178,7 +181,7 @@ private fun Shared(id: ULong, list: SharedPlaylist, onDismiss: () -> Unit) {
                 modifier = Modifier.testTag("sharing-reset"),
             ) {
                 Icon(Icons.Rounded.GroupAdd, null, Modifier.padding(end = 8.dp))
-                Text(press.label(RESET_KEY, "Make new links"))
+                Text(press.label(RESET_KEY, stringResource(R.string.sharing_make_new_links)))
             }
         }
         OutlinedButton(
@@ -193,7 +196,7 @@ private fun Shared(id: ULong, list: SharedPlaylist, onDismiss: () -> Unit) {
             modifier = Modifier.testTag("sharing-leave"),
         ) {
             Icon(Icons.AutoMirrored.Rounded.Logout, null, Modifier.padding(end = 8.dp))
-            Text(press.label(LEAVE_KEY, "Leave"))
+            Text(press.label(LEAVE_KEY, stringResource(R.string.sharing_leave)))
         }
     }
 }

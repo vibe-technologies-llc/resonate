@@ -12,10 +12,15 @@ data class OutputRoute(val id: String, val name: String)
 
 private const val ROUTE_FORM = "v1"
 
-private val namedByKind = setOf("Built-in speaker", "Earpiece")
+val namedByType =
+    setOf(
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+    )
 
-fun outputName(kind: String, productName: String): String =
-    if (kind in namedByKind) kind else productName.ifBlank { kind }
+fun outputName(type: Int, kind: String, productName: String): String =
+    if (type in namedByType) kind else productName.ifBlank { kind }
 
 private fun routeKind(type: Int): String =
     when (type) {
@@ -50,9 +55,9 @@ fun routeInUse(outputs: List<AudioOutput>, actual: Int, expected: List<Int>): Ou
     return routeOf(actual) ?: expected.firstNotNullOfOrNull(::routeOf)
 }
 
-fun audioOutputs(manager: AudioManager): List<AudioOutput> =
+fun audioOutputs(manager: AudioManager, words: Words): List<AudioOutput> =
     manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { device ->
-        val kind = outputKind(device.type)
+        val kind = outputKind(words, device.type)
         val name = device.productName.toString()
         AudioOutput(
             device.id,
@@ -61,7 +66,7 @@ fun audioOutputs(manager: AudioManager): List<AudioOutput> =
             device.sampleRates.toList(),
             device.channelCounts.toList(),
             device.encodings.toList(),
-            outputRouteOf(device.type, device.address, name, outputName(kind, name)),
+            outputRouteOf(device.type, device.address, name, outputName(device.type, kind, name)),
             device.type,
         )
     }
@@ -103,16 +108,19 @@ class OutputWatch(
     private val manager: AudioManager?
         get() = context.getSystemService(AudioManager::class.java)
 
+    private val words: Words
+        get() = ResourceWords(context.resources)
+
     fun routeNow(): OutputRoute? {
         val manager = manager ?: return null
         val expected = manager.getAudioDevicesForAttributes(mediaAttributes()).map { it.id }
-        return routeInUse(audioOutputs(manager), actual, expected)
+        return routeInUse(audioOutputs(manager, words), actual, expected)
     }
 
     private fun offersNow() {
         val manager = manager ?: return
         val expected = manager.getAudioDevicesForAttributes(mediaAttributes()).map { it.id }
-        val device = deviceInUse(audioOutputs(manager), actual, expected)
+        val device = deviceInUse(audioOutputs(manager, words), actual, expected)
         val info =
             device?.let { id ->
                 manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id == id }

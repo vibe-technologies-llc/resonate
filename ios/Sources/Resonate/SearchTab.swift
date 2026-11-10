@@ -2,10 +2,18 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-private enum SearchArea: String, CaseIterable {
-    case all = "All"
-    case library = "Library"
-    case online = "Online"
+private enum SearchArea: CaseIterable {
+    case all
+    case library
+    case online
+
+    var label: String {
+        switch self {
+        case .all: said("search.area.all")
+        case .library: said("search.area.library")
+        case .online: said("search.area.online")
+        }
+    }
 }
 
 struct SearchTab: View {
@@ -27,19 +35,19 @@ struct SearchTab: View {
                 } else {
                     let link = OnlineAsked.isLink(search.query)
                     if !link, area != .online {
-                        SearchHeading(title: "In your library")
+                        SearchHeading(title: said("search.heading.library"))
                         LibraryFindings(search: search, seeAll: $seeAll, compact: area == .all, chosen: stowKeyboard)
                             .equatable()
                         if area == .all, search.hasAnswer, !search.matchedNothing {
                             Button { area = .library } label: {
-                                Label("All library results", systemImage: "chevron.forward")
+                                Label("search.all-library-results", systemImage: "chevron.forward")
                                     .font(.subheadline)
                             }
                             .listRowSeparator(.hidden)
                         }
                     }
                     if link || area != .library {
-                        SearchHeading(title: "Online")
+                        SearchHeading(title: said("search.heading.online"))
                         if online {
                             OnlineSearchContent(actions: $actions)
                         } else {
@@ -59,11 +67,11 @@ struct SearchTab: View {
             }
         }
         .scrollDismissesKeyboard(.immediately)
-        .searchable(text: Binding(get: { search.text }, set: enter), prompt: "Search")
+        .searchable(text: Binding(get: { search.text }, set: enter), prompt: "search.title")
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .onSubmit(of: .search) { remember(search) }
-        .navigationTitle("Search")
+        .navigationTitle("search.title")
         .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -71,16 +79,16 @@ struct SearchTab: View {
             }
             if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { savingSearch = true } label: { Label("Save as playlist", systemImage: "bookmark") }
+                    Button { savingSearch = true } label: { Label("search.save-as-playlist", systemImage: "bookmark") }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { navigation.listening = true } label: { Label("Listen", systemImage: "ear") }
+                Button { navigation.listening = true } label: { Label("search.listen", systemImage: "ear") }
             }
         }
         .sheet(isPresented: $savingSearch) {
             SavedSearchSheet(
-                title: "Save search as playlist",
+                title: said("search.save-as-playlist.title"),
                 draft: .starting(name: search.query, text: search.query)
             ) { name, saved in
                 remember(search)
@@ -88,7 +96,7 @@ struct SearchTab: View {
                     if let problem {
                         library.fail(problem)
                     } else {
-                        library.notice("Saved \(name) among your playlists")
+                        library.notice(said("search.saved-as-playlist", name))
                     }
                 }
             }
@@ -133,7 +141,7 @@ struct OnlineOffRow: View {
     var body: some View {
         Button { navigation.tab = .settings } label: {
             HStack {
-                Label("Turn on online features to search online too", systemImage: "globe")
+                Label("search.online-off", systemImage: "globe")
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.forward")
@@ -145,7 +153,7 @@ struct OnlineOffRow: View {
         }
         .buttonStyle(.plain)
         .listRowSeparator(.hidden)
-        .accessibilityHint("Opens Settings")
+        .accessibilityHint("search.online-off.hint")
     }
 }
 
@@ -155,13 +163,13 @@ struct SearchStart: View {
     let choose: (String) -> Void
 
     var body: some View {
-        Section("Discover") {
+        Section("search.discover") {
             Button { navigation.listening = true } label: {
-                ToolRow(title: "Recognise a song", detail: "Name the music playing around you", symbol: "ear")
+                ToolRow(title: said("search.discover.recognise"), detail: said("search.discover.recognise.detail"), symbol: "ear")
             }
             .buttonStyle(.plain)
             NavigationLink(value: Destination.wanted) {
-                ToolRow(title: "Saved for later", detail: "Find and download the songs you saved", symbol: "bookmark")
+                ToolRow(title: said("search.discover.wanted"), detail: said("search.discover.wanted.detail"), symbol: "bookmark")
             }
         }
         if !search.recents.isEmpty {
@@ -180,10 +188,10 @@ struct SearchStart: View {
                 }
             } header: {
                 HStack {
-                    Text("Recent searches")
+                    Text("search.recents")
                     Spacer()
                     Button { search.forgetRecents() } label: {
-                        Text("Clear").touchTarget()
+                        Text("search.recents.clear-short").touchTarget()
                     }
                     .font(.subheadline)
                     .textCase(nil)
@@ -191,9 +199,9 @@ struct SearchStart: View {
             }
         }
         ContentUnavailableView(
-            "Search your library and online",
+            "search.start.title",
             systemImage: "magnifyingglass",
-            description: Text("Find songs, albums and artists you have and music online to download, or paste a shared link to open it.")
+            description: Text("search.start.detail")
         )
         .listRowSeparator(.hidden)
     }
@@ -224,17 +232,17 @@ struct LibraryFindings: View, Equatable {
             if let meant = search.found.didYouMean {
                 Button { search.text = meant } label: {
                     Label {
-                        Text("Did you mean \(Text(meant).bold())?")
+                        Text(NothingFound.meaning(meant))
                     } icon: {
                         Image(systemName: "text.magnifyingglass")
                             .accessibilityHidden(true)
                     }
                 }
             }
-            Text("Nothing in your library matches “\(search.answered)”")
+            Text(said("search.library.nothing", said("common.quoted", search.answered)))
                 .foregroundStyle(.secondary)
                 .listRowSeparator(.hidden)
-                .announced("Nothing in your library matches \(search.answered)")
+                .announced(said("search.library.nothing", search.answered))
         } else {
             SearchResults(
                 search: search,
@@ -260,7 +268,7 @@ private struct SearchAreaChooser: View {
                 Button {
                     withAnimation(reduceMotion ? nil : Flip.animation) { area = offered }
                 } label: {
-                    Text(offered.rawValue)
+                    Text(offered.label)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -282,7 +290,7 @@ private struct SearchAreaChooser: View {
         .padding(4)
         .glassEffect(.regular, in: .capsule)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Search in")
+        .accessibilityLabel("search.area.spoken")
     }
 }
 
@@ -295,6 +303,6 @@ struct LibrarySearchPage: View {
             SearchResults(search: library.tabSearch, scope: .constant(scope)).equatable().themedRows()
         }
         .listStyle(.plain)
-        .navigationTitle(scope.rawValue)
+        .navigationTitle(scope.label)
     }
 }

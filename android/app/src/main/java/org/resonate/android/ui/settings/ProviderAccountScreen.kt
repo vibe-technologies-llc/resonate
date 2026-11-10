@@ -1,6 +1,7 @@
 package org.resonate.android.ui.settings
 
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +56,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.ProviderAccountBook
+import org.resonate.android.R
 import org.resonate.android.emptyAccount
 import org.resonate.android.holdsAQuickConnectSession
 import org.resonate.android.nativecore.DownloadAccount
@@ -65,6 +68,7 @@ import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.withoutTheQuickConnectSession
+import org.resonate.android.words
 
 class ProviderAccountViewModel(
     private val resonate: Resonate,
@@ -182,27 +186,31 @@ internal fun iconFor(provider: MusicProvider): ImageVector =
 private fun needsAServer(provider: MusicProvider): Boolean =
     provider == MusicProvider.SUBSONIC || provider == MusicProvider.JELLYFIN
 
-private fun fieldLabel(field: ProviderField, provider: MusicProvider): String =
+@StringRes
+private fun fieldLabel(field: ProviderField, provider: MusicProvider): Int =
     when (field) {
         ProviderField.SERVER ->
-            if (needsAServer(provider)) "Server address" else "Server address (optional)"
-        ProviderField.USER -> "Username"
+            if (needsAServer(provider)) R.string.provider_field_server
+            else R.string.provider_field_server_optional
+        ProviderField.USER -> R.string.provider_field_user
         ProviderField.PASSWORD ->
-            if (provider == MusicProvider.HIFI_API) "Key for your own server (optional)" else "Password"
-        ProviderField.CLIENT_ID -> "TIDAL client ID"
-        ProviderField.CLIENT_SECRET -> "Client secret (if required)"
-        ProviderField.REFRESH_TOKEN -> "Refresh token"
+            if (provider == MusicProvider.HIFI_API) R.string.provider_field_key
+            else R.string.provider_field_password
+        ProviderField.CLIENT_ID -> R.string.provider_field_client_id
+        ProviderField.CLIENT_SECRET -> R.string.provider_field_client_secret
+        ProviderField.REFRESH_TOKEN -> R.string.provider_field_refresh_token
     }
 
-private fun supportOf(field: ProviderField, provider: MusicProvider): String? =
+@StringRes
+private fun supportOf(field: ProviderField, provider: MusicProvider): Int? =
     when (field) {
         ProviderField.SERVER ->
             when (provider) {
-                MusicProvider.SUBSONIC -> "For example https://music.example.org"
-                MusicProvider.JELLYFIN -> "For example https://jellyfin.example.org"
-                else -> "Leave blank to use the hosted service"
+                MusicProvider.SUBSONIC -> R.string.provider_field_server_subsonic
+                MusicProvider.JELLYFIN -> R.string.provider_field_server_jellyfin
+                else -> R.string.provider_field_server_hosted
             }
-        ProviderField.REFRESH_TOKEN -> "Filled in by Sign in with TIDAL"
+        ProviderField.REFRESH_TOKEN -> R.string.provider_field_refresh_token_detail
         else -> null
     }
 
@@ -231,8 +239,11 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
     val copy = rememberCopy()
     var removing by rememberSaveable { mutableStateOf(false) }
     val adding = kept == ProviderAccountBook.UNSAVED
+    val words = words()
+    val tidalCode = stringResource(R.string.provider_tidal_code)
     val title =
-        if (screen.id == ProviderAccountBook.UNSAVED) "Add ${providerName(provider)}"
+        if (screen.id == ProviderAccountBook.UNSAVED)
+            stringResource(R.string.provider_add_named, providerName(provider))
         else providerName(provider)
     Page(title) { padding ->
         val account = draft
@@ -242,14 +253,14 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
         }
         val unsaved = stored?.let { it.trimmed() != account.trimmed() } ?: true
         SettingsList(padding, Modifier.testTag("provider-account-list")) {
-            item(key = "about") { Note(providerDetail(provider)) }
+            item(key = "about") { Note(providerDetail(words, provider)) }
             providerFields(provider).forEach { field ->
                 item(key = "field-${field.name}") {
                     Field(
                         value = account.valueOf(field),
                         onValueChange = { value -> model.edit { it.with(field, value) } },
-                        label = fieldLabel(field, provider),
-                        supporting = supportOf(field, provider),
+                        label = stringResource(fieldLabel(field, provider)),
+                        supporting = supportOf(field, provider)?.let { stringResource(it) },
                         secret = field in secretFields,
                         keyboardType =
                             if (field == ProviderField.SERVER) KeyboardType.Uri else KeyboardType.Text,
@@ -265,7 +276,7 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
                         code = authorization?.userCode?.takeIf { busy },
                         onSignIn = model::signIn,
                         onOpen = { authorization?.verifyAt?.let(model::open) },
-                        onCopy = { authorization?.userCode?.let { copy("TIDAL code", it) } },
+                        onCopy = { authorization?.userCode?.let { copy(tidalCode, it) } },
                         onCancel = { model.cancelSignIn() },
                     )
                 }
@@ -289,7 +300,7 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
                             onClick = { removing = true },
                             modifier = Modifier.testTag("remove-provider"),
                         ) {
-                            Text("Remove")
+                            Text(stringResource(R.string.provider_remove))
                         }
                     }
                     Button(
@@ -300,20 +311,24 @@ fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
                         enabled = unsaved,
                         modifier = Modifier.testTag("save-provider"),
                     ) {
-                        Text(if (adding) "Add" else "Save")
+                        Text(
+                            stringResource(
+                                if (adding) R.string.provider_add else R.string.provider_save
+                            )
+                        )
                     }
                 }
             }
             item(key = "keystore") {
-                Footnote("Passwords, secrets and tokens stay encrypted with Android Keystore.")
+                Footnote(stringResource(R.string.provider_keystore))
             }
         }
     }
     if (removing) {
         ConfirmDialog(
-            title = "Remove ${providerName(provider)}?",
-            text = "Songs are no longer asked for here. Nothing already downloaded is touched.",
-            confirm = "Remove",
+            title = stringResource(R.string.provider_remove_named, providerName(provider)),
+            text = stringResource(R.string.provider_remove_detail),
+            confirm = stringResource(R.string.provider_remove),
             icon = Icons.Rounded.Delete,
             destructive = true,
             onConfirm = {
@@ -336,17 +351,28 @@ private fun TidalSignIn(
     onCancel: () -> Unit,
 ) {
     SettingRow(
-        title = if (signedIn) "Signed in to TIDAL" else "Not signed in",
+        title =
+            stringResource(
+                if (signedIn) R.string.provider_tidal_signed_in
+                else R.string.provider_tidal_signed_out
+            ),
         icon = if (signedIn) Icons.Rounded.CheckCircle else Icons.Rounded.Lock,
         supporting =
-            if (signedIn) "Renewed sign-ins are saved as they arrive"
-            else "Sign in on the web with a code; your password never passes through Resonate",
+            stringResource(
+                if (signedIn) R.string.provider_tidal_signed_in_detail
+                else R.string.provider_tidal_signed_out_detail
+            ),
         trailing = if (busy && code == null) ({ SmallLoading() }) else null,
     )
     if (!busy) {
         ButtonRow {
             FilledTonalButton(onClick = onSignIn, modifier = Modifier.testTag("tidal-sign-in")) {
-                Text(if (signedIn) "Sign in again" else "Sign in with TIDAL")
+                Text(
+                    stringResource(
+                        if (signedIn) R.string.provider_tidal_sign_in_again
+                        else R.string.provider_tidal_sign_in
+                    )
+                )
             }
         }
     }
@@ -371,22 +397,24 @@ private fun TidalSignIn(
                     SmallLoading()
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "Open TIDAL and enter this code. This page carries on once you approve.",
+                        stringResource(R.string.provider_tidal_enter_code),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 CodeText(code)
                 ButtonRow {
-                    TextButton(onClick = onCancel) { Text("Cancel") }
+                    TextButton(onClick = onCancel) {
+                        Text(stringResource(R.string.provider_tidal_cancel))
+                    }
                     OutlinedButton(onClick = onCopy) {
                         Icon(Icons.Rounded.ContentCopy, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Copy")
+                        Text(stringResource(R.string.provider_tidal_copy))
                     }
                     Button(onClick = onOpen) {
                         Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Open TIDAL")
+                        Text(stringResource(R.string.provider_tidal_open))
                     }
                 }
             }
@@ -407,11 +435,11 @@ private fun JellyfinQuickConnect(
     onCancel: () -> Unit,
 ) {
     SettingRow(
-        title = if (signedIn) "Signed in with Quick Connect" else "Quick Connect",
+        title = if (signedIn) stringResource(R.string.provider_jellyfin_signed_in) else stringResource(R.string.provider_jellyfin_quick_connect),
         icon = if (signedIn) Icons.Rounded.CheckCircle else Icons.Rounded.Lock,
         supporting =
-            if (signedIn) "No password is kept for this server"
-            else "Approve a code in a Jellyfin app you are signed in to, with no password typed here",
+            if (signedIn) stringResource(R.string.provider_jellyfin_signed_in_detail)
+            else stringResource(R.string.provider_jellyfin_signed_out_detail),
         trailing = if (busy && code == null) ({ SmallLoading() }) else null,
     )
     if (!busy) {
@@ -421,7 +449,12 @@ private fun JellyfinQuickConnect(
                 enabled = canAsk,
                 modifier = Modifier.testTag("jellyfin-quick-connect"),
             ) {
-                Text(if (signedIn) "Sign in again" else "Sign in with Quick Connect")
+                Text(
+                    stringResource(
+                        if (signedIn) R.string.provider_jellyfin_sign_in_again
+                        else R.string.provider_jellyfin_sign_in
+                    )
+                )
             }
         }
     }
@@ -446,8 +479,7 @@ private fun JellyfinQuickConnect(
                     SmallLoading()
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "Approve this code in a Jellyfin app you are signed in to (Settings, " +
-                            "Quick Connect). This page carries on once you do.",
+                        stringResource(R.string.provider_jellyfin_approve_code),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -457,7 +489,7 @@ private fun JellyfinQuickConnect(
                         onClick = onCancel,
                         modifier = Modifier.testTag("jellyfin-quick-connect-cancel"),
                     ) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.provider_jellyfin_cancel))
                     }
                 }
             }

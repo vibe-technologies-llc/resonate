@@ -123,12 +123,12 @@ public enum LibrarySection: String, Sendable, Equatable, CaseIterable, Identifia
 
     public var title: String {
         switch self {
-        case .home: "Library"
-        case .favourites: "Favourites"
-        case .songs: "All songs"
-        case .playlists: "Playlists"
-        case .albums: "Albums"
-        case .artists: "Artists"
+        case .home: said("library.shelf.library")
+        case .favourites: said("library.shelf.favourites")
+        case .songs: said("library.shelf.songs")
+        case .playlists: said("library.shelf.playlists")
+        case .albums: said("library.shelf.albums")
+        case .artists: said("library.shelf.artists")
         }
     }
 

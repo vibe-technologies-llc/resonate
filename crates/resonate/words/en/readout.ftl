@@ -1,0 +1,9 @@
+billed = { $title } — { $artist }
+track = track { $track }
+volume = vol { $percent }%
+shuffle = shuffle
+repeat-queue = repeat queue
+repeat-track = repeat track
+sleep-in = sleep in { $left }
+sleep-at-the-end-of-the-track = sleep at the end of the track
+sleep-at-the-end-of-the-queue = sleep at the end of the queue

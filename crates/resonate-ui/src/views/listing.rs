@@ -27,6 +27,7 @@ use crate::{
         root::RootView,
         spoken::{self, Spelt, Spoken as _, Urgency},
     },
+    words,
 };
 
 pub(crate) fn keyed_by(name: &'static str, held: &impl Hash) -> ElementId {
@@ -148,11 +149,11 @@ pub(crate) fn unread(location: &MediaLocation) -> Row {
 
 const NOTICE_LINE: &str = "notice-line";
 
-const fn severity_word(tone: Tone) -> &'static str {
+fn severity_word(tone: Tone) -> &'static str {
     match tone {
-        Tone::Trouble => "Problem",
-        Tone::Done => "Done",
-        Tone::Noted => "Note",
+        Tone::Trouble => words::listing::problem(),
+        Tone::Done => words::listing::done(),
+        Tone::Noted => words::listing::note(),
     }
 }
 
@@ -200,7 +201,7 @@ pub(crate) fn reads(clauses: &[String]) -> Div {
         .flex_wrap()
         .items_center()
         .gap_1p5()
-        .child(kit::eyebrow("Reads").pr_1p5());
+        .child(kit::eyebrow(words::listing::reads()).pr_1p5());
 
     for clause in clauses {
         row = row.child(
@@ -328,8 +329,7 @@ fn how_often_and_how_lately(
 pub(crate) fn times(plays: u32) -> SharedString {
     match plays {
         0 => SharedString::new_static(""),
-        1 => SharedString::new_static("1 play"),
-        plays => SharedString::from(format!("{plays} plays")),
+        plays => SharedString::from(words::listing::plays(plays)),
     }
 }
 
@@ -477,10 +477,17 @@ pub(crate) fn columns(
         controls,
         cx,
     );
-    let title = heads(Sortable::Title, "Title", title_room(), sorted, controls, cx);
+    let title = heads(
+        Sortable::Title,
+        words::listing::title(),
+        title_room(),
+        sorted,
+        controls,
+        cx,
+    );
     let artist = heads(
         Sortable::Artist,
-        "Artist",
+        words::listing::artist(),
         artist_room(),
         sorted,
         controls,
@@ -488,7 +495,7 @@ pub(crate) fn columns(
     );
     let format = heads(
         Sortable::Format,
-        "Format",
+        words::listing::format(),
         div().w(px(theme::row_format())).flex_none(),
         sorted,
         controls,
@@ -496,7 +503,7 @@ pub(crate) fn columns(
     );
     let heard = heads(
         Sortable::Heard,
-        "Heard",
+        words::listing::heard(),
         div().w(px(theme::row_plays())).flex_none(),
         sorted,
         controls,
@@ -504,7 +511,7 @@ pub(crate) fn columns(
     );
     let length = heads(
         Sortable::Length,
-        "Length",
+        words::listing::length(),
         div().w(px(theme::row_length())).flex_none().justify_end(),
         sorted,
         controls,
@@ -607,15 +614,15 @@ const fn key_of(column: Sortable) -> &'static str {
     }
 }
 
-const fn sorts_by(column: Sortable) -> &'static str {
+fn sorts_by(column: Sortable) -> &'static str {
     match column {
-        Sortable::Number => "Sort by album order",
-        Sortable::Marked => "Sort by when it was marked a favourite",
-        Sortable::Title => "Sort by title",
-        Sortable::Artist => "Sort by artist",
-        Sortable::Format => "Sort by format, lossless and high resolution first",
-        Sortable::Heard => "Sort by how often it is heard",
-        Sortable::Length => "Sort by length",
+        Sortable::Number => words::listing::sort_by_number(),
+        Sortable::Marked => words::listing::sort_by_marked(),
+        Sortable::Title => words::listing::sort_by_title(),
+        Sortable::Artist => words::listing::sort_by_artist(),
+        Sortable::Format => words::listing::sort_by_format(),
+        Sortable::Heard => words::listing::sort_by_heard(),
+        Sortable::Length => words::listing::sort_by_length(),
     }
 }
 

@@ -25,7 +25,7 @@ use crate::{
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, PassHandle, PassKind, RetagHandle},
     sheeted::{self, KeptSheet, SheetWrite},
-    store,
+    store, words,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -44,15 +44,15 @@ impl Unwritten {
         matches!(self, Self::Unreadable | Self::Refused | Self::Unconfirmed)
     }
 
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
-            Self::Cut => "cut out of a file it shares",
-            Self::Vaulted => "kept in the vault, which nothing writes tags into",
-            Self::Unsupported => "a format this build does not write tags to",
-            Self::Unreadable => "its tags could not be read",
-            Self::Refused => "its tags could not be written",
-            Self::Unconfirmed => "what was written did not read back",
-            Self::SheetChanged => "its cue sheet changed since the scan read it",
+            Self::Cut => words::retag::cut(),
+            Self::Vaulted => words::retag::vaulted(),
+            Self::Unsupported => words::retag::unsupported(),
+            Self::Unreadable => words::retag::unreadable(),
+            Self::Refused => words::retag::refused(),
+            Self::Unconfirmed => words::retag::unconfirmed(),
+            Self::SheetChanged => words::retag::sheet_changed(),
         }
     }
 }

@@ -15,10 +15,6 @@ public func explained(_ failure: any Swift.Error) -> String {
     return failure.localizedDescription
 }
 
-public func counted(_ count: Int, _ noun: String) -> String {
-    "\(count) \(count == 1 ? noun : noun + "s")"
-}
-
 public func clock(_ milliseconds: UInt64) -> String {
     let seconds = milliseconds / 1000
     let hours = seconds / 3600

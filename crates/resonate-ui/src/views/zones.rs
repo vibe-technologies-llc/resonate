@@ -14,21 +14,17 @@ use crate::{
     theme, toast,
     views::{
         hint::Names as _,
-        kit::EndsInAnEllipsis as _,
+        kit::{self, EndsInAnEllipsis as _},
         menu::{self, Menu},
         queue::{QueueNames, TakenBack},
         root::RootView,
         spoken::Spoken as _,
     },
+    words,
 };
 
-pub(crate) const ZONE_NAME_PLACEHOLDER: &str = "Name this zone";
 const SWITCHER: &str = "zones";
 const SWITCHER_GROUP: &str = "zone-switcher";
-const ADD_A_ZONE: &str = "Add a zone";
-const RENAME_THE_ZONE: &str = "Rename this zone…";
-const REMOVE_THE_ZONE: &str = "Remove this zone";
-const MOVED_TO: &str = "Move playback to";
 const NAME_SHOWN_AT_MOST: f32 = 120.0;
 const NAMING_FIELD_WIDTH: f32 = 140.0;
 
@@ -133,13 +129,14 @@ impl Switcher {
     }
 
     pub(crate) fn moving_to(&self, id: ZoneId) -> Option<String> {
-        self.name_of(id).map(|name| format!("{MOVED_TO} {name}"))
+        self.name_of(id)
+            .map(|name| words::zones::move_playback_to(name.as_str()))
     }
 
     pub(crate) fn moved_to(&self, id: ZoneId) -> String {
         match self.name_of(id) {
-            Some(name) => format!("Playing in {name} now"),
-            None => "Playing in the other zone now".to_owned(),
+            Some(name) => words::zones::playing_in(name.as_str()),
+            None => words::zones::playing_in_the_other_zone().to_owned(),
         }
     }
 
@@ -161,11 +158,10 @@ impl Switcher {
             .position(|zone| zone.id == self.selected)
             .map_or(1, |at| at + 1);
         match self.name_of(self.selected) {
-            Some(name) if self.several() => format!(
-                "Zone: {name}, {at} of {}. Each zone plays its own queue to its own device",
-                self.shown.len()
-            ),
-            _ => "Zones: add one to play another queue to another device".to_owned(),
+            Some(name) if self.several() => {
+                words::zones::zone_saying(at, self.shown.len(), name.as_str())
+            }
+            _ => words::zones::zones_saying().to_owned(),
         }
     }
 
@@ -204,21 +200,15 @@ pub(crate) struct ZoneShown {
 
 pub(crate) fn refusal(error: &Error, switcher: &Switcher) -> String {
     match error {
-        Error::DeviceHeld { by } => format!(
-            "{} plays that device bit-perfect, so it can't be shared",
-            switcher
-                .name_of(*by)
-                .map_or_else(|| "Another zone".to_owned(), ToString::to_string)
-        ),
-        Error::NothingToHandOver { .. } => {
-            "There's nothing in this zone's queue to move".to_owned()
-        }
-        Error::HandoverUnheard { zone } => format!(
-            "{} didn't start playing, so the music stayed where it was and its own queue was put back",
-            switcher
-                .name_of(*zone)
-                .map_or_else(|| "The other zone".to_owned(), ToString::to_string)
-        ),
+        Error::DeviceHeld { by } => match switcher.name_of(*by) {
+            Some(zone) => words::zones::device_held_by(zone.as_str()),
+            None => words::zones::device_held_by_another_zone().to_owned(),
+        },
+        Error::NothingToHandOver { .. } => words::zones::nothing_to_hand_over().to_owned(),
+        Error::HandoverUnheard { zone } => match switcher.name_of(*zone) {
+            Some(zone) => words::zones::handover_unheard_by(zone.as_str()),
+            None => words::zones::handover_unheard_by_the_other_zone().to_owned(),
+        },
         other => toast::would_not_do(Command::Stop.kind(), other.cause()),
     }
 }
@@ -352,7 +342,10 @@ impl RootView {
         self.show_zone(zone.id, cx);
         let player = self.player.clone();
         self.keep_the_zone(zone.id, &player, cx);
-        toast::tell(Notice::Done(format!("{} added", zone.name)), cx);
+        toast::tell(
+            Notice::Done(words::zones::zone_added(zone.name.as_str())),
+            cx,
+        );
     }
 
     pub(crate) fn remove_the_zone(&mut self, id: ZoneId, cx: &mut Context<Self>) {
@@ -465,19 +458,8 @@ impl RootView {
 
     pub(crate) fn zone_switcher(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.naming_the_zone.is_some() {
-            return div()
-                .id("zone-naming")
-                .flex_none()
+            return kit::framed_field("zone-naming", true)
                 .w(px(NAMING_FIELD_WIDTH))
-                .h(px(theme::search_height()))
-                .px_2()
-                .flex()
-                .items_center()
-                .rounded_md()
-                .bg(rgb(theme::background()))
-                .border_1()
-                .border_color(theme::tinted(theme::accent(), 0x99))
-                .text_size(px(theme::text_sm()))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                     this.stop_naming_the_zone(window, cx);
@@ -503,9 +485,7 @@ impl RootView {
             .rounded_md()
             .cursor_pointer()
             .hover(|button| button.bg(rgb(theme::hover())))
-            .when(several, |button| {
-                button.bg(theme::tinted(theme::accent(), 0x1c))
-            })
+            .when(several, |button| button.bg(kit::mark_wash(theme::accent())))
             .child(match several {
                 true => icons::icon(Icon::Volume, theme::toggle_icon(), theme::accent()),
                 false => icons::lit_on_hover(
@@ -573,14 +553,24 @@ impl RootView {
         }
         menu = menu
             .apart()
-            .does(Icon::Plus, ADD_A_ZONE, |this, _, cx| this.add_a_zone(cx))
-            .does(Icon::Rename, RENAME_THE_ZONE, |this, window, cx| {
-                this.name_the_zone(window, cx);
-            });
+            .does(Icon::Plus, words::zones::add_a_zone(), |this, _, cx| {
+                this.add_a_zone(cx)
+            })
+            .does(
+                Icon::Rename,
+                words::zones::rename_the_zone(),
+                |this, window, cx| {
+                    this.name_the_zone(window, cx);
+                },
+            );
         match self.switcher.can_remove() {
-            true => menu.does(Icon::Delete, REMOVE_THE_ZONE, move |this, _, cx| {
-                this.remove_the_zone(selected, cx);
-            }),
+            true => menu.does(
+                Icon::Delete,
+                words::zones::remove_the_zone(),
+                move |this, _, cx| {
+                    this.remove_the_zone(selected, cx);
+                },
+            ),
             false => menu,
         }
     }

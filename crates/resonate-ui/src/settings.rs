@@ -26,8 +26,9 @@ use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
+use resonate_words::LanguageChoice;
 
-use crate::{Launcher, Notice, Result, equaliser::Curve};
+use crate::{Launcher, Notice, Result, equaliser::Curve, words};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsCategory {
@@ -195,6 +196,7 @@ pub enum SettingKey {
     Theme,
     Accent,
     TextSize,
+    Language,
     FollowDesktopScheme,
     FollowDesktopTextSize,
     Online,
@@ -302,7 +304,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 130] = [
+    pub const ALL: [Self; 131] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -329,6 +331,7 @@ impl SettingKey {
         Self::Theme,
         Self::Accent,
         Self::TextSize,
+        Self::Language,
         Self::FollowDesktopScheme,
         Self::FollowDesktopTextSize,
         Self::Online,
@@ -462,6 +465,7 @@ pub enum Setting {
     Theme(Theme),
     Accent(Option<Accent>),
     TextSize(TextSize),
+    Language(LanguageChoice),
     FollowDesktopScheme(bool),
     FollowDesktopTextSize(bool),
     Online(bool),
@@ -609,6 +613,7 @@ impl Setting {
             Self::Theme(_) => SettingKey::Theme,
             Self::Accent(_) => SettingKey::Accent,
             Self::TextSize(_) => SettingKey::TextSize,
+            Self::Language(_) => SettingKey::Language,
             Self::FollowDesktopScheme(_) => SettingKey::FollowDesktopScheme,
             Self::FollowDesktopTextSize(_) => SettingKey::FollowDesktopTextSize,
             Self::Online(_) => SettingKey::Online,
@@ -768,7 +773,7 @@ pub struct TidalSignIn {
 
 impl fmt::Debug for TidalSignIn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TidalSignIn")
+        f.debug_struct(stringify!(TidalSignIn))
             .field("client_id", &self.client_id)
             .field("client_secret", &withheld(&self.client_secret))
             .field("refresh_token", &withheld(&self.refresh_token))
@@ -784,7 +789,7 @@ pub struct SpotifySignIn {
 
 impl fmt::Debug for SpotifySignIn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SpotifySignIn")
+        f.debug_struct(stringify!(SpotifySignIn))
             .field("client_id", &self.client_id)
             .field("refresh_token", &withheld(&self.refresh_token))
             .finish()
@@ -852,7 +857,7 @@ impl fmt::Debug for Online {
             youtube_music_keep_order,
         } = self;
 
-        f.debug_struct("Online")
+        f.debug_struct(stringify!(Online))
             .field("enabled", enabled)
             .field("after_scan", after_scan)
             .field("enrich_on_metered", enrich_on_metered)
@@ -933,7 +938,7 @@ pub struct JellyfinSession {
 
 impl fmt::Debug for JellyfinSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("JellyfinSession")
+        f.debug_struct(stringify!(JellyfinSession))
             .field("token", &"<withheld>")
             .field("user_id", &self.user_id)
             .field("device", &self.device)
@@ -982,8 +987,6 @@ pub trait SignsInToYoutubeMusic: Send + Sync {
     fn names_the_window_jar(&self, cookies: &str) -> bool;
 }
 
-const TOKEN_NOT_KEPT: &str = "TIDAL's new sign-in couldn't be saved — sign in to TIDAL again once the settings file can be written";
-
 #[derive(Clone)]
 pub struct Sourcing {
     pub inbox: Option<PathBuf>,
@@ -993,7 +996,8 @@ pub struct Sourcing {
 
 impl Sourcing {
     pub(crate) fn unkept_notice(&self) -> Option<Notice> {
-        (self.unkept)().then(|| Notice::Trouble(TOKEN_NOT_KEPT.to_owned()))
+        (self.unkept)()
+            .then(|| Notice::Trouble(words::settings_file::tidal_token_not_kept().to_owned()))
     }
 
     pub fn providers(&self, online: &Online, asking: Asking) -> Providers {
@@ -1196,6 +1200,7 @@ pub struct Stored {
     pub mouse_navigation: bool,
     pub reduced_motion: bool,
     pub scrollbars: ScrollbarMode,
+    pub language: LanguageChoice,
     pub spectral: Spectral,
     pub tabs: Tabs,
     pub remember_tab: bool,

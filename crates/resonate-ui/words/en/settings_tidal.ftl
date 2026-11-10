@@ -1,0 +1,44 @@
+sign-in-note = Sign in to TIDAL asks TIDAL for a code to approve in a browser with the client id above, then keeps the refresh token it hands back — nothing is typed into this window but the client.
+no-client = Give the client id above first
+offline = TIDAL is signed in to only while Online is on
+signed-in = Signed in to TIDAL — it is asked from now on
+the-tidal-code-lapsed-before-it = The TIDAL code lapsed before it was approved
+tidal-was-told-not-to-sign = TIDAL was told not to sign in
+tidal-refused-the-client-id = TIDAL refused the client id
+tidal-could-not-be-reached = TIDAL could not be reached
+tidal-refused-the-sign-in = TIDAL refused the sign-in
+tidals-certificate-is-not-one-this = TIDAL's certificate is not one this build trusts
+tidal-answered-something-this-build-cannot = TIDAL answered something this build cannot read
+tidal-note = Where a TIDAL client id and refresh token are set, your own subscription is asked for every track marked wanted, by the TIDAL track MusicBrainz links the recording to or by its ISRC and never by a title. Only the whole track in lossless FLAC is taken — never a preview, a lossy stream or an encrypted one — and it is downloaded, repacked as a FLAC file and kept in the vault, or the music folder where no vault is open. The client id and secret are those of the application the refresh token was issued to. The hosted hifi-api service is used where no custom server is given; a hifi-api server you run can replace it. Both use the same ISRC and whole-track checks. Monochrome's hosted service is asked too, by ISRC alone, for the whole FLAC; a Monochrome server you name can replace it. The hosted services are asked unless Ask the hosted services is turned off; a server you name is asked either way. Asked as soon as they are given, and only while Online is on.
+the-client-id-the-token-was = The client id the token was issued to, then press enter
+its-client-secret-if-it-has = Its client secret, if it has one, then press enter
+a-refresh-token-for-your-account = A refresh token for your account, then press enter
+custom-hifi-api-server-address-blank = Custom hifi-api server address; blank uses the hosted service
+a-key-your-resonate-server-lists = A key your Resonate server lists, then press enter
+custom-monochrome-server-address-blank-uses = Custom Monochrome server address; blank uses tracks.monochrome.st
+client-id = Client id
+client-secret = Client secret
+refresh-token = Refresh token
+hifi-api-server = hifi-api server
+key = Key
+monochrome-server = Monochrome server
+the-hosted-hifi-api-service-is = The hosted hifi-api service is asked from now on
+the-custom-hifi-api-server-is = The custom hifi-api server is asked from now on
+the-resonate-server-is-no-longer = The Resonate server is no longer asked
+the-resonate-server-is-asked-with = The Resonate server is asked with the key
+the-hosted-monochrome-service-is-asked = The hosted Monochrome service is asked from now on
+the-custom-monochrome-server-is-asked = The custom Monochrome server is asked from now on
+tidal-is-no-longer-asked = TIDAL is no longer asked
+tidal-is-asked-from-now-on = TIDAL is asked from now on
+sign-in-to-tidal = Sign in to TIDAL
+asking-tidal = Asking TIDAL…
+code = Code
+open-the-page = Open the page
+stop = Stop
+ask-the-hosted-services = Ask the hosted services
+off-hifi-api-and-monochrome-are = Off, hifi-api and Monochrome are asked only at a server named above
+approve-the-code = Open { $page } and approve the code { $code }; this waits until TIDAL answers, for { $minutes ->
+    [one] { $minutes } minute
+   *[other] { $minutes } minutes
+} at most.
+resonate-key-note = Wanted songs are asked of { $host } with this key, as a bearer token over https, and nowhere else. Asked as soon as it is given, and only while Online is on.

@@ -38,6 +38,7 @@ struct EqualiserView: View {
                         )
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8))
+                    .listRowSeparator(.hidden)
                     BandChips(
                         count: shaped.bands.count,
                         selected: selected,
@@ -46,6 +47,7 @@ struct EqualiserView: View {
                         add: { add(to: shaped) }
                     )
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 16))
+                    .listRowSeparator(.hidden)
                     if let selected {
                         BandCard(
                             band: shaped.bands[selected],
@@ -69,21 +71,21 @@ struct EqualiserView: View {
                 CorrectionsSection()
             }
         }
-        .navigationTitle("Equaliser")
+        .navigationTitle("equaliser.title")
         .background { ResponseTracing(curve: committed.map { draft.shown(over: $0) }, response: response) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu("More", systemImage: "ellipsis") {
-                    Button("Reset curve", systemImage: "arrow.counterclockwise", role: .destructive) { confirmingReset = true }
+                Menu("equaliser.more", systemImage: "ellipsis") {
+                    Button("equaliser.reset", systemImage: "arrow.counterclockwise", role: .destructive) { confirmingReset = true }
                         .disabled(committed == .flat)
                 }
             }
         }
         .onChange(of: committed) { _, now in draft.arrived(now) }
-        .confirmationDialog("Reset the curve?", isPresented: $confirmingReset, titleVisibility: .visible) {
-            Button("Reset curve", role: .destructive) { reset() }
+        .confirmationDialog("equaliser.reset.question", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("equaliser.reset", role: .destructive) { reset() }
         } message: {
-            Text("Every band goes, the preamp returns to 0 dB and the preset is cleared. The equaliser stays as it is.")
+            Text("equaliser.reset.message")
         }
     }
 
@@ -192,14 +194,14 @@ private struct EqualiserSwitches: View {
                 get: { enabled },
                 set: { on in library.updatePreferences { var next = $0; next.equaliserEnabled = on; return next } }
             )) {
-                ToolRow(title: "Equaliser", detail: enabled ? summary : "Off", symbol: "slider.vertical.3")
+                ToolRow(title: said("equaliser.title"), detail: enabled ? summary : said("common.off"), symbol: "slider.vertical.3")
             }
             if let route = library.route {
                 let bound = library.equaliserBound
                 Toggle(isOn: Binding(get: { bound }, set: { library.bindEqualiser($0) })) {
                     ToolRow(
-                        title: "Only for \(route.name)",
-                        detail: bound ? "Kept for this output alone" : "Shared by every output",
+                        title: said("equaliser.only-for", route.name),
+                        detail: said(bound ? "equaliser.only-for.bound" : "equaliser.only-for.shared"),
                         symbol: "hifispeaker"
                     )
                 }
@@ -209,7 +211,10 @@ private struct EqualiserSwitches: View {
 }
 
 struct BandChips: View {
+    private static let fadedOver: CGFloat = 48
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moreBeyond = false
     let count: Int
     let selected: Int?
     let full: Bool
@@ -227,6 +232,12 @@ struct BandChips: View {
                     }
                 }
                 .contentMargins(.horizontal, 16, for: .scrollContent)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1
+                } action: { _, more in
+                    moreBeyond = more
+                }
+                .mask { fadedTowardTheEnd }
                 .onChange(of: selected) { _, now in
                     guard let now else { return }
                     withAnimation(reduceMotion ? nil : .smooth) { proxy.scrollTo(now, anchor: .center) }
@@ -236,7 +247,7 @@ struct BandChips: View {
                 }
             }
             Button(action: add) {
-                Label("Add band", systemImage: "plus")
+                Label("equaliser.band.add", systemImage: "plus")
                     .font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 14)
                     .frame(minHeight: 44)
@@ -245,6 +256,14 @@ struct BandChips: View {
             }
             .buttonStyle(.plain)
             .disabled(full)
+        }
+    }
+
+    private var fadedTowardTheEnd: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: moreBeyond ? Self.fadedOver : 0)
         }
     }
 
@@ -262,7 +281,7 @@ struct BandChips: View {
         }
         .buttonStyle(.plain)
         .id(index)
-        .accessibilityLabel("Band \(index + 1)")
+        .accessibilityLabel(said("equaliser.band.number", index + 1))
         .accessibilityAddTraits(isChosen ? .isSelected : [])
     }
 }
@@ -278,7 +297,7 @@ struct BandCard: View {
     var body: some View {
         HStack(spacing: 12) {
             Menu {
-                Picker("Filter type", selection: Binding(get: { band.filter }, set: { filter in
+                Picker("equaliser.band.filter-type", selection: Binding(get: { band.filter }, set: { filter in
                     var next = band
                     next.filter = filter
                     change(next)
@@ -289,7 +308,7 @@ struct BandCard: View {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text("Band \(number) · \(band.filter.label)")
+                    Text(said("equaliser.band.title", number, band.filter.label))
                         .font(.headline)
                         .foregroundStyle(Color.primary)
                     Image(systemName: "chevron.down")
@@ -300,10 +319,10 @@ struct BandCard: View {
                 .frame(minHeight: 44)
                 .contentShape(.rect)
             }
-            .accessibilityLabel("Band \(number), \(band.filter.label)")
-            .accessibilityHint("Chooses the filter type")
+            .accessibilityLabel(said("equaliser.band.spoken", number, band.filter.label))
+            .accessibilityHint("equaliser.band.filter-type.hint")
             Spacer(minLength: 0)
-            Button("Remove", role: .destructive, action: remove)
+            Button("common.remove", role: .destructive, action: remove)
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.failure)
         }
@@ -394,7 +413,7 @@ struct MeasuredSlider<Accessory: View>: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(axis.measure.title), \(axis.spoken(shown))")
-                    .accessibilityHint("Type an exact value")
+                    .accessibilityHint("equaliser.value.type-hint")
                 }
                 accessory
             }
@@ -418,8 +437,8 @@ struct MeasuredSlider<Accessory: View>: View {
         .alert(axis.entering(band: band), isPresented: $entering) {
             TextField(axis.measure.title, text: $typed)
                 .keyboardType(.numbersAndPunctuation)
-            Button("Set", action: take)
-            Button("Cancel", role: .cancel) {}
+            Button("equaliser.value.set", action: take)
+            Button("common.cancel", role: .cancel) {}
         } message: {
             Text(axis.range)
         }
@@ -494,17 +513,17 @@ private struct PreampSection: View {
                 moving: moving,
                 commit: change
             ) {
-                Button("Fit", action: fit)
+                Button("equaliser.preamp.fit", action: fit)
                     .font(.subheadline.weight(.semibold))
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .disabled(curve.bands.isEmpty)
-                    .accessibilityLabel("Fit the preamp")
+                    .accessibilityLabel("equaliser.preamp.fit.spoken")
             }
         } header: {
-            Text("Preamp")
+            Text("equaliser.preamp")
         } footer: {
-            Text("Fit brings the queue's loudest peak to full scale.")
+            Text("equaliser.preamp.footer")
         }
     }
 }
@@ -521,8 +540,8 @@ private struct PresetsSection: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(presets, id: \.name) { preset in
-                            chip(preset)
+                        ForEach(Array(presets.enumerated()), id: \.element.name) { place, preset in
+                            chip(preset, mark: EqualiserPreset.mark(at: place))
                         }
                     }
                 }
@@ -533,18 +552,18 @@ private struct PresetsSection: View {
             }
             .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
         } header: {
-            Text("Presets")
+            Text("equaliser.presets")
         } footer: {
-            Text(preset?.detail ?? "Your own sound, shaped on the graph above.")
+            Text(preset?.detail ?? said("equaliser.presets.own"))
         }
     }
 
-    private func chip(_ preset: EqualiserPreset) -> some View {
+    private func chip(_ preset: EqualiserPreset, mark: String) -> some View {
         let isChosen = preset.name == chosen
         return Button {
             choose(preset)
         } label: {
-            Label(preset.name, systemImage: preset.mark)
+            Label(preset.name, systemImage: mark)
                 .font(.subheadline.weight(.medium))
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
@@ -563,7 +582,7 @@ private struct CorrectionsSection: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        Section("Corrections") {
+        Section("equaliser.corrections") {
             NavigationLink(value: Destination.headphoneCorrection) {
                 ToolRow(
                     title: SettingsPlace.headphoneCorrection.title,
@@ -615,7 +634,7 @@ struct RoomCorrectionRow: View {
 
     static func status(of room: RoomCorrectionState) -> String {
         guard let name = room.name else { return SettingsPlace.roomCorrection.summary }
-        return room.on ? "On · \(name)" : "Off · \(name)"
+        return said(room.on ? "equaliser.room.on" : "equaliser.room.off", name)
     }
 }
 
@@ -650,21 +669,21 @@ struct HeadphoneCorrectionView: View {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    TextField("Search headphone models", text: $model)
+                    TextField("headphone-correction.search", text: $model)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .submitLabel(.search)
                         .onSubmit { search(model) }
                 }
                 if !features.online {
-                    Text("Turn on online features in Settings to search AutoEq.").foregroundStyle(.secondary)
+                    Text("headphone-correction.offline").foregroundStyle(.secondary)
                 } else if features.searchingCorrections {
                     HStack(spacing: 12) {
                         ProgressView().accessibilityHidden(true)
-                        Text("Searching AutoEq…").foregroundStyle(.secondary)
+                        Text("headphone-correction.searching").foregroundStyle(.secondary)
                     }
                 } else if let searched = features.correctionsFor, features.corrections.isEmpty {
-                    Text("No headphones match “\(searched)”. Try the model name as printed on them.").foregroundStyle(.secondary)
+                    Text(said("headphone-correction.none", searched)).foregroundStyle(.secondary)
                 }
                 ForEach(found.shown, id: \.id) { device in
                     Button {
@@ -676,36 +695,36 @@ struct HeadphoneCorrectionView: View {
                             if current == device.name {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.tint)
-                                    .accessibilityLabel("In use")
+                                    .accessibilityLabel("headphone-correction.in-use")
                             }
                         }
                     }
                     .disabled(features.applyingCorrection)
                 }
                 if found.more > 0 {
-                    Text("\(counted(found.more, "more model")) match. Type more of the name to narrow the list.")
+                    Text(said("headphone-correction.more", found.more))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text("AutoEq")
+                Text("headphone-correction.autoeq")
             } footer: {
-                Text("A correction loads as bands on the equaliser, ready to adjust.")
+                Text("headphone-correction.autoeq.footer")
             }
             Section {
                 Button { paste() } label: {
-                    ToolRow(title: "Paste from the clipboard", detail: "EqualizerAPO or GraphicEQ text", symbol: "doc.on.clipboard")
+                    ToolRow(title: said("headphone-correction.paste"), detail: said("headphone-correction.paste.detail"), symbol: "doc.on.clipboard")
                 }
                 Button { choosingFile = true } label: {
-                    ToolRow(title: "Import a text file", detail: "A profile saved as text", symbol: "doc.text")
+                    ToolRow(title: said("headphone-correction.import-file"), detail: said("headphone-correction.import-file.detail"), symbol: "doc.text")
                 }
             } header: {
-                Text("Import a profile")
+                Text("headphone-correction.import")
             } footer: {
-                Text("Parametric filters load as bands; a GraphicEQ line is fitted onto bands.")
+                Text("headphone-correction.import.footer")
             }
         }
-        .navigationTitle("Headphone correction")
+        .navigationTitle("headphone-correction.title")
         .task(id: model) {
             let text = model.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else {
@@ -717,14 +736,14 @@ struct HeadphoneCorrectionView: View {
             search(text)
         }
         .confirmationDialog(
-            "Replace the current curve?",
+            "headphone-correction.replace.question",
             isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
             titleVisibility: .visible,
             presenting: pending
         ) { chosen in
-            Button("Load \(chosen.name)") { load(chosen) }
+            Button(said("headphone-correction.load", chosen.name)) { load(chosen) }
         } message: { chosen in
-            Text("\(chosen.name) replaces the \(counted(library.preferences?.equaliser.bands.count ?? 0, "band")) you have now.")
+            Text(said("headphone-correction.replace.message", library.preferences?.equaliser.bands.count ?? 0, chosen.name))
         }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.plainText, .text, .data]) { result in
             switch result {
@@ -758,10 +777,10 @@ struct HeadphoneCorrectionView: View {
 
     private func paste() {
         guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            library.notice("The clipboard holds no text")
+            library.notice(said("headphone-correction.clipboard-empty"))
             return
         }
-        ask(.text(name: "Pasted profile", bytes: Data(text.utf8)))
+        ask(.text(name: said("headphone-correction.pasted-name"), bytes: Data(text.utf8)))
     }
 
     private func read(_ url: URL) {
@@ -796,21 +815,19 @@ struct OtherOutputsView: View {
                 ForEach(others, id: \.id) { route in
                     Label(route.name, systemImage: "hifispeaker")
                         .swipeActions {
-                            Button("Forget", role: .destructive) { library.forgetEqualiser(for: route) }
+                            Button("other-outputs.forget", role: .destructive) { library.forgetEqualiser(for: route) }
                                 .tint(.red)
                         }
                         .contextMenu {
-                            Button("Forget its curve", systemImage: "trash", role: .destructive) {
+                            Button("other-outputs.forget-curve", systemImage: "trash", role: .destructive) {
                                 library.forgetEqualiser(for: route)
                             }
                         }
                 }
             } footer: {
-                Text(others.isEmpty
-                    ? "No other output keeps a curve of its own."
-                    : "Each comes back when that output plays. Swipe one to forget it, and it uses the shared curve.")
+                Text(said(others.isEmpty ? "other-outputs.none" : "other-outputs.footer"))
             }
         }
-        .navigationTitle("Curves for other outputs")
+        .navigationTitle("other-outputs.title")
     }
 }

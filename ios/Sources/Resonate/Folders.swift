@@ -92,12 +92,12 @@ enum FolderFailure: Swift.Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unknownFolder: "That music folder is no longer available"
-        case .notAFolderUri: "That song is not inside a chosen music folder"
-        case .refused(let name): "\(name) could not be created"
-        case .alreadyAdded: "This folder is already in your library"
-        case .overlapping(let name): "\(name) holds or sits inside a folder already in your library"
-        case .unreadable(let name): "\(name) could not be read"
+        case .unknownFolder: said("folders.failure.unknown")
+        case .notAFolderUri: said("folders.failure.outside")
+        case .refused(let name): said("folders.failure.refused", name)
+        case .alreadyAdded: said("folders.failure.already-added")
+        case .overlapping(let name): said("folders.failure.overlapping", name)
+        case .unreadable(let name): said("folders.failure.unreadable", name)
         }
     }
 }
@@ -162,7 +162,7 @@ final class Folders: Documents, @unchecked Sendable {
         let chosen = known.map { id, name in
             folder(id, name, cached[id] ?? recordAccess(id))
         }
-        return ([folder(Self.local, "On this iPhone", local)] + chosen).sorted { first, second in
+        return ([folder(Self.local, said("folders.local"), local)] + chosen).sorted { first, second in
             if (first.id == Self.local) != (second.id == Self.local) { return first.id == Self.local }
             return first.name.lowercased() < second.name.lowercased()
         }

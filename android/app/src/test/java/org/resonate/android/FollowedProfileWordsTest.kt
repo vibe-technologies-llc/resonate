@@ -42,17 +42,18 @@ class FollowedProfileWordsTest {
     fun aProfileFollowedSaysItsPlaylistsAndOnlyTheCountsLeftOutThatAreNotNought() {
         assertEquals(
             "Following Ana on Deezer · 2 playlists",
-            FollowedProfileWords.followed(followed(listOf(imported(1uL), imported(2uL)))),
+            FollowedProfileWords.followed(English, followed(listOf(imported(1uL), imported(2uL)))),
         )
         assertEquals(
             "Following Ana on Deezer · 1 playlist, 1 let go, 2 deleted on Deezer, 3 unreadable",
             FollowedProfileWords.followed(
-                followed(listOf(imported(1uL)), letGo = 1u, gone = 2u, unread = 3u)
+                English,
+                followed(listOf(imported(1uL)), letGo = 1u, gone = 2u, unread = 3u),
             ),
         )
         assertEquals(
             "Following this profile on Deezer · 0 playlists",
-            FollowedProfileWords.followed(followed(emptyList(), name = "")),
+            FollowedProfileWords.followed(English, followed(emptyList(), name = "")),
         )
     }
 
@@ -60,11 +61,11 @@ class FollowedProfileWordsTest {
     fun aProfileMovedOnceCountsItsPlaylistsAndWhatCouldNotBeRead() {
         assertEquals(
             "Moved 2 playlists of Ana to Resonate",
-            FollowedProfileWords.moved(followed(listOf(imported(1uL), imported(2uL)))),
+            FollowedProfileWords.moved(English, followed(listOf(imported(1uL), imported(2uL)))),
         )
         assertEquals(
             "Moved 1 playlist of Ana to Resonate, 1 unreadable",
-            FollowedProfileWords.moved(followed(listOf(imported(1uL)), unread = 1u)),
+            FollowedProfileWords.moved(English, followed(listOf(imported(1uL)), unread = 1u)),
         )
     }
 
@@ -85,12 +86,12 @@ class FollowedProfileWordsTest {
         assertFalse(moved.quiet)
         assertEquals(
             "Ana on Deezer: 1 new playlist · 1 changed · 1 deleted on Deezer",
-            FollowedProfileWords.refreshed(followed(emptyList(), gone = 1u), moved),
+            FollowedProfileWords.refreshed(English, followed(emptyList(), gone = 1u), moved),
         )
     }
 
     @Test
     fun aFollowedProfileIsListedByItsService() {
-        assertEquals("Deezer profile · its playlists are kept in step", FollowedProfileWords.line("Deezer"))
+        assertEquals("Deezer profile · its playlists are kept in step", FollowedProfileWords.line(English, "Deezer"))
     }
 }

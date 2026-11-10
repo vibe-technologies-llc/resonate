@@ -5,19 +5,7 @@ use gpui::SharedString;
 use resonate_core::{AlbumId, Calendar, SourceId, TrackId, WantId};
 use resonate_library::{Found, Issued, Mbid, RecordingRelease, Want};
 
-const READING_THE_RELEASE: &str = "Reading the release…";
-
-const WAITING_ITS_TURN: &str = "Waiting its turn…";
-
-const SEARCHING: &str = "Searching…";
-
-const STARTING: &str = "Starting the download…";
-
-const DOWNLOADING: &str = "Downloading…";
-
-const UNREACHED: &str = "Can't reach the providers · trying again";
-
-const NOT_FOUND_YET: &str = "Not found yet";
+use crate::words;
 
 pub(crate) const PLAYED_IF_LANDED_WITHIN: Duration = Duration::from_secs(30);
 
@@ -90,23 +78,23 @@ impl Fetching {
 
     fn saying_at(self, now: SystemTime, calendar: &Calendar) -> SharedString {
         match self {
-            Self::Landing => SharedString::new_static(READING_THE_RELEASE),
-            Self::Queued => SharedString::new_static(WAITING_ITS_TURN),
-            Self::Downloading { .. } => SharedString::new_static(SEARCHING),
-            Self::Unreached { .. } => SharedString::new_static(UNREACHED),
+            Self::Landing => SharedString::new_static(words::downloads::reading_the_release()),
+            Self::Queued => SharedString::new_static(words::downloads::waiting_its_turn()),
+            Self::Downloading { .. } => SharedString::new_static(words::downloads::searching()),
+            Self::Unreached { .. } => SharedString::new_static(words::downloads::unreached()),
             Self::Retrying { at, .. } if at > now => {
                 let minute = calendar.minute_of_the_day(at);
-                SharedString::from(format!(
-                    "{NOT_FOUND_YET} · next try {:02}:{:02}",
+                SharedString::from(words::downloads::next_try(format!(
+                    "{:02}:{:02}",
                     minute / 60,
                     minute % 60
-                ))
+                )))
             }
-            Self::Retrying { .. } => SharedString::from(format!("{NOT_FOUND_YET} · trying again")),
-            Self::Downloaded => SharedString::new_static("Downloaded"),
-            Self::GaveUp => SharedString::new_static("Not found"),
-            Self::NoProvider => SharedString::new_static("No provider is set up"),
-            Self::Unwanted => SharedString::new_static("Couldn't add it"),
+            Self::Retrying { .. } => SharedString::from(words::downloads::trying_again()),
+            Self::Downloaded => SharedString::new_static(words::downloads::downloaded()),
+            Self::GaveUp => SharedString::new_static(words::downloads::gave_up()),
+            Self::NoProvider => SharedString::new_static(words::downloads::no_provider()),
+            Self::Unwanted => SharedString::new_static(words::downloads::unwanted()),
         }
     }
 }
@@ -127,13 +115,13 @@ impl Fetched {
 pub(crate) fn saying_while(fetching: Fetching, fetched: Option<&Fetched>) -> SharedString {
     match (fetching, fetched) {
         (Fetching::Downloading { .. }, Some(fetched)) if fetched.is_arriving() => {
-            SharedString::new_static(DOWNLOADING)
+            SharedString::new_static(words::downloads::downloading())
         }
         (Fetching::Downloading { .. }, Some(fetched)) if fetched.opening => {
-            SharedString::new_static(STARTING)
+            SharedString::new_static(words::downloads::starting())
         }
         (Fetching::Downloading { .. }, Some(fetched)) => {
-            SharedString::from(format!("Searching {}…", fetched.provider))
+            SharedString::from(words::downloads::searching_at(fetched.provider.to_string()))
         }
         (fetching, _) => fetching.saying(),
     }
@@ -144,20 +132,21 @@ pub(crate) fn summed_up(fetching: &[Fetching], arriving: bool) -> SharedString {
 
     match underway {
         0 => finished(fetching),
-        1 => SharedString::new_static(if arriving { DOWNLOADING } else { SEARCHING }),
-        more => SharedString::from(format!(
-            "{} · {more} left",
-            if arriving { DOWNLOADING } else { SEARCHING }
-        )),
+        1 if arriving => SharedString::new_static(words::downloads::downloading()),
+        1 => SharedString::new_static(words::downloads::searching()),
+        more if arriving => SharedString::from(words::downloads::downloading_left(more)),
+        more => SharedString::from(words::downloads::searching_left(more)),
     }
 }
 
 pub(crate) fn keeping_said(left: u64) -> SharedString {
     match left {
-        0 | 1 => SharedString::new_static(DOWNLOADING),
-        more => SharedString::from(format!("{DOWNLOADING} · {more} left")),
+        0 | 1 => SharedString::new_static(words::downloads::downloading()),
+        more => SharedString::from(words::downloads::downloading_left(more)),
     }
 }
+
+type SaidOfACount = fn(usize) -> String;
 
 fn finished(fetching: &[Fetching]) -> SharedString {
     let downloaded = fetching
@@ -165,14 +154,18 @@ fn finished(fetching: &[Fetching]) -> SharedString {
         .filter(|each| **each == Fetching::Downloaded)
         .count();
     let unfinished = fetching.len() - downloaded;
-    let said: Vec<String> = [(downloaded, "downloaded"), (unfinished, "not downloaded")]
+    let counted: [(usize, SaidOfACount); 2] = [
+        (downloaded, words::downloads::counted_downloaded),
+        (unfinished, words::downloads::counted_not_downloaded),
+    ];
+    let said: Vec<String> = counted
         .into_iter()
         .filter(|(count, _)| *count > 0)
-        .map(|(count, what)| format!("{count} {what}"))
+        .map(|(count, saying)| saying(count))
         .collect();
 
     if said.is_empty() {
-        SharedString::new_static("Downloads")
+        SharedString::new_static(words::downloads::downloads())
     } else {
         SharedString::from(said.join(" · "))
     }

@@ -1,8 +1,7 @@
 use std::{env, fs, path::PathBuf, sync::Arc, time::SystemTime};
 
 use gpui::{
-    Background, BoxShadow, Context, Div, FontWeight, Role, SharedString, Stateful, div,
-    linear_color_stop, linear_gradient, point, prelude::*, px, relative, rgb,
+    Context, Div, FontWeight, Role, SharedString, Stateful, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{
     Calendar,
@@ -13,25 +12,23 @@ use resonate_library::{HistoryKept, Library};
 use crate::{
     ResonateApp, clipboard, fonts,
     icons::Icon,
+    keys,
     models::Notice,
     motion, theme, toast,
     views::{
         hint::Names,
-        kit::{self, Tone},
+        kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
         sheets,
         spoken::{Placed, Spoken},
     },
+    words,
     wrapped_card::{self, CardColours},
 };
 
 const DECK_HEIGHT_AT_MOST: f32 = 0.88;
 
 const PROGRESS_THICKNESS: f32 = 3.0;
-
-const WASH_OF_THE_DECK: u8 = 0x2a;
-
-const WASH_REACHES: f32 = 0.55;
 
 const ACTIONS_PARTED_BY: f32 = 16.0;
 
@@ -41,25 +38,17 @@ const TALLIES_STAND_APART: f32 = 8.0;
 
 const FIRST_ROW_WASH: u8 = 0x1f;
 
-const NOTHING_PLAYED: &str = "Nothing has been played yet, so there is no year to review";
+fn back_hint() -> String {
+    keys::keyed(words::wrapped::slide_before(), &[key!(seek_back)])
+}
 
-const BACK_HINT: &str = keyed!("The slide before", key!(seek_back));
+fn next_hint() -> String {
+    keys::keyed(words::wrapped::slide_after(), &[key!(seek)])
+}
 
-const NEXT_HINT: &str = keyed!("The next slide", key!(seek));
-
-const CLOSE_HINT: &str = keyed!("Close", key!(leave));
-
-const COPY_HINT: &str = "Copy the year as a few lines of text";
-
-const SAVE_HINT: &str = "Save a card of the year as a picture";
-
-const YEAR_HINT: &str = "Review this year";
-
-const COPIED: &str = "Copied your year";
-
-const CARD_FAILED: &str = "Couldn't draw the card";
-
-const NO_FILE_PICKER: &str = "No file picker could be opened";
+fn close_hint() -> String {
+    keys::keyed(words::wrapped::close(), &[key!(leave)])
+}
 
 const LAST_RESORT_FOLDER: &str = ".";
 
@@ -81,6 +70,10 @@ impl Deck {
             review: Arc::new(review),
             at: 0,
         }
+    }
+
+    fn place_said(&self) -> String {
+        words::wrapped::slide_of(self.at + 1, self.slides.len())
     }
 
     fn turned_by(&mut self, slides: isize) -> bool {
@@ -145,10 +138,16 @@ impl RootView {
             let taken = this.update(cx, |this, cx| {
                 match answer {
                     Ok(Some(deck)) => this.wrapped = Some(deck),
-                    Ok(None) => toast::tell(Notice::Noted(NOTHING_PLAYED.to_owned()), cx),
+                    Ok(None) => toast::tell(
+                        Notice::Noted(words::wrapped::nothing_played().to_owned()),
+                        cx,
+                    ),
                     Err(error) => {
                         tracing::error!(%error, "the year could not be read");
-                        toast::tell(toast::could_not("read your year", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::wrapped::read_your_year(), &error),
+                            cx,
+                        );
                     }
                 }
                 cx.notify();
@@ -163,7 +162,7 @@ impl RootView {
         };
 
         clipboard::copy(deck.review.summary(), cx);
-        toast::tell(Notice::Done(COPIED.to_owned()), cx);
+        toast::tell(Notice::Done(words::wrapped::copied().to_owned()), cx);
     }
 
     fn save_the_card(&self, cx: &mut Context<Self>) {
@@ -190,7 +189,10 @@ impl RootView {
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
                     let told = this.update(cx, |_, cx| {
-                        toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                        toast::tell(
+                            Notice::Trouble(words::wrapped::no_file_picker().to_owned()),
+                            cx,
+                        );
                     });
                     let _ = told;
                     return;
@@ -215,8 +217,8 @@ impl RootView {
             let told = this.update(cx, |_, cx| {
                 toast::tell(
                     match written {
-                        Some(()) => Notice::Done(format!("Saved {}", named_file(&chosen))),
-                        None => Notice::Trouble(CARD_FAILED.to_owned()),
+                        Some(()) => Notice::Done(words::wrapped::saved(named_file(&chosen))),
+                        None => Notice::Trouble(words::wrapped::card_failed().to_owned()),
                     },
                     cx,
                 );
@@ -247,35 +249,13 @@ impl RootView {
                 ))
             });
 
-        let card = div()
+        let card = kit::sheet()
             .id("wrapped-sheet")
             .dialog(REVIEW_NAME)
             .track_focus(&self.sheet_panels.holding(sheets::WRAPPED_PANEL, cx))
             .relative()
-            .flex()
-            .flex_col()
-            .gap_5()
             .w(px(theme::wrapped_width()))
             .max_h(relative(DECK_HEIGHT_AT_MOST))
-            .p_6()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .rounded_xl()
-                    .bg(the_deck_ground()),
-            )
             .child(self.wrapped_head(deck, cx))
             .child(stage)
             .child(kit::rule())
@@ -286,7 +266,7 @@ impl RootView {
 
     fn wrapped_head(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
         let count = deck.slides.len();
-        let reading = format!("{} of {count}", deck.at + 1);
+        let reading = deck.place_said();
 
         let mut progress = div()
             .id("wrapped-progress")
@@ -317,7 +297,7 @@ impl RootView {
             .child(progress)
             .child(kit::figure(reading))
             .child(self.in_the_pane_ring(
-                kit::icon_button("wrapped-close", Icon::Close, CLOSE_HINT),
+                kit::icon_button("wrapped-close", Icon::Close, close_hint()),
                 |this, _, cx| this.close_wrapped(cx),
                 cx,
             ))
@@ -328,7 +308,7 @@ impl RootView {
         slides: isize,
         id: &'static str,
         label: &'static str,
-        saying: &'static str,
+        saying: String,
         takes: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
@@ -365,7 +345,7 @@ impl RootView {
                             SharedString::from(year.to_string()),
                             year == deck.review.year,
                         )
-                        .names(YEAR_HINT),
+                        .names(words::wrapped::year_hint()),
                         move |this, _, cx| this.read_wrapped(Some(year), cx),
                         cx,
                     ),
@@ -374,12 +354,32 @@ impl RootView {
             years = years.child(offered);
         }
 
-        let back = self.a_turn(-1, "wrapped-back", "Back", BACK_HINT, deck.at > 0, cx);
+        let back = self.a_turn(
+            -1,
+            "wrapped-back",
+            words::wrapped::back(),
+            back_hint(),
+            deck.at > 0,
+            cx,
+        );
         let onward = if deck.at < last {
-            self.a_turn(1, "wrapped-next", "Next", NEXT_HINT, true, cx)
+            self.a_turn(
+                1,
+                "wrapped-next",
+                words::wrapped::next(),
+                next_hint(),
+                true,
+                cx,
+            )
         } else {
             self.in_the_pane_ring(
-                kit::button("wrapped-done", None, "Done", CLOSE_HINT, Tone::Primary),
+                kit::button(
+                    "wrapped-done",
+                    None,
+                    words::wrapped::done(),
+                    close_hint(),
+                    Tone::Primary,
+                ),
                 |this, _, cx| this.close_wrapped(cx),
                 cx,
             )
@@ -393,12 +393,24 @@ impl RootView {
             .child(years)
             .when(holds_anything, |foot| {
                 foot.child(self.in_the_pane_ring(
-                    kit::button("wrapped-copy", None, "Copy", COPY_HINT, Tone::Ghost),
+                    kit::button(
+                        "wrapped-copy",
+                        None,
+                        words::wrapped::copy(),
+                        words::wrapped::copy_hint(),
+                        Tone::Ghost,
+                    ),
                     |this, _, cx| this.copy_the_year(cx),
                     cx,
                 ))
                 .child(self.in_the_pane_ring(
-                    kit::button("wrapped-save", None, "Save card", SAVE_HINT, Tone::Ghost),
+                    kit::button(
+                        "wrapped-save",
+                        None,
+                        words::wrapped::save_card(),
+                        words::wrapped::save_hint(),
+                        Tone::Ghost,
+                    ),
                     |this, _, cx| this.save_the_card(cx),
                     cx,
                 ))
@@ -413,14 +425,6 @@ impl RootView {
             .child(back)
             .child(onward)
     }
-}
-
-fn the_deck_ground() -> Background {
-    linear_gradient(
-        160.0,
-        linear_color_stop(theme::tinted(theme::accent(), WASH_OF_THE_DECK), 0.0),
-        linear_color_stop(theme::tinted(theme::accent(), 0x00), WASH_REACHES),
-    )
 }
 
 fn named_file(path: &std::path::Path) -> String {
@@ -482,39 +486,41 @@ fn slide_drawn(slide: &Slide, review: &YearReview) -> Stateful<Div> {
 
 fn tallies_drawn(review: &YearReview) -> Stateful<Div> {
     let tallies = [
-        ("Plays", review.plays),
-        ("Songs", review.songs),
-        ("Artists", review.artists),
-        ("Albums", review.albums),
-        ("Days", u64::from(review.rhythm.days_heard)),
+        (words::wrapped::plays(), review.plays),
+        (words::wrapped::songs(), review.songs),
+        (words::wrapped::artists(), review.artists),
+        (words::wrapped::albums(), review.albums),
+        (words::wrapped::days(), u64::from(review.rhythm.days_heard)),
     ];
 
-    let mut drawn = div().id("wrapped-tallies").flex().w_full().gap_2();
-    for (at, (named, count)) in tallies.into_iter().enumerate() {
-        let reading = count.to_string();
+    let cells = tallies
+        .into_iter()
+        .enumerate()
+        .map(|(at, (named, count))| {
+            let reading = count.to_string();
 
-        drawn = drawn.child(
-            kit::card()
+            div()
                 .id(("wrapped-tally", at))
                 .read_plainly(&format!("{named}: {reading}"))
-                .flex_1()
-                .min_w(px(0.0))
+                .flex()
+                .flex_col()
                 .items_center()
                 .gap_1()
-                .p_3()
-                .bg(rgb(theme::raised()))
-                .border_color(rgb(theme::soft_edge()))
                 .child(kit::eyebrow(named))
                 .child(
                     kit::figure(reading)
                         .text_size(px(theme::text_xl()))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(rgb(theme::text())),
-                ),
-        );
-    }
+                )
+                .into_any_element()
+        })
+        .collect::<Vec<_>>();
 
-    drawn
+    div()
+        .id("wrapped-tallies")
+        .w_full()
+        .child(kit::ledger(cells.len(), cells))
 }
 
 fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
@@ -566,6 +572,7 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
                         .child(
                             div()
                                 .truncate()
+                                .ends_in_an_ellipsis()
                                 .text_size(px(theme::text_base()))
                                 .text_color(rgb(theme::text()))
                                 .child(SharedString::from(row.name.clone())),
@@ -574,6 +581,7 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
                             named.child(
                                 div()
                                     .truncate()
+                                    .ends_in_an_ellipsis()
                                     .text_size(px(theme::text_xs()))
                                     .text_color(rgb(theme::muted()))
                                     .child(SharedString::from(by)),
@@ -702,6 +710,19 @@ mod tests {
 
         assert!(driven.read(|root, _| root.wrapped.is_none()));
         assert_eq!(driven.read(|root, _| root.pane), pane);
+    }
+
+    #[test]
+    fn a_deck_says_the_slide_shown_before_how_many_it_holds() {
+        let mut deck = a_deck();
+        let count = deck.slides.len();
+
+        assert!(count > 1);
+        assert_eq!(deck.place_said(), format!("1 of {count}"));
+
+        deck.turned_by(1);
+
+        assert_eq!(deck.place_said(), format!("2 of {count}"));
     }
 
     #[test]

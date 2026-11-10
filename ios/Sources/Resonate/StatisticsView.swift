@@ -8,7 +8,9 @@ struct StatisticsView: View {
     @State private var widened: Set<StatisticsRank> = []
     @State private var showingWrapped = false
 
-    private static let spans: [(UInt32, String)] = [(7, "Week"), (30, "Month"), (365, "Year"), (0, "All time")]
+    private static var spans: [(UInt32, String)] {
+        [(7, said("statistics.span.week")), (30, said("statistics.span.month")), (365, said("statistics.span.year")), (0, said("statistics.span.all-time"))]
+    }
     private static let shortList = 5
     private static let longList = 25
 
@@ -18,26 +20,25 @@ struct StatisticsView: View {
         let detail = features.listeningDetail
         let loadedDays = features.statisticsDays ?? days
         ThemedList {
-            Picker("Period", selection: $days) {
+            Picker("statistics.period", selection: $days) {
                 ForEach(Self.spans, id: \.0) { Text($0.1).tag($0.0) }
             }
             .pickerStyle(.segmented)
             if let statistics, let detail {
                 Section {
-                    StatisticsTiles(statistics: statistics, detail: detail, span: loadedDays)
+                    StatisticsLedger(statistics: statistics, detail: detail, span: loadedDays)
                         .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
                 }
                 if statistics.plays == 0 {
                     ContentUnavailableView(
-                        "No plays yet",
+                        "statistics.no-plays",
                         systemImage: "chart.bar",
-                        description: Text("Play a song for half its length, or four minutes, to count a play.")
+                        description: Text("statistics.no-plays.detail")
                     )
                     .listRowBackground(Color.clear)
                 } else {
                     if !detail.days.isEmpty {
-                        HeadedSection("Listening over time") {
+                        HeadedSection(said("statistics.over-time")) {
                             ListeningChart(bars: features.listeningBars, span: loadedDays)
                                 .padding(.vertical, 8)
                         }
@@ -53,18 +54,18 @@ struct StatisticsView: View {
         }
         .overlay {
             if statistics == nil, features.statisticsLoading {
-                ProgressView("Reading your listening history…")
+                ProgressView("statistics.reading.long")
             }
         }
         .toolbar {
             if statistics != nil, features.statisticsLoading {
-                ProgressView().accessibilityLabel("Reading your listening history")
+                ProgressView().accessibilityLabel("statistics.reading")
             }
             if features.wrappedYear != nil {
-                Button("Wrapped", systemImage: "rectangle.stack") { showingWrapped = true }
+                Button("statistics.wrapped", systemImage: "rectangle.stack") { showingWrapped = true }
             }
         }
-        .navigationTitle("Statistics")
+        .navigationTitle("tools.statistics")
         .refreshable { features.loadStatistics(days: days) }
         .task(id: days) { features.loadStatistics(days: days) }
         .task { features.loadWrapped() }
@@ -82,7 +83,7 @@ struct StatisticsView: View {
     private func more(_ count: Int, _ rank: StatisticsRank) -> some View {
         Group {
             if count > Self.shortList {
-                Button(widened.contains(rank) ? "Show fewer" : "Show more") {
+                Button(said(widened.contains(rank) ? "statistics.show-fewer" : "statistics.show-more")) {
                     if !widened.insert(rank).inserted { widened.remove(rank) }
                 }
             }
@@ -92,7 +93,7 @@ struct StatisticsView: View {
     @ViewBuilder
     private func songs(_ tracks: [Track]) -> some View {
         if !tracks.isEmpty {
-            HeadedSection("Most listened songs") {
+            HeadedSection(said("statistics.top.songs")) {
                 ForEach(shown(tracks, .songs), id: \.id) { track in
                     TrackRow(track: track) { library.play(tracks, selected: track) }
                 }
@@ -104,7 +105,7 @@ struct StatisticsView: View {
     @ViewBuilder
     private func albums(_ albums: [ListenedTo]) -> some View {
         if !albums.isEmpty {
-            HeadedSection("Most listened albums") {
+            HeadedSection(said("statistics.top.albums")) {
                 ForEach(shown(albums, .albums), id: \.key) { album in
                     NavigationLink(value: Destination.album(album.key)) {
                         CollectionRow(track: cover(of: album, in: \.albums), title: album.name, detail: album.heard, measure: .song)
@@ -119,7 +120,7 @@ struct StatisticsView: View {
     @ViewBuilder
     private func artists(_ artists: [ListenedTo]) -> some View {
         if !artists.isEmpty {
-            HeadedSection("Most listened artists") {
+            HeadedSection(said("statistics.top.artists")) {
                 ForEach(shown(artists, .artists), id: \.key) { artist in
                     NavigationLink(value: Destination.artist(artist.name)) {
                         CollectionRow(
@@ -154,94 +155,110 @@ enum StatisticsRank: Hashable {
     case songs, albums, artists
 }
 
-struct StatTile: View {
-    private static let corner: CGFloat = 16
-
-    @ScaledMetric(relativeTo: .caption) private var symbolWidth: CGFloat = 18
-
-    let title: String
-    let value: String
-    let detail: String?
-    let symbol: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: symbol).frame(width: symbolWidth).accessibilityHidden(true)
-            }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
-            Text(value)
-                .font(.title2.weight(.semibold))
-                .minimumScaleFactor(0.6)
-                .titleLines()
-            Text(detail ?? " ")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .titleLines()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(fill, in: RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(detail.map { "\(value), \($0)" } ?? value)
+struct Ledger: View {
+    struct Cell {
+        let title: String
+        let value: String
+        let detail: String?
     }
 
-    private var fill: Color {
-        AppearanceState.shared.themedBackground ? Color.themedCard : Color(.secondarySystemGroupedBackground)
+    private static let acrossWhenWide = 3
+    private static let acrossWhenNarrow = 2
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var horizontal
+    let cells: [Cell]
+
+    var body: some View {
+        let across = typeSize.isAccessibilitySize ? 1 : horizontal == .regular ? Self.acrossWhenWide : Self.acrossWhenNarrow
+        let lines = stride(from: 0, to: cells.count, by: across).map { Array(cells[$0..<min($0 + across, cells.count)]) }
+        VStack(spacing: 0) {
+            ForEach(lines.indices, id: \.self) { line in
+                if line > 0 { Divider() }
+                HStack(spacing: 0) {
+                    ForEach(0..<across, id: \.self) { column in
+                        if column > 0 { Divider() }
+                        if column < lines[line].count {
+                            LedgerCell(cell: lines[line][column])
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
-struct StatisticsTiles: View {
+private struct LedgerCell: View {
+    let cell: Ledger.Cell
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(cell.title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .titleLines()
+            Text(cell.value)
+                .font(.title3.weight(.semibold))
+                .minimumScaleFactor(0.7)
+                .titleLines()
+            if let detail = cell.detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .titleLines()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cell.title)
+        .accessibilityValue(cell.detail.map { "\(cell.value), \($0)" } ?? cell.value)
+    }
+}
+
+struct StatisticsLedger: View {
     let statistics: LibraryStatistics
     let detail: ListeningDetail
     let span: UInt32
 
     var body: some View {
         let busiest = detail.days.max { $0.listenedMs < $1.listenedMs }
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-            StatTile(
-                title: "Listened",
+        Ledger(cells: [
+            Ledger.Cell(
+                title: said("statistics.listened"),
                 value: StatisticsView.brief(statistics.listenedMs),
-                detail: counted(Int(statistics.plays), "play"),
-                symbol: "headphones"
-            )
-            StatTile(
-                title: "Daily average",
+                detail: said("counted.plays", Int(statistics.plays))
+            ),
+            Ledger.Cell(
+                title: said("statistics.daily-average"),
                 value: StatisticsView.brief(average),
-                detail: span == 0 ? "since your first play" : "over \(span) days",
-                symbol: "calendar"
-            )
-            StatTile(
-                title: "Songs heard",
+                detail: span == 0 ? said("statistics.daily-average.since-first") : said("statistics.daily-average.over-days", Int(span))
+            ),
+            Ledger.Cell(
+                title: said("statistics.songs-heard"),
                 value: "\(detail.songsHeard)",
-                detail: "of \(statistics.songs) in your library",
-                symbol: "music.note"
-            )
-            StatTile(
-                title: "Busiest day",
-                value: busiest.map { StatisticsView.brief($0.listenedMs) } ?? "None",
-                detail: busiest.map { Date(timeIntervalSince1970: TimeInterval($0.starts)).formatted(span == 0 || span == 365 ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated)) },
-                symbol: "flame"
-            )
-            StatTile(
-                title: "Your library",
-                value: counted(Int(statistics.songs), "song"),
-                detail: StatisticsView.brief(statistics.durationMs),
-                symbol: "music.note.house"
-            )
-            StatTile(
-                title: "Albums and artists",
+                detail: said("statistics.songs-heard.of", Int(statistics.songs))
+            ),
+            Ledger.Cell(
+                title: said("statistics.busiest-day"),
+                value: busiest.map { StatisticsView.brief($0.listenedMs) } ?? said("statistics.busiest-day.none"),
+                detail: busiest.map { Date(timeIntervalSince1970: TimeInterval($0.starts)).formatted(span == 0 || span == 365 ? .dateTime.day().month(.abbreviated).year() : .dateTime.day().month(.abbreviated)) }
+            ),
+            Ledger.Cell(
+                title: said("library.title"),
+                value: said("counted.songs", Int(statistics.songs)),
+                detail: StatisticsView.brief(statistics.durationMs)
+            ),
+            Ledger.Cell(
+                title: said("statistics.albums-and-artists"),
                 value: "\(statistics.albums) · \(statistics.artists)",
-                detail: "albums · artists",
-                symbol: "square.stack"
-            )
-        }
-        .padding(.vertical, 4)
+                detail: said("statistics.albums-and-artists.detail")
+            ),
+        ])
     }
 
     private var average: UInt64 {
@@ -259,7 +276,7 @@ struct StatisticsTiles: View {
 
 extension ListenedTo {
     var heard: String {
-        let heard = "\(counted(Int(plays), "play")) · \(StatisticsView.spoken(listenedMs))"
+        let heard = "\(said("counted.plays", Int(plays))) · \(StatisticsView.spoken(listenedMs))"
         return by.isEmpty ? heard : "\(by) · \(heard)"
     }
 }
@@ -288,9 +305,9 @@ struct ListeningChart: View {
     var body: some View {
         ListeningBars(bars: bars, span: span, tallest: max(bars.map(\.listenedMs).max() ?? 1, 1), selected: $selected)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Listening over time")
+            .accessibilityLabel("statistics.over-time")
             .accessibilityValue(spoken(bars))
-            .accessibilityHint("Swipe up or down to hear each period")
+            .accessibilityHint("statistics.chart.hint")
             .accessibilityAdjustableAction { direction in
                 step(direction, through: bars)
             }
@@ -299,7 +316,7 @@ struct ListeningChart: View {
 
     private func spoken(_ bars: [ListeningBar]) -> String {
         guard let chosen = bars.first(where: { $0.starts == selected }) else { return summary(bars) }
-        return "\(chosen.caption(span: span)), \(StatisticsView.spoken(chosen.listenedMs)), \(counted(Int(chosen.plays), "play"))"
+        return "\(chosen.caption(span: span)), \(StatisticsView.spoken(chosen.listenedMs)), \(said("counted.plays", Int(chosen.plays)))"
     }
 
     private func step(_ direction: AccessibilityAdjustmentDirection, through bars: [ListeningBar]) {
@@ -315,8 +332,8 @@ struct ListeningChart: View {
     }
 
     private func summary(_ bars: [ListeningBar]) -> String {
-        guard let busiest = bars.max(by: { $0.listenedMs < $1.listenedMs }) else { return "Nothing heard" }
-        return "\(bars.count) periods. The most was \(StatisticsView.spoken(busiest.listenedMs)), \(busiest.caption(span: span))"
+        guard let busiest = bars.max(by: { $0.listenedMs < $1.listenedMs }) else { return said("statistics.chart.nothing-heard") }
+        return said("statistics.chart.summary", bars.count, StatisticsView.spoken(busiest.listenedMs), busiest.caption(span: span))
     }
 }
 
@@ -364,14 +381,14 @@ struct ListeningBars: View {
         if let chosen {
             VStack(alignment: .leading, spacing: 2) {
                 Text(StatisticsView.spoken(chosen.listenedMs)).font(.headline)
-                Text("\(chosen.caption(span: span)) · \(counted(Int(chosen.plays), "play"))")
+                Text("\(chosen.caption(span: span)) · \(said("counted.plays", Int(chosen.plays)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         } else {
             VStack(alignment: .leading, spacing: 2) {
                 Text(StatisticsView.spoken(bars.reduce(0) { $0 + $1.listenedMs })).font(.headline)
-                Text("Touch the chart to see a \(unitName)")
+                Text(touchHint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -387,11 +404,11 @@ struct ListeningBars: View {
         selected = starts
     }
 
-    private var unitName: String {
+    private var touchHint: String {
         switch span {
-        case 0: "month"
-        case 365: "week"
-        default: "day"
+        case 0: said("statistics.chart.touch.month")
+        case 365: said("statistics.chart.touch.week")
+        default: said("statistics.chart.touch.day")
         }
     }
 }
@@ -407,7 +424,7 @@ struct ShareBars: View {
                 HStack {
                     Text(share.name)
                     Spacer()
-                    Text("\(counted(Int(share.songs), "song")) · \(fraction.formatted(.percent.precision(.fractionLength(0))))")
+                    Text("\(said("counted.songs", Int(share.songs))) · \(fraction.formatted(.percent.precision(.fractionLength(0))))")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -425,7 +442,7 @@ struct ShareBars: View {
             .padding(.vertical, 2)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(share.name)
-            .accessibilityValue("\(counted(Int(share.songs), "song")), \(fraction.formatted(.percent.precision(.fractionLength(0))))")
+            .accessibilityValue("\(said("counted.songs", Int(share.songs))), \(fraction.formatted(.percent.precision(.fractionLength(0))))")
         }
     }
 }
@@ -436,16 +453,16 @@ struct LibraryBreakdownSections: View {
 
     var body: some View {
         if !breakdown.formats.isEmpty {
-            HeadedSection("Formats") { ShareBars(shares: breakdown.formats, songs: songs) }
+            HeadedSection(said("statistics.breakdown.formats")) { ShareBars(shares: breakdown.formats, songs: songs) }
         }
         if !breakdown.rates.isEmpty {
-            HeadedSection("Sample rates") { ShareBars(shares: breakdown.rates, songs: songs) }
+            HeadedSection(said("statistics.breakdown.rates")) { ShareBars(shares: breakdown.rates, songs: songs) }
         }
         if !breakdown.genres.isEmpty {
-            HeadedSection("Genres") { ShareBars(shares: breakdown.genres, songs: songs) }
+            HeadedSection(said("statistics.breakdown.genres")) { ShareBars(shares: breakdown.genres, songs: songs) }
         }
         if !breakdown.decades.isEmpty {
-            HeadedSection("Decades") { ShareBars(shares: breakdown.decades, songs: songs) }
+            HeadedSection(said("statistics.breakdown.decades")) { ShareBars(shares: breakdown.decades, songs: songs) }
         }
     }
 }

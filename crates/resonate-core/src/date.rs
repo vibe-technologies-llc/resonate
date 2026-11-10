@@ -1,5 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::words;
+
 pub const SECONDS_PER_DAY: i64 = 86_400;
 const DAYS_FROM_0000_03_01_TO_THE_EPOCH: i64 = 719_468;
 const DAYS_PER_ERA: i64 = 146_097;
@@ -11,6 +13,21 @@ const DAYS_PER_CENTURY: i64 = 36_524;
 const DAYS_PER_FIVE_MONTHS: i64 = 153;
 const MARCH: i64 = 3;
 const MONTHS_PER_YEAR: i64 = 12;
+
+pub(crate) const MONTHS_BRIEFLY: [fn() -> &'static str; 12] = [
+    words::date::jan,
+    words::date::feb,
+    words::date::mar,
+    words::date::apr,
+    words::date::may,
+    words::date::jun,
+    words::date::jul,
+    words::date::aug,
+    words::date::sep,
+    words::date::oct,
+    words::date::nov,
+    words::date::dec,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CivilDate {
@@ -59,21 +76,13 @@ impl CivilDate {
         Self::of_day(seconds_since_the_epoch(moment).div_euclid(SECONDS_PER_DAY))
     }
 
-    pub const fn month_named(self) -> &'static str {
-        match self.month {
-            1 => "Jan",
-            2 => "Feb",
-            3 => "Mar",
-            4 => "Apr",
-            5 => "May",
-            6 => "Jun",
-            7 => "Jul",
-            8 => "Aug",
-            9 => "Sep",
-            10 => "Oct",
-            11 => "Nov",
-            _ => "Dec",
-        }
+    pub fn month_named(self) -> &'static str {
+        let named = usize::try_from(self.month - 1)
+            .ok()
+            .and_then(|month| MONTHS_BRIEFLY.get(month))
+            .unwrap_or(&MONTHS_BRIEFLY[MONTHS_BRIEFLY.len() - 1]);
+
+        named()
     }
 }
 

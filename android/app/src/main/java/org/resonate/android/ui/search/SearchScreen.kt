@@ -61,11 +61,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.R
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.components.LocalPageBottomPadding
 import org.resonate.android.ui.components.SettingsAction
@@ -128,7 +130,7 @@ fun SearchScreen() {
         AnimatedContent(
             onlinePage,
             transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
-            label = "search place",
+            label = "search-place",
             modifier = Modifier.fillMaxSize(),
         ) { shown ->
             val content = PaddingValues(top = padding.calculateTopPadding(), bottom = footer + 16.dp)
@@ -196,7 +198,10 @@ private fun SearchHeader(model: SearchViewModel) {
                         onClick = LocalSheets.current::listen,
                         modifier = Modifier.testTag("listen"),
                     ) {
-                        Icon(Icons.Rounded.Hearing, contentDescription = "Listen")
+                        Icon(
+                            Icons.Rounded.Hearing,
+                            contentDescription = stringResource(R.string.search_listen),
+                        )
                     }
                     SettingsAction()
                 }
@@ -220,7 +225,7 @@ private fun SearchField(model: SearchViewModel, modifier: Modifier) {
         modifier = modifier.heightIn(min = 56.dp).testTag("search-field"),
         placeholder = {
             Text(
-                "Search or paste a link",
+                stringResource(R.string.search_placeholder),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -230,7 +235,10 @@ private fun SearchField(model: SearchViewModel, modifier: Modifier) {
             if (typed.isNotEmpty() || model.field.text.isNotEmpty()) {
                 {
                     IconButton(onClick = model::clear, modifier = Modifier.testTag("search-clear")) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Clear search")
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.search_clear),
+                        )
                     }
                 }
             } else null,

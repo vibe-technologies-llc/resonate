@@ -8,7 +8,7 @@ enum DeletionFailure: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .filesKept(let count):
-            "\(counted(count, "file")) could not be deleted; \(count == 1 ? "its folder" : "their folders") would not let go of \(count == 1 ? "it" : "them")"
+            said("deleting.files-kept", count)
         }
     }
 }
@@ -18,7 +18,7 @@ struct SongsToDelete: Identifiable {
     let tracks: [Track]
 
     var title: String {
-        tracks.count == 1 ? "Delete “\(tracks[0].shownTitle)”?" : "Delete \(counted(tracks.count, "song"))?"
+        tracks.count == 1 ? said("deleting.song.title", tracks[0].shownTitle) : said("deleting.songs.title", tracks.count)
     }
 }
 
@@ -40,7 +40,7 @@ extension Library {
             if gone.count < doomed.count {
                 report(DeletionFailure.filesKept(doomed.count - gone.count))
             } else {
-                notice(tracks.count == 1 ? "Deleted “\(tracks[0].shownTitle)”" : "Deleted \(counted(tracks.count, "song"))")
+                notice(tracks.count == 1 ? said("deleting.song.deleted", tracks[0].shownTitle) : said("deleting.songs.deleted", tracks.count))
             }
         }
     }
@@ -75,7 +75,7 @@ extension Library {
         } else if stuck > 0 {
             report(DeletionFailure.filesKept(stuck))
         } else if folded > 0 {
-            notice("Deleted \(counted(Int(folded), "identical file")); each song keeps one")
+            notice(said("deleting.identical.deleted", Int(folded)))
         }
     }
 
@@ -109,13 +109,11 @@ struct DeleteSongsConfirmation: ViewModifier {
             titleVisibility: .visible,
             presenting: asked
         ) { asked in
-            Button(asked.tracks.count == 1 ? "Delete song" : "Delete \(counted(asked.tracks.count, "song"))", role: .destructive) {
+            Button(said("deleting.songs.confirm", asked.tracks.count), role: .destructive) {
                 library.deleteSongs(asked.tracks)
             }
         } message: { asked in
-            Text(asked.tracks.count == 1
-                ? "Its file is deleted from your iPhone, and it leaves the queue, your playlists and favourites."
-                : "Their files are deleted from your iPhone, and they leave the queue, your playlists and favourites.")
+            Text(said("deleting.songs.message", asked.tracks.count))
         }
     }
 }
@@ -138,9 +136,9 @@ struct IdenticalSongsView: View {
             } else if let found {
                 if found.isEmpty {
                     ContentUnavailableView(
-                        "No identical songs",
+                        "identical.none",
                         systemImage: "checkmark.circle",
-                        description: Text("No two songs in your library are the same file.")
+                        description: Text("identical.none.detail")
                     )
                     .listRowSeparator(.hidden)
                 }
@@ -152,33 +150,33 @@ struct IdenticalSongsView: View {
                             }
                         }
                     } footer: {
-                        Text("Tap the copy to keep. The others are deleted.")
+                        Text("identical.footer")
                     }
                 }
             } else {
                 HStack(spacing: 12) {
                     ProgressView().accessibilityHidden(true)
-                    Text("Comparing songs…").foregroundStyle(.secondary)
+                    Text("identical.comparing").foregroundStyle(.secondary)
                 }
             }
         }
-        .navigationTitle("Identical songs")
+        .navigationTitle("tools.identical")
         .toolbar {
             if copies > 0 {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Delete copies", role: .destructive) { confirming = true }
+                    Button("identical.delete-copies", role: .destructive) { confirming = true }
                         .disabled(deleting)
                 }
             }
         }
         .confirmationDialog(
-            "Delete \(counted(copies, "file"))?",
+            said("identical.delete.title", copies),
             isPresented: $confirming,
             titleVisibility: .visible
         ) {
-            Button("Delete \(counted(copies, "file"))", role: .destructive) { delete(sets) }
+            Button(said("identical.delete.confirm", copies), role: .destructive) { delete(sets) }
         } message: {
-            Text("Each song keeps one file. The other files are deleted from your iPhone, and their plays, favourites and playlist places move to the copy kept.")
+            Text("identical.delete.message")
         }
         .task(id: asked) { await find() }
     }
@@ -247,14 +245,14 @@ private struct IdenticalCopyRow: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityValue(kept ? "Kept" : "Deleted")
-        .accessibilityHint(kept ? "" : "Keeps this copy instead")
+        .accessibilityValue(said(kept ? "identical.copy.kept" : "identical.copy.deleted"))
+        .accessibilityHint(kept ? "" : said("identical.copy.keep.hint"))
     }
 
     private var place: String {
         let root = Folders.root(of: track.uri)
         let folder = library.folderList.first { $0.id == root }
         let named = [folder?.name, track.name].compactMap { $0 }.joined(separator: " › ")
-        return folder?.writable == false ? named + " · read-only" : named
+        return folder?.writable == false ? said("identical.copy.read-only", named) : named
     }
 }

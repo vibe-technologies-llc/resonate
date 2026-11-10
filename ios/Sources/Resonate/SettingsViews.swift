@@ -24,30 +24,30 @@ struct SettingsView: View {
                         Text(group.title)
                     } footer: {
                         if group == .app, !searching {
-                            Text("Erasing removes your library, playlists, favourites, history, settings, accounts and pairing code from this iPhone and deletes every song Resonate lists. Your other devices are not touched.")
+                            Text("settings.erase.footer")
                         }
                     }
                 }
             }
         }
-        .searchable(text: $search, prompt: "Search settings")
+        .searchable(text: $search, prompt: "settings.search")
         .overlay {
             if matches.isEmpty {
                 ContentUnavailableView(
-                    "No settings match “\(search.trimmingCharacters(in: .whitespaces))”",
+                    said("settings.search.none", search.trimmingCharacters(in: .whitespaces)),
                     systemImage: "magnifyingglass",
-                    description: Text("Try sound, folders or the name of a service.")
+                    description: Text("settings.search.none.detail")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(.systemGroupedBackground))
             }
         }
-        .confirmationDialog("Erase all data?", isPresented: $confirmingErase, titleVisibility: .visible) {
-            Button("Erase everything", role: .destructive) { library.eraseEverything() }
+        .confirmationDialog("settings.erase.confirm", isPresented: $confirmingErase, titleVisibility: .visible) {
+            Button("settings.erase.confirm.action", role: .destructive) { library.eraseEverything() }
         } message: {
-            Text("Every song Resonate lists is deleted from this iPhone, including those in folders you added; other files in those folders stay. This cannot be undone. Resonate closes once it is done; open it again to start fresh.")
+            Text("settings.erase.confirm.message")
         }
-        .navigationTitle("Settings")
+        .navigationTitle("settings.title")
     }
 
     private var hidden: Set<SettingsPlace> {
@@ -59,10 +59,10 @@ struct SettingsView: View {
 
     static func sleepSummary(_ timer: SleepTimer?, remaining: UInt64?) -> String {
         switch timer {
-        case .after: remaining.map { "Pauses in \(clock($0 + 999))" } ?? "Pauses after the set time"
-        case .endOfTrack: "Pauses at the end of this song"
-        case .endOfQueue: "Pauses at the end of the queue"
-        case nil: "No timer set"
+        case .after: remaining.map { said("settings.sleep.pauses-in", clock($0 + 999)) } ?? said("settings.sleep.after")
+        case .endOfTrack: said("settings.sleep.end-of-song")
+        case .endOfQueue: said("settings.sleep.end-of-queue")
+        case nil: said("settings.sleep.none")
         }
     }
 }
@@ -74,16 +74,16 @@ private struct SettingsEntry: View {
 
     var body: some View {
         let place = match.place
-        let said = searching ? match.said : nil
+        let matched = searching ? match.said : nil
         switch place.opening {
         case .page(let destination):
             NavigationLink(value: destination) {
                 SettingsStatusRow(match: match, searching: searching)
             }
         case .sleepTimer:
-            SleepTimerButton(said: said)
+            SleepTimerButton(matched: matched)
         case .online:
-            OnlineSwitch(said: said)
+            OnlineSwitch(matched: matched)
         case .version:
             ToolRow(title: place.title, detail: Self.version, symbol: place.symbol, detailLines: 1)
         case .erase:
@@ -91,12 +91,12 @@ private struct SettingsEntry: View {
         }
     }
 
-    private static let version: String = {
+    private static var version: String {
         let info = Bundle.main.infoDictionary
-        let shown = info?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let shown = info?["CFBundleShortVersionString"] as? String ?? said("settings.version.unknown")
         let build = info?["CFBundleVersion"] as? String
-        return build.map { $0 == shown ? "Version \(shown)" : "Version \(shown) (\($0))" } ?? "Version \(shown)"
-    }()
+        return build.map { $0 == shown ? said("settings.version", shown) : said("settings.version.build", shown, $0) } ?? said("settings.version", shown)
+    }
 }
 
 private struct SettingsStatusRow: View {
@@ -106,12 +106,12 @@ private struct SettingsStatusRow: View {
 
     var body: some View {
         let place = match.place
-        let said = searching ? match.said : nil
+        let matched = searching ? match.said : nil
         switch place {
         case .searchHistory:
-            SearchHistoryStatus(said: said)
+            SearchHistoryStatus(matched: matched)
         case .notices:
-            NoticesStatus(said: said)
+            NoticesStatus(matched: matched)
         default:
             ToolRow(
                 title: place.title,
@@ -128,47 +128,47 @@ private struct SettingsStatusRow: View {
         switch place {
         case .equaliser:
             guard let preferences = library.preferences else { return place.summary }
-            return preferences.equaliserEnabled ? "On · \(preferences.equaliser.summary)" : "Off"
+            return preferences.equaliserEnabled ? said("settings.equaliser.on", preferences.equaliser.summary) : said("common.off")
         case .processing:
             switch library.preferences?.replayGain {
-            case .track: return "Track ReplayGain"
-            case .album: return "Album ReplayGain"
+            case .track: return said("settings.processing.track-gain")
+            case .album: return said("settings.processing.album-gain")
             default: return place.summary
             }
         case .output:
-            return library.routeReading.outputs.first.map { "Playing through \($0.name)" } ?? place.summary
+            return library.routeReading.outputs.first.map { said("settings.output.playing-through", $0.name) } ?? place.summary
         case .folders:
             let folders = library.folderList
             let readable = folders.filter(\.readable).count
-            return folders.isEmpty ? "Add and manage your music folders" : "\(counted(folders.count, "folder")) · \(readable) available"
+            return folders.isEmpty ? said("settings.folders.none") : said("settings.folders.available", folders.count, readable)
         case .enrichment:
-            guard features.online else { return "Needs online features" }
+            guard features.online else { return said("settings.enrichment.offline") }
             let enrichment = features.enrichment
-            guard enrichment.automatic else { return "Looked up when you ask" }
-            return enrichment.unmeteredOnly ? "Looked up automatically, on Wi-Fi" : "Looked up automatically"
+            guard enrichment.automatic else { return said("settings.enrichment.asked") }
+            return said(enrichment.unmeteredOnly ? "settings.enrichment.automatic-wifi" : "settings.enrichment.automatic")
         case .providers:
             return providersDetail(features.downloadAccounts)
         case .scrobbling:
             let account = features.scrobbleAccount
             let services = [
-                account?.listenbrainzToken.isEmpty == false ? "ListenBrainz" : nil,
-                account?.lastfmSession.isEmpty == false ? "Last.fm" : nil,
+                account?.listenbrainzToken.isEmpty == false ? said("service.listenbrainz") : nil,
+                account?.lastfmSession.isEmpty == false ? said("service.lastfm") : nil,
             ].compactMap { $0 }
-            return services.isEmpty ? "Share your listening with ListenBrainz or Last.fm" : services.joined(separator: " · ")
+            return services.isEmpty ? said("settings.scrobbling.none") : services.joined(separator: " · ")
         case .sync:
             switch features.syncActivity {
-            case .fetching(let songs, _): return "Fetching \(counted(songs, "song")) from your devices"
-            case .syncing: return "Syncing…"
+            case .fetching(let songs, _): return said("settings.sync.fetching", songs)
+            case .syncing: return said("sync.syncing")
             case nil: break
             }
             let standing = syncStanding(features.syncStatus, config: features.syncConfig, online: features.online)
-            return features.syncUpToDate ? "Up to date · " + standing : standing
+            return features.syncUpToDate ? said("settings.sync.up-to-date", standing) : standing
         case .accent:
             return AppearanceState.shared.accent.map { $0.name.capitalized } ?? "Resonate"
         case .background:
             let appearance = AppearanceState.shared
-            guard appearance.themedBackground else { return "Off" }
-            return appearance.movingBackground ? "Flowing" : "Still"
+            guard appearance.themedBackground else { return said("common.off") }
+            return said(appearance.movingBackground ? "settings.background.flowing" : "settings.background.still")
         case .roomCorrection:
             return RoomCorrectionRow.status(of: features.room)
         default:
@@ -179,12 +179,12 @@ private struct SettingsStatusRow: View {
 
 private struct SearchHistoryStatus: View {
     @AppStorage(SearchModel.historyKeptKey, store: SearchHistoryStore.defaults) private var kept = true
-    let said: String?
+    let matched: String?
 
     var body: some View {
         ToolRow(
             title: SettingsPlace.searchHistory.title,
-            detail: said ?? (kept ? "Recent searches are kept on this iPhone" : "Off"),
+            detail: matched ?? said(kept ? "settings.search-history.kept" : "common.off"),
             symbol: SettingsPlace.searchHistory.symbol,
             detailLines: 1
         )
@@ -193,12 +193,12 @@ private struct SearchHistoryStatus: View {
 
 private struct NoticesStatus: View {
     @AppStorage(Library.unaskedNoticesKey, store: Library.unaskedNoticeSettings) private var told = false
-    let said: String?
+    let matched: String?
 
     var body: some View {
         ToolRow(
             title: SettingsPlace.notices.title,
-            detail: said ?? (told ? "Also what the library finds by itself" : "What you start, and every failure"),
+            detail: matched ?? said(told ? "settings.notices.unasked" : "settings.notices.asked"),
             symbol: SettingsPlace.notices.symbol,
             detailLines: 1
         )
@@ -207,14 +207,14 @@ private struct NoticesStatus: View {
 
 private struct OnlineSwitch: View {
     @Environment(Library.self) private var library
-    let said: String?
+    let matched: String?
 
     var body: some View {
         let features = library.features
         Toggle(isOn: Binding(get: { features.online }, set: { features.setOnline($0) })) {
             ToolRow(
                 title: SettingsPlace.online.title,
-                detail: said ?? (features.online ? "Artwork, lyrics and music search are on" : "Resonate stays offline"),
+                detail: matched ?? said(features.online ? "settings.online.on" : "settings.online.off"),
                 symbol: SettingsPlace.online.symbol,
                 detailLines: 1
             )
@@ -243,22 +243,22 @@ private struct EraseRow: View {
 private struct SleepTimerButton: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    let said: String?
+    let matched: String?
 
     var body: some View {
-        Button { navigation.sleepTimer = true } label: { SleepTimerRow(said: said) }
+        Button { navigation.sleepTimer = true } label: { SleepTimerRow(matched: matched) }
             .disabled(library.playingTrack == nil)
     }
 }
 
 private struct SleepTimerRow: View {
     @Environment(Library.self) private var library
-    let said: String?
+    let matched: String?
 
     var body: some View {
         ToolRow(
             title: SettingsPlace.sleepTimer.title,
-            detail: said ?? SettingsView.sleepSummary(library.sleepTimer, remaining: library.clock.sleepRemainingMs),
+            detail: matched ?? SettingsView.sleepSummary(library.sleepTimer, remaining: library.clock.sleepRemainingMs),
             symbol: SettingsPlace.sleepTimer.symbol,
             detailLines: 1
         )
@@ -327,7 +327,7 @@ struct ProcessingView: View {
     var body: some View {
         ThemedForm {
             if let settings = library.preferences {
-                Section("Player volume") {
+                Section("processing.volume") {
                     Slider(
                         value: Binding(
                             get: { Double(library.volume) },
@@ -335,63 +335,63 @@ struct ProcessingView: View {
                         ),
                         in: 0...1
                     )
-                    .accessibilityLabel("Player volume")
+                    .accessibilityLabel("processing.volume")
                 }
                 Section {
-                    Picker("ReplayGain", selection: binding(settings.replayGain) { $0.replayGain = $1 }) {
-                        Text("Off").tag(GainMode.off)
-                        Text("Track").tag(GainMode.track)
-                        Text("Album").tag(GainMode.album)
+                    Picker("processing.replay-gain", selection: binding(settings.replayGain) { $0.replayGain = $1 }) {
+                        Text("common.off").tag(GainMode.off)
+                        Text("processing.replay-gain.track").tag(GainMode.track)
+                        Text("processing.replay-gain.album").tag(GainMode.album)
                     }
-                    Toggle("True-peak clip prevention", isOn: binding(settings.truePeak) { $0.truePeak = $1 })
+                    Toggle("processing.true-peak", isOn: binding(settings.truePeak) { $0.truePeak = $1 })
                 } footer: {
-                    Text("Uses the gain tags in your files to balance loudness.")
+                    Text("processing.replay-gain.footer")
                 }
-                Section("Resampling") {
-                    Picker("Resampling quality", selection: binding(settings.quality) { $0.quality = $1 }) {
-                        Text("Low latency").tag(ResamplingQuality.lowLatency)
-                        Text("Balanced").tag(ResamplingQuality.balanced)
-                        Text("High").tag(ResamplingQuality.high)
-                        Text("Very high").tag(ResamplingQuality.veryHigh)
+                Section("processing.resampling") {
+                    Picker("processing.resampling.quality", selection: binding(settings.quality) { $0.quality = $1 }) {
+                        Text("processing.resampling.low-latency").tag(ResamplingQuality.lowLatency)
+                        Text("processing.resampling.balanced").tag(ResamplingQuality.balanced)
+                        Text("processing.resampling.high").tag(ResamplingQuality.high)
+                        Text("processing.resampling.very-high").tag(ResamplingQuality.veryHigh)
                     }
-                    Picker("Filter phase", selection: binding(settings.phase) { $0.phase = $1 }) {
-                        Text("Linear").tag(ResamplingPhase.linear)
-                        Text("Intermediate").tag(ResamplingPhase.intermediate)
-                        Text("Minimum").tag(ResamplingPhase.minimum)
+                    Picker("processing.phase", selection: binding(settings.phase) { $0.phase = $1 }) {
+                        Text("processing.phase.linear").tag(ResamplingPhase.linear)
+                        Text("processing.phase.intermediate").tag(ResamplingPhase.intermediate)
+                        Text("processing.phase.minimum").tag(ResamplingPhase.minimum)
                     }
                 }
                 Section {
-                    Picker("Crossfeed", selection: binding(settings.crossfeed) { $0.crossfeed = $1 }) {
-                        Text("Off").tag(CrossfeedLevel.off)
-                        Text("Light").tag(CrossfeedLevel.light)
-                        Text("Moderate").tag(CrossfeedLevel.moderate)
-                        Text("Strong").tag(CrossfeedLevel.strong)
+                    Picker("processing.crossfeed", selection: binding(settings.crossfeed) { $0.crossfeed = $1 }) {
+                        Text("common.off").tag(CrossfeedLevel.off)
+                        Text("processing.crossfeed.light").tag(CrossfeedLevel.light)
+                        Text("processing.crossfeed.moderate").tag(CrossfeedLevel.moderate)
+                        Text("processing.crossfeed.strong").tag(CrossfeedLevel.strong)
                     }
                 } header: {
-                    Text("Stereo image")
+                    Text("processing.crossfeed.header")
                 } footer: {
-                    Text(Self.crossfeedMeaning(settings.crossfeed) + " Only a stereo stream is crossfed; anything else plays as it is whatever this says. A crossfed stream is converted rather than bit-perfect.")
+                    Text(said("processing.crossfeed.footer", Self.crossfeedMeaning(settings.crossfeed)))
                 }
                 Section {
-                    Picker("Lossy restoration", selection: binding(settings.restoration) { $0.restoration = $1 }) {
-                        Text("Off").tag(LossyRestoration.off)
-                        Text("Repair").tag(LossyRestoration.repair)
-                        Text("Extend").tag(LossyRestoration.extend)
+                    Picker("processing.restoration", selection: binding(settings.restoration) { $0.restoration = $1 }) {
+                        Text("common.off").tag(LossyRestoration.off)
+                        Text("processing.restoration.repair").tag(LossyRestoration.repair)
+                        Text("processing.restoration.extend").tag(LossyRestoration.extend)
                     }
                 } footer: {
-                    Text("Experimental processing for MP3, AAC and Vorbis. Lossless music passes through unchanged by restoration.")
+                    Text("processing.restoration.footer")
                 }
             }
         }
-        .navigationTitle("Sound processing")
+        .navigationTitle("processing.title")
     }
 
     private static func crossfeedMeaning(_ level: CrossfeedLevel) -> String {
         switch level {
-        case .off: "Each channel stays in its own ear, exactly as the record was mixed."
-        case .light: "A faint, low copy of each side reaches the other ear (650 Hz, 9.5 dB down), enough to take the edge off a hard-panned record."
-        case .moderate: "The classic setting (700 Hz, 6 dB down): the image closes up toward the front without losing its width."
-        case .strong: "The most of the other side reaches each ear (700 Hz, 4.5 dB down), for old stereo records with the voices on one side and the band on the other."
+        case .off: said("processing.crossfeed.off.meaning")
+        case .light: said("processing.crossfeed.light.meaning")
+        case .moderate: said("processing.crossfeed.moderate.meaning")
+        case .strong: said("processing.crossfeed.strong.meaning")
         }
     }
 
@@ -417,59 +417,59 @@ struct OutputView: View {
     var body: some View {
         let reading = library.routeReading
         ThemedForm {
-            Section("Route") {
+            Section("output.route") {
                 ForEach(reading.outputs, id: \.id) { output in
                     VStack(alignment: .leading) {
                         Text(output.name)
-                        Text("Active route · \(output.channels) channels").font(.caption).foregroundStyle(.tint)
+                        Text(said("output.route.active", output.channels)).font(.caption).foregroundStyle(.tint)
                     }
                 }
                 HStack {
-                    Text("Choose a device")
+                    Text("output.route.choose")
                     Spacer()
                     RoutePicker().frame(width: 44, height: 44)
                 }
             }
             Section {
-                LabeledContent("Stream", value: "Stereo float · \(library.clock.outputRate > 0 ? library.clock.outputRate : UInt32(reading.sampleRate)) Hz")
-                LabeledContent("Hardware rate", value: "\(Int(reading.sampleRate)) Hz")
-                LabeledContent("Output latency", value: String(format: "%.1f ms", reading.latencyMs))
-                LabeledContent("Underruns", value: "\(library.clock.underruns)")
+                LabeledContent("output.stream", value: said("output.stream.value", Int(library.clock.outputRate > 0 ? library.clock.outputRate : UInt32(reading.sampleRate))))
+                LabeledContent("output.hardware-rate", value: said("output.hertz", Int(reading.sampleRate)))
+                LabeledContent("output.latency", value: said("output.milliseconds", String(format: "%.1f", reading.latencyMs)))
+                LabeledContent("output.underruns", value: "\(library.clock.underruns)")
                 if library.clock.overs > 0 {
-                    LabeledContent("Clamped samples", value: "\(library.clock.overs)")
+                    LabeledContent("output.clamped", value: "\(library.clock.overs)")
                 }
             } header: {
-                Text("Current stream")
+                Text("output.current-stream")
             } footer: {
-                Text("iOS owns the physical route; the system mixer and the chosen device determine the output format.")
+                Text("output.current-stream.footer")
             }
             Section {
-                Toggle("Match the song's sample rate", isOn: $followsSongRate)
+                Toggle("output.follow-song-rate", isOn: $followsSongRate)
                     .onChange(of: followsSongRate) { library.nowPlaying.songRateFollowingChanged() }
             } footer: {
-                Text("Asks the route for each song's own rate, so a USB DAC that can follow it plays without resampling. The built-in speaker and most wireless routes keep their own rate. A change of rate between songs costs a short gap.")
+                Text("output.follow-song-rate.footer")
             }
             if let settings = library.preferences {
                 Section {
-                    Text("Playback buffer: \(Int(buffer ?? Double(settings.bufferMs))) ms")
+                    Text(said("output.buffer.value", Int(buffer ?? Double(settings.bufferMs))))
                     CommittingSlider(
-                        title: "Playback buffer",
+                        title: said("output.buffer"),
                         value: Double(settings.bufferMs),
                         range: 50...2000,
                         step: 50,
                         editing: $buffer,
-                        spoken: { "\(Int($0)) milliseconds" }
+                        spoken: { said("output.buffer.spoken", Int($0)) }
                     ) { chosen in
                         library.updatePreferences { var next = $0; next.bufferMs = UInt32(chosen); return next }
                     }
-                    Toggle("Match DSD loudness to PCM", isOn: Binding(
+                    Toggle("output.dsd-like-pcm", isOn: Binding(
                         get: { settings.dsdLikePcm },
                         set: { value in library.updatePreferences { var next = $0; next.dsdLikePcm = value; return next } }
                     ))
                 }
             }
         }
-        .navigationTitle("Audio output")
+        .navigationTitle("output.title")
     }
 }
 
@@ -483,26 +483,26 @@ struct ScrobblingView: View {
         let features = library.features
         ThemedForm {
             Section {
-                SecureField("ListenBrainz token", text: $account.listenbrainzToken)
+                SecureField("scrobbling.listenbrainz.token", text: $account.listenbrainzToken)
             } header: {
-                Text("ListenBrainz")
+                Text("service.listenbrainz")
             } footer: {
-                Text("Completed listens are queued on this device and submitted when online features are enabled.")
+                Text("scrobbling.listenbrainz.footer")
             }
-            Section("Last.fm") {
-                SecureField("Last.fm application key", text: $account.lastfmKey)
-                SecureField("Last.fm application secret", text: $account.lastfmSecret)
-                SecureField("Last.fm session", text: $account.lastfmSession)
-                Button(features.lastfmBusy ? "Waiting for Last.fm…" : "Sign in to Last.fm") {
+            Section("service.lastfm") {
+                SecureField("scrobbling.lastfm.key", text: $account.lastfmKey)
+                SecureField("scrobbling.lastfm.secret", text: $account.lastfmSecret)
+                SecureField("scrobbling.lastfm.session", text: $account.lastfmSession)
+                Button(said(features.lastfmBusy ? "scrobbling.lastfm.waiting" : "scrobbling.lastfm.sign-in")) {
                     features.signInLastFm(account)
                 }
                 .disabled(account.lastfmKey.isEmpty || account.lastfmSecret.isEmpty || features.lastfmBusy)
                 if features.lastfmBusy {
-                    Button("Cancel sign-in", role: .cancel) { features.cancelLastFmSignIn() }
+                    Button("scrobbling.lastfm.cancel", role: .cancel) { features.cancelLastFmSignIn() }
                 }
                 if let address = features.lastfmAddress, let url = URL(string: address) {
-                    Button("Open the Last.fm page again") { openURL(url) }
-                    Text("Allow Resonate on the Last.fm page; no password is typed here.")
+                    Button("scrobbling.lastfm.open-again") { openURL(url) }
+                    Text("scrobbling.lastfm.allow")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -510,17 +510,17 @@ struct ScrobblingView: View {
                 if let address, let url = URL(string: address) { openURL(url) }
             }
             Section {
-                Toggle("Include existing listening history", isOn: $history)
-                Button("Save scrobbling accounts") { features.saveScrobbling(account, includeHistory: history) }
-                Button("Validate accounts") { features.validateScrobbling(account) }
+                Toggle("scrobbling.include-history", isOn: $history)
+                Button("scrobbling.save") { features.saveScrobbling(account, includeHistory: history) }
+                Button("scrobbling.validate") { features.validateScrobbling(account) }
             } footer: {
-                Text("Favourites with an identified recording are loved on each saved account, and taken back there when you remove them.")
+                Text("scrobbling.footer")
             }
             if let status = features.scrobbleStatus {
                 Text(status).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Scrobbling")
+        .navigationTitle("scrobbling.title")
         .onAppear { if let saved = features.scrobbleAccount { account = saved } }
         .onChange(of: features.scrobbleAccount) { _, saved in if let saved { account = saved } }
     }
@@ -534,16 +534,16 @@ struct NoticesView: View {
             Section {
                 Toggle(isOn: $told) {
                     ToolRow(
-                        title: "Tell me what the library finds by itself",
-                        detail: "New songs a background scan found, songs hidden as gone and songs kept from your devices",
+                        title: said("notices.unasked"),
+                        detail: said("notices.unasked.detail"),
                         symbol: "bell.badge"
                     )
                 }
             } footer: {
-                Text("A scan you start and every failure are always told.")
+                Text("notices.footer")
             }
         }
-        .navigationTitle("Notices")
+        .navigationTitle("notices.title")
     }
 }
 
@@ -560,7 +560,7 @@ struct SearchHistoryView: View {
         ThemedForm {
             Section {
                 Toggle(isOn: $kept) {
-                    ToolRow(title: "Keep search history", detail: "Offer your recent searches again", symbol: "clock.arrow.circlepath")
+                    ToolRow(title: said("search-history.keep"), detail: said("search-history.keep.detail"), symbol: "clock.arrow.circlepath")
                 }
                 .onChange(of: kept) { _, now in
                     guard !now else { return }
@@ -568,9 +568,9 @@ struct SearchHistoryView: View {
                     library.tabSearch.forgetRecents()
                 }
             } footer: {
-                Text("Searches are kept on this iPhone only. Turning this off forgets the ones kept.")
+                Text("search-history.footer")
             }
         }
-        .navigationTitle("Search history")
+        .navigationTitle("search-history.title")
     }
 }

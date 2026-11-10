@@ -35,6 +35,9 @@ mod theme;
 mod toast;
 mod together;
 mod views;
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
 mod wrapped_card;
 
 pub use crate::{

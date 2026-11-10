@@ -18,6 +18,10 @@ mod stun;
 mod web;
 pub mod wire;
 
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
+
 pub use crate::{
     catalog::{
         Catalog, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened,
@@ -51,3 +55,34 @@ pub use crate::{
         to_the_web, web_address,
     },
 };
+
+#[cfg(test)]
+mod said_through_the_catalog {
+    use std::{fs, path::Path};
+
+    const SAYS_WORDS: [&str; 2] = ["change.rs", "shared/service.rs"];
+
+    const PROPER: [&str; 4] = ["Linux", "Android", "iOS", "Windows"];
+
+    #[test]
+    fn every_word_sync_names_for_a_listener_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+
+        let written: Vec<String> = SAYS_WORDS
+            .iter()
+            .flat_map(|file| {
+                let source = fs::read_to_string(root.join(file)).expect("a file that says words");
+                resonate_words_build::prose_of(&source)
+                    .into_iter()
+                    .filter(|said| !PROPER.contains(&said.text.as_str()))
+                    .map(move |said| format!("{file}:{} {:?}", said.line, said.text))
+            })
+            .collect();
+
+        assert!(
+            written.is_empty(),
+            "words written in the code:\n{}",
+            written.join("\n")
+        );
+    }
+}

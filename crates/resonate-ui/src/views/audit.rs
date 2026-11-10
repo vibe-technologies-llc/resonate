@@ -4,7 +4,7 @@ mod tests {
 
     const CLICKED: &str = ".on_click(";
 
-    const NAMES_A_ROLE: [&str; 19] = [
+    const NAMES_A_ROLE: [&str; 20] = [
         "said_as(",
         "named_as(",
         "listed_as(",
@@ -24,9 +24,16 @@ mod tests {
         "kit::star(",
         "kit::choice_row(",
         "kit::dot_swatch(",
+        "kit::play_on_the_art(",
     ];
 
-    const HAS_AN_ID: [&str; 4] = [".id(", "kit::button(", "kit::icon_button(", "kit::segment("];
+    const HAS_AN_ID: [&str; 5] = [
+        ".id(",
+        "kit::button(",
+        "kit::icon_button(",
+        "kit::segment(",
+        "kit::play_on_the_art(",
+    ];
 
     const STILL_POINTER_ONLY: &[&str] = &[
         "browser.rs | cell.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
@@ -35,23 +42,21 @@ mod tests {
         "chrome.rs | button | .on_click(move |_, window, _| control.act(window))",
         "dropping.rs | if stopping { | button.on_click(cx.listener(|this, _, _, cx| this.stop_copying(cx)))",
         "hint.rs | div() | .on_click(|_, _, cx| cx.stop_propagation())",
-        "playlists.rs | .child( | control(\"drop-saved\", id, Icon::Discard, DISCARD_HINT).on_click(",
-        "playlists.rs | .child( | control(\"last-saved\", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT).on_click(",
-        "playlists.rs | .child( | control(\"next-saved\", id, Icon::QueueNext, PLAYLIST_NEXT_HINT).on_click(",
         "playlists.rs | .child( | control(\"pin-saved\", id, pin_icon(pinned), pin_hint(pinned)).on_click(",
-        "playlists.rs | .child( | control(\"play-saved\", id, Icon::Play, PLAY_HINT).on_click(cx.listener(",
-        "playlists.rs | .child( | control(\"shuffle-saved\", id, Icon::Shuffle, SHUFFLE_HINT).on_click(",
-        "playlists.rs | controls.child( | control(\"add-songs\", id, Icon::Plus, ADD_SONGS_HINT).on_click(",
-        "playlists.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control( | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | control(\"play-saved\", id, Icon::Play, words::playlists::play_hint()) | .on_click(cx.listener(move |this, _, _, cx| {",
         "playlists.rs | div() | .on_click(cx.listener(move |this, _, window, cx| {",
-        "playlists.rs | div() | .on_click(cx.listener(|this, _, window, cx| this.stop_naming(window, cx)))",
-        "playlists.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "playlists.rs | kit::framed_field(\"playlist-name\", true) | .on_click(cx.listener(|this, _, window, cx| {",
         "playlists.rs | let cell = div() | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
         "playlists.rs | let listed = tall_row(playing) | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
         "root.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
         "root.rs | let box_of_words = div() | .on_click(cx.listener(|this, _, window, cx| {",
         "root.rs | named | .on_click(cx.listener(move |this, _, _, cx| {",
-        "served.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "served.rs | kit::framed_field(SEARCH_ID, false) | .on_click(cx.listener(|this, _, window, cx| {",
         "settings/library.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {",
         "settings/mod.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {",
         "settings/mod.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {",
@@ -60,7 +65,6 @@ mod tests {
         "settings/mod.rs | let clicked = press.clone(); | Self::ringed_for_keys(handle, control, press, cx).on_click(cx.listener(",
         "settings/output.rs | row.track_focus(&self.controls.at(reached, cx)) | .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {",
         "settings/sync.rs | div() | .on_click(cx.listener(|this, _, _, cx| this.show_the_pairing(true, cx)))",
-        "suggestions.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
     ];
 
     fn indent(line: &str) -> usize {
@@ -195,5 +199,74 @@ mod tests {
         for site in pointer_only_sites() {
             println!("        {site:?},");
         }
+    }
+}
+
+#[cfg(test)]
+mod words {
+    use std::path::Path;
+
+    const PROPER: &[&str] = &[
+        "AcoustID",
+        "Android",
+        "AudD",
+        "AutoEq",
+        "Clean",
+        "Discord",
+        "Explicit",
+        "Jellyfin",
+        "Last.fm",
+        "Linux",
+        "Lipshitz",
+        "ListenBrainz",
+        "PipeWire",
+        "Resonate",
+        "Shazam",
+        "Subsonic",
+        "Windows",
+        "YouTube Music",
+    ];
+
+    const NOT_WORDS: &[&str] = &[
+        "fonts.rs",
+        "icons.rs",
+        "launcher.rs",
+        "wrapped_card/markup.rs",
+    ];
+
+    const STILL_TO_MOVE: &[&str] = &[];
+
+    #[test]
+    fn every_word_the_window_shows_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let found =
+            resonate_words_build::prose_in(&root, PROPER).expect("the window's sources read");
+
+        let unmoved: Vec<String> = found
+            .iter()
+            .filter(|(path, _)| {
+                let path = path.to_string_lossy();
+                !STILL_TO_MOVE.contains(&path.as_ref()) && !NOT_WORDS.contains(&path.as_ref())
+            })
+            .flat_map(|(path, prose)| {
+                prose
+                    .iter()
+                    .map(move |said| format!("{}:{} {:?}", path.display(), said.line, said.text))
+            })
+            .collect();
+        let moved: Vec<&&str> = STILL_TO_MOVE
+            .iter()
+            .filter(|path| !found.keys().any(|found| found.to_string_lossy() == **path))
+            .collect();
+
+        assert!(
+            unmoved.is_empty(),
+            "words written in the code:\n{}",
+            unmoved.join("\n")
+        );
+        assert!(
+            moved.is_empty(),
+            "files whose words are all moved: {moved:?}"
+        );
     }
 }

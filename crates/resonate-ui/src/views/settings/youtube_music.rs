@@ -15,73 +15,19 @@ use crate::{
         root::RootView,
         settings::{Rows, action, note, switch_row},
     },
+    words,
 };
 
-const TERMS_NOTE: &str = "Saving songs this way breaks YouTube's terms, even on a paid account, \
-                          and uses this account's cookies.";
-
-const YOUTUBE_MUSIC_NOTE: &str = "Nothing is asked of YouTube until this is on, and only while \
-                                  Online is on. yt-dlp is a program of its own, installed apart. \
-                                  The cookies name a browser as yt-dlp does, as firefox or \
-                                  firefox:/path/to/profile for a fork such as Zen, or the path \
-                                  of a cookies file. With none, songs come at the free tier.";
-
-const CHECK_LABEL: &str = "Check connection";
-
-const CHECKING_LABEL: &str = "Asking YouTube…";
-
-const PREMIUM: &str = "Premium formats are available";
-
-const WITHOUT_PREMIUM: &str = "Signed in, but no Premium formats are available";
-
-const NOT_SIGNED_IN: &str = "Not signed in to YouTube";
-
-const TOOL_MISSING: &str = "yt-dlp is missing";
-
-const CHECK_SONG_GONE: &str = "The song this check asks about has left YouTube, so nothing could \
-                               be told about the account";
-
-const COULD_NOT_CHECK: &str = "YouTube could not be asked just now, so nothing is known of the \
-                               account. Try again in a while";
-
-const NO_ANSWER: &str = "YouTube Music is checked only while it and Online are on";
-
-const SIGN_IN_LABEL: &str = "Sign in to YouTube Music";
-
-const SIGN_IN_AGAIN_LABEL: &str = "Sign in again";
-
-const SIGNING_IN_LABEL: &str = "Signing in…";
-
-const SIGN_OUT_LABEL: &str = "Sign out";
-
-const SIGNED_IN: &str = "Signed in to YouTube Music";
-
-const SIGN_IN_CLOSED: &str = "The sign-in window was closed, nothing kept";
-
-const SIGN_IN_PROGRAM_MISSING: &str =
-    "resonate-signin is missing, so the sign-in window cannot open";
-
-const SIGN_IN_FAILED: &str = "The sign-in window stopped without signing in";
-
-const SIGNED_OUT: &str = "Signed out of YouTube Music";
-
-const SIGN_OUT_FAILED: &str = "What the sign-in window kept could not be taken away";
-
-const SIGN_IN_NOTE: &str = "Sign in opens a window on Google's sign-in and keeps that account's \
-                            cookies for yt-dlp alone, in Resonate's own folder. Naming a browser \
-                            or a cookies file below is the other way in.";
-
-const NO_SIGN_IN_NOTE: &str = "Install resonate-signin to sign in from here. Until then, name a \
-                               browser or a cookies file below.";
-
-const fn told(connection: YoutubeMusicConnection) -> &'static str {
+fn told(connection: YoutubeMusicConnection) -> &'static str {
     match connection {
-        YoutubeMusicConnection::Premium => PREMIUM,
-        YoutubeMusicConnection::SignedInWithoutPremium => WITHOUT_PREMIUM,
-        YoutubeMusicConnection::NotSignedIn => NOT_SIGNED_IN,
-        YoutubeMusicConnection::ToolMissing => TOOL_MISSING,
-        YoutubeMusicConnection::CheckSongGone => CHECK_SONG_GONE,
-        YoutubeMusicConnection::CouldNotCheck => COULD_NOT_CHECK,
+        YoutubeMusicConnection::Premium => words::settings_youtube_music::premium(),
+        YoutubeMusicConnection::SignedInWithoutPremium => {
+            words::settings_youtube_music::without_premium()
+        }
+        YoutubeMusicConnection::NotSignedIn => words::settings_youtube_music::not_signed_in(),
+        YoutubeMusicConnection::ToolMissing => words::settings_youtube_music::tool_missing(),
+        YoutubeMusicConnection::CheckSongGone => words::settings_youtube_music::check_song_gone(),
+        YoutubeMusicConnection::CouldNotCheck => words::settings_youtube_music::could_not_check(),
     }
 }
 
@@ -99,7 +45,7 @@ fn notice_of(answered: Option<YoutubeMusicConnection>) -> Notice {
             | YoutubeMusicConnection::CheckSongGone
             | YoutubeMusicConnection::CouldNotCheck),
         ) => Notice::Trouble(told(connection).to_owned()),
-        None => Notice::Trouble(NO_ANSWER.to_owned()),
+        None => Notice::Trouble(words::settings_youtube_music::no_answer().to_owned()),
     }
 }
 
@@ -133,10 +79,18 @@ impl Default for SigningInToYoutubeMusic {
 
 fn notice_of_the_sign_in(answered: &YoutubeMusicSignIn) -> Notice {
     match answered {
-        YoutubeMusicSignIn::SignedIn { .. } => Notice::Done(SIGNED_IN.to_owned()),
-        YoutubeMusicSignIn::Closed => Notice::Noted(SIGN_IN_CLOSED.to_owned()),
-        YoutubeMusicSignIn::ProgramMissing => Notice::Trouble(SIGN_IN_PROGRAM_MISSING.to_owned()),
-        YoutubeMusicSignIn::Failed => Notice::Trouble(SIGN_IN_FAILED.to_owned()),
+        YoutubeMusicSignIn::SignedIn { .. } => {
+            Notice::Done(words::settings_youtube_music::signed_in().to_owned())
+        }
+        YoutubeMusicSignIn::Closed => {
+            Notice::Noted(words::settings_youtube_music::sign_in_closed().to_owned())
+        }
+        YoutubeMusicSignIn::ProgramMissing => {
+            Notice::Trouble(words::settings_youtube_music::sign_in_program_missing().to_owned())
+        }
+        YoutubeMusicSignIn::Failed => {
+            Notice::Trouble(words::settings_youtube_music::sign_in_failed().to_owned())
+        }
     }
 }
 
@@ -149,16 +103,16 @@ pub(crate) enum YoutubeMusicField {
 impl YoutubeMusicField {
     pub(crate) const ALL: [Self; 2] = [Self::Cookies, Self::Program];
 
-    const fn placeholder(self) -> &'static str {
+    fn placeholder(self) -> &'static str {
         match self {
-            Self::Cookies => "A browser or a cookies file, then press enter",
-            Self::Program => "Where yt-dlp is; blank looks on the path",
+            Self::Cookies => words::settings_youtube_music::a_browser_or_a_cookies_file(),
+            Self::Program => words::settings_youtube_music::where_yt_dlp_is_blank_looks(),
         }
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Cookies => "Cookies",
+            Self::Cookies => words::settings_youtube_music::cookies(),
             Self::Program => "yt-dlp",
         }
     }
@@ -247,10 +201,18 @@ impl RootView {
         });
 
         let said = match (named, given.is_empty()) {
-            (YoutubeMusicField::Cookies, true) => "YouTube Music is asked with no account",
-            (YoutubeMusicField::Cookies, false) => "YouTube Music is asked with these cookies",
-            (YoutubeMusicField::Program, true) => "yt-dlp is looked for on the path",
-            (YoutubeMusicField::Program, false) => "yt-dlp is run from there",
+            (YoutubeMusicField::Cookies, true) => {
+                words::settings_youtube_music::youtube_music_is_asked_with_no()
+            }
+            (YoutubeMusicField::Cookies, false) => {
+                words::settings_youtube_music::youtube_music_is_asked_with_these()
+            }
+            (YoutubeMusicField::Program, true) => {
+                words::settings_youtube_music::yt_dlp_is_looked_for_on()
+            }
+            (YoutubeMusicField::Program, false) => {
+                words::settings_youtube_music::yt_dlp_is_run_from_there()
+            }
         };
         self.store(&named.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
@@ -406,9 +368,9 @@ impl RootView {
                     this.hold_the_youtube_music_cookies(String::new(), cx);
                 }
                 let said = if gone {
-                    Notice::Done(SIGNED_OUT.to_owned())
+                    Notice::Done(words::settings_youtube_music::signed_out().to_owned())
                 } else {
-                    Notice::Trouble(SIGN_OUT_FAILED.to_owned())
+                    Notice::Trouble(words::settings_youtube_music::sign_out_failed().to_owned())
                 };
                 this.report(said, cx);
                 cx.notify();
@@ -429,9 +391,9 @@ impl RootView {
         let kept = signs_in.names_the_window_jar(&app.online.youtube_music_cookies);
         let asking = self.youtube_music_sign_in.asking;
         let label = match (asking, kept) {
-            (true, _) => SIGNING_IN_LABEL,
-            (false, true) => SIGN_IN_AGAIN_LABEL,
-            (false, false) => SIGN_IN_LABEL,
+            (true, _) => words::settings_youtube_music::signing_in_label(),
+            (false, true) => words::settings_youtube_music::sign_in_again_label(),
+            (false, false) => words::settings_youtube_music::sign_in_label(),
         };
 
         let row = row.child(action(
@@ -448,7 +410,7 @@ impl RootView {
         }
         row.child(action(
             "youtube-music-sign-out",
-            SIGN_OUT_LABEL,
+            words::settings_youtube_music::sign_out_label(),
             Icon::Close,
             asking,
             |this, _, cx| this.sign_out_of_youtube_music(cx),
@@ -463,9 +425,9 @@ impl RootView {
             .signs_in_to_youtube_music
             .as_ref()?;
         Some(if signs_in.is_offered() {
-            SIGN_IN_NOTE
+            words::settings_youtube_music::sign_in_note()
         } else {
-            NO_SIGN_IN_NOTE
+            words::settings_youtube_music::no_sign_in_note()
         })
     }
 
@@ -477,7 +439,11 @@ impl RootView {
 
         action(
             "youtube-music-check",
-            if asking { CHECKING_LABEL } else { CHECK_LABEL },
+            if asking {
+                words::settings_youtube_music::checking_label()
+            } else {
+                words::settings_youtube_music::check_label()
+            },
             Icon::Link,
             asking || !reachable,
             |this, _, cx| this.check_the_youtube_music_connection(cx),
@@ -495,15 +461,15 @@ impl RootView {
             .child(self.in_the_ring(
                 "youtube-music",
                 switch_row(
-                    "Use YouTube Music",
-                    "Off, nothing is asked of YouTube",
+                    words::settings_youtube_music::use_youtube_music(),
+                    words::settings_youtube_music::off_nothing_is_asked_of_youtube(),
                     on,
                     "youtube-music",
                 ),
                 move |this, _, cx| this.turn_youtube_music(!on, cx),
                 cx,
             ))
-            .child(note(TERMS_NOTE));
+            .child(note(words::settings_youtube_music::terms_note()));
         for named in YoutubeMusicField::ALL {
             body = body.child(kit::field(
                 named.label(),
@@ -519,8 +485,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "youtube-music-keep-order",
                 switch_row(
-                    "Keep a playlist in YouTube's order",
-                    "Off, its songs stand in the order they land",
+                    words::settings_youtube_music::keep_a_playlist_in_youtubes_order(),
+                    words::settings_youtube_music::off_its_songs_stand_in_the(),
                     keeps,
                     "youtube-music-keep-order",
                 ),
@@ -535,7 +501,7 @@ impl RootView {
             Some(said) => body.note(said),
             None => body,
         };
-        body.note(YOUTUBE_MUSIC_NOTE)
+        body.note(words::settings_youtube_music::youtube_music_note())
     }
 }
 
@@ -579,7 +545,7 @@ mod tests {
     #[test]
     fn the_terms_are_said_as_the_listener_was_told_them() {
         assert_eq!(
-            TERMS_NOTE,
+            words::settings_youtube_music::terms_note(),
             "Saving songs this way breaks YouTube's terms, even on a paid account, and uses this \
              account's cookies."
         );

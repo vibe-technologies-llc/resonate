@@ -23,6 +23,7 @@ resonate-library.workspace = true
 resonate-listen.workspace = true
 resonate-lyrics.workspace = true
 resonate-providers.workspace = true
+resonate-words.workspace = true
 resvg.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
@@ -33,7 +34,11 @@ unicode-segmentation.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
+resonate-words-build.workspace = true
 gpui = { workspace = true, features = ["test-support"] }
 proptest.workspace = true
 

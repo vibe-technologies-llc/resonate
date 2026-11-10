@@ -1,0 +1,10 @@
+expand = Expand other devices
+collapse = Collapse other devices
+other-devices = Other devices
+playing = Playing
+paused = Paused
+previous-song = Previous song
+pause = Pause
+play = Play
+next-song = Next song
+control-on = { $label } on { $device } · { $zone }

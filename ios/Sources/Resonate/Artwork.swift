@@ -370,14 +370,17 @@ struct FavouriteButton: View {
             }
         } label: {
             Image(systemName: favourite ? "heart.fill" : "heart")
-                .foregroundStyle(favourite ? Color.pink : Color.secondary)
+                .foregroundStyle(favourite ? Color.worn : Color.secondary)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : starred)
                 .touchTarget()
                 .buttonShape()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(favourite ? "Remove from favourites" : "Add to favourites")
-        .accessibilityInputLabels(["Favourite", "Heart", "Like", "Add to favourites", "Remove from favourites"])
+        .accessibilityLabel(said(favourite ? "favourite.remove" : "favourite.add"))
+        .accessibilityInputLabels([
+            said("favourite.input.favourite"), said("favourite.input.heart"), said("favourite.input.like"),
+            said("favourite.add"), said("favourite.remove"),
+        ])
     }
 }

@@ -32,6 +32,21 @@ const RELEASE_PKGBUILDS: [&str; 3] = [
 ];
 const DEB_SCRIPT: &str = "deb/build.sh";
 const SERVER_FILES: [&str; 2] = ["resonate-server.service", "resonate-server.env"];
+const ARCH_FACES: [&str; 2] = ["inter-font", "ttf-jetbrains-mono"];
+const FACES_BROUGHT: [(&str, [&str; 2]); 6] = [
+    ("PKGBUILD", ARCH_FACES),
+    ("release/PKGBUILD", ARCH_FACES),
+    (".SRCINFO", ARCH_FACES),
+    (
+        "resonate.spec",
+        ["rsms-inter-fonts", "jetbrains-mono-fonts"],
+    ),
+    (DEB_SCRIPT, ["fonts-inter", "fonts-jetbrains-mono"]),
+    (
+        FLATPAK_MANIFEST,
+        ["/app/share/fonts/inter", "/app/share/fonts/jetbrains-mono"],
+    ),
+];
 
 fn packaging(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -70,6 +85,17 @@ fn every_package_installs_the_manual_of_the_settings_file() {
             packaging(recipe).contains(CONFIG_MAN_PAGE),
             "{recipe} does not install {CONFIG_MAN_PAGE}"
         );
+    }
+}
+
+#[test]
+fn every_package_brings_the_reading_face_and_the_face_for_codes() {
+    for (recipe, faces) in FACES_BROUGHT {
+        let written = packaging(recipe);
+
+        for face in faces {
+            assert!(written.contains(face), "{recipe} does not bring {face}");
+        }
     }
 }
 

@@ -452,6 +452,7 @@ impl Driven {
                 reduced_motion: false,
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
+                language: resonate_words::LanguageChoice::default(),
                 spectral: resonate_core::Spectral::default(),
                 tabs: Tabs::AS_BUILT,
                 remember_tab: false,
@@ -680,11 +681,12 @@ mod tests {
         Pane, Selection,
         equaliser::{Cell as BandCell, Editing},
         views::{
-            menu::{self, Menu, Offered},
+            menu::{Menu, Offered},
             reorder::{Listed, Shift},
             settings::curve::Plot,
             visualiser::Showing,
         },
+        words,
     };
 
     fn catalog() -> Arc<Library> {
@@ -1828,7 +1830,7 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         driven.right_click(named("track", taken.get()));
-        pressed_in_the_menu(&mut driven, menu::TAKE_OUT);
+        pressed_in_the_menu(&mut driven, words::menu::take_out());
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         assert_eq!(driven.queue(), vec![kept]);
@@ -1952,7 +1954,7 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
         driven.right_click(named("track", track.get()));
-        pressed_in_the_menu(&mut driven, menu::ADD_TO_PLAYLIST);
+        pressed_in_the_menu(&mut driven, words::menu::add_to_playlist());
         assert!(
             driven.read(|root, _| root.adding.is_some()),
             "Add to playlist opened no picker"
@@ -3216,17 +3218,17 @@ mod tests {
         let labels = menu_labels(&mut driven);
 
         for offered in [
-            menu::HIDE_EACH,
-            menu::DELETE_FROM_DISK,
-            menu::COPY_PATHS,
-            menu::SHOW_IN_FOLDER,
-            menu::SHARE_EACH,
-            menu::PLAY,
-            menu::UNFAVOUR,
+            words::menu::hide_each(),
+            words::menu::delete_from_disk(),
+            words::menu::copy_paths(),
+            words::menu::show_in_folder(),
+            words::menu::share_each(),
+            words::menu::play(),
+            words::menu::unfavour(),
         ] {
             assert!(labels.iter().any(|label| label == offered), "{offered}");
         }
-        for withheld in [menu::SHARE, menu::GO_TO_ALBUM] {
+        for withheld in [words::menu::share(), words::menu::go_to_album()] {
             assert!(!labels.iter().any(|label| label == withheld), "{withheld}");
         }
     }
@@ -3237,7 +3239,7 @@ mod tests {
         let (mut driven, library, ids) = favourites_open_with_two_chosen(cx, &folder);
 
         driven.right_click(named("track", ids[1].get()));
-        pressed_in_the_menu(&mut driven, menu::HIDE_EACH);
+        pressed_in_the_menu(&mut driven, words::menu::hide_each());
         driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 2);
 
         let left: Vec<TrackId> = library
@@ -3256,7 +3258,7 @@ mod tests {
         let (mut driven, _library, ids) = favourites_open_with_two_chosen(cx, &folder);
 
         driven.right_click(named("track", ids[1].get()));
-        pressed_in_the_menu(&mut driven, menu::DELETE_FROM_DISK);
+        pressed_in_the_menu(&mut driven, words::menu::delete_from_disk());
 
         assert_eq!(
             deleting_asked_about(&mut driven),
@@ -3278,11 +3280,15 @@ mod tests {
         driven.right_click(named("track", ids[0].get()));
         let labels = menu_labels(&mut driven);
 
-        for offered in [menu::HIDE_EACH, menu::DELETE_FROM_DISK, menu::COPY_PATHS] {
+        for offered in [
+            words::menu::hide_each(),
+            words::menu::delete_from_disk(),
+            words::menu::copy_paths(),
+        ] {
             assert!(labels.iter().any(|label| label == offered), "{offered}");
         }
 
-        pressed_in_the_menu(&mut driven, menu::DELETE_FROM_DISK);
+        pressed_in_the_menu(&mut driven, words::menu::delete_from_disk());
 
         assert_eq!(
             deleting_asked_about(&mut driven),
@@ -3417,15 +3423,15 @@ mod tests {
         assert_eq!(
             menu_labels(&mut driven),
             [
-                menu::PLAY,
-                menu::PLAY_NEXT,
-                menu::ADD_TO_QUEUE,
+                words::menu::play(),
+                words::menu::play_next(),
+                words::menu::add_to_queue(),
                 "",
-                menu::FAVOUR
+                words::menu::favour()
             ]
         );
 
-        pressed_in_the_menu(&mut driven, menu::FAVOUR);
+        pressed_in_the_menu(&mut driven, words::menu::favour());
         driven.until(|root, cx| {
             let library = root.library.read(cx);
             library.favoured_artist(artists[0].id) && library.favoured_artist(artists[1].id)
@@ -3527,15 +3533,15 @@ mod tests {
         assert_eq!(
             menu_labels(&mut driven),
             [
-                menu::PLAY,
-                menu::PLAY_NEXT,
-                menu::ADD_TO_QUEUE,
+                words::menu::play(),
+                words::menu::play_next(),
+                words::menu::add_to_queue(),
                 "",
-                menu::UNFAVOUR
+                words::menu::unfavour()
             ]
         );
 
-        pressed_in_the_menu(&mut driven, menu::ADD_TO_QUEUE);
+        pressed_in_the_menu(&mut driven, words::menu::add_to_queue());
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         assert_eq!(
@@ -3565,7 +3571,7 @@ mod tests {
         );
 
         driven.right_click(named("album", albums[1].id.get()));
-        pressed_in_the_menu(&mut driven, menu::PLAY);
+        pressed_in_the_menu(&mut driven, words::menu::play());
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         assert_eq!(
@@ -3779,7 +3785,11 @@ mod tests {
 
         assert_eq!(
             menu_labels(&mut driven)[..3],
-            [menu::PLAY, menu::PLAY_NEXT, menu::ADD_TO_QUEUE]
+            [
+                words::menu::play(),
+                words::menu::play_next(),
+                words::menu::add_to_queue()
+            ]
         );
     }
 
@@ -3837,7 +3847,7 @@ mod tests {
         driven.click_with(named("artist", artists[0].id.get()), CONTROL);
         driven.click_with(named("artist", artists[1].id.get()), CONTROL);
         driven.right_click(named("artist", artists[0].id.get()));
-        pressed_in_the_menu(&mut driven, menu::UNFAVOUR);
+        pressed_in_the_menu(&mut driven, words::menu::unfavour());
         driven.until(|root, cx| root.library.read(cx).favourited().artists == 1);
 
         assert!(chosen_rows(&mut driven).is_empty());
@@ -4165,10 +4175,14 @@ mod tests {
 
         assert_eq!(
             menu_labels(&mut driven),
-            [menu::PLAY, menu::PLAY_NEXT, menu::ADD_TO_QUEUE]
+            [
+                words::menu::play(),
+                words::menu::play_next(),
+                words::menu::add_to_queue()
+            ]
         );
 
-        pressed_in_the_menu(&mut driven, menu::ADD_TO_QUEUE);
+        pressed_in_the_menu(&mut driven, words::menu::add_to_queue());
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         assert_eq!(

@@ -759,9 +759,11 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
     let signs_in = resonate_tidal::TidalSignIn::default();
     let authorizing = signs_in.authorizing(&client)?;
     said!(
-        "open {} and enter {} to sign in to TIDAL",
-        authorizing.verify_at,
-        authorizing.user_code
+        "{}",
+        crate::words::providers::open_to_sign_in(
+            authorizing.verify_at.to_string(),
+            authorizing.user_code.to_string(),
+        )
     );
 
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -775,8 +777,8 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
     };
     config::store(settings, ConfigKey::TidalRefreshToken, token.into_string())?;
     said!(
-        "signed in; the refresh token is kept in {}",
-        settings.display()
+        "{}",
+        crate::words::providers::signed_in(settings.display().to_string())
     );
     Ok(())
 }

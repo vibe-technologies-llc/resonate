@@ -17,6 +17,7 @@ resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-vault.workspace = true
 resonate-providers.workspace = true
+resonate-words.workspace = true
 rusqlite.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
@@ -26,9 +27,13 @@ unicode-normalization.workspace = true
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
 image.workspace = true
 proptest.workspace = true
+resonate-words-build.workspace = true
 rustfft.workspace = true
 
 [[bench]]

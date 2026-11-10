@@ -1,16 +1,18 @@
 package org.resonate.android.ui
 
+import androidx.annotation.StringRes
 import kotlinx.serialization.Serializable
+import org.resonate.android.R
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.nativecore.defaultTrackFilter
 
 @Serializable
-enum class Mix(val title: String, val subtitle: String) {
-    NEVER_HEARD("Never heard", "There is always something new to find."),
-    MOST_PLAYED("Most played", "The soundtrack to your days."),
-    RECENTLY_ADDED("Recently added", "Fresh arrivals in your library."),
-    HIGH_RESOLUTION("High resolution", "A little more detail.");
+enum class Mix(@StringRes val title: Int, @StringRes val subtitle: Int) {
+    NEVER_HEARD(R.string.settings_inner_never_heard, R.string.mix_never_heard_subtitle),
+    MOST_PLAYED(R.string.settings_inner_most_played, R.string.mix_most_played_subtitle),
+    RECENTLY_ADDED(R.string.settings_inner_recently_added, R.string.mix_recently_added_subtitle),
+    HIGH_RESOLUTION(R.string.mix_high_resolution, R.string.mix_high_resolution_subtitle);
 
     fun filter(): TrackFilter =
         when (this) {

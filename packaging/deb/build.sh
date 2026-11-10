@@ -85,10 +85,10 @@ build_player() {
 
     local libraries
     libraries=$(shared_library_dependencies target/release/resonate)
-    write_control resonate sound "${libraries:+$libraries, }pipewire (>= 0.3.50), libvulkan1" \
+    write_control resonate sound "${libraries:+$libraries, }pipewire (>= 0.3.50), libvulkan1, fonts-inter" \
         'High-fidelity music player with native PipeWire output' \
         'Resonate plays music through PipeWire with a native Wayland interface. Built for x86-64-v3 processors.' \
-        yt-dlp resonate-signin
+        'yt-dlp, deno' 'fonts-jetbrains-mono, resonate-signin'
     seal resonate
 }
 

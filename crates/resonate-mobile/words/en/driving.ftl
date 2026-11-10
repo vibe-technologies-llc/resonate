@@ -1,0 +1,9 @@
+title = Driven by your other devices
+asked = What your other devices may do here
+told = Your other devices drive this one from their list of devices.
+everything = Everything
+everything-means = Play, pause, skip, seek, set the volume and change the queue
+transport = Playback only
+transport-means = Play, pause, skip, seek and set the volume, but not move or remove songs
+nothing = Nothing
+nothing-means = They cannot see or change what plays here

@@ -6,13 +6,14 @@ use std::{
 
 use ahash::AHashMap;
 use gpui::{
-    AnyView, App, BoxShadow, Context, Div, ElementId, IntoElement, MouseButton, Render,
-    SharedString, Stateful, StatefulInteractiveElement, Window, div, point, prelude::*, px, rgb,
+    AnyView, App, Context, Div, ElementId, IntoElement, MouseButton, Render, SharedString,
+    Stateful, StatefulInteractiveElement, Window, div, prelude::*, px, rgb,
 };
 
 use crate::{
     icons::{self, Icon},
     motion, theme,
+    views::kit::{self, Casts as _},
 };
 
 const HINT_GROUP: &str = "hint";
@@ -94,13 +95,7 @@ fn plate(text: SharedString) -> Div {
         .bg(rgb(theme::raised()))
         .border_1()
         .border_color(rgb(theme::soft_edge()))
-        .shadow(vec![BoxShadow {
-            color: theme::shadow(0.45),
-            offset: point(px(0.0), px(4.0)),
-            blur_radius: px(16.0),
-            spread_radius: px(0.0),
-            inset: false,
-        }])
+        .casting(kit::Cast::Slight)
         .font_family(theme::ui_face())
         .text_size(px(theme::text_sm()))
         .line_height(px(theme::text_sm() * 1.45))

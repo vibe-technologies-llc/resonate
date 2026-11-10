@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
-    BoxShadow, Canvas, Context, Div, FontWeight, MouseButton, MouseDownEvent, Pixels, Role,
-    SharedString, Stateful, Window, canvas, div, point, prelude::*, px, relative, rgb,
+    Canvas, Context, Div, FontWeight, MouseButton, MouseDownEvent, Pixels, Role, SharedString,
+    Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::Recording;
 use resonate_library::{Library, Track};
@@ -12,12 +12,13 @@ use crate::{
     icons::{self, Icon},
     theme,
     views::{
-        kit::{self, EndsInAnEllipsis},
+        kit::{self, Casts as _, EndsInAnEllipsis},
         listing::Pictured,
         root::{RootView, framed_cover},
         scrollbar::Scrollbars,
         spoken::Spoken,
     },
+    words,
 };
 
 const READ_EVERY: Duration = Duration::from_secs(1);
@@ -182,9 +183,9 @@ impl RootView {
         };
         let collapsed = self.remote_collapsed;
         let label = if collapsed {
-            "Expand other devices"
+            words::remote::expand()
         } else {
-            "Collapse other devices"
+            words::remote::collapse()
         };
         let mut heading = kit::button(
             "toggle-other-devices",
@@ -193,7 +194,7 @@ impl RootView {
             } else {
                 Icon::ChevronDown
             }),
-            "Other devices",
+            words::remote::other_devices(),
             label,
             kit::Tone::Ghost,
         )
@@ -275,13 +276,7 @@ impl RootView {
             .bg(rgb(theme::raised()))
             .border_1()
             .border_color(rgb(theme::soft_edge()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(12.0)),
-                blur_radius: px(32.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
+            .casting(kit::Cast::Short)
             .occlude()
             .on_mouse_down_out(cx.listener(|_, press: &MouseDownEvent, window, cx| {
                 let at = press.position;
@@ -345,9 +340,9 @@ impl RootView {
         let device = &song.device;
         let id = format!("remote-{}-{at}", device.id);
         let state = if song.zone.sounding {
-            "Playing"
+            words::remote::playing()
         } else {
-            "Paused"
+            words::remote::paused()
         };
         let mark = match device.platform {
             SyncedPlatform::Android | SyncedPlatform::Ios => Icon::Phone,
@@ -407,7 +402,7 @@ impl RootView {
             (
                 "previous",
                 Icon::Previous,
-                "Previous song",
+                words::remote::previous_song(),
                 RemoteKey::Previous,
             ),
             (
@@ -417,17 +412,26 @@ impl RootView {
                 } else {
                     Icon::Play
                 },
-                if song.zone.sounding { "Pause" } else { "Play" },
+                if song.zone.sounding {
+                    words::remote::pause()
+                } else {
+                    words::remote::play()
+                },
                 RemoteKey::Toggle,
             ),
-            ("next", Icon::Next, "Next song", RemoteKey::Next),
+            (
+                "next",
+                Icon::Next,
+                words::remote::next_song(),
+                RemoteKey::Next,
+            ),
         ] {
             let named = format!("{id}-{which}");
-            let saying = format!("{label} on {} · {}", device.name, song.zone.name);
+            let saying = words::remote::control_on(&device.name, label, &song.zone.name);
             let button = if key == RemoteKey::Toggle {
                 kit::lit_mark(SharedString::from(named.clone()), icon, saying)
                     .rounded_full()
-                    .bg(theme::tinted(theme::accent(), 0x18))
+                    .bg(kit::mark_wash(theme::accent()))
             } else {
                 kit::icon_button(SharedString::from(named.clone()), icon, saying)
             };
@@ -464,7 +468,7 @@ impl RootView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(icons::icon(mark, theme::text_sm(), colour))
+                    .child(icons::icon(mark, theme::menu_icon(), colour))
                     .child(remote_line(&device.name, theme::muted()).flex_1().min_w_0())
                     .child(remote_line(state, colour).flex_none()),
             )

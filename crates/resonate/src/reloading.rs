@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use resonate_mpris::{Reloadable, Running};
 
-use crate::Result;
+use crate::{Result, words};
 
 pub(crate) fn delivering<Written>(
     settings: &Path,
@@ -51,30 +51,11 @@ fn deliver(settings: &Path, group: Option<Reloadable>) {
 }
 
 fn taken_by_running(players: &[String]) -> Option<String> {
-    let (first, rest) = players.split_first()?;
-
-    Some(if rest.is_empty() {
-        format!("{first} is running and takes this up")
-    } else {
-        format!("{} are running and take this up", players.join(", "))
-    })
+    (!players.is_empty()).then(|| words::reloading::taken_up(players.len(), players.join(", ")))
 }
 
 fn kept_by_running(players: &[String]) -> Option<String> {
-    let (first, rest) = players.split_first()?;
-
-    Some(if rest.is_empty() {
-        format!(
-            "{first} is running and keeps the settings it started with; it hears this only if it \
-             reads this settings file, once it is started again"
-        )
-    } else {
-        format!(
-            "{} are running and keep the settings they started with; they hear this only if \
-             they read this settings file, once they are started again",
-            players.join(", ")
-        )
-    })
+    (!players.is_empty()).then(|| words::reloading::kept(players.len(), players.join(", ")))
 }
 
 #[cfg(test)]

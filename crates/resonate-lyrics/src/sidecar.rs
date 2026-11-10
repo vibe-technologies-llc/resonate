@@ -1,5 +1,4 @@
 use std::{
-    env,
     ffi::OsStr,
     fs::{self, File},
     io::{self, Read},
@@ -34,9 +33,6 @@ const TIMESTAMPS_SETTLE_IN: Duration = Duration::from_secs(1);
 const SPELLED_AFTER_THE_FILE: usize = 2;
 const SPELLED_IN_A_LANGUAGE: usize = SPELLED_AFTER_THE_FILE;
 const NAMED_AFTER_THE_FILE: usize = SPELLED_IN_A_LANGUAGE + 1;
-const LANGUAGES_LISTED_IN: &str = "LANGUAGE";
-const LOCALE_NAMED_IN: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];
-const THE_PLAIN_LOCALES: [&str; 2] = ["c", "posix"];
 const LONGEST_SUNG_LINE: usize = 150;
 const LONGEST_FIELD_NAME_IN_WORDS: usize = 3;
 const UNSUNG_LINES_AT_MOST_ONE_IN: usize = 4;
@@ -56,20 +52,10 @@ impl Default for Sidecar {
 }
 
 fn languages_the_listener_reads() -> Vec<String> {
-    let named = |variable: &str| env::var(variable).ok().filter(|value| !value.is_empty());
-    let locale = LOCALE_NAMED_IN.into_iter().find_map(named);
-    let plain = locale
-        .as_deref()
-        .and_then(language_of)
-        .is_none_or(|language| THE_PLAIN_LOCALES.contains(&language.as_str()));
-    let listed = named(LANGUAGES_LISTED_IN).filter(|_| !plain);
-
     let mut languages: Vec<String> = Vec::new();
-    for language in listed
+    for language in resonate_words::languages_the_listener_reads()
         .iter()
-        .flat_map(|listed| listed.split(':'))
-        .chain(locale.as_deref())
-        .filter_map(language_of)
+        .filter_map(|tag| language_of(tag))
     {
         if !languages.contains(&language) {
             languages.push(language);

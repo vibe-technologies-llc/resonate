@@ -28,7 +28,6 @@ use crate::{
     theme, toast,
     views::{
         Pane,
-        browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
         gives_way::{SignalWidths, StatusWidths, signal_kept, status_kept},
         hint::Names,
         kit::{self, KeepsItsWidth},
@@ -39,39 +38,10 @@ use crate::{
         slider::{Handle, Pointed},
         spoken::{self, Reading, Spoken},
     },
+    words,
 };
 
 const CONTROL_GROUP: &str = "transport-control";
-
-const PREVIOUS_HINT: &str = keyed!("Previous track", key!(previous));
-
-const NEXT_HINT: &str = keyed!("Next track", key!(next));
-
-const PLAY_HINT: &str = keyed!("Play", key!(play_pause));
-
-const PAUSE_HINT: &str = keyed!("Pause", key!(play_pause));
-
-const QUEUE_HINT: &str = keyed!("Show what is queued", key!(queue));
-
-const QUEUE_OPEN_HINT: &str = keyed!("Back to the pane the queue covered", key!(queue));
-
-pub(crate) const COVER_HINT: &str = "See the cover full size";
-
-const VOLUME_HINT: &str = concat!(
-    keyed!("Mute", "click", key!(mute)),
-    ". ",
-    keyed!("Louder", key!(louder)),
-    ". ",
-    keyed!("Quieter", key!(quieter))
-);
-
-const VOLUME_HINT_WHEELED: &str = concat!(
-    keyed!("Mute", "click", key!(mute)),
-    ". ",
-    keyed!("Louder", "the wheel", key!(louder)),
-    ". ",
-    keyed!("Quieter", "the wheel", key!(quieter))
-);
 
 const VOLUME_ICON_GROUP: &str = "volume-icon";
 
@@ -95,21 +65,6 @@ const TOGGLE_DOT_INSET: f32 = 2.0;
 
 const BY_LINE_SEPARATOR_PADDING: f32 = 6.0;
 
-const UNMUTE_HINT: &str = concat!(
-    "Muted. ",
-    keyed!(
-        "Hear it again",
-        "click",
-        "the wheel",
-        key!(louder),
-        key!(mute)
-    )
-);
-
-const SHOW_TIME_LEFT_HINT: &str = keyed!("Show the time left", "click");
-
-const SHOW_LENGTH_HINT: &str = keyed!("Show the length", "click");
-
 const VOLUME_A_NOTCH: f32 = 0.05;
 
 const PIXELS_A_NOTCH: f32 = 24.0;
@@ -120,30 +75,6 @@ const SECONDS_A_MINUTE: u64 = 60;
 
 const SLEEP_MINUTES: [u64; 5] = [15, 30, 45, 60, 90];
 
-const END_OF_TRACK: &str = "End of track";
-
-const END_OF_QUEUE: &str = "End of queue";
-
-const SLEEP_OFF: &str = "Turn the sleep timer off";
-
-const END_OF_TRACK_READING: &str = "Track";
-
-const END_OF_QUEUE_READING: &str = "Queue";
-
-const PLAYBACK: &str = "Playback";
-
-const NOW_PLAYING: &str = "Now playing";
-
-const SHUFFLE: &str = "Shuffle";
-
-const REPEAT: &str = "Repeat";
-
-const QUEUE: &str = "Queue";
-
-const MUTE: &str = "Mute";
-
-const INSPECT_HINT: &str = "See the whole signal path in the inspector";
-
 fn notches_turned(delta: ScrollDelta) -> f32 {
     match delta {
         ScrollDelta::Lines(lines) => lines.y / LINES_A_WHEEL_NOTCH,
@@ -153,8 +84,8 @@ fn notches_turned(delta: ScrollDelta) -> f32 {
 
 fn inspects(sink: Option<&str>) -> SharedString {
     match sink {
-        Some(sink) => SharedString::from(format!("Playing through {sink} · {INSPECT_HINT}")),
-        None => SharedString::new_static(INSPECT_HINT),
+        Some(sink) => SharedString::from(words::transport::playing_through(sink)),
+        None => SharedString::new_static(words::transport::inspect_hint()),
     }
 }
 
@@ -256,7 +187,7 @@ fn face(face: Face) -> Div {
         ),
         None => drawn
             .bg(rgb(theme::raised()))
-            .child(icons::icon(Icon::Disc, 24.0, theme::faint())),
+            .child(kit::uncovered_mark(theme::now_playing_cover())),
     }
 }
 
@@ -374,7 +305,7 @@ impl RootView {
 
         div()
             .id("playback-bar")
-            .named_as(Role::Group, PLAYBACK, "")
+            .named_as(Role::Group, words::transport::playback(), "")
             .flex()
             .flex_col()
             .flex_none()
@@ -418,12 +349,18 @@ impl RootView {
             .child(self.step(
                 "previous",
                 Icon::Previous,
-                PREVIOUS_HINT,
+                words::transport::previous_hint(key!(previous)),
                 Command::Previous,
                 cx,
             ))
             .child(self.play_button(playing, cx))
-            .child(self.step("next", Icon::Next, NEXT_HINT, Command::Next, cx))
+            .child(self.step(
+                "next",
+                Icon::Next,
+                words::transport::next_hint(key!(next)),
+                Command::Next,
+                cx,
+            ))
     }
 
     fn status(&self, state: &PlayerState, cx: &mut Context<Self>) -> Div {
@@ -468,7 +405,7 @@ impl RootView {
                     "repeat",
                     self.toggle(
                         "repeat",
-                        REPEAT,
+                        words::transport::repeat(),
                         repeat,
                         repeating(state.repeat),
                         state.repeat != RepeatMode::Off,
@@ -493,7 +430,7 @@ impl RootView {
             "shuffle",
             self.toggle(
                 "shuffle",
-                SHUFFLE,
+                words::transport::shuffle(),
                 Icon::Shuffle,
                 shuffling(shuffle),
                 shuffle,
@@ -623,9 +560,8 @@ impl RootView {
             ));
 
         let spoken_as = spoken::listening().then(|| {
-            SharedString::from(format!(
-                "{NOW_PLAYING}: {}",
-                spoken::song(&playing.title, (!idle).then_some(&*playing.artist))
+            SharedString::from(words::transport::now_playing_saying(
+                spoken::song(&playing.title, (!idle).then_some(&*playing.artist)).as_ref(),
             ))
         });
 
@@ -711,7 +647,7 @@ impl RootView {
                             px(theme::text_base()),
                             cx,
                         ),
-                        OPEN_ALBUM_HINT,
+                        words::browser::open_album_hint(),
                         playing.cover.album.map(Selection::Album),
                         cx,
                     ),
@@ -758,14 +694,14 @@ impl RootView {
             .child(kit::linked_title(self.opens(
                 of_the_title,
                 title,
-                OPEN_ALBUM_HINT,
+                words::browser::open_album_hint(),
                 playing.cover.album.map(Selection::Album),
                 cx,
             )))
             .child(kit::linked_subtitle(self.opens(
                 of_the_artist,
                 artist,
-                OPEN_ARTIST_HINT,
+                words::browser::open_artist_hint(),
                 playing.artist_id.map(Selection::Artist),
                 cx,
             )))
@@ -792,7 +728,7 @@ impl RootView {
                     self.opens(
                         of_the_artist,
                         kit::cut_to_fit(playing.artist.clone(), room, font.clone(), size, cx),
-                        OPEN_ARTIST_HINT,
+                        words::browser::open_artist_hint(),
                         playing.artist_id.map(Selection::Artist),
                         cx,
                     ),
@@ -823,7 +759,7 @@ impl RootView {
                 self.opens(
                     of_the_album,
                     kit::cut_to_fit(album, album_room, font, size, cx),
-                    OPEN_ALBUM_HINT,
+                    words::browser::open_album_hint(),
                     playing.cover.album.map(Selection::Album),
                     cx,
                 ),
@@ -930,7 +866,7 @@ impl RootView {
             .overflow_hidden()
             .bg(rgb(theme::raised()))
             .border_1()
-            .border_color(theme::tinted(theme::text(), 0x0c));
+            .border_color(kit::cover_edge());
 
         let drawn = cover
             .pictured()
@@ -976,10 +912,10 @@ impl RootView {
             "magnify-cover",
             faces(frame)
                 .id("magnify-cover")
-                .said_as(Role::Button, COVER_HINT)
+                .said_as(Role::Button, words::transport::cover_hint())
                 .cursor_pointer()
                 .hover(|cover| cover.opacity(kit::LIT))
-                .names(COVER_HINT),
+                .names(words::transport::cover_hint()),
             move |this, _, cx| this.magnify(magnified.clone(), cx),
             cx,
         );
@@ -1143,7 +1079,9 @@ impl RootView {
                 favourite: self.library.read(cx).favours_track(&track),
                 title: SharedString::from(track.title),
                 artist: SharedString::from(
-                    track.artist.unwrap_or_else(|| "Unknown artist".to_owned()),
+                    track
+                        .artist
+                        .unwrap_or_else(|| words::transport::unknown_artist().to_owned()),
                 ),
                 artist_id: track.artist_id,
                 album: album.map(SharedString::from),
@@ -1165,11 +1103,11 @@ impl RootView {
             title: SharedString::from(
                 tags.and_then(|tags| tags.title.clone())
                     .or(stem)
-                    .unwrap_or_else(|| format!("track {}", current.id)),
+                    .unwrap_or_else(|| words::transport::untitled_track(current.id.to_string())),
             ),
             artist: SharedString::from(
                 tags.and_then(|tags| tags.artist.clone())
-                    .unwrap_or_else(|| "Unknown artist".to_owned()),
+                    .unwrap_or_else(|| words::transport::unknown_artist().to_owned()),
             ),
             artist_id: None,
             album: tags
@@ -1191,10 +1129,14 @@ impl RootView {
         let level = self.grabbed_fraction(Handle::Volume).unwrap_or(level);
         let wheeled = cx.global::<ResonateApp>().scroll_volume;
         let muted = self.is_muted(cx);
-        let hint = if wheeled {
-            VOLUME_HINT_WHEELED
-        } else {
-            VOLUME_HINT
+        let hint = match (muted, wheeled) {
+            (true, _) => words::transport::unmute_hint(key!(louder), key!(mute)),
+            (false, true) => {
+                words::transport::volume_hint_wheeled(key!(louder), key!(mute), key!(quieter))
+            }
+            (false, false) => {
+                words::transport::volume_hint(key!(louder), key!(mute), key!(quieter))
+            }
         };
 
         div()
@@ -1235,9 +1177,9 @@ impl RootView {
                             "glyph",
                             muted,
                         ))
-                        .named_as(Role::Button, MUTE, if muted { UNMUTE_HINT } else { hint })
+                        .named_as(Role::Button, words::transport::mute(), &hint)
                         .thrown(muted)
-                        .names(if muted { UNMUTE_HINT } else { hint }),
+                        .names(hint),
                     |this, _, cx| {
                         cx.stop_propagation();
                         this.toggle_mute(cx);
@@ -1319,9 +1261,9 @@ impl RootView {
                     .id("seek-far-end")
                     .when(duration.is_some(), |end| {
                         let hint = if showing_left {
-                            SHOW_LENGTH_HINT
+                            words::transport::show_length_hint()
                         } else {
-                            SHOW_TIME_LEFT_HINT
+                            words::transport::show_time_left_hint()
                         };
 
                         self.in_the_standing_ring(
@@ -1341,7 +1283,7 @@ impl RootView {
         &self,
         id: &'static str,
         glyph: Icon,
-        saying: &'static str,
+        saying: String,
         command: Command,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
@@ -1359,7 +1301,7 @@ impl RootView {
                 icons::icon(glyph, theme::transport_step_icon(), theme::muted()),
                 CONTROL_GROUP,
             ))
-            .said_as(Role::Button, saying)
+            .said_as(Role::Button, &saying)
             .names(saying);
         self.in_the_standing_ring(
             id,
@@ -1371,6 +1313,11 @@ impl RootView {
 
     fn play_button(&self, playing: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         let glyph = if playing { Icon::Pause } else { Icon::Play };
+        let saying = if playing {
+            words::transport::pause_hint(key!(play_pause))
+        } else {
+            words::transport::play_hint(key!(play_pause))
+        };
 
         let button = div()
             .id("play")
@@ -1388,8 +1335,8 @@ impl RootView {
                 "glyph",
                 playing,
             ))
-            .said_as(Role::Button, if playing { PAUSE_HINT } else { PLAY_HINT })
-            .names(if playing { PAUSE_HINT } else { PLAY_HINT });
+            .said_as(Role::Button, &saying)
+            .names(saying);
         self.in_the_standing_ring(
             "play",
             button,
@@ -1403,9 +1350,13 @@ impl RootView {
 
         let toggle = self.toggle(
             "queue",
-            QUEUE,
+            words::transport::queue(),
             Icon::Queue,
-            if open { QUEUE_OPEN_HINT } else { QUEUE_HINT },
+            if open {
+                words::transport::queue_open_hint(key!(queue))
+            } else {
+                words::transport::queue_hint(key!(queue))
+            },
             open,
         );
         let toggle = reorder::takes_a_lift(toggle, LiftedTo::Queue(Placement::Queued), cx);
@@ -1417,7 +1368,7 @@ impl RootView {
         id: &'static str,
         named: &'static str,
         glyph: Icon,
-        saying: &'static str,
+        saying: String,
         active: bool,
     ) -> Stateful<Div> {
         let colour = if active {
@@ -1461,7 +1412,7 @@ impl RootView {
                 "glyph",
                 (glyph, active),
             ))
-            .named_as(Role::Button, named, saying)
+            .named_as(Role::Button, named, &saying)
             .thrown(active)
             .names(saying)
     }
@@ -1469,22 +1420,26 @@ impl RootView {
 
 fn volume_reading(level: f32, muted: bool) -> SharedString {
     if muted {
-        return SharedString::new_static("Muted");
+        return SharedString::new_static(words::transport::muted());
     }
     SharedString::from(format!("{:.0}%", level * 100.0))
 }
 
 fn spoken_position(elapsed: &str, length: Option<String>) -> SharedString {
     match length {
-        Some(length) => SharedString::from(format!("{elapsed} of {length}")),
+        Some(length) => SharedString::from(words::transport::position(elapsed, length)),
         None => SharedString::from(elapsed.to_owned()),
     }
 }
 
 fn shuffle_menu(at: Point<Pixels>, shuffle: bool, smart: SmartShuffle) -> Menu {
-    let mut menu = Menu::at(at).chooses(SHUFFLE_ON, shuffle, move |this, _, cx| {
-        this.send(Command::SetShuffle(!shuffle), cx);
-    });
+    let mut menu = Menu::at(at).chooses(
+        words::transport::shuffle_on(),
+        shuffle,
+        move |this, _, cx| {
+            this.send(Command::SetShuffle(!shuffle), cx);
+        },
+    );
 
     menu = menu.apart();
     for style in ShuffleStyle::ALL {
@@ -1500,53 +1455,62 @@ fn shuffle_menu(at: Point<Pixels>, shuffle: bool, smart: SmartShuffle) -> Menu {
     if smart.style == ShuffleStyle::Smart {
         menu = menu
             .apart()
-            .chooses(SPREAD_ARTISTS, smart.spreads_artists, move |this, _, cx| {
-                this.shuffle_as(
-                    SmartShuffle {
-                        spreads_artists: !smart.spreads_artists,
-                        ..smart
-                    },
-                    cx,
-                );
-            })
-            .chooses(SPREAD_ALBUMS, smart.spreads_albums, move |this, _, cx| {
-                this.shuffle_as(
-                    SmartShuffle {
-                        spreads_albums: !smart.spreads_albums,
-                        ..smart
-                    },
-                    cx,
-                );
-            })
-            .chooses(FRESH_FIRST, smart.fresh_first, move |this, _, cx| {
-                this.shuffle_as(
-                    SmartShuffle {
-                        fresh_first: !smart.fresh_first,
-                        ..smart
-                    },
-                    cx,
-                );
-            });
+            .chooses(
+                words::transport::spread_artists(),
+                smart.spreads_artists,
+                move |this, _, cx| {
+                    this.shuffle_as(
+                        SmartShuffle {
+                            spreads_artists: !smart.spreads_artists,
+                            ..smart
+                        },
+                        cx,
+                    );
+                },
+            )
+            .chooses(
+                words::transport::spread_albums(),
+                smart.spreads_albums,
+                move |this, _, cx| {
+                    this.shuffle_as(
+                        SmartShuffle {
+                            spreads_albums: !smart.spreads_albums,
+                            ..smart
+                        },
+                        cx,
+                    );
+                },
+            )
+            .chooses(
+                words::transport::fresh_first(),
+                smart.fresh_first,
+                move |this, _, cx| {
+                    this.shuffle_as(
+                        SmartShuffle {
+                            fresh_first: !smart.fresh_first,
+                            ..smart
+                        },
+                        cx,
+                    );
+                },
+            );
     }
 
-    menu.apart()
-        .does(Icon::Settings, SHUFFLE_SETTINGS, |this, _, cx| {
+    menu.apart().does(
+        Icon::Settings,
+        words::transport::shuffle_settings(),
+        |this, _, cx| {
             this.set_pane(Pane::Settings, cx);
             this.show_settings(SettingsCategory::Playback, cx);
-        })
+        },
+    )
 }
 
-const SHUFFLE_ON: &str = "Shuffle";
-const SPREAD_ARTISTS: &str = "Spread each artist apart";
-const SPREAD_ALBUMS: &str = "Spread each album apart";
-const FRESH_FIRST: &str = "Songs heard this week come last";
-const SHUFFLE_SETTINGS: &str = "Shuffle settings…";
-
-const fn shuffled_as(style: ShuffleStyle) -> &'static str {
+fn shuffled_as(style: ShuffleStyle) -> &'static str {
     match style {
-        ShuffleStyle::Random => "Random",
-        ShuffleStyle::Smart => "Smart shuffle",
-        ShuffleStyle::Albums => "Album by album",
+        ShuffleStyle::Random => words::transport::random(),
+        ShuffleStyle::Smart => words::transport::smart_shuffle(),
+        ShuffleStyle::Albums => words::transport::album_by_album(),
     }
 }
 
@@ -1555,7 +1519,7 @@ fn sleep_menu(at: Point<Pixels>, sleeping: Option<Asleep>) -> Menu {
     for minutes in SLEEP_MINUTES {
         menu = menu.does(
             Icon::Sleep,
-            format::counted(minutes as usize, "minute", "minutes"),
+            words::transport::minutes(minutes),
             move |this, _, cx| {
                 this.send(
                     Command::SleepUntil(Some(Until::After(Duration::from_secs(
@@ -1569,20 +1533,29 @@ fn sleep_menu(at: Point<Pixels>, sleeping: Option<Asleep>) -> Menu {
 
     menu = menu
         .apart()
-        .does(Icon::Tracks, END_OF_TRACK, |this, _, cx| {
-            this.send(Command::SleepUntil(Some(Until::EndOfTrack)), cx);
-        })
-        .does(Icon::Queue, END_OF_QUEUE, |this, _, cx| {
-            this.send(Command::SleepUntil(Some(Until::EndOfQueue)), cx);
-        });
+        .does(
+            Icon::Tracks,
+            words::transport::end_of_track(),
+            |this, _, cx| {
+                this.send(Command::SleepUntil(Some(Until::EndOfTrack)), cx);
+            },
+        )
+        .does(
+            Icon::Queue,
+            words::transport::end_of_queue(),
+            |this, _, cx| {
+                this.send(Command::SleepUntil(Some(Until::EndOfQueue)), cx);
+            },
+        );
 
     if sleeping.is_none() {
         return menu;
     }
 
-    menu.apart().does(Icon::Close, SLEEP_OFF, |this, _, cx| {
-        this.send(Command::SleepUntil(None), cx);
-    })
+    menu.apart()
+        .does(Icon::Close, words::transport::sleep_off(), |this, _, cx| {
+            this.send(Command::SleepUntil(None), cx);
+        })
 }
 
 fn sleep_reading(asleep: Asleep) -> SharedString {
@@ -1590,55 +1563,42 @@ fn sleep_reading(asleep: Asleep) -> SharedString {
         Until::After(_) => {
             SharedString::from(format::counting_down(asleep.left.unwrap_or_default()))
         }
-        Until::EndOfTrack => SharedString::new_static(END_OF_TRACK_READING),
-        Until::EndOfQueue => SharedString::new_static(END_OF_QUEUE_READING),
+        Until::EndOfTrack => SharedString::new_static(words::transport::end_of_track_reading()),
+        Until::EndOfQueue => SharedString::new_static(words::transport::end_of_queue_reading()),
     }
 }
 
-const fn sleeping_says(sleeping: Option<Asleep>) -> &'static str {
+fn sleeping_says(sleeping: Option<Asleep>) -> &'static str {
     match sleeping {
-        None => "Set a sleep timer",
+        None => words::transport::set_a_sleep_timer(),
         Some(Asleep {
             until: Until::After(_),
             ..
-        }) => "A sleep timer is running — press to change it or turn it off",
+        }) => words::transport::sleep_timer_running(),
         Some(Asleep {
             until: Until::EndOfTrack,
             ..
-        }) => "Playing stops at the end of this track — press to change it or turn it off",
+        }) => words::transport::stops_at_the_end_of_the_track(),
         Some(Asleep {
             until: Until::EndOfQueue,
             ..
-        }) => "Playing stops at the end of the queue — press to change it or turn it off",
+        }) => words::transport::stops_at_the_end_of_the_queue(),
     }
 }
 
-const fn shuffling(shuffle: bool) -> &'static str {
+fn shuffling(shuffle: bool) -> String {
     if shuffle {
-        concat!(
-            "Shuffle is on. ",
-            keyed!("Play the queue in its load order again", key!(shuffle)),
-            ". Right-click or shift-click to choose how it shuffles"
-        )
+        words::transport::shuffle_is_on(key!(shuffle))
     } else {
-        concat!(
-            keyed!("Shuffle the play order", key!(shuffle)),
-            ". Right-click or shift-click to choose how it shuffles"
-        )
+        words::transport::shuffle_is_off(key!(shuffle))
     }
 }
 
-const fn repeating(repeat: RepeatMode) -> &'static str {
+fn repeating(repeat: RepeatMode) -> String {
     match repeat {
-        RepeatMode::Off => concat!("Repeat is off. ", keyed!("Repeat the queue", key!(repeat))),
-        RepeatMode::Queue => concat!(
-            "Repeating the queue. ",
-            keyed!("Repeat the track", key!(repeat))
-        ),
-        RepeatMode::Track => concat!(
-            "Repeating the track. ",
-            keyed!("Turn repeat off", key!(repeat))
-        ),
+        RepeatMode::Off => words::transport::repeat_is_off(key!(repeat)),
+        RepeatMode::Queue => words::transport::repeating_the_queue(key!(repeat)),
+        RepeatMode::Track => words::transport::repeating_the_track(key!(repeat)),
     }
 }
 
@@ -1688,8 +1648,8 @@ fn nothing_playing() -> Playing {
     Playing {
         track: None,
         favourite: false,
-        title: SharedString::new_static("Nothing playing"),
-        artist: SharedString::new_static("Pick a track, or press play on an album"),
+        title: SharedString::new_static(words::transport::nothing_playing()),
+        artist: SharedString::new_static(words::transport::pick_a_track()),
         artist_id: None,
         album: None,
         codec: None,
@@ -1714,11 +1674,11 @@ fn what_plays_menu(
 
     Menu::at(at)
         .when_some(cover, |menu, seen| {
-            menu.does(Icon::Albums, menu::MAGNIFY, move |this, _, cx| {
+            menu.does(Icon::Albums, words::menu::magnify(), move |this, _, cx| {
                 this.magnify(seen.clone(), cx);
             })
         })
-        .does(Icon::Inspector, menu::INSPECT, |this, _, cx| {
+        .does(Icon::Inspector, words::menu::inspect(), |this, _, cx| {
             this.set_pane(Pane::Inspector, cx);
         })
         .apart()
@@ -1748,7 +1708,10 @@ pub(crate) fn copied_on_a_right_click(named: Stateful<Div>, name: SharedString) 
     named.on_mouse_down(MouseButton::Right, move |_, _, cx| {
         cx.stop_propagation();
         clipboard::copy(name.to_string(), cx);
-        toast::tell(Notice::Done(format!("{name} is on the clipboard")), cx);
+        toast::tell(
+            Notice::Done(words::transport::on_the_clipboard(name.as_ref())),
+            cx,
+        );
     })
 }
 
@@ -1788,14 +1751,26 @@ mod tests {
                     node_of(&root.step(
                         "previous",
                         Icon::Previous,
-                        PREVIOUS_HINT,
+                        words::transport::previous_hint(key!(previous)),
                         Command::Previous,
                         cx,
                     )),
                     node_of(&root.play_button(false, cx)),
                     node_of(&root.play_button(true, cx)),
-                    node_of(&root.step("next", Icon::Next, NEXT_HINT, Command::Next, cx)),
-                    node_of(&root.toggle("shuffle", SHUFFLE, Icon::Shuffle, shuffling(true), true)),
+                    node_of(&root.step(
+                        "next",
+                        Icon::Next,
+                        words::transport::next_hint(key!(next)),
+                        Command::Next,
+                        cx,
+                    )),
+                    node_of(&root.toggle(
+                        "shuffle",
+                        words::transport::shuffle(),
+                        Icon::Shuffle,
+                        shuffling(true),
+                        true,
+                    )),
                     node_of(&root.queue_button(cx)),
                     node_of(&root.sleep_button(None, cx)),
                 ]

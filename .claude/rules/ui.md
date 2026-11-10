@@ -23,7 +23,10 @@ is never named.
   - Header: `theme::header_height()`, three columns; wordmark and controls each take sidebar width
     less padding, so the search field (at most `theme::search_width()`) centres on the window.
     Control = `theme::WINDOW_CONTROL` (31, odd so the mark centres on a whole pixel) square.
-    *Resonate* drops `WORDMARK_CAPITALS_CENTRED_BY` to centre capitals on the accent square.
+    *Resonate* drops `WORDMARK_CAPITALS_CENTRED_BY` to centre capitals on the accent square. The square
+    is `theme::wordmark_mark()` and grows with the text size, as the chosen tab's accent bar
+    (`theme::chosen_mark()`, centred in its `sidebar_row`) does: fixed, both read as left behind
+    beside text drawn twice as large.
   - `views/chrome.rs` owns the frame: `theme::RESIZE_BORDER` gutter outside the painted window
     (resize edges, shadow); rounded corners on non-tiled edges. **Shadow is cast by a rim**:
     `shadow_rim` casts the `BoxShadow` from four strips under the content along its edges (gpui's
@@ -49,7 +52,9 @@ is never named.
 - **The sidebar scrolls its middle and keeps its foot.** `RootView::sidebar` holds the tabs in an
   `overflow_y_scroll` region tracked by `sidebar_scroll`, with a `Scrollbars` bar over its edge; the
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
-  vertically scrolls the tabs and leaves the foot above the playback bar.
+  vertically scrolls the tabs and leaves the foot above the playback bar. The two status rows are a
+  pane row's height and inset with a `theme::pane_icon()` mark, so their marks and words line up
+  with the tabs above and *Settings* below; a pinned playlist's row is `theme::pinned_row()`.
 - **A long menu nests what a row rarely needs, one level deep.** `Menu::nests(icon, label, fill)`
   hangs a panel off a row with a chevron (`Takes::Opens`, nothing when `fill` offers nothing): every
   menu is the same groups in the same order, a line between each: what plays (*Play*, *Play
@@ -404,7 +409,8 @@ is never named.
   without a monospace look, and `kit::figure` (body face, `text_xs`, muted) is the one way to draw
   one. JetBrains Mono (`theme::mono`) is drawn only through `kit::code`, for a string read character
   by character: the sync pairing code, the inspector's MusicBrainz ids, ISRC, barcode and catalogue
-  number (`inspector::CODES`) and a container's box kinds. Neither face is embedded, so **the drawn family is
+  number (`inspector::codes`) and a container's box kinds. Neither face is embedded: every package brings
+  them (`packaging.md`), and a build run from the checkout finds what the machine has, so **the drawn family is
   settled once against the machine**: `fonts::settle` walks a ladder per face (Inter, Adwaita Sans,
   Cantarell, ...; JetBrains Mono, Adwaita Mono, ...) against `cx.text_system().all_font_names()` at
   start; neither ladder offers a family the other does (test); a machine with none keeps the wanted
@@ -416,7 +422,25 @@ is never named.
   in `kit::sheet_actions` (right-aligned, the safe gesture first): the Listen, delete and party-offer
   sheets. A panel that floats at a press (a menu, the Sort pop-up) is `kit::floating` (`raised`,
   `soft_edge`, the short shadow, presses stopped). `kit::rule` is the soft hairline between a
-  surface's parts. No view builds a `BoxShadow` for either.
+  surface's parts. `kit::ledger(across, cells)` is figures that belong together on one surface: a
+  `kit::section` cut into lines of `across` equal cells by hairlines (a short last line keeps its
+  empty cells, so the columns hold), used by the Statistics counts, number ones and moments, the
+  inspector's signal path and Wrapped's tallies. The sharing, matching and Wrapped cards and the playlist picker are `kit::sheet`s
+  too (the picker's scrim keeps its own press, which leaves the naming), and the record card is a
+  `kit::floating`. **A shadow is one of three casts and no view builds its own**:
+  `kit::Casts::casting(Cast)` is `Long` (a sheet, the magnified cover, the drop card), `Short` (what
+  floats at a press, the downloads panel, the other-devices card, a cover lifting under the pointer:
+  album, playlist and artist cells alike) or `Slight` (a hint, a toast, the type-ahead and copying
+  pills, the play mark on a playlist's art), all at one strength through `theme::shadow`
+  (`a_shadow_is_cast_by_the_kit_and_no_view_builds_its_own` walks the views; `chrome.rs`'s rim and
+  `focus.rs`'s inset ring are the two that are not casts). **A wash, a veil and a cover's edge have
+  one name each**: `kit::chosen_wash()` under a chosen row (a selected track row, a radio row, a
+  device, a band), `kit::mark_wash(shade)` under a mark standing on its colour (an avatar, the zone
+  switcher while several zones stand, the remote's play mark; never a tinted tile behind an icon
+  that only decorates: an empty pane's mark and a nav row's are drawn bare), `kit::cover_veil()` over a
+  cover (the favourite mark's ground, a download underway), `kit::cover_edge()` the hairline round
+  one, `kit::field_lit()` a field's lit edge, `kit::uncovered_mark(side)` the disc where no picture
+  is.
 - **A control is a `kit::button` in one of four tones; nothing draws its own.** `Tone::Primary` =
   accent fill, the one gesture a heading leads with (*Play*). `Tone::Outlined` = raised secondary
   (*Play next*/*Add to queue*, one pair one tone). `Tone::Destructive` = failure-edged, only for
@@ -446,7 +470,12 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   takes `cursor_default`, no hover style, pointer cursor, listener or focus ring: it must be decided
   where the element is built, as gpui's `hover` has `debug_assert!(hover_style.is_none())`.
   `settings::action` returns the bare greyed button on `busy`, else attaches listener and focus ring
-  (`in_the_ring`).
+  (`in_the_ring`). **A control that takes a press gives under it**: `kit::GivesUnderAPress` is gpui's
+  `active` laying `theme::pressed()` (the hover ground a step further toward the text, held readable
+  by `a_pressed_ground_is_a_step_past_the_hover_and_still_read`) under a ghost, outlined or
+  destructive button, a mark, a pick, a stepper's step, the way back, a nav row and a place link,
+  and a primary button thins its accent a step past its hover. Only the kit applies it; a row or a
+  choice takes none, since its change of state is the answer and a row's press may begin a drag.
   - **Adding and forgetting a folder are not greyed: they wait.** `LibraryModel::add_roots` and
     `forget_root` put the request in `roots_waiting` (`RootWaiting::ToAdd`/`ToForget`) wherever a
     `Work` runs; `take_up_what_waited` runs when a pass hands its `Work` back: a forget first, one at
@@ -528,11 +557,14 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   shrink, only the title growing). A title carries no badge, neither an explicit mark nor a count of
   other copies (those are reached from the row's menu); text cells end in an ellipsis. The playing row draws `listing::playing_mark`
   in the number cell and its title in the accent. Row controls sit in `browser::row_controls`,
-  **always drawn**: they were once hidden until hovered or focused, but gpui's `in_focus` styles an
-  element *inside* the focused one, so they showed on every row while the window itself held the
-  caret and vanished the moment a field did (the search box, the playlist picker's name field), which
-  read as a bug (found on a hosted KWin, the `drive-a-drag` skill's compositor). The star
-  (`favour_mark_under`) alone still waits for the hover.
+  **always drawn, quiet until their row is under the pointer**: `row_controls` draws them at
+  `ROW_CONTROLS_AT_REST` (0.4) and whole on `group_hover(ROW_GROUP)`, so a listing is not a wall of
+  marks and a keyboard ring landing in one still shows where it stands. They were once hidden until
+  hovered or focused, but gpui's `in_focus` styles an element *inside* the focused one, so they
+  showed on every row while the window itself held the caret and vanished the moment a field did
+  (the search box, the playlist picker's name field), which read as a bug (found on a hosted KWin,
+  the `drive-a-drag` skill's compositor). Every row that holds them carries `ROW_GROUP` (a served
+  row too). The star (`favour_mark_under`) alone still waits for the hover.
   - **FORMAT is a sort column** on the tracks pane and Favourites (`Sortable::Format` →
     `SortOrder::Format`); the queue and an opened playlist keep it a plain header, `RowOrder` having
     no format order.
@@ -561,11 +593,18 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   the forward walk. **The walk has the undo keys while the queue is in front**: `undo_edit`/`redo_edit`
   try `put_the_queue_back`/`take_the_queue_out_again` first on `Pane::Queue`. The heading is drawn
   over an emptied queue while a *Put back* step stands, *Clear* and *Save as a playlist* hidden.
-- **A card leaves out what the file does not declare; the inspector's cards stand in one column.**
-  `fields` takes an `Option` per row and draws only what is there, one faint line where a whole card
-  is empty. The inspector stacks the signal path, Source, Output, Bitrate (and its graph),
-  ReplayGain, Heard, Container layout and Tags in one column at most `theme::inspector_column()`
-  (760) wide, centred in the pane (`mx_auto`, so a wide window leaves no gap on one side alone):
+- **A part leaves out what the file does not declare; the inspector is a specification sheet in one
+  column.** `fields` takes an `Option` per row and draws only what is there, one faint line where a
+  whole part is empty. The signal path is a `kit::ledger` of three cells (Source, Processing,
+  Output); under it each part (`inspector::part`) is ruled off from the one above and named in a
+  `PART_MARGIN` (176) margin beside its first row (`margin`, where *Output* also wears its mode's
+  badge), its rows a property list to the right: no boxes, since eight bordered cards of key and
+  value read as a dashboard and the sheet reads as what it is. The analysis pane's cards
+  (`inspector::card`, `beside`) are still cards. The inspector stacks the signal path, Source,
+  Output, Bitrate (and its graph), ReplayGain, Heard, Container layout and Tags in one column at most `theme::inspector_column()`
+  (760) wide, centred in the pane (`mx_auto`, so a wide window leaves no gap on one side alone)
+  under the pane's `kit::heading`, which holds the song's title and by-line where the lyrics,
+  visualiser and analysis panes hold theirs, so the title stands still from one to the next:
   dealt into two columns, cards of one row stood beside cards of eight and left ragged gaps. `beside` (two `flex_col` columns wrapping to one) is the analysis pane's, for its Levels and
   Source.
 - **The inspector is the one pane reading the catalog, not the engine; the *Heard* card is why.** Every
@@ -577,8 +616,15 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   truncates, wraps, measures as one string). Runs are `Search::lit` for that cell's `Column`
   (`library.md`), so a fold-reached name lights the spelling drawn. Only browse panes call it. A run
   is the accent at `FontWeight::MEDIUM`.
-- **The albums pane is a grid whose column count follows the window in the frame it moves.** A
-  `uniform_list` row is `columns` cells of `theme::grid_cover()`. Columns read `RootView::grid_width`,
+- **The albums pane is a grid whose column count follows the window in the frame it moves, and
+  whose cells fill its width.** A `uniform_list` row is `columns` cells of `RootView::grid_side()`:
+  as many `theme::grid_cover()` cells as fit (`browser::columns_across`), each then grown to share
+  what is left (`side_across`, at most `A_CELL_GROWS_AT_MOST` of the cover), so the grid ends where
+  the heading's actions do and never ragged short of the edge; `grid_row()` is the row that side
+  makes. The picture is still decoded once at `Drawn::InAGrid` (twice the cover's device pixels,
+  which a grown cell stays inside), so a resize redraws and decodes nothing. The artists and
+  playlists grids, an artist's records and the suggestion shelves take the same side, each pane
+  holding a `kit::measures_the_grid`. Columns read `RootView::grid_width`,
   a `kit::GridWidth`: the canvas under the list (`kit::measures_the_grid`) writes on prepaint how much
   *narrower than the window* the grid is, and `RootView::region` tells it the window's width whenever
   the pane is built, so a resize draws at the new count the first frame
@@ -587,11 +633,14 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `absolute` and sized by the container, so it measures the same with the list there or not. A cell's
   cover is `Drawn::InAGrid`.
 - **An empty pane says what is missing and what to do, in the Listening Party welcome's shape**
-  (`kit::empty`): the pane's icon in the accent on an accent wash (`kit::empty_mark`, the same mark
-  the party's welcome draws, `EMPTY_MARK_SIDE` round), a short headline naming the state (a level-2
-  heading at `text_xl`, no full stop: *No playlists yet*, *Nothing playing*, *No albums match*), and
-  a sentence naming the gesture that fills it (muted, ending in a full stop), every empty state having
-  one. A failure (the library unread, a decode that stopped, a server or MusicBrainz out of reach) is
+  (`kit::empty`): the pane's icon drawn bare in `faint` (`kit::empty_mark`, the same mark the
+  party's welcome draws; no disc, no wash behind it), a short headline naming the state (a level-2
+  heading at `text_lg`, no full stop: *No playlists yet*, *Nothing playing*, *No albums match*), and
+  a sentence naming the gesture that fills it (`text_sm`, muted, ending in a full stop), every empty
+  state having one. A pane whose heading already leads with the gesture offers it again in the
+  empty state as `Tone::Outlined`, never a second primary (*New playlist*), and counts nothing in
+  its subtitle while it holds nothing. A failure (the library unread, a decode that stopped, a server or MusicBrainz out of reach,
+  a lyric source that did not answer) is
   `kit::trouble`/`trouble_offering`: the same shape with the mark in `theme::failure()`. **A search that matched
   nothing offers the spelling the catalog holds, as a press**: `kit::empty_offering` adds a
   `Tone::Outlined` button *Did you mean Billie Eilish?* from `RootView::nothing_matched`, putting the
@@ -711,10 +760,13 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   is over both). `set_pane` and `show_everything` empty it; the pointer leaving the window empties it
   via `pointer_watch`.
 - **A hint names its key one way, and the key is the one bound.** `keys.rs` is `key!` (`key!(play_pause)`
-  = `space`); `app::bindings` binds through the same `key!`. `keyed!` writes the wording: what the key
-  does, an em dash, the ways (last two joined by *or*): `Louder — the wheel or ctrl-up`; a hint saying
-  more joins such sentences with full stops, a described state first. Both are `concat!`, so hints stay
-  `&'static str` (`every_key_a_hint_names_is_a_key_something_is_bound_to`).
+  = `space`); `app::bindings` binds through the same `key!`. The wording is what the key does, an em
+  dash, the ways (last two joined by *or*): `Louder — the wheel or ctrl-up`; a hint saying more joins
+  such sentences with full stops, a described state first. A hint from a catalog takes each key as a
+  variable (`play-hint = Play — { $keys }`, said as `words::transport::play_hint(key!(play_pause))`),
+  so the key stays the bound one and the words around it translate; `keys::keyed(what, &[ways])`
+  writes the same shape through `keys.ftl` where the words come from elsewhere
+  (`every_key_a_hint_names_is_a_key_something_is_bound_to`).
 - **A control names itself through one seam, and the seam lets go.** `hint::Names` is the only place a
   tooltip is attached (a test walks the crate's sources): gpui's plain `tooltip`, never
   `hoverable_tooltip` (neither press nor scroll takes that one down). `hint::asking` is one atomic
@@ -748,7 +800,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `read_as`, `greyed_for_a_reader`, `chosen_among`, `pictured_as`, `linked_as`, `read_as_typed`,
   `focused_while`) is a no-op while it says no, so a frame with no reader formats
   and allocates nothing for one.
-  - **A control is named by its hint up to the keys**: `said_as` labels it with what precedes `keyed!`'s
+  - **A control is named by its hint up to the keys**: `said_as` labels it with what precedes a hint's
     em dash (`named_by`: *Play — space* is *Play*) and describes it by the whole hint where that says
     more; `named_as` takes a visible label and keeps the hint as the description. The kit names its
     own: `kit::button`/`button_when` and the marks are buttons (greyed = AccessKit's disabled, through
@@ -803,8 +855,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   - **A chart, a card and a run of missing rows are named by what they say.** The Statistics chart
     is the list *Listening by day* (`statistics::listed_days`), each bar a list item placed *n of m*
     labelled by what the hover names (*yesterday · 3 plays · 1h 0m listened*); *Listening by hour*,
-    *Listening by weekday* and *Genres most heard* are lists alike, and a tile says its name and
-    reading (`read_plainly`). A Suggestions card is
+    *Listening by weekday* and *Genres most heard* are lists alike, and a ledger cell says its name
+    and reading (`read_plainly`). A Suggestions card is
     a list item (`("suggestion-card", index)`) of *name, reason, tracks · length* (`said_of`),
     selected where reached. The Missing pane's rows are list items: an album heading *title, owner,
     n missing*, a disc *Disc n*, a track `browser::unheld_said` (*title, artist, not in your
@@ -844,7 +896,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
 - **What is drawn at rest wears a soft edge; `outline` is for the two marks that are nothing but
   their edge.** `outline` (`DRAWN_EDGE`, 3:1) now draws only a switch's track and a radio's ring. A
   button's edge is `border`; everything else that once took `outline` (the search field at rest, a
-  menu, hint, toast, the picker and record cards, the seek and volume rails' and a scan's track, a
+  menu, hint, toast, the record card, the seek and volume rails' and a scan's track, a
   meter's ground, a plot's zero line, a day with no plays) takes `theme::soft_edge()`, `border` a
   quarter of the way to `outline`: at 3:1 each drew a hard bright line, and a surface that floats is
   told by its raised fill and shadow, a rail by what fills it, a field by its fill, mark and words.
@@ -908,8 +960,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`
   (`listing::heard`: one `theme::row_plays()`-wide cell for the tracks pane, both list panes and the
   playlists index); `how_often_and_how_lately` folds the date into it (*12 plays · 3d*, header HEARD,
-  `COUNTS_AS_HEARD`); `format::age` fits it from the `SPANS` table `format::since` reads
-  (`every_span_is_named_both_ways_and_no_two_read_alike`).
+  `COUNTS_AS_HEARD`); `format::age` fits it from the `SPANS` table `format::since` reads, each span
+  naming its two messages in `words/en/format.ftl` (`every_span_is_named_both_ways_and_no_two_read_alike`).
 - **A catalog listing marks the playing track by the row it resolves to, never the queue's id.** The
   tracks pane, Favourites and an opened suggestion compare against `RootView::playing_now`'s `track`,
   the library row `LibraryModel::track_of` weighs out of the queue row's location and span (a resumed
@@ -1009,7 +1061,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     poll.
 - **Playback bar = three columns, transport in the middle.** Now-playing panel and status cluster:
   `flex_1`, zero basis, ≥ `SIDE_AT_LEAST` (180 px), equal halves of what the centre leaves, so the
-  buttons sit on the window's centre line. Centre: basis `theme::transport_centre()` (460), shrinks to
+  buttons sit on the window's centre line. Centre: basis `theme::transport_centre()` (560), shrinks to
   `CENTRE_AT_LEAST` (260), gives way first. A press on the total clock toggles time left
   (`RootView::showing_time_left`, not kept; `format::left` subtracts whole seconds so elapsed plus left is the length shown, and a row opening (`Buffering`) draws and acts as *Pause*); the rail fills its row (`Handle::fills_its_row`). Both
   sides `overflow_hidden`. **The seek rail names the time under the pointer** in a bubble
@@ -1234,15 +1286,23 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   count, a `mod` line. Favourites stacks artists shelf, albums shelf, track rows; its count is all
   three. Its track rows have their own order, `Sorting::favourites` (*Favourited* newest first until a
   header is pressed) and `sorting::favourites_sorted`, a `Sorted` with `#` as `Sortable::Marked`.
-- **Resonate Wrapped is a sheet over the pane, offered from the Statistics heading and never unasked.** `views/wrapped.rs`: `open_wrapped` reads on the background executor and sets `RootView::wrapped`, a `Deck` (the years heard, the review, its slides, the slide shown); `Sheet::Wrapped` keeps the focus, escape closes it, and the plain arrows, which are the seek keys, turn the slide (`turn_the_slide`) because a sheet in front holds them back from the transport. A slide fades in over `HANDS_OVER`, keyed by its place; there is no auto-advance. **The deck is centred over the scrim at one height whatever the slide** (`kit::over_a_scrim`): a stage of `theme::wrapped_stage()` (380, the tallest slide, five ranked rows under a headline and detail) holds each slide centred in it, so the card and its controls stay put as the slides turn and none floats in an empty box; past the window's `DECK_HEIGHT_AT_MOST` the stage gives way and the slide scrolls. A wash of the accent (`the_deck_ground`) lies under the top of the card. The head is a progress segment a slide, lit to the one shown (spoken as *n of m*), the figure and a close mark; a `kit::rule` and the foot close it: the years, *Copy* and *Save card*, a hairline, then *Back* and *Next* (primary) together, *Next* becoming *Done* on the last slide. A slide with no rows or bars is centred and draws its headline at `text_lyric`; the eyebrow is in the accent, and the first ranked row is washed in it. The opening slide draws the year's plays, songs, artists, albums and days as a row of tiles (`tallies_drawn`) in place of its detail line. Each row and bar is a list item saying what it shows. *Copy* takes `YearReview::summary`; *Save card* writes `wrapped_card.rs`'s picture, an SVG written by hand in the worn palette and drawn by `resvg` on the background executor with the system's fonts (`the_arrows_turn_the_slides_and_escape_closes_the_deck_leaving_the_pane_alone`, `a_name_written_on_the_card_cannot_break_out_of_the_drawing`).
+- **Resonate Wrapped is a sheet over the pane, offered from the Statistics heading and never unasked.** `views/wrapped.rs`: `open_wrapped` reads on the background executor and sets `RootView::wrapped`, a `Deck` (the years heard, the review, its slides, the slide shown); `Sheet::Wrapped` keeps the focus, escape closes it, and the plain arrows, which are the seek keys, turn the slide (`turn_the_slide`) because a sheet in front holds them back from the transport. A slide fades in over `HANDS_OVER`, keyed by its place; there is no auto-advance. **The deck is centred over the scrim at one height whatever the slide** (`kit::over_a_scrim`): a stage of `theme::wrapped_stage()` (380, the tallest slide, five ranked rows under a headline and detail) holds each slide centred in it, so the card and its controls stay put as the slides turn and none floats in an empty box; past the window's `DECK_HEIGHT_AT_MOST` the stage gives way and the slide scrolls. The card is the plain sheet, no wash or gradient under it. The head is a progress segment a slide, lit to the one shown (spoken as *n of m*, `slide_of(at, count)`), the figure and a close mark; a `kit::rule` and the foot close it: the years, *Copy* and *Save card*, a hairline, then *Back* and *Next* (primary) together, *Next* becoming *Done* on the last slide. A slide with no rows or bars is centred and draws its headline at `text_lyric`; the eyebrow is in the accent, and the first ranked row is washed in it. The opening slide draws the year's plays, songs, artists, albums and days as one `kit::ledger` of five cells (`tallies_drawn`) in place of its detail line. Each row and bar is a list item saying what it shows. *Copy* takes `YearReview::summary`; *Save card* writes `wrapped_card.rs`'s picture, an SVG written by hand in the worn palette and drawn by `resvg` on the background executor with the system's fonts (`the_arrows_turn_the_slides_and_escape_closes_the_deck_leaving_the_pane_alone`, `a_name_written_on_the_card_cannot_break_out_of_the_drawing`).
 - **The Statistics pane reads top down from one figure to the rankings** (`views/statistics.rs`):
-  *Time listened* and its pace over every day the window spans (`the_pace_of`) beside four counts,
-  the number ones with their art, the chart, the moments (busiest day, longest run, the hour and the
-  day heard most), when in the day and the week, genres beside the sound, tracks, then albums beside
-  artists. **Two columns stand only from `statistics_two_columns()`**, read off the `grid_width` a
+  *Time listened* and its pace over every day the window spans (`the_pace_of`) set on the page at
+  `text_lyric`, no card and no gradient under it, beside four counts; the number ones with their
+  art, the chart, the moments (busiest day, longest run, the hour and the day heard most), when in
+  the day and the week, genres beside the sound, tracks, then albums beside artists. **Figures that
+  belong together are one `kit::ledger`, never a tile each**: the counts, the number ones and the
+  moments are each one bordered surface (`kit::section`'s shape) cut into equal cells by hairlines,
+  `across` cells a line (four, three and four when wide; two, one and two below), a cell an eyebrow
+  over its figure with no icon in a tinted square. **One colour, one meaning holds in a chart**:
+  every meter and bar is the accent (`a_fill`), the first or the peak whole and the rest worn
+  thinner; a genre is not given a hue of its own. **Two columns stand only from `statistics_two_columns()`**, read off the `grid_width` a
   `kit::measures_the_grid` under the pane writes, not a wrapping row (taffy sizes a wrapping flex item
-  at min-content width); below it everything stacks. A ranked row is a `tall_row`, its wash as long as
-  its share of the first row, its by-line the maker and plays. The three lists stay one reach run in
+  at min-content width); below it everything stacks. A ranked row is a `tall_row`: rank, art, name over
+  its by-line (the maker and plays), then a meter `theme::row_plays()` wide filled to its share of
+  the first row and the time heard right-aligned in `theme::row_length()`, so the shares line up as
+  a column instead of a wash of a different length behind every name. The three lists stay one reach run in
   order (`heard_rows`).
 - **The statistics chart is `div`s, not a canvas** (a few dozen discrete bars; a `div` carries a
   `hint::Names` hover free). `a_standing_bar` is every bar of the three charts, the peak lit, the rest
@@ -1253,8 +1313,13 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   history buckets plays by); `Chart::in_calendar` takes one so tests hold the axis to UTC and a zone
   east of it (`a_day_is_dated_in_the_listeners_calendar_rather_than_greenwichs`).
 - **Suggestions: shelves by kind; a card opens onto what it would hold.** `SuggestionKind::ALL` groups
-  cards under *Made for you*, *Rediscover*, *From your listening*, *Eras*, *Genres*, *Artists*, *Sound*, each an eyebrow over a
-  wrapping row. Pressing art or name = `LibraryModel::open_suggestion`: `SavedQuery` kept in a
+  cards under *Made for you*, *Rediscover*, *From your listening*, *Eras*, *Genres*, *Artists*, *Sound*, each a `kit::group_title` over a
+  wrapping row. **A card is a cover cell, not a boxed card with buttons**: the mosaic at
+  `grid_side()`, then the name (lit under the pointer, `pointed.rs`), the reason on one line and the
+  count and length in `faint`, as an album or playlist cell reads; *Play* is `kit::play_on_the_art`
+  (the round accent mark a playlist cell raises too) and the queue and save marks stand on a
+  `kit::cover_veil` in the art's corner, all three shown under the pointer and each stopping the
+  press, so a shelf of twenty lists holds no row of primary buttons. Pressing art or name = `LibraryModel::open_suggestion`: `SavedQuery` kept in a
   `Previewed`, first `PREVIEWED_AT_MOST` (500) rows read on the background executor; `preview_further`
   grows the window whenever the list is drawn within `LOOK_AHEAD` of full. The opened pane draws a way
   back, art at the text column's height (`Drawn::OnThePage`), kind, name, reason, count and length, the
@@ -1266,12 +1331,12 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `with_everything_listed`); *Save* = `Library::save_query` through `LibraryModel::edit`, a taken name a
   `Notice::Trouble`; a card whose search a playlist already fills greys a check.
 - **A suggestion's art is drawn, never stored; a playlist's is the same drawing.** `views/mosaic.rs` is
-  the one builder: `Mosaic` = covers drawn, two accents, a mark, a name; `Framed` = `Alone` (bordered,
-  rounded all round) or `OnACard` (foot square). `suggestion_art` draws covers in
-  `Suggestion::pictured_by` (one whole, or two to four as a 2×2 mosaic) over a 135° gradient between two
-  accents of the worn palette via `theme::hue` (the reason's colour where it has one; a genre's or
-  artist's from `resonate_core::Accent::named_pair`, an FNV hash of the name the phones share). **The gradient is painted only where no cover is** (gpui
-  clips a child to its parent's rectangle, not its rounding). Side = whole pixel, near tile the floor of
+  the one builder: `Mosaic` = covers drawn, a mark, a name, rounded all round. `suggestion_art` draws covers in
+  `Suggestion::pictured_by` (one whole, or two to four as a 2×2 mosaic). **Where no cover is, the
+  ground is neutral**: art with no picture at all is `raised` with its mark in `faint` and its name
+  in `muted`, and a tile a mosaic lacks is `raised` or `hover` by turns, as an album without a cover
+  is a neutral disc (`kit::uncovered_mark`); no gradient and no accent pair is drawn (the phones
+  still name a pair through `resonate_core::Accent::named_pair`). Side = whole pixel, near tile the floor of
   half, far tile the rest (`tile_span`); tile and cover round on the one corner they stand in
   (`Corner::of_tile`). **A frame standing alone draws its hairline over the art, never as its own
   border** (`border_1` shrank the tiles' box and the clip squared three corners): `hairline` =
@@ -1403,7 +1468,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   artist is scoped. `LibraryModel::tracks` = the first; `LibraryModel::listing` = what the tracks pane,
   heading, summary, *Play*, *Shuffle* draw from, so sidebar counts hold however deep the listener goes.
   A scoped album hero draws the owner on its own line via `RootView::opens`; the scoped cover has
-  `COVER_HINT` and `RootView::magnify` (a portrait does not: `Magnified` is an album or a file).
+  `words::transport::cover_hint` and `RootView::magnify` (a portrait does not: `Magnified` is an album or a file).
 - **Album rows = catalog rows merged with the release's missing ones.** `LibraryModel::rows` =
   `Arc<[ListedRow]>` from `album_rows` when the selection is an album: `ListedRow::Held` indexes the
   tracks listing, `Missing` the release rows; `Disc` heads each disc's run (two or more discs, seat
@@ -1438,7 +1503,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     album closes it; its scrim occludes.
   - Artist hero: `profile_line`, `heard_on`, genres from the info mark (`kit::tag`). Where
     `ArtistDetail::releases_unheld` > 0 a `Tone::Ghost` button *N releases not held* (plus *, M more
-    unread*) under `UNHELD_HINT` opens `Pane::Missing`; with unread releases and `can_enrich`, *Read the
+    unread*) under `words::browser::unheld_hint` opens `Pane::Missing`; with unread releases and `can_enrich`, *Read the
     rest* = `read_the_rest_of` (`library.md`). **An artist's services are capped at `SERVICES_SHOWN`
     (4)** (a release's card and the genre card are uncapped). **Each service is the link it was named
     from**: `service_names` keeps the first URL per service beside its `Service::title` (omitting
@@ -1468,7 +1533,10 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   the archive is asked live; title in `theme::faint()`). Pressing one = `land_album_not_held`:
   `Library::open_album_uncovered` on bg (release read whole, landed as an album with release rows and no
   want), then the album opens where each missing song is pressed to be wanted; `want_album` serves a
-  link to an album not held; `fetching_album` reads its songs from `Downloads`. *Tracks* follows the
+  link to an album not held; `fetching_album` reads its songs from `Downloads` for the colour and
+  `told_album` says them as the sidebar does (`downloads::summed_up`: *Downloading… · 9 left* while any song's
+  bytes arrive, *Searching… · N left*, then *N downloaded · N not downloaded*), never one song's state for the
+  whole album. *Tracks* follows the
   held rows with `ListedRow::NotHeld` (*Not in your library · N songs · press one to download it*) and
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
@@ -1704,8 +1772,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     it (`a_found_song_that_landed_is_listed_once_as_the_held_track`); until then, delivered or not, it
     stays listed as found
     (`a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_again`). **A found song's whole row is that
-    press** (`found_row`, `FETCH_FOUND_HINT`); the mark's own press finds the recording already
-    `wanting`; while asked for, the row takes no press. `wanting` holds a task per recording.
+    press** (`found_row`, `words::browser::fetch_found_hint`); the mark's own press finds the recording already
+    `wanting`; while asked for, the row takes no press. **A right press on a found song offers it without playing
+    it** (`found_menu`): *Download and play* (the row's press), *Download* (`want_found` alone, nothing awaited)
+    and *Download from a release* nesting the releases the heart's right press lists
+    (`a_right_press_on_a_song_found_on_musicbrainz_downloads_it_without_waiting_to_play_it`). `wanting` holds a task per recording.
     **A song pressed plays once it lands, if it lands within half a minute.** The row's press, `enter`
     on a found row and on *Top results* call `LibraryModel::fetch_and_play`: `want_found`, then
     `Downloads::play_once_landed` (one song awaited, the latest press winning; the heart, a release
@@ -1716,7 +1787,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     `play_what_was_downloaded`
     (`a_song_pressed_plays_once_it_lands_unless_it_took_longer_than_half_a_minute`,
     `a_found_song_pressed_lands_once_as_the_held_track_and_plays`). While underway the row's cover
-    wears `fetching_over`: a `FETCHING_VEIL` of the background and `Icon::Spinner` turning in the
+    wears `fetching_over`: `kit::cover_veil()` and `Icon::Spinner` turning in the
     accent (`motion.md`).
   - **A search reaches MB as seldom as it can and never leaves the listener looking at nothing.** MB
     answers one request a second, so turns go only to what is still being typed:
@@ -1956,7 +2027,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   drawing method. Tests hold every group to one category, a unique title, its own hint, no key claimed
   twice, every page to groups of its own category, every group drawn once and every category to a
   mark of its own. Rail = `theme::settings_rail()`, a tab list a reader hears (`Role::TabList`, each
-  category a `Role::Tab`, selected where open); `RootView` remembers the open category for the run.
+  category a `Role::Tab`, selected where open), its rows the sidebar's own (`theme::sidebar_row()`
+  tall, `rounded_md`, the label ending in an ellipsis); `RootView` remembers the open category for
+  the run. A filter that finds nothing is a `kit::empty`.
   Body = a column `theme::settings_column()` (720) wide at most, centred in the pane with a measure of
   padding on every side, of `kit::group`s a measure apart, then *Reset <category>* right-aligned at
   its end. Body scrolls under `RootView::settings_scroll`; `show_settings` resets it on category or
@@ -1982,14 +2055,16 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   holds the caret) is every field's frame; `RootView::text_field(id, field, leave)` is every
   settings field: a press focuses the `Field`, a press outside calls `leave` where the field held the
   caret, and the faint *enter* says how a value is given. The settings filter alone draws the frame
-  with its search mark, *ctrl-,* and the clear mark.
+  with its search mark, *ctrl-,* and the clear mark. The same frame holds the playlist naming row,
+  the zone's name, the matching sheet's two fields and the Services pane's search; the header's
+  search keeps its own `raised` fill, at the frame's height and rounding.
 - **A page inside a category opens from a nav row and is left by the way back or escape.** A heavy
   tool is a `Page`: the Equaliser's *Headphone correction* (AutoEq and what is plugged in, the
   preferred measurers), *Your own measurement*, *Measure with a microphone*, *Room correction* (the
   response, where the speakers stand) and *Listening test*; Library's *Rescan, refresh and retag*
   (the files, what online knows, the tags in the files); Sync's *Your devices* (the devices and
-  driving them, what they may drive here). Each is a `kit::nav_row` (`settings-page-<id>`: a mark in
-  an accent wash, the title, `Page::about`, a chevron) in a card titled by `Page::gathered_under`
+  driving them, what they may drive here). Each is a `kit::nav_row` (`settings-page-<id>`: a bare mark in
+  `muted`, the title, `Page::about`, a chevron) in a card titled by `Page::gathered_under`
   where the page's first group stands in the table. `RootView::settings_page` holds the page beside
   the category (`open_the_settings_page`, `leave_the_settings_page`; `show_settings` lets it go, so a
   rail press or another category returns to the category's own page); the heading reads the page's
@@ -2102,7 +2177,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `kit::level_with_the_choice` beside a column whose first line is a `kit::choice_name` (`flex_1`, ends
   in an ellipsis; badges `DEFAULT`, `UNPLUGGED`, `IN USE`, the playing track's verdict `TAKES … AS IS`/
   `CONVERTS` follow on the same line). Each is a row of the group's card, bled to its cell; the chosen
-  row has an accent wash (`kit::CHOSEN_WASH`) and the filled radio as its only marks. Under the name, two `kit::details` lines divided by faint `·`: how the
+  row has an accent wash (`kit::chosen_wash()`) and the filled radio as its only marks. Under the name, two `kit::details` lines divided by faint `·`: how the
   sink is reached, in words (port, the card's profile, whose volume it is), and what it takes, in
   `kit::figure`s (depths/rates via `format::depth` and `SampleRate::kilohertz`, every digit the rate
   holds, so 22.05 kHz is not 22.0). The node name is what the settings file holds, so the row `names`
@@ -2115,8 +2190,8 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   as a `note`; `detail` stays the hover for figures such as the filter's taps. A list/button-row group
   (devices, music folders, scan, bindings, About's readbacks) ends in a `note` of its own, always the
   one `note` builder at `text_sm`. *Lossy sources* = *Artificially enhance lossy files*, with the
-  `EXPERIMENTAL` badge `Group::is_experimental` puts in a header; its options say in words what they
-  take or add, and `LOSSY_ONLY` says that a repaired file is no longer bit-perfect.
+  *Experimental* badge `Group::is_experimental` puts in a header; its options say in words what they
+  take or add, and its note (`lossy-only`) says that a repaired file is no longer bit-perfect.
 - **A palette is shown, not named.** `kit::preview` = a strip of four bands (sidebar, panes, what it
   raises above them, the accent that would be worn) under the palette's name in a card with an accent
   border when worn. An accent is a round `kit::dot_swatch` with a check in `theme::ink_over`'s ink.
@@ -2144,7 +2219,9 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   lands on Tracks instead, hiding the front pane moves off it at once.
 - **gpui scrolls a region and draws no bar, so `views/scrollbar.rs` does.** `Scrollbars::of` reads the
   setting where a pane is built; `vertical`/`horizontal`/`around` answer a bar over the region's edge,
-  or an empty absolute div under `Hidden`. A `horizontal` bar is inset `SHELF_INSET` (24) each side. A
+  or an empty absolute div under `Hidden`. A `horizontal` bar is inset `SHELF_INSET` (24) each side. A list that scrolls inside a
+  sheet or a panel carries one as a pane does: the downloads list, the Sort pop-up's orders, the
+  matching sheet's recordings, the Listen sheet's *Heard earlier*, the playlist picker's rows. A
   bar reads the region's own `ScrollHandle` and paints the thumb in a `canvas`. **Nothing a bar knows
   survives a render** (a builder-made `Cell` is new each frame): it lights by weighing
   `Window::mouse_position` against its bounds in paint, which writes those bounds into a cell the same
@@ -2487,7 +2564,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   playlist row they take the whole reach the row is in). The + on a queue row and an opened-playlist row
   opens the playlist picker; index and opened-playlist headings use + to enter track-browsing mode.
   Albums and artists panes, the queue pane, the album page, artist page and opened suggestion carry
-  neither. Named once in `menu::PLAY_NEXT`/`menu::ADD_TO_QUEUE`: *Play next* = `Placement::Next`; *Add to
+  neither. Named once in `words::menu::play_next`/`add_to_queue`: *Play next* = `Placement::Next`; *Add to
   queue* = `Placement::Queued`. The queue pane marks a row waiting to play next with the *queue next*
   icon where its number would be (`Queued::next`); its heading counts them.
 - **The queue is drawn in the engine's four parts, each under a heading.** Published list =
@@ -2522,7 +2599,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 - **Undo and Redo are drawn in the playlists headings only** (`RootView::undo_edit`/`redo_edit`; Redo only
   while a step is there; each says how many steps stand behind the one it offers, `Undoable::behind`).
   Rows put in a playlist from the tracks or queue pane have no control to press, so the notice names
-  `ctrl-z`. **A narrowed playlist says what a gesture reaches** (`NARROWED_HINT`): Play, Play next, Add
+  `ctrl-z`. **A narrowed playlist says what a gesture reaches** (`words::playlists::narrowed_hint`): Play, Play next, Add
   to queue, Drop shown take the rows shown; Sort, Tidy, Export take the playlist whole. Tidy removes
   missing and repeated rows together in one undoable edit. The sidebar's count is the narrowed one.
 - **A pane hands its rows out by reference count, not cloned per frame.** An opened playlist's rows are

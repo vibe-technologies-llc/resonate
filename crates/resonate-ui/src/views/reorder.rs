@@ -16,34 +16,33 @@ use crate::{
         kit::{self, EndsInAnEllipsis as _},
         root::RootView,
     },
+    words,
 };
 
-pub(crate) const MOVING_HINT: &str = concat!(
-    "Drag a row to where it should play. ",
-    keyed!("Reach a row", key!(reach_above), key!(reach_below)),
-    ". ",
-    keyed!("Reach more of them", key!(widen_above), key!(widen_below)),
-    ". ",
-    keyed!(
-        "Reach further",
+pub(crate) fn moving_hint() -> String {
+    let reaching = words::reorder::moving_reaching(
+        key!(reach_above),
+        key!(reach_below),
+        key!(widen_above),
+        key!(widen_below),
+    );
+    let further = words::reorder::moving_further(
+        key!(reach_everything),
         key!(reach_first),
         key!(reach_last),
         key!(reach_page_above),
-        key!(reach_page_below)
-    ),
-    ". ",
-    keyed!("Reach every row", key!(reach_everything)),
-    ". ",
-    keyed!("Move what is reached", key!(raise_row), key!(lower_row)),
-    ". ",
-    keyed!("Play it", key!(play_reached)),
-    ". ",
-    keyed!("Take it away", key!(drop_reached)),
-    ". ",
-    keyed!("Open its menu", "menu", key!(open_menu)),
-    ". ",
-    keyed!("Reach every row between", "shift-click")
-);
+        key!(reach_page_below),
+    );
+    let acting = words::reorder::moving_acting(
+        key!(drop_reached),
+        key!(lower_row),
+        key!(open_menu),
+        key!(play_reached),
+        key!(raise_row),
+    );
+
+    words::reorder::moving_hint(acting, further, reaching)
+}
 
 const DRAGGING_EDGE: f32 = 36.0;
 
@@ -135,10 +134,10 @@ impl Step {
         }
     }
 
-    const fn saying(self) -> &'static str {
+    fn saying(self) -> String {
         match self {
-            Self::Above => keyed!("Play what is reached one place sooner", key!(raise_row)),
-            Self::Below => keyed!("Play what is reached one place later", key!(lower_row)),
+            Self::Above => words::reorder::one_place_sooner(key!(raise_row)),
+            Self::Below => words::reorder::one_place_later(key!(lower_row)),
         }
     }
 }
@@ -455,7 +454,7 @@ impl AlbumRun {
 fn titled_with_more(first: Option<&str>, held: usize) -> SharedString {
     match (first, held) {
         (Some(title), 0 | 1) => title.to_owned().into(),
-        (Some(title), held) => format!("{title} and {} more", held - 1).into(),
+        (Some(title), held) => words::reorder::titled_and_more(held - 1, title).into(),
         (None, _) => SharedString::default(),
     }
 }
@@ -573,7 +572,7 @@ impl Render for Ghost {
 pub(crate) fn beside(rows: &Chosen) -> Option<SharedString> {
     match rows.count() {
         1 => None,
-        held => Some(SharedString::from(format!("and {} more", held - 1))),
+        held => Some(SharedString::from(words::reorder::and_more(held - 1))),
     }
 }
 

@@ -7,30 +7,18 @@ import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.SharedPlaylistReach
 import org.resonate.android.nativecore.TogetherPerson
 
-private const val YOU = "You"
-private const val A_NAMELESS_PERSON = "Someone"
 private const val NOT_HELD_NAMED_AT_MOST = 5
 
 object TogetherWords {
-    const val SHARED = "Shared"
-    const val FOLLOWED = "Followed"
-    const val NOT_AN_INVITATION = "That is not a Resonate link"
-    const val LINK_NOT_OPENED = "That link could not be opened"
-    const val JOIN_THIS_PARTY_ASKS = "Join this listening party?"
-    const val JOIN_THIS_PARTY_SAYS =
-        "A link asks this phone to stop what it plays and follow someone's party instead. Join only if you were invited."
-    const val NOTHING_TO_PASTE = "The clipboard holds no Resonate link"
-    const val NOT_FOUND_TO_PLAY_NEXT = "That song could not be found here"
-
-    fun connection(connection: PartyConnection): String? =
+    fun connection(words: Words, connection: PartyConnection): String? =
         when (connection) {
             PartyConnection.HERE -> null
-            PartyConnection.CONNECTING -> "Reaching the server…"
-            PartyConnection.RECONNECTING -> "Lost the server; trying again…"
-            PartyConnection.ENDED -> "The party is over"
-            PartyConnection.NO_SUCH_PARTY -> "That party has ended, or was never begun"
-            PartyConnection.TURNED_AWAY -> "The server turned that link away"
-            PartyConnection.SERVER_TOO_OLD -> "The server is too old to hold parties"
+            PartyConnection.CONNECTING -> words.string(R.string.together_reaching_the_server)
+            PartyConnection.RECONNECTING -> words.string(R.string.together_party_reconnecting)
+            PartyConnection.ENDED -> words.string(R.string.together_party_ended)
+            PartyConnection.NO_SUCH_PARTY -> words.string(R.string.together_party_no_such)
+            PartyConnection.TURNED_AWAY -> words.string(R.string.together_party_turned_away)
+            PartyConnection.SERVER_TOO_OLD -> words.string(R.string.together_party_server_too_old)
         }
 
     fun isOver(connection: PartyConnection): Boolean =
@@ -44,65 +32,72 @@ object TogetherWords {
             PartyConnection.SERVER_TOO_OLD -> true
         }
 
-    fun following(following: PartyFollowing): String =
-        when (following) {
-            PartyFollowing.WAITING_FOR_THE_HOST -> "Waiting for the host to play something"
-            PartyFollowing.FINDING -> "Looking for this song"
-            PartyFollowing.NOT_HELD -> "You don't have this song, so you sit it out"
-            PartyFollowing.CANNOT_START_MID_SONG ->
-                "This song can't start part way through here, so you join at the next"
-            PartyFollowing.SAT_OUT -> "Paused here; press play to rejoin"
-            PartyFollowing.HOST_PAUSED -> "The host has paused"
-            PartyFollowing.IN_STEP -> "In step with the host"
-        }
+    fun following(words: Words, following: PartyFollowing): String =
+        words.string(
+            when (following) {
+                PartyFollowing.WAITING_FOR_THE_HOST -> R.string.together_following_waiting
+                PartyFollowing.FINDING -> R.string.together_following_finding
+                PartyFollowing.NOT_HELD -> R.string.together_following_not_held
+                PartyFollowing.CANNOT_START_MID_SONG -> R.string.together_following_not_mid_song
+                PartyFollowing.SAT_OUT -> R.string.together_following_sat_out
+                PartyFollowing.HOST_PAUSED -> R.string.together_following_host_paused
+                PartyFollowing.IN_STEP -> R.string.together_following_in_step
+            }
+        )
 
-    fun partyLine(party: ListeningParty): String =
-        connection(party.connection)
-            ?: if (party.hosting) "You are hosting" else following(party.following)
+    fun partyLine(words: Words, party: ListeningParty): String =
+        connection(words, party.connection)
+            ?: if (party.hosting) words.string(R.string.together_hosting)
+            else following(words, party.following)
 
-    fun roundTrip(milliseconds: ULong): String = "The server answers in $milliseconds ms"
+    fun roundTrip(words: Words, milliseconds: ULong): String =
+        words.string(R.string.together_round_trip, milliseconds.toLong())
 
-    fun person(person: TogetherPerson): String =
+    fun person(words: Words, person: TogetherPerson): String =
         when {
-            person.isMe -> YOU
-            person.name.isBlank() -> A_NAMELESS_PERSON
+            person.isMe -> words.string(R.string.together_person_you)
+            person.name.isBlank() -> words.string(R.string.together_person_nameless)
             else -> person.name
         }
 
-    fun reach(reach: SharedPlaylistReach): String? =
+    fun reach(words: Words, reach: SharedPlaylistReach): String? =
         when (reach) {
             SharedPlaylistReach.REACHED -> null
-            SharedPlaylistReach.WAITING -> "Reaching the server…"
-            SharedPlaylistReach.UNREACHED ->
-                "The server cannot be reached. Edits are kept and go when it can."
-            SharedPlaylistReach.SERVER_TOO_OLD -> "The server is too old to keep shared playlists."
-            SharedPlaylistReach.TURNED_AWAY -> "The server turned this playlist away."
-            SharedPlaylistReach.NO_SERVER ->
-                "This device is set to use no server, so nothing can be shared."
+            SharedPlaylistReach.WAITING -> words.string(R.string.together_reaching_the_server)
+            SharedPlaylistReach.UNREACHED -> words.string(R.string.together_reach_unreached)
+            SharedPlaylistReach.SERVER_TOO_OLD ->
+                words.string(R.string.together_reach_server_too_old)
+            SharedPlaylistReach.TURNED_AWAY -> words.string(R.string.together_reach_turned_away)
+            SharedPlaylistReach.NO_SERVER -> words.string(R.string.together_reach_no_server)
         }
 
-    fun badge(list: SharedPlaylist?, followed: Boolean = false): String? =
+    fun badge(words: Words, list: SharedPlaylist?, followed: Boolean = false): String? =
         when {
-            list == null -> if (followed) FOLLOWED else null
-            list.mayEdit -> SHARED
-            else -> FOLLOWED
+            list == null -> if (followed) words.string(R.string.together_badge_followed) else null
+            list.mayEdit -> words.string(R.string.together_badge_shared)
+            else -> words.string(R.string.together_badge_followed)
         }
 
     fun mayEdit(list: SharedPlaylist?, followed: Boolean): Boolean = list?.mayEdit ?: !followed
 
-    fun notHeld(titles: List<String>): String? {
+    fun notHeld(words: Words, titles: List<String>): String? {
         if (titles.isEmpty()) return null
         val named = titles.take(NOT_HELD_NAMED_AT_MOST).joinToString(", ")
         val more = titles.size - NOT_HELD_NAMED_AT_MOST
-        return if (more > 0) "Not in your library: $named and $more more"
-        else "Not in your library: $named"
+        return if (more > 0) words.plural(R.plurals.together_not_held_and_more, more, named, more)
+        else words.string(R.string.together_not_held, named)
     }
 
-    fun sharingNeedsSync(enabled: Boolean, nearbyOnly: Boolean, online: Boolean): String? =
+    fun sharingNeedsSync(
+        words: Words,
+        enabled: Boolean,
+        nearbyOnly: Boolean,
+        online: Boolean,
+    ): String? =
         when {
-            !enabled -> "Sharing a playlist needs device sync. Turn it on in Devices."
-            nearbyOnly -> "Nothing can be shared while sync stays on this network."
-            !online -> "Sharing a playlist needs online features. Turn them on in Settings."
+            !enabled -> words.string(R.string.together_sharing_needs_sync)
+            nearbyOnly -> words.string(R.string.together_sharing_nearby_only)
+            !online -> words.string(R.string.together_sharing_needs_online)
             else -> null
         }
 }

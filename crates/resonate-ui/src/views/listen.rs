@@ -11,6 +11,7 @@ use resonate_listen::{Heard, Hearing, Listening};
 use crate::{
     Pane, ResonateApp, Setting, SettingsCategory,
     icons::{self, Icon},
+    keys,
     listening::{FOLLOWED_EVERY, Following, Found, Stage, TRIES_ON_A_MISS},
     motion,
     system::sound_system,
@@ -19,56 +20,12 @@ use crate::{
         hint::Names,
         kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::RootView,
+        scrollbar::Scrollbars,
         sheets,
         spoken::{self, Spoken, Urgency},
     },
+    words,
 };
-
-const LISTEN_LABEL: &str = "Listen";
-
-const CLOSE_HINT: &str = keyed!("Close", key!(leave));
-
-const LISTEN_HINT: &str = "Listen to whatever is sounding and name it";
-
-const LISTEN_AGAIN_HINT: &str = "Listen again to whatever is sounding";
-
-const STOP_HINT: &str = "Stop listening";
-
-const FIND_HINT: &str =
-    "Look for it in the library, and on MusicBrainz where the library has not got it";
-
-const OPEN_HINT: &str = "Open the page the service keeps for it";
-
-const SETTINGS_HINT: &str = "Open the Online settings";
-
-const NO_MICROPHONE_HINT: &str = "Connect a microphone, or listen to the desktop";
-
-const EARLIER_HINT: &str = "Look for it in the library";
-
-const SOURCE_LABEL: &str = "Listen to";
-
-const DESKTOP_HINT: &str = "Hear what the desktop is playing";
-
-const MICROPHONE_HINT: &str = "Hear a microphone";
-
-const DEFAULT_MICROPHONE: &str = "Default microphone";
-
-const NO_MICROPHONE: &str = "No microphone is connected.";
-
-const KEEP_LISTENING: &str = "Keep listening";
-
-const KEEP_LISTENING_UNDER: &str = "Name each new song as it starts";
-
-const KEEP_LISTENING_HINT: &str = "Once a song is named, listen again every little while and \
-                                   name the next song that plays, until stopped";
-
-const HEARD_EARLIER: &str = "Heard earlier";
-
-const ASKING: &str = "Asking who it is…";
-
-const ASKING_UNDER: &str = "The clip is with the services that name songs.";
-
-const KEEP_IT_PLAYING: &str = "Keep the music playing while the clip is taken.";
 
 const MICROPHONES_DRAWN_AT_MOST: f32 = 168.0;
 
@@ -86,76 +43,101 @@ const EARLIER_GROUP: &str = "listen-earlier";
 
 const READY: Ending = Ending {
     weight: Weight::Ready,
-    headline: "Ready to listen",
-    sentence: "Play something, then listen to name it.",
+    said: Said::Ready,
     next: Next::Listen,
 };
 
 const NO_MATCH: Ending = Ending {
     weight: Weight::Aside,
-    headline: "No match",
-    sentence: "Nothing that was heard is a song the services know.",
+    said: Said::NoMatch,
     next: Next::ListenAgain,
 };
 
 const NOTHING_HEARD: Ending = Ending {
     weight: Weight::Aside,
-    headline: "Nothing heard",
-    sentence: "Nothing reached the recording. Is anything playing?",
+    said: Said::NothingHeard,
     next: Next::ListenAgain,
 };
 
 const DESKTOP_UNRECORDED: Ending = Ending {
     weight: Weight::Trouble,
-    headline: "Couldn't record",
-    sentence: concat!(
-        "The desktop's sound could not be recorded. Is ",
-        sound_system!(),
-        " there to capture it?"
-    ),
+    said: Said::DesktopUnrecorded,
     next: Next::ListenAgain,
 };
 
 const MICROPHONE_UNRECORDED: Ending = Ending {
     weight: Weight::Trouble,
-    headline: "Couldn't record",
-    sentence: concat!(
-        "The microphone could not be recorded. Is it there for ",
-        sound_system!(),
-        " to capture?"
-    ),
+    said: Said::MicrophoneUnrecorded,
     next: Next::ListenAgain,
 };
 
 const UNREACHED: Ending = Ending {
     weight: Weight::Trouble,
-    headline: "Couldn't reach the services",
-    sentence: "The services that name a song could not be reached. Check the connection, then \
-               listen again.",
+    said: Said::Unreached,
     next: Next::ListenAgain,
 };
 
 const REFUSED: Ending = Ending {
     weight: Weight::Trouble,
-    headline: "The clip was turned away",
-    sentence: "A service that names songs refused it, or answered with nothing readable.",
+    said: Said::Refused,
     next: Next::ListenAgain,
 };
 
 const OFFLINE: Ending = Ending {
     weight: Weight::Aside,
-    headline: "Online is off",
-    sentence: "Turn Online on in the settings to name what is heard.",
+    said: Said::Offline,
     next: Next::OpenTheSettings,
 };
 
 const NO_SERVICE: Ending = Ending {
     weight: Weight::Aside,
-    headline: "Nothing can name songs yet",
-    sentence: "Online was off when this run began, or this build carries no network. Start \
-               Resonate again to name what is heard.",
+    said: Said::NoService,
     next: Next::Nothing,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Said {
+    Ready,
+    NoMatch,
+    NothingHeard,
+    DesktopUnrecorded,
+    MicrophoneUnrecorded,
+    Unreached,
+    Refused,
+    Offline,
+    NoService,
+}
+
+impl Said {
+    fn headline(self) -> &'static str {
+        match self {
+            Self::Ready => words::listen::ready(),
+            Self::NoMatch => words::listen::no_match(),
+            Self::NothingHeard => words::listen::nothing_heard(),
+            Self::DesktopUnrecorded | Self::MicrophoneUnrecorded => {
+                words::listen::could_not_record()
+            }
+            Self::Unreached => words::listen::unreached(),
+            Self::Refused => words::listen::refused(),
+            Self::Offline => words::listen::offline(),
+            Self::NoService => words::listen::no_service(),
+        }
+    }
+
+    fn sentence(self) -> String {
+        match self {
+            Self::Ready => words::listen::ready_more().to_owned(),
+            Self::NoMatch => words::listen::no_match_more().to_owned(),
+            Self::NothingHeard => words::listen::nothing_heard_more().to_owned(),
+            Self::DesktopUnrecorded => words::listen::desktop_unrecorded(sound_system!()),
+            Self::MicrophoneUnrecorded => words::listen::microphone_unrecorded(sound_system!()),
+            Self::Unreached => words::listen::unreached_more().to_owned(),
+            Self::Refused => words::listen::refused_more().to_owned(),
+            Self::Offline => words::listen::offline_more().to_owned(),
+            Self::NoService => words::listen::no_service_more().to_owned(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Weight {
@@ -192,9 +174,18 @@ enum Next {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Ending {
     weight: Weight,
-    headline: &'static str,
-    sentence: &'static str,
+    said: Said,
     next: Next,
+}
+
+impl Ending {
+    fn headline(self) -> &'static str {
+        self.said.headline()
+    }
+
+    fn sentence(self) -> String {
+        self.said.sentence()
+    }
 }
 
 const fn ending_of(stage: &Stage, from: &Listening) -> Option<Ending> {
@@ -251,34 +242,34 @@ fn service_named(by: &SourceId) -> &str {
 
 fn heard_from(from: &Listening, microphones: &[(String, String)]) -> String {
     match from {
-        Listening::Desktop => "the desktop".to_owned(),
+        Listening::Desktop => words::listen::the_desktop().to_owned(),
         Listening::Microphone(Some(node)) => microphones
             .iter()
             .find(|(name, _)| name.as_str() == node.as_str())
-            .map_or_else(|| "the microphone".to_owned(), |(_, said)| said.clone()),
-        Listening::Microphone(None) => "the microphone".to_owned(),
+            .map_or_else(
+                || words::listen::the_microphone().to_owned(),
+                |(_, said)| said.clone(),
+            ),
+        Listening::Microphone(None) => words::listen::the_microphone().to_owned(),
     }
 }
 
 fn recording_said(from: &Listening, microphones: &[(String, String)]) -> String {
-    format!("Listening to {}…", heard_from(from, microphones))
+    words::listen::recording(heard_from(from, microphones))
 }
 
 fn tries_said(nth: u8) -> String {
     match nth {
-        1 => KEEP_IT_PLAYING.to_owned(),
-        _ => format!("Nothing named yet, so trying again: {nth} of {TRIES_ON_A_MISS}."),
+        1 => words::listen::keep_it_playing().to_owned(),
+        _ => words::listen::trying_again(nth, TRIES_ON_A_MISS),
     }
 }
 
 fn following_said(following: &Following) -> Option<String> {
     match following {
         Following::Off => None,
-        Following::Waiting => Some(format!(
-            "Listening for the next song every {} seconds",
-            FOLLOWED_EVERY.as_secs()
-        )),
-        Following::Listening { .. } => Some("Listening for the next song…".to_owned()),
+        Following::Waiting => Some(words::listen::following_every(FOLLOWED_EVERY.as_secs())),
+        Following::Listening { .. } => Some(words::listen::following_now().to_owned()),
     }
 }
 
@@ -370,7 +361,9 @@ fn recording(hearing: &Hearing, said: String, length: Duration, nth: u8) -> Div 
                     .justify_between()
                     .gap_3()
                     .child(headline(said).truncate().ends_in_an_ellipsis())
-                    .child(kit::figure(format!("{} s", seconds_left(length, share)))),
+                    .child(kit::figure(words::listen::seconds_left(seconds_left(
+                        length, share,
+                    )))),
             )
             .child(rail(share))
             .child(under(tries_said(nth))),
@@ -385,9 +378,9 @@ fn asking() -> Div {
         )),
         div()
             .gap_2()
-            .child(headline(ASKING))
+            .child(headline(words::listen::asking()))
             .child(rail(1.0))
-            .child(under(ASKING_UNDER)),
+            .child(under(words::listen::asking_under())),
     )
 }
 
@@ -398,8 +391,8 @@ fn ended(ending: Ending) -> Div {
         stage_tile(tile_mark(mark, shade)),
         div()
             .gap_1()
-            .child(headline(ending.headline))
-            .child(sentence(ending.sentence)),
+            .child(headline(ending.headline()))
+            .child(sentence(ending.sentence())),
     )
 }
 
@@ -425,7 +418,7 @@ fn found_card(found: &Found) -> Div {
                     .text_size(px(theme::text_xs()))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(rgb(theme::faint()))
-                    .child(format!("Named by {}", service_named(&heard.by))),
+                    .child(words::listen::named_by(service_named(&heard.by))),
             )
             .child(
                 div()
@@ -482,7 +475,7 @@ fn earlier_row(at: usize, heard: &Heard) -> Stateful<Div> {
 
     div()
         .id(("listen-earlier", at))
-        .named_as(Role::Button, &said, EARLIER_HINT)
+        .named_as(Role::Button, &said, words::listen::earlier_hint())
         .group(EARLIER_GROUP)
         .flex()
         .flex_none()
@@ -517,7 +510,7 @@ fn earlier_row(at: usize, heard: &Heard) -> Stateful<Div> {
             icons::icon(Icon::Search, theme::menu_icon(), theme::faint()),
             EARLIER_GROUP,
         ))
-        .names(EARLIER_HINT)
+        .names(words::listen::earlier_hint())
 }
 
 impl RootView {
@@ -594,7 +587,7 @@ impl RootView {
 
         let card = kit::sheet()
             .id("listen-sheet")
-            .dialog(LISTEN_LABEL)
+            .dialog(words::listen::listen_label())
             .track_focus(&self.sheet_panels.holding(sheets::LISTEN_PANEL, cx))
             .w(px(theme::listen_width()))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_the_listener(cx)))
@@ -603,10 +596,14 @@ impl RootView {
                     "listen-heading",
                     Icon::Listen,
                     theme::accent(),
-                    LISTEN_LABEL,
+                    words::listen::listen_label(),
                 )
                 .child(self.in_the_pane_ring(
-                    kit::icon_button(sheets::LISTEN_CLOSE, Icon::Close, CLOSE_HINT),
+                    kit::icon_button(
+                        sheets::LISTEN_CLOSE,
+                        Icon::Close,
+                        keys::keyed(words::listen::close(), &[key!(leave)]),
+                    ),
                     |this, _, cx| this.close_the_listener(cx),
                     cx,
                 )),
@@ -646,8 +643,8 @@ impl RootView {
                 kit::button(
                     "listen-stop",
                     Some(Icon::Stop),
-                    "Stop",
-                    STOP_HINT,
+                    words::listen::stop(),
+                    words::listen::stop_hint(),
                     Tone::Outlined,
                 ),
                 |this, _, cx| this.listen.update(cx, |listen, cx| listen.stop(cx)),
@@ -675,16 +672,19 @@ impl RootView {
                     kit::button(
                         "listen-settings",
                         Some(Icon::Settings),
-                        "Open the settings",
-                        SETTINGS_HINT,
+                        words::listen::open_the_settings(),
+                        words::listen::settings_hint(),
                         Tone::Primary,
                     ),
                     |this, _, cx| this.open_the_online_settings(cx),
                     cx,
                 ));
             }
-            Next::Listen => ("Listen", LISTEN_HINT),
-            Next::ListenAgain => ("Listen again", LISTEN_AGAIN_HINT),
+            Next::Listen => (words::listen::listen(), words::listen::listen_hint()),
+            Next::ListenAgain => (
+                words::listen::listen_again(),
+                words::listen::listen_again_hint(),
+            ),
         };
 
         Some(match unheard {
@@ -693,7 +693,7 @@ impl RootView {
                 "listen-again",
                 Some(Icon::Listen),
                 label,
-                NO_MICROPHONE_HINT,
+                words::listen::no_microphone_hint(),
                 Tone::Primary,
             ),
             false => self.in_the_pane_ring(
@@ -720,8 +720,8 @@ impl RootView {
                     kit::button(
                         "listen-open",
                         Some(Icon::Link),
-                        "Open",
-                        OPEN_HINT,
+                        words::listen::open(),
+                        words::listen::open_hint(),
                         Tone::Ghost,
                     ),
                     move |_, _, cx| cx.open_url(&link),
@@ -732,8 +732,8 @@ impl RootView {
                 kit::button(
                     "listen-again",
                     Some(Icon::Listen),
-                    "Listen again",
-                    LISTEN_AGAIN_HINT,
+                    words::listen::listen_again(),
+                    words::listen::listen_again_hint(),
                     Tone::Outlined,
                 ),
                 |this, _, cx| this.listen_now(cx),
@@ -743,8 +743,8 @@ impl RootView {
                 kit::button(
                     "listen-find",
                     Some(Icon::Search),
-                    "Find it",
-                    FIND_HINT,
+                    words::listen::find(),
+                    words::listen::find_hint(),
                     Tone::Primary,
                 ),
                 move |this, window, cx| this.find_what_was_heard(&finding, window, cx),
@@ -795,14 +795,14 @@ impl RootView {
         };
         let desktop = source(
             "listen-desktop",
-            "Desktop",
-            DESKTOP_HINT,
+            words::listen::desktop(),
+            words::listen::desktop_hint(),
             !from.is_a_microphone(),
         );
         let microphone = source(
             "listen-microphone",
-            "Microphone",
-            MICROPHONE_HINT,
+            words::listen::microphone(),
+            words::listen::microphone_hint(),
             from.is_a_microphone(),
         );
         let sources = kit::segmented()
@@ -834,7 +834,7 @@ impl RootView {
                     .items_center()
                     .justify_between()
                     .gap_3()
-                    .child(setting_named(SOURCE_LABEL, None))
+                    .child(setting_named(words::listen::source_label(), None))
                     .child(sources),
             )
             .when(from.is_a_microphone(), |sources| {
@@ -864,8 +864,8 @@ impl RootView {
                     div()
                         .id("listen-no-microphone")
                         .debug_selector(|| "listen-no-microphone".into())
-                        .read_plainly(NO_MICROPHONE)
-                        .child(sentence(NO_MICROPHONE)),
+                        .read_plainly(words::listen::no_microphone())
+                        .child(sentence(words::listen::no_microphone())),
                 )
                 .into_any_element();
         }
@@ -891,7 +891,7 @@ impl RootView {
                         .child(self.microphone_row(
                             kit::radio_row(
                                 "listen-microphone-default",
-                                DEFAULT_MICROPHONE,
+                                words::listen::default_microphone(),
                                 held.is_none(),
                             ),
                             Listening::Microphone(None),
@@ -940,19 +940,31 @@ impl RootView {
     ) -> Stateful<Div> {
         let row = div()
             .id("listen-keep")
-            .named_as(Role::Switch, KEEP_LISTENING, KEEP_LISTENING_HINT)
+            .named_as(
+                Role::Switch,
+                words::listen::keep_listening(),
+                words::listen::keep_listening_hint(),
+            )
             .thrown(keeps)
             .flex()
             .items_center()
             .justify_between()
             .gap_3()
+            .mx(px(-EARLIER_ROW_INSET))
+            .px(px(EARLIER_ROW_INSET))
+            .py_1p5()
+            .rounded_md()
             .cursor_pointer()
+            .hover(|row| row.bg(rgb(theme::hover())))
             .child(setting_named(
-                KEEP_LISTENING,
-                Some(following_said(following).unwrap_or_else(|| KEEP_LISTENING_UNDER.to_owned())),
+                words::listen::keep_listening(),
+                Some(
+                    following_said(following)
+                        .unwrap_or_else(|| words::listen::keep_listening_under().to_owned()),
+                ),
             ))
             .child(kit::switch("listen-keep-track", keeps))
-            .names(KEEP_LISTENING_HINT);
+            .names(words::listen::keep_listening_hint());
 
         self.in_the_pane_ring(row, |this, _, cx| this.keep_listening(cx), cx)
     }
@@ -964,9 +976,9 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_0p5()
-                .mx(px(-EARLIER_ROW_INSET))
                 .max_h(px(EARLIER_DRAWN_AT_MOST))
-                .overflow_y_scroll(),
+                .overflow_y_scroll()
+                .track_scroll(&self.heard_earlier_scroll),
             |rows, (at, found)| {
                 let finding = found.clone();
                 rows.child(self.in_the_pane_ring(
@@ -984,8 +996,17 @@ impl RootView {
             .pt_4()
             .border_t_1()
             .border_color(rgb(theme::soft_edge()))
-            .child(kit::eyebrow(HEARD_EARLIER))
-            .child(rows)
+            .child(kit::eyebrow(words::listen::heard_earlier()))
+            .child(
+                div()
+                    .relative()
+                    .mx(px(-EARLIER_ROW_INSET))
+                    .child(rows)
+                    .child(
+                        Scrollbars::of(cx)
+                            .vertical("heard-earlier-scrollbar", self.heard_earlier_scroll.clone()),
+                    ),
+            )
     }
 }
 
@@ -1005,7 +1026,7 @@ fn listen_stage(
                 Urgency::Told,
             )
         }
-        Stage::Asking => (asking(), ASKING.to_owned(), Urgency::Told),
+        Stage::Asking => (asking(), words::listen::asking().to_owned(), Urgency::Told),
         Stage::Found(found) => (
             found_card(found),
             spoken::song(&found.heard.title, found.heard.artist.as_deref()).to_string(),
@@ -1015,7 +1036,7 @@ fn listen_stage(
             let ending = ending_of(stage, from).unwrap_or(READY);
             (
                 ended(ending),
-                format!("{}. {}", ending.headline, ending.sentence),
+                words::listen::ended(ending.headline(), ending.sentence()),
                 ending.weight.urgency(),
             )
         }
@@ -1072,10 +1093,10 @@ mod tests {
             for from in [Listening::Desktop, Listening::Microphone(None)] {
                 let ending = ending_of(stage, &from).expect("an ending says how it ended");
 
-                assert!(!ending.headline.ends_with('.'), "{stage:?}");
-                assert!(ending.sentence.ends_with(['.', '?']), "{stage:?}");
+                assert!(!ending.headline().ends_with('.'), "{stage:?}");
+                assert!(ending.sentence().ends_with(['.', '?']), "{stage:?}");
                 assert_eq!(
-                    ending.headline.chars().next().map(char::is_uppercase),
+                    ending.headline().chars().next().map(char::is_uppercase),
                     Some(true),
                     "{stage:?}"
                 );

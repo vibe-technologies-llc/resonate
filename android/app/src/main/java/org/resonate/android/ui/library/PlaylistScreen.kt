@@ -1,20 +1,20 @@
 package org.resonate.android.ui.library
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -27,9 +27,10 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,21 +49,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.Alignment
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.resonate.android.LinkedPlaylistWords
+import org.resonate.android.R
 import org.resonate.android.TogetherWords
+import org.resonate.android.Words
 import org.resonate.android.nativecore.PlaylistLinkInfo
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.CollectionRow
@@ -73,20 +76,20 @@ import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.RowSelection
 import org.resonate.android.ui.components.SelectionRemoval
 import org.resonate.android.ui.components.SongSelectionBar
-import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.components.rememberReorder
-import org.resonate.android.ui.theme.ArtworkTheme
-import org.resonate.android.ui.theme.rememberSeedOf
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.reorderActions
 import org.resonate.android.ui.components.reorderable
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.ui.theme.ArtworkTheme
+import org.resonate.android.ui.theme.rememberSeedOf
 import org.resonate.android.ui.together.SharingSheet
+import org.resonate.android.words
 
 @Composable
 fun PlaylistScreen(screen: Screen.Playlist) {
@@ -125,6 +128,11 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             onMove = { from, to -> model.move(from, to, playlist?.revision) },
         )
     LaunchedEffect(screen.id) { model.open() }
+    val words = words()
+    val renameTitle = stringResource(R.string.library_playlist_rename)
+    val editSearchTitle = stringResource(R.string.library_playlist_edit_search_title)
+    val deleted = stringResource(R.string.library_playlist_deleted, name)
+    val undo = stringResource(R.string.library_undo)
     val seed = rememberSeedOf(rememberArtwork(playlist?.covers?.firstOrNull(), 0u, 96))
     ArtworkTheme(seed) {
         CollectionPage(
@@ -144,7 +152,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                             removal =
                                 if (search != null || !mayEdit) null
                                 else
-                                    SelectionRemoval("Remove from playlist") {
+                                    SelectionRemoval(stringResource(R.string.library_playlist_remove)) {
                                         model.removeAll(
                                             selection.picked(entries) { it.key }.map { it.position },
                                             playlist?.revision,
@@ -156,6 +164,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             actions = {
                 OverflowMenu(
                     playlistMenu(
+                        words,
                         sync.takeIf { search == null },
                         fills = search != null,
                         mayEdit = mayEdit,
@@ -164,11 +173,11 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         onPlayNext = { resonate.playNext(tracks) },
                         onQueue = { resonate.addToQueue(tracks) },
                         onAdd = { adding = true },
-                        onRename = { sheets.name("Rename playlist", name) { model.rename(it) } },
+                        onRename = { sheets.name(renameTitle, name) { model.rename(it) } },
                         onEditSearch =
                             search?.let { held ->
                                 {
-                                    sheets.editSearch("Edit saved search", SavedSearchDraft.of(name, held)) { renamed, revised ->
+                                    sheets.editSearch(editSearchTitle, SavedSearchDraft.of(name, held)) { renamed, revised ->
                                         model.revise(renamed, revised)
                                     }
                                 }
@@ -181,7 +190,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         onForgetLink = model::forgetLink,
                         onDelete = { deleting = true },
                     ),
-                    description = "Playlist options",
+                    description = stringResource(R.string.library_playlist_options),
                 )
             },
         ) { rows ->
@@ -191,19 +200,21 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         title = name,
                         overline =
                             when {
-                                search != null -> "Saved search"
-                                shared == null && followed -> "Followed playlist"
-                                shared == null -> "Playlist"
-                                mayEdit -> "Shared playlist"
-                                else -> "Followed playlist"
+                                search != null -> stringResource(R.string.library_saved_search)
+                                shared == null && followed -> stringResource(R.string.library_overline_followed)
+                                shared == null -> stringResource(R.string.library_overline_playlist)
+                                mayEdit -> stringResource(R.string.library_overline_shared)
+                                else -> stringResource(R.string.library_overline_followed)
                             },
-                        summary = collectionSummary(tracks = rows.map { it.track }),
+                        summary = collectionSummary(words, tracks = rows.map { it.track }),
                         onPlay = { resonate.playInOrder(rows.map { it.track }) },
                         onShuffle = { resonate.playShuffled(rows.map { it.track }) },
                         playable = rows.isNotEmpty(),
                         extra =
                             when {
-                                search != null -> { align -> SavedSearchLines(search.text, search.reading(), align) }
+                                search != null -> { align ->
+                                    SavedSearchLines(search.text, search.reading(words), align)
+                                }
                                 link != null -> { align ->
                                     LinkedPlaylistLine(
                                         link = link,
@@ -220,7 +231,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                     }
                     if (search == null && mayEdit && rows.isNotEmpty()) {
                         CollectionRow(
-                            title = "Add songs",
+                            title = stringResource(R.string.library_add_songs),
                             supporting = null,
                             onClick = { adding = true },
                             leading = { IconTile(Icons.AutoMirrored.Rounded.PlaylistAdd) },
@@ -234,8 +245,8 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                     item("empty") {
                         EmptyCollection(
                             detail =
-                                if (search != null) "No song in your library matches this search yet."
-                                else "No song of this playlist is in your library yet.",
+                                if (search != null) stringResource(R.string.library_playlist_search_matches_nothing)
+                                else stringResource(R.string.library_playlist_nothing_held),
                         )
                     }
                 }
@@ -246,7 +257,9 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         onClick = { resonate.playback.play(tracks, entry.position) },
                         playing = entry.track.id == playing,
                         trailing = {
-                            IconButton(onClick = { sheets.song(entry.track) }) { Icon(Icons.Rounded.MoreVert, "More options") }
+                            IconButton(onClick = { sheets.song(entry.track) }) {
+                                Icon(Icons.Rounded.MoreVert, stringResource(R.string.library_more_options))
+                            }
                         },
                         selection = selection.row(entry.key),
                     )
@@ -256,7 +269,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             if (rows.isEmpty()) {
                 item("empty") {
                     EmptyCollection(
-                        detail = "Add songs to shape this playlist.",
+                        detail = stringResource(R.string.library_playlist_shape),
                         action = {
                             Button(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
                                 AddSongsLabel()
@@ -298,8 +311,8 @@ fun PlaylistScreen(screen: Screen.Playlist) {
         AlertDialog(
             onDismissRequest = { deleting = false },
             icon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
-            title = { Text("Delete “$name”?") },
-            text = { Text("Your music files will stay in your library.") },
+            title = { Text(stringResource(R.string.library_playlist_delete_title, name)) },
+            text = { Text(stringResource(R.string.library_playlist_delete_detail)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -309,18 +322,20 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         lasting.launch {
                             val answer =
                                 sheets.snackbar.showSnackbar(
-                                    "Deleted “$name”",
-                                    actionLabel = "Undo",
+                                    deleted,
+                                    actionLabel = undo,
                                     duration = SnackbarDuration.Long,
                                 )
                             if (answer == SnackbarResult.ActionPerformed) model.undoDeletion()
                         }
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.library_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } },
+            dismissButton = {
+                TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.library_cancel)) }
+            },
         )
     }
 }
@@ -329,7 +344,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
 private fun SavedSearchLines(text: String, reading: String, align: TextAlign) {
     Column(Modifier.fillMaxWidth()) {
         Text(
-            text.ifBlank { "Every song" },
+            text.ifBlank { stringResource(R.string.library_playlist_every_song) },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = align,
@@ -353,9 +368,10 @@ private fun LinkedPlaylistLine(
     align: TextAlign,
     onRefresh: () -> Unit,
 ) {
+    val refreshingFrom = stringResource(R.string.library_playlist_refreshing_from, link.service)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            LinkedPlaylistWords.line(link),
+            LinkedPlaylistWords.line(words(), link),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = align,
@@ -365,7 +381,7 @@ private fun LinkedPlaylistLine(
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
             if (refreshing) {
                 CircularProgressIndicator(
-                    Modifier.size(24.dp).semantics { contentDescription = "Refreshing from ${link.service}" }
+                    Modifier.size(24.dp).semantics { contentDescription = refreshingFrom }
                 )
             } else {
                 IconButton(
@@ -373,7 +389,10 @@ private fun LinkedPlaylistLine(
                     enabled = online,
                     modifier = Modifier.testTag("playlist-link-refresh"),
                 ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh from ${link.service}")
+                    Icon(
+                        Icons.Rounded.Refresh,
+                        contentDescription = stringResource(R.string.library_playlist_refresh_from, link.service),
+                    )
                 }
             }
         }
@@ -384,10 +403,11 @@ private fun LinkedPlaylistLine(
 private fun AddSongsLabel() {
     Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
     Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-    Text("Add songs")
+    Text(stringResource(R.string.library_add_songs))
 }
 
 private fun playlistMenu(
+    words: Words,
     sync: PlaylistSyncView?,
     fills: Boolean,
     mayEdit: Boolean,
@@ -408,25 +428,63 @@ private fun playlistMenu(
 ): List<List<MenuEntry>> =
     listOf(
         listOf(
-            MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay, run = onPlayNext),
-            MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic, run = onQueue),
+            MenuEntry.Action(
+                words.string(R.string.library_play_next),
+                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                run = onPlayNext,
+            ),
+            MenuEntry.Action(
+                words.string(R.string.library_add_to_queue),
+                Icons.AutoMirrored.Rounded.QueueMusic,
+                run = onQueue,
+            ),
         ),
-        listOfNotNull(onShare?.let { MenuEntry.Action("Share", Icons.Rounded.Share, run = it) }),
+        listOfNotNull(
+            onShare?.let { MenuEntry.Action(words.string(R.string.library_share), Icons.Rounded.Share, run = it) }
+        ),
         if (!mayEdit) emptyList()
         else
             listOfNotNull(
-                if (fills) null else MenuEntry.Action("Add songs", Icons.AutoMirrored.Rounded.PlaylistAdd, run = onAdd),
-                onEditSearch?.let { MenuEntry.Action("Edit search", Icons.Rounded.Edit, run = it) },
-                MenuEntry.Action("Rename", Icons.Rounded.Edit, run = onRename),
-                MenuEntry.Action("Undo last edit", Icons.AutoMirrored.Rounded.Undo, run = onUndo),
+                if (fills) null
+                else
+                    MenuEntry.Action(
+                        words.string(R.string.library_add_songs),
+                        Icons.AutoMirrored.Rounded.PlaylistAdd,
+                        run = onAdd,
+                    ),
+                onEditSearch?.let {
+                    MenuEntry.Action(words.string(R.string.library_playlist_edit_search), Icons.Rounded.Edit, run = it)
+                },
+                MenuEntry.Action(
+                    words.string(R.string.library_playlist_rename_short),
+                    Icons.Rounded.Edit,
+                    run = onRename,
+                ),
+                MenuEntry.Action(
+                    words.string(R.string.library_playlist_undo_edit),
+                    Icons.AutoMirrored.Rounded.Undo,
+                    run = onUndo,
+                ),
             ),
         if (sync == null) emptyList()
         else
-            listOf<MenuEntry>(MenuEntry.Toggle("Keep songs on this device", Icons.Rounded.DownloadForOffline, sync.kept, onKeep)) +
+            listOf<MenuEntry>(
+                MenuEntry.Toggle(
+                    words.string(R.string.library_playlist_keep_on_device),
+                    Icons.Rounded.DownloadForOffline,
+                    sync.kept,
+                    onKeep,
+                )
+            ) +
                 if (sync.missing > 0u)
                     sync.devices.map { device ->
                         MenuEntry.Action(
-                            "Fetch ${counted(sync.missing, "missing song")} from ${device.name}",
+                            words.plural(
+                                R.plurals.library_playlist_fetch,
+                                sync.missing.toInt(),
+                                sync.missing.toInt(),
+                                device.name,
+                            ),
                             Icons.Rounded.CloudDownload,
                         ) {
                             onFetch(device)
@@ -436,11 +494,28 @@ private fun playlistMenu(
         if (link == null) emptyList()
         else
             listOf(
-                MenuEntry.Toggle("Keep in step with ${link.service}", Icons.Rounded.Sync, link.keptInStep, onKeepInStep),
-                MenuEntry.Action("Forget the link", Icons.Rounded.LinkOff, run = onForgetLink),
+                MenuEntry.Toggle(
+                    words.string(R.string.library_playlist_keep_in_step, link.service),
+                    Icons.Rounded.Sync,
+                    link.keptInStep,
+                    onKeepInStep,
+                ),
+                MenuEntry.Action(
+                    words.string(R.string.library_playlist_forget_link),
+                    Icons.Rounded.LinkOff,
+                    run = onForgetLink,
+                ),
             ),
         if (inShare) emptyList()
-        else listOf(MenuEntry.Action("Delete playlist", Icons.Rounded.Delete, destructive = true, run = onDelete)),
+        else
+            listOf(
+                MenuEntry.Action(
+                    words.string(R.string.library_playlist_delete),
+                    Icons.Rounded.Delete,
+                    destructive = true,
+                    run = onDelete,
+                )
+            ),
     )
 
 @Composable
@@ -464,6 +539,7 @@ private fun PlaylistRow(
         }
     }
     val title = entry.track.shownTitle
+    val words = words()
     SwipeToDismissBox(
         state = dismiss,
         enableDismissFromStartToEnd = false,
@@ -472,13 +548,18 @@ private fun PlaylistRow(
                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 24.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Icon(Icons.Rounded.Delete, "Remove from playlist", tint = MaterialTheme.colorScheme.onErrorContainer)
+                Icon(
+                    Icons.Rounded.Delete,
+                    stringResource(R.string.library_playlist_remove),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
             }
         },
         modifier =
             Modifier.reorderActions(
+                words = words,
                 title = title,
-                removal = "playlist",
+                removal = R.string.reorder_remove_from_playlist,
                 onRemove = onRemove,
                 onMoveUp = if (entry.position > 0) ({ onMove(entry.position - 1) }) else null,
                 onMoveDown = if (entry.position < last) ({ onMove(entry.position + 1) }) else null,
@@ -491,7 +572,9 @@ private fun PlaylistRow(
                 playing = playing,
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onMore) { Icon(Icons.Rounded.MoreVert, "More options") }
+                        IconButton(onClick = onMore) {
+                            Icon(Icons.Rounded.MoreVert, stringResource(R.string.library_more_options))
+                        }
                         handle()
                     }
                 },

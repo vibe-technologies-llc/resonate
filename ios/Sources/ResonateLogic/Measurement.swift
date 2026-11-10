@@ -108,13 +108,13 @@ public enum Measurement {
     public static func told(_ fit: MeasurementFit, toward target: String) -> String {
         let before = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), fit.offByDbBefore)
         let after = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), fit.offByDbAfter)
-        var said = "Fitted \(counted(Int(fit.bands), "band")) toward \(target): off by \(before) dB before, \(after) dB after"
+        var line = said("measurement.fitted", Int(fit.bands), target, before, after)
         if fit.imported.passedOver > 0 {
-            said += " · \(counted(Int(fit.imported.passedOver), "line")) of the file passed over"
+            line += " · " + said("measurement.fitted.passed-over", Int(fit.imported.passedOver))
         }
         if fit.imported.clamped > 0 {
-            said += " · \(counted(Int(fit.imported.clamped), "value")) held to the limits"
+            line += " · " + said("measurement.fitted.clamped", Int(fit.imported.clamped))
         }
-        return said
+        return line
     }
 }

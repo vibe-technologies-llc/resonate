@@ -21,12 +21,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Hearing
-import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
@@ -80,6 +81,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.R
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.RecognitionCandidate
 import org.resonate.android.nativecore.Track
@@ -91,6 +93,7 @@ import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.words
 
 class AnalysisViewModel(resonate: Resonate, private val id: ULong) : ViewModel() {
     private val features = resonate.features
@@ -129,7 +132,7 @@ fun AnalysisScreen(track: ULong) {
     val model = resonateViewModel(key = "analysis-$track") { AnalysisViewModel(it, track) }
     val report by model.report.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
-    Page("Analysis") { padding ->
+    Page(stringResource(R.string.analysis_title)) { padding ->
         if (song == null) {
             MissingSong(padding)
             return@Page
@@ -169,9 +172,18 @@ private fun AnalyseControl(model: AnalysisViewModel, busy: Boolean, done: Boolea
                 Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Reading the whole song", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                progress?.let { "${(it * 100).roundToInt()}% decoded" } ?: "Starting…",
+                                stringResource(R.string.analysis_reading),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                progress?.let {
+                                    stringResource(
+                                        R.string.analysis_decoded,
+                                        (it * 100).roundToInt(),
+                                    )
+                                } ?: stringResource(R.string.analysis_starting),
+
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -179,7 +191,7 @@ private fun AnalyseControl(model: AnalysisViewModel, busy: Boolean, done: Boolea
                         TextButton(onClick = model::cancel, modifier = Modifier.testTag("cancel-analysis")) {
                             Icon(Icons.Rounded.Close, null, Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text("Cancel")
+                            Text(stringResource(R.string.analysis_cancel))
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -194,13 +206,17 @@ private fun AnalyseControl(model: AnalysisViewModel, busy: Boolean, done: Boolea
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("analyse"),
             ) {
-                Icon(Icons.Rounded.Insights, null, Modifier.size(ButtonDefaults.IconSize))
+                Icon(Icons.Rounded.QueryStats, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(if (done) "Analyse again" else "Analyse original audio")
+                Text(
+                    stringResource(
+                        if (done) R.string.analysis_again else R.string.analysis_original_audio
+                    )
+                )
             }
             if (!done) {
                 Text(
-                    "Decodes the whole file once for its waveform, spectrum, loudness and a lossless check.",
+                    stringResource(R.string.analysis_explained),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
@@ -211,21 +227,21 @@ private fun AnalyseControl(model: AnalysisViewModel, busy: Boolean, done: Boolea
 }
 
 private fun LazyListScope.reportItems(report: AnalysisReport) {
-    item(key = "verdict") { VerdictCard(verdictOf(report.verdict)) }
+    item(key = "verdict") { VerdictCard(verdictOf(words(), report.verdict)) }
     item(key = "waveform") {
-        SectionHeader("Waveform")
+        SectionHeader(stringResource(R.string.analysis_waveform))
         Plot { WaveformPlot(report.waveform) }
     }
     item(key = "spectrum") {
-        SectionHeader("Spectrum")
+        SectionHeader(stringResource(R.string.analysis_spectrum))
         Plot { SpectrumPlot(report.spectrum, report.spectrumStepHz) }
     }
     item(key = "metrics") {
-        SectionHeader("Levels")
-        MetricGrid(metricsOf(report))
+        SectionHeader(stringResource(R.string.analysis_levels))
+        MetricGrid(metricsOf(words(), report))
     }
     if (report.findings.isNotEmpty()) {
-        item(key = "findings") { SectionHeader("Findings") }
+        item(key = "findings") { SectionHeader(stringResource(R.string.analysis_findings)) }
         itemsIndexed(report.findings, key = { index, _ -> "finding-$index" }) { _, finding ->
             ListItem(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -277,7 +293,8 @@ private fun Plot(content: @Composable () -> Unit) {
 private fun WaveformPlot(values: List<Float>) {
     val primary = MaterialTheme.colorScheme.primary
     val tertiary = MaterialTheme.colorScheme.tertiary
-    Canvas(Modifier.fillMaxWidth().height(120.dp).semantics { contentDescription = "Waveform of the whole song" }) {
+    val described = stringResource(R.string.analysis_waveform_described)
+    Canvas(Modifier.fillMaxWidth().height(120.dp).semantics { contentDescription = described }) {
         if (values.isEmpty()) return@Canvas
         val step = size.width / values.size
         val middle = size.height / 2
@@ -302,7 +319,8 @@ private fun SpectrumPlot(levels: List<Float>, stepHz: Float) {
     val labels = MaterialTheme.typography.labelSmall.copy(color = scheme.onSurfaceVariant)
     val heights = remember(levels) { spectrumHeights(levels) }
     val marks = remember(levels, stepHz) { spectrumMarks(levels.size, stepHz) }
-    Canvas(Modifier.fillMaxWidth().height(160.dp).semantics { contentDescription = "Average spectrum of the whole song" }) {
+    val described = stringResource(R.string.analysis_spectrum_described)
+    Canvas(Modifier.fillMaxWidth().height(160.dp).semantics { contentDescription = described }) {
         if (heights.size < 2) return@Canvas
         val texts = marks.map { (share, label) -> share to measurer.measure(label, labels) }
         val strip = (texts.maxOfOrNull { it.second.size.height } ?: 0) + 4.dp.toPx()
@@ -376,16 +394,18 @@ private fun Recognition(model: AnalysisViewModel) {
     var typed by rememberSaveable(key) { mutableStateOf(key) }
     val focus = LocalFocusManager.current
     Column {
-        SectionHeader("Recognise this recording")
+        SectionHeader(stringResource(R.string.analysis_recognise_heading))
         Column(Modifier.padding(horizontal = Sizes.gutter)) {
             OutlinedTextField(
                 value = typed,
                 onValueChange = { typed = it },
-                label = { Text("AcoustID key (optional)") },
+                label = { Text(stringResource(R.string.analysis_key)) },
                 supportingText = {
                     Text(
-                        if (key.isBlank()) "Without a key the recording is recognised by ear."
-                        else "Recognition asks AcoustID with your key."
+                        stringResource(
+                            if (key.isBlank()) R.string.analysis_key_absent
+                            else R.string.analysis_key_present
+                        )
                     )
                 },
                 singleLine = true,
@@ -397,7 +417,10 @@ private fun Recognition(model: AnalysisViewModel) {
                         model.saveKey(typed)
                     }),
                 trailingIcon = {
-                    if (typed.trim() != key) TextButton(onClick = { model.saveKey(typed) }) { Text("Save") }
+                    if (typed.trim() != key)
+                        TextButton(onClick = { model.saveKey(typed) }) {
+                            Text(stringResource(R.string.analysis_key_save))
+                        }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -411,11 +434,15 @@ private fun Recognition(model: AnalysisViewModel) {
                 if (listening) LoadingIndicator(Modifier.size(ButtonDefaults.IconSize))
                 else Icon(Icons.Rounded.Hearing, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(if (listening) "Listening…" else "Recognise recording")
+                Text(
+                    stringResource(
+                        if (listening) R.string.analysis_listening else R.string.analysis_recognise
+                    )
+                )
             }
             if (!online) {
                 Text(
-                    "Turn on online features to recognise recordings.",
+                    stringResource(R.string.analysis_offline),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -426,7 +453,7 @@ private fun Recognition(model: AnalysisViewModel) {
             Spacer(Modifier.height(8.dp))
             candidates.forEach { candidate -> CandidateRow(candidate) }
             Text(
-                "Possible matches only. Nothing is written to your files.",
+                stringResource(R.string.analysis_candidates_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
@@ -448,22 +475,30 @@ private fun CandidateRow(candidate: RecognitionCandidate) {
                 overflow = TextOverflow.Ellipsis,
             )
         },
-    ) { Text(song.title.ifBlank { "Untitled recording" }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+    ) {
+        Text(
+            song.title.ifBlank { stringResource(R.string.analysis_untitled) },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
 private fun ScoreBadge(score: UInt) {
+    val described = scoreOf(words(), score)
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         shape = MaterialTheme.shapes.medium,
         modifier =
             Modifier.heightIn(min = Sizes.rowArt).widthIn(min = Sizes.rowArt).semantics {
-                contentDescription = scoreOf(score)
+                contentDescription = described
             },
     ) {
         Box(Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
             Text(
-                "${score.coerceAtMost(100u)}%",
+                stringResource(R.string.analysis_score_badge, score.coerceAtMost(100u).toInt()),
+
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )

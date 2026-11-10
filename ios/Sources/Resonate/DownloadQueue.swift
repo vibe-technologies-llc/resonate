@@ -63,7 +63,7 @@ final class DownloadQueue {
     @ObservationIgnored private var progressShownAt: ContinuousClock.Instant?
     @ObservationIgnored private var progressShownSettled = 0
     @ObservationIgnored private lazy var background = BackgroundHold(
-        name: "Downloading songs",
+        name: said("downloads.background.title"),
         continued: BackgroundHold.downloads
     ) { [weak self] in
         self?.expire()
@@ -340,7 +340,7 @@ final class DownloadQueue {
         background.progress(ContinuedProgress(
             done: done,
             total: Int64(held.count) * Self.progressSteps,
-            subtitle: "\(settled) of \(counted(held.count, "song"))"
+            subtitle: said("downloads.background.progress", settled, held.count)
         ))
     }
 
@@ -460,6 +460,7 @@ final class DownloadQueue {
 final class BackgroundHold {
     static let downloads = "org.resonate.ios.downloads"
     static let transfers = "org.resonate.ios.transfers"
+    private static let log = Logger(subsystem: "org.resonate.ios", category: "background")
     private static var asked: [String: BackgroundHold] = [:]
 
     private let name: String
@@ -526,8 +527,7 @@ final class BackgroundHold {
             machine.submitted(id, accepted: true)
             Self.asked[id] = self
         } catch {
-            Logger(subsystem: "org.resonate.ios", category: "background")
-                .notice("\(self.name, privacy: .public) was not given time to continue: \(error, privacy: .public)")
+            Self.log.notice("\(self.name, privacy: .public) was not given time to continue: \(error, privacy: .public)")
         }
     }
 

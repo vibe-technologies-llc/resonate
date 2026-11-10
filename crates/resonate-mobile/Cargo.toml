@@ -33,6 +33,7 @@ resonate-engine.workspace = true
 resonate-eq.workspace = true
 resonate-cast.workspace = true
 resonate-upnp.workspace = true
+resonate-words.workspace = true
 objc2-core-audio-types.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
@@ -48,8 +49,12 @@ rustix = { workspace = true, features = ["time"] }
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-audio-toolbox.workspace = true
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
 hdf5-writer.workspace = true
+resonate-words-build.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

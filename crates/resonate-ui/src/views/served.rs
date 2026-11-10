@@ -14,7 +14,7 @@ use crate::{
     serving::{Failure, Page, Place, Row, favourites_in},
     theme,
     views::{
-        browser::{FAVOUR_HINT, UNFAVOUR_HINT, controls_width},
+        browser::controls_width,
         hint::Names,
         kit::{self, EndsInAnEllipsis as _, Tone},
         listing,
@@ -23,54 +23,10 @@ use crate::{
         scrollbar::Scrollbars,
         spoken::{self, Spoken as _},
     },
+    words,
 };
 
-const BACK_HINT: &str = "Back to where this was opened from";
-
-const PLAY_HINT: &str = "Play everything here, in order";
-
-const NEXT_HINT: &str = "Play this next";
-
-const QUEUE_HINT: &str = "Add this to the end of the queue";
-
-const OPEN_HINT: &str = "See what the server holds under this";
-
-const PLAY_THIS_HINT: &str = "Play this, and what follows it here";
-
-const NOT_PLAYED_HERE_HINT: &str = "This service's songs are not played from here";
-
-const KEEP_HINT: &str = "Keep this song in the music folder";
-
-const KEEP_ALL_HINT: &str = "Keep every song here in the music folder, as a playlist";
-
-const ASK_AGAIN_HINT: &str = "Ask the server again";
-
-pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter";
-
-const NOTHING_HERE: &str = "Nothing here";
-
-const NOTHING_LISTED: &str = "Search to begin";
-
-const FAVOURITES: &str = "Favourites";
-
-const SEARCH_FIRST: &str =
-    "This service lists nothing until it is asked. Search above for an artist, an album or a song.";
-
-const CHOOSE_HINT: &str = "Browse this service";
-
-const CHOOSE_AMONG_HINT: &str = "Choose which service to browse";
-
 const SEGMENTS_AT_MOST: usize = 3;
-
-const NOTHING_FOUND: &str = "Nothing found";
-
-const ASKING: &str = "Asking the server…";
-
-const ASKING_MORE: &str = "What it holds here appears as soon as it answers.";
-
-const NOTHING_FOUND_MORE: &str = "The service has nothing for that search. Try other words.";
-
-const NOTHING_HERE_MORE: &str = "The service holds nothing under this.";
 
 const SERVER_CONTROLS: usize = 4;
 
@@ -85,16 +41,28 @@ impl RootView {
 
         let heading = self.server_heading(&place, &page, way_back, cx);
         let body = match page {
-            Page::Reading => kit::empty(Icon::Server, ASKING, Some(ASKING_MORE)),
+            Page::Reading => kit::empty(
+                Icon::Server,
+                words::served::asking(),
+                Some(words::served::asking_more()),
+            ),
             Page::Failed(failure) => self.server_failed(failure, cx),
             Page::Read(rows) if rows.is_empty() => match place {
-                Place::Found { .. } => {
-                    kit::empty(Icon::Server, NOTHING_FOUND, Some(NOTHING_FOUND_MORE))
-                }
-                Place::Artists => kit::empty(Icon::Server, NOTHING_LISTED, Some(SEARCH_FIRST)),
-                Place::Artist { .. } | Place::Album { .. } | Place::Mix { .. } => {
-                    kit::empty(Icon::Server, NOTHING_HERE, Some(NOTHING_HERE_MORE))
-                }
+                Place::Found { .. } => kit::empty(
+                    Icon::Server,
+                    words::served::nothing_found(),
+                    Some(words::served::nothing_found_more()),
+                ),
+                Place::Artists => kit::empty(
+                    Icon::Server,
+                    words::served::nothing_listed(),
+                    Some(words::served::search_first()),
+                ),
+                Place::Artist { .. } | Place::Album { .. } | Place::Mix { .. } => kit::empty(
+                    Icon::Server,
+                    words::served::nothing_here(),
+                    Some(words::served::nothing_here_more()),
+                ),
             },
             Page::Read(rows) => self.server_rows_listed(rows, place, cx),
         };
@@ -111,8 +79,8 @@ impl RootView {
                 kit::button(
                     "server-ask-again",
                     None,
-                    "Try again",
-                    ASK_AGAIN_HINT,
+                    words::served::try_again(),
+                    words::served::ask_again_hint(),
                     Tone::Outlined,
                 ),
                 |this, _, cx| this.server.update(cx, |server, cx| server.read_again(cx)),
@@ -133,7 +101,9 @@ impl RootView {
             Page::Reading | Page::Failed(_) => None,
         };
         let title = match (place, page) {
-            (Place::Artists, Page::Read(rows)) if favourites_in(rows) => FAVOURITES.to_owned(),
+            (Place::Artists, Page::Read(rows)) if favourites_in(rows) => {
+                words::served::favourites().to_owned()
+            }
             _ => place.title(),
         };
         let playable = place
@@ -150,15 +120,15 @@ impl RootView {
                     kit::button(
                         "server-play",
                         Some(Icon::Play),
-                        "Play",
-                        PLAY_HINT,
+                        words::served::play(),
+                        words::served::play_hint(),
                         Tone::Primary,
                     ),
                     move |this, _, cx| this.play_what_the_server_holds(playing.clone(), cx),
                     cx,
                 ))
                 .child(self.in_the_pane_ring(
-                    kit::icon_button("server-queue", Icon::QueueLast, QUEUE_HINT),
+                    kit::icon_button("server-queue", Icon::QueueLast, words::served::queue_hint()),
                     move |this, _, cx| {
                         this.queue_what_the_server_holds(queueing.clone(), Placement::Queued, cx);
                     },
@@ -178,8 +148,8 @@ impl RootView {
                 kit::button(
                     "server-keep",
                     Some(Icon::Download),
-                    "Keep",
-                    KEEP_ALL_HINT,
+                    words::served::keep(),
+                    words::served::keep_all_hint(),
                     Tone::Primary,
                 ),
                 move |this, _, cx| {
@@ -213,7 +183,7 @@ impl RootView {
             .when_some(chooser, |heading, chooser| heading.child(chooser))
             .when_some(way_back, |heading, name| {
                 heading.child(self.in_the_pane_ring(
-                    kit::way_back("server-back", name, BACK_HINT),
+                    kit::way_back("server-back", name, words::served::back_hint()),
                     |this, _, cx| {
                         this.server.update(cx, |server, cx| {
                             server.back(cx);
@@ -257,7 +227,7 @@ impl RootView {
                 chooser.child(
                     self.in_the_pane_ring(
                         kit::tab(("served-service", index), title.clone(), index == chosen)
-                            .names(CHOOSE_HINT),
+                            .names(words::served::choose_hint()),
                         move |this, _, cx| this.choose_a_service(index, cx),
                         cx,
                     ),
@@ -270,7 +240,7 @@ impl RootView {
         let shown = titles.get(chosen).cloned().unwrap_or_default();
 
         div().flex().flex_none().child(self.in_the_pane_ring_at(
-            kit::pick("served-service", shown, CHOOSE_AMONG_HINT),
+            kit::pick("served-service", shown, words::served::choose_among_hint()),
             move |this, at, cx| {
                 let menu = services_menu(at, &offered, chosen);
                 this.open_a_menu(menu, cx);
@@ -286,22 +256,8 @@ impl RootView {
     }
 
     fn server_search_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
-            .id(SEARCH_ID)
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_2()
+        kit::framed_field(SEARCH_ID, false)
             .w(theme::width(theme::picker_width()))
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_lg()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
-            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .child(icons::icon(
                 Icon::Search,
                 theme::search_icon(),
@@ -386,9 +342,11 @@ impl RootView {
             .when(!press_does_nothing, |open| open.cursor_pointer())
             .listed_as(move || said.clone())
             .names(match row {
-                Row::Song(_) if !plays => NOT_PLAYED_HERE_HINT,
-                Row::Song(_) => PLAY_THIS_HINT,
-                Row::Heading(_) | Row::Artist(_) | Row::Album(_) | Row::Mix(_) => OPEN_HINT,
+                Row::Song(_) if !plays => words::served::not_played_here_hint(),
+                Row::Song(_) => words::served::play_this_hint(),
+                Row::Heading(_) | Row::Artist(_) | Row::Album(_) | Row::Mix(_) => {
+                    words::served::open_hint()
+                }
             })
             .when_some(song_number, |open, number| {
                 open.child(listing::number_cell(number))
@@ -430,6 +388,10 @@ impl RootView {
 
         let favourite = row.song().cloned();
         row_frame()
+            .group(crate::views::playlists::ROW_GROUP)
+            .when(!press_does_nothing, |row| {
+                row.hover(|row| row.bg(rgb(theme::hover())))
+            })
             .child(open)
             .child(self.server_controls(index, location, favourite, cx))
             .into_any_element()
@@ -455,7 +417,11 @@ impl RootView {
         let keep = keepable.map(|song| {
             let row = Row::Song(song);
             self.in_the_pane_ring(
-                kit::icon_button(("server-row-keep", index), Icon::Download, KEEP_HINT),
+                kit::icon_button(
+                    ("server-row-keep", index),
+                    Icon::Download,
+                    words::served::keep_hint(),
+                ),
                 move |this, _, cx| {
                     this.library
                         .update(cx, |library, cx| library.keep(&row, cx));
@@ -467,7 +433,11 @@ impl RootView {
             favourite.filter(|song| self.server.read(cx).keeps_favourites(&song.location));
         let star = starred.map(|song| {
             let favoured = self.server.read(cx).is_favoured(&song);
-            let saying = if favoured { UNFAVOUR_HINT } else { FAVOUR_HINT };
+            let saying = if favoured {
+                words::browser::unfavour_hint()
+            } else {
+                words::browser::favour_hint()
+            };
             let which = SharedString::from(song.location.to_uri());
             self.in_the_pane_ring(
                 kit::star(("server-row-favourite", index), favoured, which, saying),
@@ -493,19 +463,31 @@ impl RootView {
             .child(controls.when(plays, |controls| {
                 controls
                     .child(self.in_the_pane_ring(
-                        kit::icon_button(("server-row-play", index), Icon::Play, PLAY_HINT),
+                        kit::icon_button(
+                            ("server-row-play", index),
+                            Icon::Play,
+                            words::served::play_hint(),
+                        ),
                         move |this, _, cx| this.play_what_the_server_holds(playing.clone(), cx),
                         cx,
                     ))
                     .child(self.in_the_pane_ring(
-                        kit::icon_button(("server-row-next", index), Icon::QueueNext, NEXT_HINT),
+                        kit::icon_button(
+                            ("server-row-next", index),
+                            Icon::QueueNext,
+                            words::served::next_hint(),
+                        ),
                         move |this, _, cx| {
                             this.queue_what_the_server_holds(next.clone(), Placement::Next, cx);
                         },
                         cx,
                     ))
                     .child(self.in_the_pane_ring(
-                        kit::icon_button(("server-row-queue", index), Icon::QueueLast, QUEUE_HINT),
+                        kit::icon_button(
+                            ("server-row-queue", index),
+                            Icon::QueueLast,
+                            words::served::queue_hint(),
+                        ),
                         move |this, _, cx| {
                             this.queue_what_the_server_holds(queued.clone(), Placement::Queued, cx);
                         },
@@ -606,9 +588,8 @@ impl RootView {
                 this.server
                     .update(cx, |server, _| server.note_favoured(location, !favoured));
                 this.report(
-                    Notice::Trouble(format!(
-                        "Couldn't change that favourite — {}",
-                        Failure::of(&error).says().to_lowercase()
+                    Notice::Trouble(words::served::favourite_unchanged(
+                        Failure::of(&error).said_after(),
                     )),
                     cx,
                 );
@@ -704,10 +685,7 @@ impl RootView {
                 Err(error) => {
                     tracing::warn!(%error, "the Subsonic server did not list what was pressed");
                     this.report(
-                        Notice::Trouble(format!(
-                            "Couldn't read that — {}",
-                            Failure::of(&error).says().to_lowercase()
-                        )),
+                        Notice::Trouble(words::served::unread(Failure::of(&error).said_after())),
                         cx,
                     );
                 }
@@ -727,9 +705,7 @@ fn describe(row: &Row) -> (String, Option<String>, Option<String>) {
         Row::Artist(artist) => (
             artist.name.clone(),
             None,
-            artist
-                .albums
-                .map(|albums| format::counted(albums as usize, "album", "albums")),
+            artist.albums.map(words::served::albums),
         ),
         Row::Album(album) => (
             album.name.clone(),
@@ -737,9 +713,7 @@ fn describe(row: &Row) -> (String, Option<String>, Option<String>) {
             Some(
                 [
                     album.year.map(|year| year.to_string()),
-                    album
-                        .songs
-                        .map(|songs| format::counted(songs as usize, "song", "songs")),
+                    album.songs.map(words::served::songs),
                 ]
                 .into_iter()
                 .flatten()
@@ -782,38 +756,28 @@ pub(crate) fn songs_from(rows: &[Row], index: usize) -> Option<(Vec<MediaLocatio
 fn counted_in(rows: &[Row], place: &Place) -> String {
     let count = |matching: fn(&Row) -> bool| rows.iter().filter(|row| matching(row)).count();
     match place {
-        Place::Artists if !favourites_in(rows) => format::counted(
-            count(|row| matches!(row, Row::Artist(_))),
-            "artist",
-            "artists",
-        ),
-        Place::Artist { .. } => {
-            format::counted(count(|row| matches!(row, Row::Album(_))), "album", "albums")
+        Place::Artists if !favourites_in(rows) => {
+            words::served::artists(count(|row| matches!(row, Row::Artist(_))))
         }
+        Place::Artist { .. } => words::served::albums(count(|row| matches!(row, Row::Album(_)))),
         Place::Album { .. } | Place::Mix { .. } => {
-            format::counted(count(|row| matches!(row, Row::Song(_))), "song", "songs")
+            words::served::songs(count(|row| matches!(row, Row::Song(_))))
         }
         Place::Artists | Place::Found { .. } => format!(
             "{} · {} · {} · {}",
-            format::counted(
-                count(|row| matches!(row, Row::Artist(_))),
-                "artist",
-                "artists"
-            ),
-            format::counted(count(|row| matches!(row, Row::Album(_))), "album", "albums"),
-            format::counted(count(|row| matches!(row, Row::Mix(_))), "mix", "mixes"),
-            format::counted(count(|row| matches!(row, Row::Song(_))), "song", "songs"),
+            words::served::artists(count(|row| matches!(row, Row::Artist(_)))),
+            words::served::albums(count(|row| matches!(row, Row::Album(_)))),
+            words::served::mixes(count(|row| matches!(row, Row::Mix(_)))),
+            words::served::songs(count(|row| matches!(row, Row::Song(_)))),
         ),
     }
 }
 
 fn queued_words(rows: usize, at: Placement, play: bool) -> String {
-    let songs = format::counted(rows, "song", "songs");
-
     match (play, at) {
-        (true, _) => format!("{songs} queued and playing"),
-        (false, Placement::Next) => format!("{songs} to play next"),
-        (false, Placement::Queued | Placement::At(_)) => format!("{songs} added to the queue"),
+        (true, _) => words::served::queued_and_playing(rows),
+        (false, Placement::Next) => words::served::to_play_next(rows),
+        (false, Placement::Queued | Placement::At(_)) => words::served::added_to_the_queue(rows),
     }
 }
 

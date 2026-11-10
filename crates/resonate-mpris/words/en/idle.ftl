@@ -1,0 +1,1 @@
+playing = { $player } is playing

@@ -70,51 +70,66 @@ object DownloadPlan {
     fun received(jobs: List<DownloadJob>): ULong =
         jobs.filter { it.state.inFlight }.fold(0uL) { sum, job -> sum + job.received }
 
-    fun summary(jobs: List<DownloadJob>): String? {
+    fun summary(words: Words, jobs: List<DownloadJob>): String? {
         if (jobs.isEmpty()) return null
         val active = jobs.filter { !it.state.settled }
-        if (active.isNotEmpty()) return working(jobs, active)
-        return finished(jobs)
+        if (active.isNotEmpty()) return working(words, jobs, active)
+        return finished(words, jobs)
     }
 
     fun nextBatch(jobs: List<DownloadJob>): List<DownloadJob> =
         if (jobs.all { it.state.settled }) emptyList() else jobs
 
-    fun meterLine(waiting: Boolean): String? =
-        if (waiting) "Waiting for a network that is not metered" else null
+    fun meterLine(words: Words, waiting: Boolean): String? =
+        if (waiting) words.string(R.string.transfer_waiting_unmetered) else null
 
     fun waitForWants(dueAtSeconds: Long, nowSeconds: Long): Long =
         ((dueAtSeconds - nowSeconds) * 1000L).coerceIn(WANTS_ASKED_AT_LEAST_MS, WANTS_ASKED_EVERY_MS)
 
-    private fun working(jobs: List<DownloadJob>, active: List<DownloadJob>): String {
+    private fun working(words: Words, jobs: List<DownloadJob>, active: List<DownloadJob>): String {
         val current = active.firstOrNull { it.state.inFlight } ?: active.first()
         val title = current.song.title
-        val verb =
-            when (current.state) {
-                DownloadState.FINDING -> "Finding"
-                DownloadState.VALIDATING -> "Checking"
-                DownloadState.DOWNLOADING -> "Downloading"
-                else -> "Waiting for"
-            }
-        if (jobs.size == 1) return "$verb $title…"
+        val doing =
+            words.string(
+                when (current.state) {
+                    DownloadState.FINDING -> R.string.transfer_finding
+                    DownloadState.VALIDATING -> R.string.transfer_checking
+                    DownloadState.DOWNLOADING -> R.string.transfer_downloading
+                    else -> R.string.transfer_waiting_for
+                },
+                title,
+            )
+        if (jobs.size == 1) return doing
         val done = jobs.size - active.size
-        return "Downloading ${done + 1} of ${jobs.size} · $verb $title…"
+        return words.string(R.string.transfer_batch_running, done + 1, jobs.size, doing)
     }
 
-    private fun finished(jobs: List<DownloadJob>): String {
+    private fun finished(words: Words, jobs: List<DownloadJob>): String {
         val done = jobs.filter { it.state == DownloadState.DONE }
         val failed = jobs.filter { it.state == DownloadState.FAILED }
         if (jobs.size == 1) {
             val only = jobs.single()
             return when (only.state) {
                 DownloadState.DONE ->
-                    "Downloaded ${only.name ?: only.song.title} · ${only.received / 1024uL} KiB"
-                DownloadState.CANCELLED -> "Download cancelled"
-                else -> only.failure ?: "Download failed"
+                    words.string(
+                        R.string.transfer_done_one,
+                        only.name ?: only.song.title,
+                        (only.received / 1024uL).toLong(),
+                    )
+                DownloadState.CANCELLED -> words.string(R.string.transfer_cancelled)
+                else -> only.failure ?: words.string(R.string.transfer_failed)
             }
         }
-        val downloaded = "Downloaded ${done.size} of ${jobs.size} songs"
+        val downloaded =
+            words.plural(R.plurals.transfer_done_batch, jobs.size, done.size, jobs.size)
         return if (failed.isEmpty()) downloaded
-        else "$downloaded · ${failed.size} failed: ${failed.first().failure ?: "Download failed"}"
+        else
+            words.plural(
+                R.plurals.transfer_done_batch_failed,
+                failed.size,
+                downloaded,
+                failed.size,
+                failed.first().failure ?: words.string(R.string.transfer_failed),
+            )
     }
 }

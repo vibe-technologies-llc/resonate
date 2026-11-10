@@ -1,5 +1,8 @@
 package org.resonate.android.ui.library
 
+import androidx.annotation.StringRes
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.SearchOrder
 import org.resonate.android.nativecore.searchOrderReadsDescending
@@ -48,29 +51,30 @@ fun capped(typed: String): Cap? {
     return if (rows == 0u) null else Cap(rows)
 }
 
-val SearchOrder.label: String
+@get:StringRes
+val SearchOrder.label: Int
     get() =
         when (this) {
-            SearchOrder.RELEVANCE -> "Relevance"
-            SearchOrder.ALBUM -> "Album"
-            SearchOrder.TITLE -> "Title"
-            SearchOrder.ARTIST -> "Artist"
-            SearchOrder.ADDED -> "Date added"
-            SearchOrder.DURATION -> "Duration"
-            SearchOrder.PLAYS -> "Plays"
-            SearchOrder.PLAYED -> "Last played"
-            SearchOrder.FAVOURITES -> "Favourites"
-            SearchOrder.PLAYS_THIS_MONTH -> "Plays this month"
-            SearchOrder.FORMAT -> "Format"
+            SearchOrder.RELEVANCE -> R.string.library_search_order_relevance
+            SearchOrder.ALBUM -> R.string.library_order_album
+            SearchOrder.TITLE -> R.string.library_order_title
+            SearchOrder.ARTIST -> R.string.library_order_artist
+            SearchOrder.ADDED -> R.string.library_order_added
+            SearchOrder.DURATION -> R.string.library_search_order_duration
+            SearchOrder.PLAYS -> R.string.library_search_order_plays
+            SearchOrder.PLAYED -> R.string.library_order_last_played
+            SearchOrder.FAVOURITES -> R.string.library_search_order_favourites
+            SearchOrder.PLAYS_THIS_MONTH -> R.string.library_search_order_plays_this_month
+            SearchOrder.FORMAT -> R.string.library_search_order_format
         }
 
-fun SavedSearch.reading(): String {
-    val direction =
+fun SavedSearch.reading(words: Words): String {
+    val named = words.string(order.label)
+    val directed =
         when {
-            descending == searchOrderReadsDescending(order) -> ""
-            descending -> ", descending"
-            else -> ", ascending"
+            descending == searchOrderReadsDescending(order) -> named
+            descending -> words.string(R.string.library_order_descending, named)
+            else -> words.string(R.string.library_order_ascending, named)
         }
-    val limit = rows?.let { " · first $it" }.orEmpty()
-    return "${order.label}$direction$limit"
+    return rows?.let { words.string(R.string.library_search_first, directed, it.toInt()) } ?: directed
 }

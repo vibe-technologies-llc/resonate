@@ -6,7 +6,7 @@ public enum Suggestions {
 
     public static let homeShelves: Set<SuggestionShelf> = [.forYou, .rediscover, .listening]
 
-    public static let yoursShelf = "Yours"
+    public static var yoursShelf: String { said("suggestions.shelf.yours") }
 
     public static func home(_ lists: [SuggestedList]) -> [SuggestedList] {
         Array(lists.filter { homeShelves.contains($0.shelf) }.prefix(homeAtMost))
@@ -17,7 +17,7 @@ public enum Suggestions {
         case .decade, .genreOfADecade: "calendar"
         case .genre: "guitars"
         case .artist: "music.mic"
-        case .neverHeard: "sparkles"
+        case .neverHeard: "play.slash"
         case .mostPlayed: "chart.bar.fill"
         case .recentlyAdded, .freshArrivals: "clock.fill"
         case .backCatalogue, .oldFlames, .artistLeftBehind: "clock.arrow.circlepath"

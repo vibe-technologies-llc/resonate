@@ -88,14 +88,14 @@ struct PlaylistView: View {
         let features = library.features
         let playlist = features.playlists.first { $0.id == id }
         let rows = features.openPlaylist == id ? features.playlistRows : []
-        let name = playlist?.name ?? "Playlist"
+        let name = playlist?.name ?? said("playlist.kind")
         let search = playlist?.search
         let shared = features.together.shared(id)
         let followed = playlist?.followed ?? false
         let mayEdit = SharedPlaylistWords.mayEdit(shared: shared?.mayEdit, followed: followed)
         let subtitle = search == nil
-            ? SharedPlaylistWords.kind(shared: shared?.mayEdit, followed: followed) ?? playlist?.link.map(LinkedPlaylistWords.header) ?? "Playlist"
-            : "Saved search"
+            ? SharedPlaylistWords.kind(shared: shared?.mayEdit, followed: followed) ?? playlist?.link.map(LinkedPlaylistWords.header) ?? said("playlist.kind")
+            : said("playlist.saved-search")
         List {
             CollectionHeader(title: name, subtitle: subtitle, tracks: rows) {
                 PlaylistArtwork(playlist: playlist, corner: 20)
@@ -115,13 +115,13 @@ struct PlaylistView: View {
         .toolbar {
             if search == nil, mayEdit {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Add songs", systemImage: "plus") { adding = true }
+                    Button("playlist.add-songs", systemImage: "plus") { adding = true }
                 }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) { EditButton() }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu("Playlist options", systemImage: "ellipsis") {
+                Menu("playlist.options", systemImage: "ellipsis") {
                     if !rows.isEmpty {
                         CollectionQueueActions(tracks: rows, choosingPlaylist: $choosingPlaylist, queued: $queued)
                     }
@@ -156,26 +156,26 @@ struct PlaylistView: View {
                 dismiss()
             }
         }
-        .alert("Rename playlist", isPresented: $renaming) {
+        .alert("playlist.rename", isPresented: $renaming) {
             PlaylistNameField(initial: playlist?.name ?? "") { name in
                 edit { native, revision in try native.renamePlaylist(id: id, revision: revision, name: name) }
             }
         }
         .sheet(isPresented: $revising) {
             if let search {
-                SavedSearchSheet(title: "Edit saved search", draft: .of(name: name, search: search)) { renamed, revised in
+                SavedSearchSheet(title: said("playlist.saved-search.edit"), draft: .of(name: name, search: search)) { renamed, revised in
                     library.features.reviseSearch(id, name: renamed, search: revised) { problem in
                         if let problem { library.fail(problem) }
                     }
                 }
             }
         }
-        .confirmationDialog("Delete \(name)?", isPresented: $deleting, titleVisibility: .visible) {
-            Button("Delete playlist", role: .destructive) {
+        .confirmationDialog(said("playlist.delete.title", name), isPresented: $deleting, titleVisibility: .visible) {
+            Button("playlist.delete", role: .destructive) {
                 edit { native, revision in try native.deletePlaylist(id: id, revision: revision) }
             }
         } message: {
-            Text("The music files stay in your library. You can undo this action from a playlist's options.")
+            Text("playlist.delete.message")
         }
         .sheet(isPresented: $adding) { AddSongsSheet(id: id).sheetSized(.long) }
         .sheet(isPresented: $sharingList) { SharedPlaylistSheet(id: id, name: name).sheetSized(.long) }
@@ -196,10 +196,10 @@ struct PlaylistView: View {
     private func listRows(_ rows: [Track], empty: Bool, mayEdit: Bool) -> some View {
         if rows.isEmpty, empty, mayEdit {
             VStack(spacing: 12) {
-                Text("Your playlist starts here. Add songs from your library to make it yours.")
+                Text("playlist.empty")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
-                Button("Add songs", systemImage: "plus") { adding = true }
+                Button("playlist.add-songs", systemImage: "plus") { adding = true }
                     .buttonStyle(.glass)
             }
             .frame(maxWidth: .infinity)
@@ -286,22 +286,22 @@ struct PlaylistOptions: View {
         }
         Section {
             if fills {
-                Button("Edit search", systemImage: "slider.horizontal.3") { revising = true }
+                Button("playlist.edit-search", systemImage: "slider.horizontal.3") { revising = true }
             }
             if mayEdit {
-                Button("Rename playlist", systemImage: "pencil") { renaming = true }
-                Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
+                Button("playlist.rename", systemImage: "pencil") { renaming = true }
+                Button("playlists.undo", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
             }
             if !fills {
-                Button("Share", systemImage: "person.2") { sharing = true }
+                Button("playlist.share", systemImage: "person.2") { sharing = true }
             }
-            Menu("Export playlist", systemImage: "square.and.arrow.up") {
+            Menu("playlist.export", systemImage: "square.and.arrow.up") {
                 ForEach(PlaylistFileFormat.offered, id: \.self) { format in
                     Button(format.title) { export(format) }
                 }
             }
             if mayEdit {
-                Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true }
+                Button("playlist.delete", systemImage: "trash", role: .destructive) { deleting = true }
             }
         }
         if let link, !fills {
@@ -311,19 +311,19 @@ struct PlaylistOptions: View {
                 }
                 .disabled(!features.online)
                 Toggle(
-                    "Keep in step",
+                    "playlist.link.keep-in-step",
                     systemImage: "arrow.triangle.2.circlepath",
                     isOn: Binding(get: { link.keptInStep }, set: { features.keepPlaylistInStep(id, $0) })
                 )
-                Button("Forget the link", systemImage: "link") { features.forgetPlaylistLink(id) }
+                Button("playlist.link.forget", systemImage: "link") { features.forgetPlaylistLink(id) }
             }
         }
         if let sync, !fills, features.syncStatus?.standing != .off {
-            Section("Your devices") {
-                Toggle("Keep its songs here", isOn: Binding(get: { sync.kept }, set: { features.keepSongs(id, $0) }))
+            Section("playlist.devices") {
+                Toggle("playlist.devices.keep-songs", isOn: Binding(get: { sync.kept }, set: { features.keepSongs(id, $0) }))
                 if sync.missing > 0 {
                     ForEach(devices, id: \.id) { device in
-                        Button("Fetch \(counted(Int(sync.missing), "missing song")) from \(device.name)") {
+                        Button(said("playlist.devices.fetch-missing", Int(sync.missing), device.name)) {
                             features.fetchMissing(id, from: device)
                         }
                     }
@@ -341,7 +341,7 @@ struct SavedSearchRows: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(search.text.isEmpty ? "Every song" : search.text)
+            Text(search.text.isEmpty ? said("playlist.saved-search.every-song") : search.text)
                 .font(.subheadline)
             Text(search.reading)
                 .font(.footnote)
@@ -351,7 +351,7 @@ struct SavedSearchRows: View {
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
         if rows.isEmpty {
-            Text("No song in your library matches this search yet.")
+            Text("playlist.saved-search.empty")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
@@ -385,24 +385,24 @@ struct PlaylistRow: View, Equatable {
         }
         .swipeActions(edge: .trailing) {
             if mayEdit {
-                Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
+                Button("playlist.remove-song", systemImage: "minus.circle", role: .destructive) { remove(position) }
                     .tint(.red)
             }
         }
         .contextMenu {
             Section {
-                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                     navigation.feelQueued()
                     library.playNext([track])
                 }
-                Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                Button("song.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                     navigation.feelQueued()
                     library.addToQueue([track])
                 }
             }
             Section {
-                Button("Add to another playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
-                Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                Button("playlist.add-to-another", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
+                Button(said(favourite ? "song.favourite.remove" : "song.favourite.add"), systemImage: favourite ? "heart.slash" : "heart") {
                     library.setFavourite(track, !favourite)
                 }
             }
@@ -412,12 +412,12 @@ struct PlaylistRow: View, Equatable {
             if mayEdit {
                 Section {
                     if position > 0 {
-                        Button("Move up", systemImage: "arrow.up") { move(position, position - 1) }
+                        Button("playlist.move-up", systemImage: "arrow.up") { move(position, position - 1) }
                     }
                     if position + 1 < count {
-                        Button("Move down", systemImage: "arrow.down") { move(position, position + 1) }
+                        Button("playlist.move-down", systemImage: "arrow.down") { move(position, position + 1) }
                     }
-                    Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
+                    Button("playlist.remove-song", systemImage: "minus.circle", role: .destructive) { remove(position) }
                 }
             }
         }
@@ -482,15 +482,15 @@ struct AddSongsSheet: View {
             }
             .overlay {
                 if keying || !library.catalogRead {
-                    ProgressView().accessibilityLabel("Reading your songs")
+                    ProgressView().accessibilityLabel("playlist.adding.reading")
                 } else if keyed.tracks.isEmpty {
-                    ContentUnavailableView("Add a music folder in Settings to start your library.", systemImage: "music.note")
+                    ContentUnavailableView("playlist.adding.no-library", systemImage: "music.note")
                 } else if listed.isEmpty {
                     NoneMatch(kind: "songs", query: search, symbol: "magnifyingglass")
                 }
             }
-            .searchable(text: $search, prompt: "Find songs to add")
-            .navigationTitle("Add songs")
+            .searchable(text: $search, prompt: "playlist.adding.search.prompt")
+            .navigationTitle("playlist.add-songs")
             .navigationBarTitleDisplayMode(.inline)
             .task(id: library.catalogEpoch) {
                 let tracks = library.allTracks
@@ -564,7 +564,7 @@ struct AddChosenButton: View {
 
     var body: some View {
         let count = chosen.ids.count
-        Button(count == 1 ? "Add 1 song" : "Add \(count) songs", role: .confirm, action: add)
+        Button(said("playlist.adding.add", count), role: .confirm, action: add)
             .disabled(count == 0)
     }
 }
@@ -583,10 +583,10 @@ struct PlaylistPicker: View {
         NavigationStack {
             List {
                 Section {
-                    TextField("New playlist name", text: $name)
+                    TextField("playlist.picker.new-name", text: $name)
                         .submitLabel(.done)
                         .onSubmit { create(trimmed) }
-                    Button("Create and add", systemImage: "plus") { create(trimmed) }
+                    Button("playlist.picker.create-and-add", systemImage: "plus") { create(trimmed) }
                         .disabled(trimmed.isEmpty || asking)
                 } footer: {
                     if let failure { Text(failure).foregroundStyle(Color.failure).announced(failure) }
@@ -601,7 +601,7 @@ struct PlaylistPicker: View {
                                 PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(playlist.name).titleLines()
-                                    Text(counted(Int(playlist.songs), "song")).font(.subheadline).foregroundStyle(.secondary)
+                                    Text(said("counted.songs", Int(playlist.songs))).font(.subheadline).foregroundStyle(.secondary)
                                 }
                             }
                             .accessibilityElement(children: .combine)
@@ -611,7 +611,7 @@ struct PlaylistPicker: View {
                     }
                 }
             }
-            .navigationTitle("Add to playlist")
+            .navigationTitle("song.add-to-playlist")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
@@ -631,7 +631,7 @@ struct PlaylistPicker: View {
         asking = false
         failure = problem
         guard problem == nil else { return }
-        library.notice("Added to \(playlist)")
+        library.notice(said("playlist.picker.added", playlist))
         dismiss()
     }
 }

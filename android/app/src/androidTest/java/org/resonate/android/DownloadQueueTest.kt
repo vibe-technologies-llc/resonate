@@ -112,7 +112,7 @@ class DownloadQueueTest {
                 val jobs = features.downloads.jobs.value
                 assertEquals(listOf(DownloadState.DONE), jobs.map { it.state }.distinct())
                 assertTrue("at most two run at once, saw $most", most in 1..DownloadPlan.AT_ONCE)
-                val settled = DownloadPlan.summary(jobs)
+                val settled = DownloadPlan.summary(library.words, jobs)
                 while (features.downloadStatus.value != settled && System.nanoTime() < deadline) {
                     Thread.sleep(25)
                 }

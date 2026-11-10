@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_codec::Codec;
 
-use crate::{Coding, Levels, Spectrum, Steps, Tell, spectrum::BAND_HZ};
+use crate::{Coding, Levels, Spectrum, Steps, Tell, spectrum::BAND_HZ, words};
 
 pub const JUDGED_UNDER: u32 = 7;
 
@@ -75,13 +75,13 @@ impl Verdict {
             .find(|verdict| verdict.as_str() == name)
     }
 
-    pub const fn told(self) -> &'static str {
+    pub fn told(self) -> &'static str {
         match self {
-            Self::Genuine => "Consistent with lossless",
-            Self::Suspect => "Suspect: it may be a high-bitrate lossy encode",
-            Self::Fake => "Fake: it is not the lossless master it claims to be",
-            Self::Lossy => "Lossy by its codec",
-            Self::NotJudged => "Not judged",
+            Self::Genuine => words::verdict::genuine(),
+            Self::Suspect => words::verdict::suspect(),
+            Self::Fake => words::verdict::fake(),
+            Self::Lossy => words::verdict::lossy(),
+            Self::NotJudged => words::verdict::not_judged(),
         }
     }
 }
@@ -209,92 +209,73 @@ impl Finding {
             Self::Wall {
                 cutoff,
                 lossy: Some(guess),
-            } => format!(
-                "The spectrum ends in a wall at {:.1} kHz, {:.0} dB deep, where a lossy encode near {} kbps cuts",
-                kilohertz(cutoff.hz),
-                cutoff.drop_db,
-                guess.kbps()
+            } => words::verdict::wall_of_a_lossy_encode(
+                format!("{:.0}", cutoff.drop_db),
+                guess.kbps(),
+                format!("{:.1}", kilohertz(cutoff.hz)),
             ),
             Self::Wall {
                 cutoff,
                 lossy: None,
-            } if cutoff.hz <= SUSPECT_CEILING_HZ => format!(
-                "The spectrum ends in a wall at {:.1} kHz, {:.0} dB deep, where a high-bitrate lossy encode cuts, or an unusually low anti-alias filter",
-                kilohertz(cutoff.hz),
-                cutoff.drop_db
+            } if cutoff.hz <= SUSPECT_CEILING_HZ => words::verdict::wall_of_a_high_bitrate_encode(
+                format!("{:.0}", cutoff.drop_db),
+                format!("{:.1}", kilohertz(cutoff.hz)),
             ),
             Self::Wall {
                 cutoff,
                 lossy: None,
-            } => format!(
-                "The spectrum ends at {:.1} kHz, {:.0} dB deep, where an anti-alias filter would stand",
-                kilohertz(cutoff.hz),
-                cutoff.drop_db
+            } => words::verdict::wall_of_an_anti_alias_filter(
+                format!("{:.0}", cutoff.drop_db),
+                format!("{:.1}", kilohertz(cutoff.hz)),
             ),
-            Self::Rolloff { extent_hz } => format!(
-                "The spectrum fades out by {:.1} kHz with no wall to judge by",
-                kilohertz(*extent_hz)
-            ),
-            Self::Upsampled { from_hz } => format!(
-                "Nothing stands above {} kHz, where {:.1} kHz audio ends, so it was upsampled from it",
-                kilohertz(*from_hz) / 2.0,
-                kilohertz(*from_hz)
+            Self::Rolloff { extent_hz } => {
+                words::verdict::rolloff(format!("{:.1}", kilohertz(*extent_hz)))
+            }
+            Self::Upsampled { from_hz } => words::verdict::upsampled(
+                format!("{:.1}", kilohertz(*from_hz)),
+                (kilohertz(*from_hz) / 2.0).to_string(),
             ),
             Self::Padded {
                 effective,
                 declared,
-            } => {
-                format!("Only {effective} of its {declared} bits carry audio; the rest are padding")
-            }
-            Self::TooLittleHeard => "Too little of it is loud enough to judge".to_owned(),
-            Self::FromDsd => {
-                "A DSD stream is not judged by the spectrum its decimation leaves".to_owned()
-            }
-            Self::MonoAsStereo => "Both channels carry the same samples".to_owned(),
-            Self::Clipped { samples, runs } => {
-                format!("{samples} samples sit at full scale in {runs} runs")
-            }
-            Self::DcOffset { level } => format!(
-                "The signal sits off centre by {:.1} dBFS",
+            } => words::verdict::padded(*declared, *effective),
+            Self::TooLittleHeard => words::verdict::too_little_heard().to_owned(),
+            Self::FromDsd => words::verdict::from_dsd().to_owned(),
+            Self::MonoAsStereo => words::verdict::mono_as_stereo().to_owned(),
+            Self::Clipped { samples, runs } => words::verdict::clipped(*runs, *samples),
+            Self::DcOffset { level } => words::verdict::dc_offset(format!(
+                "{:.1}",
                 20.0 * level.max(f32::MIN_POSITIVE).log10()
-            ),
+            )),
             Self::QuantiserSteps {
                 coding,
                 resampled_from: None,
                 lattice,
-            } => format!(
-                "Its transform on {coding}'s own frames lands on {coding}'s quantiser steps ({:.0}% aligned), so it was decoded from {coding}",
-                lattice * 100.0,
-                coding = coding.as_str()
-            ),
+            } => {
+                words::verdict::quantiser_steps(format!("{:.0}", lattice * 100.0), coding.as_str())
+            }
             Self::QuantiserSteps {
                 coding,
                 resampled_from: Some(hz),
                 lattice,
-            } => format!(
-                "Brought back to {:.1} kHz, its transform on {coding}'s own frames lands on {coding}'s quantiser steps ({:.0}% aligned), so it was decoded from {coding} at that rate and resampled",
-                kilohertz(*hz),
-                lattice * 100.0,
-                coding = coding.as_str()
+            } => words::verdict::quantiser_steps_resampled(
+                format!("{:.0}", lattice * 100.0),
+                coding.as_str(),
+                format!("{:.1}", kilohertz(*hz)),
             ),
             Self::IntensityStereo {
                 coding,
                 resampled_from: None,
                 share,
-            } => format!(
-                "On {coding}'s own frames its two channels move as one in {:.0}% of {coding}'s bands, exactly as {coding}'s intensity stereo leaves them and far more than off those frames, so it was decoded from {coding}",
-                share * 100.0,
-                coding = coding.as_str()
-            ),
+            } => words::verdict::intensity_stereo(coding.as_str(), format!("{:.0}", share * 100.0)),
             Self::IntensityStereo {
                 coding,
                 resampled_from: Some(hz),
                 share,
-            } => format!(
-                "Brought back to {:.1} kHz, on {coding}'s own frames its two channels move as one in {:.0}% of {coding}'s bands, exactly as {coding}'s intensity stereo leaves them and far more than off those frames, so it was decoded from {coding} at that rate and resampled",
-                kilohertz(*hz),
-                share * 100.0,
-                coding = coding.as_str()
+            } => words::verdict::intensity_stereo_resampled(
+                coding.as_str(),
+                format!("{:.1}", kilohertz(*hz)),
+                format!("{:.0}", share * 100.0),
             ),
         }
     }

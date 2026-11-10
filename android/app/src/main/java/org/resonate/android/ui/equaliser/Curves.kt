@@ -1,11 +1,14 @@
 package org.resonate.android.ui.equaliser
 
+import androidx.annotation.StringRes
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserFilter
@@ -54,10 +57,6 @@ val octaveCentres = listOf(31.25f, 62.5f, 125f, 250f, 500f, 1000f, 2000f, 4000f,
 
 const val OCTAVE_Q = 1.41421356f
 
-const val FLAT_NAME = "Flat"
-
-const val CUSTOM_NAME = "Custom"
-
 val flatCurve = EqualiserCurve("", 0f, emptyList())
 
 val EqualiserFilter.usesGain: Boolean
@@ -66,17 +65,18 @@ val EqualiserFilter.usesGain: Boolean
             this == EqualiserFilter.LOW_SHELF ||
             this == EqualiserFilter.HIGH_SHELF
 
-val EqualiserFilter.label: String
+@get:StringRes
+val EqualiserFilter.label: Int
     get() =
         when (this) {
-            EqualiserFilter.PEAKING -> "Peak"
-            EqualiserFilter.LOW_SHELF -> "Low shelf"
-            EqualiserFilter.HIGH_SHELF -> "High shelf"
-            EqualiserFilter.LOW_PASS -> "Low pass"
-            EqualiserFilter.HIGH_PASS -> "High pass"
-            EqualiserFilter.NOTCH -> "Notch"
-            EqualiserFilter.BAND_PASS -> "Band pass"
-            EqualiserFilter.ALL_PASS -> "All pass"
+            EqualiserFilter.PEAKING -> R.string.equaliser_filter_peak
+            EqualiserFilter.LOW_SHELF -> R.string.equaliser_filter_low_shelf
+            EqualiserFilter.HIGH_SHELF -> R.string.equaliser_filter_high_shelf
+            EqualiserFilter.LOW_PASS -> R.string.equaliser_filter_low_pass
+            EqualiserFilter.HIGH_PASS -> R.string.equaliser_filter_high_pass
+            EqualiserFilter.NOTCH -> R.string.equaliser_filter_notch
+            EqualiserFilter.BAND_PASS -> R.string.equaliser_filter_band_pass
+            EqualiserFilter.ALL_PASS -> R.string.equaliser_filter_all_pass
         }
 
 fun tidyHertz(hertz: Float): Float =
@@ -90,35 +90,43 @@ fun tidyDb(decibels: Float): Float = (decibels * 10).roundToInt() / 10f
 
 fun tidyQ(q: Float): Float = (q * 100).roundToInt() / 100f
 
-fun hertzLabel(hertz: Float): String =
+fun hertzLabel(words: Words, hertz: Float): String =
     when {
-        hertz < 100f -> String.format(Locale.ROOT, "%.1f Hz", hertz)
-        hertz < 1000f -> String.format(Locale.ROOT, "%.0f Hz", hertz)
-        hertz < 10_000f -> String.format(Locale.ROOT, "%.2f kHz", hertz / 1000)
-        else -> String.format(Locale.ROOT, "%.1f kHz", hertz / 1000)
+        hertz < 100f ->
+            words.string(R.string.equaliser_hertz, String.format(Locale.ROOT, "%.1f", hertz))
+        hertz < 1000f ->
+            words.string(R.string.equaliser_hertz, String.format(Locale.ROOT, "%.0f", hertz))
+        hertz < 10_000f ->
+            words.string(R.string.unit_kilohertz, String.format(Locale.ROOT, "%.2f", hertz / 1000))
+        else ->
+            words.string(R.string.unit_kilohertz, String.format(Locale.ROOT, "%.1f", hertz / 1000))
     }
 
-fun signedDb(decibels: Float): String {
+fun signedDb(words: Words, decibels: Float): String {
     val shown = tidyDb(decibels).let { if (it == 0f) 0f else it }
-    return (if (shown > 0f) "+" else "") + String.format(Locale.ROOT, "%.1f dB", shown)
+    val figure = (if (shown > 0f) "+" else "") + String.format(Locale.ROOT, "%.1f", shown)
+    return words.string(R.string.equaliser_decibels, figure)
 }
 
-fun qLabel(q: Float): String = String.format(Locale.ROOT, "Q %.2f", q)
+fun qLabel(words: Words, q: Float): String =
+    words.string(R.string.equaliser_q, String.format(Locale.ROOT, "%.2f", q))
 
-fun audibleRange(hertz: Float): String =
+@StringRes
+fun audibleRange(hertz: Float): Int =
     when {
-        hertz < 60f -> "Sub-bass"
-        hertz < 180f -> "Bass"
-        hertz < 400f -> "Warmth"
-        hertz < 900f -> "Low mids"
-        hertz < 1800f -> "Mids"
-        hertz < 3500f -> "Vocals"
-        hertz < 6000f -> "Presence"
-        hertz < 12_000f -> "Treble"
-        else -> "Air"
+        hertz < 60f -> R.string.equaliser_range_sub_bass
+        hertz < 180f -> R.string.equaliser_range_bass
+        hertz < 400f -> R.string.equaliser_range_warmth
+        hertz < 900f -> R.string.equaliser_range_low_mids
+        hertz < 1800f -> R.string.equaliser_range_mids
+        hertz < 3500f -> R.string.equaliser_range_vocals
+        hertz < 6000f -> R.string.equaliser_range_presence
+        hertz < 12_000f -> R.string.equaliser_range_treble
+        else -> R.string.equaliser_range_air
     }
 
-fun bandName(band: EqualiserBand): String = "${hertzLabel(band.frequencyHz)} ${audibleRange(band.frequencyHz)}"
+fun bandName(words: Words, band: EqualiserBand): String =
+    "${hertzLabel(words, band.frequencyHz)} ${words.string(audibleRange(band.frequencyHz))}"
 
 fun level(band: EqualiserBand, preampDb: Float): Float =
     if (band.filter.usesGain) band.gainDb + preampDb else preampDb
@@ -126,17 +134,16 @@ fun level(band: EqualiserBand, preampDb: Float): Float =
 fun isFlat(curve: EqualiserCurve): Boolean =
     curve.preampDb == 0f && curve.bands.all { it.filter.usesGain && it.gainDb == 0f }
 
-fun shownName(curve: EqualiserCurve): String =
+fun shownName(words: Words, curve: EqualiserCurve): String =
     when {
-        isFlat(curve) -> FLAT_NAME
+        isFlat(curve) -> words.string(R.string.equaliser_flat)
         curve.name.isNotEmpty() -> curve.name
-        else -> CUSTOM_NAME
+        else -> words.string(R.string.equaliser_custom)
     }
 
-fun shownPreset(presets: List<EqualiserPreset>, curve: EqualiserCurve): EqualiserPreset? {
-    val name = shownName(curve)
-    return presets.firstOrNull { it.name == name }
-}
+fun shownPreset(presets: List<EqualiserPreset>, curve: EqualiserCurve): EqualiserPreset? =
+    if (isFlat(curve)) presets.firstOrNull { isFlat(it.curve) }
+    else presets.firstOrNull { curve.name.isNotEmpty() && it.name == curve.name }
 
 fun octaveCurve(
     frequencies: List<Float>,

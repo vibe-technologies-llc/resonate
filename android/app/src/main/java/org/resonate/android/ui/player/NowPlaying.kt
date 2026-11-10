@@ -64,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -86,6 +87,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
@@ -98,6 +100,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import org.resonate.android.R
 import org.resonate.android.marksFavouritesOf
 import org.resonate.android.nativecore.Track
 import org.resonate.android.rowKey
@@ -127,6 +130,7 @@ import org.resonate.android.ui.theme.PlayerTone
 import org.resonate.android.ui.theme.rememberSchemeOf
 import org.resonate.android.ui.theme.rememberSeedOf
 import org.resonate.android.ui.tools.LyricsPane
+import org.resonate.android.words
 
 private enum class Pane {
     ARTWORK,
@@ -167,6 +171,10 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
         dragged += delta
         scope.launch { expansion.follow(1f - dragged / height) }
     }
+    DisposableEffect(sheets, scheme) {
+        sheets.worn = scheme
+        onDispose { sheets.worn = null }
+    }
     ArtworkTheme(scheme) {
         val dark = LocalDarkTheme.current
         val base = if (LocalPitchBlack.current) Color.Black else scheme.surfaceContainerLow
@@ -174,9 +182,10 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
             remember(scheme.primaryContainer, appearance.nowPlayingIntensity, dark) {
                 PlayerTone.top(scheme.primaryContainer, appearance.nowPlayingIntensity, dark)
             }
-        val ground = animateColorAsState(scheme.surface, GROUND_GLIDES, label = "player ground")
-        val wash = animateColorAsState(top, GROUND_GLIDES, label = "player wash")
-        val foot = animateColorAsState(base, GROUND_GLIDES, label = "player foot")
+        val ground = animateColorAsState(scheme.surface, GROUND_GLIDES, label = "playerGround")
+        val wash = animateColorAsState(top, GROUND_GLIDES, label = "playerWash")
+        val foot = animateColorAsState(base, GROUND_GLIDES, label = "playerFoot")
+        val nowPlaying = stringResource(R.string.player_now_playing)
         Surface(
             color = Color.Transparent,
             contentColor = scheme.onSurface,
@@ -188,7 +197,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                         translationY = (1f - shown) * size.height
                         alpha = (shown * 3f).coerceAtMost(1f)
                     }
-                    .semantics { paneTitle = "Now playing" }
+                    .semantics { paneTitle = nowPlaying }
                     .focusRequester(keyboard)
                     .playerKeys(model) { playing?.durationMs ?: 0L }
                     .focusable()
@@ -224,7 +233,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                             pane,
                             transitionSpec = { fadeIn() togetherWith fadeOut() },
                             modifier = slot,
-                            label = "player pane",
+                            label = "playerPane",
                         ) { shown ->
                             when {
                                 shown == Pane.LYRICS && track != null && !track.served ->
@@ -320,11 +329,14 @@ private fun PlayerHeader(track: Track?, onClose: () -> Unit, modifier: Modifier)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onClose) {
-            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Close player")
+            Icon(
+                Icons.Rounded.KeyboardArrowDown,
+                contentDescription = stringResource(R.string.player_close),
+            )
         }
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "Now playing",
+                stringResource(R.string.player_now_playing),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -342,7 +354,10 @@ private fun PlayerHeader(track: Track?, onClose: () -> Unit, modifier: Modifier)
             onClick = { track?.let { sheets.song(it, inPlayer = true) } },
             enabled = track != null,
         ) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "Player options")
+            Icon(
+                Icons.Rounded.MoreVert,
+                contentDescription = stringResource(R.string.player_options),
+            )
         }
     }
 }
@@ -364,13 +379,15 @@ private fun ColumnScope.Controls(
     val scope = rememberCoroutineScope()
     val services by resonate.features.served.services.collectAsStateWithLifecycle()
     val titleLines = rememberTitleMaxLines()
+    val goToAlbum = stringResource(R.string.player_go_to_album)
+    val goToArtist = stringResource(R.string.player_go_to_artist)
     Row(verticalAlignment = Alignment.CenterVertically) {
         AnimatedContent(
             track,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
             contentKey = { it?.rowKey },
             modifier = Modifier.weight(1f),
-            label = "player titles",
+            label = "playerTitles",
         ) { shown ->
             Column {
                 Text(
@@ -383,7 +400,7 @@ private fun ColumnScope.Controls(
                                 enabled =
                                     shown != null && !shown.served && shown.album.isNotBlank(),
                                 role = Role.Button,
-                                onClickLabel = "Go to album",
+                                onClickLabel = goToAlbum,
                             ) {
                                 shown?.let {
                                     expansion.collapse()
@@ -402,7 +419,7 @@ private fun ColumnScope.Controls(
                         Modifier.clickable(
                             enabled = shown != null && !shown.served,
                             role = Role.Button,
-                            onClickLabel = "Go to artist",
+                            onClickLabel = goToArtist,
                         ) {
                             shown?.let {
                                 expansion.collapse()
@@ -423,7 +440,10 @@ private fun ColumnScope.Controls(
             Icon(
                 if (favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                 contentDescription =
-                    if (favourite) "Remove from favourites" else "Add to favourites",
+                    stringResource(
+                        if (favourite) R.string.player_favourite_remove
+                        else R.string.player_favourite_add
+                    ),
                 tint =
                     if (favourite) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -449,6 +469,8 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
     val heard by rememberUpdatedState(song)
     var draft by remember(song) { mutableStateOf<Float?>(null) }
     val shown = (draft ?: position.toFloat()).coerceIn(0f, duration.coerceAtLeast(1L).toFloat())
+    val words = words()
+    val progress = stringResource(R.string.player_song_progress)
     key(song) {
         CommitSlider(
             value = shown,
@@ -456,20 +478,22 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
             onDraft = { draft = it },
             range = 0f..duration.coerceAtLeast(1L).toFloat(),
             enabled = duration > 0,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Song progress" },
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = progress },
             trackHeight = 4.dp,
-            stateText = { "${clock(it.toLong())} of ${clock(duration)}" },
-            skips = model.skipActions(duration),
+            stateText = {
+                words.string(R.string.player_position_of, clock(it.toLong()), clock(duration))
+            },
+            skips = model.skipActions(words, duration),
         )
     }
-    val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
-    Row(verticalAlignment = Alignment.Top) {
+    val times = MaterialTheme.typography.labelMedium
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             clock(shown.toLong()),
             style = times,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             val line = playing?.track?.quality.orEmpty()
             if (line.isNotEmpty()) {
                 Surface(
@@ -507,7 +531,7 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
 @Composable
 private fun Transport(model: PlayerViewModel, playing: Playing?) {
     val active = playing?.active == true
-    val corner by animateDpAsState(if (active) 20.dp else 32.dp, label = "play shape")
+    val corner by animateDpAsState(if (active) 20.dp else 32.dp, label = "playShape")
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -521,12 +545,15 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
                     checkedContentColor = MaterialTheme.colorScheme.primary
                 ),
         ) {
-            Icon(Icons.Rounded.Shuffle, contentDescription = "Shuffle")
+            Icon(
+                Icons.Rounded.Shuffle,
+                contentDescription = stringResource(R.string.player_shuffle),
+            )
         }
         IconButton(onClick = model::previous, modifier = Modifier.size(56.dp)) {
             Icon(
                 Icons.Rounded.SkipPrevious,
-                contentDescription = "Previous",
+                contentDescription = stringResource(R.string.player_previous),
                 modifier = Modifier.size(32.dp),
             )
         }
@@ -537,14 +564,15 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
         ) {
             Icon(
                 if (active) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (active) "Pause" else "Play",
+                contentDescription =
+                    stringResource(if (active) R.string.player_pause else R.string.player_play),
                 modifier = Modifier.size(32.dp),
             )
         }
         IconButton(onClick = model::next, modifier = Modifier.size(56.dp)) {
             Icon(
                 Icons.Rounded.SkipNext,
-                contentDescription = "Next",
+                contentDescription = stringResource(R.string.player_next),
                 modifier = Modifier.size(32.dp),
             )
         }
@@ -568,11 +596,13 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
             Icon(
                 if (repeat == Repeat.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                 contentDescription =
-                    when (repeat) {
-                        Repeat.OFF -> "Repeat off"
-                        Repeat.ALL -> "Repeat all"
-                        Repeat.ONE -> "Repeat one"
-                    },
+                    stringResource(
+                        when (repeat) {
+                            Repeat.OFF -> R.string.player_repeat_off
+                            Repeat.ALL -> R.string.player_repeat_all
+                            Repeat.ONE -> R.string.player_repeat_one
+                        }
+                    ),
             )
         }
     }
@@ -580,6 +610,8 @@ private fun Transport(model: PlayerViewModel, playing: Playing?) {
 
 @Composable
 private fun Volume(model: PlayerViewModel, playing: Playing?) {
+    val words = words()
+    val volume = stringResource(R.string.player_volume)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             Icons.AutoMirrored.Rounded.VolumeDown,
@@ -592,10 +624,13 @@ private fun Volume(model: PlayerViewModel, playing: Playing?) {
             onCommit = model::volume,
             modifier =
                 Modifier.weight(1f).padding(horizontal = 8.dp).semantics {
-                    contentDescription = "Volume"
+                    contentDescription = volume
                 },
             trackHeight = 4.dp,
-            stateText = { "${(it * 100).roundToInt()} percent" },
+            stateText = {
+                val percent = (it * 100).roundToInt()
+                words.plural(R.plurals.player_percent, percent, percent)
+            },
         )
         Icon(
             Icons.AutoMirrored.Rounded.VolumeUp,
@@ -621,8 +656,8 @@ internal fun PlayerActions(
     val zones by LocalResonate.current.features.zones.listed.collectAsStateWithLifecycle()
     val zoneShown = zones.firstOrNull { it.shown }?.name?.takeIf { zones.size > 1 }
     val large = rememberLargeText()
-    val zonesLabel = zoneShown ?: "Zones"
-    val sleepLabel = remaining?.let { clock(it) } ?: "Sleep"
+    val zonesLabel = zoneShown ?: stringResource(R.string.player_zones)
+    val sleepLabel = remaining?.let { clock(it) } ?: stringResource(R.string.player_sleep)
     FlowRow(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -631,18 +666,25 @@ internal fun PlayerActions(
     ) {
         ActionToggle(
             Icons.Rounded.Lyrics,
-            "Lyrics",
+            stringResource(R.string.player_lyrics),
             lyricsShown,
             onLyrics,
             enabled = playing?.track?.served != true,
         )
-        ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue)
+        ActionToggle(
+            Icons.AutoMirrored.Rounded.QueueMusic,
+            stringResource(R.string.player_queue),
+            false,
+            onQueue,
+        )
         ActionToggle(
             Icons.Rounded.Speaker,
             zonesLabel,
             false,
             onZones,
-            description = zoneShown?.let { "Zones, $it shown" } ?: "Zones",
+            description =
+                zoneShown?.let { stringResource(R.string.player_zones_shown, it) }
+                    ?: stringResource(R.string.player_zones),
         )
         if (playing?.sleep != null) {
             ActionToggle(
@@ -650,7 +692,7 @@ internal fun PlayerActions(
                 sleepLabel,
                 true,
                 { sheets.sleeping = true },
-                description = "Sleep timer",
+                description = stringResource(R.string.player_sleep_timer),
             )
         }
     }

@@ -8,6 +8,8 @@ import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.pow
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.RoomCorrection
 
@@ -121,18 +123,28 @@ class LogScale(least: Float, most: Float) {
     fun actual(fraction: Float): Float = low * (high / low).pow(fraction.coerceIn(0f, 1f))
 }
 
-fun describeRoom(room: RoomCorrection?): String {
+fun describeRoom(words: Words, room: RoomCorrection?): String {
     if (room == null || room.channels == 0u) return ""
     val channels =
         when (room.channels) {
-            1u -> "Mono"
-            2u -> "Stereo"
-            4u -> "Two-by-two (binaural)"
-            else -> "${room.channels} channels"
+            1u -> words.string(R.string.equaliser_room_mono)
+            2u -> words.string(R.string.equaliser_room_stereo)
+            4u -> words.string(R.string.equaliser_room_binaural)
+            else ->
+                words.plural(
+                    R.plurals.equaliser_room_channels,
+                    room.channels.toInt(),
+                    room.channels.toInt(),
+                )
         }
     val kilohertz = String.format(Locale.ROOT, "%.1f", room.rate.toDouble() / 1000).removeSuffix(".0")
     val seconds = String.format(Locale.ROOT, "%.2f", room.lengthMs.toDouble() / 1000)
-    return "$channels · $kilohertz kHz · $seconds s"
+    return listOf(
+            channels,
+            words.string(R.string.unit_kilohertz, kilohertz),
+            words.string(R.string.equaliser_seconds, seconds),
+        )
+        .joinToString(" · ")
 }
 
 data class Measured(val headphone: String, val source: String?)

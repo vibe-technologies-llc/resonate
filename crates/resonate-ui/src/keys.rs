@@ -1,3 +1,5 @@
+use crate::words;
+
 macro_rules! key {
     (play_pause) => {
         "space"
@@ -166,28 +168,24 @@ macro_rules! key {
     };
 }
 
-macro_rules! ways {
-    ($only:expr) => {
-        $only
-    };
-    ($one:expr, $other:expr) => {
-        concat!($one, " or ", $other)
-    };
-    ($first:expr, $($rest:expr),+) => {
-        concat!($first, ", ", ways!($($rest),+))
-    };
+pub(crate) fn keyed(what: &str, ways: &[&str]) -> String {
+    words::keys::keyed(ways_said(ways), what)
 }
 
-macro_rules! keyed {
-    ($what:literal, $($way:expr),+) => {
-        concat!($what, " — ", ways!($($way),+))
-    };
+fn ways_said(ways: &[&str]) -> String {
+    match ways {
+        [] => String::new(),
+        [only] => (*only).to_owned(),
+        [one, other] => words::keys::either(*one, *other),
+        [first, rest @ ..] => words::keys::among(*first, ways_said(rest)),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use gpui::KeyBinding;
 
+    use super::keyed;
     use crate::app;
 
     const NAMED: [&str; 50] = [
@@ -265,14 +263,14 @@ mod tests {
     }
 
     #[test]
-    fn a_hint_names_what_it_does_and_then_its_keys() {
-        assert_eq!(keyed!("Play", key!(play_pause)), "Play — space");
+    fn a_hint_said_through_the_catalog_names_what_it_does_and_then_its_keys() {
+        assert_eq!(keyed("Play", &[key!(play_pause)]), "Play — space");
         assert_eq!(
-            keyed!("Louder", "the wheel", key!(louder)),
+            keyed("Louder", &["the wheel", key!(louder)]),
             "Louder — the wheel or ctrl-up"
         );
         assert_eq!(
-            keyed!("Reach further", "home", "end", "pageup"),
+            keyed("Reach further", &["home", "end", "pageup"]),
             "Reach further — home, end or pageup"
         );
     }

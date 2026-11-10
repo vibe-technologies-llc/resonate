@@ -1,6 +1,6 @@
 package org.resonate.android.ui.search
 
-import androidx.compose.ui.semantics.Role
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,18 +28,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Spellcheck
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.TravelExplore
-import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -61,15 +60,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -82,6 +84,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.R
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistHit
 import org.resonate.android.nativecore.LibrarySearch
@@ -95,17 +98,17 @@ import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.RowSelection
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Selection
-import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.lit
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.library.SavedSearchDraft
 import org.resonate.android.ui.library.shownName
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.words
 
 @Composable
 fun LibraryResults(
@@ -163,10 +166,10 @@ fun LibraryResults(
                     item(key = "failed") {
                         EmptyState(
                             Icons.Rounded.SearchOff,
-                            "Search could not finish",
+                            stringResource(R.string.search_failed),
                             Modifier.fillParentMaxHeight(0.7f),
-                            detail = "Something went wrong while searching your library.",
-                            action = "Try again",
+                            detail = stringResource(R.string.search_failed_detail),
+                            action = stringResource(R.string.search_try_again),
                             onAction = model::retryLibrary,
                         )
                     }
@@ -211,28 +214,28 @@ fun LazyListScope.loading() {
     }
 }
 
-private class BrowseTile(val title: String, val icon: ImageVector, val screen: Screen)
+private class BrowseTile(@StringRes val title: Int, val icon: ImageVector, val screen: Screen)
 
 private val browseTiles =
     listOf(
-        BrowseTile("Favourites", Icons.Rounded.Favorite, Screen.Favourites),
+        BrowseTile(R.string.browse_favourites, Icons.Rounded.Favorite, Screen.Favourites),
         BrowseTile(Mix.RECENTLY_ADDED.title, Icons.Rounded.Schedule, Screen.Mix(Mix.RECENTLY_ADDED)),
         BrowseTile(Mix.MOST_PLAYED.title, Icons.AutoMirrored.Rounded.TrendingUp, Screen.Mix(Mix.MOST_PLAYED)),
         BrowseTile(Mix.NEVER_HEARD.title, Icons.Rounded.Explore, Screen.Mix(Mix.NEVER_HEARD)),
         BrowseTile(Mix.HIGH_RESOLUTION.title, Icons.Rounded.HighQuality, Screen.Mix(Mix.HIGH_RESOLUTION)),
-        BrowseTile("Saved for later", Icons.Outlined.BookmarkBorder, Screen.Wanted),
+        BrowseTile(R.string.settings_wanted_title, Icons.Outlined.BookmarkBorder, Screen.Wanted),
     )
 
-private class SearchTip(val label: String, val query: String)
+private class SearchTip(@StringRes val label: Int, val query: String)
 
 private val searchTips =
     listOf(
-        SearchTip("Lossless", "is:lossless"),
-        SearchTip("Hi-res", "is:hires"),
-        SearchTip("Lossy", "is:lossy"),
-        SearchTip("Favourites", "is:favourite"),
-        SearchTip("Mono", "is:mono"),
-        SearchTip("Multichannel", "is:multichannel"),
+        SearchTip(R.string.search_tip_lossless, "is:lossless"),
+        SearchTip(R.string.search_tip_hires, "is:hires"),
+        SearchTip(R.string.search_tip_lossy, "is:lossy"),
+        SearchTip(R.string.search_tip_favourites, "is:favourite"),
+        SearchTip(R.string.search_tip_mono, "is:mono"),
+        SearchTip(R.string.search_tip_multichannel, "is:multichannel"),
     )
 
 fun LazyListScope.recentSearches(
@@ -242,7 +245,13 @@ fun LazyListScope.recentSearches(
     forgetAll: () -> Unit,
 ) {
     if (recent.isEmpty()) return
-    item(key = "recent-header") { SectionHeader("Recent searches", action = "Clear", onAction = forgetAll) }
+    item(key = "recent-header") {
+        SectionHeader(
+            stringResource(R.string.search_recent),
+            action = stringResource(R.string.search_recent_clear),
+            onAction = forgetAll,
+        )
+    }
     items(recent, key = { "recent-$it" }) { text ->
         ListItem(
             modifier = Modifier.animateItem().clickable { search(text) }.testTag("recent-search"),
@@ -250,7 +259,10 @@ fun LazyListScope.recentSearches(
             leadingContent = { Icon(Icons.Rounded.History, contentDescription = null) },
             trailingContent = {
                 IconButton(onClick = { forget(text) }) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Remove “$text” from recent searches")
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.search_recent_remove, text),
+                    )
                 }
             },
         ) { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -270,7 +282,7 @@ private fun LazyListScope.browse(
 ) {
     if (!online) item(key = "online-off") { OnlineOffCard(turnOnline) }
     recentSearches(recent, search, forget, forgetAll)
-    item(key = "browse-header") { SectionHeader("Browse your library") }
+    item(key = "browse-header") { SectionHeader(stringResource(R.string.search_browse)) }
     val tileColumns = (columns).coerceAtMost(3).coerceAtLeast(2)
     browseTiles.chunked(tileColumns).forEachIndexed { row, tiles ->
         item(key = "browse-$row") {
@@ -285,29 +297,23 @@ private fun LazyListScope.browse(
             }
         }
     }
-    item(key = "tips-header") { SectionHeader("Search by sound") }
+    item(key = "tips-header") { SectionHeader(stringResource(R.string.search_tips)) }
     item(key = "tips") {
         FlowRow(
             Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             searchTips.forEach { tip ->
+                val described = stringResource(R.string.search_tip_description, tip.query)
                 SuggestionChip(
                     onClick = { search(tip.query) },
-                    label = { Text(tip.label) },
-                    icon = {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(AssistChipDefaults.IconSize),
-                        )
-                    },
-                    modifier = Modifier.semantics { contentDescription = "Search for ${tip.query}" },
+                    label = { Text(stringResource(tip.label)) },
+                    modifier = Modifier.semantics { contentDescription = described },
                 )
             }
         }
         Text(
-            "Words match in any order. Try artist:, album:, year: or genre: to narrow a search.",
+            stringResource(R.string.search_tips_detail),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 12.dp),
@@ -323,8 +329,8 @@ private fun BrowseCard(tile: BrowseTile, modifier: Modifier, onClick: () -> Unit
         shape = MaterialTheme.shapes.large,
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ),
     ) {
         Row(
@@ -338,7 +344,12 @@ private fun BrowseCard(tile: BrowseTile, modifier: Modifier, onClick: () -> Unit
                 modifier = Modifier.size(22.dp),
             )
             Spacer(Modifier.width(10.dp))
-            Text(tile.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                stringResource(tile.title),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -353,14 +364,16 @@ fun OnlineOffCard(turnOnline: () -> Unit) {
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = { Icon(Icons.Rounded.CloudOff, contentDescription = null) },
             supportingContent = {
-                Text("Turn on online features to find music to download, artwork and lyrics.")
+                Text(stringResource(R.string.search_online_off_detail))
             },
-        ) { Text("Online search is off") }
+        ) { Text(stringResource(R.string.search_online_off)) }
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            FilledTonalButton(onClick = turnOnline) { Text("Turn on") }
+            FilledTonalButton(onClick = turnOnline) {
+                Text(stringResource(R.string.search_turn_on))
+            }
         }
     }
 }
@@ -387,10 +400,10 @@ private fun LazyListScope.answered(
             ListItem(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 leadingContent = { Icon(Icons.Rounded.SearchOff, contentDescription = null) },
-                supportingContent = { Text("Check the spelling, or try fewer words.") },
+                supportingContent = { Text(stringResource(R.string.search_nothing_detail)) },
                 modifier = Modifier.testTag("nothing-in-library"),
             ) {
-                Text("No matches for “${answer.query}” in your library", maxLines = 2)
+                Text(stringResource(R.string.search_nothing, answer.query), maxLines = 2)
             }
         }
         onlineSection(online, onlineFound, model, act)
@@ -402,14 +415,26 @@ private fun LazyListScope.answered(
             songs(answer, found.tracks.take(TOP_SONGS), found.tracks, playing, model, more, selection)
             if (found.tracks.size > TOP_SONGS) {
                 item(key = "songs-all") {
-                    SeeAll("See all ${songsCounted(found)} songs") { model.choose(LibraryScope.SONGS) }
+                    val total = found.trackCount.toInt()
+                    SeeAll(
+                        pluralStringResource(
+                            R.plurals.search_see_all_songs,
+                            total,
+                            songsCounted(words(), found),
+                        )
+                    ) {
+                        model.choose(LibraryScope.SONGS)
+                    }
                 }
             }
             if (found.albums.isNotEmpty()) {
                 item(key = "albums-header") {
                     SectionHeader(
-                        "Albums",
-                        action = if (found.albums.size > TOP_SHELF) "See all" else null,
+                        stringResource(R.string.search_albums),
+                        action =
+                            if (found.albums.size > TOP_SHELF) {
+                                stringResource(R.string.search_see_all)
+                            } else null,
                         onAction = { model.choose(LibraryScope.ALBUMS) },
                     )
                 }
@@ -428,8 +453,11 @@ private fun LazyListScope.answered(
             if (found.artists.isNotEmpty()) {
                 item(key = "artists-header") {
                     SectionHeader(
-                        "Artists",
-                        action = if (found.artists.size > TOP_SHELF) "See all" else null,
+                        stringResource(R.string.search_artists),
+                        action =
+                            if (found.artists.size > TOP_SHELF) {
+                                stringResource(R.string.search_see_all)
+                            } else null,
                         onAction = { model.choose(LibraryScope.ARTISTS) },
                     )
                 }
@@ -450,11 +478,12 @@ private fun LazyListScope.answered(
         LibraryScope.SONGS -> {
             item(key = "save-search") {
                 val sheets = LocalSheets.current
+                val saving = stringResource(R.string.search_save_search_title)
                 Row(Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter), horizontalArrangement = Arrangement.End) {
                     TextButton(
                         onClick = {
                             sheets.editSearch(
-                                "Save search as playlist",
+                                saving,
                                 SavedSearchDraft.starting(answer.query, answer.query),
                             ) { name, search ->
                                 model.saveSearch(name, search)
@@ -462,7 +491,7 @@ private fun LazyListScope.answered(
                         },
                         modifier = Modifier.testTag("save-search"),
                     ) {
-                        Text("Save as playlist")
+                        Text(stringResource(R.string.search_save_as_playlist))
                     }
                 }
             }
@@ -471,7 +500,12 @@ private fun LazyListScope.answered(
                 item(key = "songs-capped") {
                     Column(Modifier.padding(horizontal = Sizes.gutter, vertical = 16.dp)) {
                         Text(
-                            "Showing ${found.tracks.size} of ${found.trackCount} songs.",
+                            pluralStringResource(
+                                R.plurals.search_showing_songs,
+                                found.trackCount.toInt(),
+                                found.tracks.size,
+                                found.trackCount.toInt(),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -480,7 +514,7 @@ private fun LazyListScope.answered(
                             LoadingIndicator(Modifier.size(40.dp).testTag("more-songs-loading"))
                         } else {
                             TextButton(onClick = model::moreSongs, modifier = Modifier.testTag("more-songs")) {
-                                Text("Show more")
+                                Text(stringResource(R.string.search_show_more))
                             }
                         }
                     }
@@ -511,7 +545,17 @@ private fun LazyListScope.answered(
                     leadingContent = { ArtistPortrait(artist.artworkTrack, Sizes.rowArt) },
                     supportingContent = {
                         Text(
-                            "${counted(artist.albums, "album")} · ${counted(artist.songs, "song")}",
+                            pluralStringResource(
+                                R.plurals.count_albums,
+                                artist.albums.toInt(),
+                                artist.albums.toInt(),
+                            ) +
+                                " · " +
+                                pluralStringResource(
+                                    R.plurals.count_songs,
+                                    artist.songs.toInt(),
+                                    artist.songs.toInt(),
+                                ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -535,7 +579,7 @@ private fun LazyListScope.onlineSection(
 ) {
     when {
         !online -> {
-            item(key = "online-header") { SectionHeader("Online") }
+            item(key = "online-header") { SectionHeader(stringResource(R.string.search_online)) }
             item(key = "online-off") { OnlineOffCard(model::turnOnline) }
         }
         onlineFound != null -> onlineTop(onlineFound, model, act)
@@ -552,17 +596,19 @@ private fun LazyListScope.hints(answer: LibraryAnswer, search: (String) -> Unit)
                 AssistChip(
                     onClick = { search(meant) },
                     label = {
+                        val (before, after) =
+                            stringResource(R.string.search_did_you_mean, MEANT).split(MEANT)
                         Text(
                             buildAnnotatedString {
-                                append("Did you mean ")
+                                append(before)
                                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(meant) }
-                                append("?")
+                                append(after)
                             }
                         )
                     },
                     leadingIcon = {
                         Icon(
-                            Icons.Rounded.AutoFixHigh,
+                            Icons.Rounded.Spellcheck,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(AssistChipDefaults.IconSize),
@@ -583,13 +629,6 @@ private fun LazyListScope.hints(answer: LibraryAnswer, search: (String) -> Unit)
                     SuggestionChip(
                         onClick = { search(completion) },
                         label = { Text(completion, maxLines = 1) },
-                        icon = {
-                            Icon(
-                                Icons.Rounded.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(AssistChipDefaults.IconSize),
-                            )
-                        },
                     )
                 }
             }
@@ -599,11 +638,12 @@ private fun LazyListScope.hints(answer: LibraryAnswer, search: (String) -> Unit)
 
 @Composable
 private fun Reads(reads: List<String>) {
+    val reading = stringResource(R.string.search_reading, reads.joinToString(", "))
     Row(
         Modifier.fillMaxWidth()
             .padding(horizontal = Sizes.gutter, vertical = 4.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = "Searching for ${reads.joinToString(", ")}"
+                contentDescription = reading
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -644,7 +684,7 @@ private fun ScopeChips(found: LibrarySearch, scope: LibraryScope, choose: (Libra
             FilterChip(
                 selected = option == scope,
                 onClick = { choose(option) },
-                label = { Text(scopeLabel(option, found), maxLines = 1) },
+                label = { Text(scopeLabel(words(), option, found), maxLines = 1) },
                 modifier = Modifier.testTag("scope-${option.name.lowercase()}"),
             )
         }
@@ -661,7 +701,7 @@ private fun LazyListScope.songs(
     selection: Selection<ULong>,
 ) {
     if (shown.isEmpty()) return
-    item(key = "songs-header") { SectionHeader("Songs") }
+    item(key = "songs-header") { SectionHeader(stringResource(R.string.search_songs)) }
     itemsIndexed(shown, key = { _, track -> "song-${track.id}" }) { index, track ->
         LitTrackRow(
             track = track,
@@ -685,14 +725,22 @@ private fun LitTrackRow(
 ) {
     val title = bold()
     val supporting = bold(MaterialTheme.colorScheme.onSurface)
+    val words = words()
     val headline =
-        remember(track, lit, title) {
-            lit(track.shownTitle, lit.of(SearchColumn.TITLE, track.shownTitle), title)
+        remember(track, lit, title, words) {
+            val shown = track.shownTitle(words)
+            lit(shown, lit.of(SearchColumn.TITLE, shown), title)
         }
     val byline =
-        remember(track, lit, supporting) {
+        remember(track, lit, supporting, words) {
             buildAnnotatedString {
-                append(lit(track.shownArtist, lit.of(SearchColumn.ARTIST, track.artist), supporting))
+                append(
+                    lit(
+                        track.shownArtist(words),
+                        lit.of(SearchColumn.ARTIST, track.artist),
+                        supporting,
+                    )
+                )
                 if (track.album.isNotBlank()) {
                     append(" · ")
                     append(lit(track.album, lit.of(SearchColumn.ALBUM, track.album), supporting))
@@ -770,7 +818,7 @@ private fun ArtistTile(artist: ArtistHit, lit: Lit, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            counted(artist.songs, "song"),
+            pluralStringResource(R.plurals.count_songs, artist.songs.toInt(), artist.songs.toInt()),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -786,6 +834,8 @@ private fun SeeAll(label: String, onClick: () -> Unit) {
         TextButton(onClick = onClick) { Text(label) }
     }
 }
+
+private const val MEANT = "\uFFFC"
 
 private val TILE_AT_LEAST = 148.dp
 val TILE_SPACING = 12.dp

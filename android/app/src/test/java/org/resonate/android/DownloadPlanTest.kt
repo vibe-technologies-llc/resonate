@@ -47,20 +47,20 @@ class DownloadPlanTest {
 
     @Test
     fun aLoneJobSaysWhatItIsDoingAndHowItEnded() {
-        assertNull(DownloadPlan.summary(emptyList()))
-        assertEquals("Finding a…", DownloadPlan.summary(listOf(job(1, "a", DownloadState.FINDING))))
-        assertEquals("Downloading a…", DownloadPlan.summary(listOf(job(1, "a", DownloadState.DOWNLOADING))))
+        assertNull(DownloadPlan.summary(English, emptyList()))
+        assertEquals("Finding a…", DownloadPlan.summary(English, listOf(job(1, "a", DownloadState.FINDING))))
+        assertEquals("Downloading a…", DownloadPlan.summary(English, listOf(job(1, "a", DownloadState.DOWNLOADING))))
         assertEquals(
             "Downloaded a · 2 KiB",
-            DownloadPlan.summary(listOf(job(1, "a", DownloadState.DONE, 2048uL))),
+            DownloadPlan.summary(English, listOf(job(1, "a", DownloadState.DONE, 2048uL))),
         )
         assertEquals(
             "No provider has it",
-            DownloadPlan.summary(listOf(job(1, "a", DownloadState.FAILED, failure = "No provider has it"))),
+            DownloadPlan.summary(English, listOf(job(1, "a", DownloadState.FAILED, failure = "No provider has it"))),
         )
         assertEquals(
             "Download cancelled",
-            DownloadPlan.summary(listOf(job(1, "a", DownloadState.CANCELLED))),
+            DownloadPlan.summary(English, listOf(job(1, "a", DownloadState.CANCELLED))),
         )
     }
 
@@ -69,16 +69,17 @@ class DownloadPlanTest {
         val running =
             listOf(job(1, "a", DownloadState.DONE), job(2, "b", DownloadState.DOWNLOADING), job(3, "c"))
 
-        assertEquals("Downloading 2 of 3 · Downloading b…", DownloadPlan.summary(running))
+        assertEquals("Downloading 2 of 3 · Downloading b…", DownloadPlan.summary(English, running))
         assertEquals(
             "Downloaded 1 of 2 songs · 1 failed: Gone",
             DownloadPlan.summary(
-                listOf(job(1, "a", DownloadState.DONE), job(2, "b", DownloadState.FAILED, failure = "Gone"))
+                English,
+                listOf(job(1, "a", DownloadState.DONE), job(2, "b", DownloadState.FAILED, failure = "Gone")),
             ),
         )
         assertEquals(
             "Downloaded 2 of 2 songs",
-            DownloadPlan.summary(listOf(job(1, "a", DownloadState.DONE), job(2, "b", DownloadState.DONE))),
+            DownloadPlan.summary(English, listOf(job(1, "a", DownloadState.DONE), job(2, "b", DownloadState.DONE))),
         )
     }
 

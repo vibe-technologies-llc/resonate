@@ -12,19 +12,19 @@ public enum LinkedPlaylistPace {
 
 public enum LinkedPlaylistWords {
     public static func header(_ link: PlaylistLinkInfo) -> String {
-        link.keptInStep ? "Kept in step with \(link.service)" : "Imported from \(link.service)"
+        link.keptInStep ? said("linked.header.kept", link.service) : said("linked.header.imported", link.service)
     }
 
     public static func keepInStep(_ service: String) -> String {
-        "Keep in step with \(service)"
+        said("linked.keep-in-step", service)
     }
 
     public static func keepingExplained(_ service: String) -> String {
-        "The playlist follows the one on \(service), read again every few hours: songs in your library take its order, and the rest are saved for later to download."
+        said("linked.keeping-explained", service)
     }
 
     public static func refreshFrom(_ service: String) -> String {
-        "Refresh from \(service)"
+        said("linked.refresh-from", service)
     }
 
     public static func imported(
@@ -35,11 +35,11 @@ public enum LinkedPlaylistWords {
         missing: UInt32
     ) -> String {
         guard keptInStep else {
-            return "Imported \(counted(Int(matched), "local song")); \(missing) still missing"
+            return said("linked.imported.once", Int(matched), Int(missing))
         }
-        let here = "\(counted(Int(matched), "song")) here"
-        let following = "Keeping \(name) in step with \(service)"
-        return missing == 0 ? "\(following) · \(here)" : "\(following) · \(here), \(missing) being downloaded"
+        return missing == 0
+            ? said("linked.imported.kept", name, service, Int(matched))
+            : said("linked.imported.kept.downloading", name, service, Int(matched), Int(missing))
     }
 
     public static func moved(_ refreshed: RefreshedPlaylist) -> Bool {
@@ -53,76 +53,76 @@ public enum LinkedPlaylistWords {
         asked: Bool
     ) -> String? {
         var parts: [String] = []
-        if refreshed.added > 0 { parts.append("\(counted(Int(refreshed.added), "song")) added") }
-        if refreshed.removed > 0 { parts.append("\(refreshed.removed) taken out") }
+        if refreshed.added > 0 { parts.append(said("linked.refreshed.added", Int(refreshed.added))) }
+        if refreshed.removed > 0 { parts.append(said("linked.refreshed.removed", Int(refreshed.removed))) }
         if asked, refreshed.wanted > 0 {
-            parts.append("\(refreshed.wanted) being downloaded")
+            parts.append(said("linked.refreshed.downloading", Int(refreshed.wanted)))
         } else if asked, refreshed.missing > 0 {
-            parts.append("\(refreshed.missing) not in your library")
+            parts.append(said("linked.refreshed.missing", Int(refreshed.missing)))
         }
 
         guard moved(refreshed) || asked else { return nil }
-        guard !parts.isEmpty else { return "\(name) is in step with \(service)" }
-        return "\(name) from \(service) · " + parts.joined(separator: ", ")
+        guard !parts.isEmpty else { return said("linked.refreshed.in-step", name, service) }
+        return said("linked.refreshed", name, service, parts.joined(separator: ", "))
     }
 
     public static func keptInStep(name: String, service: String, _ kept: Bool) -> String {
-        kept ? "Keeping \(name) in step with \(service)" : "\(name) no longer follows \(service)"
+        kept ? said("linked.keeping", name, service) : said("linked.no-longer-follows", name, service)
     }
 
     public static func forgotten(name: String, service: String) -> String {
-        "\(name) no longer remembers its \(service) link"
+        said("linked.forgotten", name, service)
     }
 }
 
 public enum FollowedProfileWords {
     public static func follow(_ service: String) -> String {
-        "Follow \(service) profile"
+        said("linked.profile.follow", service)
     }
 
-    public static let moveOnce = "Move to Resonate once"
+    public static var moveOnce: String { said("linked.profile.move-once") }
 
-    public static let reading = "Reading the profile…"
+    public static var reading: String { said("linked.profile.reading") }
 
     public static func heading(_ service: String) -> String {
-        "\(service) profile"
+        said("linked.profile.heading", service)
     }
 
     public static func explained(_ service: String) -> String {
-        "Following keeps every playlist this profile makes, and its loved tracks, in step with \(service), new playlists included. Moving once imports them as they are now and follows nothing."
+        said("linked.profile.explained", service)
     }
 
     public static func followed(_ profile: FollowedProfile, keptInStep: Bool) -> String {
-        let playlists = counted(profile.playlists.count, "playlist")
+        let playlists = profile.playlists.count
         var parts: [String] = []
-        if keptInStep, profile.letGo > 0 { parts.append("\(profile.letGo) let go") }
-        if keptInStep, profile.gone > 0 { parts.append("\(profile.gone) deleted on \(profile.service)") }
-        if profile.unread > 0 { parts.append("\(profile.unread) could not be read") }
+        if keptInStep, profile.letGo > 0 { parts.append(said("linked.profile.let-go", Int(profile.letGo))) }
+        if keptInStep, profile.gone > 0 { parts.append(said("linked.profile.deleted", Int(profile.gone), profile.service)) }
+        if profile.unread > 0 { parts.append(said("linked.profile.unread", Int(profile.unread))) }
 
         let lead = keptInStep
-            ? "Following \(profile.name) on \(profile.service) · \(playlists)"
-            : "Moved \(playlists) of \(profile.name) to Resonate"
+            ? said("linked.profile.following", profile.name, profile.service, playlists)
+            : said("linked.profile.moved", playlists, profile.name)
         return parts.isEmpty ? lead : lead + ", " + parts.joined(separator: ", ")
     }
 
     public static func refreshed(name: String, service: String, added: Int, changed: Bool, gone: UInt32) -> String? {
         var parts: [String] = []
-        if added > 0 { parts.append(counted(added, "new playlist")) }
-        if gone > 0 { parts.append("\(gone) deleted on \(service)") }
+        if added > 0 { parts.append(said("linked.profile.new-playlists", added)) }
+        if gone > 0 { parts.append(said("linked.profile.deleted", Int(gone), service)) }
 
-        guard parts.isEmpty else { return "\(name) on \(service) · " + parts.joined(separator: ", ") }
-        return changed ? "\(name)'s playlists on \(service) brought in step" : nil
+        guard parts.isEmpty else { return said("linked.profile.refreshed", name, service, parts.joined(separator: ", ")) }
+        return changed ? said("linked.profile.brought-in-step", name, service) : nil
     }
 
     public static func stopFollowing(_ name: String) -> String {
-        "Stop following \(name)?"
+        said("linked.profile.stop-following.ask", name)
     }
 
     public static func followed(_ profile: ProfileFollowed) -> String {
-        "\(profile.name) on \(profile.service)"
+        said("linked.profile.on", profile.name, profile.service)
     }
 
-    public static let stopFollowingHeading = "Stop following"
+    public static var stopFollowingHeading: String { said("linked.profile.stop-following") }
 
-    public static let stoppingExplained = "Its playlists stay, still kept in step one by one; new playlists it makes are no longer brought in."
+    public static var stoppingExplained: String { said("linked.profile.stopping-explained") }
 }

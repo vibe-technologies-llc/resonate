@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.R
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.SharedPlaylist
@@ -111,7 +112,7 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
 
     fun undo() =
         features.editPlaylist { native ->
-            if (!native.undoPlaylist()) resonate.library.notice("There is no playlist edit to undo")
+            if (!native.undoPlaylist()) resonate.library.notice(R.string.library_playlist_nothing_to_undo)
         }
 
     fun undoDeletion() = features.editPlaylist { it.undoPlaylist() }

@@ -91,26 +91,28 @@ data class AudioOutput(
     val type: Int = AudioDeviceInfo.TYPE_UNKNOWN,
 )
 
-internal fun outputKind(type: Int): String =
-    when (type) {
-        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
-        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> "Built-in speaker"
-        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Earpiece"
-        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Wired headphones"
-        AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired headset"
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
-        AudioDeviceInfo.TYPE_BLE_HEADSET,
-        AudioDeviceInfo.TYPE_BLE_SPEAKER,
-        AudioDeviceInfo.TYPE_BLE_BROADCAST -> "Bluetooth audio"
-        AudioDeviceInfo.TYPE_USB_DEVICE,
-        AudioDeviceInfo.TYPE_USB_HEADSET,
-        AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB audio"
-        AudioDeviceInfo.TYPE_HDMI,
-        AudioDeviceInfo.TYPE_HDMI_ARC,
-        AudioDeviceInfo.TYPE_HDMI_EARC -> "HDMI audio"
-        else -> "Audio device"
-    }
+internal fun outputKind(words: Words, type: Int): String =
+    words.string(
+        when (type) {
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> R.string.device_kind_speaker
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> R.string.device_kind_earpiece
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> R.string.device_kind_wired_headphones
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> R.string.device_kind_wired_headset
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_BLE_BROADCAST -> R.string.device_kind_bluetooth
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_USB_ACCESSORY -> R.string.device_kind_usb
+            AudioDeviceInfo.TYPE_HDMI,
+            AudioDeviceInfo.TYPE_HDMI_ARC,
+            AudioDeviceInfo.TYPE_HDMI_EARC -> R.string.device_kind_hdmi
+            else -> R.string.device_kind_other
+        }
+    )
 
 data class MusicFolder(val uri: Uri, val name: String, val readable: Boolean, val writable: Boolean)
 
@@ -218,7 +220,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             .stateIn(derivedScope, SharingStarted.Eagerly, 0uL)
     val downloadStatus: StateFlow<String?> =
         downloads.jobs
-            .map(DownloadPlan::summary)
+            .map { DownloadPlan.summary(library.words, it) }
             .stateIn(derivedScope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
@@ -391,14 +393,20 @@ class LibraryFeatures(private val context: Context, private val library: Library
                             .native()
                             .submitScrobbles(account, playing?.takeIf { it != lastPlaying })
                     lastPlaying = playing
-                    if (count > 0uL) scrobbleStatus.value = "Submitted $count listens"
+                    if (count > 0uL)
+                        scrobbleStatus.value =
+                            library.words.plural(
+                                R.plurals.features_scrobble_submitted,
+                                count.toInt(),
+                                count.toLong(),
+                            )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
                     scrobbleStatus.value = failure.message
                 }
                 try {
-                    lovesSaid(library.native().tellLoves(account))?.let {
+                    lovesSaid(library.words, library.native().tellLoves(account))?.let {
                         scrobbleStatus.value = it
                     }
                 } catch (cancelled: CancellationException) {
@@ -521,9 +529,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
             profilesFollowed.value = native.profilesFollowed()
             when {
-                asked && keptInStep -> library.notice(FollowedProfileWords.followed(followed))
-                asked -> library.notice(FollowedProfileWords.moved(followed))
-                !changes.quiet -> tellFinding(FollowedProfileWords.refreshed(followed, changes))
+                asked && keptInStep ->
+                    library.notice(FollowedProfileWords.followed(library.words, followed))
+                asked -> library.notice(FollowedProfileWords.moved(library.words, followed))
+                !changes.quiet ->
+                    tellFinding(FollowedProfileWords.refreshed(library.words, followed, changes))
             }
         } finally {
             followingProfiles.update { it - link }
@@ -559,7 +569,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 accounts.writeSpotify(kept)
                 spotifyAccount.value = kept
                 native.configureSpotify(kept.clientId, kept.refreshToken)
-                library.notice(SpotifyWords.SIGNED_IN)
+                library.notice(R.string.spotify_words_signed_in)
             } finally {
                 spotifyAddress.value = null
                 spotifySigningIn.value = false
@@ -579,7 +589,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         native.signOutOfSpotify()
         playlists.value = native.playlists()
         profilesFollowed.value = native.profilesFollowed()
-        library.notice(SpotifyWords.SIGNED_OUT)
+        library.notice(R.string.spotify_words_signed_out)
     }
 
     fun loadProfilesFollowed() = work { native -> profilesFollowed.value = native.profilesFollowed() }
@@ -587,7 +597,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun unfollowProfile(link: String) = work { native ->
         native.unfollowProfile(link)
         profilesFollowed.value = native.profilesFollowed()
-        library.notice(FollowedProfileWords.STOPPED)
+        library.notice(R.string.followed_stopped)
     }
 
     private fun claimRefresh(id: ULong): Boolean {
@@ -620,8 +630,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
             val playlist = playlists.value.firstOrNull { it.id == id } ?: return
             val sentence =
                 LinkedPlaylistWords.refreshed(
+                    library.words,
                     playlist.name,
-                    playlist.link?.service ?: "its service",
+                    playlist.link?.service ?: library.words.string(R.string.linked_its_service),
                     refreshed,
                 )
             if (asked) library.notice(sentence) else if (moved) tellFinding(sentence)
@@ -678,7 +689,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val config = syncConfig.value
         if (config == null) {
             joinWaiting = code
-            library.notice("Joining as soon as this phone's settings are read")
+            library.notice(R.string.features_sync_joining_when_read)
             return
         }
         joinWaiting = null
@@ -688,9 +699,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun offerPairing(link: String) {
         val code = syncCodeInLink(link)
         when {
-            code == null -> library.notice("That link holds no pairing code")
+            code == null -> library.notice(R.string.features_sync_link_holds_no_code)
             code == syncStatus.value?.code || code == syncConfig.value?.key ->
-                library.notice("This phone already syncs with those devices")
+                library.notice(R.string.features_sync_already_with_those)
             else -> pairingOffered.value = code
         }
     }
@@ -809,8 +820,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val asked = native.syncFetchMissing(id, device.id)
         library.notice(
             if (asked > 0u)
-                "Asking ${device.name} for $asked ${if (asked == 1u) "song" else "songs"}"
-            else "${device.name} has nothing this playlist lacks"
+                library.words.plural(
+                    R.plurals.features_sync_asking_for_missing,
+                    asked.toInt(),
+                    device.name,
+                    asked.toInt(),
+                )
+            else library.words.string(R.string.features_sync_nothing_missing, device.name)
         )
     }
 
@@ -822,7 +838,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun continueFrom(handoff: HandedOff, play: () -> Unit) = work { native ->
         val loaded = native.syncContinueFrom(handoff.id)
         library.notice(
-            "Continuing ${if (loaded == 1u) "1 song" else "$loaded songs"} from ${handoff.device}"
+            library.words.plural(
+                R.plurals.features_sync_continuing,
+                loaded.toInt(),
+                loaded.toInt(),
+                handoff.device,
+            )
         )
         if (handoff.playing) withContext(Dispatchers.Main) { play() }
     }
@@ -983,11 +1004,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
             when (val destination = SyncLanding.destination(landing, syncFolder.value)) {
                 is LandingDestination.Into -> known.first { it.uri.toString() == destination.id }
                 LandingDestination.Away -> {
-                    syncNotice.value = SyncLanding.AWAY
+                    syncNotice.value = context.getString(SyncLanding.AWAY)
                     return
                 }
                 LandingDestination.Nowhere -> {
-                    syncNotice.value = SyncLanding.NOWHERE
+                    syncNotice.value = context.getString(SyncLanding.NOWHERE)
                     return
                 }
             }
@@ -1019,7 +1040,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 check(
                     settings.edit().putString("unfinished-sync-landing", uri.toString()).commit()
                 ) {
-                    "The song from another device could not be recorded"
+                    context.getString(R.string.features_sync_landing_not_recorded)
                 }
                 val descriptor =
                     requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
@@ -1033,7 +1054,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 throw cancelled
             } catch (failure: Exception) {
                 refuseLanding(native, received.id)
-                syncNotice.value = failure.message ?: "A song from another device could not be kept"
+                syncNotice.value =
+                    failure.message ?: library.words.string(R.string.features_sync_landing_not_kept)
                 library.report(failure)
             } finally {
                 created?.let { uri ->
@@ -1052,7 +1074,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             refreshWanted(native)
             refreshArtwork()
             enrichment.begin()
-            tellFinding(FindingNotices.kept(landed))
+            tellFinding(FindingNotices.kept(library.words, landed))
         }
     }
 
@@ -1083,10 +1105,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     )
                     .commit()
             ) {
-                "The Downloads choice could not be saved"
+                context.getString(R.string.features_folders_downloads_not_saved)
             }
             refreshFolders()
-            MusicFolder(uri, "Downloads", true, true)
+            MusicFolder(uri, context.getString(R.string.features_folders_downloads), true, true)
         }
 
     fun useDownloadsAndScan() {
@@ -1113,7 +1135,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     .map { value ->
                         val uri = Uri.parse(value)
                         if (uri == MusicDocuments.downloads) {
-                            return@map MusicFolder(uri, "Downloads", true, true)
+                            return@map MusicFolder(
+                                uri,
+                                context.getString(R.string.features_folders_downloads),
+                                true,
+                                true,
+                            )
                         }
                         var name =
                             settings.getString("folder-name:$value", null)
@@ -1151,7 +1178,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         }
                         MusicFolder(
                             uri,
-                            name.ifBlank { "Music folder" },
+                            name.ifBlank { context.getString(R.string.features_folders_music_folder) },
                             readable,
                             context.contentResolver.persistedUriPermissions.any {
                                 it.uri == uri && it.isWritePermission
@@ -1230,7 +1257,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             val fetching =
                 syncConfig.value?.let { it.enabled && (it.everything || it.favourites || it.playlists) }
                     ?: false
-            tellFinding(FindingNotices.hidden(changed.hidden, fetching))
+            tellFinding(FindingNotices.hidden(library.words, changed.hidden, fetching))
         }
     }
 
@@ -1398,13 +1425,20 @@ class LibraryFeatures(private val context: Context, private val library: Library
     suspend fun deleteCopies(sets: List<IdenticalSongs>, consent: suspend (List<Uri>) -> Boolean) {
         val deleted = SongDeletion(context, library, consent).foldCopies(sets)
         if (deleted.folded > 0) songsLeft()
-        if (deleted.kept > 0) library.report(IllegalStateException(DeletionSentences.kept(deleted.kept)))
-        else if (deleted.folded > 0) library.notice(DeletionSentences.folded(deleted.folded))
+        if (deleted.kept > 0)
+            library.report(
+                IllegalStateException(DeletionSentences.kept(library.words, deleted.kept))
+            )
+        else if (deleted.folded > 0)
+            library.notice(DeletionSentences.folded(library.words, deleted.folded))
     }
 
     private fun tellDeleted(deleted: Deleted) {
-        if (deleted.kept > 0) library.report(IllegalStateException(DeletionSentences.kept(deleted.kept)))
-        else library.notice(DeletionSentences.deleted(deleted.titles))
+        if (deleted.kept > 0)
+            library.report(
+                IllegalStateException(DeletionSentences.kept(library.words, deleted.kept))
+            )
+        else library.notice(DeletionSentences.deleted(library.words, deleted.titles))
     }
 
     fun loadPlaylists() = work { native -> playlists.value = native.playlists() }
@@ -1439,7 +1473,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun saveSearch(name: String, search: SavedSearch) = work { native ->
         native.saveSearch(name, search)
         playlists.value = native.playlists()
-        library.notice("Saved “$name” among your playlists")
+        library.notice(R.string.features_playlists_saved_search_kept, name)
     }
 
     fun keepSearchAsPlaylist(name: String, search: SavedSearch) = work { native ->
@@ -1447,8 +1481,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val kept = native.keepSearchAsPlaylist(name, search)
         playlists.value = native.playlists()
         library.notice(
-            if (already) "Already kept as “${kept.name}” among your playlists"
-            else "Kept “${kept.name}” among your playlists"
+            library.words.string(
+                if (already) R.string.features_playlists_already_kept else R.string.features_playlists_kept,
+                kept.name,
+            )
         )
     }
 
@@ -1574,8 +1610,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
         accounts.writeAuddToken(token)
         auddToken.value = token
         library.notice(
-            if (token.isEmpty()) "AudD will no longer be asked"
-            else "AudD will be asked when Shazam does not know a song"
+            library.words.string(
+                if (token.isEmpty()) R.string.features_listen_audd_not_asked else R.string.features_listen_audd_asked
+            )
         )
     }
 
@@ -1596,7 +1633,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 if (request == recognitionRequest.get()) {
                     recognition.value = found
                     if (found.isEmpty())
-                        library.notice("No recording could be identified from this audio")
+                        library.notice(R.string.features_recognition_none)
                 }
             } finally {
                 if (request == recognitionRequest.get()) recognitionBusy.value = false
@@ -1639,7 +1676,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 var failures = 0
                 tracks.forEachIndexed { index, track ->
                     currentCoroutineContext().ensureActive()
-                    library.notice("Enriching ${index + 1}/${tracks.size}: ${track.title}")
+                    library.notice(R.string.features_enrichment_enriching, index + 1, tracks.size, track.title)
                     try {
                         native.enrichTrack(track.id)
                     } catch (failure: Exception) {
@@ -1650,7 +1687,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 library.refresh()
                 refreshArtwork()
                 library.notice(
-                    "Enrichment finished${if (failures > 0) "; $failures lookups could not complete" else ""}"
+                    if (failures > 0)
+                        library.words.plural(
+                            R.plurals.features_enrichment_finished_failing,
+                            failures,
+                            failures,
+                        )
+                    else library.words.string(R.string.features_enrichment_finished)
                 )
             } finally {
                 enriching.value = false
@@ -1683,13 +1726,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
             try {
                 val found = native.autoEqProfile(id)
                 if (found == null) {
-                    library.notice("AutoEq could not give a correction for $name")
+                    library.notice(R.string.features_autoeq_no_correction, name)
                     return@work
                 }
                 library.updatePreferences {
                     it.copy(equaliserEnabled = true, equaliser = found.curve)
                 }
-                library.notice("Applied ${found.curve.name}")
+                library.notice(R.string.features_autoeq_applied, found.curve.name)
             } finally {
                 correctionApplying.value = false
             }
@@ -1710,7 +1753,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             native.startScrobbling(ScrobbleService.LAST_FM, includeHistory)
         accounts.writeScrobbling(account)
         scrobbleAccount.value = account
-        scrobbleStatus.value = "Scrobbling accounts saved"
+        scrobbleStatus.value = library.words.string(R.string.features_scrobble_accounts_saved)
     }
 
     fun validateScrobbling(account: ScrobbleAccount) = work { native ->
@@ -1724,7 +1767,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 lastfmAddress.value = native.authorizeLastfm(account.lastfmKey, account.lastfmSecret)
                 val signed = native.finishLastfmAuthorization()
                 if (signed == null) {
-                    scrobbleStatus.value = "The Last.fm sign-in ended before Resonate was allowed"
+                    scrobbleStatus.value = library.words.string(R.string.features_scrobble_lastfm_ended)
                     return@work
                 }
                 val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
@@ -1737,7 +1780,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 accounts.writeScrobbling(signedIn)
                 native.startScrobbling(ScrobbleService.LAST_FM, false)
                 scrobbleAccount.value = signedIn
-                scrobbleStatus.value = "Signed in to Last.fm as ${signed.name}"
+                scrobbleStatus.value = library.words.string(R.string.features_scrobble_lastfm_signed_in)
             } finally {
                 lastfmAddress.value = null
                 lastfmBusy.value = false
@@ -1750,7 +1793,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val signedOut = kept.copy(lastfmSession = "")
         accounts.writeScrobbling(signedOut)
         scrobbleAccount.value = signedOut
-        scrobbleStatus.value = "Signed out of Last.fm"
+        scrobbleStatus.value = library.words.string(R.string.features_scrobble_lastfm_signed_out)
     }
 
     fun refreshOutputs() {
@@ -1758,7 +1801,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     private fun outputsNow(): List<AudioOutput> =
-        context.getSystemService(android.media.AudioManager::class.java)?.let(::audioOutputs).orEmpty()
+        context
+            .getSystemService(android.media.AudioManager::class.java)
+            ?.let { audioOutputs(it, library.words) }
+            .orEmpty()
 
     fun selectOutput(id: Int) {
         library.request { native ->
@@ -1782,7 +1828,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 changeAccounts { it.saved(id, account.copy(refreshToken = token)) }
                 tidalAuthorization.value = null
                 downloads.wantsChanged()
-                library.notice("Signed in to TIDAL")
+                library.notice(R.string.features_provider_tidal_signed_in)
             } finally {
                 tidalBusy.value = false
             }
@@ -1807,7 +1853,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         ),
                     )
                 }
-                library.notice("Signed in to Jellyfin as ${session.name}")
+                library.notice(library.words.string(R.string.features_provider_jellyfin_signed_in, session.name))
             } finally {
                 jellyfinCode.value = null
                 jellyfinBusy.value = false
@@ -1831,7 +1877,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun saveProviderAccount(id: Long, account: DownloadAccount) = work {
         keepProviderAccount(id, account)
         downloads.wantsChanged()
-        library.notice("Download source saved")
+        library.notice(R.string.features_provider_source_saved)
     }
 
     fun turnProviderAccount(id: Long, on: Boolean) = work {
@@ -1842,7 +1888,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun removeProviderAccount(id: Long) = work {
         changeAccounts { it.removed(id) }
         downloads.wantsChanged()
-        library.notice("Download source removed")
+        library.notice(R.string.features_provider_source_removed)
     }
 
     fun download(song: SearchSong, folder: MusicFolder) {
@@ -1851,7 +1897,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun download(songs: List<SearchSong>, folder: MusicFolder) {
         if (providerAccounts.value?.ready != true) {
-            library.notice("Set up a download provider first")
+            library.notice(R.string.features_provider_set_up_first)
             return
         }
         downloads.enqueue(songs, folder.uri)
@@ -1877,7 +1923,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         collection.releases.isEmpty() &&
                         collection.artists.isEmpty()
                 )
-                    library.notice("No music could be read from this link")
+                    library.notice(R.string.features_wants_link_unread)
             },
         )
     }
@@ -1886,7 +1932,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
         var count = 0uL
         songs.chunked(500).forEach { count += native.saveWanted(it) }
         refreshWanted(native)
-        library.notice("Saved $count recordings for later")
+        library.notice(
+            library.words.plural(R.plurals.features_wants_saved_for_later, count.toInt(), count.toInt())
+        )
     }
 
     fun loadWanted() = work { refreshWanted(it) }
@@ -1909,7 +1957,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val imported = native.importMatchedPlaylist(name, songs)
         playlists.value = native.playlists()
         library.notice(
-            LinkedPlaylistWords.imported(name, null, false, imported.matched, imported.missing)
+            LinkedPlaylistWords.imported(
+                library.words,
+                name,
+                null,
+                false,
+                imported.matched,
+                imported.missing,
+            )
         )
     }
 
@@ -1929,6 +1984,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
         library.notice(
             LinkedPlaylistWords.imported(
+                library.words,
                 playlist?.name ?: name,
                 playlist?.link?.service ?: playlistLinkService(link),
                 keptInStep,
@@ -1945,14 +2001,18 @@ class LibraryFeatures(private val context: Context, private val library: Library
         playlists.value = native.playlists()
         val playlist = playlists.value.firstOrNull { it.id == id } ?: return@work
         playlist.link?.let { link ->
-            library.notice(LinkedPlaylistWords.inStep(playlist.name, link.service, keptInStep))
+            library.notice(
+                LinkedPlaylistWords.inStep(library.words, playlist.name, link.service, keptInStep)
+            )
         }
     }
 
     fun forgetPlaylistLink(id: ULong) = work { native ->
         native.forgetPlaylistLink(id)
         playlists.value = native.playlists()
-        playlists.value.firstOrNull { it.id == id }?.let { library.notice(LinkedPlaylistWords.forgotten(it.name)) }
+        playlists.value
+            .firstOrNull { it.id == id }
+            ?.let { library.notice(LinkedPlaylistWords.forgotten(library.words, it.name)) }
     }
 
     fun artistAlbums(id: String, from: UInt = 0u) =

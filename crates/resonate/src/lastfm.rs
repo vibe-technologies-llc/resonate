@@ -11,11 +11,11 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
 
     use resonate_online::Application;
 
-    use crate::{Error, config, error::ConfigKey, online, signals};
+    use crate::{Error, config, error::ConfigKey, online, signals, words};
 
     if forget {
         config::clear(settings, ConfigKey::LastfmSession)?;
-        said!("nothing more is scrobbled to Last.fm");
+        said!("{}", words::lastfm::forgotten());
         return Ok(());
     }
     if !config.online_enabled() {
@@ -37,10 +37,7 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
         Err(resonate_library::Error::Refused { .. }) => return Err(Error::LastfmRefused),
         Err(error) => return Err(error.into()),
     };
-    said!(
-        "open {} and allow Resonate there; this waits until Last.fm says so",
-        approving.address()
-    );
+    said!("{}", words::lastfm::open_and_allow(approving.address()));
     opened_in_a_browser(approving.address());
 
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -51,9 +48,8 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
     };
     config::store(settings, ConfigKey::LastfmSession, session.key)?;
     said!(
-        "signed in to Last.fm as {}; the session key is kept in {}",
-        session.name,
-        settings.display()
+        "{}",
+        words::lastfm::signed_in(session.name, settings.display().to_string())
     );
     Ok(())
 }

@@ -12,6 +12,7 @@ use crate::{
         root::RootView,
         settings::{Choice, Rows, switch_row},
     },
+    words,
 };
 
 impl Choice for Quality {
@@ -19,10 +20,10 @@ impl Choice for Quality {
 
     fn label(self) -> &'static str {
         match self {
-            Self::LowLatency => "Low latency",
-            Self::Balanced => "Balanced",
-            Self::High => "High",
-            Self::VeryHigh => "Very high",
+            Self::LowLatency => words::settings_processing::low_latency(),
+            Self::Balanced => words::settings_processing::balanced(),
+            Self::High => words::settings_processing::high(),
+            Self::VeryHigh => words::settings_processing::very_high(),
         }
     }
 
@@ -32,25 +33,10 @@ impl Choice for Quality {
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::LowLatency => {
-                "Answers about a millisecond after the sound goes in, where the others wait tens \
-                 of milliseconds, for the most work of the four and a treble starting to fall a \
-                 little below the top of the band. Used only where the file's rate has to be \
-                 changed."
-            }
-            Self::Balanced => {
-                "The least work of the four, with errors far below what a 16-bit file can hold. \
-                 Used only where the file's rate has to be changed."
-            }
-            Self::High => {
-                "A sharper filter whose errors sit below what a 24-bit file can hold, for a little \
-                 more work than Balanced. Used only where the file's rate has to be changed."
-            }
-            Self::VeryHigh => {
-                "The sharpest filter, keeping the treble flat almost to the top of the band and \
-                 its errors below what any file holds. It waits longest for its first sound; used \
-                 only where the file's rate has to be changed."
-            }
+            Self::LowLatency => words::settings_processing::answers_about_a_millisecond_after_the(),
+            Self::Balanced => words::settings_processing::the_least_work_of_the_four(),
+            Self::High => words::settings_processing::a_sharper_filter_whose_errors_sit(),
+            Self::VeryHigh => words::settings_processing::the_sharpest_filter_keeping_the_treble(),
         })
     }
 }
@@ -60,26 +46,19 @@ impl Choice for FilterPhase {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Linear => "Linear",
-            Self::Intermediate => "Intermediate",
-            Self::Minimum => "Minimum",
+            Self::Linear => words::settings_processing::linear(),
+            Self::Intermediate => words::settings_processing::intermediate(),
+            Self::Minimum => words::settings_processing::minimum(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Linear => {
-                "Every frequency is delayed alike, so nothing is shifted against anything else; \
-                 what rings, rings a little before a sharp sound as well as after it."
-            }
+            Self::Linear => words::settings_processing::every_frequency_is_delayed_alike_so(),
             Self::Intermediate => {
-                "Halfway between the two: less ringing ahead of a sharp sound than linear, with \
-                 only a small shift at the top of the treble."
+                words::settings_processing::halfway_between_the_two_less_ringing()
             }
-            Self::Minimum => {
-                "Nothing rings before a sharp sound, all of it after, at the cost of the top of \
-                 the treble arriving a touch later than the rest."
-            }
+            Self::Minimum => words::settings_processing::nothing_rings_before_a_sharp_sound(),
         })
     }
 }
@@ -89,29 +68,17 @@ impl Choice for Restoration {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Off => "Off",
-            Self::Repair => "Repair",
-            Self::Extend => "Repair and extend",
+            Self::Off => words::settings_processing::off(),
+            Self::Repair => words::settings_processing::repair(),
+            Self::Extend => words::settings_processing::repair_and_extend(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Off => {
-                "MP3, AAC and Vorbis files play exactly as they decode, with the treble the \
-                 encoder cut away left missing."
-            }
-            Self::Repair => {
-                "Undoes the damage an encoder leaves under its cutoff and adds nothing above it: \
-                 the treble it turned down just below the cutoff is lifted back, and short gaps \
-                 it punched in the upper treble are filled with matching noise."
-            }
-            Self::Extend => {
-                "Repairs as above, then rebuilds the treble the encoder threw away above its \
-                 cutoff — usually from 16 to 19 kHz upwards — out of the octave beneath it, \
-                 fading away as it climbs. It puts back an air the file no longer holds, which \
-                 is a guess at what was there rather than what was there."
-            }
+            Self::Off => words::settings_processing::mp3_aac_and_vorbis_files_play(),
+            Self::Repair => words::settings_processing::undoes_the_damage_an_encoder_leaves(),
+            Self::Extend => words::settings_processing::repairs_as_above_then_rebuilds_the(),
         })
     }
 }
@@ -121,27 +88,17 @@ impl Choice for DitherKind {
 
     fn label(self) -> &'static str {
         match self {
-            Self::None => "None",
-            Self::Rectangular => "Rectangular",
-            Self::Triangular => "Triangular",
+            Self::None => words::settings_processing::none(),
+            Self::Rectangular => words::settings_processing::rectangular(),
+            Self::Triangular => words::settings_processing::triangular(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::None => {
-                "Where the bits have to be cut down, they are rounded, which leaves a faint \
-                 distortion that follows the music in quiet passages."
-            }
-            Self::Rectangular => {
-                "A whisper of noise is added before the bits are cut down, turning that \
-                 distortion into steady hiss, though the hiss still rises and falls with the \
-                 music."
-            }
-            Self::Triangular => {
-                "Twice the whisper, which leaves only a steady, even hiss far below the music \
-                 and nothing that follows it. The usual choice."
-            }
+            Self::None => words::settings_processing::where_the_bits_have_to_be(),
+            Self::Rectangular => words::settings_processing::a_whisper_of_noise_is_added(),
+            Self::Triangular => words::settings_processing::twice_the_whisper_which_leaves_only(),
         })
     }
 }
@@ -151,28 +108,17 @@ impl Choice for NoiseShaping {
 
     fn label(self) -> &'static str {
         match self {
-            Self::None => "Flat",
+            Self::None => words::settings_processing::flat(),
             Self::Lipshitz => "Lipshitz",
-            Self::Threshold => "Threshold",
+            Self::Threshold => words::settings_processing::threshold(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::None => {
-                "The dither's hiss is spread evenly across every frequency, the ones the ear is \
-                 keenest on included."
-            }
-            Self::Lipshitz => {
-                "An E-weighted fit to the ear's sensitivity, designed at 44.1 kHz, which pushes \
-                 the hiss up where the ear is deaf to it. It runs at 44.1 and 48 kHz and falls \
-                 back to flat dither at every other rate."
-            }
-            Self::Threshold => {
-                "Designed at the device's own rate from the threshold of hearing, so it shapes \
-                 at every rate. The noise it leaves where the ear can hear it is 7 dB quieter \
-                 than Lipshitz's at 44.1 kHz, and 26 dB quieter than flat dither at 96 kHz."
-            }
+            Self::None => words::settings_processing::the_dithers_hiss_is_spread_evenly(),
+            Self::Lipshitz => words::settings_processing::an_e_weighted_fit_to_the(),
+            Self::Threshold => words::settings_processing::designed_at_the_devices_own_rate(),
         })
     }
 }
@@ -182,28 +128,19 @@ impl Choice for Crossfeed {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Off => "Off",
-            Self::Light => "Light",
-            Self::Moderate => "Moderate",
-            Self::Strong => "Strong",
+            Self::Off => words::settings_processing::off(),
+            Self::Light => words::settings_processing::light(),
+            Self::Moderate => words::settings_processing::moderate(),
+            Self::Strong => words::settings_processing::strong(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Off => "Each channel stays in its own ear, exactly as the record was mixed.",
-            Self::Light => {
-                "A faint, low copy of each side reaches the other ear (650 Hz, 9.5 dB down), \
-                 enough to take the edge off a hard-panned record."
-            }
-            Self::Moderate => {
-                "The classic setting (700 Hz, 6 dB down): the image closes up toward the \
-                 front without losing its width."
-            }
-            Self::Strong => {
-                "The most of the other side reaches each ear (700 Hz, 4.5 dB down), for old \
-                 stereo records with the voices on one side and the band on the other."
-            }
+            Self::Off => words::settings_processing::each_channel_stays_in_its_own(),
+            Self::Light => words::settings_processing::a_faint_low_copy_of_each(),
+            Self::Moderate => words::settings_processing::the_classic_setting_700_hz_6(),
+            Self::Strong => words::settings_processing::the_most_of_the_other_side(),
         })
     }
 }
@@ -213,50 +150,36 @@ impl Choice for ReplayGainMode {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Off => "Off",
-            Self::Track => "Track",
-            Self::Album => "Album",
+            Self::Off => words::settings_processing::off(),
+            Self::Track => words::settings_processing::track(),
+            Self::Album => words::settings_processing::album(),
         }
     }
 
     fn meaning(self) -> SharedString {
         SharedString::new_static(match self {
-            Self::Off => "Every track plays at the level it was mastered at.",
-            Self::Track => {
-                "Each track is brought to one loudness by its own ReplayGain tag, so a shuffle \
-                 across albums does not jump in level."
-            }
-            Self::Album => {
-                "Each album is brought to one loudness as a whole, so the quiet songs on it stay \
-                 quieter than the loud ones, as the record was made. A track tagged with no \
-                 album gain uses its own."
-            }
+            Self::Off => words::settings_processing::every_track_plays_at_the_level(),
+            Self::Track => words::settings_processing::each_track_is_brought_to_one(),
+            Self::Album => words::settings_processing::each_album_is_brought_to_one(),
         })
     }
 }
 
-const CROSSFEED_STEREO_ONLY: &str = "Only a stereo stream is crossfed; anything else plays as it is \
-                                     whatever this says. A crossfed stream is converted rather \
-                                     than bit-perfect.";
+type Said = fn() -> &'static str;
 
-const LOSSY_ONLY: &str = "Only MP3, AAC and Vorbis files are touched; a lossless file plays as \
-                          it is whatever this says. A file that is repaired is converted rather \
-                          than bit-perfect, and the cutoff is read off the file's own study \
-                          where there is one, or heard as it plays.";
-
-const PRE_AMPS: [(Trim, &str); 5] = [
-    (trimmed(-600), "−6 dB"),
-    (trimmed(-300), "−3 dB"),
-    (Trim::NONE, "None"),
-    (trimmed(300), "+3 dB"),
-    (trimmed(600), "+6 dB"),
+const PRE_AMPS: [(Trim, Said); 5] = [
+    (trimmed(-600), words::settings_processing::lowered_6_db),
+    (trimmed(-300), words::settings_processing::lowered_3_db),
+    (Trim::NONE, words::settings_processing::none),
+    (trimmed(300), words::settings_processing::raised_3_db),
+    (trimmed(600), words::settings_processing::raised_6_db),
 ];
 
-const UNTAGGED: [(Trim, &str); 4] = [
-    (Trim::NONE, "None"),
-    (trimmed(-300), "−3 dB"),
-    (trimmed(-600), "−6 dB"),
-    (trimmed(-900), "−9 dB"),
+const UNTAGGED: [(Trim, Said); 4] = [
+    (Trim::NONE, words::settings_processing::none),
+    (trimmed(-300), words::settings_processing::lowered_3_db),
+    (trimmed(-600), words::settings_processing::lowered_6_db),
+    (trimmed(-900), words::settings_processing::lowered_9_db),
 ];
 
 const fn trimmed(millibels: i32) -> Trim {
@@ -266,10 +189,10 @@ const fn trimmed(millibels: i32) -> Trim {
     }
 }
 
-fn labelled(table: &[(Trim, &'static str)], trim: Trim) -> &'static str {
+fn labelled(table: &[(Trim, Said)], trim: Trim) -> &'static str {
     table
         .iter()
-        .find_map(|(held, label)| (*held == trim).then_some(*label))
+        .find_map(|(held, said)| (*held == trim).then(said))
         .unwrap_or_default()
 }
 
@@ -294,10 +217,7 @@ impl Choice for PreAmp {
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::new_static(
-            "Added to every gain a ReplayGain tag asks for. Clip prevention still holds the \
-             result under the peak the tag declares.",
-        )
+        SharedString::new_static(words::settings_processing::added_to_every_gain_a_replaygain())
     }
 }
 
@@ -321,10 +241,7 @@ impl Choice for Untagged {
     }
 
     fn meaning(self) -> SharedString {
-        SharedString::new_static(
-            "The gain a track carrying no ReplayGain tag is played at, so it sits nearer the \
-             tagged tracks around it.",
-        )
+        SharedString::new_static(words::settings_processing::the_gain_a_track_carrying_no())
     }
 }
 
@@ -341,7 +258,7 @@ impl RootView {
                 }),
             )
             .child(kit::field(
-                "Phase",
+                words::settings_processing::phase(),
                 self.choices("filter-phase", phase, cx, |this, phase: FilterPhase, cx| {
                     this.send(Command::SetFilterPhase(phase), cx);
                     this.store(&Setting::FilterPhase(phase), cx);
@@ -355,8 +272,8 @@ impl RootView {
         kit::rows().child(self.in_the_ring(
             "true-peak",
             switch_row(
-                "Keep true peaks under full scale",
-                "Turn a track down by its measured peak and guard what is processed",
+                words::settings_processing::keep_true_peaks_under_full_scale(),
+                words::settings_processing::turn_a_track_down_by_its(),
                 guarded,
                 "true-peak",
             ),
@@ -381,7 +298,7 @@ impl RootView {
                     this.store(&Setting::Restoration(restoration), cx);
                 },
             ))
-            .note(LOSSY_ONLY)
+            .note(words::settings_processing::lossy_only())
     }
 
     pub(super) fn crossfeed_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -397,7 +314,7 @@ impl RootView {
                     this.store(&Setting::Crossfeed(crossfeed), cx);
                 },
             ))
-            .note(CROSSFEED_STEREO_ONLY)
+            .note(words::settings_processing::crossfeed_stereo_only())
     }
 
     pub(super) fn dither_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -438,7 +355,7 @@ impl RootView {
                 }),
             )
             .child(kit::field(
-                "Pre-amp",
+                words::settings_processing::pre_amp(),
                 self.choices(
                     "pre-amp",
                     PreAmp(levelling.pre_amp),
@@ -454,7 +371,7 @@ impl RootView {
                 ),
             ))
             .child(kit::field(
-                "Without tags",
+                words::settings_processing::without_tags(),
                 self.choices(
                     "untagged",
                     Untagged(levelling.untagged),
@@ -476,20 +393,19 @@ fn filter(params: SincParams) -> SharedString {
     let taps = 2 * u32::from(params.half_taps) + 1;
 
     if params.converts_in_blocks() {
-        return format!(
-            "Converted a block at a time through Fourier transforms: a filter reaching {} samples \
-             either side of each output instant, its window shaped to ring for as short a time as \
-             its depth allows and silent from the lower rate's Nyquist. Cutoff {:.3} of Nyquist.",
-            params.half_taps, params.cutoff,
+        return words::settings_processing::filter_in_blocks(
+            format!("{:.3}", params.cutoff),
+            params.half_taps,
         )
         .into();
     }
 
-    format!(
-        "{} source samples either side of each output instant — {taps} taps where the \
-         device's rate is at or above the file's, and more in proportion below it. {} phases in \
-         the table those weights are read from. Cutoff {:.3} of Nyquist, Kaiser β {:.1}.",
-        params.half_taps, params.phases, params.cutoff, params.kaiser_beta,
+    words::settings_processing::filter_in_phases(
+        format!("{:.1}", params.kaiser_beta),
+        format!("{:.3}", params.cutoff),
+        params.half_taps,
+        params.phases,
+        taps,
     )
     .into()
 }

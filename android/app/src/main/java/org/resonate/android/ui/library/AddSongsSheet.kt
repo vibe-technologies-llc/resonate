@@ -1,5 +1,6 @@
 package org.resonate.android.ui.library
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,9 +25,9 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -52,13 +55,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.components.Artwork
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Sizes
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
+import org.resonate.android.words
 
 @Composable
 fun AddSongsSheet(
@@ -72,11 +76,14 @@ fun AddSongsSheet(
     val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
     val chosen = remember { mutableStateListOf<ULong>() }
+    val words = words()
     val matches by
         produceState(if (query.isEmpty()) songs else emptyList(), songs, query) {
             value =
                 withContext(Dispatchers.Default) {
-                    songs.filter { matchesWords("${it.shownTitle} ${it.shownArtist} ${it.album}", query) }
+                    songs.filter {
+                        matchesWords("${it.shownTitle(words)} ${it.shownArtist(words)} ${it.album}", query)
+                    }
                 }
         }
     val add: () -> Unit = {
@@ -94,23 +101,32 @@ fun AddSongsSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Add songs", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     Text(
-                        if (chosen.isEmpty()) "Choose songs to add" else "${counted(chosen.size, "song")} chosen",
+                        stringResource(R.string.library_add_songs),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        if (chosen.isEmpty()) stringResource(R.string.library_add_choose)
+                        else pluralStringResource(R.plurals.library_add_chosen, chosen.size, chosen.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (chosen.isNotEmpty()) TextButton(onClick = { chosen.clear() }) { Text("Clear") }
+                if (chosen.isNotEmpty()) {
+                    TextButton(onClick = { chosen.clear() }) { Text(stringResource(R.string.library_clear)) }
+                }
             }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search your songs") },
+                placeholder = { Text(stringResource(R.string.library_add_search)) },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Clear search") }
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Rounded.Close, stringResource(R.string.library_clear_search))
+                        }
                     }
                 },
                 singleLine = true,
@@ -118,25 +134,32 @@ fun AddSongsSheet(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 12.dp).testTag("add-songs-search"),
             )
             if (matches.isEmpty()) {
-                EmptyState(Icons.Rounded.SearchOff, "No songs match", modifier = Modifier.weight(1f), detail = "Try another word.")
+                EmptyState(
+                    Icons.Rounded.SearchOff,
+                    stringResource(R.string.library_no_songs_match),
+                    modifier = Modifier.weight(1f),
+                    detail = stringResource(R.string.library_try_another_word),
+                )
             } else {
                 LazyColumn(Modifier.weight(1f)) {
                     items(matches, key = { it.id.toString() }) { track ->
                         val picked = track.id in chosen
                         ListItem(
                             modifier =
-                                Modifier.toggleable(value = picked, role = Role.Checkbox) { on ->
-                                    if (on) chosen.add(track.id) else chosen.remove(track.id)
-                                },
-                            colors =
-                                ListItemDefaults.colors(
-                                    containerColor =
-                                        if (picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                                ),
+                                Modifier.background(
+                                        if (picked) MaterialTheme.colorScheme.secondaryContainer
+                                        else Color.Transparent
+                                    )
+                                    .toggleable(value = picked, role = Role.Checkbox) { on ->
+                                        if (on) chosen.add(track.id) else chosen.remove(track.id)
+                                    },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             leadingContent = { Artwork(track, Sizes.rowArt, shape = MaterialTheme.shapes.medium) },
                             supportingContent = {
                                 Text(
-                                    if (track.id in already) "${track.shownArtist} · already here" else track.shownArtist,
+                                    if (track.id in already) {
+                                        stringResource(R.string.library_add_already_here, track.shownArtist)
+                                    } else track.shownArtist,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -153,7 +176,10 @@ fun AddSongsSheet(
                 enabled = chosen.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().padding(Sizes.gutter).testTag("add-chosen"),
             ) {
-                Text(if (chosen.isEmpty()) "Add songs" else "Add ${counted(chosen.size, "song")}")
+                Text(
+                    if (chosen.isEmpty()) stringResource(R.string.library_add_songs)
+                    else pluralStringResource(R.plurals.library_add_count, chosen.size, chosen.size)
+                )
             }
         }
     }

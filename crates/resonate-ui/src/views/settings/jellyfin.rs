@@ -16,26 +16,8 @@ use crate::{
         root::RootView,
         settings::{action, note},
     },
+    words,
 };
-
-const SIGN_IN_LABEL: &str = "Sign in with Quick Connect";
-
-const ASKING_LABEL: &str = "Asking the server…";
-
-const CANCEL_LABEL: &str = "Cancel";
-
-const APPROVE_IT: &str = "Approve this code in a Jellyfin app you are signed in to (Settings, \
-                          Quick Connect); this waits until the server says so.";
-
-const QUICK_CONNECT_OFF: &str = "This server has Quick Connect off, so sign in with the password";
-
-const NOT_BEGUN: &str = "The Jellyfin server could not be asked for a code";
-
-const LAPSED: &str = "The code lapsed before it was approved, nothing kept";
-
-const DENIED: &str = "The Jellyfin server refused Quick Connect";
-
-const UNREACHED: &str = "The Jellyfin server stopped answering, nothing kept";
 
 const EMBY_ROUTE: &str = "/emby";
 
@@ -105,9 +87,9 @@ impl RootView {
                 JellyfinBegun::Code(code) => code,
                 JellyfinBegun::Off | JellyfinBegun::Failed => {
                     let said = if begun == JellyfinBegun::Off {
-                        Notice::Noted(QUICK_CONNECT_OFF.to_owned())
+                        Notice::Noted(words::settings_jellyfin::quick_connect_off().to_owned())
                     } else {
-                        Notice::Trouble(NOT_BEGUN.to_owned())
+                        Notice::Trouble(words::settings_jellyfin::not_begun().to_owned())
                     };
                     let told = this.update(cx, |this, cx| {
                         this.jellyfin_quick.shown = Shown::Idle;
@@ -151,13 +133,17 @@ impl RootView {
     fn quick_connected(&mut self, answered: JellyfinSignIn, cx: &mut Context<Self>) {
         let said = match answered {
             JellyfinSignIn::SignedIn(session) => {
-                let said = format!("Signed in to Jellyfin as {}", session.name);
+                let said = words::settings_jellyfin::signed_in_as(session.name.as_str());
                 self.keep_the_jellyfin_session(session, cx);
                 Notice::Done(said)
             }
-            JellyfinSignIn::Lapsed => Notice::Noted(LAPSED.to_owned()),
-            JellyfinSignIn::Denied => Notice::Trouble(DENIED.to_owned()),
-            JellyfinSignIn::Failed => Notice::Trouble(UNREACHED.to_owned()),
+            JellyfinSignIn::Lapsed => Notice::Noted(words::settings_jellyfin::lapsed().to_owned()),
+            JellyfinSignIn::Denied => {
+                Notice::Trouble(words::settings_jellyfin::denied().to_owned())
+            }
+            JellyfinSignIn::Failed => {
+                Notice::Trouble(words::settings_jellyfin::unreached().to_owned())
+            }
             JellyfinSignIn::Stopped => return,
         };
         self.report(said, cx);
@@ -227,7 +213,7 @@ impl RootView {
         match self.jellyfin_quick.shown.clone() {
             Shown::Idle => kit::action_row().child(action(
                 "jellyfin-quick-connect",
-                SIGN_IN_LABEL,
+                words::settings_jellyfin::sign_in_with_quick_connect(),
                 Icon::Link,
                 !reachable,
                 |this, _, cx| this.sign_in_with_quick_connect(cx),
@@ -236,7 +222,7 @@ impl RootView {
             )),
             Shown::Asking => kit::action_row().child(action(
                 "jellyfin-quick-connect",
-                ASKING_LABEL,
+                words::settings_jellyfin::asking_the_server(),
                 Icon::Link,
                 true,
                 |_, _, _| {},
@@ -248,21 +234,21 @@ impl RootView {
                 .flex_col()
                 .gap_2()
                 .child(kit::field(
-                    "Code",
+                    words::settings_jellyfin::code(),
                     div()
                         .debug_selector(|| "jellyfin-quick-connect-code".to_owned())
                         .child(kit::figure(code)),
                 ))
                 .child(kit::action_row().child(action(
                     "jellyfin-quick-connect-cancel",
-                    CANCEL_LABEL,
+                    words::settings_jellyfin::cancel(),
                     Icon::Close,
                     false,
                     |this, _, cx| this.stop_quick_connect(cx),
                     self,
                     cx,
                 )))
-                .child(note(APPROVE_IT)),
+                .child(note(words::settings_jellyfin::approve_it())),
         }
     }
 }

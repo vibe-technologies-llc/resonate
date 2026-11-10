@@ -66,6 +66,8 @@ fn main() {
             ["up"] => fake.button(LEFT_BUTTON, 0),
             ["rdown"] => fake.button(RIGHT_BUTTON, 1),
             ["rup"] => fake.button(RIGHT_BUTTON, 0),
+            ["key", code, "down"] => fake.keyboard_key(number(code) as u32, 1),
+            ["key", code, "up"] => fake.keyboard_key(number(code) as u32, 0),
             ["sleep", seconds] => thread::sleep(Duration::from_secs_f64(number(seconds))),
             ["drag", x0, y0, x1, y1, steps] => {
                 let (from, to) = ((number(x0), number(y0)), (number(x1), number(y1)));

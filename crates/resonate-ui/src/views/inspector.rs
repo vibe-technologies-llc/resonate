@@ -16,7 +16,6 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::OPEN_ALBUM_HINT,
         kit::{self, EndsInAnEllipsis, Tone},
         plot,
         root::RootView,
@@ -24,40 +23,43 @@ use crate::{
         spoken::Spoken as _,
         transport::{Heard, copied_on_a_right_click},
     },
+    words,
 };
 
 const GRAPH_COLUMNS: usize = 240;
 const GRAPH_HEIGHT: f32 = 160.0;
 const GRAPH_LINE: f32 = 1.75;
 const CARD_WIDTH: f32 = 232.0;
+const STAGES: usize = 3;
+const PART_MARGIN: f32 = 176.0;
+const A_PART_IS_NAMED_BESIDE_ITS_FIRST_ROW: f32 = 18.0;
 const ATOM_KIND_WIDTH: f32 = 56.0;
 const ATOM_AT_WIDTH: f32 = 112.0;
-const NOTHING_DECLARED: &str = "The file declares none.";
 
-const CODES: [&str; 9] = [
-    "ISRC",
-    "MusicBrainz track",
-    "MusicBrainz album",
-    "MusicBrainz artist",
-    "MusicBrainz album artist",
-    "MusicBrainz release group",
-    "MusicBrainz release track",
-    "Barcode",
-    "Catalog number",
-];
-
-const GRAPH_HINT: &str = "Draw the bitrate over the decoded span as a line, one point per window";
-
-const GRAPH_OPEN_HINT: &str = "Hide the bitrate graph";
+fn codes() -> [&'static str; 9] {
+    [
+        words::inspector::isrc(),
+        words::inspector::musicbrainz_track(),
+        words::inspector::musicbrainz_album(),
+        words::inspector::musicbrainz_artist(),
+        words::inspector::musicbrainz_album_artist(),
+        words::inspector::musicbrainz_release_group(),
+        words::inspector::musicbrainz_release_track(),
+        words::inspector::barcode(),
+        words::inspector::catalog_number(),
+    ]
+}
 
 impl RootView {
     fn inspected(&self, state: &PlayerState, digest: &StreamDigest, cx: &mut Context<Self>) -> Div {
         let playing = self.playing(state, Some(digest), cx);
 
-        div()
+        let named = div()
             .flex()
             .flex_col()
             .relative()
+            .flex_1()
+            .min_w(px(theme::heading_name()))
             .gap_1()
             .child(kit::measures_its_width(self.inspected_room.clone()))
             .child(kit::linked_title(copied_on_a_right_click(
@@ -70,7 +72,7 @@ impl RootView {
                         px(theme::text_xl()),
                         cx,
                     ),
-                    OPEN_ALBUM_HINT,
+                    words::browser::open_album_hint(),
                     playing.cover.album.map(Selection::Album),
                     cx,
                 ),
@@ -82,7 +84,9 @@ impl RootView {
                 &playing,
                 self.inspected_room.get(),
                 cx,
-            ))
+            ));
+
+        kit::heading().child(kit::heading_row().child(named))
     }
 
     pub(crate) fn inspector(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -90,8 +94,8 @@ impl RootView {
         let Some(digest) = model.digest() else {
             return kit::empty(
                 Icon::Inspector,
-                "Nothing playing",
-                Some("Play a track and the inspector follows it from the decoder to the output."),
+                words::inspector::nothing_playing(),
+                Some(words::inspector::nothing_playing_about()),
             );
         };
         let output = model.state().output;
@@ -109,10 +113,8 @@ impl RootView {
             .w_full()
             .max_w(px(theme::inspector_column()))
             .mx_auto()
-            .gap_4()
-            .child(div().pb_1().child(heading))
             .child(signal_path(&digest, output, sink))
-            .child(source(&digest.info))
+            .child(source(&digest.info).mt_3().border_t_0())
             .child(sink_card(output))
             .child(bitrate(self, &digest, graphing, cx));
 
@@ -146,8 +148,13 @@ impl RootView {
             .track_scroll(&self.inspector_scroll)
             .child(column.child(tags(&digest.info.tags, carried)));
 
-        Scrollbars::of(cx)
-            .around("inspector-scrollbar", self.inspector_scroll.clone(), pane)
+        kit::pane()
+            .child(heading)
+            .child(Scrollbars::of(cx).around(
+                "inspector-scrollbar",
+                self.inspector_scroll.clone(),
+                pane,
+            ))
             .into_any_element()
     }
 }
@@ -161,94 +168,93 @@ fn signal_path(digest: &StreamDigest, output: Option<OutputStatus>, sink: Option
     } else {
         theme::lossy()
     };
-    let (mode_label, mode_colour) = output.map_or(("Closed", theme::faint()), |output| {
-        format::mode(output.mode)
-    });
+    let (mode_label, mode_colour) = output
+        .map_or((words::inspector::closed(), theme::faint()), |output| {
+            format::mode(output.mode)
+        });
     let (processing, done_to) = output.map_or_else(
-        || ("No stream".to_owned(), None),
+        || (words::inspector::no_stream().to_owned(), None),
         |output| match output.mode {
-            OutputMode::BitPerfect => ("Untouched".to_owned(), None),
-            OutputMode::Repacked => ("Repacked".to_owned(), None),
+            OutputMode::BitPerfect => (words::inspector::untouched().to_owned(), None),
+            OutputMode::Repacked => (words::inspector::repacked().to_owned(), None),
             OutputMode::Dithered => (
-                "Dithered".to_owned(),
-                Some(format!("To {}", format::depth(output.negotiated.format))),
+                words::inspector::dithered().to_owned(),
+                Some(words::inspector::to(format::depth(
+                    output.negotiated.format,
+                ))),
             ),
             OutputMode::Converted => (
                 if output.negotiated.rate == info.spec.rate {
-                    "Converted".to_owned()
+                    words::inspector::converted().to_owned()
                 } else {
-                    "Resampled".to_owned()
+                    words::inspector::resampled().to_owned()
                 },
                 Some(match graph_converting(output) {
-                    Some(graph) => format!("To {graph} kHz by the graph"),
-                    None => format!("To {}", format::quality(output.negotiated)),
+                    Some(graph) => words::inspector::to_by_the_graph(graph),
+                    None => words::inspector::to(format::quality(output.negotiated)),
                 }),
             ),
         },
     );
     let gain = match (digest.replay_gain.gain, digest.replay_gain.is_capped()) {
-        (None, false) => "No gain".to_owned(),
-        _ => format!("Gain {}", format::applied(digest.replay_gain)),
+        (None, false) => words::inspector::no_gain().to_owned(),
+        _ => words::inspector::gain(format::applied(digest.replay_gain)),
     };
 
-    kit::card()
-        .flex_row()
-        .flex_wrap()
-        .gap_x_8()
-        .gap_y_4()
-        .child(stage(
-            "Source",
-            codec.as_str().to_owned(),
-            source_colour,
-            vec![
-                format::quality(info.spec),
-                format!("{} · {container}", info.spec.channels),
-            ],
-        ))
-        .child(stage(
-            "Processing",
-            processing,
-            theme::text(),
-            done_to
-                .into_iter()
-                .chain([
-                    gain,
-                    format!(
-                        "ReplayGain {}",
-                        mode_text(digest.replay_gain_mode).to_lowercase()
+    kit::ledger(
+        STAGES,
+        vec![
+            stage(
+                words::inspector::source(),
+                codec.as_str().to_owned(),
+                source_colour,
+                vec![
+                    format::quality(info.spec),
+                    format!("{} · {container}", info.spec.channels),
+                ],
+            )
+            .into_any_element(),
+            stage(
+                words::inspector::processing(),
+                processing,
+                theme::text(),
+                done_to
+                    .into_iter()
+                    .chain([gain, replay_gain_said(digest.replay_gain_mode).to_owned()])
+                    .collect(),
+            )
+            .into_any_element(),
+            stage(
+                words::inspector::output(),
+                mode_label.to_owned(),
+                mode_colour,
+                vec![
+                    output.map_or_else(
+                        || words::inspector::stream_closed().to_owned(),
+                        |output| format::quality(output.negotiated),
                     ),
-                ])
-                .collect(),
-        ))
-        .child(stage(
-            "Output",
-            mode_label.to_owned(),
-            mode_colour,
-            vec![
-                output.map_or_else(
-                    || "Stream closed".to_owned(),
-                    |output| format::quality(output.negotiated),
-                ),
-                sink.unwrap_or_else(|| "No sink".to_owned()),
-            ],
-        ))
+                    sink.unwrap_or_else(|| words::inspector::no_sink().to_owned()),
+                ],
+            )
+            .into_any_element(),
+        ],
+    )
 }
 
 fn stage(label: &'static str, figure: String, colour: u32, lines: Vec<String>) -> Div {
     let mut column = div()
         .flex()
         .flex_col()
-        .flex_1()
-        .min_w(px(theme::stage_width()))
+        .min_w(px(0.0))
         .gap_0p5()
         .child(
             div()
                 .id(label)
                 .headed(3, label)
                 .pb_1()
-                .text_size(px(theme::text_sm()))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb(theme::muted()))
+                .text_size(px(theme::text_xs()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::faint()))
                 .child(label),
         )
         .child(
@@ -276,32 +282,41 @@ fn stage(label: &'static str, figure: String, colour: u32, lines: Vec<String>) -
 
 fn source(info: &MediaInfo) -> Div {
     let rate = info.spec.rate;
-    let coded = info.bits_per_coded_sample.map(|bits| format!("{bits}-bit"));
+    let coded = info
+        .bits_per_coded_sample
+        .map(words::inspector::coded_depth_bits);
     let reading = match info.packing {
-        Packing::DopMarked(dsd) => format!("{dsd} ({rate} carrier)"),
+        Packing::DopMarked(dsd) => words::inspector::dop_carried(dsd.to_string(), rate.to_string()),
         Packing::Samples => rate.to_string(),
     };
 
     fields(
-        summary("Source"),
+        summary(words::inspector::source()),
         vec![
-            ("Sample rate", Some(reading)),
+            (words::inspector::sample_rate(), Some(reading)),
             (
-                "Decoded depth",
+                words::inspector::decoded_depth(),
                 Some(format::depth(info.spec.format).to_owned()),
             ),
-            ("Coded depth", coded),
-            ("Channels", Some(info.spec.channels.to_string())),
+            (words::inspector::coded_depth(), coded),
             (
-                "Duration",
+                words::inspector::channels(),
+                Some(info.spec.channels.to_string()),
+            ),
+            (
+                words::inspector::duration(),
                 info.duration.map(|frames| format::clock(frames, rate)),
             ),
             (
-                "Encoder delay",
-                (info.encoder_delay > 0 || info.encoder_padding > 0)
-                    .then(|| format!("{} / {} frames", info.encoder_delay, info.encoder_padding)),
+                words::inspector::encoder_delay(),
+                (info.encoder_delay > 0 || info.encoder_padding > 0).then(|| {
+                    words::inspector::encoder_delay_frames(
+                        info.encoder_delay.to_string(),
+                        info.encoder_padding.to_string(),
+                    )
+                }),
             ),
-            ("Seekable", Some(yes_no(info.is_seekable))),
+            (words::inspector::seekable(), Some(yes_no(info.is_seekable))),
         ],
     )
 }
@@ -310,26 +325,32 @@ fn heard_card(heard: Option<&Heard>) -> Div {
     let now = SystemTime::now();
     let Some(heard) = heard else {
         return fields(
-            summary("Heard"),
-            vec![("Plays", Some("No library row".to_owned()))],
+            summary(words::inspector::heard()),
+            vec![(
+                words::inspector::plays(),
+                Some(words::inspector::no_library_row().to_owned()),
+            )],
         );
     };
 
     fields(
-        summary("Heard"),
+        summary(words::inspector::heard()),
         vec![
             (
-                "Plays",
+                words::inspector::plays(),
                 Some(match heard.plays {
-                    0 => "Never".to_owned(),
-                    plays => format::counted(plays as usize, "time", "times"),
+                    0 => words::inspector::never().to_owned(),
+                    plays => words::inspector::times(plays),
                 }),
             ),
             (
-                "Last played",
+                words::inspector::last_played(),
                 heard.played.map(|played| format::since(played, now)),
             ),
-            ("Added", Some(format::since(heard.added, now))),
+            (
+                words::inspector::added(),
+                Some(format::since(heard.added, now)),
+            ),
         ],
     )
 }
@@ -344,8 +365,11 @@ fn graph_converting(output: OutputStatus) -> Option<String> {
 fn sink_card(output: Option<OutputStatus>) -> Div {
     let Some(output) = output else {
         return fields(
-            summary("Output"),
-            vec![("Stream", Some("Closed".to_owned()))],
+            summary(words::inspector::output()),
+            vec![(
+                words::inspector::stream(),
+                Some(words::inspector::closed().to_owned()),
+            )],
         );
     };
     let (label, colour) = format::mode(output.mode);
@@ -355,31 +379,40 @@ fn sink_card(output: Option<OutputStatus>) -> Div {
         .as_millis();
 
     fields(
-        summary_beside("Output", kit::badge(label, colour)),
+        summary_beside(words::inspector::output(), kit::badge(label, colour)),
         vec![
-            ("Negotiated", Some(format::quality(output.negotiated))),
             (
-                "Graph runs at",
-                graph_converting(output).map(|graph| format!("{graph} kHz")),
+                words::inspector::negotiated(),
+                Some(format::quality(output.negotiated)),
             ),
             (
-                "On the wire",
+                words::inspector::graph_runs_at(),
+                graph_converting(output).map(words::inspector::kilohertz),
+            ),
+            (
+                words::inspector::on_the_wire(),
                 output
                     .words
                     .filter(|words| *words != Words::Whole)
                     .map(|words| words.spelled(output.negotiated.format)),
             ),
-            ("Latency", Some(format!("{latency} ms"))),
-            ("Underruns", Some(output.underruns.to_string())),
             (
-                "Clamped samples",
+                words::inspector::latency(),
+                Some(words::inspector::milliseconds(latency.to_string())),
+            ),
+            (
+                words::inspector::underruns(),
+                Some(output.underruns.to_string()),
+            ),
+            (
+                words::inspector::clamped_samples(),
                 (output.overs > 0).then(|| output.overs.to_string()),
             ),
             (
-                "Went without",
+                words::inspector::went_without(),
                 (output.went_without > Frames::ZERO).then(|| {
                     let lost = output.went_without.to_duration(output.negotiated.rate);
-                    format!("{} ms", lost.as_millis())
+                    words::inspector::milliseconds(lost.as_millis().to_string())
                 }),
             ),
         ],
@@ -395,41 +428,56 @@ fn bitrate(
     let rate = digest.info.spec.rate;
     let Some(profile) = digest.profile.as_ref() else {
         return fields(
-            summary("Bitrate"),
-            vec![("Profile", Some("Decoding…".to_owned()))],
+            summary(words::inspector::bitrate()),
+            vec![(
+                words::inspector::profile(),
+                Some(words::inspector::decoding().to_owned()),
+            )],
         )
         .into_any_element();
     };
 
     fields(
-        summary("Bitrate"),
+        summary(words::inspector::bitrate()),
         vec![
-            ("Overall", Some(kbps(profile.overall))),
-            ("Now", Some(instant(digest.packet, rate))),
-            ("Variability", Some(profile.variability.to_string())),
-            ("Mean", Some(kbps(profile.mean))),
-            ("Deviation", Some(kbps(profile.deviation))),
-            ("Range", Some(kbps_between(profile.min, profile.max))),
-            ("Packets", Some(profile.packets.to_string())),
+            (words::inspector::overall(), Some(kbps(profile.overall))),
+            (words::inspector::now(), Some(instant(digest.packet, rate))),
             (
-                "Profiled",
-                Some(format!(
-                    "{} of {}",
+                words::inspector::variability(),
+                Some(profile.variability.to_string()),
+            ),
+            (words::inspector::mean(), Some(kbps(profile.mean))),
+            (words::inspector::deviation(), Some(kbps(profile.deviation))),
+            (
+                words::inspector::range(),
+                Some(kbps_between(profile.min, profile.max)),
+            ),
+            (
+                words::inspector::packets(),
+                Some(profile.packets.to_string()),
+            ),
+            (
+                words::inspector::profiled(),
+                Some(words::inspector::profiled_of(
                     format::clock(digest.decoded.saturating_sub(digest.profiled_from), rate),
-                    format::clock(digest.decoded, rate)
+                    format::clock(digest.decoded, rate),
                 )),
             ),
         ],
     )
-    .child(div().mt_1().child(root.in_the_pane_ring(
+    .child(div().mt_2().mb_1().child(root.in_the_pane_ring(
         kit::button(
             "bitrate-graph",
             Some(Icon::Inspector),
-            if graphing { "Hide graph" } else { "Show graph" },
             if graphing {
-                GRAPH_OPEN_HINT
+                words::inspector::hide_graph()
             } else {
-                GRAPH_HINT
+                words::inspector::show_graph()
+            },
+            if graphing {
+                words::inspector::graph_open_hint()
+            } else {
+                words::inspector::graph_hint()
             },
             Tone::Outlined,
         ),
@@ -446,15 +494,30 @@ fn replay_gain(mode: ReplayGainMode, applied: AppliedGain, gain: &ReplayGain) ->
         || gain.album_peak.is_some();
 
     fields(
-        summary("ReplayGain"),
+        summary(words::inspector::replay_gain()),
         vec![
-            ("Mode", declared.then(|| mode_text(mode).to_owned())),
-            ("Track gain", gain.track_gain.map(decibels)),
-            ("Track peak", gain.track_peak.map(peak)),
-            ("Album gain", gain.album_gain.map(decibels)),
-            ("Album peak", gain.album_peak.map(peak)),
-            ("Applied", declared.then(|| format::applied(applied))),
-            ("Headroom", declared.then(|| format::headroom(applied))),
+            (
+                words::inspector::mode(),
+                declared.then(|| mode_text(mode).to_owned()),
+            ),
+            (
+                words::inspector::track_gain(),
+                gain.track_gain.map(decibels),
+            ),
+            (words::inspector::track_peak(), gain.track_peak.map(peak)),
+            (
+                words::inspector::album_gain(),
+                gain.album_gain.map(decibels),
+            ),
+            (words::inspector::album_peak(), gain.album_peak.map(peak)),
+            (
+                words::inspector::applied(),
+                declared.then(|| format::applied(applied)),
+            ),
+            (
+                words::inspector::headroom(),
+                declared.then(|| format::headroom(applied)),
+            ),
         ],
     )
 }
@@ -476,20 +539,20 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
         shares.push(*level);
     }
 
-    card("Bitrate over time")
+    summary(words::inspector::bitrate_over_time())
         .child(
             div()
                 .id("bitrate-graph")
-                .pictured_as("Bitrate over time", || {
-                    format!(
-                        "{} to {} over {WINDOW:.0}s windows",
+                .pictured_as(words::inspector::bitrate_over_time(), || {
+                    words::inspector::bitrate_over_time_said(
                         kbps(BitRate::new(floor).unwrap_or_default()),
-                        kbps(BitRate::new(top).unwrap_or_default())
+                        kbps(BitRate::new(top).unwrap_or_default()),
+                        format!("{WINDOW:.0}"),
                     )
                 })
                 .h(px(GRAPH_HEIGHT))
                 .w_full()
-                .mt_2()
+                .my_2()
                 .child(traced(shares)),
         )
         .child(
@@ -497,12 +560,12 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
                 .flex()
                 .justify_between()
                 .child(kit::figure(format::clock(digest.profiled_from, rate)))
-                .child(kit::figure(format!(
-                    "{} over {WINDOW:.0} s windows",
+                .child(kit::figure(words::inspector::bitrate_over_windows(
                     kbps_between(
                         BitRate::new(floor).unwrap_or_default(),
-                        BitRate::new(top).unwrap_or_default()
-                    )
+                        BitRate::new(top).unwrap_or_default(),
+                    ),
+                    format!("{WINDOW:.0}"),
                 )))
                 .child(kit::figure(format::clock(digest.decoded, rate))),
         )
@@ -550,14 +613,17 @@ fn plotted(shares: &[f32], bounds: Bounds<Pixels>) -> Vec<Point<Pixels>> {
 
 fn container(layout: &BoxLayout) -> Div {
     let verdict = layout.faststart.map_or_else(
-        || "No moov and mdat pair".to_owned(),
+        || words::inspector::no_moov_and_mdat().to_owned(),
         |state| match state {
-            Faststart::Ready => "Plays before the whole file arrives".to_owned(),
-            Faststart::Trailing => "The index is at the end".to_owned(),
+            Faststart::Ready => words::inspector::faststart_ready().to_owned(),
+            Faststart::Trailing => words::inspector::faststart_trailing().to_owned(),
         },
     );
 
-    let mut panel = fields(card("Container layout"), vec![("Faststart", Some(verdict))]);
+    let mut panel = fields(
+        summary(words::inspector::container_layout()),
+        vec![(words::inspector::faststart(), Some(verdict))],
+    );
     for entry in &layout.boxes {
         panel = panel.child(atom(*entry));
     }
@@ -578,7 +644,7 @@ fn atom(entry: TopLevelBox) -> Div {
                 .text_color(rgb(theme::text())),
         )
         .child(
-            kit::figure(format!("at {}", entry.at))
+            kit::figure(words::inspector::at(entry.at.to_string()))
                 .w(px(ATOM_AT_WIDTH))
                 .text_size(px(theme::text_sm()))
                 .text_color(rgb(theme::faint())),
@@ -591,87 +657,114 @@ fn atom(entry: TopLevelBox) -> Div {
 }
 
 fn tags<'a>(set: &'a TagSet, carried: Option<usize>) -> Div {
+    use words::inspector as said;
+
     let numbered = |value: Option<u32>, total: Option<u32>| match (value, total) {
-        (Some(value), Some(total)) => Some(Cow::Owned(format!("{value} of {total}"))),
+        (Some(value), Some(total)) => Some(Cow::Owned(words::inspector::numbered(total, value))),
         (Some(value), None) => Some(Cow::Owned(value.to_string())),
         _ => None,
     };
     let borrowed = |value: &'a Option<String>| value.as_deref().map(Cow::Borrowed);
 
     let named = [
-        ("Title", borrowed(&set.title)),
-        ("Artist", borrowed(&set.artist)),
-        ("Album", borrowed(&set.album)),
-        ("Album artist", borrowed(&set.album_artist)),
-        ("Track", numbered(set.track_number, set.track_total)),
-        ("Disc", numbered(set.disc_number, set.disc_total)),
-        ("Date", borrowed(&set.date)),
-        ("Genre", borrowed(&set.genre)),
+        (said::title(), borrowed(&set.title)),
+        (said::artist(), borrowed(&set.artist)),
+        (said::album(), borrowed(&set.album)),
+        (said::album_artist(), borrowed(&set.album_artist)),
+        (said::track(), numbered(set.track_number, set.track_total)),
+        (said::disc(), numbered(set.disc_number, set.disc_total)),
+        (said::date(), borrowed(&set.date)),
+        (said::genre(), borrowed(&set.genre)),
         (
-            "Compilation",
-            set.compilation.then_some(Cow::Borrowed("Yes")),
+            said::compilation(),
+            set.compilation.then_some(Cow::Borrowed(said::yes())),
         ),
-        ("Grouping", borrowed(&set.grouping)),
-        ("Collection", borrowed(&set.collection)),
-        ("Edition", borrowed(&set.edition)),
-        ("Composer", borrowed(&set.credits.composer)),
-        ("Conductor", borrowed(&set.credits.conductor)),
-        ("Lyricist", borrowed(&set.credits.lyricist)),
-        ("Performer", borrowed(&set.credits.performer)),
-        ("Remixer", borrowed(&set.credits.remixer)),
-        ("Producer", borrowed(&set.credits.producer)),
-        ("Engineer", borrowed(&set.credits.engineer)),
-        ("Label", borrowed(&set.label)),
-        ("ISRC", borrowed(&set.isrc)),
+        (said::grouping(), borrowed(&set.grouping)),
+        (said::collection(), borrowed(&set.collection)),
+        (said::edition(), borrowed(&set.edition)),
+        (said::composer(), borrowed(&set.credits.composer)),
+        (said::conductor(), borrowed(&set.credits.conductor)),
+        (said::lyricist(), borrowed(&set.credits.lyricist)),
+        (said::performer(), borrowed(&set.credits.performer)),
+        (said::remixer(), borrowed(&set.credits.remixer)),
+        (said::producer(), borrowed(&set.credits.producer)),
+        (said::engineer(), borrowed(&set.credits.engineer)),
+        (said::label(), borrowed(&set.label)),
+        (said::isrc(), borrowed(&set.isrc)),
         (
-            "Tempo",
+            said::tempo(),
             set.beats_per_minute
-                .map(|beats| Cow::Owned(format!("{beats} bpm"))),
+                .map(|beats| Cow::Owned(said::beats_per_minute(beats))),
         ),
-        ("Copyright", borrowed(&set.copyright)),
-        ("Encoder", borrowed(&set.encoder)),
-        ("Comment", borrowed(&set.comment)),
-        ("MusicBrainz track", borrowed(&set.musicbrainz_track_id)),
-        ("MusicBrainz album", borrowed(&set.musicbrainz_album_id)),
-        ("MusicBrainz artist", borrowed(&set.musicbrainz_artist_id)),
+        (said::copyright(), borrowed(&set.copyright)),
+        (said::encoder(), borrowed(&set.encoder)),
+        (said::comment(), borrowed(&set.comment)),
         (
-            "MusicBrainz album artist",
+            said::musicbrainz_track(),
+            borrowed(&set.musicbrainz_track_id),
+        ),
+        (
+            said::musicbrainz_album(),
+            borrowed(&set.musicbrainz_album_id),
+        ),
+        (
+            said::musicbrainz_artist(),
+            borrowed(&set.musicbrainz_artist_id),
+        ),
+        (
+            said::musicbrainz_album_artist(),
             borrowed(&set.musicbrainz_album_artist_id),
         ),
         (
-            "MusicBrainz release group",
+            said::musicbrainz_release_group(),
             borrowed(&set.musicbrainz_release_group_id),
         ),
         (
-            "MusicBrainz release track",
+            said::musicbrainz_release_track(),
             borrowed(&set.musicbrainz_release_track_id),
         ),
-        ("Barcode", borrowed(&set.barcode)),
-        ("Catalog number", borrowed(&set.catalog_number)),
+        (said::barcode(), borrowed(&set.barcode)),
+        (said::catalog_number(), borrowed(&set.catalog_number)),
         (
-            "Lyrics",
-            carried.map(|lines| Cow::Owned(format!("{lines} lines"))),
+            said::lyrics(),
+            carried.map(|lines| Cow::Owned(said::lyric_lines(lines))),
         ),
     ];
 
-    fields(card("Tags"), named.into())
+    fields(summary(said::tags()), named.into())
 }
 
 fn summary(title: &'static str) -> Div {
-    card(title)
+    part().child(margin().child(kit::card_title(title)))
 }
 
 fn summary_beside(title: &'static str, beside: Div) -> Div {
-    kit::card().gap_1p5().min_w(px(0.0)).child(
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap_3()
-            .pb_1()
-            .child(kit::card_title(title))
-            .child(beside),
-    )
+    part().child(margin().child(kit::card_title(title)).child(beside))
+}
+
+fn part() -> Div {
+    div()
+        .relative()
+        .flex()
+        .flex_col()
+        .min_w(px(0.0))
+        .pl(px(PART_MARGIN))
+        .py_3()
+        .border_t_1()
+        .border_color(rgb(theme::border()))
+}
+
+fn margin() -> Div {
+    div()
+        .absolute()
+        .left_0()
+        .top(px(A_PART_IS_NAMED_BESIDE_ITS_FIRST_ROW))
+        .w(px(PART_MARGIN))
+        .flex()
+        .flex_col()
+        .items_start()
+        .gap_1()
+        .pr_4()
 }
 
 pub(crate) fn beside(cards: Vec<AnyElement>) -> Div {
@@ -714,7 +807,7 @@ pub(crate) fn fields<'a, Told: Into<Cow<'a, str>>>(
             div()
                 .text_size(px(theme::text_sm()))
                 .text_color(rgb(theme::faint()))
-                .child(NOTHING_DECLARED),
+                .child(words::inspector::nothing_declared()),
         );
     }
 
@@ -761,7 +854,7 @@ fn property(name: &'static str, value: SharedString, ruled: bool) -> Div {
 }
 
 fn is_a_code(name: &str) -> bool {
-    CODES.contains(&name)
+    codes().contains(&name)
 }
 
 fn instant(packet: Option<PacketSpan>, rate: SampleRate) -> String {
@@ -770,24 +863,35 @@ fn instant(packet: Option<PacketSpan>, rate: SampleRate) -> String {
         .map_or_else(unknown, kbps)
 }
 
-const fn mode_text(mode: ReplayGainMode) -> &'static str {
+fn mode_text(mode: ReplayGainMode) -> &'static str {
     match mode {
-        ReplayGainMode::Off => "Off",
-        ReplayGainMode::Track => "Track",
-        ReplayGainMode::Album => "Album",
+        ReplayGainMode::Off => words::inspector::off(),
+        ReplayGainMode::Track => words::inspector::track(),
+        ReplayGainMode::Album => words::inspector::album(),
+    }
+}
+
+fn replay_gain_said(mode: ReplayGainMode) -> &'static str {
+    match mode {
+        ReplayGainMode::Off => words::inspector::replay_gain_off(),
+        ReplayGainMode::Track => words::inspector::replay_gain_track(),
+        ReplayGainMode::Album => words::inspector::replay_gain_album(),
     }
 }
 
 fn kbps(rate: BitRate) -> String {
-    format!("{:.0} kbps", rate.kilobits())
+    words::inspector::kbps(format!("{:.0}", rate.kilobits()))
 }
 
 fn kbps_between(low: BitRate, high: BitRate) -> String {
-    format!("{:.0} – {:.0} kbps", low.kilobits(), high.kilobits())
+    words::inspector::kbps_between(
+        format!("{:.0}", high.kilobits()),
+        format!("{:.0}", low.kilobits()),
+    )
 }
 
 fn decibels(gain: Decibels) -> String {
-    format!("{:+.2} dB", gain.get())
+    words::inspector::decibels(format!("{:+.2}", gain.get()))
 }
 
 fn peak(value: f32) -> String {
@@ -795,9 +899,14 @@ fn peak(value: f32) -> String {
 }
 
 fn yes_no(value: bool) -> String {
-    if value { "Yes" } else { "No" }.to_owned()
+    if value {
+        words::inspector::yes()
+    } else {
+        words::inspector::no()
+    }
+    .to_owned()
 }
 
 fn unknown() -> String {
-    "Unknown".to_owned()
+    words::inspector::unknown().to_owned()
 }

@@ -37,7 +37,9 @@ members = [
     "crates/providers/ytmusic",
     "crates/resonate-ui",
     "crates/resonate-upnp",
-    "crates/resonate-vault"
+    "crates/resonate-vault",
+    "crates/resonate-words",
+    "crates/resonate-words-build"
 ]
 
 [workspace.package]
@@ -102,8 +104,12 @@ win-resource-builder = { version = "0.2.0", default-features = false }
 unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"] }
 encoding_rs = { version = "0.8.44", default-features = false, features = ["alloc"] }
 chardetng = { version = "1.0.0", default-features = false }
+fluent-bundle = { version = "0.16.0", default-features = false }
+fluent-syntax = { version = "0.12.0", default-features = false }
+unic-langid = { version = "0.9.6", default-features = false }
+sys-locale = { version = "0.3.2", default-features = false }
 jiff = {
-    version = "0.2.40",
+    version = "0.2.41",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
@@ -190,7 +196,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 httparse = { version = "1.10.1", default-features = false, features = ["std"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
 webpki-root-certs = { version = "1.0.11", default-features = false }
-uuid = { version = "1.29.1", default-features = false, features = ["std", "v4"] }
+uuid = { version = "1.29.2", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
 socket2 = { version = "0.6.5", default-features = false }
 mdns-sd = { version = "0.21.7", default-features = false, features = ["async"] }
@@ -296,6 +302,8 @@ resonate-ytmusic = { version = "0.7.0", path = "crates/providers/ytmusic" }
 resonate-ui = { version = "0.7.0", path = "crates/resonate-ui" }
 resonate-upnp = { version = "0.7.0", path = "crates/resonate-upnp" }
 resonate-vault = { version = "0.7.0", path = "crates/resonate-vault" }
+resonate-words = { version = "0.7.0", path = "crates/resonate-words" }
+resonate-words-build = { version = "0.7.0", path = "crates/resonate-words-build" }
 
 [profile.dev]
 opt-level = 1

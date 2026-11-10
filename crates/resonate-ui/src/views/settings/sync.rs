@@ -5,7 +5,7 @@ use gpui::{
     SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use qrcode::{Color, EcLevel, QrCode};
-use resonate_core::{REMOTE_TRUST_ASKED, REMOTE_TRUST_TOLD, RemoteTrust, SyncedSongs};
+use resonate_core::{RemoteTrust, SyncedSongs, remote_trust_asked, remote_trust_told};
 
 use crate::{
     Notice, RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, ResonateApp, Setting,
@@ -22,62 +22,8 @@ use crate::{
         settings::{Armed, Rows, note, switch_row},
         spoken::{self, Reading, Spoken},
     },
+    words,
 };
-
-pub(crate) const SYNC_SERVER_PLACEHOLDER: &str = "host or host:port of your own server";
-pub(crate) const SYNC_DEVICE_PLACEHOLDER: &str = "What your other devices call this one";
-
-pub(crate) const SHARED_NAME_PLACEHOLDER: &str =
-    "What other people see beside you; blank says nothing";
-pub(crate) const SYNC_CODE_PLACEHOLDER: &str = "Another device's pairing code, then press enter";
-
-const SYNCING_NOTE: &str = "A change here is taken up within a few seconds.";
-
-const PAIRING_NOTE: &str = "Scan the code with your phone's camera, or type it into Device sync \
-                            on the other device. Anyone with it can join your devices, so keep \
-                            it covered while others can see the screen.";
-
-const JOINING_NOTE: &str = "Joining another device's code leaves the devices this one syncs with \
-                            now; a server never learns the code, only a number made from it.";
-
-const SONGS_NOTE: &str = "A song arrives in the music folder and is read into the library like \
-                          one dropped on the window. Any playlist's menu fetches its missing \
-                          songs from a device on request, whatever is chosen here.";
-
-const COPY_CODE_HINT: &str = "Put this device's pairing code on the clipboard";
-
-const SHOW_CODE_HINT: &str = "Show the pairing code and its QR code";
-
-const HIDE_CODE_HINT: &str = "Cover the pairing code and its QR code again";
-
-const FORCE_HINT: &str = "Reach your other devices again now, and ask them for any song this \
-                          device lacks";
-
-const CODE_COPIED: &str = "The pairing code is on the clipboard";
-
-const FORCED: &str = "Reaching your other devices again";
-
-const NOT_SYNCING: &str = "Sync is off; turn on Synchronise this device first";
-
-const REGENERATE_HINT: &str = "Make a new pairing code, so a code someone else saw reaches nothing; \
-                               your other devices then join the new one";
-
-const ARMED_TO_REGENERATE: &str = "Press again to make a new code: every device using this one stops \
-                                   syncing with this device until the new code is typed into it";
-
-const REGENERATED: &str = "A new pairing code is being made; type it into your other devices \
-                           when it shows";
-
-const DRIVE_HINT: &str = "Play, pause, skip, seek, set the volume and change the queue of what \
-                          this device plays";
-
-const STOP_DRIVING_HINT: &str = "Stop showing what this device plays";
-
-const DRIVING_WAITS: &str = "Asking the device what it plays…";
-
-const DRIVING_REFUSED: &str = "This device does not let others drive it, or cannot be driven";
-
-const NOT_DRIVEN: &str = "The other device did not take that";
 
 const DRIVEN_REDRAWN_EVERY: Duration = Duration::from_millis(500);
 
@@ -93,40 +39,6 @@ const DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING: usize = 2;
 
 const DRIVEN_SEEK_STEP: Duration = Duration::from_secs(5);
 
-const DRIVEN_POSITION: &str = "Position on the other device";
-
-const JUMP_HINT: &str = "Play this song on the other device";
-
-const UP_HINT: &str = "Move this song up its queue";
-
-const DOWN_HINT: &str = "Move this song down its queue";
-
-const REMOVE_HINT: &str = "Take this song out of its queue";
-
-const SHOW_MORE_HINT: &str = "Show more of this queue";
-
-const FORGET_HINT: &str = "Take this device off every device's list; one that syncs again comes \
-                           back";
-
-const NOT_A_CODE: &str = "That is not a pairing code: it is 35 letters and digits, as another \
-                          device's Device sync group shows it";
-
-const NO_OTHER_DEVICE: &str = "No other device shares this code yet. Show the pairing code and \
-                               scan it with your phone, or type it into another device.";
-
-const NO_CODE_YET: &str = "The pairing code is made when this device first syncs: turn on \
-                           Synchronise this device";
-
-const HOSTED_MEANS: &str = "Your devices meet through Resonate's server wherever they are, and \
-                            directly on the same network. What travels is sealed with the \
-                            pairing code, so the server cannot read it.";
-
-const OWN_SERVER_MEANS: &str = "Your devices meet through a resonate-server you run, and \
-                                directly on the same network.";
-
-const NEARBY_MEANS: &str = "No server at all: your devices sync when they are on the same \
-                            network, and nothing leaves it. This works with online features off.";
-
 const COVERED_MARK: char = '•';
 const STANDING_WASH: u8 = 0x24;
 const DEVICE_WASH: u8 = 0x22;
@@ -141,19 +53,19 @@ enum Route {
 impl Route {
     const ALL: [Self; 3] = [Self::Hosted, Self::Own, Self::Nearby];
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Hosted => "Resonate's server",
-            Self::Own => "Your own server",
-            Self::Nearby => "This network only",
+            Self::Hosted => words::settings_sync::resonates_server(),
+            Self::Own => words::settings_sync::your_own_server(),
+            Self::Nearby => words::settings_sync::this_network_only(),
         }
     }
 
-    const fn meaning(self) -> &'static str {
+    fn meaning(self) -> &'static str {
         match self {
-            Self::Hosted => HOSTED_MEANS,
-            Self::Own => OWN_SERVER_MEANS,
-            Self::Nearby => NEARBY_MEANS,
+            Self::Hosted => words::settings_sync::hosted_means(),
+            Self::Own => words::settings_sync::own_server_means(),
+            Self::Nearby => words::settings_sync::nearby_means(),
         }
     }
 
@@ -201,28 +113,17 @@ struct Said {
     under: String,
 }
 
-fn counted(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
 fn on_their_way(downloading: usize, waiting: usize) -> Option<String> {
     let total = downloading + waiting;
     if total == 0 {
         return None;
     }
-    let mut parts = vec![format!(
-        "{} on their way from another device",
-        counted(total, "song")
-    )];
+    let mut parts = vec![words::settings_sync::songs_on_their_way(total)];
     if downloading > 0 {
-        parts.push(format!("{downloading} downloading"));
+        parts.push(words::settings_sync::downloading_count(downloading));
     }
     if waiting > 0 {
-        parts.push(format!("{waiting} waiting"));
+        parts.push(words::settings_sync::waiting_count(waiting));
     }
     Some(parts.join(" · "))
 }
@@ -232,67 +133,67 @@ fn standing_said(synchronised: &Synchronised, shown: Option<&SyncShown>) -> Said
         return if synchronised.enabled {
             Said {
                 mood: Mood::Quiet,
-                headline: "Not in this build",
-                under: "This build carries no device sync".to_owned(),
+                headline: words::settings_sync::not_in_this_build(),
+                under: words::settings_sync::this_build_carries_no_device_sync().to_owned(),
             }
         } else {
             Said {
                 mood: Mood::Quiet,
-                headline: "Sync is off",
-                under: "Nothing leaves this device".to_owned(),
+                headline: words::settings_sync::sync_is_off(),
+                under: words::settings_sync::nothing_leaves_this_device().to_owned(),
             }
         };
     };
     let others = shown.devices.iter().filter(|device| !device.this);
     let nearby = others.clone().filter(|device| device.nearby).count();
     let online = others.filter(|device| device.online).count();
-    let on_this_network = format!("{} on this network", counted(nearby, "device"));
+    let on_this_network = words::settings_sync::devices_on_this_network(nearby);
     match shown.standing {
         SyncStanding::Waiting => Said {
             mood: Mood::Busy,
-            headline: "Starting",
-            under: "This device begins syncing in a moment".to_owned(),
+            headline: words::settings_sync::starting(),
+            under: words::settings_sync::this_device_begins_syncing_in_a().to_owned(),
         },
         SyncStanding::Connecting => Said {
             mood: Mood::Busy,
-            headline: "Connecting",
+            headline: words::settings_sync::connecting(),
             under: if nearby == 0 {
-                "Reaching the sync server".to_owned()
+                words::settings_sync::reaching_the_sync_server().to_owned()
             } else {
-                format!("Reaching the sync server · {on_this_network}")
+                words::settings_sync::reaching_the_server_beside(&on_this_network)
             },
         },
         SyncStanding::Connected => Said {
             mood: Mood::Fine,
-            headline: "In step",
+            headline: words::settings_sync::in_step(),
             under: if online == 0 {
-                "No other device is online".to_owned()
+                words::settings_sync::no_other_device_is_online().to_owned()
             } else {
-                format!("{} online", counted(online, "device"))
+                words::settings_sync::devices_online(online)
             },
         },
         SyncStanding::Unreachable => Said {
             mood: Mood::Trouble,
-            headline: "The server is out of reach",
+            headline: words::settings_sync::the_server_is_out_of_reach(),
             under: if nearby == 0 {
-                "Changes wait here until it can be reached".to_owned()
+                words::settings_sync::changes_wait_here_until_it_can().to_owned()
             } else {
-                format!("In step with the {on_this_network} meanwhile")
+                words::settings_sync::in_step_with_the_network_meanwhile(&on_this_network)
             },
         },
         SyncStanding::Refused => Said {
             mood: Mood::Trouble,
-            headline: "Refused",
-            under: "The sync server refused this device".to_owned(),
+            headline: words::settings_sync::refused(),
+            under: words::settings_sync::the_sync_server_refused_this_device().to_owned(),
         },
         SyncStanding::Nearby if nearby == 0 => Said {
             mood: Mood::Quiet,
-            headline: "Looking on this network",
-            under: "No other device is on this network yet".to_owned(),
+            headline: words::settings_sync::looking_on_this_network(),
+            under: words::settings_sync::no_other_device_is_on_this().to_owned(),
         },
         SyncStanding::Nearby => Said {
             mood: Mood::Fine,
-            headline: "In step on this network",
+            headline: words::settings_sync::in_step_on_this_network(),
             under: on_this_network,
         },
     }
@@ -433,8 +334,8 @@ impl RootView {
                 kit::button(
                     "sync-force",
                     Some(Icon::Sync),
-                    "Sync now",
-                    FORCE_HINT,
+                    words::settings_sync::sync_now(),
+                    words::settings_sync::force_hint(),
                     Tone::Outlined,
                 ),
                 move |this, _, cx| this.force_sync(cx),
@@ -446,8 +347,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "sync-on",
                 switch_row(
-                    "Synchronise this device",
-                    "Playlists, favourites, history and what is playing follow you",
+                    words::settings_sync::synchronise_this_device(),
+                    words::settings_sync::playlists_favourites_history_and_what_is(),
                     on,
                     "sync-on",
                 ),
@@ -461,7 +362,7 @@ impl RootView {
         {
             body = body.child(note(on_their_way));
         }
-        body.note(SYNCING_NOTE)
+        body.note(words::settings_sync::syncing_note())
     }
 
     pub(super) fn pairing_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -506,7 +407,7 @@ impl RootView {
                         div()
                             .text_size(px(theme::text_sm()))
                             .text_color(rgb(theme::muted()))
-                            .child("Click to show"),
+                            .child(words::settings_sync::click_to_show()),
                     )
                     .on_click(cx.listener(|this, _, _, cx| this.show_the_pairing(true, cx)))
             };
@@ -522,7 +423,7 @@ impl RootView {
                 .flex_1()
                 .min_w(px(0.0))
                 .gap_3()
-                .child(kit::eyebrow("Pairing code"))
+                .child(kit::eyebrow(words::settings_sync::pairing_code()))
                 .child(
                     div()
                         .id("sync-code-shown")
@@ -546,11 +447,15 @@ impl RootView {
                                 } else {
                                     Icon::Reveal
                                 }),
-                                if revealed { "Hide" } else { "Show" },
                                 if revealed {
-                                    HIDE_CODE_HINT
+                                    words::settings_sync::hide()
                                 } else {
-                                    SHOW_CODE_HINT
+                                    words::settings_sync::show()
+                                },
+                                if revealed {
+                                    words::settings_sync::hide_code_hint()
+                                } else {
+                                    words::settings_sync::show_code_hint()
                                 },
                                 Tone::Outlined,
                             ),
@@ -562,13 +467,16 @@ impl RootView {
                             kit::button(
                                 "sync-copy-code",
                                 Some(Icon::Export),
-                                "Copy",
-                                COPY_CODE_HINT,
+                                words::settings_sync::copy(),
+                                words::settings_sync::copy_code_hint(),
                                 Tone::Outlined,
                             ),
                             move |this, _, cx| {
                                 clipboard::copy(copying.clone(), cx);
-                                this.report(Notice::Done(CODE_COPIED.to_owned()), cx);
+                                this.report(
+                                    Notice::Done(words::settings_sync::code_copied().to_owned()),
+                                    cx,
+                                );
                             },
                             cx,
                         ))
@@ -584,18 +492,18 @@ impl RootView {
                         .child(tile)
                         .child(column),
                 )
-                .note(PAIRING_NOTE);
+                .note(words::settings_sync::pairing_note());
             if self.is_armed(&Armed::RegenerateTheCode) {
-                body = body.child(note(ARMED_TO_REGENERATE));
+                body = body.child(note(words::settings_sync::armed_to_regenerate()));
             } else if self.code_regenerated {
-                body = body.child(note(REGENERATED));
+                body = body.child(note(words::settings_sync::regenerated()));
             }
         } else {
-            body = body.child(note(NO_CODE_YET));
+            body = body.child(note(words::settings_sync::no_code_yet()));
         }
         body.child(
             kit::field(
-                "Join another device's code",
+                words::settings_sync::join_another_devices_code(),
                 self.text_field(
                     "sync-code",
                     &self.sync_code,
@@ -603,7 +511,7 @@ impl RootView {
                     cx,
                 ),
             )
-            .child(note(JOINING_NOTE)),
+            .child(note(words::settings_sync::joining_note())),
         )
     }
 
@@ -614,7 +522,9 @@ impl RootView {
             .as_ref()
             .map(|syncing| syncing.shown());
         let Some(shown) = shown.filter(|shown| !shown.devices.is_empty()) else {
-            return kit::rows().child(note("Your devices are listed here once this device syncs"));
+            return kit::rows().child(note(
+                words::settings_sync::your_devices_are_listed_here_once(),
+            ));
         };
         let mut devices = shown.devices;
         devices.sort_by(|first, second| {
@@ -629,7 +539,7 @@ impl RootView {
             body = body.child(self.device_row(device, cx));
         }
         if devices.iter().all(|device| device.this) {
-            body = body.child(note(NO_OTHER_DEVICE));
+            body = body.child(note(words::settings_sync::no_other_device()));
         }
         if let Some((id, name)) = self.driving.clone() {
             body = body.child(self.driven_zones(&id, &name, cx));
@@ -650,7 +560,10 @@ impl RootView {
             }
         }
         if syncing.is_none() {
-            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_sync::not_syncing().to_owned()),
+                cx,
+            );
             return;
         }
         self.driving = Some((id.to_owned(), name.to_owned()));
@@ -680,11 +593,13 @@ impl RootView {
             .flex()
             .flex_col()
             .gap_2()
-            .child(kit::row_name(format!("Playing on {name}")));
+            .child(kit::row_name(words::settings_sync::playing_on(name)));
         match shown {
-            RemoteShown::Waiting => panel.child(note(DRIVING_WAITS)),
-            RemoteShown::Refused => panel.child(note(DRIVING_REFUSED)),
-            RemoteShown::Zones(zones) if zones.is_empty() => panel.child(note(DRIVING_WAITS)),
+            RemoteShown::Waiting => panel.child(note(words::settings_sync::driving_waits())),
+            RemoteShown::Refused => panel.child(note(words::settings_sync::driving_refused())),
+            RemoteShown::Zones(zones) if zones.is_empty() => {
+                panel.child(note(words::settings_sync::driving_waits()))
+            }
             RemoteShown::Zones(zones) => {
                 for zone in zones {
                     panel = panel.child(self.driven_zone(id, &zone, cx));
@@ -702,14 +617,14 @@ impl RootView {
         let song = zone
             .song
             .clone()
-            .unwrap_or_else(|| "Nothing playing".to_owned());
+            .unwrap_or_else(|| words::settings_sync::nothing_playing().to_owned());
         let louder = zone.volume.saturating_add(VOLUME_STEP).min(WHOLE_VOLUME);
         let quieter = zone.volume.saturating_sub(VOLUME_STEP);
         let keys = [
             (
                 "previous",
                 Icon::Previous,
-                "Previous song",
+                words::settings_sync::previous_song(),
                 RemoteKey::Previous,
             ),
             (
@@ -719,17 +634,31 @@ impl RootView {
                 } else {
                     Icon::Play
                 },
-                if zone.sounding { "Pause" } else { "Play" },
+                if zone.sounding {
+                    words::settings_sync::pause()
+                } else {
+                    words::settings_sync::play()
+                },
                 RemoteKey::Toggle,
             ),
-            ("next", Icon::Next, "Next song", RemoteKey::Next),
+            (
+                "next",
+                Icon::Next,
+                words::settings_sync::next_song(),
+                RemoteKey::Next,
+            ),
             (
                 "quieter",
                 Icon::Minus,
-                "Quieter",
+                words::settings_sync::quieter(),
                 RemoteKey::Volume(quieter),
             ),
-            ("louder", Icon::Plus, "Louder", RemoteKey::Volume(louder)),
+            (
+                "louder",
+                Icon::Plus,
+                words::settings_sync::louder(),
+                RemoteKey::Volume(louder),
+            ),
         ];
         let mut transport = div().flex().items_center().gap_1();
         for (which, icon, saying, key) in keys {
@@ -809,7 +738,8 @@ impl RootView {
         );
         let reading = spoken::listening().then(|| Reading {
             share: filled,
-            said: format!("{} of {}", clock_of(position), clock_of(length)).into(),
+            said: words::settings_sync::position_of_length(clock_of(length), clock_of(position))
+                .into(),
         });
 
         Some(
@@ -834,7 +764,7 @@ impl RootView {
                     let (on, off) = (entity.clone(), entity.clone());
                     let (toward, away) = (device.clone(), device);
                     control
-                        .read_as(DRIVEN_POSITION, reading)
+                        .read_as(words::settings_sync::driven_position(), reading)
                         .on_a11y_action(AccessibleAction::SetValue, move |asked, _, cx| {
                             let Some(share) = spoken::share_asked(asked) else {
                                 return;
@@ -915,8 +845,8 @@ impl RootView {
                 kit::button(
                     SharedString::from(control),
                     None,
-                    format!("{more} more"),
-                    SHOW_MORE_HINT,
+                    words::settings_sync::more_zones(more),
+                    words::settings_sync::show_more_hint(),
                     Tone::Ghost,
                 ),
                 move |this, _, cx| {
@@ -950,8 +880,8 @@ impl RootView {
         let pressed = div()
             .id(SharedString::from(jump.clone()))
             .found_as(&named)
-            .named_as(Role::Button, &saying, JUMP_HINT)
-            .names(JUMP_HINT)
+            .named_as(Role::Button, &saying, words::settings_sync::jump_hint())
+            .names(words::settings_sync::jump_hint())
             .flex()
             .flex_1()
             .min_w(px(0.0))
@@ -991,14 +921,14 @@ impl RootView {
             (
                 "up",
                 Icon::ChevronUp,
-                UP_HINT,
+                words::settings_sync::up_hint(),
                 row.checked_sub(1)
                     .map(|to| RemoteKey::Move { from: row, to }),
             ),
             (
                 "down",
                 Icon::ChevronDown,
-                DOWN_HINT,
+                words::settings_sync::down_hint(),
                 (row + 1 < zone.queue_length).then_some(RemoteKey::Move {
                     from: row,
                     to: row + 1,
@@ -1007,7 +937,7 @@ impl RootView {
             (
                 "remove",
                 Icon::Close,
-                REMOVE_HINT,
+                words::settings_sync::remove_hint(),
                 Some(RemoteKey::Remove(row)),
             ),
         ];
@@ -1033,7 +963,10 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
-            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_sync::not_syncing().to_owned()),
+                cx,
+            );
             return;
         };
         let device = id.to_owned();
@@ -1043,7 +976,10 @@ impl RootView {
         cx.spawn(async move |this, cx| {
             if !pressing.await {
                 let _ = this.update(cx, |this, cx| {
-                    this.report(Notice::Trouble(NOT_DRIVEN.to_owned()), cx);
+                    this.report(
+                        Notice::Trouble(words::settings_sync::not_driven().to_owned()),
+                        cx,
+                    );
                 });
             }
         })
@@ -1074,7 +1010,7 @@ impl RootView {
         );
         if chosen == Route::Own {
             body = body.child(kit::field(
-                "Server",
+                words::settings_sync::server(),
                 self.text_field(
                     "sync-server",
                     &self.sync_server,
@@ -1084,7 +1020,7 @@ impl RootView {
             ));
         }
         body.child(kit::field(
-            "Device name",
+            words::settings_sync::device_name(),
             self.text_field(
                 "sync-device",
                 &self.sync_device,
@@ -1093,7 +1029,7 @@ impl RootView {
             ),
         ))
         .child(kit::field(
-            "Your name on shared playlists and parties",
+            words::settings_sync::your_name_on_shared_playlists_and(),
             self.text_field(
                 "shared-name",
                 &self.shared_name,
@@ -1101,7 +1037,7 @@ impl RootView {
                 cx,
             ),
         ))
-        .note(SYNCING_NOTE)
+        .note(words::settings_sync::syncing_note())
     }
 
     pub(super) fn synced_songs_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -1111,8 +1047,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "sync-favourites",
                 switch_row(
-                    "Fetch favourites this device lacks",
-                    "A song favourited on another device is sent here while both are online",
+                    words::settings_sync::fetch_favourites_this_device_lacks(),
+                    words::settings_sync::a_song_favourited_on_another_device(),
                     songs.favourites,
                     "sync-favourites",
                 ),
@@ -1130,8 +1066,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "sync-playlists",
                 switch_row(
-                    "Fetch the songs of playlists kept here",
-                    "A playlist whose menu says Keep its songs here is filled from another device",
+                    words::settings_sync::fetch_the_songs_of_playlists_kept(),
+                    words::settings_sync::a_playlist_whose_menu_says_keep(),
                     songs.playlists,
                     "sync-playlists",
                 ),
@@ -1149,8 +1085,8 @@ impl RootView {
             .child(self.in_the_ring(
                 "sync-everything",
                 switch_row(
-                    "Fetch everything",
-                    "Every song another device holds and this one lacks is sent here",
+                    words::settings_sync::fetch_everything(),
+                    words::settings_sync::every_song_another_device_holds_and(),
                     songs.everything,
                     "sync-everything",
                 ),
@@ -1165,7 +1101,7 @@ impl RootView {
                 },
                 cx,
             ))
-            .note(SONGS_NOTE)
+            .note(words::settings_sync::songs_note())
     }
 
     pub(super) fn sync_control_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -1183,7 +1119,7 @@ impl RootView {
         }
         kit::rows()
             .child(kit::stacked_row(
-                REMOTE_TRUST_ASKED,
+                remote_trust_asked(),
                 "",
                 div()
                     .flex()
@@ -1192,8 +1128,8 @@ impl RootView {
                     .child(div().flex().child(choices))
                     .child(note(chosen.meaning())),
             ))
-            .note(REMOTE_TRUST_TOLD)
-            .note(SYNCING_NOTE)
+            .note(remote_trust_told())
+            .note(words::settings_sync::syncing_note())
     }
 
     pub(crate) fn trust_other_devices(&mut self, control: RemoteTrust, cx: &mut Context<Self>) {
@@ -1228,11 +1164,11 @@ impl RootView {
                 "sync-regenerate",
                 Some(Icon::Undo),
                 if armed {
-                    "Press again to make a new code"
+                    words::settings_sync::press_again_to_make_a_new()
                 } else {
-                    "New code"
+                    words::settings_sync::new_code()
                 },
-                REGENERATE_HINT,
+                words::settings_sync::regenerate_hint(),
                 if armed {
                     Tone::Destructive
                 } else {
@@ -1253,10 +1189,10 @@ impl RootView {
 
     fn device_row(&mut self, device: &SyncedDevice, cx: &mut Context<Self>) -> Div {
         let state = match (device.this, device.nearby, device.online) {
-            (true, _, _) => "This device",
-            (false, true, _) => "On this network",
-            (false, false, true) => "Online",
-            (false, false, false) => "Away",
+            (true, _, _) => words::settings_sync::this_device(),
+            (false, true, _) => words::settings_sync::on_this_network(),
+            (false, false, true) => words::settings_sync::online(),
+            (false, false, false) => words::settings_sync::away(),
         };
         let under = platform_name(device.platform).map_or_else(
             || state.to_owned(),
@@ -1280,9 +1216,15 @@ impl RootView {
                 .is_some_and(|(held, _)| *held == device.id);
             let control = format!("sync-drive-{}", device.id);
             let (label, hint) = if driven {
-                ("Stop driving", STOP_DRIVING_HINT)
+                (
+                    words::settings_sync::stop_driving(),
+                    words::settings_sync::stop_driving_hint(),
+                )
             } else {
-                ("Drive", DRIVE_HINT)
+                (
+                    words::settings_sync::drive(),
+                    words::settings_sync::drive_hint(),
+                )
             };
             return row.child(self.in_the_ring_at(
                 control.clone(),
@@ -1305,8 +1247,8 @@ impl RootView {
             kit::button(
                 SharedString::from(control),
                 Some(Icon::Delete),
-                "Remove",
-                FORGET_HINT,
+                words::settings_sync::remove(),
+                words::settings_sync::forget_hint(),
                 Tone::Ghost,
             ),
             move |this, _, cx| this.forget_sync_device(&id, &name, cx),
@@ -1319,19 +1261,25 @@ impl RootView {
         self.code_regenerated = true;
         self.pairing_shown = false;
         self.store(&Setting::SyncKey(String::new()), cx);
-        self.report(Notice::Done(REGENERATED.to_owned()), cx);
+        self.report(
+            Notice::Done(words::settings_sync::regenerated().to_owned()),
+            cx,
+        );
         cx.notify();
     }
 
     fn forget_sync_device(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
-            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_sync::not_syncing().to_owned()),
+                cx,
+            );
             return;
         };
         let notice = if syncing.forget(id) {
-            Notice::Done(format!("{name} is off the list of your devices"))
+            Notice::Done(words::settings_sync::off_the_list(name))
         } else {
-            Notice::Trouble(format!("{name} could not be taken off the list"))
+            Notice::Trouble(words::settings_sync::not_taken_off_the_list(name))
         };
         self.report(notice, cx);
         cx.notify();
@@ -1358,7 +1306,9 @@ impl RootView {
                 cx,
             );
             self.report(
-                Notice::Done("Devices sync through Resonate's server".to_owned()),
+                Notice::Done(
+                    words::settings_sync::devices_sync_through_resonates_server().to_owned(),
+                ),
                 cx,
             );
         }
@@ -1380,20 +1330,23 @@ impl RootView {
             cx,
         );
         let said = if nearby_only {
-            "Devices sync only on this network"
+            words::settings_sync::devices_sync_only_on_this_network()
         } else {
-            "Devices sync through a server again"
+            words::settings_sync::devices_sync_through_a_server_again()
         };
         self.report(Notice::Done(said.to_owned()), cx);
     }
 
     pub(crate) fn force_sync(&mut self, cx: &mut Context<Self>) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
-            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_sync::not_syncing().to_owned()),
+                cx,
+            );
             return;
         };
         syncing.force();
-        self.report(Notice::Done(FORCED.to_owned()), cx);
+        self.report(Notice::Done(words::settings_sync::forced().to_owned()), cx);
         cx.notify();
     }
 
@@ -1410,9 +1363,9 @@ impl RootView {
         self.sync_server
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
         let said = if typed.is_empty() {
-            "Devices sync through Resonate's server"
+            words::settings_sync::devices_sync_through_resonates_server()
         } else {
-            "Devices sync through that server"
+            words::settings_sync::devices_sync_through_that_server()
         };
         self.own_server_asked = !typed.is_empty();
         self.synchronise(
@@ -1449,7 +1402,7 @@ impl RootView {
             cx,
         );
         self.report(
-            Notice::Done("Your other devices learn the new name shortly".to_owned()),
+            Notice::Done(words::settings_sync::your_other_devices_learn_the_new().to_owned()),
             cx,
         );
         window.focus(&self.focus, cx);
@@ -1465,14 +1418,17 @@ impl RootView {
             .reads_as_a_code
             .is_none_or(|reads| reads(&typed));
         if !reads {
-            self.report(Notice::Trouble(NOT_A_CODE.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_sync::not_a_code().to_owned()),
+                cx,
+            );
             return;
         }
         self.sync_code
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.store(&Setting::SyncKey(typed), cx);
         self.report(
-            Notice::Done("This device joins those devices".to_owned()),
+            Notice::Done(words::settings_sync::this_device_joins_those_devices().to_owned()),
             cx,
         );
         window.focus(&self.focus, cx);

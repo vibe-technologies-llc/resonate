@@ -208,6 +208,17 @@ what follows describes Unix, where `signals.rs` and termios are used.
   the terminal; the readout's line clear is the one deliberate sequence, via `said::raw`. On a
   broken pipe `said` notes nobody reads and writes no more, without exiting (`tag --apply` finishes
   the files in hand).
+- **What the terminal says comes out of the binary's catalog** (`language.md`): a file that says
+  words has `crates/resonate/words/en/<file>.ftl` and says them through `words::<file>::…`;
+  `columns.ftl` holds the table headings every listing shares (`words::columns`). A count is a
+  Fluent selector, a figure whose precision matters is passed formatted, and a line's indentation,
+  separators (` · `, ` | `) and the tabs of `sync` and `shared` stay in the code. The clap grammar,
+  error `Display`, `report`'s `resonate:` and `caused by` lines and log lines stay English. `mod
+  words` allows dead code unless every feature is on, so the full build alone refuses an unused
+  message. `every_word_the_terminal_says_is_said_through_its_catalog` (`catalog.rs`) fails on a
+  prose literal; its `PROPER` names what is a name or a stored spelling (a fetched correction's
+  kept profile name, a `Debug` type name), `NOT_WORDS` the files that say none to a listener
+  (`cli.rs`, `error.rs`, and `awake.rs`, whose power-request reason only `powercfg` reads).
 - **Tables are plain text:** `Table::push` passes every cell through `table::on_one_line`; `info`
   cuts a raw tag value at `WIDEST_TAG_VALUE`. Lengths read through one clock (`info::clock`, rounded
   to the millisecond so a minute rolls over, not `1:60.000`); a *listening* total through
@@ -312,6 +323,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   where `theme` / `text-size` is not stored and false where it is, and `text-size` is then the size
   worn when the desktop says nothing. The pane writes `theme` with `follow-desktop-scheme = false`
   (and `text-size` with `follow-desktop-text-size = false`) when a palette or size is chosen by hand.
+- `language`: `resonate_words::LanguageChoice`, `system` unless a tag is written; read before any
+  subcommand runs (`resonate_words::speak`), the pane's change spoken from the next start
+  (`language.md`).
 - `artists-drawn`: `resonate_core::ArtistsDrawn`, `grid` unless the file says `list`.
 - `spectrum-tilt` (`flat`, `pink`, `steep`), `spectrum-floor` (`60`, `78`, `96` dB under full
   scale), `spectrum-bands` (`thirds`, `sixths`, `twelfths`), `spectrum-falls` (`slowly`, `middling`,

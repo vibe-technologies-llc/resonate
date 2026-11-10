@@ -20,49 +20,45 @@ struct SavedSearchSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Playlist name") {
-                    TextField("Playlist name", text: $draft.name)
+                Section("saved-search.name") {
+                    TextField("saved-search.name", text: $draft.name)
                 }
                 Section {
-                    TextField("Search", text: $draft.text)
+                    TextField("saved-search.text", text: $draft.text)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Search")
+                    Text("saved-search.text")
                 } footer: {
-                    Text("Blank asks every song.")
+                    Text("saved-search.text.footer")
                 }
-                Section("Order") {
-                    Picker("Order", selection: Binding(get: { draft.order }, set: { draft.choose($0) })) {
+                Section("saved-search.order") {
+                    Picker("saved-search.order", selection: Binding(get: { draft.order }, set: { draft.choose($0) })) {
                         ForEach(SearchOrder.offered, id: \.self) { Text($0.label).tag($0) }
                     }
-                    Toggle("Descending", isOn: $draft.descending)
+                    Toggle("saved-search.descending", isOn: $draft.descending)
                 }
                 Section {
-                    TextField("No limit", text: $draft.cap)
+                    TextField("saved-search.limit.none", text: $draft.cap)
                         .keyboardType(.numberPad)
                 } header: {
-                    Text("Limit")
+                    Text("saved-search.limit")
                 } footer: {
-                    Text(
-                        draft.search == nil
-                            ? "A whole number above zero, or blank for every row."
-                            : "Blank keeps every row."
-                    )
+                    Text(said(draft.search == nil ? "saved-search.limit.refused" : "saved-search.limit.footer"))
                     .foregroundStyle(draft.search == nil ? Color.failure : Color.secondary)
-                    .announced(draft.search == nil ? "A whole number above zero, or blank for every row." : nil)
+                    .announced(draft.search == nil ? said("saved-search.limit.refused") : nil)
                 }
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button("common.cancel") {
                         if draft == initial { dismiss() } else { discarding = true }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button("common.save") {
                         guard let search = draft.search else { return }
                         save(draft.trimmedName, search)
                         dismiss()

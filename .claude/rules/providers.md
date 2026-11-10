@@ -100,7 +100,12 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
 
 - **Wants are asked `PollOptions::lanes` (`WANTS_ASKED_AT_ONCE`, three) at a time, fewer where a
   registered provider says `Provider::downloads_at_once`** (`Providers::downloads_at_once`, the
-  narrowest; the keyed `resonate` provider says one, since the server downloads one song at a time). The first want
+  narrowest; the keyed `resonate` provider says one, since the server downloads one song at a time). **Wants are
+  claimed in the order they were asked for** (`WANTS_UNHELD`): a want pressed alone (no other want shares its
+  `wanted` stamp) first, newest first, so a song pressed to play is not held behind an album; then the wants asked
+  together in one transaction (an album wanted whole, *Get the rest*), oldest batch first, each batch by disc and
+  position, so one album downloads in its order and before an album asked for after it
+  (`an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_album_asked_later`). The first want
   is asked alone, so an away provider or refused login is met once and noted in the shared `Away`.
   **A lane hands offers to its own `resonate-keeper` thread** via a `Keep` over a channel of none;
   the keeper opens, downloads, keeps or files while its lane searches the next; a lane offered a

@@ -413,7 +413,12 @@ const WANTS: &str = concat!(wants_selected!(), " ORDER BY w.wanted DESC, w.id DE
 
 const WANTS_UNHELD: &str = concat!(
     wants_selected!(),
-    " WHERE rt.track_id IS NULL ORDER BY w.wanted DESC, w.id DESC"
+    " JOIN (SELECT wanted, count(*) AS songs FROM wants GROUP BY wanted) asked_together
+        ON asked_together.wanted = w.wanted
+      WHERE rt.track_id IS NULL
+      ORDER BY asked_together.songs > 1,
+               CASE WHEN asked_together.songs > 1 THEN w.wanted ELSE -w.wanted END,
+               rt.disc, rt.position, w.id"
 );
 
 const REMEMBER_THE_DELIVERY_FORGOTTEN: &str =

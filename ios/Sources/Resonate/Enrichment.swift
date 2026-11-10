@@ -39,7 +39,7 @@ final class Enrichment {
     @ObservationIgnored private var away = UIApplication.shared.applicationState == .background
     @ObservationIgnored private var owedOnComingForward = false
     @ObservationIgnored private var lane: Task<Void, Never>?
-    @ObservationIgnored private lazy var pausing = BackgroundHold(name: "Pausing the lookup")
+    @ObservationIgnored private lazy var pausing = BackgroundHold(name: said("enrichment.background.pausing"))
     @ObservationIgnored private var erased = false
     @ObservationIgnored private var sought: UInt64?
     @ObservationIgnored private var portraits: UInt32 = 0
@@ -265,20 +265,20 @@ final class Enrichment {
     }
 
     private static func line(of status: EnrichmentStatus?) -> String {
-        guard let status else { return "Not looked up yet" }
+        guard let status else { return said("enrichment.status.not-yet") }
         if status.running {
             return status.due > 0
-                ? "Finding artwork and details · \(status.asked.formatted()) of \(status.due.formatted())"
-                : "Finding artwork and details"
+                ? said("enrichment.status.finding.counted", status.asked.formatted(), status.due.formatted())
+                : said("enrichment.status.finding")
         }
         return switch status.stopped {
-        case .finished: "Artwork and details up to date"
-        case .cancelled: "Stopped"
-        case .offline: "Stopped: offline"
-        case .unreachable: "Stopped: MusicBrainz could not be reached"
-        case .refused: "Stopped: the service refused too many requests"
-        case .failed: "Stopped: the library could not be read"
-        case nil: "Not looked up yet"
+        case .finished: said("enrichment.status.finished")
+        case .cancelled: said("enrichment.status.cancelled")
+        case .offline: said("enrichment.status.offline")
+        case .unreachable: said("enrichment.status.unreachable")
+        case .refused: said("enrichment.status.refused")
+        case .failed: said("enrichment.status.failed")
+        case nil: said("enrichment.status.not-yet")
         }
     }
 }
@@ -292,14 +292,14 @@ struct EnrichmentView: View {
             if !features.online {
                 Section {
                     Toggle(isOn: Binding(get: { features.online }, set: { features.setOnline($0) })) {
-                        ToolRow(title: "Online features", detail: "Artwork and details are looked up online", symbol: "globe")
+                        ToolRow(title: said("enrichment.online"), detail: said("enrichment.online.detail"), symbol: "globe")
                     }
                 }
             }
             EnrichmentSection()
                 .disabled(!features.online)
         }
-        .navigationTitle("Artwork and details")
+        .navigationTitle("enrichment.title")
     }
 }
 
@@ -311,29 +311,29 @@ struct EnrichmentSection: View {
         Section {
             Toggle(isOn: $enrichment.automatic) {
                 ToolRow(
-                    title: "Fetch artwork and details automatically",
-                    detail: "Covers, artist portraits, lyrics and MusicBrainz details",
+                    title: said("enrichment.automatic"),
+                    detail: said("enrichment.automatic.detail"),
                     symbol: "photo.on.rectangle.angled"
                 )
             }
             Toggle(isOn: $enrichment.unmeteredOnly) {
-                ToolRow(title: "Only on Wi-Fi", detail: "Wait for a network that is not metered", symbol: "wifi")
+                ToolRow(title: said("enrichment.unmetered"), detail: said("enrichment.unmetered.detail"), symbol: "wifi")
             }
             .disabled(!enrichment.automatic)
             Toggle(isOn: Binding(get: { library.features.enrichOnMetered }, set: { library.features.setEnrichOnMetered($0) })) {
-                ToolRow(title: "Look up on a metered connection", detail: "Ask for covers and details even when the network is metered", symbol: "antenna.radiowaves.left.and.right")
+                ToolRow(title: said("enrichment.metered"), detail: said("enrichment.metered.detail"), symbol: "antenna.radiowaves.left.and.right")
             }
             Button { enrichment.lookAgainForCovers() } label: {
                 ToolRow(
-                    title: "Look again for missing covers",
-                    detail: enrichment.coversAskedAgain.map { "Asking again for \(counted(Int($0), "album"))" }
-                        ?? "Ask again for albums still without a cover",
+                    title: said("enrichment.covers-again"),
+                    detail: enrichment.coversAskedAgain.map { said("enrichment.covers-again.asking", Int($0)) }
+                        ?? said("enrichment.covers-again.detail"),
                     symbol: "photo.badge.arrow.down"
                 )
             }
             EnrichmentProgressRow()
         } footer: {
-            Text("Looked up while Resonate is open. A guess is never written: only a strict match is kept.")
+            Text("enrichment.footer")
         }
         .task { enrichment.read() }
     }
@@ -352,7 +352,7 @@ struct EnrichmentProgressRow: View {
                 .monospacedDigit()
             Spacer()
             if enrichment.running {
-                Button("Stop", role: .destructive) { enrichment.stop() }
+                Button("common.stop", role: .destructive) { enrichment.stop() }
                     .buttonStyle(.glass)
             }
         }
@@ -370,25 +370,25 @@ struct RefreshArtworkRow: View {
         HStack {
             Button { confirming = true } label: {
                 ToolRow(
-                    title: "Refresh artwork and details",
+                    title: said("enrichment.refresh"),
                     detail: enrichment.running
                         ? enrichment.line
-                        : !features.online ? "Enable online features in Settings" : "Look up covers, details and lyrics for \(counted(songs, "song")) again",
-                    symbol: "wand.and.stars"
+                        : !features.online ? said("enrichment.refresh.offline") : said("enrichment.refresh.detail", songs),
+                    symbol: "photo.on.rectangle.angled"
                 )
             }
             .disabled(!features.online || songs == 0)
             if enrichment.running {
                 Spacer()
-                Button("Stop", role: .destructive) { enrichment.stop() }
+                Button("common.stop", role: .destructive) { enrichment.stop() }
                     .buttonStyle(.glass)
             }
         }
-        .alert("Refresh artwork and details?", isPresented: $confirming) {
-            Button("Cancel", role: .cancel) {}
-            Button("Refresh") { enrichment.refresh() }
+        .alert("enrichment.refresh.confirm", isPresented: $confirming) {
+            Button("common.cancel", role: .cancel) {}
+            Button("enrichment.refresh.go") { enrichment.refresh() }
         } message: {
-            Text("Covers, artist portraits, details and lyrics are looked up again for \(counted(songs, "song")). This runs while Resonate is open and can take a while.")
+            Text(said("enrichment.refresh.message", songs))
         }
     }
 }

@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -31,6 +31,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.DownloadJob
 import org.resonate.android.DownloadPlan
+import org.resonate.android.R
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.ReleaseNotHeld
@@ -59,12 +62,11 @@ import org.resonate.android.ui.components.ArtistPortrait
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.SectionHeader
-import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.SongSelectionBar
-import org.resonate.android.ui.components.rememberSelection
+import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.components.rememberPicture
-import org.resonate.android.ui.counted
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
@@ -74,6 +76,7 @@ import org.resonate.android.ui.search.OnlineSongSheet
 import org.resonate.android.ui.search.onlineSongActions
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.rememberSeedOf
+import org.resonate.android.words
 
 data class ArtistPage(
     val albums: List<AlbumHit>,
@@ -165,7 +168,7 @@ fun ArtistScreen(screen: Screen.Artist) {
     var acting by remember { mutableStateOf<SearchSong?>(null) }
     val page = loaded.valueOrNull()
     val portraitSong = screen.artworkTrack ?: page?.tracks?.firstOrNull()?.id
-    val name = screen.name.ifBlank { "Unknown artist" }
+    val name = screen.name.ifBlank { stringResource(R.string.unknown_artist) }
     val picture = rememberPicture(information?.picture)
     val seed = rememberSeedOf(picture ?: rememberArtwork(portraitSong, 0u, 96))
     LaunchedEffect(portraitSong) { portraitSong?.let(model::learn) }
@@ -195,12 +198,27 @@ fun ArtistScreen(screen: Screen.Artist) {
                 OverflowMenu(
                     listOf(
                         listOf(
-                            MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) { resonate.playNext(tracks) },
-                            MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { resonate.addToQueue(tracks) },
-                            MenuEntry.Action("Add to playlist", Icons.AutoMirrored.Rounded.PlaylistAdd) { sheets.addToPlaylist(tracks) },
+                            MenuEntry.Action(
+                                stringResource(R.string.library_play_next),
+                                Icons.AutoMirrored.Rounded.PlaylistPlay,
+                            ) {
+                                resonate.playNext(tracks)
+                            },
+                            MenuEntry.Action(
+                                stringResource(R.string.library_add_to_queue),
+                                Icons.AutoMirrored.Rounded.QueueMusic,
+                            ) {
+                                resonate.addToQueue(tracks)
+                            },
+                            MenuEntry.Action(
+                                stringResource(R.string.library_add_to_playlist),
+                                Icons.AutoMirrored.Rounded.PlaylistAdd,
+                            ) {
+                                sheets.addToPlaylist(tracks)
+                            },
                         )
                     ),
-                    description = "Artist options",
+                    description = stringResource(R.string.library_artist_options),
                 )
             },
         ) { shown ->
@@ -209,10 +227,15 @@ fun ArtistScreen(screen: Screen.Artist) {
             item("header") {
                 CollectionHeader(
                     title = name,
-                    overline = about?.let { artistLine(it.kind, it.country, it.area) }?.ifBlank { null } ?: "Artist",
+                    overline =
+                        about?.let { artistLine(it.kind, it.country, it.area) }?.ifBlank { null }
+                            ?: stringResource(R.string.library_overline_artist),
                     summary =
                         collectionSummary(
-                            shown.albums.size.takeIf { it > 0 }?.let { counted(it, "album") },
+                            words(),
+                            shown.albums.size.takeIf { it > 0 }?.let {
+                                pluralStringResource(R.plurals.count_albums, it, it)
+                            },
                             tracks = tracks,
                         ),
                     onPlay = { resonate.playInOrder(tracks) },
@@ -236,7 +259,7 @@ fun ArtistScreen(screen: Screen.Artist) {
                 }
             }
             if (shown.albums.isNotEmpty()) {
-                item("albums-title") { SectionHeader("Albums") }
+                item("albums-title") { SectionHeader(stringResource(R.string.library_shelf_albums)) }
                 item("albums") {
                     Shelf(shown.albums, key = { it.key }) { album ->
                         AlbumCard(
@@ -250,7 +273,8 @@ fun ArtistScreen(screen: Screen.Artist) {
             }
             if (shown.releasesLacked.isNotEmpty()) {
                 item("releases-lacked-title") {
-                    SectionHeader(notInYourLibraryHeading(shown.releasesLacked.size, "release"))
+                    val count = shown.releasesLacked.size
+                    SectionHeader(pluralStringResource(R.plurals.library_not_held_releases, count, count))
                 }
                 item("releases-lacked") {
                     Shelf(shown.releasesLacked, key = { it.group }) { release ->
@@ -262,17 +286,19 @@ fun ArtistScreen(screen: Screen.Artist) {
                     }
                 }
             }
-            if (tracks.isEmpty()) item("empty") { EmptyCollection(detail = "No songs by this artist are in your library.") }
+            if (tracks.isEmpty()) {
+                item("empty") { EmptyCollection(detail = stringResource(R.string.library_artist_no_songs)) }
+            }
             else {
                 val showing = if (everySong || tracks.size <= SONGS_FOLDED) tracks else tracks.take(SONGS_FOLDED)
                 item("songs-title") {
                     SectionHeader(
-                        "Songs",
+                        stringResource(R.string.library_shelf_songs),
                         action =
                             when {
                                 tracks.size <= SONGS_FOLDED -> null
-                                everySong -> "Show fewer"
-                                else -> "Show all ${tracks.size}"
+                                everySong -> stringResource(R.string.library_show_fewer)
+                                else -> stringResource(R.string.library_show_all, tracks.size)
                             },
                         onAction = { everySong = !everySong },
                     )
@@ -294,12 +320,12 @@ fun ArtistScreen(screen: Screen.Artist) {
                 val lacked = shown.songsLacked
                 item("songs-lacked-title") {
                     SectionHeader(
-                        notInYourLibraryHeading(lacked.size, "song"),
+                        pluralStringResource(R.plurals.library_not_held_songs, lacked.size, lacked.size),
                         action =
                             when {
                                 lacked.size <= SONGS_LACKED_FOLDED -> null
-                                everySongLacked -> "Show fewer"
-                                else -> "Show all ${lacked.size}"
+                                everySongLacked -> stringResource(R.string.library_show_fewer)
+                                else -> stringResource(R.string.library_show_all, lacked.size)
                             },
                         onAction = { everySongLacked = !everySongLacked },
                     )
@@ -318,7 +344,7 @@ fun ArtistScreen(screen: Screen.Artist) {
             }
             val links = about?.links.orEmpty().distinct()
             if (links.isNotEmpty()) {
-                item("links-title") { SectionHeader("Elsewhere") }
+                item("links-title") { SectionHeader(stringResource(R.string.library_artist_elsewhere)) }
                 links.forEach { link ->
                     item("link:$link") {
                         ListItem(

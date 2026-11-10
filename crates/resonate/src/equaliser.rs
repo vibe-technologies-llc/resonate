@@ -17,15 +17,12 @@ use crate::{
     measuring::{self, Room},
     online, reloading, select_sink,
     table::Table,
+    words,
 };
 
 const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
 
-const EVERY_OTHER_DEVICE: &str = "every other device";
-const ITS_OWN_CURVE: &str = "its own curve";
-const UNREADABLE: &str = "unreadable";
 const NOTHING_TO_SHOW: &str = "—";
-const MEASURED_LIVE: &str = "measured";
 
 fn counted(read: resonate_eq::Result<Option<Profile>>) -> (String, String) {
     match read {
@@ -38,7 +35,10 @@ fn counted(read: resonate_eq::Result<Option<Profile>>) -> (String, String) {
         }
         Err(error) => {
             tracing::warn!(%error, "a kept curve could not be read for the list");
-            (UNREADABLE.to_owned(), NOTHING_TO_SHOW.to_owned())
+            (
+                words::equaliser::unreadable().to_owned(),
+                NOTHING_TO_SHOW.to_owned(),
+            )
         }
     }
 }
@@ -108,15 +108,19 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     }
     if wanted.on || wanted.off {
         config::store(settings, ConfigKey::Equaliser, wanted.on)?;
-        said!("equaliser: {}", switched(wanted.on));
+        said!("{}", words::equaliser::switched(switched(wanted.on)));
         return Ok(());
     }
 
     print(&store, config, bound.as_ref())
 }
 
-const fn switched(on: bool) -> &'static str {
-    if on { "on" } else { "off" }
+fn switched(on: bool) -> &'static str {
+    if on {
+        words::equaliser::on()
+    } else {
+        words::equaliser::off()
+    }
 }
 
 fn named(text: &str) -> Result<ProfileName> {
@@ -125,7 +129,7 @@ fn named(text: &str) -> Result<ProfileName> {
 
 fn spoken_of(sink: Option<&NodeName>) -> String {
     sink.map_or_else(
-        || EVERY_OTHER_DEVICE.to_owned(),
+        || words::equaliser::every_other_device().to_owned(),
         |sink| sink.as_str().to_owned(),
     )
 }
@@ -133,12 +137,12 @@ fn spoken_of(sink: Option<&NodeName>) -> String {
 fn spoken_binding(binding: &Binding) -> String {
     match binding {
         Binding::Profile(name) => name.to_string(),
-        Binding::Own => ITS_OWN_CURVE.to_owned(),
+        Binding::Own => words::equaliser::its_own_curve().to_owned(),
     }
 }
 
 fn spoken_own(owner: Option<&NodeName>) -> String {
-    format!("the own curve of {}", spoken_of(owner))
+    words::equaliser::own_curve_of(spoken_of(owner))
 }
 
 fn curve_of(store: &Store, owner: Option<&NodeName>, binding: &Binding) -> Result<Option<Profile>> {
@@ -167,7 +171,10 @@ fn bound_as(settings: &Path, sink: Option<&NodeName>, binding: &Binding) -> Resu
     }
     config::store(settings, ConfigKey::Equaliser, true)?;
 
-    said!("bound {} to {}", spoken_binding(binding), spoken_of(sink));
+    said!(
+        "{}",
+        words::equaliser::bound(spoken_binding(binding), spoken_of(sink))
+    );
     Ok(())
 }
 
@@ -180,7 +187,7 @@ fn unbound_from(settings: &Path, sink: Option<&NodeName>) -> Result<()> {
 
 fn unbind(settings: &Path, sink: Option<&NodeName>) -> Result<()> {
     unbound_from(settings, sink)?;
-    said!("unbound {}", spoken_of(sink));
+    said!("{}", words::equaliser::unbound(spoken_of(sink)));
     Ok(())
 }
 
@@ -195,10 +202,12 @@ fn import(
         let kept = Store::read_in(from)?;
         store.keep_own_read(sink.map(NodeName::as_str), &kept)?;
         said!(
-            "shaped {} from {}, {} bands",
-            spoken_own(sink),
-            from.display(),
-            kept.profile.bands().len()
+            "{}",
+            words::equaliser::shaped_from(
+                kept.profile.bands().len(),
+                from.display().to_string(),
+                spoken_own(sink),
+            )
         );
         passed_over(&kept);
         return bound_as(settings, sink, &Binding::Own);
@@ -211,12 +220,18 @@ fn import(
 
     if kept.converted {
         said!(
-            "kept a graphic curve as {name}, {} bands at {DRAWN_AT} and fitted again at the rate \
-             a stream plays at",
-            kept.profile.bands().len()
+            "{}",
+            words::equaliser::kept_graphic(
+                kept.profile.bands().len(),
+                name.to_string(),
+                DRAWN_AT.to_string(),
+            )
         );
     } else {
-        said!("kept {name}, {} bands", kept.profile.bands().len());
+        said!(
+            "{}",
+            words::equaliser::kept(kept.profile.bands().len(), name.to_string())
+        );
     }
     passed_over(&kept);
 
@@ -251,7 +266,7 @@ fn fit_measurement(
         &Fit {
             fitted: &fitted,
             target,
-            origin: format!("the {} {}", layout.label(), from.display()),
+            origin: words::equaliser::the_layout_file(from.display().to_string(), layout.label()),
             passed_over,
             name,
         },
@@ -288,14 +303,19 @@ fn keep_fitted(
         name,
     } = kept;
     let bands = fitted.profile.bands().len();
-    let told = format!(
-        "{bands} bands fitted toward {target}, {:.1} dB off before and {:.1} dB after",
-        fitted.off_by_db_before, fitted.off_by_db_after
+    let told = words::equaliser::fitted_toward(
+        format!("{:.1}", fitted.off_by_db_after),
+        bands,
+        format!("{:.1}", fitted.off_by_db_before),
+        *target,
     );
 
     if wanted.own {
         store.keep_own(sink.map(NodeName::as_str), &fitted.profile)?;
-        said!("shaped {} from {origin}: {told}", spoken_own(sink));
+        said!(
+            "{}",
+            words::equaliser::shaped_from_told(origin, spoken_own(sink), &told)
+        );
         measurement_passed_over(*passed_over);
         return bound_as(settings, sink, &Binding::Own);
     }
@@ -303,7 +323,10 @@ fn keep_fitted(
     let held = store.holds(name);
     store.keep(name, &fitted.profile)?;
     replaced_if(held, name);
-    said!("kept {name} from {origin}: {told}");
+    said!(
+        "{}",
+        words::equaliser::kept_from_told(name.to_string(), origin, &told)
+    );
     measurement_passed_over(*passed_over);
 
     if wanted.r#for.is_some() {
@@ -328,14 +351,17 @@ fn measure(
         Some(name) => Listening::Microphone(Some(NodeName::new(name.to_owned()))),
     };
     let heard_from = match &from {
-        Listening::Desktop => "what the desktop plays".to_owned(),
-        Listening::Microphone(None) => "the default microphone".to_owned(),
+        Listening::Desktop => words::equaliser::what_the_desktop_plays().to_owned(),
+        Listening::Microphone(None) => words::equaliser::the_default_microphone().to_owned(),
         Listening::Microphone(Some(name)) => name.to_string(),
     };
     told!(
-        "playing a sweep through {} and listening to {heard_from} for {} s",
-        through.map_or("the default output", NodeName::as_str),
-        (measuring::SWEEP_FOR + measuring::HEARD_AFTER_THE_SWEEP).as_secs()
+        "{}",
+        words::equaliser::playing_a_sweep(
+            heard_from,
+            (measuring::SWEEP_FOR + measuring::HEARD_AFTER_THE_SWEEP).as_secs(),
+            through.map_or(words::equaliser::the_default_output(), NodeName::as_str),
+        )
     );
 
     let heard: Response =
@@ -351,12 +377,15 @@ fn measure(
                 source,
             }
         })?;
-        said!("wrote the measurement to {}", to.display());
+        said!(
+            "{}",
+            words::equaliser::wrote_the_measurement(to.display().to_string())
+        );
     }
 
     let fitted = fit(&measured, &goal, &Fitting::default())?;
     let called = wanted.profile.as_deref().map(named).transpose()?;
-    let name = called.unwrap_or_else(|| ProfileName::after(MEASURED_LIVE));
+    let name = called.unwrap_or_else(|| ProfileName::after(words::equaliser::measured()));
 
     keep_fitted(
         store,
@@ -366,7 +395,7 @@ fn measure(
         &Fit {
             fitted: &fitted,
             target,
-            origin: "the sweep it measured".to_owned(),
+            origin: words::equaliser::the_sweep().to_owned(),
             passed_over: 0,
             name,
         },
@@ -380,7 +409,7 @@ fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
         .filter_map(|found| catalogue.device(found))
         .collect();
     if devices.is_empty() {
-        said!("nothing measured answers to that");
+        said!("{}", words::equaliser::nothing_measured());
         return Ok(());
     }
 
@@ -393,18 +422,21 @@ fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
                 let held = store.holds(&name);
                 store.keep(&name, &profile)?;
                 replaced_if(held, &name);
-                said!("kept {name}, {} bands", profile.bands().len());
+                said!(
+                    "{}",
+                    words::equaliser::kept(profile.bands().len(), name.to_string())
+                );
                 kept += 1;
             }
-            Ok(None) => said!("{}: no correction is held", device.shown()),
+            Ok(None) => said!("{}", words::equaliser::no_correction(device.shown())),
             Err(error) => {
                 tracing::warn!(%error, device = %fetched.device, "a correction could not be fetched");
-                said!("{}: it could not be fetched", device.shown());
+                said!("{}", words::equaliser::not_fetched(device.shown()));
             }
         }
     }
 
-    said!("kept {kept} of {} corrections", ids.len());
+    said!("{}", words::equaliser::kept_corrections(ids.len(), kept));
     Ok(())
 }
 
@@ -417,31 +449,28 @@ fn named_by_measurer(device: &Device) -> String {
 
 fn measurement_passed_over(passed_over: usize) {
     if passed_over > 0 {
-        said!("{passed_over} lines of the measurement were passed over");
+        said!("{}", words::equaliser::measurement_passed_over(passed_over));
     }
 }
 
 fn replaced_if(held: bool, name: &ProfileName) {
     if held {
-        said!("{name} was kept already and is replaced");
+        said!("{}", words::equaliser::replaced(name.to_string()));
     }
 }
 
 fn passed_over(kept: &Kept) {
     if kept.passed_over > 0 {
-        said!("{} lines were passed over", kept.passed_over);
+        said!("{}", words::equaliser::lines_passed_over(kept.passed_over));
     }
     if kept.approximated > 0 {
         said!(
-            "{} filters name a rolloff this build reads as second order",
-            kept.approximated
+            "{}",
+            words::equaliser::filters_approximated(kept.approximated)
         );
     }
     if kept.clamped > 0 {
-        said!(
-            "{} values past what this build holds were held to its limits",
-            kept.clamped
-        );
+        said!("{}", words::equaliser::values_clamped(kept.clamped));
     }
 }
 
@@ -479,7 +508,10 @@ fn export(
     let profile = profile.ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
 
     store.export(&profile, Some(&standing_in), to)?;
-    said!("wrote {spoken} to {}", to.display());
+    said!(
+        "{}",
+        words::equaliser::wrote(to.display().to_string(), spoken)
+    );
     Ok(())
 }
 
@@ -501,7 +533,7 @@ fn forget(store: &Store, settings: &Path, config: &Config, name: &str) -> Result
         }
     }
 
-    said!("forgot {name}");
+    said!("{}", words::equaliser::forgot(name.to_string()));
     Ok(())
 }
 
@@ -520,7 +552,7 @@ fn forget_own(
         unbound_from(settings, sink)?;
     }
 
-    said!("forgot {}", spoken_own(sink));
+    said!("{}", words::equaliser::forgot(spoken_own(sink)));
     Ok(())
 }
 
@@ -546,7 +578,10 @@ fn list(store: &Store, config: &Config) -> Result<()> {
     let names = store.names()?;
     let owners = store.owners()?;
     if names.is_empty() && owners.is_empty() {
-        said!("no profiles are kept in {}", store.folder().display());
+        said!(
+            "{}",
+            words::equaliser::no_profiles(store.folder().display().to_string())
+        );
         return Ok(());
     }
 
@@ -563,7 +598,12 @@ fn list(store: &Store, config: &Config) -> Result<()> {
 }
 
 fn own_curves(store: &Store, config: &Config, owners: &[Option<String>]) {
-    let mut table = Table::new(vec!["OWN CURVE OF", "BANDS", "PREAMP", "BOUND"]);
+    let mut table = Table::new(vec![
+        words::equaliser::own_curve_heading(),
+        words::equaliser::bands_heading(),
+        words::equaliser::preamp_heading(),
+        words::equaliser::bound_heading(),
+    ]);
     for owner in owners {
         let owner = owner.as_deref().map(NodeName::new);
         let (bands, preamp) = counted(store.own(owner.as_ref().map(NodeName::as_str)).map(Some));
@@ -573,14 +613,24 @@ fn own_curves(store: &Store, config: &Config, owners: &[Option<String>]) {
             spoken_of(owner.as_ref()),
             bands,
             preamp,
-            if bound { "yes" } else { NOTHING_TO_SHOW }.to_owned(),
+            if bound {
+                words::equaliser::yes()
+            } else {
+                NOTHING_TO_SHOW
+            }
+            .to_owned(),
         ]);
     }
     said_on!("{}", table.render());
 }
 
 fn profiles(store: &Store, config: &Config, names: &[ProfileName]) {
-    let mut table = Table::new(vec!["PROFILE", "BANDS", "PREAMP", "BOUND TO"]);
+    let mut table = Table::new(vec![
+        words::equaliser::profile_heading(),
+        words::equaliser::bands_heading(),
+        words::equaliser::preamp_heading(),
+        words::equaliser::bound_to_heading(),
+    ]);
     for name in names {
         let (bands, preamp) = counted(store.read(name));
         let binding = Binding::Profile(name.clone());
@@ -588,7 +638,10 @@ fn profiles(store: &Store, config: &Config, names: &[ProfileName]) {
             held.by_sink()
                 .filter(|(_, to)| **to == binding)
                 .map(|(sink, _)| sink.as_str().to_owned())
-                .chain((held.fallback() == Some(&binding)).then(|| EVERY_OTHER_DEVICE.to_owned()))
+                .chain(
+                    (held.fallback() == Some(&binding))
+                        .then(|| words::equaliser::every_other_device().to_owned()),
+                )
                 .collect()
         });
 
@@ -607,7 +660,10 @@ fn profiles(store: &Store, config: &Config, names: &[ProfileName]) {
 }
 
 fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> {
-    said!("equaliser: {}", switched(config.equaliser_on()));
+    said!(
+        "{}",
+        words::equaliser::switched(switched(config.equaliser_on()))
+    );
 
     match config
         .equaliser_for
@@ -615,10 +671,13 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
         .filter(|held| !held.is_empty())
     {
         Some(bindings) => {
-            let mut table = Table::new(vec!["DEVICE", "BOUND TO"]);
+            let mut table = Table::new(vec![
+                words::equaliser::device_heading(),
+                words::equaliser::bound_to_heading(),
+            ]);
             if let Some(fallback) = bindings.fallback() {
                 table.push(vec![
-                    EVERY_OTHER_DEVICE.to_owned(),
+                    words::equaliser::every_other_device().to_owned(),
                     spoken_binding(fallback),
                 ]);
             }
@@ -627,7 +686,7 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
             }
             said_on!("{}", table.render());
         }
-        None => said!("nothing is bound to any device"),
+        None => said!("{}", words::equaliser::nothing_bound()),
     }
 
     let Some((owner, binding)) = bound_to(config, sink) else {
@@ -638,25 +697,31 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
         _ => spoken_binding(binding),
     };
     let Some(profile) = curve_of(store, owner, binding)? else {
-        said!("\n{spoken} is bound but no profile of that name is kept");
+        said!("\n{}", words::equaliser::bound_but_not_kept(spoken));
         return Ok(());
     };
 
-    said!("\nfor {}: {spoken}", spoken_of(sink));
-    said!("preamp: {}", profile.preamp());
+    said!("\n{}", words::equaliser::for_sink(spoken_of(sink), spoken));
+    said!("{}", words::equaliser::preamp(profile.preamp().to_string()));
     if let Some(target) = profile.target() {
         said!(
-            "fitted to a graphic curve of {} points: the bands below are its fit at {DRAWN_AT}, \
-             and a stream at another rate is fitted again at its own",
-            target.points().len()
+            "{}",
+            words::equaliser::fitted_to_graphic(target.points().len(), DRAWN_AT.to_string())
         );
     }
     if profile.bands().is_empty() {
-        said!("it holds no bands");
+        said!("{}", words::equaliser::holds_no_bands());
         return Ok(());
     }
 
-    let mut table = Table::new(vec!["#", "TYPE", "FREQUENCY", "GAIN", "Q", ""]);
+    let mut table = Table::new(vec![
+        "#",
+        words::equaliser::type_heading(),
+        words::equaliser::frequency_heading(),
+        words::equaliser::gain_heading(),
+        "Q",
+        "",
+    ]);
     for (at, band) in profile.bands().iter().enumerate() {
         table.push(vec![
             (at + 1).to_string(),
@@ -667,12 +732,15 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
             if band.on {
                 String::new()
             } else {
-                "off".to_owned()
+                words::equaliser::off().to_owned()
             },
         ]);
     }
     said_on!("{}", table.render());
-    said!("peak: {:+.2} dB", profile.peak_db(DRAWN_AT));
+    said!(
+        "{}",
+        words::equaliser::peak(format!("{:+.2}", profile.peak_db(DRAWN_AT)))
+    );
     Ok(())
 }
 
@@ -705,11 +773,16 @@ fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
     let (_, catalogue) = asked(config)?;
     let hits = search_preferring(&catalogue, text, measurer);
     if hits.is_empty() {
-        said!("nothing measured answers to that");
+        said!("{}", words::equaliser::nothing_measured());
         return Ok(());
     }
 
-    let mut table = Table::new(vec!["DEVICE", "MEASURED BY", "RIG", "PATH"]);
+    let mut table = Table::new(vec![
+        words::equaliser::device_heading(),
+        words::equaliser::measured_by_heading(),
+        words::equaliser::rig_heading(),
+        words::equaliser::path_heading(),
+    ]);
     for device in hits.into_iter().filter_map(|found| catalogue.device(found)) {
         table.push(vec![
             device.label.clone(),
@@ -725,7 +798,7 @@ fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
 fn measurer_missed(asked_for: Option<&str>, chosen: &str) -> Option<String> {
     let asked_for = asked_for?;
     (asked_for.trim().to_lowercase() != chosen.trim().to_lowercase())
-        .then(|| format!("{asked_for} measured nothing for it: {chosen}'s is the best ranked"))
+        .then(|| words::equaliser::measurer_missed(asked_for, chosen))
 }
 
 fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
@@ -734,7 +807,10 @@ fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
         crate::wanted_sink(cli, config).as_ref(),
     )?;
 
-    said!("sink:   {} ({})", sink.description, sink.name);
+    said!(
+        "{}",
+        words::equaliser::sink(&sink.description, sink.name.as_str())
+    );
 
     let measurer = measurer_of(config, wanted, Some(&sink.name));
 
@@ -743,18 +819,17 @@ fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
         .and_then(|found| catalogue.device(found))
     {
         Some(device) => {
-            said!("looks like: {}", device.shown());
+            said!("{}", words::equaliser::looks_like(device.shown()));
             if let Some(told) = measurer_missed(measurer, &device.measured_by) {
                 said!("{told}");
             }
             said!(
-                "fetch it:   resonate eq --fetch \"{}\" --for {}",
-                device.id,
-                sink.name
+                "{}",
+                words::equaliser::fetch_it(device.id.as_str(), sink.name.as_str())
             );
         }
         None => {
-            said!("nothing measured answers to that name clearly enough to be worth guessing at")
+            said!("{}", words::equaliser::not_clear_enough())
         }
     }
     Ok(())
@@ -777,9 +852,8 @@ fn fetch(
     if wanted.own {
         store.keep_own(sink.map(NodeName::as_str), &profile)?;
         said!(
-            "shaped {} from {id}, {} bands",
-            spoken_own(sink),
-            profile.bands().len()
+            "{}",
+            words::equaliser::shaped_from(profile.bands().len(), id.to_string(), spoken_own(sink))
         );
         return bound_as(settings, sink, &Binding::Own);
     }
@@ -791,7 +865,10 @@ fn fetch(
     let held = store.holds(&name);
     store.keep(&name, &profile)?;
     replaced_if(held, &name);
-    said!("kept {name}, {} bands", profile.bands().len());
+    said!(
+        "{}",
+        words::equaliser::kept(profile.bands().len(), name.to_string())
+    );
 
     if wanted.r#for.is_some() {
         return bind(store, settings, sink, name.as_str());
@@ -1424,7 +1501,10 @@ mod tests {
 
         assert_eq!(
             counted(scratch.store.read(&huge)),
-            (UNREADABLE.to_owned(), NOTHING_TO_SHOW.to_owned())
+            (
+                words::equaliser::unreadable().to_owned(),
+                NOTHING_TO_SHOW.to_owned()
+            )
         );
         assert_eq!(counted(scratch.store.read(&held)).0, "0");
         profiles(&scratch.store, &scratch.config(), &[held, huge]);

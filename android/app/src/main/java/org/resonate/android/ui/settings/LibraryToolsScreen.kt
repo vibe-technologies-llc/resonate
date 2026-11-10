@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -40,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -47,16 +50,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.lazy.items
 import org.resonate.android.FollowedProfileWords
+import org.resonate.android.R
 import org.resonate.android.nativecore.EnrichmentStatus
 import org.resonate.android.nativecore.EnrichmentStop
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
@@ -160,24 +164,24 @@ fun LibraryToolsScreen() {
     var confirmRefresh by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { model.read() }
     val running = status?.running == true
-    Page("Library tools") { padding ->
+    Page(stringResource(R.string.tools_title)) { padding ->
         SettingsList(padding, Modifier.testTag("tools-list")) {
-            item(key = "artwork") { SectionHeader("Artwork and details") }
+            item(key = "artwork") { SectionHeader(stringResource(R.string.tools_artwork_header)) }
             if (!online) {
                 item(key = "offline") {
                     NoticeCard(
                         Icons.Rounded.CloudOff,
-                        "Online features are off, so nothing is looked up.",
-                        action = "Turn on",
+                        stringResource(R.string.tools_offline),
+                        action = stringResource(R.string.tools_turn_on),
                         onAction = { model.setOnline(true) },
                     )
                 }
             }
             item(key = "automatic") {
                 SwitchRow(
-                    title = "Fetch automatically",
-                    icon = Icons.Rounded.AutoAwesome,
-                    supporting = "Covers, artist portraits, lyrics and MusicBrainz details",
+                    title = stringResource(R.string.tools_automatic),
+                    icon = Icons.Rounded.CloudDownload,
+                    supporting = stringResource(R.string.tools_automatic_detail),
                     checked = automatic,
                     onCheckedChange = model::setAutomatic,
                     enabled = online,
@@ -186,9 +190,9 @@ fun LibraryToolsScreen() {
             }
             item(key = "wifi") {
                 SwitchRow(
-                    title = "Only on Wi-Fi",
+                    title = stringResource(R.string.tools_wifi),
                     icon = Icons.Rounded.Wifi,
-                    supporting = "Wait for a network that is not metered",
+                    supporting = stringResource(R.string.tools_wifi_detail),
                     checked = unmeteredOnly,
                     onCheckedChange = model::setUnmeteredOnly,
                     enabled = online && automatic,
@@ -196,9 +200,9 @@ fun LibraryToolsScreen() {
             }
             item(key = "metered") {
                 SwitchRow(
-                    title = "Look up on a metered connection",
+                    title = stringResource(R.string.tools_metered),
                     icon = Icons.Rounded.SignalCellularAlt,
-                    supporting = "Ask for covers and details even when the network is metered",
+                    supporting = stringResource(R.string.tools_metered_detail),
                     checked = enrichOnMetered,
                     onCheckedChange = model::setEnrichOnMetered,
                     enabled = online,
@@ -210,9 +214,14 @@ fun LibraryToolsScreen() {
             }
             item(key = "refresh") {
                 SettingRow(
-                    title = "Refresh artwork and details",
+                    title = stringResource(R.string.tools_refresh),
                     icon = Icons.Rounded.Refresh,
-                    supporting = "Look everything up again for ${counted(songs.size, "song")}",
+                    supporting =
+                        pluralStringResource(
+                            R.plurals.tools_refresh_detail,
+                            songs.size,
+                            songs.size,
+                        ),
                     enabled = online && songs.isNotEmpty(),
                     onClick = { confirmRefresh = true },
                     modifier = Modifier.testTag("refresh-enrichment"),
@@ -220,21 +229,23 @@ fun LibraryToolsScreen() {
             }
             item(key = "covers") {
                 SettingRow(
-                    title = "Look again for missing covers",
+                    title = stringResource(R.string.tools_covers),
                     icon = Icons.Rounded.ImageSearch,
-                    supporting = coversLine(covers),
+                    supporting = coversLine(words(), covers),
                     enabled = online,
                     onClick = model::retryCovers,
                 )
             }
-            item(key = "library") { SectionHeader("Your library") }
+            item(key = "library") { SectionHeader(stringResource(R.string.tools_library_header)) }
             item(key = "rescan") {
                 SettingRow(
-                    title = "Rescan folders",
+                    title = stringResource(R.string.tools_rescan),
                     icon = Icons.Rounded.Sync,
                     supporting =
-                        if (scanning) "Reading your music folders…"
-                        else "Find new, changed and removed songs",
+                        stringResource(
+                            if (scanning) R.string.tools_rescan_reading
+                            else R.string.tools_rescan_detail
+                        ),
                     enabled = !scanning,
                     onClick = model::rescan,
                     trailing = if (scanning) ({ SmallLoading() }) else null,
@@ -242,28 +253,28 @@ fun LibraryToolsScreen() {
             }
             item(key = "tell-findings") {
                 SwitchRow(
-                    title = "Tell me what the library finds by itself",
+                    title = stringResource(R.string.tools_tell_findings),
                     checked = tellsFindings,
                     onCheckedChange = model::setTellsFindings,
                     icon = Icons.Rounded.Info,
-                    supporting = "Songs hidden because their files are gone, and songs kept from your devices",
+                    supporting = stringResource(R.string.tools_tell_findings_detail),
                     modifier = Modifier.testTag("tell-findings"),
                 )
             }
             item(key = "folders") {
                 SettingRow(
-                    title = "Music folders",
+                    title = stringResource(R.string.tools_folders),
                     icon = Icons.Rounded.FolderOpen,
-                    supporting = "Add, remove or check folder access",
+                    supporting = stringResource(R.string.tools_folders_detail),
                     onClick = { navigator.open(Screen.Folders) },
                 )
             }
             if (organiseUndo != null) {
                 item(key = "put-back") {
                     SettingRow(
-                        title = "Put files back",
+                        title = stringResource(R.string.tools_put_back),
                         icon = Icons.AutoMirrored.Rounded.Undo,
-                        supporting = "Return the songs you last organised to where they were",
+                        supporting = stringResource(R.string.tools_put_back_detail),
                         enabled = !organising,
                         onClick = model::putFilesBack,
                         modifier = Modifier.testTag("put-files-back"),
@@ -272,25 +283,25 @@ fun LibraryToolsScreen() {
             }
             item(key = "statistics") {
                 SettingRow(
-                    title = "Listening statistics",
+                    title = stringResource(R.string.tools_statistics),
                     icon = Icons.Rounded.BarChart,
-                    supporting = "Your most played, and what your library holds",
+                    supporting = stringResource(R.string.tools_statistics_detail),
                     onClick = { navigator.open(Screen.Statistics) },
                 )
             }
             item(key = "suggestions") {
                 SettingRow(
-                    title = "Made for you",
-                    icon = Icons.Rounded.AutoAwesome,
-                    supporting = "Mixes from your music and listening",
+                    title = stringResource(R.string.tools_suggestions),
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                    supporting = stringResource(R.string.tools_suggestions_detail),
                     onClick = { navigator.open(Screen.Suggestions) },
                 )
             }
             item(key = "identical") {
                 SettingRow(
-                    title = "Identical songs",
+                    title = stringResource(R.string.tools_identical),
                     icon = Icons.Rounded.ContentCopy,
-                    supporting = "Find songs stored twice and keep one file",
+                    supporting = stringResource(R.string.tools_identical_detail),
                     onClick = { navigator.open(Screen.IdenticalSongs) },
                     modifier = Modifier.testTag("identical-songs"),
                 )
@@ -298,9 +309,9 @@ fun LibraryToolsScreen() {
             if (tagsUndoable) {
                 item(key = "undo-tags") {
                     SettingRow(
-                        title = "Undo tag edit",
+                        title = stringResource(R.string.tools_undo_tags),
                         icon = Icons.AutoMirrored.Rounded.Undo,
-                        supporting = "Put back the tags you last saved",
+                        supporting = stringResource(R.string.tools_undo_tags_detail),
                         onClick = model::undoTags,
                         modifier = Modifier.testTag("undo-tags"),
                     )
@@ -308,48 +319,52 @@ fun LibraryToolsScreen() {
             }
             item(key = "listen") {
                 SettingRow(
-                    title = "Listen",
+                    title = stringResource(R.string.tools_listen),
                     icon = Icons.Rounded.Hearing,
-                    supporting = "Name the song playing around you",
+                    supporting = stringResource(R.string.tools_listen_detail),
                     onClick = LocalSheets.current::listen,
                     modifier = Modifier.testTag("listen-tool"),
                 )
             }
             item(key = "wanted") {
                 SettingRow(
-                    title = "Saved for later",
+                    title = stringResource(R.string.tools_wanted),
                     icon = Icons.Rounded.BookmarkBorder,
-                    supporting = "Recordings you want to find",
+                    supporting = stringResource(R.string.tools_wanted_detail),
                     onClick = { navigator.open(Screen.Wanted) },
                 )
             }
             if (profilesFollowed.isNotEmpty()) {
-                item(key = "profiles") { SectionHeader("Profiles followed") }
+                item(key = "profiles") {
+                    SectionHeader(stringResource(R.string.tools_profiles_header))
+                }
                 items(profilesFollowed, key = { "profile-${it.link}" }) { profile ->
                     SettingRow(
                         title = profile.name,
                         icon = Icons.Rounded.Person,
-                        supporting = FollowedProfileWords.line(profile.service),
+                        supporting = FollowedProfileWords.line(words(), profile.service),
                         trailing = {
                             TextButton(onClick = { unfollowing = profile.link }) {
-                                Text("Stop following")
+                                Text(stringResource(R.string.tools_stop_following))
                             }
                         },
                         modifier = Modifier.testTag("followed-profile"),
                     )
                 }
             }
-            item(key = "recognition") { SectionHeader("Recognition") }
+            item(key = "recognition") {
+                SectionHeader(stringResource(R.string.tools_recognition_header))
+            }
             item(key = "acoustid") { RecognitionKey(storedKey, model::saveRecognitionKey) }
             item(key = "audd") { AuddToken(auddToken, model::saveAuddToken) }
-            item(key = "search") { SectionHeader("Search") }
+            item(key = "search") { SectionHeader(stringResource(R.string.tools_search_header)) }
             item(key = "remember-searches") {
                 SwitchRow(
-                    title = "Remember recent searches",
+                    title = stringResource(R.string.tools_remember_searches),
                     checked = rememberSearches,
                     onCheckedChange = model::setRememberSearches,
                     icon = Icons.Rounded.History,
-                    supporting = "Turning this off also clears the searches kept so far",
+                    supporting = stringResource(R.string.tools_remember_searches_detail),
                     modifier = Modifier.testTag("remember-searches"),
                 )
             }
@@ -357,10 +372,13 @@ fun LibraryToolsScreen() {
     }
     unfollowing?.let { link ->
         ConfirmDialog(
-            title = "Stop following this profile?",
+            title = stringResource(R.string.tools_unfollow_title),
             text =
-                "${profilesFollowed.firstOrNull { it.link == link }?.name ?: link} will no longer bring in new playlists. The playlists already here stay.",
-            confirm = "Stop following",
+                stringResource(
+                    R.string.tools_unfollow_text,
+                    profilesFollowed.firstOrNull { it.link == link }?.name ?: link,
+                ),
+            confirm = stringResource(R.string.tools_stop_following),
             icon = Icons.Rounded.Person,
             onConfirm = { model.unfollow(link) },
             onDismiss = { unfollowing = null },
@@ -368,10 +386,9 @@ fun LibraryToolsScreen() {
     }
     if (confirmRefresh) {
         ConfirmDialog(
-            title = "Refresh artwork and details?",
-            text =
-                "Covers, artist portraits, details and lyrics will be looked up again for ${counted(songs.size, "song")}. This runs in the background and can take a while.",
-            confirm = "Refresh",
+            title = stringResource(R.string.tools_refresh_title),
+            text = pluralStringResource(R.plurals.tools_refresh_text, songs.size, songs.size),
+            confirm = stringResource(R.string.tools_refresh_confirm),
             icon = Icons.Rounded.Refresh,
             onConfirm = model::refreshAll,
             onDismiss = { confirmRefresh = false },
@@ -382,13 +399,14 @@ fun LibraryToolsScreen() {
 @Composable
 private fun EnrichmentState(status: EnrichmentStatus?, running: Boolean, onStop: () -> Unit) {
     val progress = enrichmentProgress(status)
+    val progressWords = stringResource(R.string.tools_artwork_progress)
     SettingRow(
-        title = enrichmentLine(status),
-        supporting = enrichmentFound(status),
+        title = enrichmentLine(words(), status),
+        supporting = enrichmentFound(words(), status),
         icon = if (running) null else stoppedIcon(status),
         trailing =
             if (running) {
-                { OutlinedButton(onClick = onStop) { Text("Stop") } }
+                { OutlinedButton(onClick = onStop) { Text(stringResource(R.string.tools_stop)) } }
             } else null,
         leadingContent = if (running) ({ SmallLoading() }) else null,
         modifier = Modifier.testTag("enrichment-status"),
@@ -403,7 +421,7 @@ private fun EnrichmentState(status: EnrichmentStatus?, running: Boolean, onStop:
                     progress = { progress },
                     modifier =
                         Modifier.fillMaxWidth().semantics {
-                            contentDescription = "Artwork lookup progress"
+                            contentDescription = progressWords
                         },
                 )
             } else {
@@ -417,16 +435,15 @@ private fun EnrichmentState(status: EnrichmentStatus?, running: Boolean, onStop:
 private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
     var draft by rememberSaveable(stored) { mutableStateOf(stored) }
     SettingRow(
-        title = "AcoustID key",
+        title = stringResource(R.string.tools_acoustid),
         icon = Icons.Rounded.Fingerprint,
-        supporting =
-            "With a key, Recognise in a song's analysis sends its AcoustID fingerprint, and the library is studied and recognised in the background while online lookups run, which fills the misnamed search. Without one, Recognise sends a Shazam signature and nothing runs in the background.",
+        supporting = stringResource(R.string.tools_acoustid_detail),
     )
     Field(
         value = draft,
         onValueChange = { draft = it },
-        label = "AcoustID application key",
-        supporting = "Optional · kept encrypted on this device",
+        label = stringResource(R.string.tools_acoustid_label),
+        supporting = stringResource(R.string.tools_kept_encrypted),
         secret = true,
         modifier = Modifier.testTag("acoustid-key"),
     )
@@ -438,10 +455,12 @@ private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
                     onSave("")
                 }
             ) {
-                Text("Forget key")
+                Text(stringResource(R.string.tools_forget_key))
             }
         }
-        Button(onClick = { onSave(draft) }, enabled = draft.trim() != stored) { Text("Save key") }
+        Button(onClick = { onSave(draft) }, enabled = draft.trim() != stored) {
+            Text(stringResource(R.string.tools_save_key))
+        }
     }
 }
 
@@ -449,15 +468,15 @@ private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
 private fun AuddToken(stored: String, onSave: (String) -> Unit) {
     var draft by rememberSaveable(stored) { mutableStateOf(stored) }
     SettingRow(
-        title = "AudD token",
+        title = stringResource(R.string.tools_audd),
         icon = Icons.Rounded.Hearing,
-        supporting = "Listen asks AudD when Shazam does not know a song. Without a token only Shazam is asked.",
+        supporting = stringResource(R.string.tools_audd_detail),
     )
     Field(
         value = draft,
         onValueChange = { draft = it },
-        label = "AudD API token",
-        supporting = "Optional · kept encrypted on this device",
+        label = stringResource(R.string.tools_audd_label),
+        supporting = stringResource(R.string.tools_kept_encrypted),
         secret = true,
         modifier = Modifier.testTag("audd-token"),
     )
@@ -469,9 +488,11 @@ private fun AuddToken(stored: String, onSave: (String) -> Unit) {
                     onSave("")
                 }
             ) {
-                Text("Forget token")
+                Text(stringResource(R.string.tools_forget_token))
             }
         }
-        Button(onClick = { onSave(draft) }, enabled = draft.trim() != stored) { Text("Save token") }
+        Button(onClick = { onSave(draft) }, enabled = draft.trim() != stored) {
+            Text(stringResource(R.string.tools_save_token))
+        }
     }
 }

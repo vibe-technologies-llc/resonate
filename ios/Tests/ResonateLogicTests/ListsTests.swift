@@ -381,8 +381,8 @@ import Testing
     }
 
     @Test func theHeadingCountsWhatTheLibraryLacks() {
-        #expect(NotInYourLibrary.heading(1, "release") == "Not in your library · 1 release")
-        #expect(NotInYourLibrary.heading(3, "release") == "Not in your library · 3 releases")
+        #expect(NotInYourLibrary.heading(1, .release) == "Not in your library · 1 release")
+        #expect(NotInYourLibrary.heading(3, .release) == "Not in your library · 3 releases")
     }
 
     @Test func onlyTheFirstSongsLackedAreShownUntilAllAreAsked() {

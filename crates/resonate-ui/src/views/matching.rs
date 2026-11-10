@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use gpui::{
-    BoxShadow, Context, Div, Entity, FontWeight, MouseButton, SharedString, Stateful, Window, div,
-    point, prelude::*, px, rgb, rgba,
+    Context, Div, Entity, FontWeight, MouseButton, SharedString, Stateful, Window, div, prelude::*,
+    px, rgb,
 };
 use resonate_core::{Isrc, TrackId};
 use resonate_library::{Recording, in_the_order_worth_offering};
@@ -15,42 +15,12 @@ use crate::{
         field::{Field, Submitted},
         kit,
         root::RootView,
+        scrollbar::Scrollbars,
         sheets,
         spoken::Spoken as _,
     },
+    words,
 };
-
-pub(crate) const MATCH_THE_SONG: &str = "Match to a recording…";
-
-const MATCHING_LABEL: &str = "Match the song to a recording";
-
-const MATCHING_SAYING: &str = "Choose the recording it is on MusicBrainz, and the song takes its \
-                               names and its place on a release. Or give it an ISRC for the next \
-                               lookup to ask by.";
-
-const WORDS_PLACEHOLDER: &str = "The song's name, then press enter";
-
-const ISRC_PLACEHOLDER: &str = "Twelve characters, like GBAYE7100389, then press enter";
-
-const ISRC_HEADING: &str = "Or give it an ISRC";
-
-const NOT_AN_ISRC: &str = "That is not an ISRC: it is twelve letters and digits";
-
-const LEAVE_HINT: &str = keyed!("Leave the song as it is", key!(leave));
-
-const SEARCH_HINT: &str = "Ask MusicBrainz for recordings called this";
-
-const GIVE_THE_ISRC_HINT: &str = "Give the song this ISRC and look it up by the code";
-
-const TAKE_HINT: &str = "Treat the song as this recording";
-
-const ASKING: &str = "Asking MusicBrainz…";
-
-const NOTHING_LIKE_IT: &str = "Nothing on MusicBrainz is called that. Try fewer or other words.";
-
-const UNREACHED: &str = "MusicBrainz could not be reached.";
-
-const OFFLINE: &str = "Turn Online on in the settings to search MusicBrainz.";
 
 const LIKELY_LIST_AT_MOST: f32 = 280.0;
 
@@ -74,12 +44,12 @@ pub(crate) fn matching_fields(
     window: &mut Window,
     cx: &mut Context<RootView>,
 ) -> (Entity<Field>, Entity<Field>) {
-    let words = cx.new(|cx| Field::new(WORDS_PLACEHOLDER, window, cx));
+    let words = cx.new(|cx| Field::new(words::matching::words_placeholder(), window, cx));
     cx.subscribe_in(&words, window, |this, _, _: &Submitted, _, cx| {
         this.look_for_likely_recordings(cx);
     })
     .detach();
-    let isrc = cx.new(|cx| Field::new(ISRC_PLACEHOLDER, window, cx));
+    let isrc = cx.new(|cx| Field::new(words::matching::isrc_placeholder(), window, cx));
     cx.subscribe_in(&isrc, window, |this, _, _: &Submitted, window, cx| {
         this.isrc_given(window, cx);
     })
@@ -216,7 +186,10 @@ impl RootView {
         };
         let typed = self.typed_isrc.read(cx).text().trim().to_owned();
         let Ok(isrc) = Isrc::new(&typed) else {
-            self.report(Notice::Trouble(NOT_AN_ISRC.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::matching::not_an_isrc().to_owned()),
+                cx,
+            );
             return;
         };
         self.library
@@ -238,10 +211,12 @@ impl RootView {
         let rows = div().flex().flex_col().gap_1();
         match likely {
             Likely::Unasked => rows,
-            Likely::Offline => rows.child(said(OFFLINE)),
-            Likely::Asking => rows.child(said(ASKING)),
-            Likely::Unreached => rows.child(said(UNREACHED)),
-            Likely::Found(found) if found.is_empty() => rows.child(said(NOTHING_LIKE_IT)),
+            Likely::Offline => rows.child(said(words::matching::offline())),
+            Likely::Asking => rows.child(said(words::matching::asking())),
+            Likely::Unreached => rows.child(said(words::matching::unreached())),
+            Likely::Found(found) if found.is_empty() => {
+                rows.child(said(words::matching::nothing_like_it()))
+            }
             Likely::Found(found) => {
                 rows.children(found.iter().enumerate().map(|(at, recording)| {
                     let taken = Arc::clone(recording);
@@ -251,7 +226,7 @@ impl RootView {
                             ("likely-recording", at),
                             Some(Icon::Disc),
                             likely_line(recording),
-                            TAKE_HINT,
+                            words::matching::take_hint(),
                             kit::Tone::Ghost,
                         )
                         .w_full()
@@ -267,20 +242,8 @@ impl RootView {
     }
 
     fn typed_into(field: &Entity<Field>, id: &'static str) -> Stateful<Div> {
-        div()
-            .id(id)
-            .flex()
+        kit::framed_field(id, false)
             .flex_1()
-            .items_center()
-            .gap_2()
-            .h(theme::width(theme::search_height()))
-            .px_3()
-            .rounded_md()
-            .bg(rgb(theme::background()))
-            .border_1()
-            .border_color(theme::tinted(theme::accent(), 0x99))
-            .text_size(px(theme::text_sm()))
-            .cursor_text()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(field.clone())
             .child(kit::figure("enter").text_color(rgb(theme::faint())))
@@ -293,19 +256,18 @@ impl RootView {
             .map(|matching| matching.likely.clone())
             .unwrap_or_default();
 
-        let heading = div()
-            .id("matching-sheet-asking")
-            .headed(2, MATCHING_LABEL)
-            .text_size(px(theme::text_lg()))
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(theme::text()))
-            .child(MATCHING_LABEL);
+        let heading = kit::sheet_heading(
+            "matching-sheet-asking",
+            Icon::Globe,
+            theme::accent(),
+            words::matching::matching_label(),
+        );
         let saying = div()
             .id("matching-sheet-saying")
-            .read_plainly(MATCHING_SAYING)
+            .read_plainly(words::matching::matching_saying())
             .text_size(px(theme::text_sm()))
             .text_color(rgb(theme::muted()))
-            .child(MATCHING_SAYING);
+            .child(words::matching::matching_saying());
         let searching = div()
             .flex()
             .items_center()
@@ -315,8 +277,8 @@ impl RootView {
                 kit::button(
                     "search-for-likely-recordings",
                     Some(Icon::Search),
-                    "Search",
-                    SEARCH_HINT,
+                    words::matching::search(),
+                    words::matching::search_hint(),
                     kit::Tone::Outlined,
                 ),
                 |this, _, cx| this.look_for_likely_recordings(cx),
@@ -326,15 +288,20 @@ impl RootView {
             .id("likely-recordings")
             .max_h(px(LIKELY_LIST_AT_MOST))
             .overflow_y_scroll()
+            .track_scroll(&self.likely_scroll)
             .child(self.likely_rows(&likely, cx));
+        let found = div()
+            .relative()
+            .child(found)
+            .child(Scrollbars::of(cx).vertical("likely-scrollbar", self.likely_scroll.clone()));
         let isrc_heading = div()
             .id("matching-isrc-heading")
-            .headed(3, ISRC_HEADING)
+            .headed(3, words::matching::isrc_heading())
             .pt_2()
             .text_size(px(theme::text_sm()))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(rgb(theme::text()))
-            .child(ISRC_HEADING);
+            .child(words::matching::isrc_heading());
         let coding = div()
             .flex()
             .items_center()
@@ -344,46 +311,32 @@ impl RootView {
                 kit::button(
                     "give-the-isrc",
                     Some(Icon::Check),
-                    "Give it",
-                    GIVE_THE_ISRC_HINT,
+                    words::matching::give_it(),
+                    words::matching::give_the_isrc_hint(),
                     kit::Tone::Outlined,
                 ),
                 |this, window, cx| this.isrc_given(window, cx),
                 cx,
             ));
-        let leaving = div().flex().justify_end().child(self.in_the_pane_ring(
+        let leaving = kit::sheet_actions().child(self.in_the_pane_ring(
             kit::button(
                 "leave-the-matching",
                 None,
-                "Cancel",
-                LEAVE_HINT,
+                words::matching::cancel(),
+                words::matching::leave_hint(key!(leave)),
                 kit::Tone::Outlined,
             ),
             |this, window, cx| this.leave_the_matching(window, cx),
             cx,
         ));
 
-        let card = div()
+        let card = kit::sheet()
             .id("matching-sheet")
-            .dialog(MATCHING_LABEL)
+            .dialog(words::matching::matching_label())
             .track_focus(&self.sheet_panels.holding(sheets::MATCHING_PANEL, cx))
-            .flex()
-            .flex_col()
             .gap_3()
             .w(px(theme::confirm_width() * 1.4))
             .max_w_full()
-            .p_5()
-            .rounded_xl()
-            .bg(rgb(theme::surface()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(16.0)),
-                blur_radius: px(48.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
             .on_mouse_down_out(
                 cx.listener(|this, _, window, cx| this.leave_the_matching(window, cx)),
             )
@@ -395,15 +348,7 @@ impl RootView {
             .child(coding)
             .child(leaving);
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(theme::scrim()))
-            .occlude()
-            .child(motion::lifted_in(card, "matching-sheet-arrives"))
+        kit::over_a_scrim(motion::lifted_in(card, "matching-sheet-arrives"))
     }
 }
 

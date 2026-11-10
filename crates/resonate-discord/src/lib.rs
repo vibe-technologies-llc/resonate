@@ -9,6 +9,10 @@ mod socket;
 #[path = "pipe.rs"]
 mod socket;
 
+mod words {
+    include!(concat!(env!("OUT_DIR"), "/words.rs"));
+}
+
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -69,5 +73,43 @@ impl Drop for Discord {
         if let Some(publishing) = self.running.get_mut().take() {
             publishing.stop();
         }
+    }
+}
+
+#[cfg(test)]
+mod said_through_the_catalog {
+    use std::path::Path;
+
+    const PROPER: &[&str] = &[
+        "Resonate",
+        "app/com.discordapp.Discord",
+        "app/com.discordapp.DiscordCanary",
+        "app/com.discordapp.DiscordPTB",
+        "app/dev.vencord.Vesktop",
+        ".flatpak/com.discordapp.Discord/xdg-run",
+        ".flatpak/com.discordapp.DiscordCanary/xdg-run",
+        ".flatpak/com.discordapp.DiscordPTB/xdg-run",
+        ".flatpak/dev.vencord.Vesktop/xdg-run",
+    ];
+
+    #[test]
+    fn every_word_discord_shows_for_the_player_is_said_through_its_catalog() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let found = resonate_words_build::prose_in(&root, PROPER).expect("the sources read");
+
+        let written: Vec<String> = found
+            .iter()
+            .flat_map(|(path, prose)| {
+                prose
+                    .iter()
+                    .map(move |said| format!("{}:{} {:?}", path.display(), said.line, said.text))
+            })
+            .collect();
+
+        assert!(
+            written.is_empty(),
+            "words written in the code:\n{}",
+            written.join("\n")
+        );
     }
 }

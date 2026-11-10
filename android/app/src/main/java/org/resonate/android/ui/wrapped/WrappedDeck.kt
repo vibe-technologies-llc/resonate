@@ -68,6 +68,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -87,6 +88,7 @@ import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.nativecore.WrappedBar
 import org.resonate.android.nativecore.WrappedRow
 import org.resonate.android.nativecore.WrappedSlide
@@ -95,6 +97,7 @@ import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.rememberCalm
 import org.resonate.android.ui.settings.rememberCopy
 import org.resonate.android.ui.theme.LocalDarkTheme
+import org.resonate.android.words
 
 private val CARD_WIDTH = 360.dp
 private val CARD_HEIGHT = 450.dp
@@ -146,13 +149,14 @@ private fun Deck(
         }
     }
     LaunchedEffect(Unit) { focus.requestFocus() }
+    val entry = WrappedWords.entry(words(), year.year)
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier =
             Modifier.fillMaxSize()
                 .semantics {
                     testTagsAsResourceId = true
-                    paneTitle = "Your ${year.year} in music"
+                    paneTitle = entry
                 }
                 .testTag("wrapped-deck")
                 .focusRequester(focus)
@@ -178,7 +182,10 @@ private fun Deck(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onClose, modifier = Modifier.testTag("wrapped-close")) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Close")
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.wrapped_close),
+                    )
                 }
                 Spacer(Modifier.weight(1f))
                 Years(year, onYear)
@@ -242,6 +249,9 @@ private fun Foot(
     val copy = rememberCopy(sensitive = false)
     val scope = rememberCoroutineScope()
     var copied by remember(year.year) { mutableStateOf(false) }
+    val words = words()
+    val entry = WrappedWords.entry(words, year.year)
+    val notDrawn = stringResource(R.string.wrapped_not_drawn)
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -256,10 +266,13 @@ private fun Foot(
                 enabled = page > 0,
                 modifier = Modifier.testTag("wrapped-before"),
             ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "The slide before")
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.wrapped_before),
+                )
             }
             Text(
-                WrappedWords.place(page, year.slides.size),
+                WrappedWords.place(words, page, year.slides.size),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("wrapped-place"),
@@ -269,20 +282,25 @@ private fun Foot(
                 enabled = page < year.slides.lastIndex,
                 modifier = Modifier.testTag("wrapped-next"),
             ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "The next slide")
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowForward,
+                    contentDescription = stringResource(R.string.wrapped_next),
+                )
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {
-                    copy("Your ${year.year} in music", year.summary)
+                    copy(entry, year.summary)
                     copied = true
                 },
                 modifier = Modifier.weight(1f).testTag("wrapped-copy"),
             ) {
                 Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (copied) "Copied" else "Copy summary")
+                Text(
+                    stringResource(if (copied) R.string.wrapped_copied else R.string.wrapped_copy)
+                )
             }
             FilledTonalButton(
                 onClick = {
@@ -300,11 +318,11 @@ private fun Foot(
                                     file
                                 }
                                 .onSuccess {
-                                    resonate.host.shareImage("Your ${year.year} in music", it)
+                                    resonate.host.shareImage(entry, it)
                                 }
                                 .onFailure {
                                     android.util.Log.w("Resonate", "The card was not drawn", it)
-                                    resonate.library.notice("Couldn't draw the card")
+                                    resonate.library.notice(notDrawn)
                                 }
                         }
                 },
@@ -312,7 +330,7 @@ private fun Foot(
             ) {
                 Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Share card")
+                Text(stringResource(R.string.wrapped_share))
             }
         }
     }
@@ -475,7 +493,7 @@ private fun ShareCard(year: Long, slide: WrappedSlide) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            "Resonate · $year",
+            stringResource(R.string.wrapped_card_brand, year),
             style = MaterialTheme.typography.labelLarge,
             color = scheme.onPrimaryContainer,
         )

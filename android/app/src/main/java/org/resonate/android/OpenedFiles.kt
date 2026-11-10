@@ -52,14 +52,14 @@ object OpenedNames {
     fun treesOverlap(first: String, second: String): Boolean =
         first != second && (withinTree(first, second) || withinTree(second, first))
 
-    fun safeName(wanted: String?): String =
+    fun safeName(wanted: String?, unnamed: String): String =
         wanted
             .orEmpty()
             .substringAfterLast('/')
             .map { if (it in "\\?:*\"<>|" || it.isISOControl()) '_' else it }
             .joinToString("")
             .trim()
-            .ifEmpty { "Opened song" }
+            .ifEmpty { unnamed }
 
     fun nameAmong(wanted: String, taken: Set<String>): String {
         if (wanted !in taken) return wanted
@@ -118,7 +118,7 @@ class OpenedFiles(private val context: Context, private val library: LibraryRepo
         try {
             context.contentResolver.openInputStream(opened)?.use { input ->
                 destination.outputStream().use { input.copyTo(it) }
-            } ?: throw IOException("The file could not be opened")
+            } ?: throw IOException(context.getString(R.string.opened_unreadable))
         } catch (failure: Exception) {
             destination.delete()
             throw failure
@@ -131,6 +131,9 @@ class OpenedFiles(private val context: Context, private val library: LibraryRepo
             context.contentResolver
                 .query(opened, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                 ?.use { if (it.moveToFirst()) it.getString(0) else null }
-        return OpenedNames.safeName(asked ?: opened.lastPathSegment)
+        return OpenedNames.safeName(
+            asked ?: opened.lastPathSegment,
+            context.getString(R.string.opened_unnamed),
+        )
     }
 }

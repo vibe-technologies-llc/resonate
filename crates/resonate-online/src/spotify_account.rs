@@ -23,13 +23,13 @@ use crate::{
     client::{LARGEST_CONTINUATION, Posted},
     query::Params,
     shared::stated,
+    words,
 };
 
 const SCOPES: &str = "playlist-read-private playlist-read-collaborative user-library-read";
 const REDIRECT_PATH: &str = "/spotify";
 const REDIRECT_PORT: u16 = 43_879;
 const A_TRACK: &str = "track";
-const LIKED_SONGS: &str = "Liked Songs";
 const ID_LENGTH: usize = 22;
 const ASKED_A_PAGE: usize = 50;
 const SONGS_READ_AT_MOST: usize = 50_000;
@@ -41,12 +41,6 @@ pub(crate) const A_SIGN_IN_LAPSES_AFTER: Duration = Duration::from_secs(10 * 60)
 pub(crate) const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 const A_REQUEST_ARRIVES_WITHIN: Duration = Duration::from_secs(2);
 const LONGEST_REQUEST_HEAD: usize = 8 * 1024;
-const BACK_IN_THE_APP: &str = "<!doctype html><meta charset=\"utf-8\"><title>Resonate</title>\
-                               <p>Signed in to Spotify. You can go back to Resonate.</p>";
-const TOLD_NOT_TO: &str = "<!doctype html><meta charset=\"utf-8\"><title>Resonate</title>\
-                           <p>Spotify was told not to sign in. You can go back to Resonate.</p>";
-const NOT_THIS_SIGN_IN: &str = "<!doctype html><meta charset=\"utf-8\"><title>Resonate</title>\
-                                <p>This page is not the sign-in Resonate is waiting for.</p>";
 
 pub const SPOTIFY_REDIRECT: &str = "http://127.0.0.1:43879/spotify";
 
@@ -141,7 +135,7 @@ impl SpotifyAccount {
             return Ok(None);
         };
         let mut playlists = vec![ProfilePlaylist {
-            title: LIKED_SONGS.to_owned(),
+            title: words::spotify_account::liked_songs().to_owned(),
             link: PlaylistLink::SpotifyLiked,
         }];
         let listed = format!("{}/me/playlists", self.endpoints.api);
@@ -180,7 +174,7 @@ impl SpotifyAccount {
         };
 
         Ok(Some(LinkedPlaylist {
-            name: LIKED_SONGS.to_owned(),
+            name: words::spotify_account::liked_songs().to_owned(),
             songs,
         }))
     }
@@ -687,18 +681,30 @@ fn heard(
         return Ok(None);
     };
     let Some(query) = redirect_query(&head) else {
-        answer(&mut stream, "404 Not Found", NOT_THIS_SIGN_IN);
+        answer(
+            &mut stream,
+            "404 Not Found",
+            words::spotify_account::not_this_sign_in(),
+        );
         return Ok(None);
     };
     if field_of(query, "state").as_deref() != Some(state) {
-        answer(&mut stream, "400 Bad Request", NOT_THIS_SIGN_IN);
+        answer(
+            &mut stream,
+            "400 Bad Request",
+            words::spotify_account::not_this_sign_in(),
+        );
         return Ok(None);
     }
     if let Some(code) = field_of(query, "code") {
-        answer(&mut stream, "200 OK", BACK_IN_THE_APP);
+        answer(
+            &mut stream,
+            "200 OK",
+            words::spotify_account::back_in_the_app(),
+        );
         return Ok(Some(code));
     }
-    answer(&mut stream, "200 OK", TOLD_NOT_TO);
+    answer(&mut stream, "200 OK", words::spotify_account::told_not_to());
 
     Err(SpotifySignInError::Denied)
 }
@@ -762,7 +768,17 @@ fn percent_decoded(text: &str) -> String {
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
-fn answer(stream: &mut TcpStream, status: &str, page: &str) {
+fn page(saying: &str) -> String {
+    let escaped = saying
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+
+    format!("<!doctype html><meta charset=\"utf-8\"><title>Resonate</title><p>{escaped}</p>")
+}
+
+fn answer(stream: &mut TcpStream, status: &str, saying: &str) {
+    let page = page(saying);
     let written = write!(
         stream,
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\
@@ -1068,7 +1084,7 @@ mod tests {
         assert_eq!(signed_in.refresh_token, "first-refresh");
         assert!(stranger.starts_with("HTTP/1.1 400"), "{stranger}");
         assert!(approved.starts_with("HTTP/1.1 200"), "{approved}");
-        assert!(approved.contains(BACK_IN_THE_APP));
+        assert!(approved.contains(&page(words::spotify_account::back_in_the_app())));
         assert_eq!(asked.len(), 1, "the stranger's code is never exchanged");
         assert_eq!(asked[0].path, "/accounts/api/token");
 
@@ -1173,7 +1189,10 @@ mod tests {
 
         assert_eq!(profile.name, "A Listener");
         assert_eq!(profile.playlists[0].link, PlaylistLink::SpotifyLiked);
-        assert_eq!(profile.playlists[0].title, LIKED_SONGS);
+        assert_eq!(
+            profile.playlists[0].title,
+            words::spotify_account::liked_songs()
+        );
         assert_eq!(
             profile
                 .playlists
@@ -1261,7 +1280,7 @@ mod tests {
             .expect("an answer")
             .expect("a list");
 
-        assert_eq!(read.name, LIKED_SONGS);
+        assert_eq!(read.name, words::spotify_account::liked_songs());
         assert_eq!(
             read.songs,
             [ListedSong::Named(LinkNames {

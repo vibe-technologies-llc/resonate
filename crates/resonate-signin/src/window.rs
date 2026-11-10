@@ -14,10 +14,8 @@ use wry::{PageLoadEvent, WebContext, WebView, WebViewBuilder};
 
 use crate::{
     CLOSED, Cookie, EngineOp, Error, FAILED, Result, SIGN_IN_PAGE, SIGNED_IN, domain_cookie_of,
-    is_youtube_music, kept, signed_in, written,
+    is_youtube_music, kept, signed_in, words, written,
 };
-
-const TITLE: &str = "Sign in to YouTube Music";
 
 const LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
 
@@ -36,9 +34,12 @@ enum Looked {
 }
 
 pub fn sign_in(jar: PathBuf, profile: PathBuf) -> Result<Infallible> {
+    resonate_words::speak(resonate_words::negotiated(
+        &resonate_words::languages_the_listener_reads(),
+    ));
     let event_loop = EventLoopBuilder::<Woken>::with_user_event().build();
     let window = WindowBuilder::new()
-        .with_title(TITLE)
+        .with_title(words::window::title())
         .with_inner_size(LogicalSize::new(WIDTH, HEIGHT))
         .build(&event_loop)
         .map_err(|source| Error::Window { source })?;

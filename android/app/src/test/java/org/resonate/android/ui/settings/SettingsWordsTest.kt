@@ -1,5 +1,6 @@
 package org.resonate.android.ui.settings
 
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import java.time.ZoneOffset
 import java.util.Locale
@@ -9,6 +10,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.AudioOutput
+import org.resonate.android.English
 import org.resonate.android.nativecore.DevicePlatform
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.EnrichmentStatus
@@ -40,22 +42,22 @@ class SettingsWordsTest {
 
     @Test
     fun enrichmentLineSaysWhatThePassIsDoingOrHowItStopped() {
-        assertEquals("Not looked up yet", enrichmentLine(null))
-        assertEquals("Finding artwork and details", enrichmentLine(enrichment(running = true)))
+        assertEquals("Not looked up yet", enrichmentLine(English, null))
+        assertEquals("Finding artwork and details", enrichmentLine(English, enrichment(running = true)))
         assertEquals(
             "Finding artwork and details · 3 of 12",
-            enrichmentLine(enrichment(running = true, due = 12u, asked = 3u)),
+            enrichmentLine(English, enrichment(running = true, due = 12u, asked = 3u)),
         )
         assertEquals(
             "Artwork and details up to date",
-            enrichmentLine(enrichment(stopped = EnrichmentStop.FINISHED)),
+            enrichmentLine(English, enrichment(stopped = EnrichmentStop.FINISHED)),
         )
-        assertEquals("Stopped: offline", enrichmentLine(enrichment(stopped = EnrichmentStop.OFFLINE)))
+        assertEquals("Stopped: offline", enrichmentLine(English, enrichment(stopped = EnrichmentStop.OFFLINE)))
         assertEquals(
             "Stopped: MusicBrainz could not be reached",
-            enrichmentLine(enrichment(stopped = EnrichmentStop.UNREACHABLE)),
+            enrichmentLine(English, enrichment(stopped = EnrichmentStop.UNREACHABLE)),
         )
-        assertEquals("Not looked up yet", enrichmentLine(enrichment()))
+        assertEquals("Not looked up yet", enrichmentLine(English, enrichment()))
     }
 
     @Test
@@ -68,32 +70,35 @@ class SettingsWordsTest {
 
     @Test
     fun enrichmentFoundCountsWhatArrived() {
-        assertNull(enrichmentFound(enrichment()))
+        assertNull(enrichmentFound(English, enrichment()))
         assertEquals(
             "1 song matched · 2 covers",
-            enrichmentFound(enrichment(matched = 1u, covers = 2u)),
+            enrichmentFound(English, enrichment(matched = 1u, covers = 2u)),
         )
     }
 
     @Test
     fun coversLineSaysHowManyAlbumsAreAskedAgain() {
-        assertEquals("Ask again for albums still without a cover", coversLine(null))
-        assertEquals("Asking again for 1 album", coversLine(1u))
-        assertEquals("Asking again for 4 albums", coversLine(4u))
+        assertEquals("Ask again for albums still without a cover", coversLine(English, null))
+        assertEquals("Asking again for 1 album", coversLine(English, 1u))
+        assertEquals("Asking again for 4 albums", coversLine(English, 4u))
     }
 
     @Test
     fun durationFiguresGrowTheirUnit() {
         val english = Locale.UK
 
-        assertEquals(Figure("0", "minutes"), durationFigure(0uL, english))
-        assertEquals(Figure("<1", "minute"), durationFigure(59_999uL, english))
-        assertEquals(Figure("1", "minute"), durationFigure(60_000uL, english))
-        assertEquals(Figure("59", "minutes"), durationFigure(3_599_999uL, english))
-        assertEquals(Figure("1", "hours"), durationFigure(3_600_000uL, english))
-        assertEquals(Figure("2.5", "hours"), durationFigure(9_000_000uL, english))
-        assertEquals(Figure("2,5", "hours"), durationFigure(9_000_000uL, Locale.GERMANY))
-        assertEquals(Figure("1,235", "hours"), durationFigure(1234uL * 3_600_000uL + 1_800_000uL, english))
+        assertEquals(Figure("0", "minutes"), durationFigure(English, 0uL, english))
+        assertEquals(Figure("<1", "minute"), durationFigure(English, 59_999uL, english))
+        assertEquals(Figure("1", "minute"), durationFigure(English, 60_000uL, english))
+        assertEquals(Figure("59", "minutes"), durationFigure(English, 3_599_999uL, english))
+        assertEquals(Figure("1", "hours"), durationFigure(English, 3_600_000uL, english))
+        assertEquals(Figure("2.5", "hours"), durationFigure(English, 9_000_000uL, english))
+        assertEquals(Figure("2,5", "hours"), durationFigure(English, 9_000_000uL, Locale.GERMANY))
+        assertEquals(
+            Figure("1,235", "hours"),
+            durationFigure(English, 1234uL * 3_600_000uL + 1_800_000uL, english),
+        )
     }
 
     @Test
@@ -123,16 +128,25 @@ class SettingsWordsTest {
 
     @Test
     fun anOutputIsNamedByKindOnlyWhereItsNameSaysNothing() {
-        val speaker = AudioOutput(2, "sdk_gphone64", "Built-in speaker", listOf(48_000), emptyList(), emptyList())
+        val speaker =
+            AudioOutput(
+                2,
+                "sdk_gphone64",
+                "Built-in speaker",
+                listOf(48_000),
+                emptyList(),
+                emptyList(),
+                type = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            )
         val dac = AudioOutput(7, "FiiO K5", "USB audio", listOf(44_100, 192_000, 96_000), emptyList(), emptyList())
 
-        assertEquals("Built-in speaker", outputTitle(speaker))
-        assertEquals("sdk_gphone64", outputSubtitle(speaker))
-        assertEquals("FiiO K5", outputTitle(dac))
-        assertEquals("USB audio", outputSubtitle(dac))
-        assertEquals("44.1–192 kHz", outputRates(dac))
-        assertEquals("48 kHz", outputRates(speaker))
-        assertEquals("Android chooses for you", outputSubtitle(systemDefaultOutput))
+        assertEquals("Built-in speaker", outputTitle(English, speaker))
+        assertEquals("sdk_gphone64", outputSubtitle(English, speaker))
+        assertEquals("FiiO K5", outputTitle(English, dac))
+        assertEquals("USB audio", outputSubtitle(English, dac))
+        assertEquals("44.1–192 kHz", outputRates(English, dac))
+        assertEquals("48 kHz", outputRates(English, speaker))
+        assertEquals("Android chooses for you", outputSubtitle(English, systemDefaultOutput))
     }
 
     @Test
@@ -153,8 +167,8 @@ class SettingsWordsTest {
                 ),
             )
 
-        assertEquals("44.1–192 kHz · 16, 24, 32-bit, float · 1–2 channels", outputTakes(dac))
-        assertNull(outputTakes(systemDefaultOutput))
+        assertEquals("44.1–192 kHz · 16, 24, 32-bit, float · 1–2 channels", outputTakes(English, dac))
+        assertNull(outputTakes(English, systemDefaultOutput))
     }
 
     @Test
@@ -163,11 +177,11 @@ class SettingsWordsTest {
             OutputStream(OutputFormat(44_100u, OutputEncoding.PCM16, 2u), OutputPath.BIT_PERFECT)
         val mixed = OutputStream(OutputFormat(48_000u, OutputEncoding.FLOAT, 1u), OutputPath.MIXED)
 
-        assertEquals("44.1 kHz · 16-bit · stereo", outputStreamWords(stream))
-        assertEquals("48 kHz · 32-bit float · mono", outputStreamWords(mixed))
-        assertEquals("Mixed by Android", outputPathWords(OutputPath.MIXED))
-        assertTrue(outputPathWords(OutputPath.EXCLUSIVE).startsWith("Exclusive"))
-        assertTrue(outputPathWords(OutputPath.BIT_PERFECT).startsWith("Bit-perfect"))
+        assertEquals("44.1 kHz · 16-bit · stereo", outputStreamWords(English, stream))
+        assertEquals("48 kHz · 32-bit float · mono", outputStreamWords(English, mixed))
+        assertEquals("Mixed by Android", outputPathWords(English, OutputPath.MIXED))
+        assertTrue(outputPathWords(English, OutputPath.EXCLUSIVE).startsWith("Exclusive"))
+        assertTrue(outputPathWords(English, OutputPath.BIT_PERFECT).startsWith("Bit-perfect"))
     }
 
     @Test
@@ -182,9 +196,9 @@ class SettingsWordsTest {
         val dac = AudioOutput(7, "FiiO K5", "USB audio", emptyList(), emptyList(), emptyList())
 
         assertEquals(listOf(SYSTEM_DEFAULT_OUTPUT, 7), withSystemDefault(listOf(dac)).map { it.id })
-        assertEquals("System default", outputNamed(listOf(dac), 0))
-        assertEquals("FiiO K5", outputNamed(listOf(dac), 7))
-        assertEquals("An unavailable device", outputNamed(listOf(dac), 3))
+        assertEquals("System default", outputNamed(English, listOf(dac), 0))
+        assertEquals("FiiO K5", outputNamed(English, listOf(dac), 7))
+        assertEquals("An unavailable device", outputNamed(English, listOf(dac), 3))
     }
 
     @Test
@@ -209,8 +223,8 @@ class SettingsWordsTest {
         assertEquals(FolderAccess.UNAVAILABLE, folderAccess(false, false, true))
         assertEquals(FolderAccess.READ_AND_WRITE, folderAccess(false, true, true))
         assertEquals(FolderAccess.READ_ONLY, folderAccess(false, true, false))
-        assertTrue(removalText("Music", false).contains("untouched"))
-        assertFalse(removalText("Downloads", true).contains("leave your library"))
+        assertTrue(removalText(English, "Music", false).contains("untouched"))
+        assertFalse(removalText(English, "Downloads", true).contains("leave your library"))
     }
 
     @Test
@@ -261,28 +275,34 @@ class SettingsWordsTest {
 
     @Test
     fun theTransfersHeaderSaysHowManyAreDownloadingAndHowManyWait() {
-        assertEquals("Transfers", transfersHeader(0u, 0u))
-        assertEquals("Transfers · 2 downloading · 340 waiting", transfersHeader(2u, 340u))
-        assertEquals("Transfers · 3 waiting", transfersHeader(0u, 3u))
-        assertEquals("Transfers · 1 downloading", transfersHeader(1u, 0u))
+        assertEquals("Transfers", transfersHeader(English, 0u, 0u))
+        assertEquals("Transfers · 2 downloading · 340 waiting", transfersHeader(English, 2u, 340u))
+        assertEquals("Transfers · 3 waiting", transfersHeader(English, 0u, 3u))
+        assertEquals("Transfers · 1 downloading", transfersHeader(English, 1u, 0u))
     }
 
     @Test
     fun syncWordsFollowTheStandingAndTheDevicesReached() {
-        assertEquals("Off", syncHeadline(null, config.copy(enabled = false), true))
-        assertEquals("Waiting for online features", syncHeadline(null, config, false))
-        assertEquals("Up to date", syncHeadline(status(SyncStanding.CONNECTED), config, true))
+        assertEquals("Off", syncHeadline(English, null, config.copy(enabled = false), true))
+        assertEquals("Waiting for online features", syncHeadline(English, null, config, false))
+        assertEquals("Up to date", syncHeadline(English, status(SyncStanding.CONNECTED), config, true))
         assertEquals(
             "Sending 2 changes",
-            syncHeadline(status(SyncStanding.CONNECTED, owed = 2u), config, true),
+            syncHeadline(English, status(SyncStanding.CONNECTED, owed = 2u), config, true),
         )
         assertEquals(
             "Catching up",
-            syncHeadline(status(SyncStanding.NEARBY, device("desk", nearby = true)), config, true),
+            syncHeadline(
+                English,
+                status(SyncStanding.NEARBY, device("desk", nearby = true)),
+                config,
+                true,
+            ),
         )
         assertEquals(
             "1 device online",
             syncStanding(
+                English,
                 status(SyncStanding.CONNECTED, device("me", online = true, here = true), device("desk", online = true)),
                 config,
                 true,
@@ -290,11 +310,16 @@ class SettingsWordsTest {
         )
         assertEquals(
             "Server unreachable · 1 on this network",
-            syncStanding(status(SyncStanding.UNREACHABLE, device("desk", nearby = true)), config, true),
+            syncStanding(
+                English,
+                status(SyncStanding.UNREACHABLE, device("desk", nearby = true)),
+                config,
+                true,
+            ),
         )
         assertEquals(
             "Looking for devices",
-            syncHeadline(status(SyncStanding.NEARBY), config.copy(nearbyOnly = true), false),
+            syncHeadline(English, status(SyncStanding.NEARBY), config.copy(nearbyOnly = true), false),
         )
     }
 
@@ -312,8 +337,8 @@ class SettingsWordsTest {
             )
 
         assertEquals(listOf("me", "bee", "cat", "ant", "zed"), ordered.map { it.name })
-        assertEquals("This device", deviceState(ordered[0]))
-        assertEquals("On this network", deviceState(ordered[2]))
+        assertEquals("This device", deviceState(English, ordered[0]))
+        assertEquals("On this network", deviceState(English, ordered[2]))
         assertFalse(mayForget(ordered[0]))
         assertFalse(mayForget(ordered[1]))
         assertTrue(mayForget(ordered[3]))
@@ -326,11 +351,17 @@ class SettingsWordsTest {
 
         assertEquals(
             String.format(Locale.getDefault(), "Artist · from desk · %.1f of %.1f MB", 1.0, 4.0),
-            transferLine(moving),
+            transferLine(English, moving),
         )
         assertEquals(0.25f, transferProgress(moving))
         assertNull(transferProgress(moving.copy(size = 0uL)))
-        assertEquals("Waiting", transferLine(moving.copy(artist = "", from = "", state = SyncTransferState.WAITING)))
+        assertEquals(
+            "Waiting",
+            transferLine(
+                English,
+                moving.copy(artist = "", from = "", state = SyncTransferState.WAITING),
+            ),
+        )
     }
 
     @Test

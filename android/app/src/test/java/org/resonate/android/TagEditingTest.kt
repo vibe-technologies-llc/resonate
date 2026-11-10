@@ -73,33 +73,33 @@ class TagEditingTest {
     fun theNoticeCountsWhatWasSavedAndWhatWasLeft() {
         assertEquals(
             TagNotice("Saved the tags of 1 song", false),
-            TagSentences.told(1, 0, null, undoing = false),
+            TagSentences.told(English, 1, 0, null, undoing = false),
         )
         assertEquals(
             TagNotice("Put back the tags of 3 songs", false),
-            TagSentences.told(3, 0, null, undoing = true),
+            TagSentences.told(English, 3, 0, null, undoing = true),
         )
         assertEquals(
             TagNotice("Nothing to change", false),
-            TagSentences.told(0, 0, null, undoing = false),
+            TagSentences.told(English, 0, 0, null, undoing = false),
         )
         assertEquals(
             TagNotice("The song's file could not be written (2 songs left as they were)", true),
-            TagSentences.told(1, 2, "The song's file could not be written", undoing = false),
+            TagSentences.told(English, 1, 2, "The song's file could not be written", undoing = false),
         )
         assertEquals(
             TagNotice("The song's file could not be written", true),
-            TagSentences.told(0, 1, "The song's file could not be written", undoing = false),
+            TagSentences.told(English, 0, 1, "The song's file could not be written", undoing = false),
         )
     }
 
     @Test
     fun theSheetCountsTheSongsItEdits() {
-        assertEquals("Edit tags", TagSentences.editTitle(1))
-        assertEquals("Edit 12 songs", TagSentences.editTitle(12))
+        assertEquals("Edit tags", TagSentences.editTitle(English, 1))
+        assertEquals("Edit 12 songs", TagSentences.editTitle(English, 12))
         assertEquals(
             "1 song cannot be written and will be left alone.",
-            TagSentences.cannotBeWritten(1),
+            TagSentences.cannotBeWritten(English, 1),
         )
     }
 

@@ -3,7 +3,10 @@ use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, Que
 use resonate_eq::Error as Eq;
 use resonate_library::{Error as Library, LookupOp};
 
-use crate::{MobilePlayer, documents::document_uri, measurement::MeasuredFile, zoning::Zoned};
+use crate::{
+    MobilePlayer, documents::document_uri, measurement::MeasuredFile, words::failure as said,
+    zoning::Zoned,
+};
 
 impl MobilePlayer {
     pub(crate) fn still_waiting(zoned: &Zoned, state: &PlayerState) -> Option<String> {
@@ -51,74 +54,62 @@ fn waiting_is_over(state: &PlayerState) -> bool {
     state.output.is_some() || matches!(state.playback, PlaybackState::Idle | PlaybackState::Stopped)
 }
 
-const fn waits_for_a_device(cause: Cause) -> &'static str {
+fn waits_for_a_device(cause: Cause) -> &'static str {
     match cause {
-        Cause::NoDevice => {
-            "No speakers or headphones to play through — playing on once one is there"
-        }
-        _ => "The audio device stopped playing — playing on once one is there",
+        Cause::NoDevice => said::no_device_waiting(),
+        _ => said::device_stopped_waiting(),
     }
 }
 
 pub(crate) fn would_not_play(cause: Cause, title: &str) -> String {
     match cause {
-        Cause::Unreadable => format!("Couldn't find “{title}” — it may have been moved or deleted"),
-        Cause::Unsupported => format!("“{title}” is in a format Resonate can't play"),
-        Cause::Damaged => format!("Couldn't play “{title}” — the file looks damaged"),
-        Cause::CannotSeek => format!("Couldn't jump around in “{title}”"),
+        Cause::Unreadable => said::title_unreadable(title),
+        Cause::Unsupported => said::title_unsupported(title),
+        Cause::Damaged => said::title_damaged(title),
+        Cause::CannotSeek => said::title_cannot_seek(title),
         cause => plainly(cause).to_owned(),
     }
 }
 
 pub(crate) fn would_not_do(command: CommandKind, cause: Cause) -> String {
-    match cause {
-        Cause::Unreadable | Cause::Unsupported | Cause::Damaged => {
-            "That song couldn't be opened".to_owned()
-        }
-        Cause::CannotSeek => "This song can't be skipped through".to_owned(),
+    let told = match cause {
+        Cause::Unreadable | Cause::Unsupported | Cause::Damaged => said::song_unopened(),
+        Cause::CannotSeek => said::song_cannot_seek(),
         Cause::NothingPlaying => match command {
-            CommandKind::Pause | CommandKind::Seek | CommandKind::SeekBy => {
-                "Nothing is playing right now".to_owned()
-            }
-            _ => "There's nothing in the queue to play".to_owned(),
+            CommandKind::Pause | CommandKind::Seek | CommandKind::SeekBy => said::nothing_playing(),
+            _ => said::nothing_queued(),
         },
-        cause => plainly(cause).to_owned(),
-    }
+        cause => plainly(cause),
+    };
+
+    told.to_owned()
 }
 
-pub(crate) const fn of_a_command(cause: Cause) -> &'static str {
+pub(crate) fn of_a_command(cause: Cause) -> &'static str {
     match cause {
-        Cause::Unreadable | Cause::Unsupported | Cause::Damaged => "That song couldn't be opened",
+        Cause::Unreadable | Cause::Unsupported | Cause::Damaged => said::song_unopened(),
         cause => plainly(cause),
     }
 }
 
-pub(crate) const fn of_a_player(error: &resonate_engine::Error) -> &'static str {
+pub(crate) fn of_a_player(error: &resonate_engine::Error) -> &'static str {
     use resonate_engine::Error as Player;
 
     match error {
-        Player::NothingToAudition => {
-            "Play a song first: the test is heard on one playing, and a DSD stream sent as it is cannot be switched within"
-        }
-        Player::ArmsAlike => {
-            "A and B would sound the same on this stream, so there is nothing to tell apart"
-        }
-        Player::LevelsUnmeasured => {
-            "A and B could not be measured against each other, so the test cannot level them"
-        }
-        Player::LevelsTooFarApart { .. } => {
-            "A and B play too far apart in loudness to be matched, so the test cannot level them"
-        }
+        Player::NothingToAudition => said::nothing_to_audition(),
+        Player::ArmsAlike => said::arms_alike(),
+        Player::LevelsUnmeasured => said::levels_unmeasured(),
+        Player::LevelsTooFarApart { .. } => said::levels_too_far_apart(),
         other => of_a_command(other.cause()),
     }
 }
 
-pub(crate) const fn of_a_read(read: &resonate_codec::Error) -> &'static str {
+pub(crate) fn of_a_read(read: &resonate_codec::Error) -> &'static str {
     match Cause::of_a_read(read) {
-        Cause::Unreadable => "The audio file couldn't be found or read",
-        Cause::Unsupported => "The audio file is in a format Resonate can't play",
-        Cause::Damaged => "The audio file looks damaged",
-        Cause::CannotSeek => "The audio file can't be skipped through",
+        Cause::Unreadable => said::file_unreadable(),
+        Cause::Unsupported => said::file_unsupported(),
+        Cause::Damaged => said::file_damaged(),
+        Cause::CannotSeek => said::file_cannot_seek(),
         cause => plainly(cause),
     }
 }
@@ -126,86 +117,67 @@ pub(crate) const fn of_a_read(read: &resonate_codec::Error) -> &'static str {
 pub(crate) fn of_a_lookup(op: LookupOp, source: &Library) -> String {
     let asked = op.asked_for();
     match source {
-        Library::Unreachable { .. } => {
-            format!("The online service could not be reached for {asked}")
-        }
-        Library::Refused { status, .. } => {
-            format!("The online service refused the request for {asked} ({status})")
-        }
-        Library::Unreadable { .. } => {
-            format!("The online service's answer about {asked} could not be read")
-        }
-        Library::TooLarge { .. } => {
-            format!("The online service's answer about {asked} was too large to read")
-        }
-        Library::RefusedInARow { refusals, .. } => {
-            format!("The online service refused {refusals} requests in a row, the last for {asked}")
-        }
-        _ => format!("The online lookup of {asked} failed"),
+        Library::Unreachable { .. } => said::lookup_unreachable(asked),
+        Library::Refused { status, .. } => said::lookup_refused(asked, *status),
+        Library::Unreadable { .. } => said::lookup_unreadable(asked),
+        Library::TooLarge { .. } => said::lookup_too_large(asked),
+        Library::RefusedInARow { refusals, .. } => said::lookup_refused_in_a_row(asked, *refusals),
+        _ => said::lookup_failed(asked),
     }
 }
 
 pub(crate) fn of_a_measurement(file: MeasuredFile, source: &Eq) -> String {
     const MIB: usize = 1024 * 1024;
+
+    let file = file.to_string();
     match source {
-        Eq::MeasurementTooLarge { limit } => {
-            format!("The {file} file is larger than {} MiB", limit / MIB)
-        }
-        Eq::NoMeasuredPoints => {
-            format!("No line of the {file} file reads as a frequency and a level")
-        }
+        Eq::MeasurementTooLarge { limit } => said::measurement_too_large(&file, limit / MIB),
+        Eq::NoMeasuredPoints => said::measurement_no_points(&file),
         Eq::TooFewMeasuredPoints { found, least } => {
-            format!("The {file} file holds {found} points and a response needs at least {least}")
+            said::measurement_too_few_points(&file, *found, *least)
         }
         Eq::ResponseMissesTheMidBand {
             lowest_hertz,
             highest_hertz,
-        } => format!(
-            "The {file} spans {lowest_hertz:.0} Hz to {highest_hertz:.0} Hz and must reach 500 Hz to 2 kHz"
+        } => said::measurement_misses_the_mid_band(
+            &file,
+            format!("{highest_hertz:.0}"),
+            format!("{lowest_hertz:.0}"),
         ),
         Eq::NothingToCorrect { off_by_db } => {
-            format!(
-                "The measurement is within {off_by_db:.1} dB of the target, so there is nothing to correct"
-            )
+            said::measurement_nothing_to_correct(format!("{off_by_db:.1}"))
         }
-        _ => format!("The {file} file could not be read"),
+        _ => said::measurement_unreadable(&file),
     }
 }
 
 pub(crate) fn of_a_sweep(source: &Dsp) -> String {
     match source {
-        Dsp::SweepBand { rate, .. } => {
-            format!("A sweep up to 20 kHz needs a rate above 40 kHz and this one runs at {rate}")
-        }
-        Dsp::HeardTooShort { heard, played } => format!(
-            "The recording held {heard} frames and the sweep alone was {played}, so it was cut short"
-        ),
-        Dsp::HeardTooLong { .. } => "The recording of the sweep was too long to measure".to_owned(),
-        Dsp::NothingHeard => {
-            "Nothing of the sweep was heard: raise the volume or bring the microphone nearer"
-                .to_owned()
-        }
-        _ => "The sweep could not be measured".to_owned(),
+        Dsp::SweepBand { rate, .. } => said::sweep_band(rate.to_string()),
+        Dsp::HeardTooShort { heard, played } => said::sweep_heard_too_short(*heard, *played),
+        Dsp::HeardTooLong { .. } => said::sweep_heard_too_long().to_owned(),
+        Dsp::NothingHeard => said::sweep_nothing_heard().to_owned(),
+        _ => said::sweep_unmeasured().to_owned(),
     }
 }
 
-const fn plainly(cause: Cause) -> &'static str {
+fn plainly(cause: Cause) -> &'static str {
     match cause {
-        Cause::NoDevice => "No speakers or headphones to play through",
-        Cause::DeviceGone => "The audio device was unplugged or switched off",
-        Cause::SoundServer => "Lost touch with the sound system — trying again",
-        Cause::DeviceRefused => "The audio device wouldn't play this song's format",
-        Cause::QueueMoved => "The queue changed before that could happen",
-        Cause::PlayerStopped => "The player stopped responding — restart Resonate",
-        Cause::NothingPlaying => "Nothing is playing right now",
-        Cause::CannotSeek => "This song can't be skipped through",
-        Cause::Unreadable => "A song couldn't be found",
-        Cause::Unsupported => "A song is in a format Resonate can't play",
-        Cause::Damaged => "A song couldn't be played",
-        Cause::HeldByAnotherZone => "Another zone plays that device bit-perfect",
-        Cause::ZoneRefused => "That zone is no longer there",
-        Cause::NotHandedOver => "The other zone didn't take the playback over",
-        Cause::NothingToCompare => "The two sides of the listening test can't be told apart here",
+        Cause::NoDevice => said::no_device(),
+        Cause::DeviceGone => said::device_gone(),
+        Cause::SoundServer => said::sound_server(),
+        Cause::DeviceRefused => said::device_refused(),
+        Cause::QueueMoved => said::queue_moved(),
+        Cause::PlayerStopped => said::player_stopped(),
+        Cause::NothingPlaying => said::nothing_playing(),
+        Cause::CannotSeek => said::song_cannot_seek(),
+        Cause::Unreadable => said::unreadable(),
+        Cause::Unsupported => said::unsupported(),
+        Cause::Damaged => said::damaged(),
+        Cause::HeldByAnotherZone => said::held_by_another_zone(),
+        Cause::ZoneRefused => said::zone_refused(),
+        Cause::NotHandedOver => said::not_handed_over(),
+        Cause::NothingToCompare => said::nothing_to_compare(),
     }
 }
 

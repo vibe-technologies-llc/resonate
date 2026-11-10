@@ -14,12 +14,10 @@ public struct SpotifyAccount: Equatable, Sendable {
 
 public enum SpotifyWords {
     public static let neverCalledBack = "resonate-spotify-sign-in"
-    public static let signedIn = "Signed in to Spotify"
-    public static let signedOut = "Signed out of Spotify: its playlists keep their songs and no longer follow it"
-    public static let whatFollowingDoes =
-        "Follow keeps the liked songs and every playlist in step, read again every six hours. Move copies them once and follows nothing. A song you lack is saved for later, found by its ISRC or a strict search; one neither names is left out."
-    public static let whatSpotifyAllows =
-        "Spotify lets an app in development mode read only the playlists the account owns or collaborates on, so a playlist it merely follows is read from its public page: the first hundred songs at most, and not at all where it is private."
+    public static var signedIn: String { said("spotify.signed-in") }
+    public static var signedOut: String { said("spotify.signed-out") }
+    public static var whatFollowingDoes: String { said("spotify.following-explained") }
+    public static var whatSpotifyAllows: String { said("spotify.allows") }
 
     static func isGiven(_ text: String) -> Bool {
         !text.allSatisfy(\.isWhitespace)
@@ -30,6 +28,6 @@ public enum SpotifyWords {
     }
 
     public static func register(redirect: String) -> String {
-        "Register an app at developer.spotify.com with \(redirect) among its redirect URIs"
+        said("spotify.register", redirect)
     }
 }

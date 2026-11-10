@@ -1,0 +1,15 @@
+name-this-zone = Name this zone
+add-a-zone = Add a zone
+rename-the-zone = Rename this zone…
+remove-the-zone = Remove this zone
+move-playback-to = Move playback to { $zone }
+playing-in = Playing in { $zone } now
+playing-in-the-other-zone = Playing in the other zone now
+zone-saying = Zone: { $zone }, { $at } of { $count }. Each zone plays its own queue to its own device
+zones-saying = Zones: add one to play another queue to another device
+device-held-by = { $zone } plays that device bit-perfect, so it can't be shared
+device-held-by-another-zone = Another zone plays that device bit-perfect, so it can't be shared
+nothing-to-hand-over = There's nothing in this zone's queue to move
+handover-unheard-by = { $zone } didn't start playing, so the music stayed where it was and its own queue was put back
+handover-unheard-by-the-other-zone = The other zone didn't start playing, so the music stayed where it was and its own queue was put back
+zone-added = { $zone } added

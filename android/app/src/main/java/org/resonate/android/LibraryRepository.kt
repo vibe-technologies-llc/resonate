@@ -2,10 +2,12 @@ package org.resonate.android
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
+import androidx.annotation.StringRes
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -54,6 +56,11 @@ class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
     val current by lazy { CurrentActivity() }
     val resonate by lazy { Resonate(library, Playback(library) { current.controller }, current) }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        library.languagesChanged(newConfig)
+    }
 }
 
 data class Place(
@@ -72,13 +79,14 @@ data class Place(
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class LibraryRepository(private val context: Context) {
+    val words: Words = ResourceWords(context.resources)
     private val scope =
         CoroutineScope(
             SupervisorJob() +
                 Dispatchers.IO +
                 CoroutineExceptionHandler { _, failure ->
                     Log.e("Resonate", "A library task failed", failure)
-                    fail("The player could not complete that action")
+                    fail(words.string(R.string.notice_player_failed))
                 }
         )
     @Volatile private var engine = CompletableDeferred<MobilePlayer>()
@@ -202,6 +210,10 @@ class LibraryRepository(private val context: Context) {
         mutableStatus.value = message
     }
 
+    internal fun notice(@StringRes id: Int, vararg args: Any) {
+        notice(words.string(id, *args))
+    }
+
     fun clearFilter() {
         filter.value = null
         search = ""
@@ -231,6 +243,11 @@ class LibraryRepository(private val context: Context) {
                 }
             }
         }
+    }
+
+    fun languagesChanged(configuration: Configuration) {
+        if (!engine.isCompleted) return
+        scope.launch { SpokenLanguages.tell(configuration) }
     }
 
     @Synchronized
@@ -269,6 +286,7 @@ class LibraryRepository(private val context: Context) {
                         },
                     )
                 opened = native
+                SpokenLanguages.tell(context.resources.configuration)
                 val store = preferencesStore()
                 native.rewriteDocumentsWith(DocumentRewrites(context))
                 native.watchOutputMixer(BitPerfectMixer(context))
@@ -302,10 +320,10 @@ class LibraryRepository(private val context: Context) {
                 report(failure)
             } catch (failure: LinkageError) {
                 ready.completeExceptionally(
-                    IllegalStateException("The audio library could not be loaded", failure)
+                    IllegalStateException(words.string(R.string.notice_library_unloaded), failure)
                 )
                 Log.e("Resonate", "Native audio library could not be loaded", failure)
-                fail("The audio library could not be loaded")
+                fail(words.string(R.string.notice_library_unloaded))
             } finally {
                 withContext(NonCancellable) {
                     access.withLock {
@@ -470,7 +488,7 @@ class LibraryRepository(private val context: Context) {
             store.unbind(forgotten)
             mutableBoundRoutes.value = store.boundRoutes()
             if (forgotten.id == mutableRoute.value?.id) followRoute(native)
-            notice("Forgot the curve for ${forgotten.name}")
+            notice(R.string.equaliser_curve_forgotten, forgotten.name)
         }
     }
 
@@ -539,7 +557,7 @@ class LibraryRepository(private val context: Context) {
 
     private suspend fun scanFolder(tree: Uri) {
         mutableScanning.value = true
-        mutableStatus.value = "Reading music folder…"
+        mutableStatus.value = words.string(R.string.scan_reading)
         var indexed = 0
         var failed = 0
         try {
@@ -711,11 +729,12 @@ class LibraryRepository(private val context: Context) {
     }
 
     private fun scanSummary(indexed: Int, failed: Int): String =
-        "Read $indexed ${if (indexed == 1) "song" else "songs"}${if (failed > 0) "; $failed unreadable" else ""}"
+        words.plural(R.plurals.scan_read, indexed, indexed) +
+            if (failed > 0) words.plural(R.plurals.scan_unreadable, failed, failed) else ""
 
     internal fun report(failure: Exception) {
         Log.e("Resonate", "Player operation failed", failure)
-        fail(failure.message ?: "The player could not complete that action")
+        fail(failure.message ?: words.string(R.string.notice_player_failed))
     }
 
     companion object {

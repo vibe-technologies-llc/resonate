@@ -20,6 +20,7 @@ struct ResonateApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .monospacedDigit()
                 .environment(library)
                 .onAppear { library.start() }
                 .onOpenURL { library.open($0) }
@@ -199,9 +200,9 @@ struct ErasingOverlay: View {
                     .onTapGesture {}
                 Group {
                     if let left = library.erasedLeaving {
-                        Text((["Erasing did not finish."] + left.sentences + ["Close Resonate, open it again and erase once more."]).joined(separator: " "))
+                        Text(([said("erasing.unfinished")] + left.sentences + [said("erasing.again")]).joined(separator: " "))
                     } else {
-                        ProgressView("Erasing…")
+                        ProgressView("erasing.progress")
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -223,13 +224,13 @@ struct RootView: View {
     var body: some View {
         @Bindable var navigation = navigation
         TabView(selection: $navigation.tab) {
-            Tab("Home", systemImage: "house", value: Root.home) {
+            Tab("tabs.home", systemImage: "house", value: Root.home) {
                 stack(.home) { HomeView() }
             }
-            Tab("Library", systemImage: "square.stack", value: Root.library) {
+            Tab("tabs.library", systemImage: "square.stack", value: Root.library) {
                 LibraryTab()
             }
-            Tab("Settings", systemImage: "gearshape", value: Root.settings) {
+            Tab("tabs.settings", systemImage: "gearshape", value: Root.settings) {
                 stack(.settings) { SettingsView() }
             }
             Tab(value: Root.search, role: .search) {
@@ -344,27 +345,28 @@ struct PairingOffer: ViewModifier {
     let insidePlayer: Bool
 
     func body(content: Content) -> some View {
-        content.alert(
-            "Join these devices?",
-            isPresented: Binding(
-                get: { navigation.nowPlaying == insidePlayer && library.features.pairingOffered != nil },
-                set: { shown in if !shown { library.features.pairingOffered = nil } }
-            ),
-            presenting: library.features.pairingOffered
-        ) { code in
-            Button("Join") {
-                library.features.joinSync(code)
-                library.features.pairingOffered = nil
-                navigation.nowPlaying = false
-                navigation.tab = .settings
-                navigation.paths[.settings] = [.sync]
+        content
+            .alert(
+                "sync.pairing-offer.title",
+                isPresented: Binding(
+                    get: { navigation.nowPlaying == insidePlayer && library.features.pairingOffered != nil },
+                    set: { shown in if !shown { library.features.pairingOffered = nil } }
+                ),
+                presenting: library.features.pairingOffered
+            ) { code in
+                Button("common.join") {
+                    library.features.joinSync(code)
+                    library.features.pairingOffered = nil
+                    navigation.nowPlaying = false
+                    navigation.tab = .settings
+                    navigation.paths[.settings] = [.sync]
+                }
+                Button("common.cancel", role: .cancel) {}
+            } message: { code in
+                Text(library.features.syncConfig?.key.isEmpty == false
+                    ? said("sync.pairing-offer.switch", code)
+                    : said("sync.pairing-offer.join", code))
             }
-            Button("Cancel", role: .cancel) {}
-        } message: { code in
-            Text(library.features.syncConfig?.key.isEmpty == false
-                ? "A link asks this iPhone to leave the devices it syncs with now and sync with the devices of the code \(code). Join only if that is your code or one you were given."
-                : "A link asks this iPhone to share its playlists, favourites and history with the devices of the code \(code). Join only if that is your code or one you were given.")
-        }
     }
 }
 
@@ -382,11 +384,11 @@ struct PartyOffer: ViewModifier {
             ),
             presenting: library.features.together.partyOffered
         ) { link in
-            Button("Join") {
+            Button("common.join") {
                 library.features.together.partyOffered = nil
                 library.features.together.accept(link)
             }
-            Button("Cancel", role: .cancel) {}
+            Button("common.cancel", role: .cancel) {}
         } message: { _ in
             Text(TogetherWords.joinThisPartySays)
         }
@@ -515,9 +517,9 @@ struct LiveSong<Content: View>: View {
                 content(track)
             } else {
                 ContentUnavailableView(
-                    "This song is no longer here",
+                    "song.gone.title",
                     systemImage: "music.note",
-                    description: Text("It may have been removed from your library.")
+                    description: Text("song.gone.detail")
                 )
             }
         } else {
@@ -603,14 +605,14 @@ struct SyncProgress: View {
         .buttonStyle(.plain)
         .bannerGlass()
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens device sync")
+        .accessibilityHint("sync.progress.hint")
         .onAppear { AccessibilityNotification.Announcement(title).post() }
     }
 
     private var title: String {
         switch activity {
-        case .syncing: "Syncing with your devices…"
-        case .fetching(let songs, _): "Fetching \(counted(songs, "song")) from your devices"
+        case .syncing: said("sync.progress.syncing")
+        case .fetching(let songs, _): said("sync.progress.fetching", songs)
         }
     }
 
@@ -629,12 +631,12 @@ struct ScanProgress: View {
             ProgressView()
                 .frame(width: BannerGlyph.edge, height: BannerGlyph.edge)
                 .accessibilityHidden(true)
-            Text("Reading music folder… \(counted(library.scanned, "song"))")
+            Text(said("scan.reading.counted", library.scanned))
                 .font(.subheadline)
                 .monospacedDigit()
                 .contentTransition(reduceMotion ? .identity : .numericText())
             Spacer(minLength: 0)
-            Button("Stop") { library.stopScanning() }
+            Button("common.stop") { library.stopScanning() }
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
@@ -643,15 +645,15 @@ struct ScanProgress: View {
         .frame(minHeight: BannerGlyph.row)
         .bannerGlass()
         .accessibilityElement(children: .combine)
-        .onAppear { AccessibilityNotification.Announcement("Reading music folder").post() }
+        .onAppear { AccessibilityNotification.Announcement(said("scan.reading")).post() }
     }
 }
 
 extension StatusMessage.Offer {
     var title: String {
         switch self {
-        case .openCatalog: "Try again"
-        case .restoreQueueRow, .restoreEqualiser: "Undo"
+        case .openCatalog: said("common.try-again")
+        case .restoreQueueRow, .restoreEqualiser: said("common.undo")
         }
     }
 }
@@ -705,7 +707,7 @@ struct StatusCard: View {
                 .contentShape(Rectangle())
                 .onTapGesture { expanded.toggle() }
                 .accessibilityAddTraits(.isButton)
-                .accessibilityHint(expanded ? "Shows less of the message" : "Shows the whole message")
+                .accessibilityHint(said(expanded ? "status.less.hint" : "status.whole.hint"))
             if let offer = message.offer {
                 Button(offer.title) { library.perform(offer) }
                     .font(.footnote.weight(.semibold))
@@ -722,7 +724,7 @@ struct StatusCard: View {
                     .touchTarget()
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel("common.dismiss")
         }
         .bannerGlass(tint: failed ? Self.failureTint : nil)
     }
@@ -734,17 +736,17 @@ struct LibraryToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            Menu("More", systemImage: "ellipsis") {
-                Button("Add music folder", systemImage: "folder.badge.plus") {
+            Menu("common.more", systemImage: "ellipsis") {
+                Button("library.toolbar.add-folder", systemImage: "folder.badge.plus") {
                     navigation.choosingFolder = true
                 }
                 .disabled(library.scanning)
                 if library.scanning {
-                    Button("Stop reading", systemImage: "stop.circle") { library.stopScanning() }
+                    Button("library.toolbar.stop-reading", systemImage: "stop.circle") { library.stopScanning() }
                 } else {
-                    Button("Rescan library", systemImage: "arrow.clockwise") { library.rescan() }
+                    Button("library.toolbar.rescan", systemImage: "arrow.clockwise") { library.rescan() }
                 }
-                Button("Library tools", systemImage: "wrench.and.screwdriver") {
+                Button("library.toolbar.tools", systemImage: "wrench.and.screwdriver") {
                     navigation.open(.tools)
                 }
             }

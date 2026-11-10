@@ -187,6 +187,10 @@ extension Color {
     @MainActor static var worn: Color { AppearanceState.shared.tint }
     @MainActor static var wornInk: Color { AppearanceState.shared.ink }
     static let themedCard = AccentColours.card
+
+    @MainActor static var cardGround: Color {
+        AppearanceState.shared.themedBackground ? themedCard : Color(.secondarySystemGroupedBackground)
+    }
 }
 
 extension View {
@@ -277,7 +281,7 @@ struct AppearanceView: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(appearance.accent.map { $0.name.capitalized } ?? "Resonate").font(.headline)
-                        Text("Tints Resonate and its icon on the Home Screen.")
+                        Text("appearance.accent.detail")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -301,16 +305,16 @@ struct AppearanceView: View {
                 }
                 .padding(.vertical, 8)
             } header: {
-                Text("Accent colour")
+                Text("appearance.accent")
             } footer: {
                 if let refused = appearance.iconRefused {
-                    Text("The icon could not be changed: \(refused)")
+                    Text(said("appearance.icon.refused", refused))
                 } else {
-                    Text("Resonate keeps its own colours and icon. Any other accent recolours the icon as the desktop does.")
+                    Text("appearance.accent.footer")
                 }
             }
         }
-        .navigationTitle("Accent colour")
+        .navigationTitle("appearance.accent")
     }
 
     private static let packaged = LinearGradient(
@@ -320,7 +324,13 @@ struct AppearanceView: View {
     )
 
     private func icon(of accent: ResonateAccent?) -> UIImage {
-        UIImage(named: accent?.iconName ?? "Icon") ?? UIImage()
+        UIImage(named: accent?.iconName ?? Self.primaryIcon) ?? UIImage()
+    }
+
+    private static var primaryIcon: String {
+        let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        return (primary?["CFBundleIconFiles"] as? [String])?.first ?? ""
     }
 }
 
@@ -389,44 +399,44 @@ struct BackgroundView: View {
         @Bindable var appearance = AppearanceState.shared
         ThemedForm {
             Section {
-                Toggle("Resonate background", isOn: $appearance.themedBackground)
+                Toggle("appearance.background.themed", isOn: $appearance.themedBackground)
                 if appearance.themedBackground {
-                    Toggle("Flowing", isOn: $appearance.movingBackground)
+                    Toggle("appearance.background.moving", isOn: $appearance.movingBackground)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Strength")
+                        Text("appearance.background.strength")
                         HStack(spacing: 12) {
-                            Text("Subtle").font(.caption).foregroundStyle(.secondary)
+                            Text("appearance.background.subtle").font(.caption).foregroundStyle(.secondary)
                             Slider(value: $appearance.backgroundStrength, in: 0...1)
-                                .accessibilityLabel("Strength")
+                                .accessibilityLabel("appearance.background.strength")
                                 .accessibilityValue(Text(appearance.backgroundStrength, format: .percent.precision(.fractionLength(0))))
-                            Text("Vivid").font(.caption).foregroundStyle(.secondary)
+                            Text("appearance.background.vivid").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
             } footer: {
-                Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion keeps it still, and Low Power Mode slows it.")
+                Text("appearance.background.footer")
             }
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Intensity")
+                    Text("appearance.now-playing.intensity")
                     HStack(spacing: 12) {
-                        Text("Darker").font(.caption).foregroundStyle(.secondary)
+                        Text("appearance.now-playing.darker").font(.caption).foregroundStyle(.secondary)
                         Slider(value: $appearance.nowPlayingIntensity, in: 0...1)
-                            .accessibilityLabel("Now Playing intensity")
+                            .accessibilityLabel("appearance.now-playing.intensity.label")
                             .accessibilityValue(Text(appearance.nowPlayingIntensity, format: .percent.precision(.fractionLength(0))))
-                        Text("Vibrant").font(.caption).foregroundStyle(.secondary)
+                        Text("appearance.now-playing.vibrant").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if appearance.nowPlayingIntensity != AppearanceState.defaultIntensity {
-                    Button("Reset to default") { appearance.nowPlayingIntensity = AppearanceState.defaultIntensity }
+                    Button("appearance.now-playing.reset") { appearance.nowPlayingIntensity = AppearanceState.defaultIntensity }
                 }
             } header: {
-                Text("Now Playing")
+                Text("appearance.now-playing")
             } footer: {
-                Text("How dark or vivid the cover's colours are behind Now Playing, its lyrics and the visualizer.")
+                Text("appearance.now-playing.footer")
             }
         }
-        .navigationTitle("Background")
+        .navigationTitle("appearance.background")
     }
 }
 

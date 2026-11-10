@@ -1,11 +1,21 @@
 use resonate_core::MediaLocation;
 use resonate_engine::{Command, TagSet};
 
+use crate::words;
+
 pub(crate) const PREVIOUS: &str = "previous";
 pub(crate) const PLAY_PAUSE: &str = "play-pause";
 pub(crate) const NEXT: &str = "next";
-pub(crate) const ACTIONS: [&str; 6] =
-    [PREVIOUS, "Previous", PLAY_PAUSE, "Play/Pause", NEXT, "Next"];
+pub(crate) fn actions() -> [&'static str; 6] {
+    [
+        PREVIOUS,
+        words::notify::previous(),
+        PLAY_PAUSE,
+        words::notify::play_pause(),
+        NEXT,
+        words::notify::next(),
+    ]
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Shown {
@@ -107,7 +117,7 @@ mod tests {
 
     #[test]
     fn each_button_a_notification_offers_is_a_transport_command() {
-        let keys: Vec<&str> = ACTIONS.iter().step_by(2).copied().collect();
+        let keys: Vec<&str> = actions().into_iter().step_by(2).collect();
 
         assert_eq!(keys, vec![PREVIOUS, PLAY_PAUSE, NEXT]);
         assert_eq!(pressed(PREVIOUS), Some(Command::Previous));
@@ -118,8 +128,8 @@ mod tests {
 
     #[test]
     fn a_label_is_carried_beside_every_key_the_desktop_may_press() {
-        assert_eq!(ACTIONS.len() % 2, 0);
-        for label in ACTIONS.iter().skip(1).step_by(2) {
+        assert_eq!(actions().len() % 2, 0);
+        for label in actions().into_iter().skip(1).step_by(2) {
             assert!(!label.is_empty());
         }
     }

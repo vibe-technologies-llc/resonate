@@ -27,6 +27,7 @@ use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
 use resonate_upnp::{Located, Udn, Vouched};
+use resonate_words::{Language, LanguageChoice};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
@@ -164,6 +165,7 @@ pub struct Config {
     pub theme: Option<Theme>,
     pub accent: Option<Accent>,
     pub text_size: Option<TextSize>,
+    pub language: Option<LanguageChoice>,
     pub follow_desktop_scheme: Option<bool>,
     pub follow_desktop_text_size: Option<bool>,
     pub online: Option<bool>,
@@ -316,6 +318,7 @@ impl fmt::Debug for Config {
             theme,
             accent,
             text_size,
+            language,
             follow_desktop_scheme,
             follow_desktop_text_size,
             online,
@@ -454,6 +457,7 @@ impl fmt::Debug for Config {
             .field("theme", theme)
             .field("accent", accent)
             .field("text_size", text_size)
+            .field("language", language)
             .field("follow_desktop_scheme", follow_desktop_scheme)
             .field("follow_desktop_text_size", follow_desktop_text_size)
             .field("online", online)
@@ -613,6 +617,15 @@ impl Bindings {
 }
 
 impl Config {
+    pub fn language(&self) -> LanguageChoice {
+        self.language.unwrap_or_default()
+    }
+
+    pub fn language_spoken(&self) -> Language {
+        self.language()
+            .language(&resonate_words::languages_the_listener_reads())
+    }
+
     #[cfg(test)]
     pub fn appearance(&self) -> Appearance {
         self.appearance_where_the_desktop_asks(false)
@@ -1147,6 +1160,9 @@ impl Config {
             ConfigKey::Accent => config.accent = Some(at.one_of(value, Accent::parse)?),
             ConfigKey::TextSize => {
                 config.text_size = Some(at.one_of(value, TextSize::parse)?);
+            }
+            ConfigKey::Language => {
+                config.language = Some(at.one_of(value, LanguageChoice::parse)?);
             }
             ConfigKey::FollowDesktopScheme => {
                 config.follow_desktop_scheme = Some(at.boolean(value)?);
@@ -2030,7 +2046,7 @@ mod tests {
 
     #[test]
     fn the_man_page_gives_every_spelling_a_setting_takes() {
-        let spelled: [(ConfigKey, Vec<String>); 18] = [
+        let spelled: [(ConfigKey, Vec<String>); 19] = [
             (ConfigKey::Quality, spelled_by::<QualityArg>()),
             (ConfigKey::FilterPhase, spelled_by::<FilterPhaseArg>()),
             (ConfigKey::Dither, spelled_by::<DitherArg>()),
@@ -2058,6 +2074,12 @@ mod tests {
             (
                 ConfigKey::TextSize,
                 TextSize::ALL.map(|size| size.as_str().to_owned()).to_vec(),
+            ),
+            (
+                ConfigKey::Language,
+                LanguageChoice::ALL
+                    .map(|choice| choice.as_str().to_owned())
+                    .to_vec(),
             ),
             (
                 ConfigKey::Scrollbars,

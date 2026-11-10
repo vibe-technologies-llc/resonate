@@ -72,20 +72,20 @@ struct SearchResults: View, Equatable {
                 songRow(track, among: found.tracks, query)
             }
         } header: {
-            SeeAllHeader(title: "Songs", more: found.trackCount > songsAtTop) { scope = .songs }
+            SeeAllHeader(title: SearchScope.songs.label, more: found.trackCount > songsAtTop) { scope = .songs }
         }
         if showsCollections, !found.albums.isEmpty {
             Section {
                 AlbumShelf(albums: Array(found.albums.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {
-                SeeAllHeader(title: "Albums", more: found.albums.count > Self.topCollections) { scope = .albums }
+                SeeAllHeader(title: SearchScope.albums.label, more: found.albums.count > Self.topCollections) { scope = .albums }
             }
         }
         if showsCollections, !found.artists.isEmpty {
             Section {
                 ArtistShelf(artists: Array(found.artists.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {
-                SeeAllHeader(title: "Artists", more: found.artists.count > Self.topCollections) { scope = .artists }
+                SeeAllHeader(title: SearchScope.artists.label, more: found.artists.count > Self.topCollections) { scope = .artists }
             }
         }
     }
@@ -97,10 +97,10 @@ struct SearchResults: View, Equatable {
                 songRow(track, among: found.tracks, query)
             }
         } header: {
-            Text(counted(Int(found.trackCount), "song"))
+            Text(said("counted.songs", Int(found.trackCount)))
         } footer: {
             if found.trackCount > found.tracks.count {
-                Text("Showing the best \(found.tracks.count). Add a word to narrow the search.")
+                Text(said("search.showing-best", found.tracks.count))
             }
         }
     }
@@ -191,8 +191,8 @@ struct SeeAllHeader: View {
             Text(title)
             Spacer()
             if more {
-                Button("See all", action: seeAll)
-                    .accessibilityLabel("See all \(title.lowercased())")
+                Button("search.see-all", action: seeAll)
+                    .accessibilityLabel(said("search.see-all.spoken", title.lowercased()))
                     .font(.subheadline)
                     .textCase(nil)
                     .frame(minWidth: 44)
@@ -211,12 +211,21 @@ struct NoneMatch: View {
 
     var body: some View {
         ContentUnavailableView(
-            "No \(kind) match “\(query)”",
+            titled(said("common.quoted", query)),
             systemImage: symbol,
-            description: Text("Check the spelling, or try fewer words.")
+            description: Text("search.none.hint")
         )
         .listRowSeparator(.hidden)
-        .announced("No \(kind) match \(query)")
+        .announced(titled(query))
+    }
+
+    private func titled(_ query: String) -> String {
+        switch kind {
+        case "albums": said("search.none.albums", query)
+        case "artists": said("search.none.artists", query)
+        case "favourites": said("search.none.favourites", query)
+        default: said("search.none.songs", query)
+        }
     }
 }
 
@@ -227,7 +236,7 @@ struct NothingFound: View {
         if let meant = search.found.didYouMean {
             Button { search.text = meant } label: {
                 Label {
-                    Text("Did you mean \(Text(meant).bold())?")
+                    Text(Self.meaning(meant))
                 } icon: {
                     Image(systemName: "text.magnifyingglass")
                         .accessibilityHidden(true)
@@ -235,6 +244,14 @@ struct NothingFound: View {
             }
         }
         NoneMatch(kind: "songs", query: search.answered, symbol: "magnifyingglass")
+    }
+
+    static func meaning(_ meant: String) -> AttributedString {
+        var asked = AttributedString(said("search.did-you-mean", meant))
+        if let shown = asked.range(of: meant) {
+            asked[shown].inlinePresentationIntent = .stronglyEmphasized
+        }
+        return asked
     }
 }
 
@@ -261,7 +278,7 @@ struct SearchReadings: View {
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Searching for \(reads.joined(separator: ", "))")
+        .accessibilityLabel(said("search.reads.spoken", reads.joined(separator: ", ")))
     }
 }
 
@@ -270,11 +287,11 @@ struct SearchSuggestions: View {
 
     var body: some View {
         if search.query.isEmpty, !search.recents.isEmpty {
-            Section("Recent searches") {
+            Section("search.recents") {
                 ForEach(search.recents, id: \.self) { recent in
                     Label(recent, systemImage: "clock.arrow.circlepath").searchCompletion(recent)
                 }
-                Button("Clear recent searches", role: .destructive) { search.forgetRecents() }
+                Button("search.recents.clear", role: .destructive) { search.forgetRecents() }
             }
         }
     }
@@ -292,7 +309,7 @@ struct SearchCompletions: View {
                 HStack(spacing: 8) {
                     ForEach(completions, id: \.self) { completion in
                         Button { search.text = completion } label: {
-                            Label(completion, systemImage: "magnifyingglass")
+                            Text(completion)
                                 .font(.subheadline)
                                 .titleLines()
                                 .padding(.horizontal, 12)
@@ -301,7 +318,7 @@ struct SearchCompletions: View {
                                 .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Search for \(completion)")
+                        .accessibilityLabel(said("search.completion.spoken", completion))
                     }
                 }
             }
@@ -368,7 +385,7 @@ struct ArtistShelf: View {
                             Text(lit(artist.shownName, by: query, in: .artist))
                                 .font(.subheadline.weight(.medium))
                                 .titleLines()
-                            Text(counted(Int(artist.songs), "song"))
+                            Text(said("counted.songs", Int(artist.songs)))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

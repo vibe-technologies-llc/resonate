@@ -38,12 +38,14 @@ import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import org.resonate.android.R
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 
@@ -76,7 +78,10 @@ fun Page(
     val navigation: @Composable () -> Unit = {
         if (back) {
             IconButton(onClick = navigator::back) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.page_back),
+                )
             }
         }
     }
@@ -175,6 +180,6 @@ private fun PageBar(
 fun SettingsAction() {
     val navigator = LocalNavigator.current
     IconButton(onClick = { navigator.open(Screen.Settings) }) {
-        Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.page_settings))
     }
 }

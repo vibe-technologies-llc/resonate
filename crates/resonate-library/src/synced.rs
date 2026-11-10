@@ -23,7 +23,7 @@ use crate::{
     filed::{self, Beside, Unfiled},
     organise::{Named, Naming},
     playlist::{self, Row},
-    store, undo, vaulted, volumes,
+    store, undo, vaulted, volumes, words,
 };
 
 pub(crate) const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, ''), coalesce(a.title, ''), t.mbid, t.duration, t.sample_rate";
@@ -689,7 +689,11 @@ fn a_free_name(
     keeping: Option<PlaylistId>,
 ) -> Result<String> {
     let name = name.trim();
-    let wanted = if name.is_empty() { "Synced" } else { name };
+    let wanted = if name.is_empty() {
+        words::synced::unnamed()
+    } else {
+        name
+    };
     let mut asked = FIRST_ALIAS - 1;
     loop {
         let candidate = match asked {
@@ -1552,7 +1556,7 @@ fn vaulted(
         Ok(Keeping::Kept(kept)) => kept,
         Ok(Keeping::Refused(refusal)) => {
             tracing::warn!(
-                refused = refusal.as_str(),
+                refused = ?refusal,
                 "a song from another device was refused by the vault"
             );
             return Ok(SongFiled::Refused);

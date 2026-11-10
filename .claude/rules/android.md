@@ -20,6 +20,19 @@ Host binding generation reads ELF metadata and needs no PipeWire. `versionName` 
 `Cargo.toml`'s `version` read by Gradle, and `versionCode` is derived from it (a pre-release's
 candidate digit, 9 for a final), so a release is versioned in one place.
 
+**Every word the app shows is a resource** (`language.md`): `res/values/strings.xml`, `<plurals>` for
+a count, the launcher's name `@string/app_name`; `generateLocaleConfig` and `res/resources.properties`
+(`unqualifiedResLocale=en`) make the language the system's per-app setting, and `SpokenLanguages`
+tells the boundary the configuration's locales as the player opens and on every configuration change
+(`ResonateApplication.onConfigurationChanged`, once the engine is open). Composables read
+`stringResource` and `pluralStringResource`; everything else says its words through the `Words` seam
+(`Words.kt`: `string(id, args)` and `plural(id, count, args)`), `ResourceWords` over `Resources` in the
+app (`LibraryRepository.words`, `words()` in a composable) and, in JVM tests, `English`, which reads
+`res/values/*.xml` and formats each resource as Android does for English, so logic tested on the JVM
+(`DeletionSentences`, `SyncWords`, `TagSentences` and the rest) takes a `Words` and its tests assert the
+same English without Robolectric. `WordsTest` refuses a prose literal in any Kotlin source; `PROPER`
+names the literals that are proper names.
+
 `MainActivity` is a `ComponentActivity` that draws edge to edge and sets `ResonateApp`; it keeps
 the `MediaController` connection (made again on start where none is, or the last one failed or was
 lost) and implements `ui.Host` (folder and room-response pickers,
@@ -331,7 +344,7 @@ accent the seed is the wallpaper's (`wallpaperSeed`, `system_accent1_500`); an a
 desktop's seven (`resonate-ui`'s `RESONATE` flavour, held equal by `AppearanceTest`). The accent swatches are four to a row, spread across the page, and *Player background*'s two percentages are `CommitSlider`s with the player's 4 dp track. Either seeds a
 MaterialKolor `TonalSpot` scheme (`schemeOf`), never the platform's `dynamic*ColorScheme`: One UI fills
 the system surface-container roles with flat greys of its own, which greyed the mini player and the
-scrolled top bars, so only the accent hue is taken from the system. `ResonateTheme` builds one scheme and one `MaterialExpressiveTheme`
+scrolled top bars, so only the accent hue is taken from the system. **The ground is the desktop's, not the accent's**: `schemeOf` overrides MaterialKolor's neutral and neutral-variant palettes with a warm near-neutral (`WarmGround`, `WarmGroundVariant`; `Neutrals.WARM`), so every surface is a warm near-black or warm paper and the accent is left to controls, selection and text that means something, as `ui.md`'s Resonate and Resonate Light palettes are; the tone ladder is MaterialKolor's own, so the contrast bars hold as they did. A cover's own scheme keeps the seed's neutrals (`Neutrals.OF_THE_SEED`, what `rememberSchemeOf` asks for), so the player's ground is the cover's, and `ThemeContrastTest` walks both. Type is the system face with tabular figures in every style (`ResonateTypography`, `tnum`, as the desktop's `theme::ui`), so clocks, lengths and counts line up down a list; row titles are tracked at 0.15 sp and headings a little tight. `ResonateShapes` rounds `extraSmall` to 12 dp, which is what an outlined text field, a menu and a snackbar wear, so no field sets a shape of its own. `ResonateTheme` builds one scheme and one `MaterialExpressiveTheme`
 whatever the choice, so changing it never rebuilds the content below; it provides `LocalDarkTheme`, which
 `ArtworkTheme` reads in place of the system's, as it reads `LocalPitchBlack`, and re-applies `enableEdgeToEdge` so the system bars' icon
 colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
@@ -348,7 +361,7 @@ Home stays composed beside the selected root. A pushed page slides a sixth of th
 (300 ms), and the pop reverses it; the system's back swipe (`predictivePopTransitionSpec`) slides the leaving page wholly off, opaque, over the one beneath shifting a sixth of the width, since a fading or shrinking leaving page shows the page beneath through it; each page is a `Page`, a Scaffold with a large, medium or small
 flexible top bar that stays `surface` when content scrolls under it (no scrolled container colour). Above the navigation bar sit the banners and the mini-player, so they show
 on every page. They overlay the pages in a transparent bottom-aligned column, so page content
-continues behind the mini-player's outer padding instead of ending at an opaque strip. The measured
+continues behind the mini-player's outer padding instead of ending at an opaque strip. The footer draws the page's `surface` behind itself, clear at its top and whole from 70 % of its height down (`GROUND_WHOLE_FROM`), so a row passing under the mini-player dissolves instead of showing as a cut sliver between it and the navigation bar. The measured
 banner and mini-player height supplies each `Page`'s bottom content inset and floating-action-button
 clearance, so the last items can scroll above the controls. The page is edge to edge, so the window
 never resizes for the keyboard: `Page` shrinks itself by the part of the IME inset that covers it and
@@ -359,6 +372,8 @@ mini-player's room is not counted twice. A text field's value is Compose state (
 so with no banner shown the mini player's gap above equals the one below. The empty library's *Welcome* scrolls, so the banners
 arriving on a first scan never squeeze its buttons.
 
+**The look is quiet chrome around the covers.** Colour comes from artwork and from the accent on what acts; chrome is neutral. A `Shortcut` tile (Home's *Favourites* and *Shuffle all*, Playlists' *Favourites* and *Party*, Statistics' year in review) and a Search browse tile are `surfaceContainerHigh` with the icon in `primary`, never one tinted container per tile; an `IconTile` standing where a row's cover would (*New playlist*, *Add songs*, a device that handed off) is the same, and only a tile that says something is tinted (a song already held, `primaryContainer`). Home's mixes are `CoverCard`s like every other shelf (the title and the detail on two lines), the reason's icon a small round badge at the cover's foot; *Your listening* is three figures set on the page between hairlines, its header's *Statistics* and the figures both opening the page. `EmptyState` is a bare icon over its words, with no tile behind it; *Welcome* leads with the five-bar mark (`ResonateMark`, the launcher's paths drawn in `primary`). No icon is a sparkle or a wand: statistics is a bar chart, a mix a queue, analysis a chart under a glass, restoration a plaster, *Never heard* a struck play. A sheet opened over the player (`SheetHost`) wears the player's scheme (`Sheets.worn`, set while `NowPlaying` is composed), so the song sheet matches the queue and zones sheets beside it. Song details are a specification sheet (`DetailRow`): the label in a 36 % column, the value beside it and a 48 dp slot for *Copy* in every row so the values line up, stacked above a font scale of 1.3. Every slider wears `CommitSlider`'s 4 dp track, the playback buffer's included.
+
 **Settings is a page of navigation rows in six groups, the phones' shared root** (`SettingsScreen`,
 `SettingsCatalog.kt`): a search field, then *Sound* (Equaliser, Sound processing, Audio output),
 *Library* (Music folders, Library tools, Listening statistics, Made for you, Saved for later), *Online &
@@ -367,7 +382,8 @@ Scrobbling; Spotify), *Devices* (Device sync), *Appearance* (Appearance) and *Ap
 notifications, with *Allow* while refused, and the version). Every row is an icon, its page's title and
 a one-line status, live where there is one to tell (the equaliser's *On · <curve>* or *Off*, the output
 in use, the theme and accent). Search folds accents and matches word starts across a row's title, line,
-group and the settings its page holds (`Setting.inner`, the one matched named in place of the line);
+group, the settings its page holds (`Setting.inner`, the one matched named in place of the line) and the
+proper names it answers to (`Setting.names`), each row's words read from the resources first (`matchingSettings(words, query)`);
 the equaliser's pages (*Headphone correction*, *Measure with a microphone*, *Room correction*,
 *Listening test*, *Curves for other outputs* while one is kept) are rows only search lists
 (`Setting.onRoot` false, their line led by *Equaliser ·*), so *AutoEq*, *room*, *ABX* or *microphone*

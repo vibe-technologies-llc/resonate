@@ -5,31 +5,32 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 
 class SettingsCatalogTest {
-    private fun found(query: String) = matchingSettings(query).map { it.setting }
+    private fun found(query: String) = matchingSettings(English, query).map { it.setting }
 
     @Test
     fun anEmptyQueryShowsTheRootsRowsWithTheirOwnDetail() {
-        val all = matchingSettings("  ")
+        val all = matchingSettings(English, "  ")
 
         assertEquals(Setting.entries.filter { it.onRoot }, all.map { it.setting })
-        assertTrue(all.all { it.shownDetail == it.setting.detail })
+        assertTrue(all.all { it.shownDetail == English.string(it.setting.detail) })
         assertFalse(all.any { it.setting == Setting.HEADPHONE_CORRECTION })
     }
 
     @Test
     fun theRootIsGroupedSoundLibraryOnlineDevicesAppearanceAndApp() {
-        val groups = matchingSettings("").map { it.setting.group }.distinct()
+        val groups = matchingSettings(English, "").map { it.setting.group }.distinct()
 
         assertEquals(SettingsGroup.entries.toList(), groups)
         assertEquals(
             listOf("Sound", "Library", "Online & services", "Devices", "Appearance", "App"),
-            groups.map { it.title },
+            groups.map { English.string(it.title) },
         )
         assertEquals(
             listOf(Setting.EQUALISER, Setting.PROCESSING, Setting.OUTPUT),
-            matchingSettings("").map { it.setting }.filter { it.group == SettingsGroup.SOUND },
+            matchingSettings(English, "").map { it.setting }.filter { it.group == SettingsGroup.SOUND },
         )
     }
 
@@ -40,7 +41,7 @@ class SettingsCatalogTest {
         assertEquals(listOf(Setting.LISTENING_TEST), found("ABX"))
         assertEquals(listOf(Setting.MEASUREMENT), found("microphone"))
         assertEquals(listOf(Setting.HEADPHONE_CORRECTION), found("graphiceq"))
-        assertEquals("Speaker angle", Setting.ROOM_CORRECTION.match("angle")?.shownDetail)
+        assertEquals("Speaker angle", Setting.ROOM_CORRECTION.match(English, "angle")?.shownDetail)
     }
 
     @Test
@@ -57,7 +58,7 @@ class SettingsCatalogTest {
 
     @Test
     fun anInnerSettingIsFoundAndNamedInPlaceOfTheDetail() {
-        val match = Setting.LIBRARY_TOOLS.match("wifi")
+        val match = Setting.LIBRARY_TOOLS.match(English, "wifi")
 
         assertEquals("Only on Wi-Fi", match?.shownDetail)
         assertEquals(listOf(Setting.LIBRARY_TOOLS), found("wi-fi"))
@@ -65,9 +66,9 @@ class SettingsCatalogTest {
 
     @Test
     fun hyphenatedWordsAnswerToEitherHalfOrTheWhole() {
-        assertEquals("True-peak clip prevention", Setting.PROCESSING.match("true peak")?.shownDetail)
-        assertEquals("True-peak clip prevention", Setting.PROCESSING.match("truepeak")?.shownDetail)
-        assertEquals("True-peak clip prevention", Setting.PROCESSING.match("peak")?.shownDetail)
+        assertEquals("True-peak clip prevention", Setting.PROCESSING.match(English, "true peak")?.shownDetail)
+        assertEquals("True-peak clip prevention", Setting.PROCESSING.match(English, "truepeak")?.shownDetail)
+        assertEquals("True-peak clip prevention", Setting.PROCESSING.match(English, "peak")?.shownDetail)
     }
 
     @Test
@@ -77,9 +78,9 @@ class SettingsCatalogTest {
 
     @Test
     fun wordsSpreadAcrossTitleAndInnerSettingsStillMatchWithTheDetail() {
-        val match = Setting.SYNC.match("devices pairing")
+        val match = Setting.SYNC.match(English, "devices pairing")
 
-        assertEquals(Setting.SYNC.detail, match?.shownDetail)
+        assertEquals(English.string(Setting.SYNC.detail), match?.shownDetail)
     }
 
     @Test
@@ -89,12 +90,12 @@ class SettingsCatalogTest {
 
     @Test
     fun nothingMatchesNonsense() {
-        assertNull(Setting.OUTPUT.match("zzzz"))
+        assertNull(Setting.OUTPUT.match(English, "zzzz"))
         assertTrue(found("zzzz").isEmpty())
     }
 
     @Test
     fun listsAreFoundUnderMadeForYou() {
-        assertEquals("Old flames", Setting.SUGGESTIONS.match("flames")?.shownDetail)
+        assertEquals("Old flames", Setting.SUGGESTIONS.match(English, "flames")?.shownDetail)
     }
 }

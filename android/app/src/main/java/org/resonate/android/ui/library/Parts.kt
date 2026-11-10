@@ -27,17 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -48,6 +45,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -55,6 +54,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistHit
 import org.resonate.android.nativecore.MusicPlaylist
@@ -63,11 +64,12 @@ import org.resonate.android.ui.components.ArtistPortrait
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.PlayShuffleButtons
 import org.resonate.android.ui.components.PlaylistCover
+import org.resonate.android.ui.components.ResonateMark
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.rememberTitleMaxLines
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.words
 
 object Shelves {
     val albumWidth = 152.dp
@@ -83,24 +85,37 @@ val AlbumHit.screen: Screen.Album
 val ArtistHit.screen: Screen.Artist
     get() = Screen.Artist(name, artworkTrack)
 
+fun ArtistHit.shownName(words: Words): String =
+    name.ifBlank { words.string(R.string.unknown_artist) }
+
 val ArtistHit.shownName: String
-    get() = name.ifBlank { "Unknown artist" }
+    @Composable get() = shownName(words())
+
+fun AlbumHit.shownTitle(words: Words): String =
+    title.ifBlank { words.string(R.string.library_unknown_album) }
 
 val AlbumHit.shownTitle: String
-    get() = title.ifBlank { "Unknown album" }
+    @Composable get() = shownTitle(words())
+
+fun AlbumHit.byline(words: Words): String =
+    listOfNotNull(
+            if (variousArtists) words.string(R.string.library_various_artists)
+            else artist.ifBlank { words.string(R.string.unknown_artist) },
+            year?.toString(),
+        )
+        .joinToString(" · ")
 
 val AlbumHit.byline: String
-    get() =
-        listOfNotNull(
-                if (variousArtists) "Various artists" else artist.ifBlank { "Unknown artist" },
-                year?.toString(),
-            )
-            .joinToString(" · ")
+    @Composable get() = byline(words())
+
+fun ArtistHit.summary(words: Words): String {
+    val songCount = words.plural(R.plurals.count_songs, songs.toInt(), songs.toInt())
+    val albumCount = words.plural(R.plurals.count_albums, albums.toInt(), albums.toInt())
+    return if (albums > 0u) "$albumCount · $songCount" else songCount
+}
 
 val ArtistHit.summary: String
-    get() =
-        if (albums > 0u) "${counted(albums, "album")} · ${counted(songs, "song")}"
-        else counted(songs, "song")
+    @Composable get() = summary(words())
 
 val MusicPlaylist.screen: Screen.Playlist
     get() = Screen.Playlist(id, name)
@@ -136,12 +151,13 @@ fun PlaylistCard(
     modifier: Modifier = Modifier,
     badge: String? = null,
 ) {
+    val songs = playlist.songs.toInt()
     CoverCard(
         title = playlist.name,
         detail =
             listOfNotNull(
-                    badge ?: "Saved search".takeIf { playlist.search != null },
-                    counted(playlist.songs, "song"),
+                    badge ?: stringResource(R.string.library_saved_search).takeIf { playlist.search != null },
+                    pluralStringResource(R.plurals.count_songs, songs, songs),
                 )
                 .joinToString(" · "),
         onClick = onClick,
@@ -159,9 +175,10 @@ fun CoverCard(
     detail: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    titleLines: Int = rememberTitleMaxLines(),
+    detailLines: Int = rememberTitleMaxLines(),
     cover: @Composable () -> Unit,
 ) {
-    val lines = rememberTitleMaxLines()
     Column(
         modifier
             .clip(MaterialTheme.shapes.large)
@@ -173,7 +190,7 @@ fun CoverCard(
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
-            maxLines = lines,
+            maxLines = titleLines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
@@ -182,7 +199,7 @@ fun CoverCard(
                 detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = lines,
+                maxLines = detailLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 4.dp),
             )
@@ -386,10 +403,10 @@ fun Loading(modifier: Modifier = Modifier) {
 fun Unreadable(onRetry: () -> Unit, modifier: Modifier = Modifier) {
     EmptyState(
         Icons.Rounded.ErrorOutline,
-        "This could not be loaded",
+        stringResource(R.string.library_unreadable),
         modifier = modifier,
-        detail = "Check the notice below, then try again.",
-        action = "Try again",
+        detail = stringResource(R.string.library_unreadable_detail),
+        action = stringResource(R.string.library_try_again),
         onAction = onRetry,
     )
 }
@@ -417,26 +434,17 @@ fun Welcome(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = MaterialShapes.Cookie9Sided.toShape(),
-                modifier = Modifier.size(112.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.LibraryMusic, contentDescription = null, modifier = Modifier.size(48.dp))
-                }
-            }
+            ResonateMark(WELCOME_MARK, MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(24.dp))
             Text(
-                "Make room for your music",
+                stringResource(R.string.library_welcome_title),
                 style = MaterialTheme.typography.headlineSmall,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(max = 420.dp),
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Add a music folder, or use your Downloads, to bring your albums, artists and favourites together.",
+                stringResource(R.string.library_welcome_detail),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -449,7 +457,7 @@ fun Welcome(modifier: Modifier = Modifier) {
             ) {
                 Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("Add music folder")
+                Text(stringResource(R.string.library_add_folder))
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
@@ -458,7 +466,7 @@ fun Welcome(modifier: Modifier = Modifier) {
             ) {
                 Icon(Icons.Rounded.Download, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("Use Downloads")
+                Text(stringResource(R.string.library_use_downloads))
             }
         }
     }
@@ -467,8 +475,8 @@ fun Welcome(modifier: Modifier = Modifier) {
 @Composable
 fun EmptyCollection(
     modifier: Modifier = Modifier,
-    title: String = "A little quiet here",
-    detail: String = "Add some songs to make this collection yours.",
+    title: String = stringResource(R.string.library_empty_title),
+    detail: String = stringResource(R.string.library_empty_detail),
     action: (@Composable () -> Unit)? = null,
 ) {
     Column(
@@ -496,3 +504,4 @@ fun LazyListScope.sectionTitle(key: String, title: String, action: String? = nul
 }
 
 private val WELCOME_BUTTON_WIDTH = 216.dp
+private val WELCOME_MARK = 88.dp

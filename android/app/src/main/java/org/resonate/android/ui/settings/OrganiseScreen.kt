@@ -17,6 +17,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -29,6 +31,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.resonate.android.OrganiseSentences
+import org.resonate.android.R
+import org.resonate.android.Words
 import org.resonate.android.nativecore.FiledSong
 import org.resonate.android.nativecore.OrganisePlan
 import org.resonate.android.nativecore.defaultOrganiseLayout
@@ -36,20 +40,15 @@ import org.resonate.android.nativecore.organiseLayoutProblem
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
+import org.resonate.android.words
 import org.resonate.android.ui.resonateViewModel
 
 data class Planned(val layout: String, val plan: OrganisePlan)
 
 object OrganiseWords {
-    const val FIELDS =
-        "Fields: {albumartist} {artist} {album} {title} {year} {disc} {track} {ext}. Slashes make folders; {disc} is written only for albums of more than one disc."
-    const val KEPT_IN_PLACE =
-        "A song whose place another file holds, or that names nothing to file it by, stays where it is."
-
-    fun explained(folder: String): String =
-        "The files move inside $folder, each with its lyrics beside it. Favourites, plays and playlists follow them, and Library tools can put them back."
+    fun explained(words: Words, folder: String): String =
+        words.string(R.string.organise_explained, folder)
 
     fun current(planned: Planned?, layout: String): OrganisePlan? =
         planned?.takeIf { it.layout == layout }?.plan
@@ -65,7 +64,8 @@ class OrganiseViewModel(private val resonate: Resonate, private val folder: Uri)
     private val mutablePlanning = MutableStateFlow(false)
 
     val name: String =
-        resonate.features.folders.value.firstOrNull { it.uri == folder }?.name ?: "this folder"
+        resonate.features.folders.value.firstOrNull { it.uri == folder }?.name
+            ?: resonate.library.words.string(R.string.organise_this_folder)
     val rootId: String = DocumentsContract.getTreeDocumentId(folder)
     var layout by mutableStateOf(organising.layout())
         private set
@@ -128,15 +128,16 @@ fun OrganiseScreen(folder: String) {
     val current = OrganiseWords.current(planned, layout)
     val waiting = OrganiseWords.waiting(problem, current, failedFor, layout)
     val moves = current?.moves.orEmpty()
+    val words = words()
     Page(
-        "Organise ${model.name}",
+        stringResource(R.string.organise_title, model.name),
         actions = {
             TextButton(
                 onClick = { confirming = true },
                 enabled = problem == null && !planning && moves.isNotEmpty() && !busy,
                 modifier = Modifier.testTag("organise"),
             ) {
-                Text("Organise")
+                Text(stringResource(R.string.organise_action))
             }
         },
     ) { padding ->
@@ -145,8 +146,8 @@ fun OrganiseScreen(folder: String) {
                 Field(
                     value = layout,
                     onValueChange = model::type,
-                    label = "Layout",
-                    supporting = problem ?: OrganiseWords.FIELDS,
+                    label = stringResource(R.string.organise_layout),
+                    supporting = problem ?: stringResource(R.string.organise_fields),
                     error = problem != null,
                     keyboardType = KeyboardType.Uri,
                     modifier = Modifier.testTag("organise-layout"),
@@ -156,7 +157,7 @@ fun OrganiseScreen(folder: String) {
                 item(key = "usual") {
                     ButtonRow {
                         OutlinedButton(onClick = { model.type(usual) }) {
-                            Text("Use the usual layout")
+                            Text(stringResource(R.string.organise_usual_layout))
                         }
                     }
                 }
@@ -164,42 +165,56 @@ fun OrganiseScreen(folder: String) {
             if (planning || waiting) {
                 item(key = "planning") { ListLoading() }
             } else if (current != null) {
-                item(key = "preview") { SectionHeader("Preview") }
+                item(key = "preview") { SectionHeader(stringResource(R.string.organise_preview)) }
                 item(key = "to-move") {
                     SettingRow(
-                        "To move",
-                        supporting = counted(moves.size, "song"),
+                        stringResource(R.string.organise_to_move),
+                        supporting =
+                            pluralStringResource(R.plurals.count_songs, moves.size, moves.size),
                         modifier = Modifier.testTag("organise-to-move"),
                     )
                 }
                 item(key = "in-place") {
-                    SettingRow("Already in place", supporting = counted(current.unchanged, "song"))
+                    val unchanged = current.unchanged.toInt()
+                    SettingRow(
+                        stringResource(R.string.organise_in_place),
+                        supporting =
+                            pluralStringResource(R.plurals.count_songs, unchanged, unchanged),
+                    )
                 }
                 if (current.taken > 0u) {
                     item(key = "taken") {
-                        SettingRow("Place taken", supporting = counted(current.taken, "song"))
+                        val taken = current.taken.toInt()
+                        SettingRow(
+                            stringResource(R.string.organise_taken),
+                            supporting = pluralStringResource(R.plurals.count_songs, taken, taken),
+                        )
                     }
                 }
                 if (current.unplaced > 0u) {
                     item(key = "unplaced") {
-                        SettingRow("Not enough tags", supporting = counted(current.unplaced, "song"))
+                        val unplaced = current.unplaced.toInt()
+                        SettingRow(
+                            stringResource(R.string.organise_unplaced),
+                            supporting =
+                                pluralStringResource(R.plurals.count_songs, unplaced, unplaced),
+                        )
                     }
                 }
-                item(key = "kept") { Footnote(OrganiseWords.KEPT_IN_PLACE) }
+                item(key = "kept") { Footnote(stringResource(R.string.organise_kept_in_place)) }
                 if (moves.isNotEmpty()) {
-                    item(key = "moves") { SectionHeader("Moves") }
+                    item(key = "moves") { SectionHeader(stringResource(R.string.organise_moves)) }
                     items(moves.take(OrganiseSentences.LISTED_AT_MOST), key = { "move-${it.id}" }) {
                         move ->
                         SettingRow(
                             move.to.joinToString(" / "),
-                            supporting = OrganiseSentences.shown(move.from, model.rootId),
+                            supporting = OrganiseSentences.shown(words, move.from, model.rootId),
                         )
                     }
                     if (moves.size > OrganiseSentences.LISTED_AT_MOST) {
                         item(key = "more") {
-                            Note(
-                                "and ${counted(moves.size - OrganiseSentences.LISTED_AT_MOST, "more song")}"
-                            )
+                            val more = moves.size - OrganiseSentences.LISTED_AT_MOST
+                            Note(pluralStringResource(R.plurals.organise_more, more, more))
                         }
                     }
                 }
@@ -208,9 +223,9 @@ fun OrganiseScreen(folder: String) {
     }
     if (confirming) {
         ConfirmDialog(
-            title = OrganiseSentences.confirmTitle(moves.size),
-            text = OrganiseWords.explained(model.name),
-            confirm = "Organise",
+            title = OrganiseSentences.confirmTitle(words, moves.size),
+            text = OrganiseWords.explained(words, model.name),
+            confirm = stringResource(R.string.organise_action),
             icon = Icons.Rounded.DriveFileRenameOutline,
             onConfirm = {
                 model.organise(moves)

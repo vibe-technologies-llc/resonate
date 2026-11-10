@@ -1,5 +1,7 @@
 package org.resonate.android
 
+import androidx.annotation.StringRes
+
 data class LandingFolder(
     val id: String,
     val readable: Boolean,
@@ -16,9 +18,8 @@ sealed interface LandingDestination {
 }
 
 object SyncLanding {
-    const val AWAY =
-        "The folder songs from your devices go to cannot be reached; they wait until it can"
-    const val NOWHERE = "Add a music folder with write access to keep songs from your devices"
+    @StringRes val AWAY = R.string.sync_landing_away
+    @StringRes val NOWHERE = R.string.sync_landing_nowhere
 
     fun destination(folders: List<LandingFolder>, chosen: String?): LandingDestination {
         val folder =

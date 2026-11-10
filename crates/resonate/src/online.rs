@@ -305,8 +305,8 @@ pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
     let signs_in = SpotifySignIn::new(client_for(config, Asking::ForTheListener));
     let authorizing = signs_in.authorizing(client_id)?;
     said!(
-        "open this address to sign in to Spotify, with {} listed among the app's redirect URIs:",
-        resonate_online::SPOTIFY_REDIRECT
+        "{}",
+        crate::words::spotify::open_to_sign_in(resonate_online::SPOTIFY_REDIRECT)
     );
     said!("{}", authorizing.authorize_at);
 

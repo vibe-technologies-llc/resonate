@@ -8,8 +8,8 @@ any other agent reads them itself, and this file says which, when, and what is n
 1. **`CLAUDE.md`**: the project, the crates and how they may depend on each other, the invariants
    the layering protects, the commands. With the rules it is the authority on the design; this file
    does not repeat it.
-2. **`.claude/rules/rust-style.md`** and **`.claude/rules/errors.md`**: they apply to every Rust
-   file.
+2. **`.claude/rules/rust-style.md`**, **`.claude/rules/errors.md`** and
+   **`.claude/rules/language.md`**: they apply to every Rust file.
 3. **Every other `.claude/rules/*.md` whose scope covers a file you are about to change.** Each
    opens with a YAML `paths:` list of globs; a file you edit matching one makes that rules file
    required reading first. One with no `paths:` applies everywhere. `CLAUDE.md`'s table says what

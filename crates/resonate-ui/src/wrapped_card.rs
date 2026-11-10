@@ -4,6 +4,10 @@ use resonate_core::wrapped::{REVIEW_NAME, YearReview, spelled_listening, spelled
 use resvg::{tiny_skia, usvg};
 use thiserror::Error;
 
+use crate::words;
+
+mod markup;
+
 const CARD_WIDTH: u32 = 1_080;
 
 const CARD_HEIGHT: u32 = 1_350;
@@ -39,13 +43,6 @@ pub(crate) enum CardRefused {
 }
 
 pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
-    let family = escaped(&colours.family);
-    let eyebrow = escaped(&format!("{REVIEW_NAME} {}", review.year));
-    let listened = escaped(&spelled_listening(review.listened));
-    let across = escaped(&format!(
-        "{} songs · {} artists · {} albums",
-        review.songs, review.artists, review.albums
-    ));
     let rows: String = rows_of(review)
         .iter()
         .take(4)
@@ -53,70 +50,33 @@ pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
         .map(|(at, (label, name))| {
             let y = FIRST_ROW_AT + at as u32 * ROWS_APART;
 
-            format!(
-                concat!(
-                    r##"<text x="{margin}" y="{y}" font-size="28" font-weight="600" "##,
-                    r##"fill="#{muted:06x}" letter-spacing="2">{label}</text>"##,
-                    r##"<text x="{margin}" y="{name_y}" font-size="50" font-weight="600" "##,
-                    r##"fill="#{text:06x}">{name}</text>"##,
-                ),
-                margin = CARD_MARGIN,
-                y = y,
-                name_y = y + 62,
-                muted = colours.muted,
-                text = colours.text,
-                label = label,
-                name = escaped(&cut(name)),
-            )
+            markup::row(y, &escaped(label), &escaped(&cut(name)), colours)
         })
         .collect();
     let foot = review
         .formats
         .map(|formats| {
-            format!(
-                "{} lossless · {} above CD quality",
+            words::wrapped_card::formats(
+                spelled_share(formats.high_resolution_permille),
                 spelled_share(formats.lossless_permille),
-                spelled_share(formats.high_resolution_permille)
             )
         })
         .unwrap_or_default();
+    let said = markup::Said {
+        family: escaped(&colours.family),
+        eyebrow: escaped(&format!("{REVIEW_NAME} {}", review.year)),
+        listened: escaped(&spelled_listening(review.listened)),
+        of_music: escaped(words::wrapped_card::of_music()),
+        across: escaped(&words::wrapped_card::across(
+            review.albums,
+            review.artists,
+            review.songs,
+        )),
+        rows,
+        foot: escaped(&foot),
+    };
 
-    format!(
-        concat!(
-            r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" "##,
-            r##"viewBox="0 0 {width} {height}" font-family="{family}, sans-serif">"##,
-            r##"<rect width="{width}" height="{height}" fill="#{ground:06x}"/>"##,
-            r##"<rect width="{width}" height="18" fill="#{accent:06x}"/>"##,
-            r##"<text x="{margin}" y="170" font-size="32" font-weight="700" "##,
-            r##"fill="#{accent:06x}" letter-spacing="3">{eyebrow}</text>"##,
-            r##"<text x="{margin}" y="320" font-size="118" font-weight="800" "##,
-            r##"fill="#{text:06x}">{listened}</text>"##,
-            r##"<text x="{margin}" y="392" font-size="52" font-weight="600" "##,
-            r##"fill="#{text:06x}">of music</text>"##,
-            r##"<text x="{margin}" y="462" font-size="32" fill="#{muted:06x}">{across}</text>"##,
-            r##"<rect x="{margin}" y="508" width="{rule}" height="2" fill="#{raised:06x}"/>"##,
-            "{rows}",
-            r##"<text x="{margin}" y="1210" font-size="30" fill="#{muted:06x}">{foot}</text>"##,
-            r##"<text x="{margin}" y="1278" font-size="34" font-weight="700" "##,
-            r##"fill="#{accent:06x}">Resonate</text>"##,
-            "</svg>"
-        ),
-        width = CARD_WIDTH,
-        height = CARD_HEIGHT,
-        margin = CARD_MARGIN,
-        rule = CARD_WIDTH - 2 * CARD_MARGIN,
-        family = family,
-        ground = colours.ground,
-        accent = colours.accent,
-        raised = colours.raised,
-        text = colours.text,
-        muted = colours.muted,
-        eyebrow = eyebrow,
-        listened = listened,
-        across = across,
-        rows = rows,
-        foot = escaped(&foot),
-    )
+    markup::card(&said, colours)
 }
 
 pub(crate) fn pictured(review: &YearReview, colours: &CardColours) -> Result<Vec<u8>, CardRefused> {
@@ -152,10 +112,13 @@ fn rows_of(review: &YearReview) -> Vec<(&'static str, String)> {
     };
 
     [
-        ("Top song", named(&review.top_songs)),
-        ("Top artist", named(&review.top_artists)),
-        ("Top album", named(&review.top_albums)),
-        ("Top genre", named(&review.top_genres)),
+        (words::wrapped_card::top_song(), named(&review.top_songs)),
+        (
+            words::wrapped_card::top_artist(),
+            named(&review.top_artists),
+        ),
+        (words::wrapped_card::top_album(), named(&review.top_albums)),
+        (words::wrapped_card::top_genre(), named(&review.top_genres)),
     ]
     .into_iter()
     .filter_map(|(label, name)| name.map(|name| (label, name)))

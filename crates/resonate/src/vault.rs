@@ -7,7 +7,7 @@ use resonate_library::{
 
 use crate::{
     Error, Result, cli::VaultArgs, finished, info::bytes_text, none_failed, table::Table,
-    until_told,
+    until_told, words,
 };
 
 const WRITES_SHOWN: usize = 20;
@@ -38,21 +38,19 @@ fn release(library: &Library, args: &VaultArgs) -> Result<()> {
     } else {
         library.vault_release_foretold(&roots)?
     };
-    let verb = if args.apply {
-        "released"
-    } else {
-        "would release"
-    };
     said!(
-        "{verb} {} | kept {} the vault holds the only copy of",
-        released.released,
-        released.stranded
+        "{}",
+        if args.apply {
+            words::vault::released(released.released, released.stranded)
+        } else {
+            words::vault::would_release(released.released, released.stranded)
+        }
     );
     if !args.apply && released.released > 0 {
-        said!("nothing was released; --apply makes it so");
+        said!("{}", words::vault::nothing_released());
     }
     if args.apply && released.released > 0 {
-        said!("resonate vault --prune takes away what nothing names any more");
+        said!("{}", words::vault::prune_after());
     }
     Ok(())
 }
@@ -63,18 +61,34 @@ fn compact(library: &Library, apply: bool) -> Result<()> {
     } else {
         library.vault_covers_compaction_foretold()?
     };
-    let verb = if apply { "" } else { "would swap " };
+    let now = bytes_text(compacted.now);
+    let saved = bytes_text(compacted.was.saturating_sub(compacted.now));
+    let was = bytes_text(compacted.was);
+
     said!(
-        "{verb}covers {} | were {} | now {} | saved {} | left as JPEGs {} | failed {}",
-        compacted.covers,
-        bytes_text(compacted.was),
-        bytes_text(compacted.now),
-        bytes_text(compacted.was.saturating_sub(compacted.now)),
-        compacted.kept,
-        compacted.left
+        "{}",
+        if apply {
+            words::vault::compacted(
+                compacted.covers,
+                compacted.kept,
+                compacted.left,
+                now,
+                saved,
+                was,
+            )
+        } else {
+            words::vault::would_compact(
+                compacted.covers,
+                compacted.kept,
+                compacted.left,
+                now,
+                saved,
+                was,
+            )
+        }
     );
     if !apply && compacted.covers > 0 {
-        said!("nothing was swapped; --apply makes it so");
+        said!("{}", words::vault::nothing_swapped());
     }
     Ok(())
 }
@@ -83,14 +97,20 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     let held = library.holdings()?;
     let objects = library.vault_objects()?;
 
-    said!("root {}", vault.root().display());
+    said!("{}", words::vault::root(vault.root().display().to_string()));
 
     if objects.is_empty() {
-        said!("the vault holds nothing yet; resonate vault --import says what it would take");
+        said!("{}", words::vault::holds_nothing());
         return Ok(());
     }
 
-    let mut table = Table::new(vec!["FORM", "OBJECTS", "HELD", "SOURCES", "SAVED"]);
+    let mut table = Table::new(vec![
+        words::vault::form(),
+        words::vault::objects(),
+        words::vault::held(),
+        words::vault::sources(),
+        words::vault::saved(),
+    ]);
     for form in Form::ALL {
         let of_this_form: Vec<&VaultObject> =
             objects.iter().filter(|held| held.form == form).collect();
@@ -115,16 +135,18 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
     let loose = library.vault_objects_nothing_names()?.len();
 
     said!(
-        "objects {} | held {} | sources {} | saved {} | covers {} | pictures {}",
-        held.objects,
-        bytes_text(bytes),
-        bytes_text(was),
-        bytes_text(was.saturating_sub(bytes)),
-        held.covers,
-        bytes_text(held.cover_bytes)
+        "{}",
+        words::vault::holdings(
+            held.covers,
+            bytes_text(bytes),
+            held.objects,
+            bytes_text(held.cover_bytes),
+            bytes_text(was.saturating_sub(bytes)),
+            bytes_text(was),
+        )
     );
     if unvalidated > 0 || loose > 0 {
-        said!("unvalidated {unvalidated} | named by nothing {loose}");
+        said!("{}", words::vault::unvalidated(loose, unvalidated));
     }
     Ok(())
 }
@@ -153,7 +175,7 @@ fn import(library: &Library, args: &VaultArgs) -> Result<()> {
 
 fn kept_as(wanted: &Wanted) -> String {
     if wanted.renewing {
-        format!("{}, weighed again", wanted.form.as_str())
+        words::vault::weighed_again(wanted.form.as_str())
     } else {
         wanted.form.as_str().to_owned()
     }
@@ -166,14 +188,19 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
 
     if apply {
         if !plan.vaulted.is_empty() {
-            let mut table = Table::new(vec!["FILE", "FORM", "WAS", "NOW"]);
+            let mut table = Table::new(vec![
+                words::vault::file(),
+                words::vault::form(),
+                words::vault::was(),
+                words::vault::now(),
+            ]);
             for held in plan.vaulted.iter().take(WRITES_SHOWN) {
                 table.push(vec![
                     named(&held.wanted.from),
                     held.wanted.form.as_str().to_owned(),
                     bytes_text(held.wanted.bytes),
                     if held.deduped {
-                        "already held".to_owned()
+                        words::vault::already_held().to_owned()
                     } else {
                         bytes_text(held.bytes)
                     },
@@ -181,13 +208,19 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
             }
             told.push_str(&table.render());
             if plan.vaulted.len() > WRITES_SHOWN {
-                told.push_str(&format!("and {} more\n", plan.vaulted.len() - WRITES_SHOWN));
+                told.push_str(&words::vault::more(plan.vaulted.len() - WRITES_SHOWN));
+                told.push('\n');
             }
         }
     } else if plan.wanted.is_empty() {
-        return "nothing to import\n".to_owned();
+        return format!("{}\n", words::vault::nothing_to_import());
     } else {
-        let mut table = Table::new(vec!["FILE", "CODEC", "SIZE", "WOULD BE KEPT AS"]);
+        let mut table = Table::new(vec![
+            words::vault::file(),
+            words::vault::codec(),
+            words::vault::size(),
+            words::vault::would_be_kept_as(),
+        ]);
         for wanted in plan.wanted.iter().take(WRITES_SHOWN) {
             table.push(vec![
                 named(&wanted.from),
@@ -198,43 +231,40 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
         }
         told.push_str(&table.render());
         if plan.wanted.len() > WRITES_SHOWN {
-            told.push_str(&format!("and {} more\n", plan.wanted.len() - WRITES_SHOWN));
+            told.push_str(&words::vault::more(plan.wanted.len() - WRITES_SHOWN));
+            told.push('\n');
         }
     }
 
     for passed in &plan.passed {
-        told.push_str(&format!(
-            "passed over {}: it {}\n",
+        told.push_str(&words::vault::passed_over(
             named(&passed.from),
-            passed.why.as_str()
+            passed.why.as_str(),
         ));
+        told.push('\n');
     }
 
     if apply {
-        told.push_str(&format!(
-            "kept {} | already held {} | covers {} | passed over {} | sources {} | held {} | \
-             saved {}\n",
-            stats.vaulted,
-            stats.deduped,
+        told.push_str(&words::vault::imported(
             stats.covers,
-            stats.passed,
-            bytes_text(stats.was_bytes),
+            stats.deduped,
             bytes_text(stats.bytes),
-            bytes_text(stats.saved())
+            stats.vaulted,
+            stats.passed,
+            bytes_text(stats.saved()),
+            bytes_text(stats.was_bytes),
         ));
+        told.push('\n');
         if stats.covers_passed > 0 {
-            told.push_str(&format!(
-                "covers the vault could not keep {}\n",
-                stats.covers_passed
-            ));
+            told.push_str(&words::vault::covers_not_kept(stats.covers_passed));
+            told.push('\n');
         }
     } else {
         let renewing = plan.wanted.iter().filter(|wanted| wanted.renewing).count();
-        told.push_str(&format!(
-            "would keep {} | of them weighed again under this build's encoder {renewing}\n",
-            stats.walked
-        ));
-        told.push_str("nothing was written; pass --apply to do it\n");
+        told.push_str(&words::vault::would_keep(renewing, stats.walked));
+        told.push('\n');
+        told.push_str(words::vault::nothing_written());
+        told.push('\n');
     }
     told
 }
@@ -243,7 +273,7 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
     let objects = library.vault_objects()?;
     let covers = vault.covers()?;
     if objects.is_empty() && covers.is_empty() {
-        said!("the vault holds nothing to weigh");
+        said!("{}", words::vault::nothing_to_weigh());
         return Ok(());
     }
 
@@ -302,22 +332,28 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
     }
 
     for (_, path) in moved.iter().chain(&covers_moved) {
-        said!("did not read back as what went in: {}", path.display());
+        said!(
+            "{}",
+            words::vault::did_not_read_back(path.display().to_string())
+        );
     }
     for (path, error) in &unreached {
         said!(
-            "could not be read, so it was not weighed: {} ({error})",
-            path.display()
+            "{}",
+            words::vault::not_weighed(error.to_string(), path.display().to_string())
         );
     }
     said!(
-        "weighed {} | held {held} | moved {} | covers weighed {} | covers held {covers_held} | \
-         covers moved {} | unreached {}",
-        objects.len(),
-        moved.len(),
-        covers.len(),
-        covers_moved.len(),
-        unreached.len()
+        "{}",
+        words::vault::weighed(
+            covers.len(),
+            covers_held,
+            covers_moved.len(),
+            held,
+            moved.len(),
+            unreached.len(),
+            objects.len(),
+        )
     );
 
     reframed(vault, &unframed, mending)?;
@@ -329,10 +365,8 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
         let covers: Vec<_> = covers_moved.iter().map(|(key, _)| *key).collect();
         let let_go = library.let_go_of_vault_covers(&covers)?;
         said!(
-            "mended: tracks pointed back at their own files {} | tracks the vault holds the only \
-             copy of {} | albums letting go of a cover {let_go}",
-            released.released,
-            released.stranded
+            "{}",
+            words::vault::mended(let_go, released.released, released.stranded)
         );
         return match unreached.len() as u64 {
             0 => Ok(()),
@@ -343,9 +377,7 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
         };
     }
     if failing > 0 {
-        said!(
-            "nothing was mended; --apply points each track back at its own file and lets the covers go"
-        );
+        said!("{}", words::vault::nothing_mended());
     }
     match (failing as u64, unreached.len() as u64) {
         (0, 0) => Ok(()),
@@ -358,11 +390,7 @@ fn reframed(vault: &Vault, unframed: &[PathBuf], mending: bool) -> Result<()> {
         return Ok(());
     }
     if !mending {
-        said!(
-            "packed as one frame by an earlier build, so a seek back in one starts it over: {}; \
-             --apply repacks them in frames",
-            unframed.len()
-        );
+        said!("{}", words::vault::unframed(unframed.len()));
         return Ok(());
     }
 
@@ -371,13 +399,13 @@ fn reframed(vault: &Vault, unframed: &[PathBuf], mending: bool) -> Result<()> {
         match vault.reframe(path)? {
             Reframing::Reframed => repacked += 1,
             Reframing::AlreadyFramed => {}
-            Reframing::NotHeld => said!("did not repack as what went in: {}", path.display()),
+            Reframing::NotHeld => said!(
+                "{}",
+                words::vault::did_not_repack(path.display().to_string())
+            ),
         }
     }
-    said!(
-        "repacked in frames {repacked} of the {} packed as one frame",
-        unframed.len()
-    );
+    said!("{}", words::vault::repacked(repacked, unframed.len()));
     Ok(())
 }
 
@@ -387,16 +415,16 @@ fn prune(library: &Library, args: &VaultArgs) -> Result<()> {
     } else {
         library.vault_prune_foretold()?
     };
-    let verb = if args.apply { "" } else { "would take " };
     said!(
-        "{verb}objects {} | covers {} | staged {} | left {}",
-        pruned.objects,
-        pruned.covers,
-        pruned.staged,
-        pruned.left
+        "{}",
+        if args.apply {
+            words::vault::pruned(pruned.covers, pruned.left, pruned.objects, pruned.staged)
+        } else {
+            words::vault::would_prune(pruned.covers, pruned.left, pruned.objects, pruned.staged)
+        }
     );
     if !args.apply && pruned.objects + pruned.covers + pruned.staged > 0 {
-        said!("nothing was taken away; --apply makes it so");
+        said!("{}", words::vault::nothing_taken());
     }
     Ok(())
 }

@@ -1,3 +1,5 @@
+use crate::words;
+
 const SCHEME_END: &str = "://";
 const SCHEMES: [&str; 2] = ["https", "http"];
 const BARE_WWW: &str = "www.";
@@ -138,7 +140,7 @@ impl Service {
         }
     }
 
-    pub const fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
             Self::Spotify => "Spotify",
             Self::Tidal => "Tidal",
@@ -161,7 +163,7 @@ impl Service {
             Self::Facebook => "Facebook",
             Self::Instagram => "Instagram",
             Self::Twitter => "X",
-            Self::Other => "elsewhere",
+            Self::Other => words::link::elsewhere(),
         }
     }
 

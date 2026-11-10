@@ -40,10 +40,6 @@ pub(crate) use crate::views::{
         lastfm::{LastfmAccount, LastfmSigning},
         spotify::SpotifyState,
         subsonic::{Account, Service},
-        sync::{
-            SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
-            SYNC_SERVER_PLACEHOLDER,
-        },
         tidal::{SigningIn, TidalAccount},
         youtube_music::{CheckingYoutubeMusic, SigningInToYoutubeMusic, YoutubeMusicField},
     },
@@ -57,7 +53,7 @@ use crate::{
         field::Field,
         focus::{self, by_the_pointer},
         hint::{self, Names},
-        kit::{self, Press, Tone},
+        kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::RootView,
         scrollbar::Scrollbars,
         settings::{
@@ -66,29 +62,10 @@ use crate::{
         },
         spoken::{self, Spoken},
     },
+    words,
 };
 
-const CATEGORIES: &str = "Settings categories";
-
-const BACK_HINT: &str = keyed!("Back to the rest of this category", key!(leave));
-
-const CLEAR_THE_FILTER_HINT: &str = "Clear what is typed";
-
-pub(crate) const FILTER_PLACEHOLDER: &str = "Find a setting…";
-
-const REVERT_HINT: &str = "Put this back to what Resonate was built with, and take the key out of \
-                           the settings file";
-
-const EXPERIMENTAL: &str = "Experimental";
-
-const RESET_HINT: &str = "Put every setting in this category back to what Resonate was built with";
-
-const NOTHING_FOUND: &str = "No setting answers to that.";
-
 type Place = (Category, Option<Page>);
-
-const NOTHING_FOUND_MORE: &str = "A setting is found by its name, by the words its hint uses, or \
-                                  by what other players call it.";
 
 trait Choice: Copy + PartialEq + 'static {
     const ALL: &'static [Self];
@@ -110,9 +87,8 @@ fn said_under<T: Choice>(held: T) -> SharedString {
     if T::ALL.contains(&held) {
         held.meaning()
     } else {
-        SharedString::from(format!(
-            "{} is in force, which is none of these.",
-            held.in_force()
+        SharedString::from(words::settings_pane::in_force_but_none_of_these(
+            held.in_force().to_string(),
         ))
     }
 }
@@ -179,12 +155,8 @@ impl RootView {
         let found = narrowing.anywhere().count();
         let (title, about) = match (narrowing.narrows(), page) {
             (true, _) => (
-                SharedString::new_static("Found"),
-                SharedString::from(match found {
-                    0 => "No setting anywhere answers to that".to_owned(),
-                    1 => "One setting, wherever it is kept".to_owned(),
-                    many => format!("{many} settings, wherever they are kept"),
-                }),
+                SharedString::new_static(words::settings_pane::found()),
+                SharedString::from(words::settings_pane::settings_found(found)),
             ),
             (false, Some(page)) => (
                 SharedString::new_static(page.title()),
@@ -199,7 +171,11 @@ impl RootView {
             Some(_) => self
                 .in_the_ring(
                     "settings-way-back",
-                    kit::way_back("settings-way-back", category.label(), BACK_HINT),
+                    kit::way_back(
+                        "settings-way-back",
+                        category.label(),
+                        words::settings_pane::back_hint(key!(leave)),
+                    ),
                     |this, window, cx| {
                         this.leave_the_settings_page(cx);
                         window.focus(&this.focus, cx);
@@ -207,7 +183,7 @@ impl RootView {
                     cx,
                 )
                 .into_any_element(),
-            None => kit::eyebrow("Settings").into_any_element(),
+            None => kit::eyebrow(words::settings_pane::settings()).into_any_element(),
         };
 
         kit::heading().child(
@@ -260,7 +236,7 @@ impl RootView {
     fn clear_filter(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let clear = div()
             .id("clear-the-filter")
-            .said_as(Role::Button, CLEAR_THE_FILTER_HINT)
+            .said_as(Role::Button, words::settings_pane::clear_the_filter_hint())
             .group("clear-filter")
             .flex()
             .flex_none()
@@ -270,7 +246,7 @@ impl RootView {
             .rounded_full()
             .cursor_pointer()
             .hover(|mark| mark.bg(rgb(theme::hover())))
-            .names(CLEAR_THE_FILTER_HINT)
+            .names(words::settings_pane::clear_the_filter_hint())
             .child(icons::lit_on_hover(
                 icons::icon(Icon::Close, theme::filter_clear_mark(), theme::muted()),
                 "clear-filter",
@@ -292,7 +268,7 @@ impl RootView {
         let chosen = self.settings_category;
         let mut rail = div()
             .id("settings-categories")
-            .named_as(Role::TabList, CATEGORIES, "")
+            .named_as(Role::TabList, words::settings_pane::categories(), "")
             .flex()
             .flex_col()
             .flex_none()
@@ -327,9 +303,9 @@ impl RootView {
                         .flex()
                         .items_center()
                         .gap_2p5()
+                        .h(px(theme::sidebar_row()))
                         .px_3()
-                        .py_2()
-                        .rounded_lg()
+                        .rounded_md()
                         .text_size(px(theme::text_sm()))
                         .whitespace_nowrap()
                         .cursor_pointer()
@@ -337,7 +313,7 @@ impl RootView {
                         .text_color(rgb(ink))
                         .child(motion::shown_while(
                             focus::beneath_the_ring(div())
-                                .rounded_lg()
+                                .rounded_md()
                                 .bg(rgb(theme::hover())),
                             "chosen",
                             selected,
@@ -349,7 +325,14 @@ impl RootView {
                         )
                         .names(category.about())
                         .child(icons::icon(category.icon(), theme::root_icon(), ink))
-                        .child(div().flex_1().min_w(px(0.0)).child(category.label()))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .truncate()
+                                .ends_in_an_ellipsis()
+                                .child(category.label()),
+                        )
                         .when_some(found, |row, found| {
                             row.child(kit::figure(found.to_string()).text_color(rgb(
                                 if found == 0 {
@@ -394,25 +377,11 @@ impl RootView {
                 }
             }
             if places.is_empty() {
-                column = column.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .py_8()
-                        .child(
-                            div()
-                                .text_size(px(theme::text_base()))
-                                .text_color(rgb(theme::muted()))
-                                .child(NOTHING_FOUND),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(theme::text_sm()))
-                                .text_color(rgb(theme::faint()))
-                                .child(NOTHING_FOUND_MORE),
-                        ),
-                );
+                column = column.child(kit::empty(
+                    Icon::Search,
+                    words::settings_pane::nothing_found(),
+                    Some(words::settings_pane::nothing_found_more()),
+                ));
             }
             for ((category, page), groups) in places {
                 let mut place = div()
@@ -500,7 +469,7 @@ impl RootView {
             kit::place_link(
                 SharedString::from(id),
                 label.clone(),
-                format!("Open {label}, where these settings are kept"),
+                words::settings_pane::open_the_place(&label),
             ),
             move |this, window, cx| {
                 this.open_the_place(category, page, cx);
@@ -639,6 +608,7 @@ impl RootView {
             Group::VolumeWheel => self.volume_wheel_group(cx),
             Group::MouseNavigation => self.mouse_navigation_group(cx),
             Group::Scrollbars => self.scrollbars_group(cx),
+            Group::Language => self.language_group(cx),
             Group::LiveSpectrum => self.live_spectrum_group(cx),
             Group::Tabs => self.tabs_group(cx),
             Group::WindowState => self.window_state_group(cx),
@@ -664,7 +634,10 @@ impl RootView {
             kit::group_heading()
                 .child(kit::group_title(group.title()))
                 .when(group.is_experimental(), |heading| {
-                    heading.child(kit::badge(EXPERIMENTAL, theme::lossy()))
+                    heading.child(kit::badge(
+                        words::settings_pane::experimental(),
+                        theme::lossy(),
+                    ))
                 })
                 .when(moved, |heading| heading.child(self.revert(group, cx)))
                 .child(hint::explains(group.title(), group.hint())),
@@ -678,7 +651,7 @@ impl RootView {
             kit::icon_button(
                 SharedString::from(format!("revert-{}", group.title())),
                 Icon::Undo,
-                REVERT_HINT,
+                words::settings_pane::revert_hint(),
             ),
             move |this, _, cx| this.put_back(group, cx),
             cx,
@@ -691,8 +664,8 @@ impl RootView {
             kit::button(
                 "reset-the-category",
                 Some(Icon::Undo),
-                format!("Reset {}", category.label().to_lowercase()),
-                RESET_HINT,
+                words::settings_pane::reset_the_category(category.label().to_lowercase()),
+                words::settings_pane::reset_hint(),
                 Tone::Ghost,
             ),
             move |this, _, cx| {
@@ -809,6 +782,7 @@ impl RootView {
             }
             Group::Motion => self.reduce_motion(defaults::REDUCED_MOTION, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
+            Group::Language => self.speak(defaults::LANGUAGE, cx),
             Group::LiveSpectrum => self.read_the_spectrum(defaults::SPECTRAL, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
             Group::WindowState => self.put_window_state_back(cx),
@@ -854,6 +828,7 @@ impl RootView {
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let reduced_motion = cx.global::<ResonateApp>().reduced_motion;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
+        let language = cx.global::<ResonateApp>().language;
         let spectral = cx.global::<ResonateApp>().spectral;
         let tabs = cx.global::<ResonateApp>().tabs;
         let remember_tab = cx.global::<ResonateApp>().remember_tab;
@@ -958,6 +933,7 @@ impl RootView {
             mouse_navigation,
             reduced_motion,
             scrollbars,
+            language,
             spectral,
             tabs,
             remember_tab,

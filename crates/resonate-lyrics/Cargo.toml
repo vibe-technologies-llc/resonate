@@ -9,6 +9,7 @@ doctest = false
 
 [dependencies]
 resonate-core.workspace = true
+resonate-words.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 roxmltree.workspace = true

@@ -122,7 +122,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   kbps missed five of 36 loud masters there with the cause not found (a power-law lattice per scale
   factor band, each band's scale factor searched, is untried without fdkaac to weigh it on)
 
-## Later: Together
+## Later: Language
+
+- [L] The first language beside English: a `Language` variant, every crate's `words/<tag>/`, Android's `values-<tag>/` and iOS's `<tag>.lproj` (`language.md`).
+- [M] Numbers, dates and month names in the listener's locale: figures are not grouped, and `CivilDate`'s months and the weekdays are English words in a catalog, not the locale's.
+- [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
+- [M] The window speaking a newly chosen language at once, without a restart.
+- [S] The CLI's help, the man pages, the desktop entry and the metainfo in the listener's language; `build.rs` writes them in English at build time.
+
 
 - [M] Chat and reactions in a listening party.
 - [M] Handing the host's role to someone else in a party, when the host must go.

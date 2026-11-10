@@ -11,11 +11,10 @@ use crate::{
     CaptureOp, Clip, Error, Hearing, Listening, Result,
     recording::Recorder,
     session::{HEARD_AT, HEARD_IN, Held, Played, Sitting, finished},
+    words,
 };
 
 const ENUMERATES_WITHIN: Duration = Duration::from_secs(2);
-const STREAM_NAME: &str = "Listening";
-const PLAYING_NAME: &str = "Measuring";
 
 #[derive(Clone, Debug)]
 pub struct Listener {
@@ -79,7 +78,7 @@ impl Listener {
                 spec: StreamSpec::new(HEARD_AT, HEARD_IN, SampleFormat::F32),
                 latency: LatencyRequest::Auto,
                 role: MediaRole::Music,
-                media_name: PLAYING_NAME.to_owned(),
+                media_name: words::listener::measuring().to_owned(),
                 force_graph_rate: false,
                 no_convert: false,
                 realtime: true,
@@ -115,7 +114,7 @@ impl Listener {
                 },
             },
             spec: sitting.spec,
-            media_name: STREAM_NAME.to_owned(),
+            media_name: words::listener::listening().to_owned(),
         };
         let opened = pipewire
             .capture(

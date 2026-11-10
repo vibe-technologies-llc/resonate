@@ -43,7 +43,7 @@ public struct ListeningBar: Identifiable, Equatable, Sendable {
     public func caption(span: UInt32) -> String {
         switch span {
         case 0: starts.formatted(.dateTime.month(.wide).year())
-        case 365: "Week of " + starts.formatted(.dateTime.day().month(.abbreviated))
+        case 365: said("listening.week-of", starts.formatted(.dateTime.day().month(.abbreviated)))
         default: starts.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))
         }
     }

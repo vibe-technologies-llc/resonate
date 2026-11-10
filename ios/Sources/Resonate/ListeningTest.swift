@@ -109,20 +109,20 @@ struct ListeningTestView: View {
                     .accessibilityElement(children: .combine)
                     if !standing.finished {
                         HStack {
-                            Button("Hear A", systemImage: "play.fill") { testing.hear(.a) }
-                            Button("Hear B", systemImage: "play.fill") { testing.hear(.b) }
-                            Button("Hear X", systemImage: "play.fill") { testing.hear(.x) }
+                            Button("listening-test.hear-a", systemImage: "play.fill") { testing.hear(.a) }
+                            Button("listening-test.hear-b", systemImage: "play.fill") { testing.hear(.b) }
+                            Button("listening-test.hear-x", systemImage: "play.fill") { testing.hear(.x) }
                         }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         HStack {
-                            Button("X is A", systemImage: "checkmark") { testing.say(.a) }
-                            Button("X is B", systemImage: "checkmark") { testing.say(.b) }
+                            Button("listening-test.x-is-a", systemImage: "checkmark") { testing.say(.a) }
+                            Button("listening-test.x-is-b", systemImage: "checkmark") { testing.say(.b) }
                         }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                     }
-                    Button(standing.finished ? "Done" : "End the test", systemImage: "stop.fill") { testing.end() }
+                    Button(said(standing.finished ? "common.done" : "listening-test.end"), systemImage: "stop.fill") { testing.end() }
                 } header: {
                     Text(testing.running.label)
                 } footer: {
@@ -131,7 +131,7 @@ struct ListeningTestView: View {
             } else {
                 Section {
                     Picker(
-                        "Test",
+                        "listening-test.test",
                         selection: Binding(
                             get: { testing.testing },
                             set: { testing.choose($0, preferences: library.preferences) }
@@ -142,20 +142,20 @@ struct ListeningTestView: View {
                     .pickerStyle(.segmented)
                     .disabled(testing.beginning)
                 } header: {
-                    Text("What is tested")
+                    Text("listening-test.what-is-tested")
                 } footer: {
                     Text(testing.testing.howItWorks)
                 }
                 if testing.testing != .equaliser, let against = testing.against {
-                    Section("Against") {
+                    Section("listening-test.against") {
                         AgainstPickers(setting: against) { testing.set(against: $0) }
                     }
                     .disabled(testing.beginning)
                 }
-                Section("Trials") {
+                Section("listening-test.trials") {
                     ForEach(testing.lengths, id: \.self) { trials in
                         Button(
-                            testing.beginning ? ListeningTestWords.beginning(testing.testing) : "Begin \(trials) trials",
+                            testing.beginning ? ListeningTestWords.beginning(testing.testing) : said("listening-test.begin", Int(trials)),
                             systemImage: "play.fill"
                         ) { testing.begin(trials, curve: library.preferences?.equaliser ?? .flat) }
                             .disabled(testing.beginning)
@@ -163,7 +163,7 @@ struct ListeningTestView: View {
                 }
             }
         }
-        .navigationTitle("Listening test")
+        .navigationTitle("listening-test.title")
         .onDisappear { testing.end() }
     }
 }
@@ -177,7 +177,7 @@ private struct AgainstPickers: View {
         switch setting {
         case .restoration(let a, let b):
             Picker(
-                "B is",
+                "listening-test.b-is",
                 selection: Binding(get: { b }, set: { choose(.restoration(a: a, b: $0)) })
             ) {
                 ForEach(LossyRestoration.every.filter { $0 != a }, id: \.self) {
@@ -186,7 +186,7 @@ private struct AgainstPickers: View {
             }
         case .resampling(let aQuality, let aPhase, let bQuality, let bPhase):
             Picker(
-                "B's quality",
+                "listening-test.b-quality",
                 selection: Binding(
                     get: { bQuality },
                     set: { choose(.resampling(aQuality: aQuality, aPhase: aPhase, bQuality: $0, bPhase: bPhase)) }
@@ -197,7 +197,7 @@ private struct AgainstPickers: View {
                 }
             }
             Picker(
-                "B's phase",
+                "listening-test.b-phase",
                 selection: Binding(
                     get: { bPhase },
                     set: { choose(.resampling(aQuality: aQuality, aPhase: aPhase, bQuality: bQuality, bPhase: $0)) }
@@ -209,7 +209,7 @@ private struct AgainstPickers: View {
             }
         case .dither(let a, let b):
             Picker(
-                "B is",
+                "listening-test.b-is",
                 selection: Binding(get: { b }, set: { choose(.dither(a: a, b: $0)) })
             ) {
                 ForEach(ListeningTestWords.ditherChoices.filter { $0 != a }, id: \.self) {

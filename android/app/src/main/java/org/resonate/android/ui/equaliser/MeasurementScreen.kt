@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Stop
@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -52,7 +53,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.R
 import org.resonate.android.SweepRecorder
+import org.resonate.android.Words
 import org.resonate.android.nativecore.BuiltInTarget
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.fitMeasurement
@@ -74,10 +77,9 @@ import org.resonate.android.ui.settings.Note
 import org.resonate.android.ui.settings.NoticeCard
 import org.resonate.android.ui.settings.SettingRow
 import org.resonate.android.ui.settings.SettingsList
+import org.resonate.android.words
 
 private const val ANY_DOCUMENT = "*/*"
-
-private const val MEASURED_PROFILE = "Measured"
 
 sealed interface TargetChoice {
     data class BuiltIn(val name: String) : TargetChoice
@@ -85,9 +87,12 @@ sealed interface TargetChoice {
     data object File : TargetChoice
 }
 
-fun targetChoices(targets: List<BuiltInTarget>): List<Choice<TargetChoice?>> =
+fun targetChoices(words: Words, targets: List<BuiltInTarget>): List<Choice<TargetChoice?>> =
     targets.map { Choice<TargetChoice?>(TargetChoice.BuiltIn(it.name), it.label) } +
-        Choice<TargetChoice?>(TargetChoice.File, "A file of your own…")
+        Choice<TargetChoice?>(
+            TargetChoice.File,
+            words.string(R.string.equaliser_measure_own_file),
+        )
 
 fun Aim?.choice(): TargetChoice? =
     when (this) {
@@ -137,7 +142,9 @@ class MeasurementViewModel(private val resonate: Resonate) : ViewModel() {
                         fitMeasurement(read.bytes, aim.target(), profileNameFor(read.name))
                     }
                 commit(fit.imported.curve)
-                measuring.update { it.finished(fitSentence(fit, aim.label(offers.targets))) }
+                measuring.update {
+                    it.finished(fitSentence(library.words, fit, aim.label(offers.targets)))
+                }
             } finally {
                 measuring.update { it.finished(null) }
             }
@@ -182,11 +189,13 @@ class MeasurementViewModel(private val resonate: Resonate) : ViewModel() {
                                 sweep.rate,
                                 view.calibration?.bytes,
                                 aim.target(),
-                                MEASURED_PROFILE,
+                                library.words.string(R.string.equaliser_measured_profile),
                             )
                         }
                     commit(fit.imported.curve)
-                    measuring.update { it.finished(fitSentence(fit, aim.label(offers.targets))) }
+                    measuring.update {
+                        it.finished(fitSentence(library.words, fit, aim.label(offers.targets)))
+                    }
                 } finally {
                     measuring.update { it.finished(null) }
                 }
@@ -225,27 +234,29 @@ fun MeasurementScreen() {
     val offers = view.offers
     val aim = view.aim
     val ready = offers != null && aim != null && !view.fitting
-    Page("Measure with a microphone") { padding ->
+    Page(stringResource(R.string.equaliser_measure)) { padding ->
         SettingsList(padding, Modifier.testTag("measurement-list")) {
             item(key = "target") {
-                SectionHeader("Target")
+                SectionHeader(stringResource(R.string.equaliser_measure_target))
                 SettingRow(
-                    title = "Fit toward",
+                    title = stringResource(R.string.equaliser_measure_fit_toward),
                     icon = Icons.Rounded.TrackChanges,
                     supporting =
-                        if (offers == null) "Reading the targets…"
-                        else aim?.label(offers.targets) ?: "Choose a target",
+                        if (offers == null) {
+                            stringResource(R.string.equaliser_measure_reading_targets)
+                        } else {
+                            aim?.label(offers.targets)
+                                ?: stringResource(R.string.equaliser_measure_choose_target)
+                        },
                     enabled = offers != null && !view.fitting,
                     onClick = { choosing = true },
                     modifier = Modifier.testTag("measurement-target"),
                 )
-                Note(
-                    "The response the fit aims at. A file of your own is read as a measurement is."
-                )
+                Note(stringResource(R.string.equaliser_measure_target_note))
             }
             item(key = "file") {
-                SectionHeader("A measurement file")
-                Note("AutoEq's CSV or REW's exported text. A few bands are fitted to it.")
+                SectionHeader(stringResource(R.string.equaliser_measure_file))
+                Note(stringResource(R.string.equaliser_measure_file_note))
                 ButtonRow(start = true) {
                     FilledTonalButton(
                         onClick = { measurementPicker.launch(arrayOf(ANY_DOCUMENT)) },
@@ -253,20 +264,21 @@ fun MeasurementScreen() {
                         contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                         modifier = Modifier.testTag("measurement-fit"),
                     ) {
-                        Icon(Icons.Rounded.Insights, null, Modifier.size(ButtonDefaults.IconSize))
+                        Icon(Icons.AutoMirrored.Rounded.ShowChart, null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                         Text(
-                            if (view.fitting && !view.sounding) "Fitting…"
-                            else "Fit a measurement…"
+                            stringResource(
+                                if (view.fitting && !view.sounding) {
+                                    R.string.equaliser_measure_fitting
+                                } else R.string.equaliser_measure_fit_file
+                            )
                         )
                     }
                 }
             }
             item(key = "microphone") {
-                SectionHeader("The microphone")
-                Note(
-                    "Plays a sweep through the speaker, pausing the music, and fits what the microphone hears toward the target."
-                )
+                SectionHeader(stringResource(R.string.equaliser_measure_microphone))
+                Note(stringResource(R.string.equaliser_measure_microphone_note))
                 ButtonRow(start = true) {
                     Button(
                         onClick = { model.measure(context) },
@@ -276,7 +288,12 @@ fun MeasurementScreen() {
                     ) {
                         Icon(Icons.Rounded.Mic, null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                        Text(if (view.sounding) "Measuring…" else "Measure")
+                        Text(
+                            stringResource(
+                                if (view.sounding) R.string.equaliser_measure_measuring
+                                else R.string.equaliser_measure_start
+                            )
+                        )
                     }
                     if (view.sounding) {
                         OutlinedButton(
@@ -286,15 +303,17 @@ fun MeasurementScreen() {
                         ) {
                             Icon(Icons.Rounded.Stop, null, Modifier.size(ButtonDefaults.IconSize))
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text("Stop")
+                            Text(stringResource(R.string.equaliser_measure_stop))
                         }
                     }
                 }
                 val calibration = view.calibration
                 SettingRow(
-                    title = "Microphone calibration",
+                    title = stringResource(R.string.equaliser_measure_calibration),
                     icon = Icons.Rounded.Tune,
-                    supporting = calibration?.name ?: "None, so the microphone is taken flat",
+                    supporting =
+                        calibration?.name
+                            ?: stringResource(R.string.equaliser_measure_calibration_none),
                     enabled = offers != null && !view.fitting,
                     onClick = { calibrationPicker.launch(arrayOf(ANY_DOCUMENT)) },
                     trailing =
@@ -305,7 +324,12 @@ fun MeasurementScreen() {
                                     onClick = model::forgetCalibration,
                                     enabled = !view.fitting,
                                 ) {
-                                    Icon(Icons.Rounded.Close, "Forget the calibration")
+                                    Icon(
+                                        Icons.Rounded.Close,
+                                        stringResource(
+                                            R.string.equaliser_measure_calibration_forget
+                                        ),
+                                    )
                                 }
                             }
                         },
@@ -316,8 +340,8 @@ fun MeasurementScreen() {
                 item(key = "denied") {
                     NoticeCard(
                         Icons.Rounded.MicOff,
-                        "Resonate needs the microphone to hear the sweep. Allow it in Settings.",
-                        action = "Open Settings",
+                        stringResource(R.string.equaliser_measure_denied),
+                        action = stringResource(R.string.equaliser_open_settings),
                         onAction = resonate.host::openAppSettings,
                         modifier = Modifier.testTag("measurement-denied"),
                     )
@@ -339,8 +363,8 @@ fun MeasurementScreen() {
     }
     if (choosing && offers != null) {
         ChoiceDialog(
-            title = "Fit toward",
-            choices = targetChoices(offers.targets),
+            title = stringResource(R.string.equaliser_measure_fit_toward),
+            choices = targetChoices(words(), offers.targets),
             selected = aim.choice(),
             onChoose = { chosen ->
                 when (chosen) {

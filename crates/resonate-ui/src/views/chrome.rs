@@ -2,8 +2,9 @@ use std::cell::Cell;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Role, Size, Stateful,
-    Svg, Tiling, Window, WindowControlArea, canvas, div, point, prelude::*, px, rgb,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Role, SharedString,
+    Size, Stateful, Svg, Tiling, Window, WindowControlArea, canvas, div, point, prelude::*, px,
+    rgb,
 };
 
 use crate::{
@@ -11,6 +12,7 @@ use crate::{
     icons::{self, Icon},
     theme,
     views::{hint::Names, spoken::Spoken},
+    words,
 };
 
 const SHADOW_ALPHA: f32 = 0.45;
@@ -57,12 +59,12 @@ impl Control {
         }
     }
 
-    const fn saying(self) -> &'static str {
+    fn saying(self) -> SharedString {
         match self {
-            Self::Minimise => "Minimise the window",
-            Self::Maximise => "Fill the screen",
-            Self::Restore => "Back to the window's own size",
-            Self::Close => keyed!("Close Resonate", key!(quit)),
+            Self::Minimise => words::chrome::minimise_the_window().into(),
+            Self::Maximise => words::chrome::fill_the_screen().into(),
+            Self::Restore => words::chrome::back_to_the_window_size().into(),
+            Self::Close => words::chrome::close_resonate(key!(quit)).into(),
         }
     }
 
@@ -128,7 +130,7 @@ fn window_control(control: Control) -> Stateful<Div> {
         .rounded_md()
         .cursor_pointer()
         .hover(|button| button.bg(rgb(control.hover())))
-        .said_as(Role::Button, control.saying())
+        .said_as(Role::Button, &control.saying())
         .names(control.saying())
         .when(THE_SYSTEM_PRESSES_THE_CAPTION, |button| {
             button.occlude().window_control_area(control.area())

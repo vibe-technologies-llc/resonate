@@ -7,11 +7,19 @@ extension Track {
 }
 
 enum Grouping: String, CaseIterable, Identifiable {
-    case songs = "Songs"
-    case albums = "Albums"
-    case artists = "Artists"
+    case songs
+    case albums
+    case artists
 
     var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .songs: said("library.songs")
+        case .albums: said("library.albums")
+        case .artists: said("library.artists")
+        }
+    }
 }
 
 struct SongsView: View {
@@ -36,14 +44,14 @@ struct SongsView: View {
                     .id(SongsList.browsed)
             }
         }
-        .searchable(text: $search.text, prompt: "Search your music")
+        .searchable(text: $search.text, prompt: "songs.search.prompt")
         .searchScopes($scope, activation: .onSearchPresentation) {
-            ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
+            ForEach(SearchScope.allCases) { Text($0.label).tag($0) }
         }
         .searchSuggestions { SearchSuggestions(search: search) }
         .onSubmit(of: .search) { search.remember() }
         .onAppear { search.recallRecents() }
-        .navigationTitle("Songs")
+        .navigationTitle("library.songs")
         .toolbar {
             if grouping == .songs, !search.isAsked {
                 ToolbarItem(placement: .topBarTrailing) { FilterButton() }
@@ -57,8 +65,8 @@ struct SongsView: View {
         @Bindable var navigation = navigation
         return List {
             Section {
-                Picker("Show", selection: $navigation.songsGrouping) {
-                    ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
+                Picker("songs.show", selection: $navigation.songsGrouping) {
+                    ForEach(Grouping.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -107,11 +115,11 @@ struct BrowsedSongs: View {
         let tracks = library.tracks
         if library.tracksRead, tracks.isEmpty, library.filtering {
             ContentUnavailableView {
-                Label("No songs match these filters", systemImage: "line.3.horizontal.decrease.circle")
+                Label("songs.filtered.none", systemImage: "line.3.horizontal.decrease.circle")
             } description: {
-                Text("Change or reset the filters to see the rest of your library.")
+                Text("songs.filtered.none.detail")
             } actions: {
-                Button("Reset filters") { library.setFilter(Library.everything) }
+                Button("songs.filtered.reset") { library.setFilter(Library.everything) }
                     .buttonStyle(.glass)
             }
             .listRowSeparator(.hidden)
@@ -186,14 +194,14 @@ struct CollectionOrderPicker: View {
     let grouping: Grouping
 
     var body: some View {
-        Picker("Sort by", selection: $order) {
-            Text("Name").tag(CollectionOrder.alphabetical)
+        Picker("filter.sort-by", selection: $order) {
+            Text("collections.order.name").tag(CollectionOrder.alphabetical)
             if grouping == .albums {
-                Text("Artist").tag(CollectionOrder.artist)
-                Text("Year").tag(CollectionOrder.year)
+                Text("collections.order.artist").tag(CollectionOrder.artist)
+                Text("collections.order.year").tag(CollectionOrder.year)
             }
-            Text("Recently added").tag(CollectionOrder.added)
-            Text("Most played").tag(CollectionOrder.plays)
+            Text("collections.order.added").tag(CollectionOrder.added)
+            Text("collections.order.plays").tag(CollectionOrder.plays)
         }
         .pickerStyle(.menu)
     }
@@ -214,8 +222,8 @@ struct FilterChips: View {
                         }
                         .buttonStyle(.borderless)
                         .touchTarget()
-                        .accessibilityLabel("Remove filter \(chip.label)")
-                        .accessibilityInputLabels([chip.label, "Remove \(chip.label)"])
+                        .accessibilityLabel(said("filter.chip.remove", chip.label))
+                        .accessibilityInputLabels([chip.label, said("filter.chip.remove.spoken", chip.label)])
                     }
                 }
                 .padding(.horizontal, 16)
@@ -252,29 +260,30 @@ struct FilterButton: View {
 
     var body: some View {
         let filtering = library.filtering
-        Button("Filter and sort", systemImage: filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") {
+        Button("filter.title", systemImage: filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") {
             navigation.filters = true
         }
-        .accessibilityValue(filtering ? "On" : "Off")
+        .accessibilityValue(said(filtering ? "common.on" : "common.off"))
     }
 }
 
 struct EmptyLibrary: View {
-    @ScaledMetric(relativeTo: .largeTitle) private var glyph: CGFloat = 56
+    @ScaledMetric(relativeTo: .largeTitle) private var mark: CGFloat = 72
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "music.note.house")
-                .font(.system(size: glyph))
-                .foregroundStyle(.tint)
+        VStack(spacing: 12) {
+            ResonateMark()
+                .fill(.tint)
+                .frame(width: mark, height: mark)
                 .accessibilityHidden(true)
-            Text("Your music, in its own detail").font(.title2.weight(.semibold))
-            Text("Choose a music folder to build your library, or put songs in Resonate's folder in the Files app. Your files stay where they are.")
+            Text("songs.empty.title").font(.title2.weight(.semibold))
+            Text("songs.empty.detail")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            Button("Choose music folder") { navigation.choosingFolder = true }
+            Button("songs.empty.choose-folder") { navigation.choosingFolder = true }
                 .buttonStyle(.glassProminent)
+                .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
         .padding(32)
@@ -387,19 +396,19 @@ struct TrackRow: View {
             FavouriteButton(track: track)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+            Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                 navigation.feelQueued()
                 library.playNext([track])
             }
             .tint(.indigo)
-            Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+            Button("song.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                 navigation.feelQueued()
                 library.addToQueue([track])
             }
             .tint(.orange)
         }
         .modifier(StandardTrackMenus(track: track, enabled: ownsMenus))
-        .accessibilityAction(named: "Song details") { navigation.open(.inspector(track)) }
+        .accessibilityAction(named: "song.details") { navigation.open(.inspector(track)) }
     }
 
     private var title: AttributedString {
@@ -464,7 +473,7 @@ struct PlayableTrack: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityValue(playingHere ? "Now playing" : "")
+        .accessibilityValue(playingHere ? said("song.now-playing") : "")
     }
 
     @ViewBuilder
@@ -473,6 +482,7 @@ struct PlayableTrack: View {
             ZStack {
                 if playingHere {
                     NowPlayingIndicator()
+                        .foregroundStyle(.tint)
                 } else {
                     Text("\(numbered)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -504,11 +514,11 @@ struct StandardTrackMenus: ViewModifier {
             let favourite = library.isFavourite(track)
             content
                 .swipeActions(edge: .trailing) {
-                    Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                    Button(said(favourite ? "song.favourite.remove" : "song.favourite.add"), systemImage: favourite ? "heart.slash" : "heart") {
                         library.setFavourite(track, !favourite)
                     }
                     .tint(.pink)
-                    Button("Add to playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
+                    Button("song.add-to-playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
                         .tint(.blue)
                 }
                 .contextMenu { TrackMenu(track: track) }
@@ -519,15 +529,50 @@ struct StandardTrackMenus: ViewModifier {
 }
 
 struct NowPlayingIndicator: View {
+    private static let heardEverySeconds = 0.05
+    private static let barWidthShare: CGFloat = 0.2
+    private static let gapShare: CGFloat = 0.14
+    private static let settlesOver = 0.3
+
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
+    @ScaledMetric(relativeTo: .callout) private var height: CGFloat = 14
+    @State private var bars = PlayingBars()
 
     var body: some View {
-        Image(systemName: "waveform")
-            .font(.callout.weight(.semibold))
-            .foregroundStyle(.tint)
-            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: library.transport == .playing && !reduceMotion)
-            .accessibilityHidden(true)
+        let barWidth = height * Self.barWidthShare
+        HStack(alignment: .bottom, spacing: height * Self.gapShare) {
+            ForEach(bars.heights.indices, id: \.self) { index in
+                Capsule()
+                    .frame(width: barWidth, height: max(height * CGFloat(bars.heights[index]), barWidth))
+            }
+        }
+        .frame(height: height, alignment: .bottom)
+        .animation(motion, value: bars)
+        .accessibilityHidden(true)
+        .task(id: following) {
+            guard following else {
+                bars.rest()
+                return
+            }
+            let features = library.features
+            features.hearLoudness(true)
+            defer { features.hearLoudness(false) }
+            while !Task.isCancelled {
+                bars.hear(features.heardLevel.bands)
+                try? await Task.sleep(for: .seconds(Self.heardEverySeconds))
+            }
+        }
+    }
+
+    private var following: Bool {
+        phase == .active && library.transport == .playing && !reduceMotion
+    }
+
+    private var motion: Animation? {
+        guard !reduceMotion else { return nil }
+        return following ? .linear(duration: Self.heardEverySeconds) : .smooth(duration: Self.settlesOver)
     }
 }
 
@@ -539,20 +584,20 @@ struct TrackMenu: View {
     var body: some View {
         let favourite = library.isFavourite(track)
         Section {
-            Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+            Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                 navigation.feelQueued()
                 library.playNext([track])
             }
-            Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+            Button("song.add-to-queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
                 navigation.feelQueued()
                 library.addToQueue([track])
             }
         }
         Section {
-            Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+            Button(said(favourite ? "song.favourite.remove" : "song.favourite.add"), systemImage: favourite ? "heart.slash" : "heart") {
                 library.setFavourite(track, !favourite)
             }
-            Button("Add to playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
+            Button("song.add-to-playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
         }
         Section {
             SongPages(track: track)
@@ -573,21 +618,21 @@ struct SongPages: View {
 
     @ViewBuilder
     private var pages: some View {
-        Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
+        Button("song.details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
         ShareSongButton(track: track)
         if library.features.tagsWritable(track) {
-            Button("Edit tags", systemImage: "pencil") { navigation.editTags([track]) }
+            Button("song.edit-tags", systemImage: "pencil") { navigation.editTags([track]) }
         }
-        Button("Lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
-        Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
+        Button("tools.lyrics", systemImage: "quote.bubble") { navigation.open(.lyrics(track)) }
+        Button("song.analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
         if let albumPage = track.albumPage {
-            Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
+            Button("song.go-to-album", systemImage: "square.stack") { navigation.open(albumPage) }
         }
         if !track.artist.isEmpty {
-            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
+            Button("song.go-to-artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
         }
         if library.features.songDeletable(track) {
-            Button("Delete song", systemImage: "trash", role: .destructive) {
+            Button("song.delete", systemImage: "trash", role: .destructive) {
                 navigation.deleting = SongsToDelete(tracks: [track])
             }
         }

@@ -13,7 +13,7 @@ struct SyncView: View {
         ThemedForm {
             if let config = features.syncConfig {
                 Section {
-                    Toggle("Sync this iPhone", isOn: Binding(
+                    Toggle("sync.enabled", isOn: Binding(
                         get: { config.enabled },
                         set: { enabled in
                             guard var next = library.features.syncConfig else { return }
@@ -22,13 +22,13 @@ struct SyncView: View {
                         }
                     ))
                 } footer: {
-                    Text("Playlists, favourites, history and what's playing follow you between your devices, sealed with your pairing code.")
+                    Text("sync.enabled.footer")
                 }
                 if config.enabled {
                     SyncStatusSection()
                     SyncDevices(pairing: $pairing)
                     if !features.syncHandoffs.isEmpty {
-                        Section("Continue listening") {
+                        Section("sync.continue-listening") {
                             HandoffRows()
                         }
                     }
@@ -39,12 +39,12 @@ struct SyncView: View {
                             waiting: status.waiting
                         )
                     }
-                    Section("Options") {
+                    Section("sync.options") {
                         NavigationLink(value: Destination.syncSongs) {
-                            ToolRow(title: "Songs", detail: Self.songs(config), symbol: SettingsPlace.syncSongs.symbol)
+                            ToolRow(title: said("sync.options.songs"), detail: Self.songs(config), symbol: SettingsPlace.syncSongs.symbol)
                         }
                         NavigationLink(value: Destination.syncConnection) {
-                            ToolRow(title: "Connection", detail: Self.connection(config), symbol: SettingsPlace.syncConnection.symbol)
+                            ToolRow(title: said("sync.options.connection"), detail: Self.connection(config), symbol: SettingsPlace.syncConnection.symbol)
                         }
                         NavigationLink(value: Destination.syncControl) {
                             let offered = SyncControlsOffered.shown
@@ -58,14 +58,14 @@ struct SyncView: View {
                 }
             } else {
                 Section {
-                    Label("Sync settings could not be read", systemImage: "exclamationmark.triangle")
-                    Button("Try again", systemImage: "arrow.clockwise") { features.readSecretsAgain() }
+                    Label("sync.unread", systemImage: "exclamationmark.triangle")
+                    Button("common.try-again", systemImage: "arrow.clockwise") { features.readSecretsAgain() }
                 } footer: {
-                    Text("The keychain was locked when Resonate started. Unlock your iPhone and try again.")
+                    Text("sync.unread.footer")
                 }
             }
         }
-        .navigationTitle("Device sync")
+        .navigationTitle("sync.title")
         .sheet(isPresented: $pairing) {
             PairingSheet().sheetSized()
         }
@@ -73,16 +73,16 @@ struct SyncView: View {
     }
 
     private static func songs(_ config: SyncConfig) -> String {
-        if config.everything { return "Everything" }
-        let kinds = [config.favourites ? "Favourites" : nil, config.playlists ? "Kept playlists" : nil].compactMap { $0 }
-        return kinds.isEmpty ? "When asked" : kinds.joined(separator: ", ")
+        if config.everything { return said("sync.songs.everything") }
+        let kinds = [config.favourites ? said("sync.songs.favourites") : nil, config.playlists ? said("sync.songs.kept-playlists") : nil].compactMap { $0 }
+        return kinds.isEmpty ? said("sync.songs.when-asked") : kinds.joined(separator: ", ")
     }
 
     private static func connection(_ config: SyncConfig) -> String {
         switch SyncRoute(config) {
-        case .hosted: "Resonate server"
+        case .hosted: said("sync.route.resonate-server")
         case .own: config.server.trimmingCharacters(in: .whitespaces)
-        case .nearby: "This network only"
+        case .nearby: said("sync.route.nearby")
         }
     }
 }
@@ -100,7 +100,7 @@ struct SyncStatusSection: View {
                 LocalNetworkRefusedRow()
             }
             if offline {
-                Button("Sync only on this network", systemImage: "wifi") {
+                Button("sync.only-nearby", systemImage: "wifi") {
                     guard var next = features.syncConfig else { return }
                     next.nearbyOnly = true
                     features.saveSync(next)
@@ -109,14 +109,14 @@ struct SyncStatusSection: View {
                 Button {
                     features.forceSync()
                 } label: {
-                    Label(features.syncAskedAt == nil ? "Sync now" : "Syncing…", systemImage: "arrow.triangle.2.circlepath")
+                    Label(said(features.syncAskedAt == nil ? "sync.now" : "sync.syncing"), systemImage: "arrow.triangle.2.circlepath")
                         .symbolEffect(.rotate, options: .repeat(.continuous), isActive: features.syncAskedAt != nil && !reduceMotion)
                 }
                 .disabled(!features.syncRuns || features.syncAskedAt != nil)
             }
         } footer: {
             if offline {
-                Text("Online features are off. Turn them on in Settings, or sync only with devices on the same network.")
+                Text("sync.offline.footer")
             }
         }
     }
@@ -128,8 +128,8 @@ struct LocalNetworkRefusedRow: View {
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Nearby devices need Local Network access")
-                Text("Without it this iPhone cannot find your devices on this network. Turn on Local Network for Resonate in Settings.")
+                Text("sync.local-network.refused")
+                Text("sync.local-network.refused.detail")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -137,7 +137,7 @@ struct LocalNetworkRefusedRow: View {
             Image(systemName: "network.slash").foregroundStyle(Color.warning).accessibilityHidden(true)
         }
         .padding(.vertical, 4)
-        Button("Open Settings", systemImage: "gear") {
+        Button("common.open-settings", systemImage: "gear") {
             if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
         }
     }
@@ -181,20 +181,20 @@ struct SyncStateRow: View {
 
     private func headline(_ features: Features) -> String {
         switch features.syncActivity {
-        case .fetching(let songs, _): return "Fetching \(counted(songs, "song"))"
-        case .syncing: return "Syncing…"
+        case .fetching(let songs, _): return said("sync.state.fetching", songs)
+        case .syncing: return said("sync.syncing")
         case nil: break
         }
-        guard let status = features.syncStatus else { return "Starting…" }
-        if features.syncUpToDate { return "Up to date" }
+        guard let status = features.syncStatus else { return said("sync.state.starting") }
+        if features.syncUpToDate { return said("sync.state.up-to-date") }
         let nearby = status.devices.contains { $0.nearby && !$0.thisDevice }
         switch status.standing {
-        case .connecting: return "Connecting…"
-        case .refused: return "Refused"
-        case .unreachable: return nearby ? "Catching up" : "Not syncing"
-        case .nearby: return nearby ? "Catching up" : "Looking for devices"
-        case .connected: return status.owed > 0 ? "Sending \(counted(Int(status.owed), "change"))" : "Catching up"
-        case .off: return "Off"
+        case .connecting: return said("sync.state.connecting")
+        case .refused: return said("sync.state.refused")
+        case .unreachable: return said(nearby ? "sync.state.catching-up" : "sync.state.not-syncing")
+        case .nearby: return said(nearby ? "sync.state.catching-up" : "sync.state.looking")
+        case .connected: return status.owed > 0 ? said("sync.state.sending", Int(status.owed)) : said("sync.state.catching-up")
+        case .off: return said("sync.state.off")
         }
     }
 }
@@ -215,7 +215,7 @@ struct SyncDevices: View {
                 KnownDeviceEntry(known: known)
                     .swipeActions(edge: .trailing) {
                         if !known.online, !known.thisDevice {
-                            Button("Remove", systemImage: "trash", role: .destructive) {
+                            Button("common.remove", systemImage: "trash", role: .destructive) {
                                 features.forgetSyncDevices([known])
                             }
                             .tint(.red)
@@ -223,38 +223,38 @@ struct SyncDevices: View {
                     }
                     .contextMenu {
                         if !known.online, !known.thisDevice {
-                            Button("Remove device", systemImage: "trash", role: .destructive) {
+                            Button("sync.devices.remove", systemImage: "trash", role: .destructive) {
                                 features.forgetSyncDevices([known])
                             }
                         }
                     }
             }
             if others.isEmpty {
-                Text("No other devices yet. Add one with this iPhone's pairing code.")
+                Text("sync.devices.none")
                     .foregroundStyle(.secondary)
             }
-            Button("Add a device…", systemImage: "plus.circle") {
+            Button("sync.devices.add", systemImage: "plus.circle") {
                 pairing = true
             }
         } header: {
             HStack {
-                Text("Devices")
+                Text("sync.devices")
                 Spacer()
                 if away.count > 1 {
                     Menu {
-                        Button("Remove \(counted(away.count, "device")) that are away", systemImage: "trash", role: .destructive) {
+                        Button(said("sync.devices.remove-away", away.count), systemImage: "trash", role: .destructive) {
                             features.forgetSyncDevices(away)
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .touchTarget()
-                            .accessibilityLabel("Device options")
+                            .accessibilityLabel("sync.devices.options")
                     }
                 }
             }
         } footer: {
             if !away.isEmpty {
-                Text("Swipe a device that's away to remove it. A removed device that syncs again comes back.")
+                Text("sync.devices.footer")
             }
         }
     }
@@ -268,7 +268,7 @@ struct KnownDeviceEntry: View {
             NavigationLink(value: Destination.syncDevice(known.id)) {
                 KnownDeviceRow(known: known)
             }
-            .accessibilityHint("Play, pause, skip and set the volume of what it plays")
+            .accessibilityHint("sync.devices.drive-hint")
         } else {
             KnownDeviceRow(known: known)
         }
@@ -308,13 +308,13 @@ struct KnownDeviceRow: View {
 
     private var caption: String {
         let state = if known.thisDevice {
-            "This iPhone"
+            said("sync.device.this-iphone")
         } else if known.nearby {
-            "On this network"
+            said("sync.device.nearby")
         } else if known.online {
-            "Online"
+            said("sync.device.online")
         } else {
-            "Away"
+            said("sync.device.away")
         }
         return [known.platform.title, state].compactMap { $0 }.joined(separator: " · ")
     }
@@ -349,7 +349,7 @@ struct PairingSheet: View {
                                 .privacySensitive()
                                 .overlay {
                                     if !revealed {
-                                        Label("Tap to show", systemImage: "eye")
+                                        Label("sync.pairing.tap-to-show", systemImage: "eye")
                                             .font(.subheadline.weight(.semibold))
                                             .padding(.horizontal, 14)
                                             .padding(.vertical, 8)
@@ -358,11 +358,11 @@ struct PairingSheet: View {
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture { withAnimation(reduceMotion ? nil : .smooth) { revealed.toggle() } }
-                                .accessibilityLabel(revealed ? code : "Pairing code, hidden")
-                                .accessibilityHint(revealed ? "Hides the code" : "Shows the code")
+                                .accessibilityLabel(revealed ? code : said("sync.pairing.hidden"))
+                                .accessibilityHint(said(revealed ? "sync.pairing.hides" : "sync.pairing.shows"))
                                 .accessibilityAddTraits(.isButton)
                         } else {
-                            Text("Made when sync first starts")
+                            Text("sync.pairing.not-made")
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity)
                         }
@@ -378,10 +378,10 @@ struct PairingSheet: View {
                                     )
                                     copies += 1
                                 } label: {
-                                    Label("Copy", systemImage: "doc.on.doc")
+                                    Label("common.copy", systemImage: "doc.on.doc")
                                 }
-                                ShareLink(item: code, subject: Text("Resonate pairing code")) {
-                                    Label("Share", systemImage: "square.and.arrow.up")
+                                ShareLink(item: code, subject: Text("sync.pairing.share-subject")) {
+                                    Label("common.share", systemImage: "square.and.arrow.up")
                                 }
                             }
                             .buttonStyle(.bordered)
@@ -389,58 +389,58 @@ struct PairingSheet: View {
                     }
                     .padding(.vertical, 8)
                 } header: {
-                    Text("This iPhone's code")
+                    Text("sync.pairing.this-code")
                 } footer: {
-                    Text("On your other device, open Device sync and enter this code. To pair with a computer, scan the QR code under its Settings › Sync with the Camera app.")
+                    Text("sync.pairing.this-code.footer")
                 }
                 Section {
-                    TextField("Pairing code", text: $joining)
+                    TextField("sync.pairing.code", text: $joining)
                         .font(.body.monospaced())
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                     if !joining.isEmpty, !reads {
-                        Text("This is not a pairing code")
+                        Text("sync.pairing.not-a-code")
                             .font(.caption)
                             .foregroundStyle(Color.failure)
-                            .announced("This is not a pairing code")
+                            .announced(said("sync.pairing.not-a-code"))
                     }
-                    Button("Join") {
+                    Button("sync.pairing.join") {
                         if code == nil { join() } else { confirmingJoin = true }
                     }
                     .disabled(!reads)
                 } header: {
-                    Text("Use another device's code")
+                    Text("sync.pairing.join.header")
                 } footer: {
-                    Text("This iPhone then syncs with the devices that share that code.")
+                    Text("sync.pairing.join.footer")
                 }
                 Section {
-                    Button("Make a new code…", role: .destructive) {
+                    Button("sync.pairing.new", role: .destructive) {
                         confirmingNew = true
                     }
                 } footer: {
-                    Text("Do this if someone else may have seen the code. Your other devices then need the new one.")
+                    Text("sync.pairing.new.footer")
                 }
             }
-            .navigationTitle("Add a device")
+            .navigationTitle("sync.pairing.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("common.done") { dismiss() }
                 }
             }
             .sensoryFeedback(.success, trigger: copies)
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active { revealed = false }
             }
-            .confirmationDialog("Join another group?", isPresented: $confirmingJoin, titleVisibility: .visible) {
-                Button("Join") { join() }
+            .confirmationDialog("sync.pairing.join.confirm", isPresented: $confirmingJoin, titleVisibility: .visible) {
+                Button("sync.pairing.join") { join() }
             } message: {
-                Text("This iPhone leaves the devices it syncs with now and syncs with the devices that share this code.")
+                Text("sync.pairing.join.confirm.message")
             }
-            .confirmationDialog("Make a new pairing code?", isPresented: $confirmingNew, titleVisibility: .visible) {
-                Button("Make a new code", role: .destructive) { library.features.newSyncGroup() }
+            .confirmationDialog("sync.pairing.new.confirm", isPresented: $confirmingNew, titleVisibility: .visible) {
+                Button("sync.pairing.new.confirm.action", role: .destructive) { library.features.newSyncGroup() }
             } message: {
-                Text("Your other devices stop syncing with this iPhone until you enter the new code on them. Playlists, favourites and history stay here and are sent again under the new code.")
+                Text("sync.pairing.new.confirm.message")
             }
         }
     }
@@ -490,21 +490,21 @@ struct SyncSongsPage: View {
         let destinations = library.folderList.filter { $0.readable && $0.writable }
         ThemedForm {
             Section {
-                SyncSwitch(title: "Favourites", detail: "Songs favoured on another device", choice: \.favourites)
-                SyncSwitch(title: "Kept playlists", detail: "Playlists set to keep their songs here", choice: \.playlists)
-                SyncSwitch(title: "Everything", detail: "Every song your other devices hold", choice: \.everything)
+                SyncSwitch(title: said("sync.songs.favourites"), detail: said("sync.songs.favourites.detail"), choice: \.favourites)
+                SyncSwitch(title: said("sync.songs.kept-playlists"), detail: said("sync.songs.kept-playlists.detail"), choice: \.playlists)
+                SyncSwitch(title: said("sync.songs.everything"), detail: said("sync.songs.everything.detail"), choice: \.everything)
             } header: {
-                Text("Fetch automatically")
+                Text("sync.songs.fetch-automatically")
             } footer: {
-                Text("A playlist's menu can always fetch its missing songs from a device.")
+                Text("sync.songs.fetch-automatically.footer")
             }
             Section {
-                SyncSwitch(title: "Use mobile data", detail: "Without it, songs move only on Wi-Fi", choice: \.meteredAllowed)
+                SyncSwitch(title: said("sync.songs.mobile-data"), detail: said("sync.songs.mobile-data.detail"), choice: \.meteredAllowed)
             }
             Section {
                 if let first = destinations.first {
                     let kept = destinations.first { $0.id == features.syncFolder } ?? first
-                    Picker("Keep songs in", selection: Binding(
+                    Picker("sync.songs.folder", selection: Binding(
                         get: { kept.id },
                         set: { chosen in
                             guard let folder = destinations.first(where: { $0.id == chosen }) else { return }
@@ -517,9 +517,9 @@ struct SyncSongsPage: View {
                     }
                 } else {
                     ContentUnavailableView(
-                        "No folder to keep songs in",
+                        "sync.songs.no-folder",
                         systemImage: "folder.badge.questionmark",
-                        description: Text("Add a music folder with write access first.")
+                        description: Text("sync.songs.no-folder.detail")
                     )
                 }
                 if let notice = features.syncNotice {
@@ -528,10 +528,10 @@ struct SyncSongsPage: View {
                         .announced(notice)
                 }
             } footer: {
-                Text("Songs from your other devices are saved in this folder and added to your library.")
+                Text("sync.songs.folder.footer")
             }
         }
-        .navigationTitle("Songs")
+        .navigationTitle("sync.options.songs")
         .task { library.folderList = await library.folders.refreshed() }
     }
 }
@@ -549,25 +549,25 @@ struct SyncConnectionPage: View {
             if let config = features.syncConfig {
                 let route = chosen ?? SyncRoute(config)
                 Section {
-                    Picker("Sync through", selection: Binding(get: { route }, set: { choose($0, config) })) {
-                        Label("Resonate's server", systemImage: "cloud").tag(SyncRoute.hosted)
-                        Label("Your own server", systemImage: "server.rack").tag(SyncRoute.own)
-                        Label("This network only", systemImage: "wifi").tag(SyncRoute.nearby)
+                    Picker("sync.route", selection: Binding(get: { route }, set: { choose($0, config) })) {
+                        Label("sync.route.hosted", systemImage: "cloud").tag(SyncRoute.hosted)
+                        Label("sync.route.own", systemImage: "server.rack").tag(SyncRoute.own)
+                        Label("sync.route.nearby", systemImage: "wifi").tag(SyncRoute.nearby)
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
                 } header: {
-                    Text("Sync through")
+                    Text("sync.route")
                 } footer: {
                     Text(Self.explanation(route))
                 }
                 if route == .own {
                     Section {
-                        TextField("host or host:port", text: $server)
+                        TextField("sync.route.own.address-prompt", text: $server)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                        Button("Use this server") {
+                        Button("sync.route.own.use") {
                             guard var next = features.syncConfig else { return }
                             next.server = trimmed(server)
                             next.nearbyOnly = false
@@ -575,34 +575,34 @@ struct SyncConnectionPage: View {
                         }
                         .disabled(trimmed(server).isEmpty || (trimmed(server) == config.server && !config.nearbyOnly))
                     } header: {
-                        Text("Server address")
+                        Text("sync.route.own.address")
                     }
                 }
                 Section {
-                    TextField("Name", text: $device, prompt: Text("iPhone"))
-                    Button("Save name") {
+                    TextField("common.name", text: $device, prompt: Text("iPhone"))
+                    Button("sync.connection.save-name") {
                         guard var next = features.syncConfig else { return }
                         next.device = trimmed(device)
                         features.saveSync(next)
                     }
                     .disabled(trimmed(device) == config.device)
                 } header: {
-                    Text("This iPhone's name")
+                    Text("sync.connection.device-name")
                 } footer: {
-                    Text("What your other devices call this iPhone.")
+                    Text("sync.connection.device-name.footer")
                 }
                 Section {
-                    TextField("Name", text: $sharedName)
-                    Button("Save name") { features.together.rename(sharedName) }
+                    TextField("common.name", text: $sharedName)
+                    Button("sync.connection.save-name") { features.together.rename(sharedName) }
                         .disabled(trimmed(sharedName) == features.together.name)
                 } header: {
-                    Text("Your name on shared playlists and parties")
+                    Text("sync.connection.shared-name")
                 } footer: {
-                    Text("What other people see. Left empty, you are Someone.")
+                    Text("sync.connection.shared-name.footer")
                 }
             }
         }
-        .navigationTitle("Connection")
+        .navigationTitle("sync.options.connection")
         .onAppear {
             sharedName = features.together.name
             guard let config = features.syncConfig else { return }
@@ -634,11 +634,11 @@ struct SyncConnectionPage: View {
     private static func explanation(_ route: SyncRoute) -> String {
         switch route {
         case .hosted:
-            "Your devices meet through Resonate's server wherever they are, and directly on the same network. Everything is sealed with your pairing code, so the server can't read it."
+            said("sync.route.hosted.explained")
         case .own:
-            "Your devices meet through a resonate-server you run, and directly on the same network."
+            said("sync.route.own.explained")
         case .nearby:
-            "Your devices sync only when they're on the same Wi-Fi. Nothing leaves your network, and it works with online features off."
+            said("sync.route.nearby.explained")
         }
     }
 }
@@ -660,7 +660,7 @@ struct SyncTransfers: View {
                 SyncTransferRow(transfer: keyed.transfer)
             }
         } header: {
-            Text(active.isEmpty ? "Recently fetched" : fetchingHeading(downloading: downloading, waiting: waiting))
+            Text(active.isEmpty ? said("sync.transfers.recent") : fetchingHeading(downloading: downloading, waiting: waiting))
         }
     }
 }
@@ -676,7 +676,7 @@ struct SyncTransferRow: View {
                     .frame(width: 20)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(transfer.title.isEmpty ? "Unknown song" : transfer.title).titleLines()
+                    Text(transfer.title.isEmpty ? said("sync.transfer.unknown-song") : transfer.title).titleLines()
                     Text(caption)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -686,7 +686,7 @@ struct SyncTransferRow: View {
             }
             if transfer.state == .moving, transfer.size > 0 {
                 ProgressView(value: Double(min(transfer.received, transfer.size)), total: Double(transfer.size))
-                    .accessibilityLabel("Fetching")
+                    .accessibilityLabel("sync.transfer.fetching")
             }
         }
         .accessibilityElement(children: .combine)
@@ -711,16 +711,20 @@ struct SyncTransferRow: View {
     }
 
     private var caption: String {
-        let source = [transfer.artist, transfer.from.isEmpty ? nil : "from \(transfer.from)"]
+        let source = [transfer.artist, transfer.from.isEmpty ? nil : said("sync.transfer.from", transfer.from)]
             .compactMap { $0?.isEmpty == false ? $0 : nil }
             .joined(separator: " · ")
         let state: String = switch transfer.state {
-        case .waiting: "Waiting"
+        case .waiting: said("sync.transfer.waiting")
         case .moving where transfer.size > 0:
-            "\(Int64(transfer.received).formatted(.byteCount(style: .file))) of \(Int64(transfer.size).formatted(.byteCount(style: .file)))"
-        case .moving: "Fetching"
-        case .landed: "Fetched"
-        case .failed: "Could not be fetched"
+            said(
+                "sync.transfer.progress",
+                Int64(transfer.received).formatted(.byteCount(style: .file)),
+                Int64(transfer.size).formatted(.byteCount(style: .file))
+            )
+        case .moving: said("sync.transfer.fetching")
+        case .landed: said("sync.transfer.fetched")
+        case .failed: said("sync.transfer.failed")
         }
         return source.isEmpty ? state : "\(state) · \(source)"
     }
@@ -729,10 +733,10 @@ struct SyncTransferRow: View {
 extension DevicePlatform {
     var title: String? {
         switch self {
-        case .linux: "Linux"
-        case .android: "Android"
-        case .ios: "iOS"
-        case .windows: "Windows"
+        case .linux: said("platform.linux")
+        case .android: said("platform.android")
+        case .ios: said("platform.ios")
+        case .windows: said("platform.windows")
         case .other: nil
         }
     }

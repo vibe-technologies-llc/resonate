@@ -37,7 +37,7 @@ use resonate_sync::{
 
 use crate::config::Config;
 #[cfg(feature = "sync")]
-use crate::{Error, Result, config, error::ConfigKey};
+use crate::{Error, Result, config, error::ConfigKey, words};
 
 #[cfg(all(feature = "sync", not(windows)))]
 const DEVICE_NAME: &str = "Linux";
@@ -942,12 +942,12 @@ pub(crate) fn asked(
         Asked::Join(code) => {
             let key = SyncKey::from_code(code).map_err(Error::Sync)?;
             config::store(settings, ConfigKey::SyncKey, key.code())?;
-            said!("This device joins the devices of {}", key.code());
+            said!("{}", words::sync::joins(key.code()));
             Ok(None)
         }
         Asked::Leave => {
             config::clear(settings, ConfigKey::SyncKey)?;
-            said!("This device left its devices; a new pairing code is made when it next syncs");
+            said!("{}", words::sync::left());
             Ok(None)
         }
         Asked::Forget(name) => {
@@ -960,31 +960,36 @@ pub(crate) fn asked(
                 return Err(Error::SyncDeviceOnline(name.into()));
             }
             sync.forget(device.id).map_err(Error::Sync)?;
-            said!("{} is off the list of your devices", device.name);
+            said!("{}", words::sync::forgotten(device.name.as_str()));
             Ok(None)
         }
         Asked::Standing => {
             let library = library.ok_or(Error::SyncOff)?;
             let running = running(config, settings, &library)?;
             let sync = &running.sync;
-            said!("Pairing code\t{}", sync.code());
+            said!("{}\t{}", words::sync::pairing_code(), sync.code());
+            let server = words::sync::server();
             match server_of(config) {
-                Server::Nowhere => said!("Server\tnone, devices on this network only"),
-                Server::At(server) => said!("Server\t{server}"),
-                Server::Hosted => said!("Server\t{}", resonate_sync::HOSTED_SERVER),
+                Server::Nowhere => said!("{server}\t{}", words::sync::no_server()),
+                Server::At(at) => said!("{server}\t{at}"),
+                Server::Hosted => said!("{server}\t{}", resonate_sync::HOSTED_SERVER),
             }
             let standing = connected(sync);
-            said!("Standing\t{}", standing_of(standing));
+            said!("{}\t{}", words::sync::standing(), standing_of(standing));
             for device in sync.shown().devices {
+                let reached = match (device.nearby, device.online) {
+                    (true, _) => words::sync::on_this_network(),
+                    (false, true) => words::sync::online(),
+                    (false, false) => words::sync::away(),
+                };
                 said!(
-                    "{}\t{}{}",
+                    "{}\t{}",
                     device.name,
-                    match (device.nearby, device.online) {
-                        (true, _) => "on this network",
-                        (false, true) => "online",
-                        (false, false) => "away",
-                    },
-                    if device.this { ", this device" } else { "" }
+                    if device.this {
+                        words::sync::this_device(reached)
+                    } else {
+                        reached.to_owned()
+                    }
                 );
             }
             Ok(None)
@@ -1014,7 +1019,7 @@ pub(crate) fn asked(
                 })
                 .map_err(Error::Sync)?;
             if missing.is_empty() {
-                said!("{playlist} lacks nothing {from} could send");
+                said!("{}", words::sync::lacks_nothing(from, playlist));
                 return Ok(None);
             }
             let landed = fetched_in_batches(
@@ -1022,7 +1027,7 @@ pub(crate) fn asked(
                 |batch| sync.fetch(batch, device.id),
                 |batch| transferred(sync, batch),
             );
-            said!("{landed} of {} songs came from {from}", missing.len());
+            said!("{}", words::sync::came_from(from, landed, missing.len()));
             Ok(None)
         }
         Asked::Handoff { from } => {
@@ -1139,17 +1144,29 @@ fn controlled(
 
 #[cfg(feature = "sync")]
 fn said_zone(mirror: &Mirror, zone: &RemoteZone) {
-    said!("Zone\t{} {}", zone.zone, zone.name);
-    said!("State\t{}", playback_word(zone.playback));
+    said!("{}\t{} {}", words::sync::zone(), zone.zone, zone.name);
+    said!("{}\t{}", words::sync::state(), playback_word(zone.playback));
     if let Some(row) = zone.playing_row() {
         let place = clock_of(mirror.position_of(zone, Instant::now()));
         let length = zone
             .length
             .map_or_else(String::new, |length| format!(" / {}", clock_of(length)));
-        said!("Playing\t{}\t{place}{length}", billed(row));
+        said!(
+            "{}\t{}\t{place}{length}",
+            words::sync::playing(),
+            billed(row)
+        );
     }
-    said!("Volume\t{}%", (u32::from(zone.volume.get()) + 5) / 10);
-    said!("Queue\t{} songs", zone.queue_length);
+    said!(
+        "{}\t{}",
+        words::sync::volume(),
+        words::sync::percent((u32::from(zone.volume.get()) + 5) / 10)
+    );
+    said!(
+        "{}\t{}",
+        words::sync::queue(),
+        words::sync::songs(zone.queue_length)
+    );
     for (at, row) in zone.rows.iter().enumerate() {
         let number = zone.first_row + at;
         let mark = if zone.playing == Some(number) {
@@ -1166,17 +1183,17 @@ fn billed(row: &RemoteRow) -> String {
     if row.artist.is_empty() {
         row.title.clone()
     } else {
-        format!("{} — {}", row.title, row.artist)
+        words::sync::billed(&row.artist, &row.title)
     }
 }
 
 #[cfg(feature = "sync")]
-const fn playback_word(playback: RemotePlayback) -> &'static str {
+fn playback_word(playback: RemotePlayback) -> &'static str {
     match playback {
-        RemotePlayback::Idle => "idle",
-        RemotePlayback::Playing => "playing",
-        RemotePlayback::Paused => "paused",
-        RemotePlayback::Stopped => "stopped",
+        RemotePlayback::Idle => words::sync::idle(),
+        RemotePlayback::Playing => words::sync::playing_now(),
+        RemotePlayback::Paused => words::sync::paused(),
+        RemotePlayback::Stopped => words::sync::stopped(),
     }
 }
 
@@ -1212,11 +1229,11 @@ fn connected(sync: &Sync) -> Standing {
 #[cfg(feature = "sync")]
 fn standing_of(standing: Standing) -> &'static str {
     match standing {
-        Standing::Starting | Standing::Connecting => "connecting",
-        Standing::Connected => "connected",
-        Standing::Unreachable => "the server could not be reached",
-        Standing::Refused(_) => "the server refused this device",
-        Standing::Nearby => "syncing with devices on this network",
+        Standing::Starting | Standing::Connecting => words::sync::connecting(),
+        Standing::Connected => words::sync::connected(),
+        Standing::Unreachable => words::sync::unreachable(),
+        Standing::Refused(_) => words::sync::refused(),
+        Standing::Nearby => words::sync::nearby(),
     }
 }
 

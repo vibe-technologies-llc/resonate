@@ -40,76 +40,76 @@ struct LibraryToolsView: View {
     var body: some View {
         let current = library.playingTrack
         ThemedList {
-            Section("Your library") {
+            Section("library.title") {
                 NavigationLink(value: Destination.playlists) {
-                    ToolRow(title: "Playlists", detail: "Listen to your collections", symbol: "music.note.list")
+                    ToolRow(title: said("library.playlists"), detail: said("tools.playlists.detail"), symbol: "music.note.list")
                 }
                 NavigationLink(value: Destination.suggestions) {
-                    ToolRow(title: "Suggestions", detail: "Rediscover music from your library", symbol: "sparkles")
+                    ToolRow(title: said("tools.suggestions"), detail: said("tools.suggestions.detail"), symbol: "square.stack")
                 }
                 NavigationLink(value: Destination.statistics) {
-                    ToolRow(title: "Statistics", detail: "Your listening in numbers", symbol: "chart.bar")
+                    ToolRow(title: said("tools.statistics"), detail: said("tools.statistics.detail"), symbol: "chart.bar")
                 }
                 NavigationLink(value: Destination.party) {
-                    ToolRow(title: "Listening party", detail: "Listen with other people, in step", symbol: "person.2.wave.2")
+                    ToolRow(title: said("tools.party"), detail: said("tools.party.detail"), symbol: "person.2.wave.2")
                 }
                 NavigationLink(value: Destination.identicalSongs) {
-                    ToolRow(title: "Identical songs", detail: "Find files held twice and keep one of each", symbol: "square.on.square")
+                    ToolRow(title: said("tools.identical"), detail: said("tools.identical.detail"), symbol: "square.on.square")
                 }
                 Button { navigation.filters = true } label: {
-                    ToolRow(title: "Filter and sort", detail: "Genre, artist, audio quality and more", symbol: "line.3.horizontal.decrease.circle")
+                    ToolRow(title: said("filter.title"), detail: said("tools.filter.detail"), symbol: "line.3.horizontal.decrease.circle")
                 }
             }
-            Section("Discover") {
+            Section("tools.discover") {
                 Button { navigation.openSearch() } label: {
-                    ToolRow(title: "Search", detail: "Your library, online music and shared links", symbol: "magnifyingglass")
+                    ToolRow(title: said("tools.search"), detail: said("tools.search.detail"), symbol: "magnifyingglass")
                 }
                 Button { navigation.listening = true } label: {
-                    ToolRow(title: "Listen", detail: "Name the song playing around you", symbol: "ear")
+                    ToolRow(title: said("tools.listen"), detail: said("tools.listen.detail"), symbol: "ear")
                 }
                 NavigationLink(value: Destination.wanted) {
-                    ToolRow(title: "Saved for later", detail: "Recordings you want to add to your library", symbol: "bookmark")
+                    ToolRow(title: said("tools.saved-for-later"), detail: said("tools.saved-for-later.detail"), symbol: "bookmark")
                 }
                 RefreshArtworkRow()
                 if library.features.organiseUndo != nil {
                     Button { library.features.putFilesBack() } label: {
-                        ToolRow(title: "Put files back", detail: "Return the songs you last organised to where they were", symbol: "arrow.uturn.backward.circle")
+                        ToolRow(title: said("tools.put-files-back"), detail: said("tools.put-files-back.detail"), symbol: "arrow.uturn.backward.circle")
                     }
                     .disabled(library.features.organising)
                 }
                 if library.features.tagsUndoable {
                     Button { library.features.undoTags() } label: {
-                        ToolRow(title: "Undo tag edit", detail: "Put back the tags you last saved", symbol: "arrow.uturn.backward")
+                        ToolRow(title: said("tools.undo-tags"), detail: said("tools.undo-tags.detail"), symbol: "arrow.uturn.backward")
                     }
                 }
             }
             Section {
                 NavigationLink(value: current.map { _ in Destination.lyrics(nil) }) {
-                    ToolRow(title: "Lyrics", detail: "Follow the words as they play", symbol: "quote.bubble")
+                    ToolRow(title: said("tools.lyrics"), detail: said("tools.lyrics.detail"), symbol: "quote.bubble")
                 }
                 NavigationLink(value: current.map { _ in Destination.visualizer }) {
-                    ToolRow(title: "Visualizer", detail: "Watch the live waveform", symbol: "waveform")
+                    ToolRow(title: said("tools.visualizer"), detail: said("tools.visualizer.detail"), symbol: "waveform")
                 }
                 NavigationLink(value: current.map { _ in Destination.analysis(nil) }) {
-                    ToolRow(title: "Analysis", detail: "Loudness, spectrum and audio quality", symbol: "waveform.path.ecg")
+                    ToolRow(title: said("tools.analysis"), detail: said("tools.analysis.detail"), symbol: "waveform.path.ecg")
                 }
                 NavigationLink(value: current.map(Destination.inspector)) {
-                    ToolRow(title: "Inspector", detail: "Artwork, tags and source details", symbol: "info.circle")
+                    ToolRow(title: said("tools.inspector"), detail: said("tools.inspector.detail"), symbol: "info.circle")
                 }
             } header: {
-                Text("Current song")
+                Text("tools.current-song")
             } footer: {
-                if current == nil { Text("Play a song to use these tools.") }
+                if current == nil { Text("tools.current-song.none") }
             }
             .disabled(current == nil)
-            Section("Preferences") {
+            Section("tools.preferences") {
                 Button { navigation.tab = .settings } label: {
-                    ToolRow(title: "Settings", detail: "Sound, music folders and connected services", symbol: "gearshape")
+                    ToolRow(title: said("tools.settings"), detail: said("tools.settings.detail"), symbol: "gearshape")
                 }
             }
         }
         .buttonStyle(.plain)
-        .navigationTitle("Library tools")
+        .navigationTitle("tools.title")
     }
 }
 
@@ -132,33 +132,33 @@ struct FoldersView: View {
                     )
                     .swipeActions {
                         if folder.id != Folders.local {
-                            Button("Remove access", role: .destructive) { removing = folder }
+                            Button("folders.remove-access", role: .destructive) { removing = folder }
                                 .tint(.red)
                         }
                     }
                 }
             } footer: {
-                Text("Music is read through the folders you grant. Songs you put in Resonate's folder in the Files app are read from On this iPhone.")
+                Text("folders.footer")
             }
             Section {
                 Button { navigation.choosingFolder = true } label: {
-                    ToolRow(title: "Add music folder", detail: "Grant Resonate a folder in Files", symbol: "folder.badge.plus")
+                    ToolRow(title: said("folders.add"), detail: said("folders.add.detail"), symbol: "folder.badge.plus")
                 }
                 RescanRow()
             }
         }
-        .navigationTitle("Music folders")
+        .navigationTitle("folders.title")
         .sheet(item: $organising) { OrganiseSheet(folder: $0).sheetSized(.long) }
         .task { library.folderList = await library.folders.refreshed() }
         .confirmationDialog(
-            "Remove \(removing?.name ?? "this folder")?",
+            said("folders.remove.title", removing?.name ?? said("folders.remove.this-folder")),
             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
             titleVisibility: .visible,
             presenting: removing
         ) { folder in
-            Button("Remove access", role: .destructive) { library.removeFolder(folder) }
+            Button("folders.remove-access", role: .destructive) { library.removeFolder(folder) }
         } message: { _ in
-            Text("Your music files stay where they are. Its songs are hidden until you add the folder again.")
+            Text("folders.remove.message")
         }
     }
 }
@@ -170,17 +170,17 @@ private struct RescanRow: View {
         let readable = library.folderList.contains(where: \.readable)
         if library.scanning {
             HStack(spacing: 14) {
-                ToolRow(title: "Reading your music…", detail: "\(counted(library.scanned, "song")) so far", symbol: "arrow.clockwise")
+                ToolRow(title: said("folders.scanning"), detail: said("folders.scanning.detail", Int(library.scanned)), symbol: "arrow.clockwise")
                 Spacer(minLength: 0)
-                Button("Stop") { library.stopScanning() }
+                Button("folders.scanning.stop") { library.stopScanning() }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
             }
         } else {
             Button { library.rescan() } label: {
                 ToolRow(
-                    title: "Rescan library",
-                    detail: readable ? "Find new and changed music in your folders" : "Add a music folder first",
+                    title: said("folders.rescan-library"),
+                    detail: readable ? said("folders.rescan-library.detail") : said("folders.rescan-library.no-folder"),
                     symbol: "arrow.clockwise"
                 )
             }
@@ -228,18 +228,18 @@ struct FolderRow: View {
 
     @ViewBuilder
     private var actions: some View {
-        Button("Rescan", systemImage: "arrow.clockwise", action: rescan)
+        Button("folders.rescan", systemImage: "arrow.clockwise", action: rescan)
             .disabled(!folder.readable || scanning)
-        Button("Organise", systemImage: "folder.badge.gearshape", action: organise)
+        Button("organise.title", systemImage: "folder.badge.gearshape", action: organise)
             .disabled(!folder.writable || scanning)
         if folder.id != Folders.local {
-            Button("Remove access", systemImage: "xmark.circle", role: .destructive, action: remove)
+            Button("folders.remove-access", systemImage: "xmark.circle", role: .destructive, action: remove)
         }
     }
 
     private var standing: String {
-        if !folder.readable { return "Unavailable · choose this folder again to restore access" }
-        return folder.writable ? "Access available" : "Read-only access · songs from your devices cannot be kept here"
+        if !folder.readable { return said("folders.standing.unavailable") }
+        return folder.writable ? said("folders.standing.available") : said("folders.standing.read-only")
     }
 }
 
@@ -254,7 +254,6 @@ struct SuggestedMix: Identifiable, Sendable {
     let detail: String
     let shelfName: String
     let source: Source
-    let accents: MixAccents
     let mark: String
 
     init(list: SuggestedList) {
@@ -263,17 +262,15 @@ struct SuggestedMix: Identifiable, Sendable {
         detail = list.detail
         shelfName = list.shelfName
         source = .search(list.search)
-        accents = list.accents
         mark = Suggestions.symbol(for: list.reason)
     }
 
-    init(title: String, detail: String, filter: TrackFilter, accents: MixAccents, mark: String) {
-        id = title
+    init(id: String, title: String, detail: String, filter: TrackFilter, mark: String) {
+        self.id = id
         self.title = title
         self.detail = detail
         shelfName = Suggestions.yoursShelf
         source = .filter(filter)
-        self.accents = accents
         self.mark = mark
     }
 
@@ -281,7 +278,7 @@ struct SuggestedMix: Identifiable, Sendable {
         if case .search(let search) = source { search } else { nil }
     }
 
-    static let yours = madeYours()
+    static var yours: [SuggestedMix] { madeYours() }
 
     private static func madeYours() -> [SuggestedMix] {
         var favourites = defaultTrackFilter()
@@ -291,8 +288,8 @@ struct SuggestedMix: Identifiable, Sendable {
         recent.descending = true
         recent.played = true
         return [
-            SuggestedMix(title: "Your favourites", detail: "Every song you hearted", filter: favourites, accents: MixAccents(from: .mauve, to: .red), mark: "heart.fill"),
-            SuggestedMix(title: "Recently played", detail: "What you listened to last", filter: recent, accents: MixAccents(from: .amber, to: .peach), mark: "clock.arrow.circlepath"),
+            SuggestedMix(id: "your-favourites", title: said("mix.yours.favourites"), detail: said("mix.yours.favourites.detail"), filter: favourites, mark: "heart.fill"),
+            SuggestedMix(id: "recently-played", title: said("mix.yours.recent"), detail: said("mix.yours.recent.detail"), filter: recent, mark: "clock.arrow.circlepath"),
         ]
     }
 
@@ -361,7 +358,7 @@ struct SuggestionsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Lists from your library and listening history, turning over each day").foregroundStyle(.secondary)
+                Text("suggestions.lead").foregroundStyle(.secondary)
                 ForEach(offered.shelves, id: \.name) { shelf in
                     Text(shelf.name).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth), spacing: 16, alignment: .top)], spacing: 20) {
@@ -375,9 +372,10 @@ struct SuggestionsView: View {
                     }
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 20)
         }
-        .navigationTitle("Suggestions")
+        .navigationTitle("tools.suggestions")
         .background {
             CatalogReading {
                 guard let found = await OfferedMixes.read(in: library), found != offered else { return }
@@ -404,12 +402,12 @@ struct MixView: View {
             if let mix {
                 List {
                     CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
-                        MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: Self.corner)
+                        MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
                     }
                     if let failure {
                         ReadFailure(text: failure) { Task { await load(mix) } }
                     } else if read, tracks.isEmpty {
-                        Text("Nothing in this mix yet.").foregroundStyle(.secondary)
+                        Text("mix.empty").foregroundStyle(.secondary)
                     }
                     ForEach(tracks, id: \.id) { track in
                         TrackRow(track: track) {
@@ -425,9 +423,9 @@ struct MixView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title) }
             } else if resolved {
-                ContentUnavailableView("This mix is no longer offered", systemImage: "sparkles")
+                ContentUnavailableView("mix.gone", systemImage: "square.stack")
             } else {
-                ProgressView().accessibilityLabel("Reading this mix")
+                ProgressView().accessibilityLabel("mix.reading")
             }
         }
         .background { CatalogReading(subject: id) { await resolveAndLoad() } }
@@ -464,6 +462,8 @@ struct MixView: View {
 }
 
 struct SuggestedMixCard: View {
+    private static let corner: CGFloat = 10
+
     @Environment(Library.self) private var library
     let mix: SuggestedMix
     let covers: [Track]
@@ -473,8 +473,7 @@ struct SuggestedMixCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: open) {
-                MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: 16)
-                    .background { HeaderShadow(outline: .rounded(16)) }
+                MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
             }
             .buttonStyle(.plain)
             .accessibilityHidden(true)
@@ -488,17 +487,17 @@ struct SuggestedMixCard: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Shows the songs in this mix")
-                Button("Play \(mix.title)", systemImage: "play.fill") { play(shuffled: false) }
+                .accessibilityHint("mix.open.hint")
+                Button(said("mix.play.named", mix.title), systemImage: "play.fill") { play(shuffled: false) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
             }
         }
         .contextMenu {
-            Button("Play", systemImage: "play.fill") { play(shuffled: false) }
-            Button("Shuffle", systemImage: "shuffle") { play(shuffled: true) }
-            Button("Show songs", systemImage: "music.note.list", action: open)
+            Button("common.play", systemImage: "play.fill") { play(shuffled: false) }
+            Button("common.shuffle", systemImage: "shuffle") { play(shuffled: true) }
+            Button("mix.show-songs", systemImage: "music.note.list", action: open)
         }
         .sensoryFeedback(.success, trigger: played)
     }
@@ -510,7 +509,7 @@ struct SuggestedMixCard: View {
                 let native = try await library.player()
                 let tracks = try await Work.aside { try mix.tracks(in: native) }
                 guard !tracks.isEmpty else {
-                    library.notice("Nothing in \(mix.title) yet")
+                    library.notice(said("mix.empty.named", mix.title))
                     return
                 }
                 played += 1
@@ -535,26 +534,26 @@ struct FilterSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                CataloguePicker(title: "Genre", choice: $filter.genre, names: genres)
-                CataloguePicker(title: "Artist", choice: $filter.artist, names: artists)
-                CataloguePicker(title: "Album", choice: $filter.album, names: albums)
-                Toggle("Favourites only", isOn: $filter.favourites)
-                Toggle("Unplayed only", isOn: $filter.unplayed)
-                Toggle("High-resolution only", isOn: Binding(
+                CataloguePicker(title: said("filter.genre"), choice: $filter.genre, names: genres)
+                CataloguePicker(title: said("filter.artist"), choice: $filter.artist, names: artists)
+                CataloguePicker(title: said("filter.album"), choice: $filter.album, names: albums)
+                Toggle("filter.favourites-only", isOn: $filter.favourites)
+                Toggle("filter.unplayed-only", isOn: $filter.unplayed)
+                Toggle("filter.high-resolution-only", isOn: Binding(
                     get: { filter.minimumRate >= 88200 },
                     set: { filter.minimumRate = $0 ? 88200 : 0 }
                 ))
-                Stepper(filter.minimumBits == 0 ? "Any bit depth" : "At least \(filter.minimumBits)-bit", value: $filter.minimumBits, in: 0...32, step: 8)
-                Picker("Sort by", selection: $filter.order) {
+                Stepper(filter.minimumBits == 0 ? said("filter.bits.any") : said("filter.bits.at-least", Int(filter.minimumBits)), value: $filter.minimumBits, in: 0...32, step: 8)
+                Picker("filter.sort-by", selection: $filter.order) {
                     ForEach(FilterChip.orderNames, id: \.1) { Text($0.1).tag($0.0) }
                 }
-                Toggle("Descending", isOn: $filter.descending)
+                Toggle("filter.descending", isOn: $filter.descending)
                 Section {
-                    Button("Reset", role: .destructive) { filter = SongBrowsing.defaultFilter }
+                    Button("filter.reset", role: .destructive) { filter = SongBrowsing.defaultFilter }
                         .disabled(filter == SongBrowsing.defaultFilter)
                 }
             }
-            .navigationTitle("Filter and sort")
+            .navigationTitle("filter.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -563,7 +562,7 @@ struct FilterSheet: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") {
+                    Button("filter.apply") {
                         library.setFilter(filter)
                         dismiss()
                     }
@@ -606,7 +605,7 @@ struct CataloguePicker: View {
 
     var body: some View {
         Picker(title, selection: $choice) {
-            Text("Any").tag("")
+            Text("filter.any").tag("")
             if !choice.isEmpty, !names.contains(choice) {
                 Text(choice).tag(choice)
             }

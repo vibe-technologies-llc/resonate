@@ -3,7 +3,7 @@ package org.resonate.android.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.PlayDisabled
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Explore
@@ -74,7 +74,7 @@ val SuggestionReason.icon: ImageVector
             SuggestionReason.GENRE_OF_A_DECADE -> Icons.Rounded.CalendarMonth
             SuggestionReason.GENRE -> Icons.Rounded.Category
             SuggestionReason.ARTIST -> Icons.Rounded.Person
-            SuggestionReason.NEVER_HEARD -> Icons.Rounded.AutoAwesome
+            SuggestionReason.NEVER_HEARD -> Icons.Rounded.PlayDisabled
             SuggestionReason.MOST_PLAYED -> Icons.AutoMirrored.Rounded.TrendingUp
             SuggestionReason.RECENTLY_ADDED,
             SuggestionReason.FRESH_ARRIVALS -> Icons.Rounded.NewReleases

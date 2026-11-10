@@ -269,7 +269,9 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
 
     private fun lighted(text: String, result: LibrarySearch): Lit =
         try {
-            lit(text, result) { query, value, column -> highlights(query, value, column) }
+            lit(resonate.library.words, text, result) { query, value, column ->
+                highlights(query, value, column)
+            }
         } catch (failure: Exception) {
             Lit.none
         }

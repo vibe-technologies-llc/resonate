@@ -9,6 +9,7 @@ doctest = false
 
 [dependencies]
 resonate-core.workspace = true
+resonate-words.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
@@ -21,9 +22,13 @@ resonate-pipewire.workspace = true
 resonate-audio.workspace = true
 wasapi = "0.27.0"
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
 resonate-dsp.workspace = true
 resonate-wasapi.workspace = true
+resonate-words-build.workspace = true
 
 [lints]
 workspace = true

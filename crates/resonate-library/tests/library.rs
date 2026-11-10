@@ -23669,6 +23669,74 @@ fn a_delivery_with_no_vault_is_held_before_the_lane_opens_the_next() -> Result<(
     Ok(())
 }
 
+struct NotesWhatIsAsked {
+    source: SourceId,
+    asked: Mutex<Vec<String>>,
+}
+
+impl Provider for NotesWhatIsAsked {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
+        self.asked.lock().push(identity.title.clone());
+        Ok(Obtained::Nothing)
+    }
+}
+
+#[test]
+fn an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_album_asked_later()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let album = only_album(&library)?;
+    let mut rows = orbits_rows();
+    rows.extend([
+        release_row(4, "San Tropez", Vec::new()),
+        release_row(5, "Seamus", Vec::new()),
+        release_row(6, "Echoes", Vec::new()),
+        release_row(7, "Childhood's End", Vec::new()),
+        release_row(8, "Free Four", Vec::new()),
+    ]);
+    library.land_release(album.id, &orbits(rows, Vec::new()))?;
+    let held = library.release_tracks(album.id)?;
+    let row_of = |title: &str| {
+        held.iter()
+            .find(|row| row.title == title)
+            .map(|row| row.id)
+            .expect("the release names the song")
+    };
+    let noting = Arc::new(NotesWhatIsAsked {
+        source: SourceId::new("shop").expect("a nameable source"),
+        asked: Mutex::new(Vec::new()),
+    });
+
+    library.want_release_tracks(&[row_of("Seamus"), row_of("San Tropez")])?;
+    library.want_release_tracks(&[row_of("Free Four"), row_of("Childhood's End")])?;
+    library.want(row_of("Echoes"))?;
+    library
+        .poll(
+            Arc::new(Providers::none().and(Arc::clone(&noting) as Arc<dyn Provider>)),
+            PollOptions {
+                lanes: NonZeroUsize::MIN,
+                ..PollOptions::default()
+            },
+        )?
+        .join()?;
+
+    assert_eq!(
+        *noting.asked.lock(),
+        [
+            "Echoes",
+            "San Tropez",
+            "Seamus",
+            "Childhood's End",
+            "Free Four"
+        ]
+    );
+    Ok(())
+}
+
 struct HeldUntilAskedAgain {
     asked_again: Arc<AtomicBool>,
     overlapped: Arc<AtomicBool>,

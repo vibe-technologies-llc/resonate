@@ -8,6 +8,7 @@ license.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
+resonate-words-build.workspace = true
 
 [target.'cfg(windows)'.build-dependencies]
 thiserror.workspace = true
@@ -60,6 +61,7 @@ resonate-upnp.workspace = true
 resonate-ui = { workspace = true, optional = true }
 resonate-vault.workspace = true
 resonate-signin = { workspace = true, optional = true }
+resonate-words.workspace = true
 resonate-ytmusic = { workspace = true, optional = true }
 thiserror.workspace = true
 toml_edit.workspace = true
@@ -81,6 +83,7 @@ trash.workspace = true
 [dev-dependencies]
 base64.workspace = true
 png.workspace = true
+resonate-words-build.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 rustix = { workspace = true, features = ["pty"] }

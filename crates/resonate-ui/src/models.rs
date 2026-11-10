@@ -49,12 +49,13 @@ use crate::{
         self, Download, Downloads, Fetched, Fetcher, Fetching, Polling, Unfinished, WantStanding,
     },
     drawing::Drawer,
-    format,
+    format, keys,
     recent::{Leaving, Recent},
     serving::{Row, song_to_keep},
     settings::{Asking, Online, Sourcing},
     theme, toast,
     views::statistics::{BARS_AT_MOST, Chart},
+    words,
 };
 
 const PAGE: usize = 2_000;
@@ -70,8 +71,6 @@ const MISSING_AT_MOST: usize = 5_000;
 const PREVIEWED_AT_MOST: usize = 500;
 const FAVOURITES_AT_MOST: usize = 5_000;
 const MOST_LISTENED: usize = 10;
-const READING_A_COVER: &str = "read a cover";
-const READING_A_PORTRAIT: &str = "read a portrait";
 const COVERS_HELD: NonZeroUsize = held(512);
 const COVERS_WARMED: usize = 256;
 const NAMES_HELD: NonZeroUsize = held(4_096);
@@ -112,37 +111,23 @@ pub const PICTURED_AT_MOST: usize = 4;
 
 pub const PINNED_IN_THE_SIDEBAR: usize = 5;
 
-const TAKEN_BACK: &str = concat!(" · ", keyed!("Put it back", key!(undo)));
+fn unnamed_playlist(id: PlaylistId) -> String {
+    words::models::unnamed_playlist(id.to_string())
+}
 
-const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
-const NO_LINK_TO_SHARE: &str = "There's no link for that track";
-const NO_LINK_TO_SHARE_ANY: &str = "There's no link for any of those tracks";
-const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
-const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
-const PLACED_ON: &str = "Placed the track on that release";
-const TOOK_THE_RECORDING: &str = "The song is that recording now";
-const NOT_TAKEN: &str = "MusicBrainz no longer answers for that recording";
-const GAVE_THE_ISRC: &str = "Gave the track that ISRC, looking it up by the code";
-const ALREADY_ON_A_RELEASE: &str =
-    "That track is already on a release; Place on a release… moves it to another";
+fn put_it_back() -> String {
+    keys::keyed(words::models::put_it_back(), &[key!(undo)])
+}
 
 fn read_further(read: usize) -> String {
     match read {
-        0 => "The rest of the discography held nothing worth keeping".to_owned(),
-        read => format!(
-            "Read {} more of the discography",
-            format::counted(read, "release", "releases")
-        ),
+        0 => words::models::the_rest_held_nothing().to_owned(),
+        count => words::models::read_more_of_the_discography(count),
     }
 }
 
-const NO_MUSIC_FOLDER: &str = "Choose a music folder to keep songs in";
-const NO_TITLE_TO_KEEP: &str = "This song has no title to keep it under";
-const ALREADY_HELD: &str = "Already in your library";
 const KEEP_THREAD: &str = "resonate-keep";
 const KEEPS_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
-const ALREADY_WALKING: &str = "Another library task is still running — try again once it finishes";
-const NO_PROVIDER: &str = "No provider is set up to download it";
 
 pub(crate) const fn side(pixels: u32) -> NonZeroU32 {
     match NonZeroU32::new(pixels) {
@@ -333,6 +318,8 @@ pub enum MissingRow {
     Release(usize),
 }
 
+type SaidOfACount = fn(usize) -> String;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Favourited {
     pub artists: usize,
@@ -350,16 +337,17 @@ impl Favourited {
     }
 
     pub fn counted(self) -> String {
-        [
-            (self.artists, "artist", "artists"),
-            (self.albums, "album", "albums"),
-            (self.tracks, "track", "tracks"),
-        ]
-        .into_iter()
-        .filter(|(held, _, _)| *held > 0)
-        .map(|(held, one, many)| format::counted(held, one, many))
-        .collect::<format::Parts<String>>()
-        .join(" · ")
+        let counts: [(usize, SaidOfACount); 3] = [
+            (self.artists, words::models::artists_counted),
+            (self.albums, words::models::albums_counted),
+            (self.tracks, words::models::tracks_counted),
+        ];
+        counts
+            .into_iter()
+            .filter(|(held, _)| *held > 0)
+            .map(|(held, said)| said(held))
+            .collect::<format::Parts<String>>()
+            .join(" · ")
     }
 }
 
@@ -427,27 +415,27 @@ enum Edited {
 }
 
 impl Change {
-    const fn doing(self) -> &'static str {
+    fn doing(self) -> &'static str {
         match self {
-            Self::Playlist => "change the playlist",
-            Self::Want => "want that track",
-            Self::Unwant => "stop wanting that track",
-            Self::Dismiss => "dismiss that",
-            Self::BringBack => "bring back what was dismissed",
-            Self::Favour { favourite: true } => "mark it a favourite",
-            Self::Favour { favourite: false } => "take it out of the favourites",
-            Self::Hide { hidden: true } => "hide that from the library",
-            Self::Hide { hidden: false } => "show that in the library again",
-            Self::ForgetDelivered => "forget that delivery",
-            Self::ForgetTheMatch => "forget that match",
-            Self::TakePressing => "take that pressing",
-            Self::PlaceOn => "place the track on that release",
-            Self::TakeRecording => "treat the song as that recording",
-            Self::GiveIsrc => "give the track that ISRC",
-            Self::LookUp => "look the track up",
-            Self::ReadTheRest => "read the rest of the discography",
-            Self::Undo => "put that back",
-            Self::Redo => "do that again",
+            Self::Playlist => words::models::change_the_playlist(),
+            Self::Want => words::models::want_that_track(),
+            Self::Unwant => words::models::stop_wanting_that_track(),
+            Self::Dismiss => words::models::dismiss_that(),
+            Self::BringBack => words::models::bring_back_what_was_dismissed(),
+            Self::Favour { favourite: true } => words::models::mark_it_a_favourite(),
+            Self::Favour { favourite: false } => words::models::take_it_out_of_the_favourites(),
+            Self::Hide { hidden: true } => words::models::hide_that_from_the_library(),
+            Self::Hide { hidden: false } => words::models::show_that_in_the_library_again(),
+            Self::ForgetDelivered => words::models::forget_that_delivery(),
+            Self::ForgetTheMatch => words::models::forget_that_match(),
+            Self::TakePressing => words::models::take_that_pressing(),
+            Self::PlaceOn => words::models::place_the_track_on_that_release(),
+            Self::TakeRecording => words::models::treat_the_song_as_that_recording(),
+            Self::GiveIsrc => words::models::give_the_track_that_isrc(),
+            Self::LookUp => words::models::look_the_track_up(),
+            Self::ReadTheRest => words::models::read_the_rest_of_the_discography(),
+            Self::Undo => words::models::put_that_back(),
+            Self::Redo => words::models::do_that_again(),
         }
     }
 }
@@ -944,58 +932,44 @@ impl Followed {
 fn stopped_told(stopped: &KeepStopped) -> String {
     let song = &stopped.song;
     match stopped.why {
-        WhyAway::SignInLapsed => format!(
-            "The cookies lapsed at “{song}”. Sign in to YouTube again, and the rest stays queued"
-        ),
-        WhyAway::SubscriptionLapsed => format!(
-            "This account has lost Premium, so “{song}” and the rest stay queued until it is back"
-        ),
-        WhyAway::ToolMissing => {
-            format!("yt-dlp is missing. Install it, and “{song}” and the rest stay queued")
-        }
-        WhyAway::NotAnswering => {
-            format!("The service stopped answering at “{song}”, so the rest stays queued")
-        }
+        WhyAway::SignInLapsed => words::models::the_cookies_lapsed(song),
+        WhyAway::SubscriptionLapsed => words::models::premium_lost(song),
+        WhyAway::ToolMissing => words::models::yt_dlp_missing(song),
+        WhyAway::NotAnswering => words::models::the_service_stopped_answering(song),
     }
 }
 
 fn kept(summary: &KeepSummary) -> Option<Notice> {
-    let songs = |count: usize| {
-        if count == 1 {
-            "1 song".to_owned()
-        } else {
-            format!("{count} songs")
-        }
-    };
     if let Some(stopped) = &summary.stopped {
         return Some(Notice::Trouble(stopped_told(stopped)));
     }
     let missed = summary.gone + summary.unkept;
     match (summary.landed, missed) {
         (0, 0) => None,
-        (landed, 0) => Some(Notice::Done(format!("Kept {}", songs(landed)))),
-        (0, missed) => Some(Notice::Trouble(format!("{} not kept", songs(missed)))),
-        (landed, missed) => Some(Notice::Noted(format!(
-            "Kept {}, {} not",
-            songs(landed),
-            songs(missed)
+        (landed, 0) => Some(Notice::Done(words::models::kept_songs(landed))),
+        (0, missed) => Some(Notice::Trouble(words::models::songs_not_kept(missed))),
+        (landed, missed) => Some(Notice::Noted(words::models::kept_some_songs_not_others(
+            landed, missed,
         ))),
     }
 }
 
 fn keep_refused(error: &resonate_library::Error) -> Notice {
     match error {
-        resonate_library::Error::NoDeliveryFolder => Notice::Trouble(NO_MUSIC_FOLDER.to_owned()),
-        resonate_library::Error::KeptWithNoTitle => Notice::Trouble(NO_TITLE_TO_KEEP.to_owned()),
-        error => toast::could_not("keep the song", error),
+        resonate_library::Error::NoDeliveryFolder => {
+            Notice::Trouble(words::models::no_music_folder().to_owned())
+        }
+        resonate_library::Error::KeptWithNoTitle => {
+            Notice::Trouble(words::models::no_title_to_keep().to_owned())
+        }
+        error => toast::could_not(words::models::keep_the_song(), error),
     }
 }
 
 fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
-    let held = format!("{name}: {} queued, {} already held", kept.queued, kept.held);
     match left_out {
-        0 => held,
-        left_out => format!("{held}, {left_out} left out with no title"),
+        0 => words::models::list_kept(kept.held, name, kept.queued),
+        unnamed => words::models::list_kept_leaving_out(kept.held, name, kept.queued, unnamed),
     }
 }
 
@@ -1246,7 +1220,7 @@ impl LibraryModel {
     pub fn refresh_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
         let Some((library, reference)) = self.follows_links() else {
             toast::tell(
-                Notice::Noted("Turn Online on to read a playlist from its link".to_owned()),
+                Notice::Noted(words::models::turn_online_on_to_read_a_playlist().to_owned()),
                 cx,
             );
             return;
@@ -1277,10 +1251,10 @@ impl LibraryModel {
                 library.keep_playlist_from_its_link(id, upkeep)?;
                 let name = library
                     .playlist(id)?
-                    .map_or_else(|| format!("playlist {id}"), |found| found.name);
+                    .map_or_else(|| unnamed_playlist(id), |found| found.name);
                 Ok(Some(match upkeep {
-                    Upkeep::InStep => format!("{name} is kept in step with its link"),
-                    Upkeep::Once => format!("{name} stays as it stands"),
+                    Upkeep::InStep => words::models::kept_in_step_with_its_link(name),
+                    Upkeep::Once => words::models::stays_as_it_stands(name),
                 }))
             },
             cx,
@@ -1314,7 +1288,9 @@ impl LibraryModel {
                     tracing::info!(%playlist, "a playlist's link names no playlist now");
                     if asked {
                         toast::tell(
-                            Notice::Trouble("The link names no playlist any more".to_owned()),
+                            Notice::Trouble(
+                                words::models::the_link_names_no_playlist_any_more().to_owned(),
+                            ),
                             cx,
                         );
                     }
@@ -1323,7 +1299,10 @@ impl LibraryModel {
                     tracing::warn!(%error, %playlist, "a playlist was not read again from its link");
                     if asked {
                         toast::tell(
-                            toast::could_not("read the playlist from its link", &error),
+                            toast::could_not(
+                                words::models::read_the_playlist_from_its_link(),
+                                &error,
+                            ),
                             cx,
                         );
                     }
@@ -2119,7 +2098,7 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "an album not held could not be wanted");
-                        toast::tell(toast::could_not("add the album", &error), cx);
+                        toast::tell(toast::could_not(words::models::add_the_album(), &error), cx);
                     }
                 }
                 this.read(Wanted::Everything, cx);
@@ -2168,7 +2147,10 @@ impl LibraryModel {
                         }
                         Err(error) => {
                             tracing::error!(%error, "an album not held could not be opened");
-                            toast::tell(toast::could_not("open the album", &error), cx);
+                            toast::tell(
+                                toast::could_not(words::models::open_the_album(), &error),
+                                cx,
+                            );
                             None
                         }
                     }
@@ -2218,7 +2200,10 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "an artist found elsewhere could not be opened");
-                        toast::tell(toast::could_not("open the artist", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::open_the_artist(), &error),
+                            cx,
+                        );
                         None
                     }
                 }
@@ -2244,7 +2229,7 @@ impl LibraryModel {
                 this.albums_missing_tracks_wanted.remove(&album);
                 this.wants_landed(
                     wanted,
-                    "download the missing tracks",
+                    words::models::download_the_missing_tracks(),
                     Wanted::Everything,
                     cx,
                 );
@@ -2287,6 +2272,28 @@ impl LibraryModel {
                     .find(|each| *each != Fetching::Downloaded)
             })
             .or_else(|| fetching.first().copied())
+    }
+
+    pub(crate) fn told_album(&self, group: &Mbid) -> Option<SharedString> {
+        if self.albums_wanted.contains_key(group) {
+            return Some(Fetching::Landing.saying());
+        }
+        let songs: Vec<&Download> = self
+            .album_songs
+            .get(group)?
+            .iter()
+            .filter_map(|recording| self.downloads.of(recording))
+            .collect();
+        if songs.is_empty() {
+            return None;
+        }
+        let fetching: Vec<Fetching> = songs.iter().map(|song| self.fetching(song)).collect();
+        let arriving = songs.iter().any(|song| {
+            self.fetched(song)
+                .is_some_and(|fetched| fetched.is_arriving())
+        });
+
+        Some(downloads::summed_up(&fetching, arriving))
     }
 
     pub fn downloads(&self) -> &[Download] {
@@ -2428,7 +2435,10 @@ impl LibraryModel {
                     Ok(tracks) => tracks,
                     Err(error) => {
                         tracing::error!(%error, "a suggestion could not be previewed");
-                        toast::tell(toast::could_not("preview that suggestion", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::preview_that_suggestion(), &error),
+                            cx,
+                        );
                         return;
                     }
                 };
@@ -2769,7 +2779,10 @@ impl LibraryModel {
                 let answered = match answered {
                     Ok(answered) => answered,
                     Err(error) => {
-                        toast::tell(toast::could_not("read that album's pressings", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::read_that_album_s_pressings(), &error),
+                            cx,
+                        );
                         Pressings::Unanswered
                     }
                 };
@@ -2855,7 +2868,7 @@ impl LibraryModel {
             move |library| {
                 library
                     .take_pressing(album, reference.as_ref(), &release)
-                    .map(|took| took.then(|| TOOK_THE_PRESSING.to_owned()))
+                    .map(|took| took.then(|| words::models::took_the_pressing().to_owned()))
             },
             cx,
         );
@@ -2890,7 +2903,7 @@ impl LibraryModel {
             move |library| {
                 library
                     .place_on(track, reference.as_ref(), &recording, &release)
-                    .map(|placed| placed.then(|| PLACED_ON.to_owned()))
+                    .map(|placed| placed.then(|| words::models::placed_on().to_owned()))
             },
             cx,
         );
@@ -2926,7 +2939,14 @@ impl LibraryModel {
                 library
                     .take_recording(track, reference.as_ref(), &recording)
                     .map(|taken| {
-                        Some(if taken { TOOK_THE_RECORDING } else { NOT_TAKEN }.to_owned())
+                        Some(
+                            if taken {
+                                words::models::took_the_recording()
+                            } else {
+                                words::models::not_taken()
+                            }
+                            .to_owned(),
+                        )
                     })
             },
             cx,
@@ -2940,7 +2960,7 @@ impl LibraryModel {
             move |library| {
                 library
                     .set_isrc(track, &isrc)
-                    .map(|()| Some(GAVE_THE_ISRC.to_owned()))
+                    .map(|()| Some(words::models::gave_the_isrc().to_owned()))
             },
             move |this, edited, cx| {
                 if edited == Edited::Landed {
@@ -2961,7 +2981,7 @@ impl LibraryModel {
             move |library| {
                 let asked_again = library.ask_about_again(track)?;
                 held.store(asked_again, Ordering::Relaxed);
-                Ok((!asked_again).then(|| ALREADY_ON_A_RELEASE.to_owned()))
+                Ok((!asked_again).then(|| words::models::already_on_a_release().to_owned()))
             },
             move |this, edited, cx| {
                 if edited == Edited::Landed && due.load(Ordering::Relaxed) {
@@ -2996,7 +3016,7 @@ impl LibraryModel {
             move |library| {
                 library
                     .forget_the_match(album)
-                    .map(|forgot| forgot.then(|| FORGOT_THE_MATCH.to_owned()))
+                    .map(|forgot| forgot.then(|| words::models::forgot_the_match().to_owned()))
             },
             cx,
         );
@@ -3013,7 +3033,7 @@ impl LibraryModel {
             move |library| {
                 library
                     .forget_delivered(&path)
-                    .map(|forgot| forgot.then(|| format!("Forgot the delivered {title}")))
+                    .map(|forgot| forgot.then(|| words::models::forgot_the_delivered(title)))
             },
             cx,
         );
@@ -3134,13 +3154,16 @@ impl LibraryModel {
     pub fn share_file(&mut self, track: TrackId, cx: &mut Context<Self>) {
         let Some(reference) = self.reference.clone().filter(|_| self.online) else {
             toast::tell(
-                Notice::Noted("Turn Online on to upload a file".to_owned()),
+                Notice::Noted(words::models::turn_online_on_to_upload_a_file().to_owned()),
                 cx,
             );
             return;
         };
         let library = Arc::clone(&self.library);
-        toast::tell(Notice::Noted("Uploading file to Catbox…".to_owned()), cx);
+        toast::tell(
+            Notice::Noted(words::models::uploading_file_to_catbox().to_owned()),
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -3165,12 +3188,14 @@ impl LibraryModel {
                 let notice = match result {
                     Ok(Some(link)) => {
                         clipboard::copy(link, cx);
-                        Notice::Done("Public Catbox file link is on the clipboard".to_owned())
+                        Notice::Done(words::models::public_catbox_file_link_is_on_the().to_owned())
                     }
                     Ok(None) => Notice::Noted(
-                        "Only whole local files can be uploaded with this build".to_owned(),
+                        words::models::only_whole_local_files_can_be_uploaded().to_owned(),
                     ),
-                    Err(error) => toast::could_not("upload the file to Catbox", &error),
+                    Err(error) => {
+                        toast::could_not(words::models::upload_the_file_to_catbox(), &error)
+                    }
                 };
                 toast::tell(notice, cx);
                 cx.notify();
@@ -3611,9 +3636,8 @@ impl LibraryModel {
                 library.start_playlist(&name, &holding)?;
 
                 Ok(Some(match holding.len() {
-                    0 => format!("Started {name}{TAKEN_BACK}"),
-                    1 => format!("Started {name} with 1 track{TAKEN_BACK}"),
-                    added => format!("Started {name} with {added} tracks{TAKEN_BACK}"),
+                    0 => words::models::started(name, put_it_back()),
+                    added => words::models::started_with(added, name, put_it_back()),
                 }))
             },
             cx,
@@ -3627,7 +3651,7 @@ impl LibraryModel {
                 let id = library.save_query(&name, &query)?;
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
 
-                Ok(Some(format!("{name} fills itself, and holds {held} now")))
+                Ok(Some(words::models::fills_itself(held, name)))
             },
             cx,
         );
@@ -3646,8 +3670,8 @@ impl LibraryModel {
                 library.revise_query(id, &name, &query)?;
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
 
-                Ok(Some(format!(
-                    "{name} fills itself from the new search, and holds {held} now"
+                Ok(Some(words::models::fills_itself_from_the_new_search(
+                    held, name,
                 )))
             },
             cx,
@@ -3676,7 +3700,7 @@ impl LibraryModel {
 
                 Ok(name
                     .filter(|_| dropped)
-                    .map(|name| format!("Discarded {name}{TAKEN_BACK}")))
+                    .map(|name| words::models::discarded(name, put_it_back())))
             },
             cx,
         );
@@ -3689,9 +3713,9 @@ impl LibraryModel {
                 let copy = library.duplicate_playlist(id)?;
                 let name = library
                     .playlist(copy)?
-                    .map_or_else(|| format!("playlist {copy}"), |found| found.name);
+                    .map_or_else(|| unnamed_playlist(copy), |found| found.name);
 
-                Ok(Some(format!("Made {name}{TAKEN_BACK}")))
+                Ok(Some(words::models::made(name, put_it_back())))
             },
             cx,
         );
@@ -3776,9 +3800,8 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 Ok(Some(match library.remove_matching(id, &matching)? {
-                    0 => "Nothing shown was left to take out".to_owned(),
-                    1 => "Took 1 row out".to_owned(),
-                    dropped => format!("Took {dropped} rows out"),
+                    0 => words::models::nothing_shown_was_left_to_take_out().to_owned(),
+                    dropped => words::models::took_rows_out(dropped),
                 }))
             },
             cx,
@@ -3821,11 +3844,10 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 let written = library.export_playlist(id, &path)?;
-                Ok(Some(format!(
-                    "Wrote {} rows to {} as {}",
+                Ok(Some(words::models::wrote_rows(
                     written.rows,
-                    path.display(),
-                    written.format.name()
+                    written.format.name(),
+                    path.display().to_string(),
                 )))
             },
             cx,
@@ -3843,9 +3865,8 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 Ok(Some(match library.sort_playlist(id, order, reading)? {
-                    0 => "Already in that order".to_owned(),
-                    1 => "Moved 1 row into that order".to_owned(),
-                    moved => format!("Moved {moved} rows into that order"),
+                    0 => words::models::already_in_that_order().to_owned(),
+                    moved => words::models::moved_rows_into_that_order(moved),
                 }))
             },
             cx,
@@ -3864,14 +3885,13 @@ impl LibraryModel {
                 let moved = library.keep_playlist_in_order(id, kept)?;
                 let Some(_) = kept else {
                     return Ok(Some(
-                        "Back in hand: a row added now lands at the end".to_owned(),
+                        words::models::back_in_hand_a_row_added_now().to_owned(),
                     ));
                 };
 
                 Ok(Some(match moved {
-                    0 => "Kept in that order, and it was already in it".to_owned(),
-                    1 => "Kept in that order, and 1 row moved into it".to_owned(),
-                    moved => format!("Kept in that order, and {moved} rows moved into it"),
+                    0 => words::models::kept_in_that_order_and_it_was().to_owned(),
+                    moved => words::models::kept_in_that_order_and_rows_moved(moved),
                 }))
             },
             cx,
@@ -3883,9 +3903,8 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 Ok(Some(match library.tidy_playlist(id)? {
-                    0 => "Every row names a file that is there and appears once".to_owned(),
-                    1 => "Removed 1 missing or doubled row".to_owned(),
-                    removed => format!("Removed {removed} missing or doubled rows"),
+                    0 => words::models::every_row_names_a_file_that_is().to_owned(),
+                    removed => words::models::removed_missing_or_doubled_rows(removed),
                 }))
             },
             cx,
@@ -3907,7 +3926,10 @@ impl LibraryModel {
             let outcome = this.update(cx, |this, cx| match counted {
                 Err(error) => {
                     tracing::warn!(%error, "a play was not counted");
-                    toast::tell(toast::could_not("count that play", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::models::count_that_play(), &error),
+                        cx,
+                    );
                 }
                 Ok(None) => {}
                 Ok(Some(counted)) => {
@@ -3986,7 +4008,7 @@ impl LibraryModel {
             |library| {
                 Ok(Some(match library.undo()? {
                     Some(put_back) => put_back_as(&put_back),
-                    None => "Nothing left to put back".to_owned(),
+                    None => words::models::nothing_left_to_put_back().to_owned(),
                 }))
             },
             cx,
@@ -4003,7 +4025,7 @@ impl LibraryModel {
             |library| {
                 Ok(Some(match library.redo()? {
                     Some(done_again) => done_again_as(&done_again),
-                    None => "Nothing left to do again".to_owned(),
+                    None => words::models::nothing_left_to_do_again().to_owned(),
                 }))
             },
             cx,
@@ -4244,7 +4266,7 @@ impl LibraryModel {
         cx.spawn(async move |this, cx| {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
-                let decoded = picture_or_trouble(read, READING_A_COVER, cx);
+                let decoded = picture_or_trouble(read, words::models::read_a_cover(), cx);
                 this.decoding.remove(&wanted);
                 this.covers.insert(wanted, decoded).forget(cx);
                 cx.notify();
@@ -4270,7 +4292,7 @@ impl LibraryModel {
         cx.spawn(async move |this, cx| {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
-                let read = picture_or_trouble(read, READING_A_COVER, cx);
+                let read = picture_or_trouble(read, words::models::read_a_cover(), cx);
                 if this.magnified.as_ref().is_some_and(|held| held.names(&id)) {
                     this.magnified
                         .replace(Magnifying::Read(id, read))
@@ -4404,7 +4426,7 @@ impl LibraryModel {
         cx.spawn(async move |this, cx| {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
-                let decoded = picture_or_trouble(read, READING_A_PORTRAIT, cx);
+                let decoded = picture_or_trouble(read, words::models::read_a_portrait(), cx);
                 this.decoding_portraits.remove(&wanted);
                 this.portraits.insert(wanted, decoded).forget(cx);
                 cx.notify();
@@ -4789,7 +4811,10 @@ impl LibraryModel {
                     self.forget_the_listing();
                     self.listed_for = asked_for;
                 }
-                toast::tell(toast::could_not("read the library", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::read_the_library(), &error),
+                    cx,
+                );
             }
         }
         cx.notify();
@@ -5030,7 +5055,7 @@ impl LibraryModel {
                 let read = drawing.await;
 
                 let landed = this.update(cx, |this, cx| {
-                    let decoded = picture_or_trouble(read, READING_A_COVER, cx);
+                    let decoded = picture_or_trouble(read, words::models::read_a_cover(), cx);
                     this.covers.insert(sized, decoded).forget(cx);
                     cx.notify();
                 });
@@ -5069,7 +5094,10 @@ impl LibraryModel {
             .hold_lyrics_ahead(&wanted.location, wanted.span, ahead)
         {
             tracing::error!(%error, "how far the words run ahead could not be kept");
-            toast::tell(toast::could_not("keep the lyrics' timing", &error), cx);
+            toast::tell(
+                toast::could_not(words::models::keep_the_lyrics_timing(), &error),
+                cx,
+            );
         }
     }
 
@@ -5081,7 +5109,10 @@ impl LibraryModel {
             Ok(()) => true,
             Err(error) => {
                 tracing::error!(%error, "the earlier plays could not be asked to be sent");
-                toast::tell(toast::could_not("send the earlier plays", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::send_the_earlier_plays(), &error),
+                    cx,
+                );
                 cx.notify();
                 false
             }
@@ -5097,7 +5128,7 @@ impl LibraryModel {
             Err(error) => {
                 tracing::error!(%error, "the covers still missing could not be asked for again");
                 toast::tell(
-                    toast::could_not("look for the missing covers again", &error),
+                    toast::could_not(words::models::look_for_the_missing_covers_again(), &error),
                     cx,
                 );
                 cx.notify();
@@ -5213,7 +5244,10 @@ impl LibraryModel {
             }
             Err(error) => {
                 tracing::error!(%error, "the scan could not be started");
-                toast::tell(toast::could_not("start the scan", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::start_the_scan(), &error),
+                    cx,
+                );
                 cx.notify();
                 return false;
             }
@@ -5256,7 +5290,10 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the scan failed");
-                        toast::tell(toast::could_not("finish the scan", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::finish_the_scan(), &error),
+                            cx,
+                        );
                     }
                 }
                 this.reload(cx);
@@ -5517,7 +5554,10 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the lookup could not be started");
-                toast::tell(toast::could_not("start the lookup", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::start_the_lookup(), &error),
+                    cx,
+                );
                 cx.notify();
                 return;
             }
@@ -5558,7 +5598,10 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the lookup failed");
-                        toast::tell(toast::could_not("finish the lookup", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::finish_the_lookup(), &error),
+                            cx,
+                        );
                     }
                 }
                 this.reload(cx);
@@ -5664,7 +5707,10 @@ impl LibraryModel {
 
     pub fn import(&mut self, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
-            toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
+            toast::tell(
+                Notice::Trouble(words::models::already_walking().to_owned()),
+                cx,
+            );
             cx.notify();
             return;
         }
@@ -5679,7 +5725,10 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the tracks could not be kept in the vault");
-                toast::tell(toast::could_not("keep the tracks in the vault", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::keep_the_tracks_in_the_vault(), &error),
+                    cx,
+                );
                 cx.notify();
                 return;
             }
@@ -5712,7 +5761,10 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the tracks were not kept in the vault");
-                        toast::tell(toast::could_not("keep the tracks in the vault", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::keep_the_tracks_in_the_vault(), &error),
+                            cx,
+                        );
                     }
                 }
                 this.reload(cx);
@@ -5781,7 +5833,7 @@ impl LibraryModel {
         if self.providers(cx).has_a_source() {
             self.fetch_what_was_wanted(PollOptions::default(), cx);
         } else {
-            toast::tell(Notice::Trouble(NO_PROVIDER.to_owned()), cx);
+            toast::tell(Notice::Trouble(words::models::no_provider().to_owned()), cx);
         }
     }
 
@@ -5824,7 +5876,10 @@ impl LibraryModel {
         }
         if self.work.is_busy() {
             if prompted == Prompted::ByHand {
-                toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
+                toast::tell(
+                    Notice::Trouble(words::models::already_walking().to_owned()),
+                    cx,
+                );
                 cx.notify();
             }
             return false;
@@ -5848,7 +5903,10 @@ impl LibraryModel {
             Err(resonate_library::Error::AlreadyAsking { .. }) => {
                 tracing::debug!("another process is asking the providers; this poll waits for it");
                 if prompted == Prompted::ByHand {
-                    toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
+                    toast::tell(
+                        Notice::Trouble(words::models::already_walking().to_owned()),
+                        cx,
+                    );
                     cx.notify();
                 }
                 self.ask_what_is_owed_after(OWED_ASKED_AGAIN_AFTER, cx);
@@ -5856,7 +5914,10 @@ impl LibraryModel {
             }
             Err(error) => {
                 tracing::error!(%error, "the providers could not be asked");
-                toast::tell(toast::could_not("ask the providers", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::ask_the_providers(), &error),
+                    cx,
+                );
                 cx.notify();
                 return true;
             }
@@ -5918,7 +5979,10 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the providers were not asked");
-                        toast::tell(toast::could_not("ask the providers", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::ask_the_providers(), &error),
+                            cx,
+                        );
                     }
                 }
                 this.reload(cx);
@@ -5936,7 +6000,7 @@ impl LibraryModel {
             move |library| {
                 Ok(match library.keep_song(song)? {
                     KeptSong::Queued => None,
-                    KeptSong::AlreadyHeld(_) => Some(ALREADY_HELD.to_owned()),
+                    KeptSong::AlreadyHeld(_) => Some(words::models::already_held().to_owned()),
                 })
             },
             cx,
@@ -6047,7 +6111,7 @@ impl LibraryModel {
             Err(error) => {
                 tracing::error!(%error, "the keep pass could not start");
                 toast::tell(
-                    Notice::Trouble("The songs could not be kept".to_owned()),
+                    Notice::Trouble(words::models::the_songs_could_not_be_kept().to_owned()),
                     cx,
                 );
                 return;
@@ -6156,7 +6220,7 @@ impl LibraryModel {
                 tracing::error!("the keep pass stopped");
                 self.tell_what_was_kept(cx);
                 toast::tell(
-                    Notice::Trouble("The songs could not be kept".to_owned()),
+                    Notice::Trouble(words::models::the_songs_could_not_be_kept().to_owned()),
                     cx,
                 );
             }
@@ -6291,7 +6355,10 @@ impl LibraryModel {
 
     fn tag(&mut self, options: RetagOptions, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
-            toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
+            toast::tell(
+                Notice::Trouble(words::models::already_walking().to_owned()),
+                cx,
+            );
             cx.notify();
             return;
         }
@@ -6301,7 +6368,7 @@ impl LibraryModel {
             Err(error) => {
                 tracing::error!(%error, "the catalog could not be written back into the files");
                 toast::tell(
-                    toast::could_not("write the tags into the files", &error),
+                    toast::could_not(words::models::write_the_tags_into_the_files(), &error),
                     cx,
                 );
                 cx.notify();
@@ -6314,16 +6381,15 @@ impl LibraryModel {
         self.previewed_tags = Planned::Not;
         cx.notify();
 
-        self._retag =
-            cx.spawn(async move |this, cx| {
-                while !handle.is_finished() {
-                    cx.background_executor().timer(SCAN_POLL).await;
-                    if this.update(cx, |_, cx| cx.notify()).is_err() {
-                        return;
-                    }
+        self._retag = cx.spawn(async move |this, cx| {
+            while !handle.is_finished() {
+                cx.background_executor().timer(SCAN_POLL).await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    return;
                 }
+            }
 
-                let finished = this.update(cx, |this, cx| {
+            let finished = this.update(cx, |this, cx| {
                 this.work = Work::Nothing;
                 this.tags_walk_back = this.library.retag_walks_back().unwrap_or_default();
                 this.take_up_what_waited(cx);
@@ -6337,13 +6403,19 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the catalog was not written back into the files");
-                        toast::tell(toast::could_not("write the tags into the files", &error), cx);
+                        toast::tell(
+                            toast::could_not(
+                                words::models::write_the_tags_into_the_files(),
+                                &error,
+                            ),
+                            cx,
+                        );
                     }
                 }
                 this.reload(cx);
             });
-                let _ = finished;
-            });
+            let _ = finished;
+        });
     }
 
     pub fn organise(&mut self, layout: Layout, pass: Pass, cx: &mut Context<Self>) {
@@ -6372,7 +6444,10 @@ impl LibraryModel {
 
     fn file(&mut self, options: OrganiseOptions, pass: Pass, cx: &mut Context<Self>) {
         if self.work.is_busy() {
-            toast::tell(Notice::Trouble(ALREADY_WALKING.to_owned()), cx);
+            toast::tell(
+                Notice::Trouble(words::models::already_walking().to_owned()),
+                cx,
+            );
             cx.notify();
             return;
         }
@@ -6381,7 +6456,10 @@ impl LibraryModel {
             Ok(handle) => handle,
             Err(error) => {
                 tracing::error!(%error, "the files could not be put in order");
-                toast::tell(toast::could_not("put the files in order", &error), cx);
+                toast::tell(
+                    toast::could_not(words::models::put_the_files_in_order(), &error),
+                    cx,
+                );
                 cx.notify();
                 return;
             }
@@ -6415,7 +6493,10 @@ impl LibraryModel {
                     }
                     Err(error) => {
                         tracing::error!(%error, "the files were not put in order");
-                        toast::tell(toast::could_not("put the files in order", &error), cx);
+                        toast::tell(
+                            toast::could_not(words::models::put_the_files_in_order(), &error),
+                            cx,
+                        );
                     }
                 }
                 this.reload(cx);
@@ -6448,7 +6529,10 @@ impl LibraryModel {
                 this.take_up_what_waited(cx);
                 if let Err(error) = dropped {
                     tracing::error!(%error, "a library folder could not be dropped");
-                    toast::tell(toast::could_not("drop that library folder", &error), cx);
+                    toast::tell(
+                        toast::could_not(words::models::drop_that_library_folder(), &error),
+                        cx,
+                    );
                 }
                 this.reload(cx);
             });
@@ -6468,7 +6552,7 @@ fn done_again_as(done_again: &Undoable) -> String {
 fn made_by_saying(made_by: Maker, saying: String) -> String {
     match made_by {
         Maker::ThisRun => saying,
-        Maker::AModel => format!("The model's edit: {saying}"),
+        Maker::AModel => words::models::the_models_edit(saying),
     }
 }
 
@@ -6476,20 +6560,20 @@ fn edit_put_back_as(put_back: &Undoable) -> String {
     let name = &put_back.name;
 
     match put_back.edit {
-        Edit::Started => format!("{name} is gone again"),
-        Edit::Renamed => format!("It is {name} again"),
-        Edit::Revised => format!("{name} fills itself from the search it had"),
-        Edit::Discarded => format!("Put {name} back"),
+        Edit::Started => words::models::gone_again(name),
+        Edit::Renamed => words::models::it_is_again(name),
+        Edit::Revised => words::models::fills_itself_from_the_search_it_had(name),
+        Edit::Discarded => words::models::put_back(name),
         Edit::Added | Edit::Copied | Edit::Imported => {
-            format!("Took back out of {name} what went in")
+            words::models::took_back_out_what_went_in(name)
         }
         Edit::Removed | Edit::Dropped | Edit::Tidied | Edit::Folded => {
-            format!("Put back in {name} what went out")
+            words::models::put_back_in_what_went_out(name)
         }
         Edit::Moved | Edit::Ordered | Edit::Kept => {
-            format!("Put {name} back in the order it was in")
+            words::models::put_back_in_the_order_it_was_in(name)
         }
-        Edit::Refreshed => format!("Put back the rows {name} held before it was refreshed"),
+        Edit::Refreshed => words::models::put_back_the_rows_held_before_refreshed(name),
     }
 }
 
@@ -6497,20 +6581,20 @@ fn edit_done_again_as(done_again: &Undoable) -> String {
     let name = &done_again.name;
 
     match done_again.edit {
-        Edit::Started => format!("Started {name} again"),
-        Edit::Renamed => format!("It is {name} again"),
-        Edit::Revised => format!("{name} fills itself from the search it was given"),
-        Edit::Discarded => format!("{name} is gone again"),
+        Edit::Started => words::models::started_again(name),
+        Edit::Renamed => words::models::it_is_again(name),
+        Edit::Revised => words::models::fills_itself_from_the_search_it_was_given(name),
+        Edit::Discarded => words::models::gone_again(name),
         Edit::Added | Edit::Copied | Edit::Imported => {
-            format!("Put back into {name} what had gone in")
+            words::models::put_back_into_what_had_gone_in(name)
         }
         Edit::Removed | Edit::Dropped | Edit::Tidied | Edit::Folded => {
-            format!("Took back out of {name} what had gone out")
+            words::models::took_back_out_what_had_gone_out(name)
         }
         Edit::Moved | Edit::Ordered | Edit::Kept => {
-            format!("Put {name} back in the order that edit left")
+            words::models::put_back_in_the_order_that_edit_left(name)
         }
-        Edit::Refreshed => format!("Refreshed {name} from its link again"),
+        Edit::Refreshed => words::models::refreshed_from_its_link_again(name),
     }
 }
 
@@ -6530,35 +6614,31 @@ async fn cover_what_was_wanted(
 fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
     let failed = stats.failed.total();
-    let mut said: Vec<String> = [
-        (stats.added, "added"),
-        (stats.updated, "updated"),
-        (stats.moved, "moved"),
-        (stats.removed, "removed"),
-    ]
-    .into_iter()
-    .filter(|(count, _)| *count > 0)
-    .map(|(count, done)| {
-        format!(
-            "{} {done}",
-            format::counted(count as usize, "track", "tracks")
-        )
-    })
-    .collect();
+    let tracks_done: [(_, fn(_) -> String); 4] = [
+        (stats.added, words::models::tracks_added),
+        (stats.updated, words::models::tracks_updated),
+        (stats.moved, words::models::tracks_moved),
+        (stats.removed, words::models::tracks_removed),
+    ];
+    let mut said: Vec<String> = tracks_done
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, done)| done(count))
+        .collect();
     if failed > 0 {
-        said.push(format!("{failed} couldn't be read"));
+        said.push(words::models::could_not_be_read(failed));
     }
     if said.is_empty() && prompted != Prompted::ByHand && !summary.cancelled {
         return None;
     }
 
     let mut told = if said.is_empty() {
-        "The library is up to date".to_owned()
+        words::models::the_library_is_up_to_date().to_owned()
     } else {
         said.join(" · ")
     };
     if summary.cancelled {
-        told.push_str(", stopped early");
+        told.push_str(words::models::stopped_early());
     }
     Some(Notice::Noted(told))
 }
@@ -6580,29 +6660,26 @@ fn relocations(summary: &OrganiseSummary) -> Vec<(MediaLocation, MediaLocation)>
 fn filed(summary: &OrganiseSummary) -> Notice {
     let stats = summary.stats;
     let mut told = match stats.moved {
-        0 => "No file needed moving".to_owned(),
-        moved => format!("Moved {}", format::counted(moved as usize, "file", "files")),
+        0 => words::models::no_file_needed_moving().to_owned(),
+        moved => words::models::moved_files(moved),
     };
     let unmoved = stats.collided + stats.failed;
     if unmoved > 0 {
-        told.push_str(&format!(" · {unmoved} couldn't be moved"));
+        told = [told, words::models::could_not_be_moved(unmoved)].join(" · ");
     }
     if summary.cancelled {
-        told.push_str(", stopped early");
+        told.push_str(words::models::stopped_early());
     }
     Notice::Done(told)
 }
 
 fn retagged(summary: &RetagSummary) -> Notice {
     let mut told = match summary.stats.written {
-        0 => "No file needed its tags written".to_owned(),
-        written => format!(
-            "Wrote the tags into {}",
-            format::counted(written as usize, "file", "files")
-        ),
+        0 => words::models::no_file_needed_its_tags_written().to_owned(),
+        written => words::models::wrote_the_tags_into(written),
     };
     if summary.cancelled {
-        told.push_str(", stopped early");
+        told.push_str(words::models::stopped_early());
     }
     Notice::Done(told)
 }
@@ -6610,41 +6687,32 @@ fn retagged(summary: &RetagSummary) -> Notice {
 fn vaulted(summary: &ImportSummary) -> Notice {
     let stats = summary.stats;
     let mut told = match stats.vaulted {
-        0 => "The vault already holds every track it can".to_owned(),
-        vaulted => format!(
-            "Kept {} in the vault · saved {}",
-            format::counted(vaulted as usize, "track", "tracks"),
-            format::bytes(stats.saved())
-        ),
+        0 => words::models::the_vault_already_holds_every_track_it().to_owned(),
+        vaulted => words::models::kept_in_the_vault(vaulted, format::bytes(stats.saved())),
     };
     if summary.cancelled {
-        told.push_str(", stopped early");
+        told.push_str(words::models::stopped_early());
     }
     Notice::Done(told)
 }
 
 fn deletion_told(deleted: resonate_library::Result<Deleted>, title: &str, asked: usize) -> Notice {
     match (deleted, asked) {
-        (Ok(deleted), 1) if deleted.kept > 0 => Notice::Trouble(format!(
-            "Couldn't delete “{title}” — its file couldn't be removed"
-        )),
-        (Ok(_), 1) => Notice::Done(format!("Deleted “{title}”")),
-        (Ok(deleted), asked) if deleted.kept > 0 => Notice::Trouble(format!(
-            "Couldn't delete {} of {} — their files couldn't be removed",
-            format::counted(deleted.kept as usize, "song", "songs"),
-            format::counted(asked, "song", "songs"),
-        )),
-        (Ok(_), asked) => Notice::Done(format!(
-            "Deleted {}",
-            format::counted(asked, "song", "songs")
-        )),
+        (Ok(deleted), 1) if deleted.kept > 0 => {
+            Notice::Trouble(words::models::could_not_delete_the_song(title))
+        }
+        (Ok(_), 1) => Notice::Done(words::models::deleted_the_song(title)),
+        (Ok(deleted), asked) if deleted.kept > 0 => Notice::Trouble(
+            words::models::could_not_delete_some_songs(asked, deleted.kept),
+        ),
+        (Ok(_), asked) => Notice::Done(words::models::deleted_songs(asked)),
         (Err(error), asked) => {
             tracing::error!(%error, "tracks could not be deleted");
             toast::could_not(
                 if asked == 1 {
-                    "delete that track"
+                    words::models::delete_that_track()
                 } else {
-                    "delete those tracks"
+                    words::models::delete_those_tracks()
                 },
                 &error,
             )
@@ -6659,49 +6727,37 @@ fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
     }
 
     let mut told = match stats.kept {
-        0 => "Nothing in the inbox filled a want".to_owned(),
-        kept => format!(
-            "The inbox filled {}",
-            format::counted(kept as usize, "want", "wants")
-        ),
+        0 => words::models::nothing_in_the_inbox_filled_a_want().to_owned(),
+        kept => words::models::the_inbox_filled(kept),
     };
     if stats.unkept > 0 {
-        told.push_str(&format!(" · {} couldn't be kept", stats.unkept));
+        told = [told, words::models::could_not_be_kept(stats.unkept)].join(" · ");
     }
     if summary.cancelled {
-        told.push_str(", stopped early");
+        told.push_str(words::models::stopped_early());
     }
     Some(Notice::Done(told))
 }
 
 fn looked_up(summary: &EnrichSummary) -> Notice {
     let stats = summary.stats;
-    let mut said = format!(
-        "{} and {} answered",
-        format::counted(stats.releases as usize, "album", "albums"),
-        format::counted(stats.artists as usize, "artist", "artists"),
-    );
+    let mut parts = vec![words::models::albums_and_artists_answered(
+        stats.releases,
+        stats.artists,
+    )];
     if stats.lyrics > 0 {
-        said.push_str(&format!(
-            " · lyrics for {}",
-            format::counted(stats.lyrics as usize, "track", "tracks")
-        ));
+        parts.push(words::models::lyrics_for_tracks(stats.lyrics));
     }
     if stats.songs > 0 {
-        said.push_str(&format!(
-            " · {} of albums not held learnt",
-            format::counted(stats.songs as usize, "song", "songs")
-        ));
+        parts.push(words::models::songs_of_albums_not_held_learnt(stats.songs));
     }
+    let mut said = parts.join(" · ");
     if summary.cancelled {
-        said.push_str(", stopped early");
+        said.push_str(words::models::stopped_early());
     }
 
     match summary.stopped_by {
-        Some(op) => Notice::Trouble(format!(
-            "MusicBrainz couldn't be reached while looking up {} · {said}",
-            op.asked_for()
-        )),
+        Some(op) => Notice::Trouble(words::models::musicbrainz_unreached(said, op.asked_for())),
         None => Notice::Noted(said),
     }
 }
@@ -6738,24 +6794,18 @@ fn sharing_told(read: Vec<resonate_library::Result<Option<Shared>>>) -> Sharing 
 
     if links.is_empty() {
         return nothing(match (failure, asked, absent) {
-            (Some(error), 1, _) => toast::could_not("share that track", &error),
-            (Some(error), _, _) => toast::could_not("share those tracks", &error),
-            (None, 1, 1) => Notice::Noted(NOTHING_TO_SHARE.to_owned()),
-            (None, 1, _) => Notice::Noted(NO_LINK_TO_SHARE.to_owned()),
-            (None, _, _) => Notice::Noted(NO_LINK_TO_SHARE_ANY.to_owned()),
+            (Some(error), 1, _) => toast::could_not(words::models::share_that_track(), &error),
+            (Some(error), _, _) => toast::could_not(words::models::share_those_tracks(), &error),
+            (None, 1, 1) => Notice::Noted(words::models::nothing_to_share().to_owned()),
+            (None, 1, _) => Notice::Noted(words::models::no_link_to_share().to_owned()),
+            (None, _, _) => Notice::Noted(words::models::no_link_to_share_any().to_owned()),
         });
     }
 
     let notice = match (asked, links.len()) {
         (1, _) => Notice::Done(said.unwrap_or_default()),
-        (asked, held) if held == asked => Notice::Done(format!(
-            "{} are on the clipboard",
-            format::counted(held, "link", "links")
-        )),
-        (asked, held) => Notice::Done(format!(
-            "{held} of {} are on the clipboard",
-            format::counted(asked, "link", "links")
-        )),
+        (asked, held) if held == asked => Notice::Done(words::models::links_on_the_clipboard(held)),
+        (asked, held) => Notice::Done(words::models::some_links_on_the_clipboard(asked, held)),
     };
 
     Sharing {
@@ -6766,8 +6816,8 @@ fn sharing_told(read: Vec<resonate_library::Result<Option<Shared>>>) -> Sharing 
 
 fn on_the_clipboard(shared: &Shared) -> String {
     match shared.artist.as_deref() {
-        Some(artist) => format!("{artist} — {} is on the clipboard", shared.title),
-        None => format!("{} is on the clipboard", shared.title),
+        Some(artist) => words::models::song_by_on_the_clipboard(artist, &shared.title),
+        None => words::models::song_on_the_clipboard(&shared.title),
     }
 }
 
@@ -7127,35 +7177,27 @@ fn headed_by_run<K: PartialEq>(
 }
 
 fn read_in(imported: Imported) -> String {
-    let mut said = format!(
-        "{}: read {} as {}, added {}",
-        imported.name,
-        imported.format.name(),
+    let mut said = vec![words::models::read_in(
+        imported.added,
         imported.encoding.name(),
-        imported.added
-    );
+        imported.format.name(),
+        &imported.name,
+    )];
     if imported.already > 0 {
-        said.push_str(&format!(", {} already in it", imported.already));
+        said.push(words::models::already_in_it(imported.already));
     }
     if imported.elsewhere > 0 {
-        said.push_str(&format!(
-            ", passed over {} naming no local file",
-            imported.elsewhere
+        said.push(words::models::passed_over_naming_no_local_file(
+            imported.elsewhere,
         ));
     }
     if imported.missing > 0 {
-        said.push_str(&format!(
-            ", {} naming a file that is not there",
-            imported.missing
-        ));
+        said.push(words::models::naming_a_file_not_there(imported.missing));
     }
     if imported.short > 0 {
-        said.push_str(&format!(
-            ", {} the sheet declared and did not hold",
-            imported.short
-        ));
+        said.push(words::models::declared_and_not_held(imported.short));
     }
-    said
+    said.join(", ")
 }
 
 #[derive(Default)]
@@ -7348,18 +7390,20 @@ fn shelves(
 }
 
 fn brought_back(brought: Missing) -> String {
-    let parts: Vec<String> = [
-        (brought.tracks, "missing track", "missing tracks"),
-        (brought.releases, "unheld release", "unheld releases"),
-    ]
-    .into_iter()
-    .filter(|(count, _, _)| *count > 0)
-    .map(|(count, one, many)| format::counted(count as usize, one, many))
-    .collect();
+    let counted: [(_, fn(_) -> String); 2] = [
+        (brought.tracks, words::models::missing_tracks),
+        (brought.releases, words::models::unheld_releases),
+    ];
+    let parts: Vec<String> = counted
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, said)| said(count))
+        .collect();
 
     match parts.as_slice() {
-        [] => "Nothing was dismissed".to_owned(),
-        parts => format!("{} brought back", parts.join(" and ")),
+        [] => words::models::nothing_was_dismissed().to_owned(),
+        [only] => words::models::brought_back(only),
+        [one, other, ..] => words::models::brought_back(words::models::both(one, other)),
     }
 }
 
@@ -7384,7 +7428,10 @@ fn tell_of_listen_time(
     cx: &mut AsyncApp,
 ) {
     let told = this.update(cx, |_, cx| {
-        toast::tell(toast::could_not("keep how long that was heard", error), cx);
+        toast::tell(
+            toast::could_not(words::models::keep_how_long_that_was_heard(), error),
+            cx,
+        );
     });
     let _ = told;
 }
@@ -7545,40 +7592,26 @@ fn refreshed_where_due(
 }
 
 fn link_told(name: &str, added: usize, removed: usize, wanted: usize) -> String {
-    let mut told = match (added, removed) {
-        (0, 0) => format!("{name} is as its link has it"),
-        (added, 0) => format!(
-            "Added {} to {name}",
-            format::counted(added, "song", "songs")
-        ),
-        (0, removed) => format!(
-            "Took {} out of {name}, as its link did",
-            format::counted(removed, "song", "songs")
-        ),
-        (added, removed) => format!(
-            "Added {} to {name} and took {} out",
-            format::counted(added, "song", "songs"),
-            format::counted(removed, "song", "songs")
-        ),
+    let told = match (added, removed) {
+        (0, 0) => words::models::as_its_link_has_it(name),
+        (added, 0) => words::models::added_songs_to(added, name),
+        (0, removed) => words::models::took_songs_out_as_its_link_did(name, removed),
+        (added, removed) => words::models::added_and_took_out(added, name, removed),
     };
-    if wanted > 0 {
-        told.push_str(&format!(
-            " · downloading {}",
-            format::counted(wanted, "more", "more")
-        ));
+    match wanted {
+        0 => told,
+        wanted => [told, words::models::downloading_more(wanted)].join(" · "),
     }
-    told
 }
 
 fn put_into(library: &Library, id: PlaylistId, added: usize) -> resonate_library::Result<String> {
     let name = library
         .playlist(id)?
-        .map_or_else(|| format!("playlist {id}"), |found| found.name);
+        .map_or_else(|| unnamed_playlist(id), |found| found.name);
 
     Ok(match added {
-        0 => format!("Nothing went into {name}"),
-        1 => format!("Put 1 track in {name}{TAKEN_BACK}"),
-        added => format!("Put {added} tracks in {name}{TAKEN_BACK}"),
+        0 => words::models::nothing_went_into(name),
+        added => words::models::put_tracks_in(added, name, put_it_back()),
     })
 }
 
@@ -7976,11 +8009,11 @@ mod tests {
 
     use super::{
         Arranging, Beyond, Change, Favourited, Followed, KeepPass, LibraryModel, ListedRow,
-        MissingRow, NO_LINK_TO_SHARE_ANY, Notice, POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned,
-        Reaching, Shared, Wanted, albums_kept_before_the_rest, arranged, beyond_the_listing,
-        delivery_folder, elsewhere_standing, headed_by_disc, held_at, held_in, kept,
-        kept_before_the_rest, landed_since, missing_track_rows, on_the_clipboard, renewed,
-        retried_after, sharing_told, stopped_told, unheld_release_rows,
+        MissingRow, Notice, POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching, Shared, Wanted,
+        albums_kept_before_the_rest, arranged, beyond_the_listing, delivery_folder,
+        elsewhere_standing, headed_by_disc, held_at, held_in, kept, kept_before_the_rest,
+        landed_since, missing_track_rows, on_the_clipboard, renewed, retried_after, sharing_told,
+        stopped_told, unheld_release_rows,
     };
     use crate::{
         ResonateApp,
@@ -7988,7 +8021,7 @@ mod tests {
         served::ServedSong,
         serving::{Row, song_to_keep},
         settings::{Online, Supplying},
-        toast,
+        toast, words,
     };
 
     const KEPT_FROM: &str = "kept-from";
@@ -9233,7 +9266,7 @@ mod tests {
         assert_eq!(sharing.link, None);
         assert_eq!(
             sharing.notice,
-            Notice::Noted(NO_LINK_TO_SHARE_ANY.to_owned())
+            Notice::Noted(words::models::no_link_to_share_any().to_owned())
         );
     }
 

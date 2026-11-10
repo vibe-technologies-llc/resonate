@@ -13,6 +13,7 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 resonate-core.workspace = true
 resonate-engine.workspace = true
+resonate-words.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 zbus.workspace = true
@@ -38,7 +39,11 @@ windows = {
     ]
 }
 
+[build-dependencies]
+resonate-words-build.workspace = true
+
 [dev-dependencies]
+resonate-words-build.workspace = true
 resonate-codec.workspace = true
 zbus = { workspace = true, features = ["object-manager"] }
 

@@ -52,14 +52,14 @@ struct WrappedDeck: View {
 
     private var turns: some View {
         HStack {
-            Button("Back", systemImage: "chevron.left") { turn(by: -1) }
+            Button("wrapped.back", systemImage: "chevron.left") { turn(by: -1) }
                 .disabled(at == 0)
             Spacer()
             Text(WrappedDeckPlace.said(at: at, of: shown.slides.count))
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(.secondary)
             Spacer()
-            Button("Next", systemImage: "chevron.right") { turn(by: 1) }
+            Button("wrapped.next", systemImage: "chevron.right") { turn(by: 1) }
                 .disabled(at >= shown.slides.count - 1)
         }
         .buttonStyle(.glass)
@@ -76,23 +76,23 @@ struct WrappedDeck: View {
                         Button(String(year)) { asked = year }
                     }
                 }
-                .accessibilityLabel("Year, \(String(shown.year))")
+                .accessibilityLabel(said("wrapped.year.label", String(shown.year)))
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button(copies > 0 ? "Copied" : "Copy summary", systemImage: "doc.on.doc") {
+            Button(said(copies > 0 ? "wrapped.copied" : "wrapped.copy-summary"), systemImage: "doc.on.doc") {
                 UIPasteboard.general.string = shown.summary
                 copies += 1
             }
-            .announced(copies > 0 ? "Copied" : nil)
+            .announced(copies > 0 ? said("wrapped.copied") : nil)
         }
         if let words = WrappedCardWords.of(shown), let preview {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(
                     item: WrappedCardShare(words: words, accent: AppearanceState.shared.tint),
-                    preview: SharePreview("Your \(String(shown.year)) on Resonate", image: preview)
+                    preview: SharePreview(said("wrapped.share.title", String(shown.year)), image: preview)
                 ) {
-                    Label("Share card", systemImage: "square.and.arrow.up")
+                    Label("wrapped.share-card", systemImage: "square.and.arrow.up")
                 }
             }
         }
@@ -211,7 +211,7 @@ struct WrappedBars: View {
             HStack(alignment: .bottom, spacing: Self.gap) {
                 ForEach(Array(bars.enumerated()), id: \.offset) { _, bar in
                     RoundedRectangle(cornerRadius: Self.gap)
-                        .fill(bar.peak ? Color.accentColor : Color.secondary.opacity(0.4))
+                        .fill(bar.peak ? Color.worn : Color.secondary.opacity(0.4))
                         .frame(height: max(Self.shortest, tallest * Double(bar.sharePermille) / Self.permille))
                         .frame(maxWidth: .infinity)
                         .accessibilityElement()

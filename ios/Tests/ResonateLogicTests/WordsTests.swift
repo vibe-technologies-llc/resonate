@@ -25,10 +25,26 @@ import Testing
         #expect(explained(Plain()) == "Nothing was found")
     }
 
-    @Test func aNumberIsCountedWithItsNounSingularOnlyAtOne() {
-        #expect(counted(0, "song") == "0 songs")
-        #expect(counted(1, "song") == "1 song")
-        #expect(counted(2, "song") == "2 songs")
+    @Test func aKeyIsSaidInTheEnglishItsStringsHold() {
+        #expect(said("downloads.waiting-for-unmetered") == "Waiting for a network that is not metered")
+    }
+
+    @Test func aKeyTheStringsDoNotHoldIsSaidAsItself() {
+        #expect(said("nowhere.held") == "nowhere.held")
+    }
+
+    @Test func aCountIsSaidSingularOnlyAtOne() {
+        #expect(said("counted.songs", 0) == "0 songs")
+        #expect(said("counted.songs", 1) == "1 song")
+        #expect(said("counted.songs", 2) == "2 songs")
+        #expect(said("counted.lyrics-sheets", 1) == "1 lyrics sheet")
+    }
+
+    @Test func aCountInASentenceTakesItsOwnArgumentWhereverTheOthersStand() {
+        #expect(said("settings.folders.available", 1, 0) == "1 folder · 0 available")
+        #expect(said("settings.folders.available", 3, 2) == "3 folders · 2 available")
+        #expect(said("headphone-correction.replace.message", 1, "Flat") == "Flat replaces the 1 band you have now.")
+        #expect(said("headphone-correction.replace.message", 10, "Flat") == "Flat replaces the 10 bands you have now.")
     }
 
     @Test func aLengthReadsAsMinutesAndSecondsAndAsHoursOnlyOnceItHasThem() {

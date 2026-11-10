@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.English
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.Track
@@ -61,18 +62,18 @@ class ReadingsTest {
 
     @Test
     fun everyVerdictTheAnalysisGivesReadsAsAHeadline() {
-        assertEquals(Tone.GOOD, verdictOf("genuine").tone)
-        assertEquals("Consistent with lossless", verdictOf("genuine").title)
-        assertEquals(Tone.WARNING, verdictOf("suspect").tone)
-        assertEquals(Tone.BAD, verdictOf("fake").tone)
-        assertEquals("Lossy by its codec", verdictOf("lossy").title)
-        assertEquals("Not judged", verdictOf("not-judged").title)
-        assertEquals(Tone.NEUTRAL, verdictOf("anything else").tone)
+        assertEquals(Tone.GOOD, verdictOf(English, "genuine").tone)
+        assertEquals("Consistent with lossless", verdictOf(English, "genuine").title)
+        assertEquals(Tone.WARNING, verdictOf(English, "suspect").tone)
+        assertEquals(Tone.BAD, verdictOf(English, "fake").tone)
+        assertEquals("Lossy by its codec", verdictOf(English, "lossy").title)
+        assertEquals("Not judged", verdictOf(English, "not-judged").title)
+        assertEquals(Tone.NEUTRAL, verdictOf(English, "anything else").tone)
     }
 
     @Test
     fun levelsAreReadInDecibelsWithTheirSign() {
-        val metrics = metricsOf(report()).associate { it.label to it.value }
+        val metrics = metricsOf(English, report()).associate { it.label to it.value }
 
         assertEquals("-9.5 LUFS", metrics["Loudness"])
         assertEquals("DR8", metrics["Dynamic range"])
@@ -85,14 +86,14 @@ class ReadingsTest {
 
     @Test
     fun aMeasureTheAnalysisCouldNotTakeIsLeftOut() {
-        val labels = metricsOf(report(loudness = null, dynamicRange = null, bits = null).copy(peak = 0f)).map { it.label }
+        val labels = metricsOf(English, report(loudness = null, dynamicRange = null, bits = null).copy(peak = 0f)).map { it.label }
 
         assertEquals(listOf("True peak", "RMS", "Clipped samples"), labels)
     }
 
     @Test
     fun clippedSamplesAreCountedReadably() {
-        assertEquals("12,345", metricsOf(report(clipped = 12_345uL)).first { it.label == "Clipped samples" }.value)
+        assertEquals("12,345", metricsOf(English, report(clipped = 12_345uL)).first { it.label == "Clipped samples" }.value)
     }
 
     @Test
@@ -118,7 +119,7 @@ class ReadingsTest {
 
     @Test
     fun technicalDetailsLeaveOutWhatIsUnknown() {
-        val shown = technicalDetails(track, null).associate { it.label to it.value }
+        val shown = technicalDetails(English, track, null).associate { it.label to it.value }
 
         assertEquals("FLAC", shown["Codec"])
         assertEquals("96,000 Hz", shown["Sample rate"])
@@ -133,8 +134,8 @@ class ReadingsTest {
     fun theInspectorAddsTheContainerAndTheTagsItRead() {
         val inspector = Inspector(track, "FLAC", "S24", true, "", "© Label", "", "GBAYE0601498")
 
-        val technical = technicalDetails(track, inspector).associate { it.label to it.value }
-        val tagged = taggedDetails(track, inspector)
+        val technical = technicalDetails(English, track, inspector).associate { it.label to it.value }
+        val tagged = taggedDetails(English, track, inspector)
 
         assertEquals("FLAC", technical["Container"])
         assertEquals("Yes", technical["Seekable"])
@@ -179,7 +180,7 @@ class ReadingsTest {
 
     @Test
     fun aRecognitionScoreIsAPercentage() {
-        assertEquals("87% match", scoreOf(87u))
-        assertEquals("100% match", scoreOf(140u))
+        assertEquals("87% match", scoreOf(English, 87u))
+        assertEquals("100% match", scoreOf(English, 140u))
     }
 }

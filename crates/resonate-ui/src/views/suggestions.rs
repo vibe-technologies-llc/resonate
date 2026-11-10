@@ -1,9 +1,10 @@
 use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Context, Div, SharedString, Stateful, div, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, Context, Div, ElementId, FontWeight, SharedString, Stateful, div, prelude::*,
+    px, rgb, uniform_list,
 };
-use resonate_core::{Accent, AlbumId};
+use resonate_core::AlbumId;
 use resonate_engine::Placement;
 use resonate_library::{
     PICTURED_BY_AT_MOST, Reason, SavedQuery, Search, Suggestion, SuggestionKind, Track,
@@ -14,42 +15,22 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::{Chooses, Plays, Rowed, TRACK_CONTROLS},
+        browser::{self, Chooses, Plays, Rowed, TRACK_CONTROLS},
         hint::Names,
-        kit::{self, EndsInAnEllipsis, Press, Tone},
+        kit::{self, Casts as _, EndsInAnEllipsis, Press, Tone},
         listing,
-        mosaic::{Framed, Mosaic},
+        mosaic::{self, Mosaic},
+        pointed::{self, LitUnderThePointer as _},
         reorder::{Listed, Shift},
         root::{RootView, empty, listed},
         scrollbar::Scrollbars,
         sorting,
         spoken::{self, Spoken as _},
     },
+    words,
 };
 
-const NOTHING_OFFERED: &str = "Nothing to suggest yet";
-
-const SCAN_MORE: &str = "Scan more music, and the lists it can fill itself appear here.";
-
-const PLAY_HINT: &str = "Play what this list would hold, in order";
-
-const SHUFFLE_HINT: &str = "Play what this list would hold, shuffled";
-
-const QUEUE_HINT: &str = "Queue what this list would hold after what is already queued, ahead of the rest of what is playing";
-
-const SAVE_HINT: &str = "Keep this as a playlist that fills itself";
-
-const SAVED_HINT: &str = "A playlist already fills itself from this search";
-
-const OPEN_HINT: &str = "See what this list would hold";
-
-const SEARCH_HINT: &str = "Put this list's search in the search box and see it in the tracks pane";
-
-const BACK_HINT: &str = "Back to every suggestion";
-
-const CARD_PADDING: f32 = 12.0;
-
-const CARD_GAP: f32 = 12.0;
+const SUGGESTION_CELL: &str = "suggestion-cell";
 
 const SHELF_PADDING: f32 = 24.0;
 
@@ -73,7 +54,7 @@ impl RootView {
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
-            .gap_6()
+            .gap_8()
             .p(px(SHELF_PADDING))
             .overflow_y_scroll()
             .track_scroll(&self.suggestions_scroll);
@@ -97,14 +78,14 @@ impl RootView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_3()
-                    .child(kit::eyebrow(kind.name()))
+                    .gap_4()
+                    .child(kit::group_title(kind.name()).flex_none())
                     .child(
                         div()
                             .flex()
                             .flex_wrap()
                             .content_start()
-                            .gap(px(CARD_GAP))
+                            .gap(px(theme::grid_gap()))
                             .children(cards),
                     ),
             );
@@ -113,14 +94,28 @@ impl RootView {
         kit::pane()
             .child(suggestions_heading(offered.len()))
             .when(nothing, |pane| {
-                pane.child(empty(Icon::Suggestions, NOTHING_OFFERED, Some(SCAN_MORE)))
+                pane.child(empty(
+                    Icon::Suggestions,
+                    words::suggestions::nothing_offered(),
+                    Some(words::suggestions::scan_more()),
+                ))
             })
             .when(!nothing, |pane| {
-                pane.child(Scrollbars::of(cx).around(
-                    "suggestions-scrollbar",
-                    self.suggestions_scroll.clone(),
-                    shelves,
-                ))
+                pane.child(
+                    div()
+                        .relative()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .min_h(px(0.0))
+                        .child(kit::measures_the_grid(self.grid_width.clone()))
+                        .child(Scrollbars::of(cx).around(
+                            "suggestions-scrollbar",
+                            self.suggestions_scroll.clone(),
+                            shelves,
+                        )),
+                )
             })
             .into_any_element()
     }
@@ -133,69 +128,110 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let opening = suggestion.query.clone();
-        let side = theme::suggestion_card();
-        let art = self.suggestion_art(suggestion, side, Drawn::InAGrid, true, cx);
+        let playing = suggestion.query.clone();
+        let side = self.grid_side();
+        let art = self.suggestion_art(suggestion, side, Drawn::InAGrid, cx);
+        let cell_id = ElementId::from(("suggestion-card", index));
+        let pointed = pointed::is_pointed_at(&cell_id);
 
-        kit::card()
-            .id(("suggestion-card", index))
+        div()
+            .id(cell_id.clone())
+            .debug_selector(move || format!("suggestion-open-{index}"))
+            .follows_the_pointer(cell_id)
+            .group(SUGGESTION_CELL)
             .listed_as(|| said_of(suggestion))
             .chosen(reached)
+            .flex()
             .flex_none()
+            .flex_col()
+            .gap_2p5()
             .w(px(side))
-            .p_0()
-            .gap_0()
-            .overflow_hidden()
-            .hover(|card| card.border_color(rgb(theme::soft_edge())))
+            .cursor_pointer()
+            .names(words::suggestions::open_hint())
             .child(
                 div()
-                    .id(("suggestion-open", index))
-                    .debug_selector(move || format!("suggestion-open-{index}"))
-                    .flex()
-                    .flex_col()
-                    .flex_grow(1.0)
-                    .cursor_pointer()
-                    .names(OPEN_HINT)
+                    .relative()
+                    .rounded(px(mosaic::ART_ROUNDING))
+                    .group_hover(SUGGESTION_CELL, |frame| frame.casting(kit::Cast::Short))
                     .child(art)
-                    .child(div().flex_1())
+                    .when(reached, |frame| {
+                        frame
+                            .child(browser::reached_ring())
+                            .child(kit::brought_into_view(
+                                self.suggestions_scroll.clone(),
+                                Rc::clone(&self.reached_unseen),
+                            ))
+                    })
                     .child(
                         div()
+                            .absolute()
+                            .top_1()
+                            .right_1()
                             .flex()
-                            .flex_col()
-                            .gap_1()
-                            .px(px(CARD_PADDING))
-                            .pt(px(CARD_PADDING))
-                            .child(
-                                kit::card_title(SharedString::from(suggestion.name.clone()))
-                                    .truncate()
-                                    .ends_in_an_ellipsis(),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(theme::text_sm()))
-                                    .text_color(rgb(theme::muted()))
-                                    .child(SharedString::from(suggestion.reason.says())),
-                            )
-                            .child(kit::figure(measured(suggestion))),
+                            .rounded_md()
+                            .bg(kit::cover_veil())
+                            .opacity(0.0)
+                            .group_hover(SUGGESTION_CELL, |marks| marks.opacity(1.0))
+                            .child(self.queue_mark(
+                                ("suggestion-queue", index),
+                                &suggestion.query,
+                                cx,
+                            ))
+                            .child(self.save_mark(("suggestion-save", index), suggestion, cx)),
                     )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.open_offered(opening.clone(), cx);
-                    })),
+                    .child(
+                        kit::play_on_the_art(
+                            ("suggestion-play", index),
+                            words::suggestions::play_hint(),
+                        )
+                        .absolute()
+                        .bottom_2()
+                        .right_2()
+                        .opacity(0.0)
+                        .group_hover(SUGGESTION_CELL, |mark| mark.opacity(1.0))
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.with_the_rows_of(&playing, window, cx, |this, rows, _, cx| {
+                                    this.plays_in_order(cx);
+                                    this.play(&rows, 0, cx);
+                                });
+                            },
+                        )),
+                    ),
             )
             .child(
-                kit::action_row()
-                    .px(px(CARD_PADDING))
-                    .pt_2()
-                    .pb(px(CARD_PADDING))
-                    .child(self.play_suggestion(("suggestion-play", index), &suggestion.query, cx))
-                    .child(self.queue_mark(("suggestion-queue", index), &suggestion.query, cx))
-                    .child(self.save_mark(("suggestion-save", index), suggestion, cx)),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .min_w(px(0.0))
+                    .child(
+                        div()
+                            .text_size(px(theme::text_sm()))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(if pointed {
+                                theme::accent()
+                            } else {
+                                theme::text()
+                            }))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(SharedString::from(suggestion.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::muted()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(SharedString::from(suggestion.reason.says())),
+                    )
+                    .child(kit::figure(measured(suggestion)).text_color(rgb(theme::faint()))),
             )
-            .when(reached, |card| {
-                card.child(reached_edge()).child(kit::brought_into_view(
-                    self.suggestions_scroll.clone(),
-                    Rc::clone(&self.reached_unseen),
-                ))
-            })
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.open_offered(opening.clone(), cx);
+            }))
     }
 
     pub(crate) fn offered_in_shelf_order(&self, cx: &App) -> Vec<SavedQuery> {
@@ -215,11 +251,9 @@ impl RootView {
 
     pub(crate) fn cards_a_page(&self) -> usize {
         let seen = self.suggestions_scroll.bounds().size;
-        let taken = theme::suggestion_card() + CARD_GAP;
-        let across = (f32::from(seen.width) - 2.0 * SHELF_PADDING + CARD_GAP) / taken;
-        let down = f32::from(seen.height) / taken;
+        let down = f32::from(seen.height) / (self.grid_row() + theme::grid_gap());
 
-        (across.max(1.0) as usize) * (down.max(1.0) as usize)
+        self.grid_columns() * (down.max(1.0) as usize)
     }
 
     fn opened_suggestion(
@@ -229,7 +263,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let playing = self.playing_now(cx).track;
-        let art = self.suggestion_art(suggestion, self.hero_side(), Drawn::OnThePage, false, cx);
+        let art = self.suggestion_art(suggestion, self.hero_side(), Drawn::OnThePage, cx);
         let reads = suggestion
             .query
             .text
@@ -247,7 +281,11 @@ impl RootView {
             .child(self.shuffle_suggestion(&suggestion.query, cx))
             .child(self.save_mark("opened-suggestion-save", suggestion, cx))
             .child(self.in_the_pane_ring(
-                kit::icon_button("opened-suggestion-search", Icon::Search, SEARCH_HINT),
+                kit::icon_button(
+                    "opened-suggestion-search",
+                    Icon::Search,
+                    words::suggestions::search_hint(),
+                ),
                 move |this, window, cx| {
                     this.search_instead(searched.clone(), window, cx);
                     this.choose_pane(Pane::Tracks, cx);
@@ -257,7 +295,11 @@ impl RootView {
 
         let heading = kit::heading()
             .child(self.in_the_pane_ring(
-                kit::way_back("suggestions-back", "Suggestions", BACK_HINT),
+                kit::way_back(
+                    "suggestions-back",
+                    words::suggestions::suggestions(),
+                    words::suggestions::back_hint(),
+                ),
                 |this, _, cx| {
                     this.library
                         .update(cx, |library, cx| library.open_suggestion(None, cx));
@@ -274,9 +316,8 @@ impl RootView {
                         .min_w(px(0.0))
                         .gap_1()
                         .child(kit::measures_its_height(self.hero_height.clone()))
-                        .child(kit::eyebrow(format!(
-                            "Suggestion · {}",
-                            suggestion.reason.kind().name()
+                        .child(kit::eyebrow(words::suggestions::suggestion_of(
+                            suggestion.reason.kind().name(),
                         )))
                         .child(kit::title(SharedString::from(suggestion.name.clone())))
                         .child(kit::subtitle(SharedString::from(suggestion.reason.says())))
@@ -346,7 +387,6 @@ impl RootView {
         suggestion: &Suggestion,
         side: f32,
         drawn_at: Drawn,
-        on_a_card: bool,
         cx: &mut Context<Self>,
     ) -> Div {
         let drawn: Vec<crate::models::Picture> = suggestion
@@ -355,19 +395,12 @@ impl RootView {
             .take(PICTURED_BY_AT_MOST)
             .filter_map(|album| self.drawn_album(*album, drawn_at, cx))
             .collect();
-        let framed = if on_a_card {
-            Framed::OnACard
-        } else {
-            Framed::Alone
-        };
-
         Mosaic {
             drawn: &drawn,
-            ground: accents_of(suggestion),
             mark: icon_of(suggestion.reason),
             name: &suggestion.name,
         }
-        .drawn(side, framed)
+        .drawn(side)
     }
 
     fn drawn_album(
@@ -397,7 +430,7 @@ impl RootView {
                 Press::Greyed,
                 id,
                 Icon::Check,
-                SAVED_HINT,
+                words::suggestions::saved_hint(),
                 "suggestion-card",
             );
         }
@@ -405,8 +438,9 @@ impl RootView {
         let named = suggestion.name.clone();
 
         self.in_the_pane_ring(
-            kit::icon_button(id, Icon::Plus, SAVE_HINT),
+            kit::icon_button(id, Icon::Plus, words::suggestions::save_hint()),
             move |this, _, cx| {
+                cx.stop_propagation();
                 let saved = saving.clone();
                 let name = named.clone();
                 this.library.update(cx, |library, cx| {
@@ -426,8 +460,9 @@ impl RootView {
         let queueing = query.clone();
 
         self.in_the_pane_ring(
-            kit::icon_button(id, Icon::QueueLast, QUEUE_HINT),
+            kit::icon_button(id, Icon::QueueLast, words::suggestions::queue_hint()),
             move |this, window, cx| {
+                cx.stop_propagation();
                 this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
                     this.queue(&listed(&rows), Placement::Queued, cx);
                 });
@@ -445,7 +480,13 @@ impl RootView {
         let playing = query.clone();
 
         self.in_the_pane_ring(
-            kit::button(id, Some(Icon::Play), "Play", PLAY_HINT, Tone::Primary),
+            kit::button(
+                id,
+                Some(Icon::Play),
+                words::suggestions::play(),
+                words::suggestions::play_hint(),
+                Tone::Primary,
+            ),
             move |this, window, cx| {
                 this.with_the_rows_of(&playing, window, cx, |this, rows, _, cx| {
                     this.plays_in_order(cx);
@@ -463,8 +504,8 @@ impl RootView {
             kit::button(
                 "opened-suggestion-shuffle",
                 Some(Icon::Shuffle),
-                "Shuffle",
-                SHUFFLE_HINT,
+                words::suggestions::shuffle(),
+                words::suggestions::shuffle_hint(),
                 Tone::Outlined,
             ),
             move |this, window, cx| {
@@ -490,17 +531,8 @@ fn in_shelf_order(offered: &[Suggestion]) -> Vec<usize> {
         .collect()
 }
 
-fn reached_edge() -> Div {
-    div()
-        .absolute()
-        .inset_0()
-        .rounded_lg()
-        .border_2()
-        .border_color(rgb(theme::accent()))
-}
-
 fn measured(suggestion: &Suggestion) -> String {
-    let mut parts = vec![format::counted(suggestion.rows as usize, "track", "tracks")];
+    let mut parts = vec![words::suggestions::tracks(suggestion.rows)];
     if let Some(length) = suggestion.length {
         parts.push(format::spanned(length));
     }
@@ -519,13 +551,9 @@ fn said_of(suggestion: &Suggestion) -> SharedString {
 fn measured_shown(suggestion: &Suggestion, shown: usize) -> String {
     let whole = measured(suggestion);
     match (shown as u64) < suggestion.rows && shown > 0 {
-        true => format!("{whole} · the first {shown} shown"),
+        true => words::suggestions::first_shown(shown, whole),
         false => whole,
     }
-}
-
-fn accents_of(suggestion: &Suggestion) -> (Accent, Accent) {
-    suggestion.reason.accents(&suggestion.name)
 }
 
 fn icon_of(reason: Reason) -> Icon {
@@ -559,9 +587,9 @@ fn suggestions_heading(offered: usize) -> Div {
                 .flex_1()
                 .min_w(px(theme::heading_name()))
                 .gap_1()
-                .child(kit::title("Suggestions"))
+                .child(kit::title(words::suggestions::suggestions()))
                 .when(offered > 0, |column| {
-                    column.child(kit::subtitle(format::counted(offered, "list", "lists")))
+                    column.child(kit::subtitle(words::suggestions::lists(offered)))
                 }),
         ),
     )

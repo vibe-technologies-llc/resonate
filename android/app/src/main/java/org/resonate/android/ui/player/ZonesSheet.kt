@@ -39,19 +39,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import org.resonate.android.R
 import org.resonate.android.ZonePlan
 import org.resonate.android.nativecore.NetworkRenderer
 import org.resonate.android.nativecore.PlayerZone
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.settings.ConfirmDialog
+import org.resonate.android.ui.settings.offeredOutputs
 import org.resonate.android.ui.settings.outputNamed
 import org.resonate.android.ui.settings.outputTitle
-import org.resonate.android.ui.settings.offeredOutputs
+import org.resonate.android.words
 
 @Composable
 fun ZonesSheet(onDismiss: () -> Unit) {
@@ -81,12 +85,12 @@ fun ZonesSheet(onDismiss: () -> Unit) {
             Modifier.navigationBarsPadding().padding(bottom = 16.dp).verticalScroll(rememberScrollState())
         ) {
             Text(
-                "Zones",
+                stringResource(R.string.player_zones),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Text(
-                "Each zone plays a queue of its own on the output it was added for",
+                stringResource(R.string.zones_detail),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
@@ -95,7 +99,11 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 zones.forEach { zone ->
                     ZoneRow(
                         zone = zone,
-                        output = ZonePlan.heardOn(zone.rendererName, outputNamed(outputs, zone.device)),
+                        output =
+                            ZonePlan.heardOn(
+                                zone.rendererName,
+                                outputNamed(words(), outputs, zone.device),
+                            ),
                         mayHandOver =
                             shown != null && ZonePlan.mayHandOverTo(zone.id, shown, queue.isNotEmpty()),
                         onShow = { features.zones.show(zone.id) },
@@ -109,23 +117,23 @@ fun ZonesSheet(onDismiss: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Add a zone",
+                stringResource(R.string.zones_add_heading),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
             offeredOutputs(outputs).forEach { output ->
-                val title = outputTitle(output)
+                val title = outputTitle(words(), output)
                 ListItem(
                     onClick = { features.zones.add(title, output) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 ) {
-                    Text("Add a zone on $title")
+                    Text(stringResource(R.string.zones_add_on, title))
                 }
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Network renderers",
+                stringResource(R.string.zones_renderers_heading),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
@@ -134,13 +142,18 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 supportingContent = {
                     Text(
-                        if (looking) "${renderers.size} found on this network"
-                        else "Streamers, amplifiers and Cast receivers on this network, as outputs for a zone"
+                        if (looking)
+                            pluralStringResource(
+                                R.plurals.zones_renderers_found,
+                                renderers.size,
+                                renderers.size,
+                            )
+                        else stringResource(R.string.zones_renderers_detail)
                     )
                 },
                 trailingContent = { Switch(checked = looking, onCheckedChange = null) },
             ) {
-                Text("Find renderers")
+                Text(stringResource(R.string.zones_find_renderers))
             }
             ListItem(
                 onClick = { addressing = true },
@@ -148,12 +161,18 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 leadingContent = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 supportingContent = {
                     Text(
-                        if (addresses.isEmpty()) "For a network that hides its renderers from a search"
-                        else "${addresses.size} added"
+                        if (addresses.isEmpty())
+                            stringResource(R.string.zones_renderer_address_detail)
+                        else
+                            pluralStringResource(
+                                R.plurals.zones_added,
+                                addresses.size,
+                                addresses.size,
+                            )
                     )
                 },
             ) {
-                Text("Add a renderer by address")
+                Text(stringResource(R.string.zones_add_renderer_by_address))
             }
             ListItem(
                 onClick = { addressingReceiver = true },
@@ -162,19 +181,24 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 supportingContent = {
                     Text(
                         if (receiverAddresses.isEmpty())
-                            "For a Google Cast receiver a search does not hear"
-                        else "${receiverAddresses.size} added"
+                            stringResource(R.string.zones_receiver_address_detail)
+                        else
+                            pluralStringResource(
+                                R.plurals.zones_added,
+                                receiverAddresses.size,
+                                receiverAddresses.size,
+                            )
                     )
                 },
             ) {
-                Text("Add a receiver by address")
+                Text(stringResource(R.string.zones_add_receiver_by_address))
             }
         }
     }
     if (addressing) {
         RendererAddressDialog(
-            title = "Add a renderer by address",
-            label = "Description address",
+            title = stringResource(R.string.zones_add_renderer_by_address),
+            label = stringResource(R.string.zones_description_address),
             placeholder = "http://192.168.1.20:49152/description.xml",
             addresses = addresses,
             add = { features.renderers.add(it) },
@@ -184,9 +208,9 @@ fun ZonesSheet(onDismiss: () -> Unit) {
     }
     if (addressingReceiver) {
         RendererAddressDialog(
-            title = "Add a receiver by address",
-            label = "Address or host name",
-            placeholder = "192.168.1.30 or living-room.local",
+            title = stringResource(R.string.zones_add_receiver_by_address),
+            label = stringResource(R.string.zones_receiver_address),
+            placeholder = stringResource(R.string.zones_receiver_address_example),
             addresses = receiverAddresses,
             add = { features.renderers.addReceiver(it) },
             forget = { features.renderers.forgetReceiver(it) },
@@ -207,9 +231,9 @@ fun ZonesSheet(onDismiss: () -> Unit) {
     }
     removing?.let { zone ->
         ConfirmDialog(
-            title = "Remove ${zone.name}?",
-            text = "Its queue goes with it and it stops playing",
-            confirm = "Remove",
+            title = stringResource(R.string.zones_remove_title, zone.name),
+            text = stringResource(R.string.zones_remove_detail),
+            confirm = stringResource(R.string.zones_remove),
             onConfirm = { features.zones.remove(zone.id) },
             onDismiss = { removing = null },
             destructive = true,
@@ -235,16 +259,21 @@ private fun ZoneRow(
         onClick = onShow,
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = { RadioButton(selected = zone.shown, onClick = null) },
-        supportingContent = { Text(ZonePlan.line(output, zone.transport, zone.playing)) },
+        supportingContent = {
+            Text(ZonePlan.line(words(), output, zone.transport, zone.playing))
+        },
         trailingContent = {
             Box {
                 IconButton(onClick = { menu = true }) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = "${zone.name} options")
+                    Icon(
+                        Icons.Rounded.MoreVert,
+                        contentDescription = stringResource(R.string.zones_options, zone.name),
+                    )
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (mayHandOver) {
                         DropdownMenuItem(
-                            text = { Text("Hand the song over here") },
+                            text = { Text(stringResource(R.string.zones_hand_over)) },
                             onClick = {
                                 menu = false
                                 onHandOver()
@@ -252,7 +281,7 @@ private fun ZoneRow(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Play on a renderer") },
+                        text = { Text(stringResource(R.string.zones_play_on_renderer)) },
                         onClick = {
                             menu = false
                             onChooseRenderer()
@@ -260,7 +289,7 @@ private fun ZoneRow(
                     )
                     if (zone.renderer != null) {
                         DropdownMenuItem(
-                            text = { Text("Play on this phone") },
+                            text = { Text(stringResource(R.string.zones_play_on_phone)) },
                             onClick = {
                                 menu = false
                                 onPlayOnPhone()
@@ -268,7 +297,7 @@ private fun ZoneRow(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Rename") },
+                        text = { Text(stringResource(R.string.zones_rename)) },
                         onClick = {
                             menu = false
                             onRename()
@@ -276,7 +305,7 @@ private fun ZoneRow(
                     )
                     if (ZonePlan.mayRemove(zone.id)) {
                         DropdownMenuItem(
-                            text = { Text("Remove") },
+                            text = { Text(stringResource(R.string.zones_remove)) },
                             onClick = {
                                 menu = false
                                 onRemove()
@@ -305,20 +334,26 @@ private fun RenameZoneDialog(zone: PlayerZone, save: (String) -> Unit, dismiss: 
     LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text("Rename zone") },
+        title = { Text(stringResource(R.string.zones_rename_title)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(ZONE_NAME_AT_MOST) },
-                label = { Text("Zone name") },
+                label = { Text(stringResource(R.string.zones_name)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { saved() }),
                 modifier = Modifier.focusRequester(focus),
             )
         },
-        confirmButton = { TextButton(onClick = saved, enabled = name.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(onClick = saved, enabled = name.isNotBlank()) {
+                Text(stringResource(R.string.zones_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.zones_cancel)) }
+        },
     )
 }
 
@@ -332,12 +367,12 @@ private fun RendererDialog(
 ) {
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text("Play ${zone.name} on") },
+        title = { Text(stringResource(R.string.zones_play_on_title, zone.name)) },
         text = {
             when {
                 !reaching && renderers.isEmpty() ->
-                    Text("Turn on Find renderers, or add one by its address, to reach renderers and receivers")
-                renderers.isEmpty() -> Text("No renderer or receiver has answered yet")
+                    Text(stringResource(R.string.zones_renderers_unreached))
+                renderers.isEmpty() -> Text(stringResource(R.string.zones_renderers_unanswered))
                 else ->
                     Column(Modifier.selectableGroup()) {
                         renderers.forEach { renderer ->
@@ -351,7 +386,16 @@ private fun RendererDialog(
                                 leadingContent = {
                                     RadioButton(selected = renderer.node == zone.renderer, onClick = null)
                                 },
-                                supportingContent = { Text(ZonePlan.rendererLine(renderer.kind, renderer.host)) },
+                                supportingContent = {
+                                    Text(
+                                        ZonePlan.rendererLine(
+                                            words(),
+                                            renderer.kind,
+                                            renderer.host,
+                                        )
+                                    )
+
+                                },
                             ) {
                                 Text(renderer.name)
                             }
@@ -359,7 +403,9 @@ private fun RendererDialog(
                     }
             }
         },
-        confirmButton = { TextButton(onClick = dismiss) { Text("Close") } },
+        confirmButton = {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.zones_close)) }
+        },
     )
 }
 
@@ -403,7 +449,9 @@ private fun RendererAddressDialog(
                     ListItem(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         trailingContent = {
-                            TextButton(onClick = { forget(address) }) { Text("Remove") }
+                            TextButton(onClick = { forget(address) }) {
+                                Text(stringResource(R.string.zones_remove))
+                            }
                         },
                     ) {
                         Text(address)
@@ -411,8 +459,15 @@ private fun RendererAddressDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = added, enabled = typed.isNotBlank()) { Text("Add") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Close") } },
+        confirmButton = {
+            TextButton(onClick = added, enabled = typed.isNotBlank()) {
+                Text(stringResource(R.string.zones_add))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.zones_close)) }
+        },
+
     )
 }
 

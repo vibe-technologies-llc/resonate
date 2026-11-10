@@ -39,7 +39,11 @@ class PartyService : Service() {
         super.onCreate()
         library.retain()
         notifications.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Listening party", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(
+                CHANNEL,
+                getString(R.string.party_notification_channel),
+                NotificationManager.IMPORTANCE_LOW,
+            )
         )
     }
 
@@ -56,7 +60,7 @@ class PartyService : Service() {
 
     private suspend fun watch() {
         while (together.keepsTheServiceForeground) {
-            val line = together.party.value?.let(TogetherWords::partyLine)
+            val line = together.party.value?.let { TogetherWords.partyLine(library.words, it) }
             if (line != lineShown) notifications.notify(NOTIFICATION, notification())
             delay(READ_EVERY_MS)
             try {
@@ -82,7 +86,7 @@ class PartyService : Service() {
 
     private fun notification(): Notification {
         val party = together.party.value
-        lineShown = party?.let(TogetherWords::partyLine)
+        lineShown = party?.let { TogetherWords.partyLine(library.words, it) }
         val leave =
             PendingIntent.getService(
                 this,
@@ -99,14 +103,17 @@ class PartyService : Service() {
             )
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle("Listening party")
+            .setContentTitle(getString(R.string.party_notification_title))
             .setContentText(lineShown)
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(
                 Notification.Action.Builder(
                         null,
-                        if (party?.hosting == true) "End the party" else "Leave",
+                        getString(
+                            if (party?.hosting == true) R.string.party_notification_end
+                            else R.string.party_notification_leave
+                        ),
                         leave,
                     )
                     .build()

@@ -5,7 +5,7 @@ use resonate_core::TrackId;
 use resonate_library::{Album, Artist, Track};
 
 use crate::{
-    Favourited, LibraryModel, format,
+    Favourited, LibraryModel,
     icons::Icon,
     theme,
     views::{
@@ -16,15 +16,8 @@ use crate::{
         scrollbar::Scrollbars,
         sorting,
     },
+    words,
 };
-
-const NOTHING_FAVOURITE: &str = "No favourites yet";
-
-const NOTHING_MATCHES: &str = "No favourites match";
-
-const NOTHING_FAVOURED_MATCHES: &str = "Nothing you favoured matches this search.";
-
-const HOW_TO_FAVOUR: &str = "Press the star on a track, an album or an artist to keep it here.";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Shelved {
@@ -114,11 +107,15 @@ impl RootView {
                 pane.child(if narrowed {
                     empty(
                         Icon::Favourite,
-                        NOTHING_MATCHES,
-                        Some(NOTHING_FAVOURED_MATCHES),
+                        words::favourites::nothing_matches(),
+                        Some(words::favourites::nothing_favoured_matches()),
                     )
                 } else {
-                    empty(Icon::Favourite, NOTHING_FAVOURITE, Some(HOW_TO_FAVOUR))
+                    empty(
+                        Icon::Favourite,
+                        words::favourites::nothing_favourite(),
+                        Some(words::favourites::how_to_favour()),
+                    )
                 })
             })
             .children(shelves)
@@ -137,7 +134,7 @@ impl RootView {
         if held.artists > 0 {
             stacked = stacked.child(self.artist_shelf_of(
                 "favourite-artists",
-                format::counted(held.artists, "artist", "artists"),
+                words::favourites::artists(held.artists),
                 artists,
                 Listed::FavouriteArtists,
                 cx,
@@ -146,7 +143,7 @@ impl RootView {
         if held.albums > 0 {
             stacked = stacked.child(self.album_shelf(
                 "favourite-albums",
-                format::counted(held.albums, "album", "albums"),
+                words::favourites::albums(held.albums),
                 albums,
                 Listed::FavouriteAlbums,
                 cx,
@@ -230,7 +227,7 @@ fn favourites_heading(held: Favourited, reads: &[String]) -> Div {
                     .flex_1()
                     .min_w(px(theme::heading_name()))
                     .gap_1()
-                    .child(kit::title("Favourites"))
+                    .child(kit::title(words::favourites::favourites()))
                     .when(!counted.is_empty(), |column| {
                         column.child(kit::subtitle(counted))
                     }),

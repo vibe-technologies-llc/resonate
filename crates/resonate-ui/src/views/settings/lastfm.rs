@@ -18,33 +18,8 @@ use crate::{
         root::RootView,
         settings::{Rows, action},
     },
+    words,
 };
-
-const SIGN_IN_NOTE: &str = "Sign in opens Last.fm's own page in your browser, under the key and \
-                            secret of an API account you made on last.fm; allow Resonate there \
-                            and this notices on its own. No password is typed here; the session \
-                            key is kept in the settings file, and what is heard is scrobbled \
-                            under it within half a minute, beside ListenBrainz where a token is \
-                            given.";
-
-const WAITING_NOTE: &str = "Allow Resonate on the Last.fm page your browser opened; this waits \
-                            for ten minutes at most.";
-
-const ENDED: &str = "The Last.fm sign-in ended before Resonate was allowed, nothing kept";
-
-const SIGNED_IN_NOTE: &str = "A Last.fm session is kept: what is heard is scrobbled to Last.fm \
-                              within half a minute. Signing out forgets the session, not the \
-                              key and secret.";
-
-const OFFLINE: &str = "Last.fm is signed in to only while Online is on";
-
-const NOTHING_TO_SIGN_IN_WITH: &str = "Give the API key and secret first";
-
-const REFUSED: &str = "Last.fm refused the sign-in: check the API key and secret";
-
-const UNREACHED: &str = "Last.fm could not be reached to sign in";
-
-const SIGNED_OUT: &str = "Nothing heard is scrobbled to Last.fm from now on";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LastfmAccount {
@@ -70,17 +45,17 @@ impl LastfmSigning {
 impl LastfmAccount {
     pub(crate) const ALL: [Self; 2] = [Self::Key, Self::Secret];
 
-    const fn placeholder(self) -> &'static str {
+    fn placeholder(self) -> &'static str {
         match self {
-            Self::Key => "The API key of your Last.fm API account, then press enter",
-            Self::Secret => "Its shared secret, then press enter",
+            Self::Key => words::settings_lastfm::the_api_key_of_your_last(),
+            Self::Secret => words::settings_lastfm::its_shared_secret_then_press_enter(),
         }
     }
 
-    const fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Self::Key => "API key",
-            Self::Secret => "Shared secret",
+            Self::Key => words::settings_lastfm::api_key(),
+            Self::Secret => words::settings_lastfm::shared_secret(),
         }
     }
 
@@ -152,9 +127,9 @@ impl RootView {
     ) {
         self.keep_the_typed_application(cx);
         let said = if self.lastfm_field(account).read(cx).text().trim().is_empty() {
-            "Last.fm is not scrobbled to without its API key and secret"
+            words::settings_lastfm::last_fm_is_not_scrobbled_to()
         } else {
-            "Kept for signing in to Last.fm"
+            words::settings_lastfm::kept_for_signing_in_to_last()
         };
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);
@@ -238,11 +213,17 @@ impl RootView {
     fn sign_in_to_lastfm(&mut self, cx: &mut Context<Self>) {
         let app = cx.global::<ResonateApp>();
         let Some(scrobblers) = app.scrobblers.clone().filter(|_| app.online.enabled) else {
-            self.report(Notice::Trouble(OFFLINE.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_lastfm::offline().to_owned()),
+                cx,
+            );
             return;
         };
         let Some(asked) = self.lastfm_sign_in(cx) else {
-            self.report(Notice::Trouble(NOTHING_TO_SIGN_IN_WITH.to_owned()), cx);
+            self.report(
+                Notice::Trouble(words::settings_lastfm::nothing_to_sign_in_with().to_owned()),
+                cx,
+            );
             return;
         };
         if self.lastfm_signing.asking {
@@ -306,19 +287,19 @@ impl RootView {
                     global.online.lastfm_session = key.clone();
                 });
                 self.store(&Setting::LastfmSession(key), cx);
-                Notice::Done(format!(
-                    "Signed in to Last.fm as {name} — what is heard from now on is scrobbled there"
-                ))
+                Notice::Done(words::settings_lastfm::signed_in_as(&name))
             }
             Ok(None) if self.lastfm_signing.stopped.load(Ordering::SeqCst) => {
                 cx.notify();
                 return;
             }
-            Ok(None) => Notice::Noted(ENDED.to_owned()),
-            Err(Error::Refused { .. }) => Notice::Trouble(REFUSED.to_owned()),
+            Ok(None) => Notice::Noted(words::settings_lastfm::ended().to_owned()),
+            Err(Error::Refused { .. }) => {
+                Notice::Trouble(words::settings_lastfm::refused().to_owned())
+            }
             Err(error) => {
                 tracing::warn!(%error, "the Last.fm sign-in did not finish");
-                Notice::Trouble(UNREACHED.to_owned())
+                Notice::Trouble(words::settings_lastfm::unreached().to_owned())
             }
         };
         self.report(notice, cx);
@@ -330,7 +311,10 @@ impl RootView {
             global.online.lastfm_session = String::new();
         });
         self.store(&Setting::LastfmSession(String::new()), cx);
-        self.report(Notice::Done(SIGNED_OUT.to_owned()), cx);
+        self.report(
+            Notice::Done(words::settings_lastfm::signed_out().to_owned()),
+            cx,
+        );
         cx.notify();
     }
 
@@ -357,14 +341,14 @@ impl RootView {
             return body
                 .child(kit::action_row().child(action(
                     "lastfm-sign-out",
-                    "Sign out of Last.fm",
+                    words::settings_lastfm::sign_out_of_last_fm(),
                     Icon::Close,
                     false,
                     |this, _, cx| this.sign_out_of_lastfm(cx),
                     self,
                     cx,
                 )))
-                .note(SIGNED_IN_NOTE);
+                .note(words::settings_lastfm::signed_in_note());
         }
         if let Some(address) = self.lastfm_signing.waiting.clone() {
             return body
@@ -372,7 +356,7 @@ impl RootView {
                     kit::action_row()
                         .child(action(
                             "lastfm-open-again",
-                            "Open the page again",
+                            words::settings_lastfm::open_the_page_again(),
                             Icon::Link,
                             false,
                             move |_, _, cx| cx.open_url(&address),
@@ -381,7 +365,7 @@ impl RootView {
                         ))
                         .child(action(
                             "lastfm-stop",
-                            "Stop",
+                            words::settings_lastfm::stop(),
                             Icon::Close,
                             false,
                             |this, _, cx| this.stop_signing_in_to_lastfm(cx),
@@ -389,15 +373,15 @@ impl RootView {
                             cx,
                         )),
                 )
-                .note(WAITING_NOTE);
+                .note(words::settings_lastfm::waiting_note());
         }
         let held_back = !reachable || asking || self.lastfm_sign_in(cx).is_none();
         body.child(kit::action_row().child(action(
             "lastfm-sign-in",
             if asking {
-                "Asking Last.fm…"
+                words::settings_lastfm::asking_last_fm()
             } else {
-                "Sign in to Last.fm"
+                words::settings_lastfm::sign_in_to_last_fm()
             },
             Icon::Link,
             held_back,
@@ -405,6 +389,6 @@ impl RootView {
             self,
             cx,
         )))
-        .note(SIGN_IN_NOTE)
+        .note(words::settings_lastfm::sign_in_note())
     }
 }

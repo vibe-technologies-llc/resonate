@@ -19,32 +19,17 @@ use crate::{
         kit,
         listing::{Sortable, Sorted},
         root::RootView,
+        scrollbar::Scrollbars,
         sheets,
         spoken::Spoken,
         typing::jumped,
     },
+    words,
 };
 
 const BELOW_ITS_CONTROL: f32 = 4.0;
 
 const KEPT_FROM_THE_WINDOW_EDGE: f32 = 8.0;
-
-const ORDERS_LABEL: &str = "Order";
-
-const ORDERS_HINT: &str = keyed!(
-    "Choose an order",
-    key!(order_above),
-    key!(order_below),
-    "its first letters"
-);
-
-const READINGS_LABEL: &str = "Direction";
-
-const READINGS_HINT: &str = keyed!(
-    "Choose which way round it reads",
-    key!(read_the_first_way),
-    key!(read_the_other_way)
-);
 
 pub(crate) trait Ordering: Copy + PartialEq + 'static {
     const EVERY: &'static [Self];
@@ -75,15 +60,15 @@ pub(crate) enum Ordered {
 }
 
 impl Ordered {
-    const fn title(self) -> &'static str {
+    fn title(self) -> &'static str {
         match self {
-            Self::Tracks => "Sort songs",
-            Self::Albums => "Sort albums",
-            Self::Artists => "Sort artists",
-            Self::Playlists => "Sort playlists",
-            Self::Rows(_) => "Sort this playlist",
-            Self::Queue => "Sort the queue",
-            Self::SavedSearch => "Sort this search",
+            Self::Tracks => words::sorting::sort_songs(),
+            Self::Albums => words::sorting::sort_albums(),
+            Self::Artists => words::sorting::sort_artists(),
+            Self::Playlists => words::sorting::sort_playlists(),
+            Self::Rows(_) => words::sorting::sort_this_playlist(),
+            Self::Queue => words::sorting::sort_the_queue(),
+            Self::SavedSearch => words::sorting::sort_this_search(),
         }
     }
 }
@@ -290,7 +275,11 @@ impl RootView {
         let orders = O::EVERY.iter().copied().enumerate().fold(
             div()
                 .id("order-choices")
-                .named_as(Role::RadioGroup, ORDERS_LABEL, ORDERS_HINT)
+                .named_as(
+                    Role::RadioGroup,
+                    words::sorting::orders_label(),
+                    &words::sorting::orders_hint(key!(order_above), key!(order_below)),
+                )
                 .flex()
                 .flex_col()
                 .gap_0p5()
@@ -309,7 +298,14 @@ impl RootView {
         let readings = Direction::ALL.into_iter().fold(
             kit::segmented()
                 .id("order-readings")
-                .named_as(Role::RadioGroup, READINGS_LABEL, READINGS_HINT)
+                .named_as(
+                    Role::RadioGroup,
+                    words::sorting::readings_label(),
+                    &words::sorting::readings_hint(
+                        key!(read_the_first_way),
+                        key!(read_the_other_way),
+                    ),
+                )
                 .w_full(),
             |readings, direction| {
                 let taken = read_as.clone();
@@ -371,7 +367,18 @@ impl RootView {
             .flex_col()
             .gap_1()
             .min_h(px(0.0))
-            .child(orders)
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .min_h(px(0.0))
+                    .child(orders)
+                    .child(
+                        Scrollbars::of(cx)
+                            .vertical("order-scrollbar", self.ordering_scroll.clone()),
+                    ),
+            )
             .child(kit::rule().mx_1())
             .child(div().flex_none().px_1().pb_1().child(readings))
     }
@@ -399,27 +406,35 @@ impl Ordering for PlaylistOrder {
 
     fn named(self) -> &'static str {
         match self {
-            Self::Name => "Name",
-            Self::Created => "Newest",
-            Self::Modified => "Last changed",
-            Self::Played => "Last played",
-            Self::Plays => "Most played",
-            Self::PlaysThisMonth => "Most played this month",
+            Self::Name => words::sorting::playlist_name(),
+            Self::Created => words::sorting::playlist_newest(),
+            Self::Modified => words::sorting::playlist_last_changed(),
+            Self::Played => words::sorting::playlist_last_played(),
+            Self::Plays => words::sorting::playlist_most_played(),
+            Self::PlaysThisMonth => words::sorting::playlist_most_played_this_month(),
         }
     }
 
     fn read(self, reading: Direction) -> &'static str {
         match (self, reading) {
-            (Self::PlaysThisMonth, Direction::Descending) => "Most played first",
-            (Self::PlaysThisMonth, Direction::Ascending) => "Least played first",
-            (Self::Name, Direction::Ascending) => "A to Z",
-            (Self::Name, Direction::Descending) => "Z to A",
-            (Self::Created | Self::Modified, Direction::Descending) => "Newest first",
-            (Self::Created | Self::Modified, Direction::Ascending) => "Oldest first",
-            (Self::Played, Direction::Descending) => "Most recent first",
-            (Self::Played, Direction::Ascending) => "Longest ago first",
-            (Self::Plays, Direction::Descending) => "Most played first",
-            (Self::Plays, Direction::Ascending) => "Least played first",
+            (Self::PlaysThisMonth, Direction::Descending) => {
+                words::sorting::playlist_most_played_first()
+            }
+            (Self::PlaysThisMonth, Direction::Ascending) => {
+                words::sorting::playlist_least_played_first()
+            }
+            (Self::Name, Direction::Ascending) => words::sorting::playlist_a_to_z(),
+            (Self::Name, Direction::Descending) => words::sorting::playlist_z_to_a(),
+            (Self::Created | Self::Modified, Direction::Descending) => {
+                words::sorting::playlist_newest_first()
+            }
+            (Self::Created | Self::Modified, Direction::Ascending) => {
+                words::sorting::playlist_oldest_first()
+            }
+            (Self::Played, Direction::Descending) => words::sorting::playlist_most_recent_first(),
+            (Self::Played, Direction::Ascending) => words::sorting::playlist_longest_ago_first(),
+            (Self::Plays, Direction::Descending) => words::sorting::playlist_most_played_first(),
+            (Self::Plays, Direction::Ascending) => words::sorting::playlist_least_played_first(),
         }
     }
 }
@@ -429,22 +444,26 @@ impl Ordering for RowOrder {
 
     fn named(self) -> &'static str {
         match self {
-            Self::Album => "Album order",
-            Self::Artist => "Artist",
-            Self::Title => "Title",
-            Self::Length => "Length",
-            Self::File => "File name",
+            Self::Album => words::sorting::row_album_order(),
+            Self::Artist => words::sorting::row_artist(),
+            Self::Title => words::sorting::row_title(),
+            Self::Length => words::sorting::row_length(),
+            Self::File => words::sorting::row_file_name(),
         }
     }
 
     fn read(self, reading: Direction) -> &'static str {
         match (self, reading) {
-            (Self::Album, Direction::Ascending) => "First album first",
-            (Self::Album, Direction::Descending) => "Last album first",
-            (Self::Artist | Self::Title | Self::File, Direction::Ascending) => "A to Z",
-            (Self::Artist | Self::Title | Self::File, Direction::Descending) => "Z to A",
-            (Self::Length, Direction::Ascending) => "Shortest first",
-            (Self::Length, Direction::Descending) => "Longest first",
+            (Self::Album, Direction::Ascending) => words::sorting::row_first_album_first(),
+            (Self::Album, Direction::Descending) => words::sorting::row_last_album_first(),
+            (Self::Artist | Self::Title | Self::File, Direction::Ascending) => {
+                words::sorting::row_a_to_z()
+            }
+            (Self::Artist | Self::Title | Self::File, Direction::Descending) => {
+                words::sorting::row_z_to_a()
+            }
+            (Self::Length, Direction::Ascending) => words::sorting::row_shortest_first(),
+            (Self::Length, Direction::Descending) => words::sorting::row_longest_first(),
         }
     }
 }
@@ -454,42 +473,54 @@ impl Ordering for SortOrder {
 
     fn named(self) -> &'static str {
         match self {
-            Self::Relevance => "Best match",
-            Self::AlbumThenTrack => "Album order",
-            Self::Title => "Title",
-            Self::Artist => "Artist",
-            Self::DateAdded => "Added",
-            Self::Duration => "Length",
-            Self::Format => "Format",
-            Self::Plays => "Most played",
-            Self::Played => "Last played",
-            Self::Favourited => "Favourited",
-            Self::PlaysThisMonth => "Most played this month",
+            Self::Relevance => words::sorting::song_best_match(),
+            Self::AlbumThenTrack => words::sorting::song_album_order(),
+            Self::Title => words::sorting::song_title(),
+            Self::Artist => words::sorting::song_artist(),
+            Self::DateAdded => words::sorting::song_added(),
+            Self::Duration => words::sorting::song_length(),
+            Self::Format => words::sorting::song_format(),
+            Self::Plays => words::sorting::song_most_played(),
+            Self::Played => words::sorting::song_last_played(),
+            Self::Favourited => words::sorting::song_favourited(),
+            Self::PlaysThisMonth => words::sorting::song_most_played_this_month(),
         }
     }
 
     fn read(self, reading: Direction) -> &'static str {
         match (self, reading) {
-            (Self::Relevance, Direction::Ascending) => "Best first",
-            (Self::Relevance, Direction::Descending) => "Worst first",
-            (Self::PlaysThisMonth, Direction::Descending) => "Most played first",
-            (Self::PlaysThisMonth, Direction::Ascending) => "Least played first",
-            (Self::AlbumThenTrack, Direction::Ascending) => "First album first",
-            (Self::AlbumThenTrack, Direction::Descending) => "Last album first",
-            (Self::Title | Self::Artist, Direction::Ascending) => "A to Z",
-            (Self::Title | Self::Artist, Direction::Descending) => "Z to A",
-            (Self::DateAdded, Direction::Descending) => "Newest first",
-            (Self::DateAdded, Direction::Ascending) => "Oldest first",
-            (Self::Duration, Direction::Ascending) => "Shortest first",
-            (Self::Duration, Direction::Descending) => "Longest first",
-            (Self::Format, Direction::Descending) => "Best quality first",
-            (Self::Format, Direction::Ascending) => "Lossy first",
-            (Self::Plays, Direction::Descending) => "Most played first",
-            (Self::Plays, Direction::Ascending) => "Least played first",
-            (Self::Played, Direction::Descending) => "Most recent first",
-            (Self::Played, Direction::Ascending) => "Longest ago first",
-            (Self::Favourited, Direction::Descending) => "Just favourited first",
-            (Self::Favourited, Direction::Ascending) => "Favourited longest ago first",
+            (Self::Relevance, Direction::Ascending) => words::sorting::song_best_first(),
+            (Self::Relevance, Direction::Descending) => words::sorting::song_worst_first(),
+            (Self::PlaysThisMonth, Direction::Descending) => {
+                words::sorting::song_most_played_first()
+            }
+            (Self::PlaysThisMonth, Direction::Ascending) => {
+                words::sorting::song_least_played_first()
+            }
+            (Self::AlbumThenTrack, Direction::Ascending) => {
+                words::sorting::song_first_album_first()
+            }
+            (Self::AlbumThenTrack, Direction::Descending) => {
+                words::sorting::song_last_album_first()
+            }
+            (Self::Title | Self::Artist, Direction::Ascending) => words::sorting::song_a_to_z(),
+            (Self::Title | Self::Artist, Direction::Descending) => words::sorting::song_z_to_a(),
+            (Self::DateAdded, Direction::Descending) => words::sorting::song_newest_first(),
+            (Self::DateAdded, Direction::Ascending) => words::sorting::song_oldest_first(),
+            (Self::Duration, Direction::Ascending) => words::sorting::song_shortest_first(),
+            (Self::Duration, Direction::Descending) => words::sorting::song_longest_first(),
+            (Self::Format, Direction::Descending) => words::sorting::song_best_quality_first(),
+            (Self::Format, Direction::Ascending) => words::sorting::song_lossy_first(),
+            (Self::Plays, Direction::Descending) => words::sorting::song_most_played_first(),
+            (Self::Plays, Direction::Ascending) => words::sorting::song_least_played_first(),
+            (Self::Played, Direction::Descending) => words::sorting::song_most_recent_first(),
+            (Self::Played, Direction::Ascending) => words::sorting::song_longest_ago_first(),
+            (Self::Favourited, Direction::Descending) => {
+                words::sorting::song_just_favourited_first()
+            }
+            (Self::Favourited, Direction::Ascending) => {
+                words::sorting::song_favourited_longest_ago_first()
+            }
         }
     }
 }
@@ -499,30 +530,34 @@ impl Ordering for AlbumOrder {
 
     fn named(self) -> &'static str {
         match self {
-            Self::Relevance => "Best match",
-            Self::Title => "Title",
-            Self::Artist => "Artist",
-            Self::Year => "Year",
-            Self::Tracks => "Tracks",
-            Self::Added => "Added",
-            Self::Favourited => "Favourited",
+            Self::Relevance => words::sorting::album_best_match(),
+            Self::Title => words::sorting::album_title(),
+            Self::Artist => words::sorting::album_artist(),
+            Self::Year => words::sorting::album_year(),
+            Self::Tracks => words::sorting::album_tracks(),
+            Self::Added => words::sorting::album_added(),
+            Self::Favourited => words::sorting::album_favourited(),
         }
     }
 
     fn read(self, reading: Direction) -> &'static str {
         match (self, reading) {
-            (Self::Relevance, Direction::Ascending) => "Best first",
-            (Self::Relevance, Direction::Descending) => "Worst first",
-            (Self::Title | Self::Artist, Direction::Ascending) => "A to Z",
-            (Self::Title | Self::Artist, Direction::Descending) => "Z to A",
-            (Self::Year, Direction::Descending) => "Newest first",
-            (Self::Year, Direction::Ascending) => "Oldest first",
-            (Self::Tracks, Direction::Descending) => "Longest first",
-            (Self::Tracks, Direction::Ascending) => "Shortest first",
-            (Self::Added, Direction::Descending) => "Newest first",
-            (Self::Added, Direction::Ascending) => "Oldest first",
-            (Self::Favourited, Direction::Descending) => "Just favourited first",
-            (Self::Favourited, Direction::Ascending) => "Favourited longest ago first",
+            (Self::Relevance, Direction::Ascending) => words::sorting::album_best_first(),
+            (Self::Relevance, Direction::Descending) => words::sorting::album_worst_first(),
+            (Self::Title | Self::Artist, Direction::Ascending) => words::sorting::album_a_to_z(),
+            (Self::Title | Self::Artist, Direction::Descending) => words::sorting::album_z_to_a(),
+            (Self::Year, Direction::Descending) => words::sorting::album_newest_first(),
+            (Self::Year, Direction::Ascending) => words::sorting::album_oldest_first(),
+            (Self::Tracks, Direction::Descending) => words::sorting::album_longest_first(),
+            (Self::Tracks, Direction::Ascending) => words::sorting::album_shortest_first(),
+            (Self::Added, Direction::Descending) => words::sorting::album_newest_first(),
+            (Self::Added, Direction::Ascending) => words::sorting::album_oldest_first(),
+            (Self::Favourited, Direction::Descending) => {
+                words::sorting::album_just_favourited_first()
+            }
+            (Self::Favourited, Direction::Ascending) => {
+                words::sorting::album_favourited_longest_ago_first()
+            }
         }
     }
 }
@@ -532,24 +567,32 @@ impl Ordering for ArtistOrder {
 
     fn named(self) -> &'static str {
         match self {
-            Self::Relevance => "Best match",
-            Self::Name => "Name",
-            Self::Albums => "Albums",
-            Self::Tracks => "Tracks",
-            Self::Favourited => "Favourited",
+            Self::Relevance => words::sorting::artist_best_match(),
+            Self::Name => words::sorting::artist_name(),
+            Self::Albums => words::sorting::artist_albums(),
+            Self::Tracks => words::sorting::artist_tracks(),
+            Self::Favourited => words::sorting::artist_favourited(),
         }
     }
 
     fn read(self, reading: Direction) -> &'static str {
         match (self, reading) {
-            (Self::Relevance, Direction::Ascending) => "Best first",
-            (Self::Relevance, Direction::Descending) => "Worst first",
-            (Self::Name, Direction::Ascending) => "A to Z",
-            (Self::Name, Direction::Descending) => "Z to A",
-            (Self::Albums | Self::Tracks, Direction::Descending) => "Most first",
-            (Self::Albums | Self::Tracks, Direction::Ascending) => "Fewest first",
-            (Self::Favourited, Direction::Descending) => "Just favourited first",
-            (Self::Favourited, Direction::Ascending) => "Favourited longest ago first",
+            (Self::Relevance, Direction::Ascending) => words::sorting::artist_best_first(),
+            (Self::Relevance, Direction::Descending) => words::sorting::artist_worst_first(),
+            (Self::Name, Direction::Ascending) => words::sorting::artist_a_to_z(),
+            (Self::Name, Direction::Descending) => words::sorting::artist_z_to_a(),
+            (Self::Albums | Self::Tracks, Direction::Descending) => {
+                words::sorting::artist_most_first()
+            }
+            (Self::Albums | Self::Tracks, Direction::Ascending) => {
+                words::sorting::artist_fewest_first()
+            }
+            (Self::Favourited, Direction::Descending) => {
+                words::sorting::artist_just_favourited_first()
+            }
+            (Self::Favourited, Direction::Ascending) => {
+                words::sorting::artist_favourited_longest_ago_first()
+            }
         }
     }
 }
@@ -578,8 +621,6 @@ const ROW_COLUMNS: &[Sortable] = &[
     Sortable::Artist,
     Sortable::Length,
 ];
-
-const COLUMN_HINT: &str = "Put the listing in this order, or press again to turn it round";
 
 const fn track_order(column: Sortable) -> SortOrder {
     match column {
@@ -644,13 +685,13 @@ const fn row_column(order: RowOrder) -> Option<Sortable> {
     }
 }
 
-pub(crate) const fn unsorted() -> Sorted {
+pub(crate) fn unsorted() -> Sorted {
     Sorted {
         number: Sortable::Number,
         by: None,
         reading: Direction::Ascending,
         offers: &[],
-        saying: COLUMN_HINT,
+        saying: words::sorting::column_hint(),
         press: |_, _, _| {},
     }
 }
@@ -663,7 +704,7 @@ pub(crate) fn tracks_sorted(this: &RootView, cx: &Context<RootView>) -> Sorted {
         by: track_column(sorting.tracks),
         reading: sorting.tracks_read,
         offers: TRACK_COLUMNS,
-        saying: COLUMN_HINT,
+        saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = track_order(column);
             this.library.update(cx, |library, cx| {
@@ -685,7 +726,7 @@ pub(crate) fn favourites_sorted(this: &RootView, cx: &Context<RootView>) -> Sort
         by: favourite_column(sorting.favourites),
         reading: sorting.favourites_read,
         offers: FAVOURITE_COLUMNS,
-        saying: COLUMN_HINT,
+        saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = track_order(column);
             this.library.update(cx, |library, cx| {
@@ -705,7 +746,7 @@ pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
         by: row_column(this.row_order),
         reading: this.row_reading,
         offers: ROW_COLUMNS,
-        saying: COLUMN_HINT,
+        saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let Some(opened) = this.library.read(cx).opened() else {
                 return;
@@ -728,7 +769,7 @@ pub(crate) fn queue_sorted(this: &RootView) -> Sorted {
         by: row_column(this.queue_order),
         reading: this.queue_reading,
         offers: ROW_COLUMNS,
-        saying: COLUMN_HINT,
+        saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = row_order(column);
             let reading = if this.queue_order == wanted {

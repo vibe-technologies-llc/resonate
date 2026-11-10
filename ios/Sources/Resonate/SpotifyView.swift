@@ -13,37 +13,37 @@ struct SpotifyView: View {
         let account = features.spotifyAccount
         ThemedForm {
             Section {
-                TextField("Client ID", text: $clientId)
+                TextField("spotify.client-id", text: $clientId)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 if clientId.trimmingCharacters(in: .whitespaces) != account.clientId {
-                    Button("Save") { features.keepSpotifyClient(clientId) }
+                    Button("common.save") { features.keepSpotifyClient(clientId) }
                 }
             } header: {
-                Text("Your app")
+                Text("spotify.app")
             } footer: {
                 Text(SpotifyWords.register(redirect: spotifyRedirect()))
             }
             Section {
                 if account.signedIn {
-                    Button(features.followingProfile ? "Reading the account…" : "Follow the account") {
+                    Button(said(features.followingProfile ? "spotify.reading" : "spotify.follow")) {
                         features.followProfile(spotifyAccountLink(), keptInStep: true)
                     }
                     .disabled(!features.online || features.followingProfile)
-                    Button("Move to Resonate once") {
+                    Button("spotify.move-once") {
                         features.followProfile(spotifyAccountLink(), keptInStep: false)
                     }
                     .disabled(!features.online || features.followingProfile)
-                    Button("Sign out of Spotify", role: .destructive) { features.signOutOfSpotify() }
+                    Button("spotify.sign-out", role: .destructive) { features.signOutOfSpotify() }
                 } else if features.spotifySigningIn {
-                    Text("Approve the sign-in on the page that opened")
-                    Button("Cancel sign-in") { features.cancelSpotifySignIn() }
+                    Text("spotify.approve")
+                    Button("spotify.cancel-sign-in") { features.cancelSpotifySignIn() }
                 } else {
-                    Button("Sign in to Spotify") { features.signInToSpotify(clientId) }
+                    Button("spotify.sign-in") { features.signInToSpotify(clientId) }
                         .disabled(!features.online || !SpotifyWords.canSignIn(clientId: clientId))
                 }
             } header: {
-                Text("Your account")
+                Text("spotify.account")
             } footer: {
                 Text(account.signedIn ? SpotifyWords.whatFollowingDoes : SpotifyWords.whatSpotifyAllows)
             }

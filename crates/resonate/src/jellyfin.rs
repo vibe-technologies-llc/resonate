@@ -12,7 +12,7 @@ use crate::{
     Error, Result,
     config::{self, Config},
     error::ConfigKey,
-    signals,
+    signals, words,
 };
 
 const KEPT: [ConfigKey; 3] = [
@@ -24,7 +24,7 @@ const KEPT: [ConfigKey; 3] = [
 pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()> {
     if forgetting {
         forget(settings)?;
-        said!("the Jellyfin session is forgotten; sign in again with resonate jellyfin");
+        said!("{}", words::jellyfin::forgotten());
         return Ok(());
     }
     if !config.online_enabled() {
@@ -41,10 +41,7 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
         return Err(Error::QuickConnectOff);
     }
     let approving = asking.begun()?;
-    said!(
-        "approve {} in a Jellyfin app you are signed in to (Settings, Quick Connect)",
-        approving.code
-    );
+    said!("{}", words::jellyfin::approve(approving.code.as_str()));
 
     let cancelled = Arc::new(AtomicBool::new(false));
     let stopping = Arc::clone(&cancelled);
@@ -54,9 +51,8 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
     };
     keep(settings, &signed)?;
     said!(
-        "signed in to Jellyfin as {}; the session is kept in {}",
-        signed.name,
-        settings.display()
+        "{}",
+        words::jellyfin::signed_in(signed.name.as_str(), settings.display().to_string())
     );
     Ok(())
 }
