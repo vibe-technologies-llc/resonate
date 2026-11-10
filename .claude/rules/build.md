@@ -30,7 +30,9 @@ paths:
   and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run), and the
   `macos` job (`macos-latest`, Apple Silicon: the clippy, the headless tests and the `signals` test
   the `windows` job runs, with its excludes, then the tests of `resonate` and `resonate-ui`, since
-  the window builds for macOS on a Mac alone; `macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
+  the window builds for macOS on a Mac alone; its test steps run `--no-fail-fast` and each whatever
+  the one before answered, so one run names every failure of a build no machine here can run;
+  `macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
   layering refusals gets a line. The layering job has six shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `only_on` (the same in one
   target's tree), `reached_by_the_binary_alone` (`cargo tree -i`; `online`, `mcp`, `discord`),

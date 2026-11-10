@@ -480,9 +480,6 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
                     _ => {}
                 }
             }
-            if kind == "STOP" {
-                heard_now.fetching = None;
-            }
             vec![(MEDIA, heard_now.media_status(&request))]
         }
         (_, other) => panic!("asked {other} on {namespace}"),

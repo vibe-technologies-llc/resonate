@@ -324,9 +324,11 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
-      - run: cargo test --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
-      - run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
-      - run: cargo test --locked -p resonate -p resonate-ui
+      - run: cargo test --locked --no-fail-fast --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
+      - if: ${{ !cancelled() }}
+        run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
+      - if: ${{ !cancelled() }}
+        run: cargo test --locked --no-fail-fast -p resonate -p resonate-ui
 
   server-package:
     name: Sync server package
