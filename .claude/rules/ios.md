@@ -588,7 +588,8 @@ heart (the song's heart is Now Playing's). **Now Playing builds no AirPlay picke
 `AVRoutePickerView` in the zoom's first frame and, 600 ms in, an `MPVolumeView` (the first of each in a launch also loading its framework),
 so the process keeps one of each (`KeptControls`, built by `PlayerWarmup` 2 s after launch) and Now Playing borrows them:
 `RoutePicker` and `VolumeDriver` are a `KeptControlHost` that adopts the kept control while it is in a window and, leaving,
-hands it to another host still in one. Inline (the
+hands it to another host still in one. **The picker is tinted the worn accent while it routes elsewhere** (`RoutePicker.whileRouted`
+into `activeTintColor`, read in the body that draws it so a change of accent reaches the kept control), where the system's own is blue. Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits, the width read as one of three fits (`InlineFit`) so the accessory's animated resizing redraws the player only as a threshold is crossed, never every frame: a 28 pt cover and the play
 button always, the title with the artist beneath it from 150 pt, as Apple Music's minimised player draws them, and no next (the capsule beside the search
 button is about 220 pt, and the artist line fills what next held), tighter spacing and a

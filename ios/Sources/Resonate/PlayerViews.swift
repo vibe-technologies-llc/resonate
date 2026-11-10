@@ -1530,11 +1530,15 @@ enum PlayerWarmup {
 }
 
 struct RoutePicker: UIViewRepresentable {
+    var whileRouted = Color.worn
+
     func makeUIView(context: Context) -> KeptControlHost {
         KeptControls.route.host()
     }
 
-    func updateUIView(_ uiView: KeptControlHost, context: Context) {}
+    func updateUIView(_ uiView: KeptControlHost, context: Context) {
+        KeptControls.route.control.activeTintColor = UIColor(whileRouted)
+    }
 }
 
 struct UpNextList: View {
