@@ -13,12 +13,12 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select, unb
 use parking_lot::Mutex;
 use resonate_audio::{
     AudioSource, Error, GraphTime, Operation, Reshaped, Reshaper, Result, SinkStream, StreamClock,
-    StreamCommand, StreamEvent, StreamRequest, StreamState, Unreshapable, Words,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, Unreshapable, Words, handover::Handing,
 };
 use resonate_core::{ChannelLayout, Frames, Ratio, SampleFormat, SampleRate, StreamSpec};
 use resonate_coreaudio::{Drain, Rendering, Shaped};
 
-use super::{handover::Handing, remote_io_state::Routing};
+use super::remote_io_state::Routing;
 
 const COMMAND_POLL: Duration = Duration::from_millis(10);
 const QUIET_WAIT: Duration = Duration::from_secs(24 * 60 * 60);

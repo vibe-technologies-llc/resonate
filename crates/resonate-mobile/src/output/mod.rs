@@ -1,5 +1,5 @@
 mod formats;
-#[cfg(any(target_os = "android", target_os = "ios", test))]
+#[cfg(any(target_os = "android", test))]
 mod handover;
 #[cfg(target_os = "android")]
 mod oboe;
