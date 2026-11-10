@@ -1515,6 +1515,15 @@
     <string name="wrapped_place">%1$d of %2$d</string>
     <string name="sync_landing_away">The folder songs from your devices go to cannot be reached; they wait until it can</string>
     <string name="sync_landing_nowhere">Add a music folder with write access to keep songs from your devices</string>
+    <plurals name="sync_landing_begins">
+        <item quantity="one">Fetching %1$d song from your devices into %2$s</item>
+        <item quantity="other">Fetching %1$d songs from your devices into %2$s</item>
+    </plurals>
+    <string name="sync_landing_asks_again">Asking your devices for their songs, kept in %1$s</string>
+    <plurals name="sync_landing_keeping">
+        <item quantity="one">Keeping %1$d song from your devices</item>
+        <item quantity="other">Keeping %1$d songs from your devices</item>
+    </plurals>
     <string name="organise_waiting">Filing songs once the scan ends</string>
     <plurals name="organise_confirm">
         <item quantity="one">Move %1$d song?</item>
