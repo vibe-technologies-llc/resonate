@@ -27,7 +27,49 @@ objc2-core-foundation = {
     default-features = false,
     features = [
         "std",
+        "CFCGTypes",
         "CFString"
+    ]
+}
+block2 = { version = "0.6.2", default-features = false, features = ["std"] }
+dispatch2 = { version = "0.3.1", default-features = false, features = ["std"] }
+objc2 = { version = "0.6.5", default-features = false, features = ["std"] }
+objc2-app-kit = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "NSImage",
+        "objc2-core-foundation"
+    ]
+}
+objc2-foundation = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "NSData",
+        "NSDictionary",
+        "NSObject",
+        "NSString",
+        "NSValue",
+        "objc2-core-foundation"
+    ]
+}
+objc2-media-player = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "MPMediaEntity",
+        "MPMediaItem",
+        "MPNowPlayingInfoCenter",
+        "MPRemoteCommand",
+        "MPRemoteCommandCenter",
+        "MPRemoteCommandEvent",
+        "block2",
+        "objc2-app-kit",
+        "objc2-core-foundation"
     ]
 }
 parking_lot.workspace = true

@@ -35,7 +35,14 @@ its guard dropped finds nothing). It takes `objc2-audio-toolbox` and `objc2-core
 targets and `thiserror`; on macOS alone `objc2-core-audio` 0.3.2 (`AudioHardware`, the device,
 stream and property calls, with `objc2-core-audio-types` for the ranged format), `objc2-core-foundation`
 0.3.2 (`CFString`, a device's name and UID; the version gpui's tree already holds) and
-`parking_lot` (the listeners' registry). `mach_absolute_time` and `mach_timebase_info` are declared
+`parking_lot` (the listeners' registry), and for `NowPlaying` (the system's Now Playing and its
+remote commands, `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`) `objc2-media-player` 0.3.2
+(the info center, the commands, their events and the artwork alone), `objc2`, `objc2-foundation`
+(strings, numbers, data, the dictionary), `objc2-app-kit` (`NSImage` alone, the cover),
+`block2` (the command handlers and the artwork's request) and `dispatch2` (every call is posted to
+the main queue, never run synchronously), each at the version gpui's tree already holds, so no
+second copy is built. `NowPlaying` holds no Objective-C object: each call fetches the shared center
+inside its block, so it is `Send` and `Sync` and may be dropped on any thread. `mach_absolute_time` and `mach_timebase_info` are declared
 by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
 is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature. It is
 reached by `resonate-coreaudio`, on macOS `resonate-listen` (the microphone and the measuring

@@ -12,6 +12,8 @@ mod error;
 mod hog;
 #[cfg(target_os = "macos")]
 mod listening;
+#[cfg(target_os = "macos")]
+mod now_playing;
 #[cfg(any(target_os = "macos", test))]
 mod physical;
 #[cfg(target_os = "macos")]
@@ -37,9 +39,10 @@ pub use crate::{
 };
 #[cfg(target_os = "macos")]
 pub use crate::{
-    device::{Device, Offered, RateRange, Stream, Transport},
+    device::{Device, OfferedFormat, RateRange, Stream, Transport},
     hog::{Hog, Pid},
     listening::{Listening, Told, notify_on_the_hals_own_thread, told_of_the_system},
+    now_playing::{Answer, Asked, Clock, NowPlaying, Offered, Playback, Shown},
     physical::{Depth, PhysicalFormat},
     property::Direction,
     volume::{Mute, Scalar, Volume},

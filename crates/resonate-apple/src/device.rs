@@ -95,7 +95,7 @@ impl RateRange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Offered {
+pub struct OfferedFormat {
     pub format: PhysicalFormat,
     pub rates: RateRange,
 }
@@ -222,7 +222,7 @@ impl Stream {
         property::write(self.0, physical, format.described(), Op::SetPhysicalFormat)
     }
 
-    pub fn physical_formats(self) -> Result<Vec<Offered>> {
+    pub fn physical_formats(self) -> Result<Vec<OfferedFormat>> {
         let formats = Address::global(kAudioStreamPropertyAvailablePhysicalFormats);
         let offered = property::read_all::<AudioStreamRangedDescription>(
             self.0,
@@ -231,7 +231,7 @@ impl Stream {
         )?;
         Ok(offered
             .into_iter()
-            .map(|offered| Offered {
+            .map(|offered| OfferedFormat {
                 format: PhysicalFormat::of(offered.mFormat),
                 rates: RateRange::of(offered.mSampleRateRange),
             })

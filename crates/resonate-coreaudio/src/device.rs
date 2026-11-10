@@ -2,7 +2,7 @@ use std::io;
 
 use parking_lot::Mutex;
 use resonate_apple::{
-    Depth as Carried, Device, Direction, Mute, Offered, Stream, Transport, Volume,
+    Depth as Carried, Device, Direction, Mute, OfferedFormat, Stream, Transport, Volume,
 };
 use resonate_audio::{Error, Operation, Plugged, SinkInfo, SinkResult, gain_of};
 
@@ -30,7 +30,7 @@ const fn depth_of(carried: Carried) -> Depth {
     }
 }
 
-pub(crate) fn physical_of(offered: &Offered) -> Option<Physical> {
+pub(crate) fn physical_of(offered: &OfferedFormat) -> Option<Physical> {
     let depth = offered.format.depth()?;
     Some(Physical {
         depth: depth_of(depth),
