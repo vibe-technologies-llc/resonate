@@ -418,7 +418,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   the pane's *Regenerate pairing code* (two presses; the sync watcher mints a new one at once);
   `resonate sync --forget <device>` takes a device that is away off every list
   (`Error::SyncDeviceOnline` for one online); `sync-device` the name other devices see (default
-  `<hostname> (Linux)`, from `/proc/sys/kernel/hostname`, else `Linux`); `sync-songs` an array of
+  `<hostname> (Linux)`, the host being `rustix::system::uname`'s node name on Unix (a Mac's less
+  the `.local` Bonjour gives it, `named_without_its_domain`) and `COMPUTERNAME` on Windows, else the
+  system's name alone: `Linux`, `Windows`, `macOS`); `sync-songs` an array of
   `favourites`, `playlists`, `everything` (empty = only on request). `sync-control` what another
   device may do to this one's zones (`everything`, `transport`, `nothing`; `RemoteTrust`, `sync.md`'s
   *One device drives another's zones*), chosen in the Sync category's *Your devices* page, its *Driven by your other devices* group, driven from elsewhere by `resonate sync --control <device>`. Off whenever `online` is, unless

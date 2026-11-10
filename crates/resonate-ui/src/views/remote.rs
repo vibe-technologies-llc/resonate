@@ -346,9 +346,10 @@ impl RootView {
         };
         let mark = match device.platform {
             SyncedPlatform::Android | SyncedPlatform::Ios => Icon::Phone,
-            SyncedPlatform::Linux | SyncedPlatform::Windows | SyncedPlatform::Other => {
-                Icon::Computer
-            }
+            SyncedPlatform::Linux
+            | SyncedPlatform::Windows
+            | SyncedPlatform::MacOs
+            | SyncedPlatform::Other => Icon::Computer,
         };
         let colour = if song.zone.sounding {
             theme::accent()

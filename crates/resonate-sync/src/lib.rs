@@ -62,7 +62,7 @@ mod said_through_the_catalog {
 
     const SAYS_WORDS: [&str; 2] = ["change.rs", "shared/service.rs"];
 
-    const PROPER: [&str; 4] = ["Linux", "Android", "iOS", "Windows"];
+    const PROPER: [&str; 5] = ["Linux", "Android", "iOS", "Windows", "macOS"];
 
     #[test]
     fn every_word_sync_names_for_a_listener_is_said_through_its_catalog() {

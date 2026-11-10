@@ -737,13 +737,14 @@ extension DevicePlatform {
         case .android: said("platform.android")
         case .ios: said("platform.ios")
         case .windows: said("platform.windows")
+        case .macOs: said("platform.macos")
         case .other: nil
         }
     }
 
     var symbol: String {
         switch self {
-        case .linux, .windows: "desktopcomputer"
+        case .linux, .windows, .macOs: "desktopcomputer"
         case .android, .ios: "iphone"
         case .other: "questionmark.square.dashed"
         }

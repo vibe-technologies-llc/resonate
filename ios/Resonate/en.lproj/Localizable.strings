@@ -777,6 +777,7 @@
 "platform.android" = "Android";
 "platform.ios" = "iOS";
 "platform.linux" = "Linux";
+"platform.macos" = "macOS";
 "platform.windows" = "Windows";
 "player.add-to-playlist" = "Add to playlist";
 "player.analyse" = "Analyse";

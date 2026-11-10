@@ -24,6 +24,7 @@ pub enum Platform {
     Android,
     Ios,
     Windows,
+    MacOs,
     Other,
 }
 
@@ -34,6 +35,7 @@ impl Platform {
             Platform::Android => "Android",
             Platform::Ios => "iOS",
             Platform::Windows => "Windows",
+            Platform::MacOs => "macOS",
             Platform::Other => words::change::device(),
         }
     }

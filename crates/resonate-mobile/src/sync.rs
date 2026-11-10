@@ -190,6 +190,7 @@ pub enum DevicePlatform {
     Android,
     Ios,
     Windows,
+    MacOs,
     Other,
 }
 
@@ -388,6 +389,7 @@ impl MobilePlayer {
                         Platform::Android => DevicePlatform::Android,
                         Platform::Ios => DevicePlatform::Ios,
                         Platform::Windows => DevicePlatform::Windows,
+                        Platform::MacOs => DevicePlatform::MacOs,
                         Platform::Other => DevicePlatform::Other,
                     },
                     id: device.id.to_string(),

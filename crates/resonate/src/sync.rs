@@ -39,16 +39,20 @@ use crate::config::Config;
 #[cfg(feature = "sync")]
 use crate::{Error, Result, config, error::ConfigKey, words};
 
-#[cfg(all(feature = "sync", not(windows)))]
+#[cfg(all(feature = "sync", not(windows), not(target_os = "macos")))]
 const DEVICE_NAME: &str = "Linux";
 #[cfg(all(feature = "sync", windows))]
 const DEVICE_NAME: &str = "Windows";
-#[cfg(all(feature = "sync", not(windows)))]
+#[cfg(all(feature = "sync", target_os = "macos"))]
+const DEVICE_NAME: &str = "macOS";
+#[cfg(all(feature = "sync", not(windows), not(target_os = "macos")))]
 const THIS_PLATFORM: Platform = Platform::Linux;
 #[cfg(all(feature = "sync", windows))]
 const THIS_PLATFORM: Platform = Platform::Windows;
-#[cfg(all(feature = "sync", not(windows)))]
-const HOST_NAME: &str = "/proc/sys/kernel/hostname";
+#[cfg(all(feature = "sync", target_os = "macos"))]
+const THIS_PLATFORM: Platform = Platform::MacOs;
+#[cfg(all(feature = "sync", any(unix, test)))]
+const THE_LOCAL_DOMAIN: &str = ".local";
 #[cfg(feature = "sync")]
 const CONNECTED_WITHIN: Duration = Duration::from_secs(15);
 #[cfg(feature = "sync")]
@@ -1580,6 +1584,7 @@ impl resonate_ui::Syncing for Running {
                         Platform::Android => resonate_ui::SyncedPlatform::Android,
                         Platform::Ios => resonate_ui::SyncedPlatform::Ios,
                         Platform::Windows => resonate_ui::SyncedPlatform::Windows,
+                        Platform::MacOs => resonate_ui::SyncedPlatform::MacOs,
                         Platform::Other => resonate_ui::SyncedPlatform::Other,
                     },
                     online: device.online,
@@ -1686,9 +1691,21 @@ impl resonate_ui::Syncing for Running {
     }
 }
 
-#[cfg(all(feature = "sync", not(windows)))]
+#[cfg(all(feature = "sync", unix))]
 fn host_name() -> String {
-    fs::read_to_string(HOST_NAME).unwrap_or_default()
+    let named = rustix::system::uname();
+    let named = named.nodename().to_string_lossy();
+
+    match cfg!(target_os = "macos") {
+        true => named_without_its_domain(&named).to_owned(),
+        false => named.trim().to_owned(),
+    }
+}
+
+#[cfg(all(feature = "sync", any(unix, test)))]
+fn named_without_its_domain(host: &str) -> &str {
+    let host = host.trim();
+    host.strip_suffix(THE_LOCAL_DOMAIN).unwrap_or(host)
 }
 
 #[cfg(all(feature = "sync", windows))]
@@ -1701,6 +1718,17 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+
+    #[test]
+    fn a_mac_is_named_as_its_host_without_the_domain_bonjour_gives_it() {
+        assert_eq!(named_without_its_domain("studio.local\n"), "studio");
+        assert_eq!(named_without_its_domain("studio"), "studio");
+        assert_eq!(
+            named_without_its_domain("studio.example.org"),
+            "studio.example.org"
+        );
+        assert_eq!(named_without_its_domain(""), "");
+    }
 
     fn recording(title: usize) -> Recording {
         Recording {

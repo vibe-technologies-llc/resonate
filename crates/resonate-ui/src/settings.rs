@@ -1310,6 +1310,7 @@ pub enum SyncedPlatform {
     Android,
     Ios,
     Windows,
+    MacOs,
     Other,
 }
 

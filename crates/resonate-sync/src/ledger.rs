@@ -3953,6 +3953,7 @@ const fn platform_tag(platform: Platform) -> i64 {
         Platform::Android => 1,
         Platform::Ios => 2,
         Platform::Windows => 3,
+        Platform::MacOs => 4,
         Platform::Other => 255,
     }
 }
@@ -3963,6 +3964,7 @@ const fn platform_of(tag: i64) -> Platform {
         1 => Platform::Android,
         2 => Platform::Ios,
         3 => Platform::Windows,
+        4 => Platform::MacOs,
         _ => Platform::Other,
     }
 }

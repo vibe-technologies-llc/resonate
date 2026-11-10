@@ -226,6 +226,7 @@ mod words {
         "Subsonic",
         "Windows",
         "YouTube Music",
+        "macOS",
     ];
 
     const NOT_WORDS: &[&str] = &[
