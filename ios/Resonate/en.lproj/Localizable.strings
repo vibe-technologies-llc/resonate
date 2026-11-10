@@ -1007,12 +1007,10 @@
 "scrobbling.footer" = "Favourites with an identified recording are loved on each saved account, and taken back there when you remove them.";
 "scrobbling.include-history" = "Include existing listening history";
 "scrobbling.lastfm.key" = "Last.fm application key";
-"scrobbling.lastfm.password" = "Last.fm password (used only to sign in)";
 "scrobbling.lastfm.secret" = "Last.fm application secret";
 "scrobbling.lastfm.session" = "Last.fm session";
 "scrobbling.lastfm.sign-in" = "Sign in to Last.fm";
 "scrobbling.lastfm.signed-in" = "Signed in to Last.fm";
-"scrobbling.lastfm.username" = "Last.fm username";
 "scrobbling.listenbrainz.footer" = "Completed listens are queued on this device and submitted when online features are enabled.";
 "scrobbling.listenbrainz.token" = "ListenBrainz token";
 "scrobbling.save" = "Save scrobbling accounts";
@@ -1684,3 +1682,14 @@
 "zones.renderers.none" = "No renderer or receiver has answered yet.";
 "zones.renderers.off" = "Turn on Find renderers, or add one by its address, to reach renderers and receivers.";
 "zones.title" = "Zones";
+"providers.jellyfin.cancel" = "Cancel sign-in";
+"providers.jellyfin.code" = "Approve code %@ in a Jellyfin app you are signed in to (Settings, Quick Connect)";
+"providers.jellyfin.sign-in" = "Sign in with Quick Connect";
+"providers.jellyfin.sign-in-again" = "Sign in again with Quick Connect";
+"providers.jellyfin.signed-in" = "Signed in to Jellyfin as %@";
+"providers.jellyfin.waiting" = "Waiting for approval…";
+"scrobbling.lastfm.allow" = "Allow Resonate on the Last.fm page; no password is typed here.";
+"scrobbling.lastfm.cancel" = "Cancel sign-in";
+"scrobbling.lastfm.ended" = "The Last.fm sign-in ended before Resonate was allowed";
+"scrobbling.lastfm.open-again" = "Open the Last.fm page again";
+"scrobbling.lastfm.waiting" = "Waiting for Last.fm…";

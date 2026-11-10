@@ -37,8 +37,8 @@ const PLAYLISTS_READ_AT_MOST: usize = 1_000;
 const REFUSED_THE_TOKEN: u16 = 401;
 const NOT_THE_LISTENERS: u16 = 403;
 const RENEWED_BEFORE_IT_LAPSES: Duration = Duration::from_secs(60);
-const A_SIGN_IN_LAPSES_AFTER: Duration = Duration::from_secs(10 * 60);
-const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
+pub(crate) const A_SIGN_IN_LAPSES_AFTER: Duration = Duration::from_secs(10 * 60);
+pub(crate) const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 const A_REQUEST_ARRIVES_WITHIN: Duration = Duration::from_secs(2);
 const LONGEST_REQUEST_HEAD: usize = 8 * 1024;
 

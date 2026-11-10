@@ -1,5 +1,8 @@
 use std::{
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, UNIX_EPOCH},
 };
 
@@ -70,6 +73,18 @@ impl ScrobbleService {
             Self::LastFm => "lastfm",
         }
     }
+}
+
+#[derive(Default)]
+pub(crate) struct LastfmSigning {
+    waiting: parking_lot::Mutex<Option<(u64, resonate_online::LastfmApproving)>>,
+    attempts: Arc<AtomicU64>,
+}
+
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LastfmSignedIn {
+    pub name: String,
+    pub session: String,
 }
 
 #[uniffi::export]
@@ -218,22 +233,48 @@ impl MobilePlayer {
             .collect()
     }
 
-    pub fn lastfm_sign_in(
-        &self,
-        key: String,
-        secret: String,
-        user: String,
-        password: String,
-    ) -> Result<String> {
+    pub fn authorize_lastfm(&self, key: String, secret: String) -> Result<String> {
         self.require_online()?;
-        resonate_online::signed_in(
-            self.services.online.client(),
-            &resonate_online::Application { key, secret },
-            &user,
-            &password,
+        let signing = &self.services.lastfm_signing;
+        let attempt = signing.attempts.fetch_add(1, Ordering::AcqRel) + 1;
+        *signing.waiting.lock() = None;
+        let approving = resonate_online::approval_asked(
+            Arc::clone(self.services.online.client()),
+            resonate_online::Application { key, secret },
         )
-        .map(|session| session.key)
-        .map_err(|source| Error::reference(LookupOp::Token, source))
+        .map_err(|source| Error::reference(LookupOp::Token, source))?;
+        let address = approving.address().to_owned();
+        let mut waiting = signing.waiting.lock();
+        if signing.attempts.load(Ordering::Acquire) != attempt {
+            return Err(Error::SignInCancelled);
+        }
+        *waiting = Some((attempt, approving));
+        Ok(address)
+    }
+
+    pub fn finish_lastfm_authorization(&self) -> Result<Option<LastfmSignedIn>> {
+        self.require_online()?;
+        let signing = &self.services.lastfm_signing;
+        let Some((attempt, approving)) = signing.waiting.lock().take() else {
+            return Ok(None);
+        };
+        let attempts = Arc::clone(&signing.attempts);
+        let reaching = Arc::clone(self.services.online.client());
+        approving
+            .approved(&|| attempts.load(Ordering::Acquire) != attempt || !reaching.is_reaching())
+            .map(|session| {
+                session.map(|session| LastfmSignedIn {
+                    name: session.name,
+                    session: session.key,
+                })
+            })
+            .map_err(|source| Error::reference(LookupOp::Token, source))
+    }
+
+    pub fn cancel_lastfm_authorization(&self) {
+        let signing = &self.services.lastfm_signing;
+        signing.attempts.fetch_add(1, Ordering::AcqRel);
+        *signing.waiting.lock() = None;
     }
 
     pub fn submit_scrobbles(&self, account: ScrobbleAccount, playing: Option<u64>) -> Result<u64> {

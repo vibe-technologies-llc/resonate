@@ -53,6 +53,13 @@ paths:
   `SpotifySignInLapsed`. `--forget` clears the token and `Library::let_go_of_the_profile`: each
   playlist kept from the account keeps its rows and forgets its link, or the next refresh of a public
   one would mirror what the public page holds (`online.md`'s *A Spotify account*).
+- **`jellyfin [--forget]` signs in to the `jellyfin` server with Quick Connect** (`jellyfin.rs`):
+  `OnlineOff`, `NoJellyfinServer` and `QuickConnectOff` (Emby, or Quick Connect off) before a code is
+  asked; the code is printed with where to approve it, the first interrupt cancels
+  (`JellyfinSignInCancelled`), and one `config::edit` keeps `jellyfin-token`, `jellyfin-user-id`,
+  `jellyfin-device` and the user's name in `jellyfin-user` and clears `jellyfin-password`
+  (`a_quick_connect_sign_in_keeps_the_session_and_lets_go_of_the_password`); `--forget` clears the
+  three. No running window is told (no `Reloadable`), as `ytmusic sign-in`.
 - **`ytmusic keep URL` and `ytmusic check` are the terminal's YouTube Music** (`ytmusic.rs`, online
   alone; a build without it is `NoServed`). `keep_of` reads a song link (`watch?v=`, a `youtu.be`
   address whose path reads as a video; a `watch` link naming a list too is the song) or a `playlist?list=` on `music.youtube.com` or
@@ -65,7 +72,13 @@ paths:
   the first interrupt (`signals::leave_when_told`); the walk runs under `cancel_when_told`, the first
   interrupt `KeepCancelled` through `main`, which calls `stop_the_tools`. A window or poll holding the
   lock is `KeepWaitsItsTurn`, what was queued staying queued; a service stopping the pass is
-  `KeepStopped`. `check` prints `YtMusic::check`.
+  `KeepStopped`. `check` prints `YtMusic::check`. **`ytmusic sign-in` opens the sign-in window**
+  (`signed_in_with`, `providers.md`'s *Signing in to YouTube Music in a window*): `OnlineOff`,
+  `YoutubeMusicOff` and `NoSignInProgram` before anything starts, the first interrupt leaving
+  through `signals::leave` (which kills the child), then `youtube-music-cookies` stored as the jar
+  and the check printed; `ytmusic sign-out` (`signed_out_with`) takes the jar and profile away and
+  clears the key only where it names that jar. No running window is told: it reads the account from
+  the file it started with, as before.
 - **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
   <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
   on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows
@@ -218,10 +231,13 @@ what follows describes Unix, where `signals.rs` and termios are used.
   or `q` ending it early is no failure). A key whose command fails ends the loop through the same
   farewell before the error is answered. **It names what plays**: `readout::billing` = the digest's
   title and artist where it is the row's, else the file's stem.
-- **A password prompt restores the terminal on a signal.** `resonate lastfm` reads the password
-  under `signals::leave_when_told`: the first interrupt leaves through `signals::leave`, echo back
-  on; `leaving_on` is that over any signals and any `leaving`
-  (`a_signal_during_a_prompt_leaves_with_its_number`).
+- **`lastfm [--forget]` signs in on Last.fm's own page** (`lastfm.rs`): `OnlineOff` and
+  `NoLastfmApplication` before anything is asked, a key and secret Last.fm refuses `LastfmRefused`;
+  the page is printed and opened where a browser can be (`xdg-open`, `explorer` on Windows; a
+  failure only logged, so it works over SSH), the wait runs under `signals::cancel_when_told`, an end
+  without the allowing is `LastfmSignInEnded`, and the session lands in `lastfm-session`. No password
+  is read: the unechoed prompt is gone. `signals::leaving_on` leaves on any signals through any
+  `leaving` (`a_signal_during_a_prompt_leaves_with_its_number`).
 - **`play` takes a key at a time on a terminal.** `input::KeyAtATime` leaves canonical mode and echo
   via `rustix`'s safe `termios`, keeps `ISIG`, restores on drop. A wedged front end's
   `process::exit` and a panic (release aborts) run no destructor: exit goes through
@@ -407,7 +423,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   browser as `yt-dlp` spells it (`firefox`, `firefox:/path/to/profile`, how a fork such as Zen is
   named), else the path of a Netscape cookies file, which holds a path separator, so a bare word
   is a browser for `yt-dlp` to refuse; `Cookies::read` decides, and `Config`'s `Debug` withholds the
-  value. `yt-dlp` is a path, blank meaning `PATH`. The last feeds `PlaylistToKeep::ordered`.
+  value. A sign-in through the window writes it as the path of its own jar. `yt-dlp` is a path, blank meaning `PATH`. The last feeds `PlaylistToKeep::ordered`.
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
   on. `hosted-services` (default true) lets blank/absent fall back to the hosted services
   (`tracks.monochrome.st`); with it off nothing hosted is registered (`providers.md`).
@@ -434,7 +450,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   where the file's mtime moved, so a sign-in elsewhere is heard at the next read), cleared by
   `--forget`; `Config`'s `Debug` withholds it.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
-  `lastfm-session`: written by `resonate lastfm --user` or the Accounts category's *Last.fm* group,
+  `lastfm-session`: written by `resonate lastfm` or the Accounts category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is
   scrobbled; `Config`'s `Debug` and `Accounts`' print none of them.
 - `shuffle-style` (`random`, `smart`, `albums`; `smart` unless set), `shuffle-spreads-artists`,

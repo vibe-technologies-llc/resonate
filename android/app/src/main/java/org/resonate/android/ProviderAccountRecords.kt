@@ -64,6 +64,9 @@ object ProviderAccountRecords {
                             clientId = sealed("client-id"),
                             clientSecret = sealed("client-secret"),
                             refreshToken = sealed("refresh-token"),
+                            token = sealed("token"),
+                            userId = sealed("user-id"),
+                            device = sealed("device"),
                         ),
                 )
             }
@@ -86,6 +89,9 @@ object ProviderAccountRecords {
                     put(key(kept.id, "client-id"), seal(account.clientId))
                     put(key(kept.id, "client-secret"), seal(account.clientSecret))
                     put(key(kept.id, "refresh-token"), seal(account.refreshToken))
+                    put(key(kept.id, "token"), seal(account.token))
+                    put(key(kept.id, "user-id"), seal(account.userId))
+                    put(key(kept.id, "device"), seal(account.device))
                 }
             }
         return stale + written

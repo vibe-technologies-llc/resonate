@@ -11,7 +11,8 @@ depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'font
          'freetype2' 'vulkan-icd-loader' 'inter-font' 'ttf-jetbrains-mono')
 makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11')
 optdepends=('yt-dlp: keeping songs from YouTube Music'
-            'deno: a JavaScript runtime yt-dlp needs for YouTube Music')
+            'deno: a JavaScript runtime yt-dlp needs for YouTube Music'
+            'resonate-signin: signing in to YouTube Music in a window of its own')
 conflicts=('resonate-player' 'resonate-player-git' 'resonate-git')
 replaces=('resonate-player')
 options=('!lto' '!debug')
@@ -30,7 +31,7 @@ build() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
   export RUSTFLAGS="-C target-cpu=x86-64-v3"
-  cargo build --frozen --release --workspace --bin resonate
+  cargo build --frozen --release --package resonate --bin resonate
 }
 
 package() {

@@ -18,3 +18,7 @@ not-signed-in = not signed in
 tool-missing = yt-dlp could not be run; it is a separate install
 check-song-gone = the song this check asks about has left YouTube, so nothing could be told
 could-not-check = YouTube could not be asked just now; try again in a while
+window-open = a window is open on Google's sign-in: sign in there, and it closes itself once YouTube Music is reached
+signed-in = signed in to YouTube Music; youtube-music-cookies names the window's own cookies now
+signed-out = signed out of YouTube Music: the window's cookies and profile are gone, and youtube-music-cookies with them
+window-forgotten = the sign-in window's cookies and profile are gone; youtube-music-cookies names something else and is left as it was

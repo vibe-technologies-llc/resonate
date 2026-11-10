@@ -406,7 +406,17 @@ struct ProviderSection: View {
 
     private func followed(_ previous: DownloadAccount, _ current: DownloadAccount) -> DownloadAccount {
         let unedited = account == previous || account.trimmed == current
-        return unedited ? current : account.renewed(current.refreshToken)
+        if unedited { return current }
+        guard current.holdsAQuickConnectSession, !account.holdsAQuickConnectSession else {
+            return account.renewed(current.refreshToken)
+        }
+        var signed = account
+        signed.user = current.user
+        signed.password = ""
+        signed.token = current.token
+        signed.userId = current.userId
+        signed.device = current.device
+        return signed
     }
 }
 
@@ -441,10 +451,30 @@ struct ProviderFields: View {
             SecureField("providers.field.key", text: $account.password)
         case .subsonic, .jellyfin:
             serverField(said("providers.field.server"))
+                .onChange(of: account.server) { _, _ in
+                    if account.provider == .jellyfin { account.letGoOfTheQuickConnectSession() }
+                }
             TextField("providers.field.username", text: $account.user)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             SecureField("providers.field.password", text: $account.password)
+                .onChange(of: account.password) { _, typed in
+                    if !typed.isEmpty { account.letGoOfTheQuickConnectSession() }
+                }
+            if account.offersQuickConnect {
+                Button(said(features.jellyfinBusy ? "providers.jellyfin.waiting" : (account.holdsAQuickConnectSession ? "providers.jellyfin.sign-in-again" : "providers.jellyfin.sign-in"))) {
+                    features.quickConnectJellyfin(account.trimmed)
+                }
+                .disabled(features.jellyfinBusy)
+                if features.jellyfinBusy {
+                    Button("providers.jellyfin.cancel", role: .cancel) { features.cancelJellyfinQuickConnect() }
+                }
+                if let code = features.jellyfinCode {
+                    Text(said("providers.jellyfin.code", code))
+                        .font(.title3.weight(.semibold))
+                        .textSelection(.enabled)
+                }
+            }
         case .tidal:
             TextField("providers.field.tidal-client", text: $account.clientId)
                 .textInputAutocapitalization(.never)

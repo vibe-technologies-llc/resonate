@@ -27,6 +27,7 @@ members = [
     "crates/resonate-online",
     "crates/resonate-providers",
     "crates/resonate-server",
+    "crates/resonate-signin",
     "crates/resonate-sync",
     "crates/providers/inbox",
     "crates/providers/jellyfin",
@@ -239,6 +240,8 @@ wayland-protocols = {
     features = ["client", "staging"]
 }
 
+tao = { version = "0.35.3", default-features = false, features = ["rwh_06"] }
+wry = { version = "0.55.1", default-features = false, features = ["os-webview"] }
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = {
     version = "0.3.23",
@@ -270,6 +273,7 @@ resonate-analysis = { version = "0.7.0", path = "crates/resonate-analysis" }
 resonate-audio = { version = "0.7.0", path = "crates/resonate-audio" }
 resonate-cast = { version = "0.7.0", path = "crates/resonate-cast" }
 resonate-core = { version = "0.7.0", path = "crates/resonate-core" }
+resonate-signin = { version = "0.7.0", path = "crates/resonate-signin", default-features = false }
 resonate-codec = { version = "0.7.0", path = "crates/resonate-codec" }
 resonate-discord = { version = "0.7.0", path = "crates/resonate-discord" }
 resonate-driven = { version = "0.7.0", path = "crates/resonate-driven" }

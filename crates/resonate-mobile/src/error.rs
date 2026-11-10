@@ -160,6 +160,10 @@ pub enum Error {
     DownloadCancelled,
     #[error("{}", words::errors::download_expired())]
     DownloadExpired,
+    #[error("{}", words::errors::quick_connect_off())]
+    QuickConnectOff,
+    #[error("{}", words::errors::sign_in_cancelled())]
+    SignInCancelled,
     #[error("{}", words::errors::unknown_download())]
     UnknownDownload,
     #[error("{}", words::errors::download_too_large())]

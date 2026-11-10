@@ -143,6 +143,7 @@ fn jellyfin_of(made: &Made, server: &JellyfinServer) -> Arc<Jellyfin> {
             url: server.url.clone(),
             user: server.user.clone(),
             password: server.password.clone(),
+            kept: server.kept.clone(),
         })
     })
 }
@@ -206,6 +207,91 @@ pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::Ch
     }))
 }
 
+#[cfg(all(feature = "ui", feature = "online"))]
+#[derive(Default)]
+struct QuickConnects {
+    waiting: parking_lot::Mutex<
+        Option<(
+            resonate_jellyfin::QuickConnect,
+            resonate_jellyfin::Approving,
+        )>,
+    >,
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+impl resonate_ui::SignsInToJellyfin for QuickConnects {
+    fn begun(&self, address: &str) -> resonate_ui::JellyfinBegun {
+        use resonate_ui::JellyfinBegun;
+
+        let asking = resonate_jellyfin::QuickConnect::at(address);
+        match asking.offered() {
+            Ok(true) => {}
+            Ok(false) => return JellyfinBegun::Off,
+            Err(error) => {
+                tracing::warn!(%error, "the Jellyfin server could not be asked about Quick Connect");
+                return JellyfinBegun::Failed;
+            }
+        }
+        match asking.begun() {
+            Ok(approving) => {
+                let code = approving.code.clone();
+                *self.waiting.lock() = Some((asking, approving));
+                JellyfinBegun::Code(code)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the Jellyfin server gave no Quick Connect code");
+                JellyfinBegun::Failed
+            }
+        }
+    }
+
+    fn approved(&self, stopped: &std::sync::atomic::AtomicBool) -> resonate_ui::JellyfinSignIn {
+        use std::sync::atomic::Ordering;
+
+        use resonate_providers::Error as Refused;
+        use resonate_ui::{JellyfinSession, JellyfinSignIn};
+
+        let Some((asking, approving)) = self.waiting.lock().take() else {
+            return JellyfinSignIn::Failed;
+        };
+        match asking.approved(&approving, &|| stopped.load(Ordering::SeqCst)) {
+            Ok(Some(signed)) => JellyfinSignIn::SignedIn(JellyfinSession {
+                token: signed.session.token,
+                user_id: signed.session.user,
+                device: signed.session.device,
+                name: signed.name,
+            }),
+            Ok(None) => JellyfinSignIn::Stopped,
+            Err(Refused::AuthorizationLapsed { .. }) => JellyfinSignIn::Lapsed,
+            Err(Refused::AuthorizationDenied { .. }) => JellyfinSignIn::Denied,
+            Err(error) => {
+                tracing::warn!(%error, "the Jellyfin Quick Connect did not end signed in");
+                JellyfinSignIn::Failed
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn signs_in_to_jellyfin() -> Option<Arc<dyn resonate_ui::SignsInToJellyfin>> {
+    Some(Arc::new(QuickConnects::default()))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+pub fn signs_in_to_jellyfin() -> Option<Arc<dyn resonate_ui::SignsInToJellyfin>> {
+    None
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn signs_in_to_youtube_music() -> Option<Arc<dyn resonate_ui::SignsInToYoutubeMusic>> {
+    Some(Arc::new(crate::signing_in::FromTheWindow::here()))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
+pub fn signs_in_to_youtube_music() -> Option<Arc<dyn resonate_ui::SignsInToYoutubeMusic>> {
+    None
+}
+
 #[cfg(all(feature = "ui", not(feature = "online")))]
 pub fn checks_youtube_music(_settings: Option<PathBuf>) -> Option<resonate_ui::ChecksYoutubeMusic> {
     None
@@ -214,6 +300,7 @@ pub fn checks_youtube_music(_settings: Option<PathBuf>) -> Option<resonate_ui::C
 #[cfg(feature = "online")]
 pub fn stop_the_tools() {
     resonate_ytmusic::stop_the_tools();
+    crate::signing_in::stop_signing_in();
 }
 
 #[cfg(not(feature = "online"))]
@@ -269,6 +356,11 @@ impl Accounts {
                 config.jellyfin.as_deref(),
                 config.jellyfin_user.as_deref(),
                 config.jellyfin_password.as_deref(),
+                [
+                    config.jellyfin_token.as_deref(),
+                    config.jellyfin_user_id.as_deref(),
+                    config.jellyfin_device.as_deref(),
+                ],
             ),
             tidal: tidal(
                 config.tidal_client_id.as_deref(),
@@ -304,6 +396,11 @@ impl Accounts {
                 Some(&online.jellyfin),
                 Some(&online.jellyfin_user),
                 Some(&online.jellyfin_password),
+                [
+                    Some(&online.jellyfin_token),
+                    Some(&online.jellyfin_user_id),
+                    Some(&online.jellyfin_device),
+                ],
             ),
             tidal: tidal(
                 Some(&online.tidal_client_id),
@@ -358,6 +455,7 @@ struct JellyfinServer {
     url: String,
     user: String,
     password: String,
+    kept: Option<resonate_jellyfin::KeptSession>,
 }
 
 #[cfg(feature = "online")]
@@ -367,6 +465,7 @@ impl std::fmt::Debug for JellyfinServer {
             .field("url", &self.url)
             .field("user", &self.user)
             .field("password", &"<withheld>")
+            .field("kept", &self.kept)
             .finish()
     }
 }
@@ -376,11 +475,31 @@ fn jellyfin(
     url: Option<&str>,
     user: Option<&str>,
     password: Option<&str>,
+    [token, user_id, device]: [Option<&str>; 3],
 ) -> Option<JellyfinServer> {
+    let url = given(url)?;
+    let kept =
+        given(token)
+            .zip(given(user_id))
+            .zip(given(device))
+            .map(|((token, user), device)| resonate_jellyfin::KeptSession {
+                token,
+                user,
+                device,
+            });
+    if kept.is_some() {
+        return Some(JellyfinServer {
+            url,
+            user: given(user).unwrap_or_default(),
+            password: String::new(),
+            kept,
+        });
+    }
     Some(JellyfinServer {
-        url: given(url)?,
+        url,
         user: given(user)?,
         password: given(password)?,
+        kept: None,
     })
 }
 
@@ -796,6 +915,35 @@ mod tests {
             ..whole
         };
         assert!(!schemes(&offline).contains(&"jellyfin".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_jellyfin_account_is_ready_with_a_password_or_a_whole_kept_session() {
+        let ready = |config: &Config| Accounts::of(config).jellyfin.is_some();
+        let address = Config {
+            jellyfin: Some("http://music.local:8096".to_owned()),
+            ..Config::default()
+        };
+        let kept = Config {
+            jellyfin_token: Some("token".to_owned()),
+            jellyfin_user_id: Some("0a1b".to_owned()),
+            jellyfin_device: Some("device".to_owned()),
+            ..address.clone()
+        };
+        let half_kept = Config {
+            jellyfin_device: None,
+            ..kept.clone()
+        };
+
+        assert!(!ready(&address));
+        assert!(ready(&kept));
+        assert!(!ready(&half_kept));
+        assert!(
+            Accounts::of(&kept)
+                .jellyfin
+                .is_some_and(|server| server.kept.is_some())
+        );
     }
 
     #[cfg(feature = "online")]

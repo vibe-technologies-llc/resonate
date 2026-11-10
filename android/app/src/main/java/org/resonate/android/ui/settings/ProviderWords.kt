@@ -56,7 +56,8 @@ fun providerFields(provider: MusicProvider): List<ProviderField> =
             listOf(ProviderField.CLIENT_ID, ProviderField.CLIENT_SECRET, ProviderField.REFRESH_TOKEN)
     }
 
-fun accountIdentity(account: DownloadAccount): String = "${account.provider.name}:${account.refreshToken}"
+fun accountIdentity(account: DownloadAccount): String =
+    "${account.provider.name}:${account.refreshToken}:${account.token}"
 
 fun DownloadAccount.valueOf(field: ProviderField): String =
     when (field) {

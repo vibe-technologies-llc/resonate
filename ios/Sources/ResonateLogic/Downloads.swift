@@ -142,9 +142,19 @@ extension DownloadAccount {
     public var readiness: ProviderReadiness {
         switch provider {
         case .monochrome, .hifiApi: .ready
-        case .subsonic, .jellyfin:
+        case .subsonic:
             if Self.isBlank(server) {
                 .missingServer
+            } else if Self.isBlank(user) || password.isEmpty {
+                .missingLogin
+            } else {
+                .ready
+            }
+        case .jellyfin:
+            if Self.isBlank(server) {
+                .missingServer
+            } else if holdsAQuickConnectSession {
+                .ready
             } else if Self.isBlank(user) || password.isEmpty {
                 .missingLogin
             } else {
@@ -154,6 +164,22 @@ extension DownloadAccount {
         case .tidal where Self.isBlank(refreshToken): .needsSignIn
         case .tidal: .ready
         }
+    }
+
+    public var holdsAQuickConnectSession: Bool {
+        !Self.isBlank(token) && !Self.isBlank(userId) && !Self.isBlank(device)
+    }
+
+    public var offersQuickConnect: Bool {
+        provider == .jellyfin && !Self.isBlank(server)
+            && !server.trimmingCharacters(in: .whitespaces).lowercased()
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("/emby")
+    }
+
+    public mutating func letGoOfTheQuickConnectSession() {
+        token = ""
+        userId = ""
+        device = ""
     }
 
     public var usesItsOwnServer: Bool {

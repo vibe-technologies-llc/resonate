@@ -425,6 +425,8 @@ impl Driven {
                 signs_in: None,
                 spotify: None,
                 checks_youtube_music: None,
+                signs_in_to_youtube_music: None,
+                signs_in_to_jellyfin: None,
                 attention,
                 places: Places {
                     config: folder.path().join("config.toml"),
@@ -4598,31 +4600,42 @@ mod tests {
         assert_eq!(searched, "", "the token was typed into the search as well");
     }
 
-    struct SignsInWithOnePassword;
+    struct AllowedOnLastfm;
 
-    impl resonate_library::Scrobblers for SignsInWithOnePassword {
+    struct AllowedAtOnce;
+
+    impl resonate_library::LastfmApproval for AllowedAtOnce {
+        fn address(&self) -> &str {
+            "https://www.last.fm/api/auth/?api_key=a%20key&token=t"
+        }
+
+        fn approved(
+            &self,
+            _: &dyn Fn() -> bool,
+        ) -> resonate_library::Result<Option<resonate_library::LastfmSession>> {
+            Ok(Some(resonate_library::LastfmSession {
+                name: "listener".to_owned(),
+                key: "a session key".to_owned(),
+            }))
+        }
+    }
+
+    impl resonate_library::Scrobblers for AllowedOnLastfm {
         fn under(&self, _: String) -> Arc<dyn resonate_library::Scrobbler> {
             unreachable!("no ListenBrainz token is given here")
         }
 
-        fn signed_in_to_lastfm(
+        fn lastfm_approval(
             &self,
             asked: &resonate_library::LastfmSignIn,
-        ) -> resonate_library::Result<resonate_library::LastfmSession> {
-            let right = asked.key == "a key"
-                && asked.secret == "a secret"
-                && asked.user == "listener"
-                && asked.password == "right";
-            if !right {
+        ) -> resonate_library::Result<Box<dyn resonate_library::LastfmApproval>> {
+            if asked.key != "a key" || asked.secret != "a secret" {
                 return Err(resonate_library::Error::Refused {
                     op: resonate_library::LookupOp::Token,
                     status: 401,
                 });
             }
-            Ok(resonate_library::LastfmSession {
-                name: "listener".to_owned(),
-                key: "a session key".to_owned(),
-            })
+            Ok(Box::new(AllowedAtOnce))
         }
     }
 
@@ -4633,13 +4646,13 @@ mod tests {
     }
 
     #[gpui::test]
-    fn last_fm_is_signed_in_to_from_its_group_and_the_password_is_never_kept(
+    fn last_fm_is_signed_in_to_by_allowing_it_on_its_own_page_and_no_password_is_asked(
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|global, _| {
-                global.scrobblers = Some(Arc::new(SignsInWithOnePassword));
+                global.scrobblers = Some(Arc::new(AllowedOnLastfm));
                 global.online.enabled = true;
             });
         });
@@ -4647,36 +4660,32 @@ mod tests {
             |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
         driven.click("tab-settings");
         driven.focus(|root| &root.finding);
-        driven.cx.simulate_input("last.fm password");
+        driven.cx.simulate_input("last.fm");
         driven.settle();
 
         type_into(&mut driven, 0, "a key");
         driven.cx.simulate_keystrokes("enter");
-        type_into(&mut driven, 1, "a secret");
-        type_into(&mut driven, 2, "listener");
-        type_into(&mut driven, 3, "wrong");
+        type_into(&mut driven, 1, "a wrong secret");
         driven.cx.simulate_keystrokes("enter");
-        driven.until(|root, cx| {
-            !root.lastfm_signing.is_asking() && root.lastfm[3].read(cx).text().is_empty()
-        });
+        driven.click("lastfm-sign-in");
+        driven.until(|root, _| !root.lastfm_signing.is_asking());
 
         assert_eq!(driven.read(session), "");
+
+        driven.focus(|root| &root.lastfm[1]);
+        driven.cx.simulate_keystrokes("ctrl-a backspace");
+        type_into(&mut driven, 1, "a secret");
+        driven.cx.simulate_keystrokes("enter");
+        driven.click("lastfm-sign-in");
+        driven.until(|root, cx| !session(root, cx).is_empty());
+
+        assert_eq!(driven.read(session), "a session key");
         assert_eq!(
             driven.read(|_, cx| {
                 let online = &cx.global::<ResonateApp>().online;
                 (online.lastfm_key.clone(), online.lastfm_secret.clone())
             }),
             ("a key".to_owned(), "a secret".to_owned())
-        );
-
-        type_into(&mut driven, 3, "right");
-        driven.click("lastfm-sign-in");
-        driven.until(|root, cx| !session(root, cx).is_empty());
-
-        assert_eq!(driven.read(session), "a session key");
-        assert_eq!(
-            driven.read(|root, cx| root.lastfm[3].read(cx).text().to_owned()),
-            ""
         );
 
         driven.click("lastfm-sign-out");
@@ -5068,6 +5077,360 @@ mod tests {
             assert!(online.youtube_music);
             assert_eq!(online.youtube_music_cookies, "firefox");
         });
+    }
+
+    struct QuickConnectsOnce {
+        begun: crate::JellyfinBegun,
+        answer: crate::JellyfinSignIn,
+        asked: parking_lot::Mutex<Vec<String>>,
+    }
+
+    impl QuickConnectsOnce {
+        fn answering(begun: crate::JellyfinBegun, answer: crate::JellyfinSignIn) -> Arc<Self> {
+            Arc::new(Self {
+                begun,
+                answer,
+                asked: parking_lot::Mutex::default(),
+            })
+        }
+    }
+
+    impl crate::SignsInToJellyfin for QuickConnectsOnce {
+        fn begun(&self, address: &str) -> crate::JellyfinBegun {
+            self.asked.lock().push(address.to_owned());
+            self.begun.clone()
+        }
+
+        fn approved(&self, _: &AtomicBool) -> crate::JellyfinSignIn {
+            self.answer.clone()
+        }
+    }
+
+    fn a_session() -> crate::JellyfinSession {
+        crate::JellyfinSession {
+            token: "token-1".to_owned(),
+            user_id: "0a1b".to_owned(),
+            device: "device-1".to_owned(),
+            name: "listener".to_owned(),
+        }
+    }
+
+    fn jellyfin_shown(cx: &mut TestAppContext, signs_in: Arc<QuickConnectsOnce>) -> Driven {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(move |global, _| {
+                global.online.enabled = true;
+                global.signs_in_to_jellyfin = Some(signs_in as Arc<dyn crate::SignsInToJellyfin>);
+            });
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("jellyfin");
+        driven.settle();
+        for (nth, typed) in [(0, "http://music.local:8096"), (2, "sesame")] {
+            driven.focus(move |root| &root.jellyfin[nth]);
+            driven.cx.simulate_input(typed);
+            driven.cx.simulate_keystrokes("enter");
+            driven.settle();
+        }
+        driven
+    }
+
+    #[gpui::test]
+    fn a_jellyfin_code_approved_elsewhere_signs_in_and_empties_the_password(
+        cx: &mut TestAppContext,
+    ) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::SignedIn(a_session()),
+        );
+        let mut driven = jellyfin_shown(cx, Arc::clone(&signs_in));
+
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
+
+        assert_eq!(*signs_in.asked.lock(), ["http://music.local:8096"]);
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert_eq!(online.jellyfin_user_id, "0a1b");
+            assert_eq!(online.jellyfin_device, "device-1");
+            assert_eq!(online.jellyfin_user, "listener");
+            assert!(online.jellyfin_password.is_empty());
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.jellyfin[2].read(cx).text().to_owned()),
+            ""
+        );
+        assert_eq!(
+            driven.read(|root, cx| root.jellyfin[1].read(cx).text().to_owned()),
+            "listener"
+        );
+    }
+
+    #[gpui::test]
+    fn a_jellyfin_code_that_lapsed_keeps_nothing(cx: &mut TestAppContext) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::Lapsed,
+        );
+        let mut driven = jellyfin_shown(cx, signs_in);
+
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("lapsed"))
+        });
+
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert!(online.jellyfin_token.is_empty());
+            assert_eq!(online.jellyfin_password, "sesame");
+        });
+    }
+
+    #[gpui::test]
+    fn a_server_without_quick_connect_says_so_and_keeps_the_password(cx: &mut TestAppContext) {
+        let signs_in =
+            QuickConnectsOnce::answering(crate::JellyfinBegun::Off, crate::JellyfinSignIn::Failed);
+        let mut driven = jellyfin_shown(cx, signs_in);
+
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("Quick Connect off"))
+        });
+
+        driven.cx.update(|_, cx| {
+            assert_eq!(
+                cx.global::<ResonateApp>().online.jellyfin_password,
+                "sesame"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_code_waiting_is_shown_and_cancel_stops_the_wait(cx: &mut TestAppContext) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::Stopped,
+        );
+        let mut driven = jellyfin_shown(cx, signs_in);
+        let stopped = driven.cx.update(|_, cx| {
+            driven.root.update(cx, |root, cx| {
+                root.jellyfin_quick.shown_waiting("123456".to_owned());
+                cx.notify();
+                root.jellyfin_quick.stopping()
+            })
+        });
+        driven.settle();
+
+        assert!(
+            driven
+                .cx
+                .debug_bounds("jellyfin-quick-connect-code")
+                .is_some()
+        );
+        driven.click("jellyfin-quick-connect-cancel");
+
+        assert!(stopped.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(
+            driven
+                .cx
+                .debug_bounds("jellyfin-quick-connect-code")
+                .is_none()
+        );
+    }
+
+    #[gpui::test]
+    fn a_password_typed_after_a_quick_connect_lets_the_kept_session_go(cx: &mut TestAppContext) {
+        let signs_in = QuickConnectsOnce::answering(
+            crate::JellyfinBegun::Code("123456".to_owned()),
+            crate::JellyfinSignIn::SignedIn(a_session()),
+        );
+        let mut driven = jellyfin_shown(cx, signs_in);
+        driven.click("jellyfin-quick-connect");
+        driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
+
+        driven.focus(|root| &root.jellyfin[2]);
+        driven.cx.simulate_input("another");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        driven.cx.update(|_, cx| {
+            let online = &cx.global::<ResonateApp>().online;
+            assert!(online.jellyfin_token.is_empty());
+            assert!(online.jellyfin_device.is_empty());
+            assert_eq!(online.jellyfin_password, "another");
+        });
+    }
+
+    struct SignsInToYoutubeOnce {
+        offered: bool,
+        answer: crate::YoutubeMusicSignIn,
+        jar: String,
+        asked: std::sync::atomic::AtomicUsize,
+        signed_out: std::sync::atomic::AtomicBool,
+    }
+
+    impl SignsInToYoutubeOnce {
+        fn answering(answer: crate::YoutubeMusicSignIn) -> Arc<Self> {
+            Arc::new(Self {
+                offered: true,
+                answer,
+                jar: "/data/resonate/youtube-music-cookies.txt".to_owned(),
+                asked: std::sync::atomic::AtomicUsize::new(0),
+                signed_out: std::sync::atomic::AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl crate::SignsInToYoutubeMusic for SignsInToYoutubeOnce {
+        fn is_offered(&self) -> bool {
+            self.offered
+        }
+
+        fn sign_in(&self) -> crate::YoutubeMusicSignIn {
+            self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.answer.clone()
+        }
+
+        fn sign_out(&self) -> bool {
+            self.signed_out
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            true
+        }
+
+        fn names_the_window_jar(&self, cookies: &str) -> bool {
+            cookies.trim() == self.jar
+        }
+    }
+
+    fn youtube_music_shown(
+        cx: &mut TestAppContext,
+        signs_in: Option<Arc<SignsInToYoutubeOnce>>,
+        checked: Arc<parking_lot::Mutex<Vec<String>>>,
+    ) -> Driven {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(move |global, _| {
+                global.online.enabled = true;
+                global.signs_in_to_youtube_music =
+                    signs_in.map(|signs_in| signs_in as Arc<dyn crate::SignsInToYoutubeMusic>);
+                global.checks_youtube_music = Some(Arc::new(move |online: &crate::Online| {
+                    checked.lock().push(online.youtube_music_cookies.clone());
+                    Some(crate::YoutubeMusicConnection::Premium)
+                }));
+            });
+        });
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("youtube music");
+        driven.settle();
+        driven.click("youtube-music-track");
+        driven.settle();
+        driven
+    }
+
+    #[gpui::test]
+    fn signing_in_to_youtube_music_names_the_jar_and_checks_the_account(cx: &mut TestAppContext) {
+        let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::SignedIn {
+            cookies: "/data/resonate/youtube-music-cookies.txt".to_owned(),
+        });
+        let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+
+        driven.click("youtube-music-sign-in");
+        let heard = Arc::clone(&checked);
+        driven.until(move |_, _| !heard.lock().is_empty());
+
+        assert_eq!(signs_in.asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            *checked.lock(),
+            ["/data/resonate/youtube-music-cookies.txt"]
+        );
+        driven.cx.update(|_, cx| {
+            assert_eq!(
+                cx.global::<ResonateApp>().online.youtube_music_cookies,
+                "/data/resonate/youtube-music-cookies.txt"
+            );
+        });
+        assert_eq!(
+            driven.read(|root, cx| root.youtube_music[0].read(cx).text().to_owned()),
+            "/data/resonate/youtube-music-cookies.txt"
+        );
+    }
+
+    #[gpui::test]
+    fn a_sign_in_closed_keeps_the_browser_the_settings_named(cx: &mut TestAppContext) {
+        let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::Closed);
+        let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+        driven.focus(|root| &root.youtube_music[0]);
+        driven.cx.simulate_input("firefox");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        driven.click("youtube-music-sign-in");
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("nothing kept"))
+        });
+
+        assert!(checked.lock().is_empty());
+        driven.cx.update(|_, cx| {
+            assert_eq!(
+                cx.global::<ResonateApp>().online.youtube_music_cookies,
+                "firefox"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn sign_out_is_offered_only_for_what_the_window_kept_and_clears_it(cx: &mut TestAppContext) {
+        let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::SignedIn {
+            cookies: "/data/resonate/youtube-music-cookies.txt".to_owned(),
+        });
+        let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+        let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+        driven.focus(|root| &root.youtube_music[0]);
+        driven.cx.simulate_input("firefox");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        assert!(driven.cx.debug_bounds("youtube-music-sign-out").is_none());
+
+        driven.click("youtube-music-sign-in");
+        let heard = Arc::clone(&checked);
+        driven.until(move |_, _| !heard.lock().is_empty());
+        driven.settle();
+        driven.click("youtube-music-sign-out");
+        driven.until(|_, cx| {
+            cx.global::<ResonateApp>()
+                .online
+                .youtube_music_cookies
+                .is_empty()
+        });
+
+        assert!(
+            signs_in
+                .signed_out
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
+        driven.settle();
+        assert!(driven.cx.debug_bounds("youtube-music-sign-out").is_none());
+    }
+
+    #[gpui::test]
+    fn without_the_sign_in_program_the_pane_offers_no_sign_in(cx: &mut TestAppContext) {
+        let missing = Arc::new(SignsInToYoutubeOnce {
+            offered: false,
+            ..Arc::try_unwrap(SignsInToYoutubeOnce::answering(
+                crate::YoutubeMusicSignIn::ProgramMissing,
+            ))
+            .unwrap_or_else(|_| unreachable!())
+        });
+        let mut driven = youtube_music_shown(cx, Some(missing), Arc::default());
+
+        assert!(driven.cx.debug_bounds("youtube-music-sign-in").is_none());
+        assert!(driven.cx.debug_bounds("youtube-music-check").is_some());
     }
 
     #[gpui::test]

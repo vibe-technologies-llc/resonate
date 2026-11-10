@@ -8,6 +8,8 @@ paths:
   - "crates/resonate-library/src/supply.rs"
   - "crates/resonate-library/src/filed.rs"
   - "crates/resonate-library/src/keeps.rs"
+  - "crates/resonate-signin/**/*.rs"
+  - "crates/resonate/src/signing_in.rs"
 ---
 
 # Providers
@@ -508,6 +510,30 @@ catalog is the server's, browsed through its API and never copied into `resonate
   `ProviderOp::SignIn`. `Server`'s `Debug` prints `<withheld>`, `Session` has no `Debug`, and
   `told` keeps ureq's address-printing errors out of the log, as Subsonic's does
   (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
+- **Quick Connect signs in with no password** (`quick_connect.rs`, Jellyfin 10.8+): `QuickConnect::at`
+  asks `QuickConnect/Enabled` (`offered`: false for an address under `/emby`, a refusal below 500 or
+  any answer but `true`, so a proxy's page is no offer), `begun` posts `QuickConnect/Initiate` with the
+  `MediaBrowser` authorization (`Call::SigningIn`; a `405` asks again by `GET`, `Call::Introducing`)
+  and answers the `Code` (`Approving`'s `Debug` withholds the secret), and `approved` polls
+  `QuickConnect/Connect?secret=` every `QUICK_CONNECT_ASKED_EVERY` (5 s) until `Authenticated`, then posts
+  the secret to `Users/AuthenticateWithQuickConnect` and answers a `SignedIn`: the `KeptSession`
+  (token, user id, and the device id the code was asked under) and the user's name. A secret the server
+  forgot (404) or a wait past `A_QUICK_CONNECT_LAPSES_AFTER` (10 minutes) is `AuthorizationLapsed`, a
+  401/403 at `Initiate` `AuthorizationDenied`, a cancel heard within a tenth of a second `Ok(None)`, and
+  a poll the server did not answer is asked again (`a_code_approved_elsewhere_signs_in_and_yields_the_session_the_device_was_issued`,
+  `a_code_never_approved_lapses_and_keeps_nothing`, `a_cancel_ends_the_wait_and_keeps_nothing`,
+  `quick_connect_is_not_offered_by_emby_or_a_server_with_it_off_or_one_answering_a_page`,
+  `an_older_server_is_begun_with_get`).
+- **A kept session stands in place of the password.** `Server::kept` (`KeptSession`, its token
+  withheld): the provider names the kept device in its authorization, takes the session without asking
+  `AuthenticateByName`, and a 401 is `Unwelcome` under `ProviderOp::SignIn` (away), never a sign-in by
+  name, since no password stands beside it
+  (`a_kept_session_is_asked_with_its_token_and_never_signs_in`,
+  `a_kept_token_turned_away_is_the_account_turned_away_and_not_a_new_sign_in`). The binary keeps it as
+  `jellyfin-token`, `jellyfin-user-id` and `jellyfin-device` (`binary.md`); an account is ready with an
+  address and either user and password or the whole session, and **a token and a password never both
+  stand**: a Quick Connect sign-in clears `jellyfin-password` and writes the user's name into
+  `jellyfin-user`, and a password typed, an address changed or the account forgotten lets the session go.
 - **Emby is the same client under `/emby`.** The address is tried as given and, where the sign-in
   is answered 404 and the address does not already end in `/emby`, under `/emby`; the route that
   answered is the session's root and its `Flavour`. No other call differs, so Emby is no second
@@ -867,6 +893,54 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
 - **A cookie value is withheld from the logs too.** `Cookies`' `Debug` prints neither browser nor path,
   and `Telling` replaces `Cookies::withheld` (the whole value, the profile, each short of a `~`) in
   every line of stderr before it reaches `tracing`.
+
+## Signing in to YouTube Music in a window
+
+**A separate program owns the browser engine: `resonate-signin`** (`crates/resonate-signin`), the
+only executable linking `wry` (WebKitGTK 4.1 on Linux, WebView2 on Windows) and `tao`, so no package
+of the player gains WebKitGTK. Its library (no `window` feature: no wry, no tao) is the binary's
+dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-com` from the
+`resonate` tree and lets `resonate-signin` reach core alone.
+
+- **What the window does**: `resonate-signin --jar FILE --profile FOLDER` opens
+  `SIGN_IN_PAGE` (Google's sign-in for YouTube, continuing to `music.youtube.com`) on its own
+  `WebContext` profile, with the engine's own user agent, and on every finished page and once a
+  second (`LOOKED_AT_EVERY`) reads the address; on `music.youtube.com` itself (`is_youtube_music`:
+  `https`, that host, no user-info) it reads every cookie, keeps those under `youtube.com` and
+  `google.com` (`kept`: the domain or a subdomain, never a lookalike, and none whose fields hold a
+  tab, CR or LF, which would forge a jar line) and, where `LOGIN_INFO` and `SAPISID` stand under
+  `youtube.com` (`signed_in`; Google's cookies alone are no YouTube sign-in), writes the jar and
+  exits `SIGNED_IN` (0). Closing the window first exits `CLOSED` (3); anything else `FAILED` (1).
+  `Outcome::of` reads the status back.
+- **A domain cookie keeps its dot.** `cookie::Cookie::domain()` strips the leading dot wry's engines
+  hand over, which would write `youtube.com FALSE` (host-only) and make `yt-dlp` keep a rotated
+  `.youtube.com` value beside the stale one; `domain_cookie_of` dots the bare `youtube.com` and
+  `google.com` again, leaving a `__Host-` cookie and any subdomain's host-only
+  (`a_domain_the_engine_handed_over_undotted_is_dotted_again_unless_it_names_one_host`).
+- **The profile is owner-only before the window opens** (`0700`, `owner_only`): WebKit keeps the
+  whole Google session there in plain text, a superset of the jar
+  (`the_windows_profile_is_made_owner_only_before_the_window_opens`).
+- **The jar is Netscape's** (`netscape`: `#HttpOnly_` before an HttpOnly cookie, a session cookie
+  expiring `0`), **written whole, owner-only**: `written` stages `<jar>.staged` under
+  `writer::Held::taken_over` (a second sign-in writing is refused `WouldBlock`), `0600` on Unix
+  before a byte, `sync_all`, rename, folder synced. `Cookie`'s `Debug` withholds the value.
+- **The binary** (`signing_in.rs`, `online`): `the_program` is `resonate-signin` beside
+  `current_exe`, else the first on `PATH`; `Kept::in_the_data_folder` names
+  `youtube-music-cookies.txt` and the profile `youtube-music-sign-in` in `config::data_dir`;
+  `sign_in` runs the program, holds each child by pid so `stop_the_tools` kills it on the way out,
+  and reads the outcome (`YoutubeMusicSignInClosed`, `YoutubeMusicSignInFailed { code }`,
+  `YoutubeMusicSignInNotStarted`); `sign_out` takes jar and profile away, a missing one no failure;
+  `names_the_jar` says whether `youtube-music-cookies` names the window's own jar.
+- **Signing in points `youtube-music-cookies` at the jar**, whatever it named before (a browser is
+  not kept); a cancel or failure leaves the setting as it was; signing out clears the setting only
+  where it names that jar, so a listener's own cookies file is never touched
+  (`a_sign_in_closed_or_failed_leaves_the_setting_as_it_was`,
+  `signing_out_deletes_only_what_the_window_kept`). `yt-dlp` keeps refreshing the jar through
+  `--cookies`, which is wanted.
+- **Checked by hand on Linux** (2026-11-09, Hyprland, WebKitGTK 2.54): Google let the sign-in
+  through, and `yt-dlp` read the jar the window wrote: the account's *Liked Music* and the Premium
+  formats 774 and 141 of `CHECKED_WITH`. WebView2 is cross-checked only; the sign-in there waits on
+  a Windows machine (`docs/FEATURES.md`). How long a jar lasts is not known.
 
 ## Keeping a song from a service
 

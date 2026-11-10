@@ -33,6 +33,15 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   JavaScript runtime for YouTube's challenges, and `deno` is the one it finds by itself (`node` or
   `bun` serve where present). A Flatpak holds neither and shows the provider as unavailable, and no
   package ships them (`providers.md`).
+- **`resonate-signin` is recommended, never depended on**, and is its own package: `-git`'s
+  PKGBUILD is split (`resonate-signin-git`, `optdepends` of the player), `release/signin/PKGBUILD`
+  is `resonate-signin` (`optdepends` of the release player), the spec's subpackage
+  `resonate-signin` is `Recommends`, and the DEB script's `signin` builds `resonate-signin`, the
+  player's control `Recommends` it. Each depends on WebKitGTK 4.1; each builds it with `--package
+  resonate-signin` in a `cargo` run apart from the player's, which is `--package resonate --bin
+  resonate`, never `--workspace` (`dependencies.md`). The Windows zip and installer carry
+  `resonate-signin.exe` beside `resonate.exe` (`SourceSignIn`, signed with it). The Flatpak, having
+  no `yt-dlp`, carries none.
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment
   `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
   build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the

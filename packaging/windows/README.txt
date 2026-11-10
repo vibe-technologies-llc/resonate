@@ -9,6 +9,11 @@ choice of the default app for you: pick Resonate under Settings > Apps > Default
 removes the program, the shortcut and every registry entry setup wrote, and leaves your settings,
 catalog and equaliser profiles where they are.
 
+resonate-signin.exe beside it is the YouTube Music sign-in window: Settings, Accounts, YouTube
+Music, Sign in opens it on Google's own page through the system's WebView2 and keeps the account's
+cookies in %LOCALAPPDATA%\resonate for yt-dlp alone. Without it, name a browser or a cookies file
+there instead.
+
 Settings live in %APPDATA%\resonate\config.toml; the catalog, the vault and the equaliser profiles
 live in %LOCALAPPDATA%\resonate.
 

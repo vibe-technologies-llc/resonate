@@ -149,6 +149,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val appearance = AppearanceStore(context.getSharedPreferences("appearance", Context.MODE_PRIVATE))
     val tidalAuthorization = MutableStateFlow<TidalAuthorization?>(null)
     val tidalBusy = MutableStateFlow(false)
+    val jellyfinCode = MutableStateFlow<String?>(null)
+    val lastfmAddress = MutableStateFlow<String?>(null)
+    val lastfmBusy = MutableStateFlow(false)
+    val jellyfinBusy = MutableStateFlow(false)
     private val artistRequest = AtomicLong()
     private val analysisRequest = AtomicLong()
     val corrections = MutableStateFlow<List<AutoEqDevice>>(emptyList())
@@ -1756,20 +1760,32 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scrobbleStatus.value = native.validateScrobbling(account).joinToString(" · ")
     }
 
-    fun signInLastFm(account: ScrobbleAccount, user: String, password: String, onSignedIn: () -> Unit) = work { native ->
-        val session = native.lastfmSignIn(account.lastfmKey, account.lastfmSecret, user, password)
-        val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
-        val signedIn =
-            kept.copy(
-                lastfmKey = account.lastfmKey,
-                lastfmSecret = account.lastfmSecret,
-                lastfmSession = session,
-            )
-        accounts.writeScrobbling(signedIn)
-        native.startScrobbling(ScrobbleService.LAST_FM, false)
-        scrobbleAccount.value = signedIn
-        scrobbleStatus.value = library.words.string(R.string.features_scrobble_lastfm_signed_in)
-        onSignedIn()
+    fun signInLastFm(account: ScrobbleAccount) {
+        lastfmBusy.value = true
+        work { native ->
+            try {
+                lastfmAddress.value = native.authorizeLastfm(account.lastfmKey, account.lastfmSecret)
+                val signed = native.finishLastfmAuthorization()
+                if (signed == null) {
+                    scrobbleStatus.value = library.words.string(R.string.features_scrobble_lastfm_ended)
+                    return@work
+                }
+                val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
+                val signedIn =
+                    kept.copy(
+                        lastfmKey = account.lastfmKey,
+                        lastfmSecret = account.lastfmSecret,
+                        lastfmSession = signed.session,
+                    )
+                accounts.writeScrobbling(signedIn)
+                native.startScrobbling(ScrobbleService.LAST_FM, false)
+                scrobbleAccount.value = signedIn
+                scrobbleStatus.value = library.words.string(R.string.features_scrobble_lastfm_signed_in)
+            } finally {
+                lastfmAddress.value = null
+                lastfmBusy.value = false
+            }
+        }
     }
 
     fun signOutLastFm() = work { _ ->
@@ -1815,6 +1831,32 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 library.notice(R.string.features_provider_tidal_signed_in)
             } finally {
                 tidalBusy.value = false
+            }
+        }
+    }
+
+    fun quickConnectJellyfin(id: Long, account: DownloadAccount) {
+        jellyfinBusy.value = true
+        work { native ->
+            try {
+                jellyfinCode.value = native.beginJellyfinQuickConnect(account.server).code
+                val session = native.finishJellyfinQuickConnect() ?: return@work
+                changeAccounts {
+                    it.saved(
+                        id,
+                        account.copy(
+                            user = session.name.ifBlank { account.user },
+                            password = "",
+                            token = session.token,
+                            userId = session.userId,
+                            device = session.device,
+                        ),
+                    )
+                }
+                library.notice(library.words.string(R.string.features_provider_jellyfin_signed_in, session.name))
+            } finally {
+                jellyfinCode.value = null
+                jellyfinBusy.value = false
             }
         }
     }
@@ -2101,6 +2143,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
         searching.value = false
         enriching.value = false
         tidalBusy.value = false
+        jellyfinBusy.value = false
+        jellyfinCode.value = null
+        lastfmBusy.value = false
+        lastfmAddress.value = null
         correctionBusy.value = false
         correctionApplying.value = false
     }

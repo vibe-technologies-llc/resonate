@@ -1,0 +1,36 @@
+[package]
+name = "resonate-signin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[[bin]]
+name = "resonate-signin"
+path = "src/main.rs"
+required-features = ["window"]
+
+[features]
+default = ["window"]
+window = ["dep:clap", "dep:tao", "dep:tracing", "dep:tracing-subscriber", "dep:wry"]
+
+[dependencies]
+clap = { workspace = true, optional = true }
+resonate-core.workspace = true
+resonate-words.workspace = true
+tao = { workspace = true, optional = true }
+thiserror.workspace = true
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+wry = { workspace = true, optional = true }
+
+[build-dependencies]
+resonate-words-build.workspace = true
+
+[dev-dependencies]
+resonate-words-build.workspace = true
+
+[lints]
+workspace = true

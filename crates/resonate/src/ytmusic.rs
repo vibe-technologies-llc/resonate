@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -13,7 +13,15 @@ use resonate_library::{
 use resonate_providers::{Id, PlaysInPlace as _, Providers, Song, WhyAway};
 use resonate_ytmusic::{Connection, VideoId, YtMusic, playlist_id};
 
-use crate::{Error, Result, cli::YtmusicArgs, config::Config, providers, signals, words};
+use crate::{
+    Error, Result,
+    cli::YtmusicArgs,
+    config::{self, Config},
+    error::ConfigKey,
+    providers, signals,
+    signing_in::{self, Kept},
+    words,
+};
 
 const AFTER_THE_SCHEME: &str = "://";
 const SHORT_LINKS_ARE_ON: &str = "youtu.be";
@@ -229,6 +237,70 @@ fn check(config: &Config, settings: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+fn signed_in_with(
+    config: &Config,
+    settings: Option<&Path>,
+    program: Option<PathBuf>,
+    kept: &Kept,
+) -> Result<String> {
+    if !config.online_enabled() {
+        return Err(Error::OnlineOff);
+    }
+    if !config.turns_youtube_music_on() {
+        return Err(Error::YoutubeMusicOff);
+    }
+    let program = program.ok_or(Error::NoSignInProgram)?;
+    let settings = settings.ok_or(Error::NoConfigDir)?;
+    let named = kept.jar_named()?;
+    said!("{}", words::ytmusic::window_open());
+    signing_in::sign_in(&program, kept)?;
+    config::store(settings, ConfigKey::YoutubeMusicCookies, named.as_str())?;
+    Ok(named)
+}
+
+fn sign_in(config: &Config, settings: Option<PathBuf>) -> Result<()> {
+    let kept = Kept::in_the_data_folder()?;
+    let _leaving = signals::leave_when_told();
+    let named = signed_in_with(
+        config,
+        settings.as_deref(),
+        signing_in::the_program(),
+        &kept,
+    )?;
+    said!("{}", words::ytmusic::signed_in());
+    let checked = Config {
+        youtube_music_cookies: Some(named),
+        ..config.clone()
+    };
+    said!("{}", connection_said(account(&checked, settings)?.check()));
+    Ok(())
+}
+
+fn signed_out_with(config: &Config, settings: Option<&Path>, kept: &Kept) -> Result<bool> {
+    signing_in::sign_out(kept)?;
+    let ours = config
+        .youtube_music_cookies
+        .as_deref()
+        .is_some_and(|cookies| signing_in::names_the_jar(cookies, kept));
+    if ours {
+        config::clear(
+            settings.ok_or(Error::NoConfigDir)?,
+            ConfigKey::YoutubeMusicCookies,
+        )?;
+    }
+    Ok(ours)
+}
+
+fn sign_out(config: &Config, settings: Option<PathBuf>) -> Result<()> {
+    let kept = Kept::in_the_data_folder()?;
+    if signed_out_with(config, settings.as_deref(), &kept)? {
+        said!("{}", words::ytmusic::signed_out());
+    } else {
+        said!("{}", words::ytmusic::window_forgotten());
+    }
+    Ok(())
+}
+
 pub fn run(
     config: &Config,
     settings: Option<PathBuf>,
@@ -238,12 +310,18 @@ pub fn run(
     match wanted {
         YtmusicArgs::Keep { url } => keep(config, settings, url, library),
         YtmusicArgs::Check => check(config, settings),
+        YtmusicArgs::SignIn => sign_in(config, settings),
+        YtmusicArgs::SignOut => sign_out(config, settings),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::path::Path;
+
     use super::*;
+    use crate::signing_in::Kept;
 
     const A_SONG: &str = "https://music.youtube.com/watch?v=abc123";
 
@@ -327,6 +405,141 @@ mod tests {
             keep(&offline, None, A_SONG, never_opened),
             Err(Error::OnlineOff)
         ));
+    }
+
+    fn a_sign_in_folder(name: &str) -> (PathBuf, PathBuf, Kept) {
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ytmusic-sign-in-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a folder");
+        let settings = folder.join("config.toml");
+        std::fs::write(
+            &settings,
+            "youtube-music = true\nyoutube-music-cookies = \"firefox\"\n",
+        )
+        .expect("the settings");
+        let kept = Kept::under(&folder.join("data"));
+        (folder, settings, kept)
+    }
+
+    #[cfg(unix)]
+    fn a_sign_in_program(folder: &Path, says: &str) -> PathBuf {
+        use std::{io::ErrorKind, os::unix::fs::PermissionsExt as _, process::Command};
+
+        let program = folder.join(format!("resonate-signin-{}", says.len()));
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\n[ \"$1\" = --runs ] && exit 0\n{says}\n"),
+        )
+        .expect("a program");
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+            .expect("runnable");
+        loop {
+            match Command::new(&program).arg("--runs").status() {
+                Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
+                    std::thread::yield_now();
+                }
+                ran => {
+                    ran.expect("the program runs");
+                    return program;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_sign_in_with_online_or_youtube_music_off_or_no_program_is_refused_before_anything_starts()
+    {
+        let (folder, settings, kept) = a_sign_in_folder("refused");
+        let program = Some(folder.join("never-run"));
+        let offline = Config {
+            online: Some(false),
+            ..turned_on()
+        };
+
+        assert!(matches!(
+            signed_in_with(&offline, Some(&settings), program.clone(), &kept),
+            Err(Error::OnlineOff)
+        ));
+        assert!(matches!(
+            signed_in_with(&Config::default(), Some(&settings), program, &kept),
+            Err(Error::YoutubeMusicOff)
+        ));
+        assert!(matches!(
+            signed_in_with(&turned_on(), Some(&settings), None, &kept),
+            Err(Error::NoSignInProgram)
+        ));
+        assert!(!kept.profile.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sign_in_closed_or_failed_leaves_the_setting_as_it_was() {
+        let (folder, settings, kept) = a_sign_in_folder("closed");
+        let before = std::fs::read_to_string(&settings).expect("the settings");
+
+        for says in ["exit 3", "exit 1 # failed"] {
+            let program = a_sign_in_program(&folder, says);
+            assert!(signed_in_with(&turned_on(), Some(&settings), Some(program), &kept).is_err());
+            assert_eq!(
+                std::fs::read_to_string(&settings).expect("the settings"),
+                before
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sign_in_names_the_jar_in_the_settings_in_place_of_a_browser() {
+        let (folder, settings, kept) = a_sign_in_folder("signed-in");
+        let program = a_sign_in_program(&folder, "mkdir -p \"$(dirname \"$2\")\"; : > \"$2\"");
+
+        let named =
+            signed_in_with(&turned_on(), Some(&settings), Some(program), &kept).expect("signed in");
+
+        let written = std::fs::read_to_string(&settings).expect("the settings");
+        assert_eq!(named, kept.jar.display().to_string());
+        assert!(
+            written.contains(&format!("youtube-music-cookies = \"{named}\"")),
+            "{written}"
+        );
+        assert!(!written.contains("firefox"), "{written}");
+    }
+
+    #[test]
+    fn signing_out_deletes_only_what_the_window_kept() {
+        let (folder, settings, kept) = a_sign_in_folder("out");
+        let own = folder.join("cookies.txt");
+        std::fs::write(&own, "the listener's").expect("their cookies");
+        std::fs::create_dir_all(&kept.profile).expect("a profile");
+        std::fs::write(&kept.jar, "jar").expect("a jar");
+        let theirs = Config {
+            youtube_music_cookies: Some(own.display().to_string()),
+            ..turned_on()
+        };
+
+        signed_out_with(&theirs, Some(&settings), &kept).expect("signed out");
+
+        assert!(own.exists());
+        assert!(!kept.jar.exists() && !kept.profile.exists());
+        assert!(
+            std::fs::read_to_string(&settings)
+                .expect("the settings")
+                .contains("firefox")
+        );
+
+        let ours = Config {
+            youtube_music_cookies: Some(kept.jar.display().to_string()),
+            ..turned_on()
+        };
+        signed_out_with(&ours, Some(&settings), &kept).expect("signed out");
+        assert!(
+            !std::fs::read_to_string(&settings)
+                .expect("the settings")
+                .contains("youtube-music-cookies")
+        );
     }
 
     #[test]

@@ -126,6 +126,17 @@ is never named.
     (`a_song_asked_for_before_any_provider_was_set_up_is_fetched_once_one_is`).
   - A server address must begin `http://` or `https://` with a host (`reads_as_a_server`); else a
     toast, nothing stored.
+- **Jellyfin is signed in to with Quick Connect from its group** (`views/settings/jellyfin.rs`): the
+  `SignsInToJellyfin` seam (`Lookups::signs_in_to_jellyfin`, the binary's `QuickConnects`;
+  `JellyfinBegun`, `JellyfinSignIn`, `JellyfinSession` with its token withheld) behind *Sign in with
+  Quick Connect* (`jellyfin-quick-connect`) beside an address not under `/emby`; the code
+  (`jellyfin-quick-connect-code`) waits beside *Cancel* (`jellyfin-quick-connect-cancel`) and the
+  sentence to approve it, and signed in the user field holds the server's name for the user, the
+  password field empties and the three session settings are written. Quick Connect off is a note that
+  keeps the password; a password typed, the address changed or the account forgotten lets the session
+  go (`let_go_of_the_jellyfin_session`;
+  `a_jellyfin_code_approved_elsewhere_signs_in_and_empties_the_password`,
+  `a_password_typed_after_a_quick_connect_lets_the_kept_session_go`).
 - **A Spotify account is signed in to, followed and let go from its group, and offered only with a
   client ID.** `views/settings/spotify.rs` holds one `Field` (`spotify-client-id`, an app the listener
   registered). `SignsInToSpotify` is the seam, `Lookups::spotify` the binary's
@@ -141,14 +152,16 @@ is never named.
   rows. `resonate spotify` reaches a running window (`Followed::Spotify`, `Reloadable::Spotify`)
   (`a_spotify_account_is_signed_in_to_followed_and_let_go_from_its_group_and_offered_only_with_a_client`,
   `a_spotify_sign_in_made_at_the_terminal_reaches_the_window`).
-- **Last.fm is signed in to from its group; the password is typed, sent once and never kept.**
-  `views/settings/lastfm.rs` holds four `Field`s (`LastfmAccount`): API key and secret kept as
-  `lastfm-key`/`lastfm-secret`, user name and password kept nowhere. Enter or *Sign in to Last.fm*
-  asks `Scrobblers::signed_in_to_lastfm` on the background executor; the password is emptied either
-  way, a session is written as `lastfm-session`; a refusal says what could be wrong, anything else
-  that Last.fm was not reached (`last_fm_is_signed_in_to_from_its_group_and_the_password_is_never_kept`).
+- **Last.fm is signed in to on its own page; no password is typed in the window.**
+  `views/settings/lastfm.rs` holds two `Field`s (`LastfmAccount`): API key and secret, kept as
+  `lastfm-key`/`lastfm-secret`. *Sign in to Last.fm* asks `Scrobblers::lastfm_approval` on the
+  background executor, opens the page it answers (`cx.open_url`) and waits on the approval beside
+  *Open the page again* (`lastfm-open-again`) and *Stop* (`lastfm-stop`); a session is written as
+  `lastfm-session`, an end without the allowing is a note that nothing was kept, a refusal says to
+  check the key and secret, anything else that Last.fm was not reached
+  (`last_fm_is_signed_in_to_by_allowing_it_on_its_own_page_and_no_password_is_asked`).
 - **A secret is drawn as marks.** `Field::masked` (Subsonic and Jellyfin password, TIDAL secret and token,
-  AcoustID/AudD/ListenBrainz keys, Last.fm key, secret, password) shapes one `•` per letter; `Shown`
+  AcoustID/AudD/ListenBrainz keys, Last.fm key and secret) shapes one `•` per letter; `Shown`
   maps every offset both ways; copies and cuts nothing.
 - **The caret blinks as the desktop says.** `CaretBlink` on `Stored` and `ResonateApp` (`as_built`
   500 ms; `steady` holds it lit); every field's blink task rereads it each tick. The binary's
@@ -1591,7 +1604,19 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `Group::YoutubeMusic` (`views/settings/youtube_music.rs`): the switch, the cookies and `yt-dlp`
   fields, the keep-order switch, the terms in one plain sentence beside them and *Check connection*,
   which asks the `ChecksYoutubeMusic` seam (`Lookups::checks_youtube_music`) on the background executor
-  and toasts what it heard. In the server pane a service that `Serves::keeps_songs` draws a *Keep* mark
+  and toasts what it heard. **It signs in through the sign-in window**: the `SignsInToYoutubeMusic`
+  seam (`Lookups::signs_in_to_youtube_music`, the binary's `signing_in::FromTheWindow`), where it
+  `is_offered` (the program found), leads the action row with *Sign in to YouTube Music*
+  (`youtube-music-sign-in`; *Sign in again* where `names_the_window_jar`, *Signing in…* while it
+  runs on the background executor), greyed like the check; `YoutubeMusicSignIn::SignedIn` puts the
+  jar in the cookies field, the global and the file, moves the sources and runs the check;
+  `Closed` is a note that nothing was kept, the setting untouched. *Sign out*
+  (`youtube-music-sign-out`) stands only beside the window's own jar and clears it. Not offered, the
+  group says to install `resonate-signin` and draws no sign-in
+  (`signing_in_to_youtube_music_names_the_jar_and_checks_the_account`,
+  `a_sign_in_closed_keeps_the_browser_the_settings_named`,
+  `sign_out_is_offered_only_for_what_the_window_kept_and_clears_it`,
+  `without_the_sign_in_program_the_pane_offers_no_sign_in`). In the server pane a service that `Serves::keeps_songs` draws a *Keep* mark
   on a song row (`server-row-keep-<n>`) and *Keep* on a mix's heading (`server-keep`, once its rows are
   read, the name on the row it was opened from carried in `Place::Mix`), and no *Play* where
   `Serves::plays_songs` says no. A press is `LibraryModel::keep` or `keep_mix`, its pass followed through

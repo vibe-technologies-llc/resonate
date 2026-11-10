@@ -59,6 +59,12 @@ cargo @arguments
 if ($LASTEXITCODE -ne 0) {
     throw "the build failed"
 }
+$signInArguments = $arguments.Clone()
+$signInArguments[$signInArguments.IndexOf("resonate")] = "resonate-signin"
+cargo @signInArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "the sign-in window's build failed"
+}
 
 $name = "resonate-$Version-$($build.Label)-windows"
 $staging = Join-Path $Output $name
@@ -66,9 +72,11 @@ Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $staging | Out-Null
 
 $executable = Join-Path $release "resonate.exe"
-& (Join-Path $PSScriptRoot "sign.ps1") -Files $executable
+$signIn = Join-Path $release "resonate-signin.exe"
+& (Join-Path $PSScriptRoot "sign.ps1") -Files $executable, $signIn
 
 Copy-Item $executable $staging
+Copy-Item $signIn $staging
 Copy-Item (Join-Path $root "LICENSE") $staging
 Copy-Item (Join-Path $root "COPYRIGHT") $staging
 Copy-Item (Join-Path $PSScriptRoot "README.txt") $staging
@@ -86,6 +94,7 @@ $compiler = Find-InnoCompiler
     "/DNumericVersion=$numeric" `
     "/DInstallArchitecture=$($build.Installs)" `
     "/DSourceExecutable=$executable" `
+    "/DSourceSignIn=$signIn" `
     "/DRepositoryRoot=$root" `
     "/DOutputDirectory=$((Resolve-Path $Output).Path)" `
     "/DOutputName=$setupName" `

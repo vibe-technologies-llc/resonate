@@ -1,0 +1,11 @@
+sign-in-with-quick-connect = Sign in with Quick Connect
+asking-the-server = Asking the server…
+cancel = Cancel
+code = Code
+approve-it = Approve this code in a Jellyfin app you are signed in to (Settings, Quick Connect); this waits until the server says so.
+quick-connect-off = This server has Quick Connect off, so sign in with the password
+not-begun = The Jellyfin server could not be asked for a code
+lapsed = The code lapsed before it was approved, nothing kept
+denied = The Jellyfin server refused Quick Connect
+unreached = The Jellyfin server stopped answering, nothing kept
+signed-in-as = Signed in to Jellyfin as { $name }

@@ -315,8 +315,12 @@ impl Served {
 fn is_ready(account: &DownloadAccount) -> bool {
     let given = |field: &str| !field.trim().is_empty();
     match account.provider {
-        MusicProvider::Subsonic | MusicProvider::Jellyfin => {
+        MusicProvider::Subsonic => {
             given(&account.server) && given(&account.user) && given(&account.password)
+        }
+        MusicProvider::Jellyfin => {
+            let kept = given(&account.token) && given(&account.user_id) && given(&account.device);
+            given(&account.server) && (kept || (given(&account.user) && given(&account.password)))
         }
         MusicProvider::Tidal => given(&account.client_id) && given(&account.refresh_token),
         MusicProvider::Monochrome | MusicProvider::HifiApi => true,
@@ -710,6 +714,9 @@ mod tests {
             client_id: String::new(),
             client_secret: String::new(),
             refresh_token: String::new(),
+            token: String::new(),
+            user_id: String::new(),
+            device: String::new(),
         }
     }
 

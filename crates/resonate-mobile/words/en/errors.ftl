@@ -134,3 +134,5 @@ received-finished = finished
 impulse-kept = kept
 impulse-found = found
 impulse-removed = removed
+quick-connect-off = This server has Quick Connect off, so sign in with the password
+sign-in-cancelled = The sign-in was cancelled

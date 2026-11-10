@@ -270,6 +270,9 @@ pub enum SettingKey {
     Jellyfin,
     JellyfinUser,
     JellyfinPassword,
+    JellyfinToken,
+    JellyfinUserId,
+    JellyfinDevice,
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
@@ -301,7 +304,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 128] = [
+    pub const ALL: [Self; 131] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -402,6 +405,9 @@ impl SettingKey {
         Self::Jellyfin,
         Self::JellyfinUser,
         Self::JellyfinPassword,
+        Self::JellyfinToken,
+        Self::JellyfinUserId,
+        Self::JellyfinDevice,
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
@@ -541,6 +547,9 @@ pub enum Setting {
     Jellyfin(String),
     JellyfinUser(String),
     JellyfinPassword(String),
+    JellyfinToken(String),
+    JellyfinUserId(String),
+    JellyfinDevice(String),
     TidalClientId(String),
     TidalClientSecret(String),
     TidalRefreshToken(String),
@@ -680,6 +689,9 @@ impl Setting {
             Self::Jellyfin(_) => SettingKey::Jellyfin,
             Self::JellyfinUser(_) => SettingKey::JellyfinUser,
             Self::JellyfinPassword(_) => SettingKey::JellyfinPassword,
+            Self::JellyfinToken(_) => SettingKey::JellyfinToken,
+            Self::JellyfinUserId(_) => SettingKey::JellyfinUserId,
+            Self::JellyfinDevice(_) => SettingKey::JellyfinDevice,
             Self::TidalClientId(_) => SettingKey::TidalClientId,
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
@@ -734,6 +746,9 @@ pub struct Online {
     pub jellyfin: String,
     pub jellyfin_user: String,
     pub jellyfin_password: String,
+    pub jellyfin_token: String,
+    pub jellyfin_user_id: String,
+    pub jellyfin_device: String,
     pub tidal_client_id: String,
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
@@ -824,6 +839,9 @@ impl fmt::Debug for Online {
             jellyfin,
             jellyfin_user,
             jellyfin_password,
+            jellyfin_token,
+            jellyfin_user_id,
+            jellyfin_device,
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
@@ -860,6 +878,9 @@ impl fmt::Debug for Online {
             .field("jellyfin", jellyfin)
             .field("jellyfin_user", jellyfin_user)
             .field("jellyfin_password", &withheld(jellyfin_password))
+            .field("jellyfin_token", &withheld(jellyfin_token))
+            .field("jellyfin_user_id", jellyfin_user_id)
+            .field("jellyfin_device", jellyfin_device)
             .field("tidal_client_id", tidal_client_id)
             .field("tidal_client_secret", &withheld(tidal_client_secret))
             .field("tidal_refresh_token", &withheld(tidal_refresh_token))
@@ -906,6 +927,65 @@ pub enum YoutubeMusicConnection {
 }
 
 pub type ChecksYoutubeMusic = Arc<dyn Fn(&Online) -> Option<YoutubeMusicConnection> + Send + Sync>;
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct JellyfinSession {
+    pub token: String,
+    pub user_id: String,
+    pub device: String,
+    pub name: String,
+}
+
+impl fmt::Debug for JellyfinSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(stringify!(JellyfinSession))
+            .field("token", &"<withheld>")
+            .field("user_id", &self.user_id)
+            .field("device", &self.device)
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JellyfinBegun {
+    Code(String),
+    Off,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JellyfinSignIn {
+    SignedIn(JellyfinSession),
+    Lapsed,
+    Denied,
+    Stopped,
+    Failed,
+}
+
+pub trait SignsInToJellyfin: Send + Sync {
+    fn begun(&self, address: &str) -> JellyfinBegun;
+
+    fn approved(&self, stopped: &AtomicBool) -> JellyfinSignIn;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum YoutubeMusicSignIn {
+    SignedIn { cookies: String },
+    Closed,
+    ProgramMissing,
+    Failed,
+}
+
+pub trait SignsInToYoutubeMusic: Send + Sync {
+    fn is_offered(&self) -> bool;
+
+    fn sign_in(&self) -> YoutubeMusicSignIn;
+
+    fn sign_out(&self) -> bool;
+
+    fn names_the_window_jar(&self, cookies: &str) -> bool;
+}
 
 #[derive(Clone)]
 pub struct Sourcing {

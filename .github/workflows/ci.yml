@@ -17,6 +17,7 @@ env:
   ARCH_PACKAGES: >-
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
     fontconfig freetype2 ttf-dejavu vulkan-headers vulkan-icd-loader ffmpeg flac wavpack mac lame dbus
+    webkit2gtk-4.1
 
 jobs:
   clippy:
@@ -228,6 +229,10 @@ jobs:
           reached_by_the_binary_alone resonate-mcp
           reached_by_the_binary_alone resonate-discord
           refuse_headless resonate serde_json gpui ureq quinn tokio
+          refuse resonate wry tao webkit2gtk webview2-com
+          refuse_headless resonate wry tao webkit2gtk webview2-com
+          only resonate-signin resonate-core resonate-words
+          reached_by_the_binary_alone resonate-signin
           refuse resonate-pipewire resonate-wasapi
           refuse resonate-wasapi resonate-codec resonate-dsp resonate-pipewire pipewire libspa gpui
           only resonate-wasapi resonate-core resonate-audio resonate-words

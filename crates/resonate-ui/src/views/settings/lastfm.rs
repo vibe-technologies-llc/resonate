@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use gpui::{
     App, AppContext as _, BorrowAppContext as _, Context, Entity, ParentElement as _, Task, Window,
 };
@@ -20,13 +25,13 @@ use crate::{
 pub(crate) enum LastfmAccount {
     Key,
     Secret,
-    User,
-    Password,
 }
 
 #[derive(Default)]
 pub(crate) struct LastfmSigning {
     asking: bool,
+    waiting: Option<String>,
+    stopped: Arc<AtomicBool>,
     task: Option<Task<()>>,
 }
 
@@ -38,16 +43,12 @@ impl LastfmSigning {
 }
 
 impl LastfmAccount {
-    pub(crate) const ALL: [Self; 4] = [Self::Key, Self::Secret, Self::User, Self::Password];
-    const KEPT: [Self; 2] = [Self::Key, Self::Secret];
-    const TYPED_TO_SIGN_IN: [Self; 2] = [Self::User, Self::Password];
+    pub(crate) const ALL: [Self; 2] = [Self::Key, Self::Secret];
 
     fn placeholder(self) -> &'static str {
         match self {
             Self::Key => words::settings_lastfm::the_api_key_of_your_last(),
             Self::Secret => words::settings_lastfm::its_shared_secret_then_press_enter(),
-            Self::User => words::settings_lastfm::your_last_fm_user_name(),
-            Self::Password => words::settings_lastfm::your_last_fm_password_then_press(),
         }
     }
 
@@ -55,8 +56,6 @@ impl LastfmAccount {
         match self {
             Self::Key => words::settings_lastfm::api_key(),
             Self::Secret => words::settings_lastfm::shared_secret(),
-            Self::User => words::settings_lastfm::user_name(),
-            Self::Password => words::settings_lastfm::password(),
         }
     }
 
@@ -64,8 +63,6 @@ impl LastfmAccount {
         match self {
             Self::Key => "lastfm-key",
             Self::Secret => "lastfm-secret",
-            Self::User => "lastfm-user",
-            Self::Password => "lastfm-password",
         }
     }
 
@@ -73,8 +70,6 @@ impl LastfmAccount {
         match self {
             Self::Key => 0,
             Self::Secret => 1,
-            Self::User => 2,
-            Self::Password => 3,
         }
     }
 
@@ -82,7 +77,6 @@ impl LastfmAccount {
         match self {
             Self::Key => online.lastfm_key.clone(),
             Self::Secret => online.lastfm_secret.clone(),
-            Self::User | Self::Password => String::new(),
         }
     }
 
@@ -90,15 +84,13 @@ impl LastfmAccount {
         match self {
             Self::Key => online.lastfm_key = given,
             Self::Secret => online.lastfm_secret = given,
-            Self::User | Self::Password => {}
         }
     }
 
-    fn setting(self, given: String) -> Option<Setting> {
+    fn setting(self, given: String) -> Setting {
         match self {
-            Self::Key => Some(Setting::LastfmKey(given)),
-            Self::Secret => Some(Setting::LastfmSecret(given)),
-            Self::User | Self::Password => None,
+            Self::Key => Setting::LastfmKey(given),
+            Self::Secret => Setting::LastfmSecret(given),
         }
     }
 
@@ -106,14 +98,10 @@ impl LastfmAccount {
         online: &Online,
         window: &mut Window,
         cx: &mut Context<RootView>,
-    ) -> [Entity<Field>; 4] {
+    ) -> [Entity<Field>; 2] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
-                let field = Field::new(account.placeholder(), window, cx);
-                let mut field = match account {
-                    Self::Key | Self::Secret | Self::Password => field.masked(),
-                    Self::User => field,
-                };
+                let mut field = Field::new(account.placeholder(), window, cx).masked();
                 field.hold(account.held(online), cx);
                 field
             });
@@ -137,11 +125,6 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if LastfmAccount::TYPED_TO_SIGN_IN.contains(&account) {
-            self.sign_in_to_lastfm(cx);
-            window.focus(&self.focus, cx);
-            return;
-        }
         self.keep_the_typed_application(cx);
         let said = if self.lastfm_field(account).read(cx).text().trim().is_empty() {
             words::settings_lastfm::last_fm_is_not_scrobbled_to()
@@ -154,7 +137,7 @@ impl RootView {
     }
 
     fn keep_the_typed_application(&mut self, cx: &mut Context<Self>) {
-        for account in LastfmAccount::KEPT {
+        for account in LastfmAccount::ALL {
             let given = self.lastfm_field(account).read(cx).text().trim().to_owned();
             if given == account.held(&cx.global::<ResonateApp>().online) {
                 continue;
@@ -165,9 +148,7 @@ impl RootView {
             cx.update_global::<ResonateApp, _>(|global, _| {
                 account.hold(&mut global.online, given.clone());
             });
-            if let Some(setting) = account.setting(given) {
-                self.store(&setting, cx);
-            }
+            self.store(&account.setting(given), cx);
         }
     }
 
@@ -176,7 +157,7 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        for account in LastfmAccount::KEPT {
+        for account in LastfmAccount::ALL {
             let field = self.lastfm_field(account).read(cx);
             let typed_apart = field.is_focused(window)
                 && field.text().trim() != account.held(&cx.global::<ResonateApp>().online);
@@ -226,8 +207,6 @@ impl RootView {
         Some(LastfmSignIn {
             key: typed(LastfmAccount::Key)?,
             secret: typed(LastfmAccount::Secret)?,
-            user: typed(LastfmAccount::User)?,
-            password: typed(LastfmAccount::Password)?,
         })
     }
 
@@ -252,35 +231,69 @@ impl RootView {
         }
 
         self.keep_the_typed_application(cx);
+        let stopped = Arc::new(AtomicBool::new(false));
+        self.lastfm_signing.stopped = Arc::clone(&stopped);
         self.lastfm_signing.asking = true;
         cx.notify();
         self.lastfm_signing.task = Some(cx.spawn(async move |this, cx| {
+            let asked_for = cx
+                .background_executor()
+                .spawn(async move { scrobblers.lastfm_approval(&asked) })
+                .await;
+            let approval = match asked_for {
+                Ok(approval) => approval,
+                Err(error) => {
+                    let told = this.update(cx, |this, cx| this.lastfm_signed_in(Err(error), cx));
+                    let _ = told;
+                    return;
+                }
+            };
+            let address = approval.address().to_owned();
+            let shown = this.update(cx, |this, cx| {
+                this.lastfm_signing.waiting = Some(address.clone());
+                cx.open_url(&address);
+                cx.notify();
+            });
+            if shown.is_err() {
+                return;
+            }
             let answered = cx
                 .background_executor()
-                .spawn(async move { scrobblers.signed_in_to_lastfm(&asked) })
+                .spawn(async move { approval.approved(&|| stopped.load(Ordering::SeqCst)) })
                 .await;
             let told = this.update(cx, |this, cx| this.lastfm_signed_in(answered, cx));
             let _ = told;
         }));
     }
 
+    fn stop_signing_in_to_lastfm(&mut self, cx: &mut Context<Self>) {
+        self.lastfm_signing.stopped.store(true, Ordering::SeqCst);
+        self.lastfm_signing.asking = false;
+        self.lastfm_signing.waiting = None;
+        self.lastfm_signing.task = None;
+        cx.notify();
+    }
+
     fn lastfm_signed_in(
         &mut self,
-        answered: resonate_library::Result<LastfmSession>,
+        answered: resonate_library::Result<Option<LastfmSession>>,
         cx: &mut Context<Self>,
     ) {
         self.lastfm_signing.asking = false;
-        self.lastfm_field(LastfmAccount::Password)
-            .clone()
-            .update(cx, |field, cx| field.hold(String::new(), cx));
+        self.lastfm_signing.waiting = None;
         let notice = match answered {
-            Ok(LastfmSession { name, key }) => {
+            Ok(Some(LastfmSession { name, key })) => {
                 cx.update_global::<ResonateApp, _>(|global, _| {
                     global.online.lastfm_session = key.clone();
                 });
                 self.store(&Setting::LastfmSession(key), cx);
                 Notice::Done(words::settings_lastfm::signed_in_as(&name))
             }
+            Ok(None) if self.lastfm_signing.stopped.load(Ordering::SeqCst) => {
+                cx.notify();
+                return;
+            }
+            Ok(None) => Notice::Noted(words::settings_lastfm::ended().to_owned()),
             Err(Error::Refused { .. }) => {
                 Notice::Trouble(words::settings_lastfm::refused().to_owned())
             }
@@ -311,18 +324,13 @@ impl RootView {
         let reachable = app.scrobblers.is_some() && app.online.enabled;
         let asking = self.lastfm_signing.asking;
 
-        let shown: &[LastfmAccount] = if signed_in {
-            &LastfmAccount::KEPT
-        } else {
-            &LastfmAccount::ALL
-        };
         let mut body = kit::rows();
-        for account in shown {
+        for account in LastfmAccount::ALL {
             body = body.child(kit::field(
                 account.label(),
                 self.text_field(
                     account.id(),
-                    self.lastfm_field(*account),
+                    self.lastfm_field(account),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),
@@ -341,6 +349,31 @@ impl RootView {
                     cx,
                 )))
                 .note(words::settings_lastfm::signed_in_note());
+        }
+        if let Some(address) = self.lastfm_signing.waiting.clone() {
+            return body
+                .child(
+                    kit::action_row()
+                        .child(action(
+                            "lastfm-open-again",
+                            words::settings_lastfm::open_the_page_again(),
+                            Icon::Link,
+                            false,
+                            move |_, _, cx| cx.open_url(&address),
+                            self,
+                            cx,
+                        ))
+                        .child(action(
+                            "lastfm-stop",
+                            words::settings_lastfm::stop(),
+                            Icon::Close,
+                            false,
+                            |this, _, cx| this.stop_signing_in_to_lastfm(cx),
+                            self,
+                            cx,
+                        )),
+                )
+                .note(words::settings_lastfm::waiting_note());
         }
         let held_back = !reachable || asking || self.lastfm_sign_in(cx).is_none();
         body.child(kit::action_row().child(action(

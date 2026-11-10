@@ -3,10 +3,12 @@ use std::{
     fmt::{self, Write as _},
     num::NonZeroUsize,
     sync::Arc,
-    time::UNIX_EPOCH,
+    thread,
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use md5::{Digest, Md5};
+use resonate_fetch::escaped;
 use resonate_library::{
     Billed, ListeningService, LookupOp, Love, Loved, LovedNames, Mbid, Scrobble, Scrobbler,
     TokenHeld,
@@ -17,6 +19,7 @@ use crate::{
     Client, Host,
     client::{Encoded, Posted},
     query::Params,
+    spotify_account::{A_SIGN_IN_LAPSES_AFTER, LOOKED_AT_EVERY},
 };
 
 const FORM: &str = "application/x-www-form-urlencoded";
@@ -25,7 +28,13 @@ const ANSWERED_AS: &str = "json";
 const SCROBBLE: &str = "track.scrobble";
 const PLAYING_NOW: &str = "track.updateNowPlaying";
 const WHO_IS_SIGNED_IN: &str = "user.getInfo";
-const SIGN_IN: &str = "auth.getMobileSession";
+const GET_TOKEN: &str = "auth.getToken";
+const GET_SESSION: &str = "auth.getSession";
+const ALLOWED_ON: &str = "https://www.last.fm/api/auth/";
+const NOT_YET_AUTHORISED: u32 = 14;
+const TOKEN_EXPIRED: u32 = 15;
+const UNREACHED_POLLS_AT_MOST: usize = 5;
+const ASKED_EVERY: Duration = Duration::from_secs(3);
 const LOVE: &str = "track.love";
 const UNLOVE: &str = "track.unlove";
 const AUTHENTICATION_FAILED: u32 = 4;
@@ -90,19 +99,99 @@ impl LastFm {
     }
 }
 
-pub fn signed_in(
-    client: &Client,
-    application: &Application,
-    user: &str,
-    password: &str,
-) -> resonate_library::Result<Session> {
-    let fields = Fields::default()
-        .with("method", SIGN_IN)
-        .with("api_key", &application.key)
-        .with("username", user)
-        .with("password", password);
-    let answer = asked(client, LookupOp::Token, &fields, &application.secret)?;
+pub struct LastfmApproving {
+    client: Arc<Client>,
+    application: Application,
+    token: String,
+    address: String,
+    until: Instant,
+}
 
+impl fmt::Debug for LastfmApproving {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LastfmApproving").finish_non_exhaustive()
+    }
+}
+
+pub fn approval_asked(
+    client: Arc<Client>,
+    application: Application,
+) -> resonate_library::Result<LastfmApproving> {
+    let fields = Fields::default()
+        .with("method", GET_TOKEN)
+        .with("api_key", &application.key);
+    let op = LookupOp::Token;
+    let answer = approval_answered(&client, op, &fields, &application.secret)?;
+    if let Some(code) = answer.error {
+        return Err(refused(op, code));
+    }
+    let token = answer
+        .token
+        .filter(|token| !token.trim().is_empty())
+        .ok_or(resonate_library::Error::Unreadable {
+            op: LookupOp::Token,
+        })?;
+    let address = format!(
+        "{ALLOWED_ON}?api_key={}&token={}",
+        escaped(&application.key),
+        escaped(&token)
+    );
+    Ok(LastfmApproving {
+        client,
+        application,
+        token,
+        address,
+        until: Instant::now() + A_SIGN_IN_LAPSES_AFTER,
+    })
+}
+
+impl LastfmApproving {
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
+    pub fn approved(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+    ) -> resonate_library::Result<Option<Session>> {
+        let op = LookupOp::Token;
+        let mut unreached = 0;
+        loop {
+            if cancelled() || Instant::now() >= self.until {
+                return Ok(None);
+            }
+            let fields = Fields::default()
+                .with("method", GET_SESSION)
+                .with("api_key", &self.application.key)
+                .with("token", &self.token);
+            match approval_answered(&self.client, op, &fields, &self.application.secret) {
+                Ok(answer) => {
+                    unreached = 0;
+                    match answer.error {
+                        Some(NOT_YET_AUTHORISED) => {}
+                        Some(TOKEN_EXPIRED) => return Ok(None),
+                        Some(code) => return Err(refused(op, code)),
+                        None if cancelled() => return Ok(None),
+                        None => return session_of(answer).map(Some),
+                    }
+                }
+                Err(error @ resonate_library::Error::Unreachable { .. }) => {
+                    unreached += 1;
+                    if unreached >= UNREACHED_POLLS_AT_MOST {
+                        return Err(error);
+                    }
+                    tracing::debug!(%error, "Last.fm did not answer the poll; asking again");
+                }
+                Err(error) => return Err(error),
+            }
+            if !waited(ASKED_EVERY, self.until, cancelled) {
+                return Ok(None);
+            }
+        }
+    }
+}
+
+fn session_of(answer: Answer) -> resonate_library::Result<Session> {
     answer
         .session
         .filter(|session| !session.key.trim().is_empty())
@@ -113,6 +202,20 @@ pub fn signed_in(
         .ok_or(resonate_library::Error::Unreadable {
             op: LookupOp::Token,
         })
+}
+
+fn waited(every: Duration, until: Instant, cancelled: &dyn Fn() -> bool) -> bool {
+    let end = (Instant::now() + every).min(until);
+    loop {
+        if cancelled() {
+            return false;
+        }
+        let left = end.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return true;
+        }
+        thread::sleep(LOOKED_AT_EVERY.min(left));
+    }
 }
 
 impl Scrobbler for LastFm {
@@ -261,6 +364,7 @@ struct Answer {
     error: Option<u32>,
     session: Option<SessionDoc>,
     user: Option<UserDoc>,
+    token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -280,6 +384,39 @@ fn asked(
     fields: &Fields,
     secret: &str,
 ) -> resonate_library::Result<Answer> {
+    let answer = answered(client, op, fields, secret)?;
+    match answer.error {
+        None => Ok(answer),
+        Some(code) => Err(refused(op, code)),
+    }
+}
+
+fn approval_answered(
+    client: &Client,
+    op: LookupOp,
+    fields: &Fields,
+    secret: &str,
+) -> resonate_library::Result<Answer> {
+    let answer: Option<Answer> = client.posted_saying_failures(
+        Host::LastFm,
+        op,
+        Host::LastFm.base(),
+        &Posted {
+            content_type: FORM.to_owned(),
+            encoded: Encoded::Plain,
+            bytes: fields.signed(secret).into_bytes(),
+            authorization: None,
+        },
+    )?;
+    answer.ok_or(resonate_library::Error::Unreadable { op })
+}
+
+fn answered(
+    client: &Client,
+    op: LookupOp,
+    fields: &Fields,
+    secret: &str,
+) -> resonate_library::Result<Answer> {
     let answer: Option<Answer> = client.posted(
         Host::LastFm,
         op,
@@ -291,12 +428,7 @@ fn asked(
             authorization: None,
         },
     )?;
-    let answer = answer.ok_or(resonate_library::Error::Unreadable { op })?;
-
-    match answer.error {
-        None => Ok(answer),
-        Some(code) => Err(refused(op, code)),
-    }
+    answer.ok_or(resonate_library::Error::Unreadable { op })
 }
 
 fn refused(op: LookupOp, code: u32) -> resonate_library::Error {
@@ -360,15 +492,12 @@ mod tests {
     #[test]
     fn a_request_is_signed_by_its_fields_in_name_order_and_the_secret() {
         let fields = Fields::default()
-            .with("method", SIGN_IN)
+            .with("method", GET_SESSION)
             .with("api_key", "key")
-            .with("username", "someone")
-            .with("password", "sesame");
+            .with("token", "approved");
 
         let mut expected = String::new();
-        for byte in Md5::digest(
-            "api_keykeymethodauth.getMobileSessionpasswordsesameusernamesomeonesecret".as_bytes(),
-        ) {
+        for byte in Md5::digest("api_keykeymethodauth.getSessiontokenapprovedsecret".as_bytes()) {
             let _ = write!(expected, "{byte:02x}");
         }
         assert_eq!(fields.signature("secret"), expected);

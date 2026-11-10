@@ -22,7 +22,7 @@ use resonate_online::OnlineLyrics;
 #[cfg(feature = "online")]
 use resonate_online::{
     AcoustId, Application, Audd, AutoEq, ByEar, Client, Identity, Introduction, LastFm,
-    ListenBrainz, Online, Releases, Repository, Session, Shazam, SpotifyAccount, SpotifyGrant,
+    ListenBrainz, Online, Releases, Repository, Shazam, SpotifyAccount, SpotifyGrant,
     SpotifyGrants, SpotifySignIn, Version,
 };
 
@@ -420,13 +420,36 @@ pub fn lastfm(config: &Config, account: LastfmAccount) -> Arc<dyn Scrobbler> {
 }
 
 #[cfg(feature = "online")]
-pub fn lastfm_signed_in(
+pub fn lastfm_approval(
     config: &Config,
-    application: &Application,
-    user: &str,
-    password: &str,
-) -> resonate_library::Result<Session> {
-    resonate_online::signed_in(&client(config), application, user, password)
+    application: Application,
+) -> resonate_library::Result<resonate_online::LastfmApproving> {
+    resonate_online::approval_asked(client(config), application)
+}
+
+#[cfg(all(feature = "online", feature = "ui"))]
+struct Approving(resonate_online::LastfmApproving);
+
+#[cfg(all(feature = "online", feature = "ui"))]
+impl resonate_library::LastfmApproval for Approving {
+    fn address(&self) -> &str {
+        self.0.address()
+    }
+
+    fn approved(
+        &self,
+        cancelled: &dyn Fn() -> bool,
+    ) -> resonate_library::Result<Option<resonate_library::LastfmSession>> {
+        Ok(self
+            .0
+            .approved(cancelled)?
+            .map(
+                |resonate_online::Session { name, key }| resonate_library::LastfmSession {
+                    name,
+                    key,
+                },
+            ))
+    }
 }
 
 #[cfg(all(feature = "online", feature = "ui"))]
@@ -440,17 +463,18 @@ impl resonate_library::Scrobblers for ByToken {
         listenbrainz(&self.config, token)
     }
 
-    fn signed_in_to_lastfm(
+    fn lastfm_approval(
         &self,
         asked: &resonate_library::LastfmSignIn,
-    ) -> resonate_library::Result<resonate_library::LastfmSession> {
+    ) -> resonate_library::Result<Box<dyn resonate_library::LastfmApproval>> {
         let application = Application {
             key: asked.key.clone(),
             secret: asked.secret.clone(),
         };
-        let Session { name, key } =
-            lastfm_signed_in(&self.config, &application, &asked.user, &asked.password)?;
-        Ok(resonate_library::LastfmSession { name, key })
+        Ok(Box::new(Approving(lastfm_approval(
+            &self.config,
+            application,
+        )?)))
     }
 }
 

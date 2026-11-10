@@ -196,7 +196,15 @@ impl RootView {
         } else {
             words::settings_subsonic::server_asked_from_now_on(service.name())
         };
+        let lets_the_session_go = service == Service::Jellyfin
+            && (account == Account::Server || (account == Account::Password && !given.is_empty()));
         self.store(&account.setting(service, given), cx);
+        if lets_the_session_go {
+            self.let_go_of_the_jellyfin_session(cx);
+        }
+        if service == Service::Jellyfin && account == Account::Server {
+            self.stop_quick_connect(cx);
+        }
         self.report(Notice::Done(said), cx);
         self.the_sources_moved(cx);
         window.focus(&self.focus, cx);
@@ -281,6 +289,9 @@ impl RootView {
             });
             self.store(&account.setting(service, String::new()), cx);
         }
+        if service == Service::Jellyfin {
+            self.let_go_of_the_jellyfin_session(cx);
+        }
     }
 
     pub(super) fn account_group(&mut self, service: Service, cx: &mut Context<Self>) -> Rows {
@@ -295,6 +306,9 @@ impl RootView {
                     cx,
                 ),
             ));
+        }
+        if service == Service::Jellyfin {
+            body = body.child(self.quick_connect_row(cx));
         }
         body.note(service.note())
     }

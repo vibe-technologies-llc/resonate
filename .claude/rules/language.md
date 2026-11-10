@@ -117,7 +117,9 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-listen`'s
   `every_word_a_recording_is_named_by_is_said_through_its_catalog` (the PipeWire stream names),
   `resonate-online`'s `every_word_a_spotify_sign_in_shows_a_listener_is_said_through_its_catalog`,
-  `resonate-ytmusic`'s `every_word_a_youtube_music_account_names_is_said_through_its_catalog` and
+  `resonate-ytmusic`'s `every_word_a_youtube_music_account_names_is_said_through_its_catalog`,
+  `resonate-signin`'s `every_word_the_sign_in_window_shows_is_said_through_its_catalog` (`window.rs`,
+  whose title the window speaks in the listener's language) and
   `resonate-server`'s `every_word_an_invitation_page_says_is_said_through_its_catalog` (the `/s/` and
   `/p/` pages, whose `lang` is the language spoken). Not words, and left in the code: an error's
   `Display` and what feeds one (`resonate-engine`'s `CommandKind::as_str`), a codec's or

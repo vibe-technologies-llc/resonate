@@ -439,12 +439,16 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   `LovedNames` (title, artist) of the catalog track carrying it (`THE_NAMES_OF_A_RECORDING`).
   Last.fm signs `track.love`/`track.unlove` with `artist` and `track`; a recording no track names any
   more is told nothing and marked told. ListenBrainz reads the recording alone.
-- **A session is asked once, by name and password, and the password is not kept.**
-  `resonate_online::signed_in` asks `auth.getMobileSession`; `resonate lastfm --user` reads the
-  password from standard input (echo off on a terminal, `input::a_line_unechoed`) and stores only
-  the session key (`lastfm-session`); `--forget` clears it. The window asks the same call through
-  `Scrobblers::signed_in_to_lastfm` (a `LastfmSignIn` in, a `LastfmSession` out), which the binary's
-  `ByToken` answers with `lastfm_signed_in`. These types, `lastfm::Application`,
+- **A session is allowed on Last.fm's own page; no password reaches Resonate.**
+  `resonate_online::approval_asked` signs `auth.getToken` under the listener's key and secret and
+  answers a `LastfmApproving`: the page `https://www.last.fm/api/auth/?api_key=<key>&token=<token>`
+  and `approved(cancelled)`, which signs `auth.getSession` with the token every `ASKED_EVERY` (3 s),
+  error 14 (not yet authorised) meaning keep waiting, until a session, a cancel or
+  `A_SIGN_IN_LAPSES_AFTER` (Spotify's ten minutes; `Ok(None)` for both). No callback address is
+  involved, so the browser need not be on the same machine. The session key alone is stored
+  (`lastfm-session`); `--forget` clears it. The window asks it through `Scrobblers::lastfm_approval`
+  (a `LastfmSignIn` of key and secret in, a `LastfmApproval` out), which the binary's `ByToken`
+  answers with `lastfm_approval`. These types, `lastfm::Application`,
   `lastfm::Session` and the window's `settings::Online` print no secret in `Debug`
   (`<withheld>` for every token, password, secret and the contact:
   `an_application_and_a_session_print_neither_secret_nor_session_key`,

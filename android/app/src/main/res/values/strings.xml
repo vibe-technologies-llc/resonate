@@ -943,12 +943,10 @@
     <string name="scrobbling_shared_secret">Shared secret</string>
     <string name="scrobbling_shared_secret_detail">Both come from an API account you create at Last.fm</string>
     <string name="scrobbling_lastfm_signed_in">Signed in to Last.fm</string>
-    <string name="scrobbling_lastfm_signed_in_detail">Resonate keeps the session, never your password</string>
+    <string name="scrobbling_lastfm_signed_in_detail">Resonate keeps the session key</string>
     <string name="scrobbling_sign_out">Sign out</string>
     <string name="scrobbling_lastfm_sign_in_title">Sign in to Last.fm</string>
-    <string name="scrobbling_lastfm_sign_in_detail">Your password is used once to start a session and is never saved</string>
-    <string name="scrobbling_lastfm_user">Last.fm username</string>
-    <string name="scrobbling_lastfm_password">Last.fm password</string>
+    <string name="scrobbling_lastfm_sign_in_detail">Last.fm\'s own page opens in your browser; no password is typed here</string>
     <string name="scrobbling_sign_in">Sign in</string>
     <string name="scrobbling_when_saving">When saving</string>
     <string name="scrobbling_history">Include existing history</string>
@@ -2083,4 +2081,17 @@
     <string name="visualizer_playing_description">Live visualisation of the music playing</string>
     <string name="visualizer_resume">Resume visualiser</string>
     <string name="visualizer_pause">Pause visualiser</string>
+    <string name="scrobbling_lastfm_waiting_detail">Allow Resonate on the Last.fm page your browser opened</string>
+    <string name="scrobbling_lastfm_cancel">Cancel</string>
+    <string name="scrobbling_lastfm_open_again">Open the page again</string>
+    <string name="features_scrobble_lastfm_ended">The Last.fm sign-in ended before Resonate was allowed</string>
+    <string name="features_provider_jellyfin_signed_in">Signed in to Jellyfin as %1$s</string>
+    <string name="provider_jellyfin_quick_connect">Quick Connect</string>
+    <string name="provider_jellyfin_signed_in">Signed in with Quick Connect</string>
+    <string name="provider_jellyfin_signed_in_detail">No password is kept for this server</string>
+    <string name="provider_jellyfin_signed_out_detail">Approve a code in a Jellyfin app you are signed in to, with no password typed here</string>
+    <string name="provider_jellyfin_sign_in_again">Sign in again</string>
+    <string name="provider_jellyfin_sign_in">Sign in with Quick Connect</string>
+    <string name="provider_jellyfin_approve_code">Approve this code in a Jellyfin app you are signed in to (Settings, Quick Connect). This page carries on once you do.</string>
+    <string name="provider_jellyfin_cancel">Cancel</string>
 </resources>

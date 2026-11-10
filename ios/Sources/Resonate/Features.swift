@@ -60,6 +60,10 @@ final class Features {
 
     var tidalAuthorization: TidalAuthorization?
     var tidalBusy = false
+    var jellyfinCode: String?
+    var jellyfinBusy = false
+    var lastfmAddress: String?
+    var lastfmBusy = false
     var corrections: [AutoEqDevice] = []
     var correctionsFor: String?
     var searchingCorrections = false
@@ -174,6 +178,8 @@ final class Features {
     @ObservationIgnored private var playlistRequest = 0
     @ObservationIgnored private var searchRequest = 0
     @ObservationIgnored private var tidalRequest = 0
+    @ObservationIgnored private var jellyfinRequest = 0
+    @ObservationIgnored private var lastfmRequest = 0
     @ObservationIgnored private var onlinePending: Task<Void, Never>?
     @ObservationIgnored private var onlineAnswers = OnlineAnswers()
     @ObservationIgnored private var submitting: Task<Void, Never>?
@@ -1716,20 +1722,44 @@ final class Features {
         }
     }
 
-    func signInLastFm(_ account: ScrobbleAccount, user: String, password: String) {
-        work { [weak self] native in
-            let session = try await Work.aside {
-                try native.lastfmSignIn(key: account.lastfmKey, secret: account.lastfmSecret, user: user, password: password)
+    func signInLastFm(_ account: ScrobbleAccount) {
+        guard !lastfmBusy else { return }
+        lastfmBusy = true
+        lastfmRequest += 1
+        let request = lastfmRequest
+        work({ [weak self] native in
+            let address = try await Work.aside {
+                try native.authorizeLastfm(key: account.lastfmKey, secret: account.lastfmSecret)
+            }
+            guard let self, lastfmRequest == request else { return }
+            lastfmAddress = address
+            let answer = try await Work.aside { try native.finishLastfmAuthorization() }
+            guard lastfmRequest == request else { return }
+            guard let signed = answer else {
+                scrobbleStatus = said("scrobbling.lastfm.ended")
+                return
             }
             var signedIn = account
-            signedIn.lastfmSession = session
-            let store = self?.accounts
+            signedIn.lastfmSession = signed.session
+            let store = accounts
             let kept = signedIn
-            try await Work.inSecrets { try store?.writeScrobbling(kept) }
-            self?.scrobbleAccount = signedIn
-            self?.scrobbleStatus = said("scrobbling.lastfm.signed-in")
+            try await Work.inSecrets { try store.writeScrobbling(kept) }
+            scrobbleAccount = signedIn
+            scrobbleStatus = said("scrobbling.lastfm.signed-in")
             try await Work.aside { try native.startScrobbling(service: .lastFm, includeHistory: false) }
-        }
+        }, finally: { [weak self] in
+            guard let self, lastfmRequest == request else { return }
+            lastfmBusy = false
+            lastfmAddress = nil
+        })
+    }
+
+    func cancelLastFmSignIn() {
+        guard lastfmBusy else { return }
+        lastfmRequest += 1
+        lastfmBusy = false
+        lastfmAddress = nil
+        work { native in try await Work.aside { native.cancelLastfmAuthorization() } }
     }
 
     func authorizeTidal(_ account: DownloadAccount) {
@@ -1756,6 +1786,44 @@ final class Features {
             tidalBusy = false
             tidalAuthorization = nil
         })
+    }
+
+    func quickConnectJellyfin(_ account: DownloadAccount) {
+        guard !jellyfinBusy else { return }
+        jellyfinBusy = true
+        jellyfinRequest += 1
+        let request = jellyfinRequest
+        work({ [weak self] native in
+            let begun = try await Work.aside {
+                try native.beginJellyfinQuickConnect(server: account.server)
+            }
+            guard let self, jellyfinRequest == request else { return }
+            jellyfinCode = begun.code
+            let answer = try await Work.aside { try native.finishJellyfinQuickConnect() }
+            guard let session = answer, jellyfinRequest == request else { return }
+
+            var updated = account
+            if !session.name.isEmpty { updated.user = session.name }
+            updated.password = ""
+            updated.token = session.token
+            updated.userId = session.userId
+            updated.device = session.device
+
+            try await keepProviderAccount(updated)
+            library.notice(said("providers.jellyfin.signed-in", session.name))
+        }, finally: { [weak self] in
+            guard let self, jellyfinRequest == request else { return }
+            jellyfinBusy = false
+            jellyfinCode = nil
+        })
+    }
+
+    func cancelJellyfinQuickConnect() {
+        guard jellyfinBusy else { return }
+        jellyfinRequest += 1
+        jellyfinBusy = false
+        jellyfinCode = nil
+        work { native in try await Work.aside { native.cancelJellyfinQuickConnect() } }
     }
 
     func cancelTidalAuthorization() {

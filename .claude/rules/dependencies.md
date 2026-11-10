@@ -108,6 +108,15 @@ here, add it there.
   reached by the binary and `resonate-mobile` alone. **`bzip2`** keeps its default features,
   which are its pure-Rust `libbz2-rs-sys` backend (the C `bzip2-sys` is the other, off); **`tar`**
   has no default features (`xattr` is not read). Both read the MusicBrainz export alone.
+- `resonate-signin`: core alone among workspace crates, reached by the binary alone, and only
+  without its `window` feature; **`wry`** (`os-webview` alone) and **`tao`** (`rwh_06` alone: no
+  `x11`, no `dbus`, since the window runs on Wayland through GTK) come in only under `window`, which
+  the executable needs, so the binary's tree holds no browser engine (the layering job). **A
+  `--workspace` build selects `resonate-signin` with its default `window` feature and Cargo merges
+  it into the library the player links**, so every recipe builds the player as `--package resonate
+  --bin resonate` and the sign-in program in a `cargo` run of its own
+  (`no_recipe_builds_the_player_beside_the_sign_in_windows_engine`); the Flatpak's SDK has no
+  WebKitGTK at all.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
   Reached by the binary (behind `sync`), `resonate-driven`, `resonate-mobile` and `resonate-server` alone; `resonate-server`
   reaches core, `resonate-sync` and, for its hifi-api gateway, `resonate-tidal` with the seam and

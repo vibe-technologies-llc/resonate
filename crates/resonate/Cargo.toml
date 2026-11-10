@@ -23,6 +23,7 @@ online = [
     "dep:resonate-monochrome",
     "dep:resonate-musicbrainz",
     "dep:resonate-online",
+    "dep:resonate-signin",
     "dep:resonate-subsonic",
     "dep:resonate-tidal",
     "dep:resonate-ytmusic"
@@ -59,6 +60,7 @@ resonate-providers.workspace = true
 resonate-upnp.workspace = true
 resonate-ui = { workspace = true, optional = true }
 resonate-vault.workspace = true
+resonate-signin = { workspace = true, optional = true }
 resonate-words.workspace = true
 resonate-ytmusic = { workspace = true, optional = true }
 thiserror.workspace = true

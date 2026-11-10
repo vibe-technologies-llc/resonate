@@ -105,6 +105,9 @@ pub enum ConfigKey {
     Jellyfin,
     JellyfinUser,
     JellyfinPassword,
+    JellyfinToken,
+    JellyfinUserId,
+    JellyfinDevice,
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
@@ -197,7 +200,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 133] = [
+    pub const ALL: [Self; 136] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -293,6 +296,9 @@ impl ConfigKey {
         Self::Jellyfin,
         Self::JellyfinUser,
         Self::JellyfinPassword,
+        Self::JellyfinToken,
+        Self::JellyfinUserId,
+        Self::JellyfinDevice,
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
@@ -430,6 +436,9 @@ impl ConfigKey {
             Self::Jellyfin => "jellyfin",
             Self::JellyfinUser => "jellyfin-user",
             Self::JellyfinPassword => "jellyfin-password",
+            Self::JellyfinToken => "jellyfin-token",
+            Self::JellyfinUserId => "jellyfin-user-id",
+            Self::JellyfinDevice => "jellyfin-device",
             Self::TidalClientId => "tidal-client-id",
             Self::TidalClientSecret => "tidal-client-secret",
             Self::TidalRefreshToken => "tidal-refresh-token",
@@ -514,6 +523,13 @@ pub enum IconOp {
     Stage,
     Place,
     Remove,
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SignOutOp {
+    Jar,
+    Profile,
 }
 
 #[derive(Debug, Error)]
@@ -832,6 +848,40 @@ pub enum Error {
     YoutubeMusicOff,
 
     #[cfg(feature = "online")]
+    #[error(
+        "resonate-signin is not installed beside resonate or on the path; install it to sign in \
+         to YouTube Music here, or name a browser or a cookies file in youtube-music-cookies"
+    )]
+    NoSignInProgram,
+
+    #[cfg(feature = "online")]
+    #[error("the sign-in window was closed before signing in, so nothing was kept")]
+    YoutubeMusicSignInClosed,
+
+    #[cfg(feature = "online")]
+    #[error("the sign-in window stopped without signing in (exit code {code:?})")]
+    YoutubeMusicSignInFailed { code: Option<i32> },
+
+    #[cfg(feature = "online")]
+    #[error("the sign-in window could not be started")]
+    YoutubeMusicSignInNotStarted {
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(feature = "online")]
+    #[error("the data folder's path is not text, so youtube-music-cookies cannot name the jar")]
+    YoutubeMusicJarNotText,
+
+    #[cfg(feature = "online")]
+    #[error("signing out of YouTube Music could not take away the {op:?}")]
+    YoutubeMusicSignOut {
+        op: SignOutOp,
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(feature = "online")]
     #[error("{link} is not a link to a song or a playlist on YouTube Music")]
     NotAYoutubeMusicLink { link: String },
 
@@ -887,6 +937,20 @@ pub enum Error {
     SignInCancelled,
 
     #[cfg(feature = "online")]
+    #[error("jellyfin is not set in the settings, and Quick Connect needs the server it names")]
+    NoJellyfinServer,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "this server has Quick Connect off (or is Emby); sign in with jellyfin-user and jellyfin-password"
+    )]
+    QuickConnectOff,
+
+    #[cfg(feature = "online")]
+    #[error("the Jellyfin sign-in was cancelled before the code was approved")]
+    JellyfinSignInCancelled,
+
+    #[cfg(feature = "online")]
     #[error(
         "spotify-client-id is not set in the settings; register an app at \
          developer.spotify.com and name its client ID there"
@@ -915,19 +979,12 @@ pub enum Error {
     NoLastfmApplication,
 
     #[cfg(feature = "online")]
-    #[error("no Last.fm account was named to sign in")]
-    NoLastfmUser,
-
-    #[cfg(feature = "online")]
-    #[error("Last.fm turned down the name and password")]
+    #[error("Last.fm turned down the API key and secret")]
     LastfmRefused,
 
     #[cfg(feature = "online")]
-    #[error("the password could not be read from standard input")]
-    ReadPassword {
-        #[source]
-        source: io::Error,
-    },
+    #[error("the Last.fm sign-in ended before Resonate was allowed, so nothing was kept")]
+    LastfmSignInEnded,
 
     #[cfg(not(feature = "mcp"))]
     #[error(

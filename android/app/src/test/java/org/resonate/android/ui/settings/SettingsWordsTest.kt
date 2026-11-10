@@ -250,16 +250,15 @@ class SettingsWordsTest {
         assertEquals("new", edited.valueOf(ProviderField.PASSWORD))
         assertEquals("https://a", edited.trimmed().server)
         assertEquals("me", edited.trimmed().user)
-        assertEquals("SUBSONIC:", accountIdentity(account))
+        assertEquals("SUBSONIC::", accountIdentity(account))
     }
 
     @Test
-    fun lastFmSignInNeedsTheApiAccountAndTheListener() {
+    fun lastFmSignInNeedsTheApiAccountAlone() {
         val account = ScrobbleAccount("", "key", "secret", "")
 
-        assertTrue(canSignInToLastFm(ScrobbleDraft(account, user = "me", password = "pw")))
-        assertFalse(canSignInToLastFm(ScrobbleDraft(account, user = "me")))
-        assertFalse(canSignInToLastFm(ScrobbleDraft(account.copy(lastfmSecret = ""), user = "me", password = "pw")))
+        assertTrue(canSignInToLastFm(ScrobbleDraft(account)))
+        assertFalse(canSignInToLastFm(ScrobbleDraft(account.copy(lastfmSecret = ""))))
     }
 
     private val config = SyncConfig(true, false, "", "", "", false, false, false, false, SyncControl.EVERYTHING)

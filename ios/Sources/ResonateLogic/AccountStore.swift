@@ -50,6 +50,9 @@ private struct KeptProviderAccount: Codable {
     let clientId: String
     let clientSecret: String
     let refreshToken: String
+    let token: String?
+    let userId: String?
+    let device: String?
 
     init(_ account: DownloadAccount) {
         provider = account.provider.name
@@ -59,6 +62,9 @@ private struct KeptProviderAccount: Codable {
         clientId = account.clientId
         clientSecret = account.clientSecret
         refreshToken = account.refreshToken
+        token = account.token
+        userId = account.userId
+        device = account.device
     }
 
     var account: DownloadAccount? {
@@ -70,7 +76,10 @@ private struct KeptProviderAccount: Codable {
                 password: password,
                 clientId: clientId,
                 clientSecret: clientSecret,
-                refreshToken: refreshToken
+                refreshToken: refreshToken,
+                token: token ?? "",
+                userId: userId ?? "",
+                device: device ?? ""
             )
         }
     }

@@ -49,7 +49,7 @@ pub use crate::{
     by_ear::ByEar,
     client::{Client, Identity, Introduction},
     error::{Error, Host, Result},
-    lastfm::{Application, LastFm, Session, signed_in},
+    lastfm::{Application, LastFm, LastfmApproving, Session, approval_asked},
     listenbrainz::ListenBrainz,
     lyrics::{OnlineLyrics, source_of as lyric_source_of},
     reference::Online,

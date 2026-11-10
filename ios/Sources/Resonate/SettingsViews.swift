@@ -475,9 +475,8 @@ struct OutputView: View {
 
 struct ScrobblingView: View {
     @Environment(Library.self) private var library
+    @Environment(\.openURL) private var openURL
     @State private var account = ScrobbleAccount(listenbrainzToken: "", lastfmKey: "", lastfmSecret: "", lastfmSession: "")
-    @State private var user = ""
-    @State private var password = ""
     @State private var history = false
 
     var body: some View {
@@ -494,13 +493,21 @@ struct ScrobblingView: View {
                 SecureField("scrobbling.lastfm.key", text: $account.lastfmKey)
                 SecureField("scrobbling.lastfm.secret", text: $account.lastfmSecret)
                 SecureField("scrobbling.lastfm.session", text: $account.lastfmSession)
-                TextField("scrobbling.lastfm.username", text: $user).textInputAutocapitalization(.never)
-                SecureField("scrobbling.lastfm.password", text: $password)
-                Button("scrobbling.lastfm.sign-in") {
-                    features.signInLastFm(account, user: user, password: password)
-                    password = ""
+                Button(said(features.lastfmBusy ? "scrobbling.lastfm.waiting" : "scrobbling.lastfm.sign-in")) {
+                    features.signInLastFm(account)
                 }
-                .disabled(account.lastfmKey.isEmpty || account.lastfmSecret.isEmpty || user.isEmpty || password.isEmpty)
+                .disabled(account.lastfmKey.isEmpty || account.lastfmSecret.isEmpty || features.lastfmBusy)
+                if features.lastfmBusy {
+                    Button("scrobbling.lastfm.cancel", role: .cancel) { features.cancelLastFmSignIn() }
+                }
+                if let address = features.lastfmAddress, let url = URL(string: address) {
+                    Button("scrobbling.lastfm.open-again") { openURL(url) }
+                    Text("scrobbling.lastfm.allow")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onChange(of: features.lastfmAddress) { _, address in
+                if let address, let url = URL(string: address) { openURL(url) }
             }
             Section {
                 Toggle("scrobbling.include-history", isOn: $history)

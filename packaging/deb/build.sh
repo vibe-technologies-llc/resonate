@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-package=${1:?usage: build.sh player|server [output-directory]}
+package=${1:?usage: build.sh player|server|signin [output-directory]}
 output=${2:-$PWD/deb-artifacts}
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -64,7 +64,7 @@ seal() {
 }
 
 build_player() {
-    cargo build --locked --release --workspace --bin resonate
+    cargo build --locked --release --package resonate --bin resonate
 
     local generated
     generated=$(find target/release/build -name resonate.1 -printf '%h\n' -quit)
@@ -88,8 +88,23 @@ build_player() {
     write_control resonate sound "${libraries:+$libraries, }pipewire (>= 0.3.50), libvulkan1, fonts-inter" \
         'High-fidelity music player with native PipeWire output' \
         'Resonate plays music through PipeWire with a native Wayland interface. Built for x86-64-v3 processors.' \
-        'yt-dlp, deno' fonts-jetbrains-mono
+        'yt-dlp, deno' 'fonts-jetbrains-mono, resonate-signin'
     seal resonate
+}
+
+build_signin() {
+    cargo build --locked --release --package resonate-signin
+
+    stage="$work/resonate-signin"
+    install -Dm755 target/release/resonate-signin "$stage/usr/bin/resonate-signin"
+    stage_documents resonate-signin
+
+    local libraries
+    libraries=$(shared_library_dependencies target/release/resonate-signin)
+    write_control resonate-signin sound "$libraries" \
+        "Resonate's YouTube Music sign-in window, on WebKitGTK" \
+        "A window of its own that signs in to YouTube Music on Google's page and keeps the account's cookies for Resonate, so no browser of the listener's is read. Built for x86-64-v3 processors."
+    seal resonate-signin
 }
 
 build_server() {
@@ -119,5 +134,6 @@ build_server() {
 case "$package" in
     player) build_player ;;
     server) build_server ;;
+    signin) build_signin ;;
     *) echo "unknown package: $package" >&2; exit 2 ;;
 esac

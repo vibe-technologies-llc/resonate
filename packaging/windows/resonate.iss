@@ -33,6 +33,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "{#SourceExecutable}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceSignIn}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepositoryRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepositoryRoot}\COPYRIGHT"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme

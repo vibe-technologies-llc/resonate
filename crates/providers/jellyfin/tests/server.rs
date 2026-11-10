@@ -7,7 +7,9 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_jellyfin::{Flavour, Id, Jellyfin, Named, Patience, PlaysInPlace as _, Server};
+use resonate_jellyfin::{
+    Flavour, Id, Jellyfin, KeptSession, Named, Patience, PlaysInPlace as _, QuickConnect, Server,
+};
 use resonate_providers::{Error, ProviderOp};
 
 const AUDIO: &[u8] = b"fLaC and the rest of the file";
@@ -144,6 +146,20 @@ impl Fake {
             url: self.url.clone(),
             user: "listener".to_owned(),
             password: "sesame".to_owned(),
+            kept: None,
+        })
+    }
+
+    fn kept(&self) -> Jellyfin {
+        Jellyfin::at(Server {
+            url: self.url.clone(),
+            user: "listener".to_owned(),
+            password: String::new(),
+            kept: Some(KeptSession {
+                token: TOKEN.to_owned(),
+                user: USER_ID.to_owned(),
+                device: "kept-device".to_owned(),
+            }),
         })
     }
 
@@ -539,6 +555,37 @@ fn a_token_the_server_turned_down_is_signed_in_for_again_once() {
 }
 
 #[test]
+fn a_kept_session_is_asked_with_its_token_and_never_signs_in() {
+    let fake = Fake::serving(library);
+
+    let artists = fake.kept().artists().expect("the artists");
+
+    assert_eq!(artists.len(), 1);
+    assert!(fake.heard_at("/Users/AuthenticateByName").is_empty());
+    assert!(
+        fake.heard()
+            .iter()
+            .all(|asked| asked.parameter("api_key") == Some(TOKEN))
+    );
+}
+
+#[test]
+fn a_kept_token_turned_away_is_the_account_turned_away_and_not_a_new_sign_in() {
+    let fake = Fake::serving(|_, _| Canned::status(401));
+
+    assert!(matches!(
+        fake.kept().artists(),
+        Err(Error::Unwelcome {
+            op: ProviderOp::SignIn,
+            code: 401,
+            ..
+        })
+    ));
+    assert!(fake.heard_at("/Users/AuthenticateByName").is_empty());
+    assert_eq!(fake.heard().len(), 1);
+}
+
+#[test]
 fn a_token_turned_down_twice_is_a_refusal_and_not_a_loop() {
     let fake = Fake::serving(|asked, _| {
         if asked.is("POST", "/Users/AuthenticateByName") {
@@ -602,6 +649,7 @@ fn an_address_that_names_the_emby_route_is_signed_in_to_there_alone() {
         url: format!("{}/emby/", fake.url),
         user: "listener".to_owned(),
         password: "sesame".to_owned(),
+        kept: None,
     });
 
     jellyfin.artists().expect("the artists");
@@ -660,6 +708,7 @@ fn a_server_that_never_answers_is_given_up_within_the_patience() {
         url,
         user: "listener".to_owned(),
         password: "sesame".to_owned(),
+        kept: None,
     })
     .waiting(Patience {
         answered_within: IMPATIENT,
@@ -790,4 +839,183 @@ fn the_first_page_is_the_servers_artists() {
 
     assert_eq!(first.artists.len(), 1);
     assert!(first.songs.is_empty());
+}
+
+const SECRET: &str = "quick-secret";
+const CODE: &str = "123456";
+
+fn initiated() -> Canned {
+    Canned::json(&format!(
+        r#"{{"Authenticated":false,"Secret":"{SECRET}","Code":"{CODE}","DeviceId":"d"}}"#
+    ))
+}
+
+fn connected(approved: bool) -> Canned {
+    Canned::json(&format!(
+        r#"{{"Authenticated":{approved},"Secret":"{SECRET}","Code":"{CODE}"}}"#
+    ))
+}
+
+fn signed_in_by_quick_connect() -> Canned {
+    Canned::json(&format!(
+        r#"{{"AccessToken":"{TOKEN}","User":{{"Id":"{USER_ID}","Name":"listener"}},"ServerId":"s"}}"#
+    ))
+}
+
+fn quick_connect(approved_after: usize) -> (Fake, Arc<Mutex<usize>>) {
+    let polled = Arc::new(Mutex::new(0));
+    let counted = Arc::clone(&polled);
+    let fake = Fake::serving(move |asked, _| {
+        if asked.is("GET", "/QuickConnect/Enabled") {
+            return Canned::json("true");
+        }
+        if asked.is("POST", "/QuickConnect/Initiate") {
+            return initiated();
+        }
+        if asked.is("GET", "/QuickConnect/Connect") && asked.parameter("secret") == Some(SECRET) {
+            let mut polled = counted.lock();
+            *polled += 1;
+            return connected(*polled > approved_after);
+        }
+        if asked.is("POST", "/Users/AuthenticateWithQuickConnect") {
+            return signed_in_by_quick_connect();
+        }
+        Canned::status(404)
+    });
+    (fake, polled)
+}
+
+fn asking(fake: &Fake) -> QuickConnect {
+    QuickConnect::at(&fake.url).asked_every(Duration::from_millis(5))
+}
+
+#[test]
+fn a_code_approved_elsewhere_signs_in_and_yields_the_session_the_device_was_issued() {
+    let (fake, polled) = quick_connect(2);
+    let asking = asking(&fake);
+
+    assert!(asking.offered().expect("asked whether it is offered"));
+    let approving = asking.begun().expect("a code");
+    let signed = asking
+        .approved(&approving, &|| false)
+        .expect("an answer")
+        .expect("signed in");
+
+    assert_eq!(approving.code, CODE);
+    assert_eq!(signed.name, "listener");
+    assert_eq!(signed.session.token, TOKEN);
+    assert_eq!(signed.session.user, USER_ID);
+    assert_eq!(*polled.lock(), 3);
+    let initiated = fake.heard_at("/QuickConnect/Initiate");
+    let named = initiated[0]
+        .authorization
+        .clone()
+        .expect("an authorization");
+    assert!(
+        named.contains(&format!(r#"DeviceId="{}""#, signed.session.device)),
+        "{named}"
+    );
+    let authenticated = fake.heard_at("/Users/AuthenticateWithQuickConnect");
+    assert!(
+        authenticated[0].body.contains(SECRET),
+        "{}",
+        authenticated[0].body
+    );
+    assert!(authenticated[0].authorization.is_some());
+}
+
+#[test]
+fn a_code_never_approved_lapses_and_keeps_nothing() {
+    let (fake, _) = quick_connect(usize::MAX);
+    let lapsing = asking(&fake).lapsing_after(Duration::from_millis(60));
+    let approving = lapsing.begun().expect("a code");
+
+    assert!(matches!(
+        lapsing.approved(&approving, &|| false),
+        Err(Error::AuthorizationLapsed { .. })
+    ));
+    assert!(
+        fake.heard_at("/Users/AuthenticateWithQuickConnect")
+            .is_empty()
+    );
+
+    let forgotten = Fake::serving(|asked, _| {
+        if asked.is("POST", "/QuickConnect/Initiate") {
+            return initiated();
+        }
+        Canned::status(404)
+    });
+    let asked_again = asking(&forgotten);
+    let approving = asked_again.begun().expect("a code");
+    assert!(matches!(
+        asked_again.approved(&approving, &|| false),
+        Err(Error::AuthorizationLapsed { .. })
+    ));
+}
+
+#[test]
+fn a_cancel_ends_the_wait_and_keeps_nothing() {
+    let (fake, polled) = quick_connect(usize::MAX);
+    let asking = asking(&fake);
+    let approving = asking.begun().expect("a code");
+    let heard = Arc::clone(&polled);
+
+    let answered = asking.approved(&approving, &move || *heard.lock() >= 1);
+
+    assert!(matches!(answered, Ok(None)), "{answered:?}");
+    assert!(
+        fake.heard_at("/Users/AuthenticateWithQuickConnect")
+            .is_empty()
+    );
+}
+
+#[test]
+fn quick_connect_is_not_offered_by_emby_or_a_server_with_it_off_or_one_answering_a_page() {
+    for answer in ["false", "<html><body>Sign in</body></html>", "null"] {
+        let fake = Fake::serving(move |_, _| Canned::json(answer));
+        assert!(!asking(&fake).offered().expect("asked"), "{answer}");
+    }
+    let missing = Fake::serving(|_, _| Canned::status(404));
+    assert!(!asking(&missing).offered().expect("asked"));
+
+    let emby = Fake::serving(|_, _| Canned::json("true"));
+    assert!(
+        !QuickConnect::at(&format!("{}/emby", emby.url))
+            .offered()
+            .expect("asked")
+    );
+    assert!(emby.heard().is_empty());
+}
+
+#[test]
+fn an_older_server_is_begun_with_get() {
+    let fake = Fake::serving(
+        |asked, _| match (asked.method.as_str(), asked.path.as_str()) {
+            ("POST", "/QuickConnect/Initiate") => Canned::status(405),
+            ("GET", "/QuickConnect/Initiate") => initiated(),
+            _ => Canned::status(404),
+        },
+    );
+
+    let approving = asking(&fake).begun().expect("a code");
+
+    assert_eq!(approving.code, CODE);
+    let asked = fake.heard_at("/QuickConnect/Initiate");
+    assert_eq!(asked.len(), 2);
+    assert!(asked[1].authorization.is_some());
+}
+
+#[test]
+fn a_code_refused_by_the_server_is_denied_and_the_secret_never_reaches_debug() {
+    let refusing = Fake::serving(|_, _| Canned::status(401));
+    assert!(matches!(
+        asking(&refusing).begun(),
+        Err(Error::AuthorizationDenied { .. })
+    ));
+
+    let (fake, _) = quick_connect(0);
+    let approving = asking(&fake).begun().expect("a code");
+    let shown = format!("{approving:?}");
+    assert!(!shown.contains(SECRET), "{shown}");
+    assert!(shown.contains(CODE), "{shown}");
 }

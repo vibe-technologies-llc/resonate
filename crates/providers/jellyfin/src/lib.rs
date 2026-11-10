@@ -20,8 +20,12 @@ use serde::de::DeserializeOwned;
 use ureq::{Agent, Body, http};
 use uuid::Uuid;
 
+pub use crate::quick_connect::{
+    A_QUICK_CONNECT_LAPSES_AFTER, Approving, QUICK_CONNECT_ASKED_EVERY, QuickConnect, SignedIn,
+};
 use crate::served::{Authenticated, ItemDoc, ItemsDoc, found};
 
+mod quick_connect;
 mod served;
 
 const JELLYFIN: &str = "jellyfin";
@@ -51,6 +55,24 @@ pub struct Server {
     pub url: String,
     pub user: String,
     pub password: String,
+    pub kept: Option<KeptSession>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct KeptSession {
+    pub token: String,
+    pub user: String,
+    pub device: String,
+}
+
+impl fmt::Debug for KeptSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeptSession")
+            .field("token", &Withheld)
+            .field("user", &self.user)
+            .field("device", &self.device)
+            .finish()
+    }
 }
 
 struct Withheld;
@@ -67,6 +89,7 @@ impl fmt::Debug for Server {
             .field("url", &self.url)
             .field("user", &self.user)
             .field("password", &Withheld)
+            .field("kept", &self.kept)
             .finish()
     }
 }
@@ -99,6 +122,7 @@ enum Call<'a> {
     Post,
     Delete,
     SigningIn(&'a str),
+    Introducing,
 }
 
 fn downloading(patience: Patience) -> Agent {
@@ -137,13 +161,17 @@ pub struct Jellyfin {
 
 impl Jellyfin {
     pub fn at(server: Server) -> Self {
+        let device = server.kept.as_ref().map_or_else(
+            || Arc::from(Uuid::new_v4().simple().to_string()),
+            |kept| Arc::from(kept.device.as_str()),
+        );
         Self {
             source: SourceId::new(JELLYFIN).unwrap_or_else(|_| SourceId::local()),
             server,
             asking: asking_agent(Patience::default(), Trusted::SystemStoreToo),
             downloading: downloading(Patience::default()),
             patience: Patience::default(),
-            device: Arc::from(Uuid::new_v4().simple().to_string()),
+            device,
             session: Arc::new(Mutex::new(None)),
             pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
@@ -157,6 +185,11 @@ impl Jellyfin {
             patience,
             ..self
         }
+    }
+
+    fn issued_to(mut self, device: &str) -> Self {
+        self.device = Arc::from(device);
+        self
     }
 
     pub const fn server(&self) -> &Server {
@@ -257,6 +290,21 @@ impl Jellyfin {
                         .build()
                         .send_empty(),
                     None => request.send_empty(),
+                }
+            }
+            Call::Introducing => {
+                let authorization = self.authorization();
+                let request = agent
+                    .get(url)
+                    .header("Authorization", &authorization)
+                    .header("X-Emby-Authorization", &authorization);
+                match timeout {
+                    Some(timeout) => request
+                        .config()
+                        .timeout_global(Some(timeout))
+                        .build()
+                        .call(),
+                    None => request.call(),
                 }
             }
             Call::SigningIn(body) => {
@@ -376,6 +424,14 @@ impl Jellyfin {
 
     fn sign_in(&self, deadline: Option<Instant>) -> Result<Session> {
         let (plain, emby) = self.roots();
+        if let Some(kept) = &self.server.kept {
+            return Ok(Session {
+                flavour: flavour_of(&plain),
+                root: plain,
+                token: kept.token.clone(),
+                user: kept.user.clone(),
+            });
+        }
         match (self.authenticated(&plain, deadline), emby) {
             (
                 Err(Error::Refused {
@@ -419,6 +475,17 @@ impl Jellyfin {
         loop {
             let session = self.session(deadline)?;
             match self.called_within(agent, op, call, &url(&session), deadline) {
+                Err(Error::Refused {
+                    status: UNAUTHORIZED,
+                    ..
+                }) if self.server.kept.is_some() => {
+                    self.forget(&session);
+                    return Err(Error::Unwelcome {
+                        provider: self.source.clone(),
+                        op: ProviderOp::SignIn,
+                        code: UNAUTHORIZED,
+                    });
+                }
                 Err(Error::Refused {
                     status: UNAUTHORIZED,
                     ..
@@ -717,6 +784,7 @@ mod tests {
             url: "http://music.local:8096/".to_owned(),
             user: "listener".to_owned(),
             password: "sesame".to_owned(),
+            kept: None,
         })
     }
 
@@ -767,12 +835,33 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_session_names_the_device_it_was_issued_to_and_withholds_its_token() {
+        let server = Server {
+            url: "http://music.local:8096".to_owned(),
+            user: "listener".to_owned(),
+            password: String::new(),
+            kept: Some(KeptSession {
+                token: "very-secret-token".to_owned(),
+                user: "0a1b".to_owned(),
+                device: "kept-device".to_owned(),
+            }),
+        };
+
+        let shown = format!("{server:?}");
+        let header = Jellyfin::at(server).authorization();
+
+        assert!(header.contains(r#"DeviceId="kept-device""#), "{header}");
+        assert!(!shown.contains("very-secret-token"), "{shown}");
+    }
+
+    #[test]
     fn an_address_is_tried_plain_and_then_under_the_emby_route_unless_it_names_it() {
         let plain = jellyfin().roots();
         let named = Jellyfin::at(Server {
             url: "https://music.local/EMBY/".to_owned(),
             user: String::new(),
             password: String::new(),
+            kept: None,
         })
         .roots();
 
@@ -794,6 +883,7 @@ mod tests {
             url: "music.local:8096".to_owned(),
             user: "listener".to_owned(),
             password: "sesame".to_owned(),
+            kept: None,
         });
         let url = session(&jellyfin.server.url).url("/Items", &[]);
         let refused = jellyfin
