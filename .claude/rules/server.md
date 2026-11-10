@@ -209,7 +209,10 @@ it off.
 - **A plain `GET` of `/s/` or `/p/` is a page, not a socket** (`pages.rs`): `serve_web` peeks at the
   stream before tungstenite, which would refuse it, and answers a static page that hands its URL
   fragment to `resonate://`. The fragment never reaches here, so the page holds nothing of an
-  invitation. `/.well-known/assetlinks.json` answers only where `[web] android_certificates` names
+  invitation. **What was asked is read out before the connection closes** (`read_out`, until the
+  asker closes or `A_PAGE_ASKER_LEAVES_WITHIN`, 2 s): the request was only peeked at, and a socket
+  closed with bytes unread resets the connection, which a Mac or an iPhone reads as no page at all
+  where Linux still hands over what arrived. `/.well-known/assetlinks.json` answers only where `[web] android_certificates` names
   signing fingerprints, else 404, so no build claims links it cannot verify. Both sides of a socket
   leave Nagle's algorithm (`set_nodelay`), since a party's clock is read over it
   (`a_page_is_answered_beside_the_socket_and_holds_nothing_of_the_invitation`).

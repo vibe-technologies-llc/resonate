@@ -322,7 +322,8 @@ mod tests {
         fs::set_permissions(&kept.profile, fs::Permissions::from_mode(0o755)).expect("opened");
         let looking = a_program(
             &folder,
-            "stat -c %a \"$4\" > \"$(dirname \"$4\")/mode-seen\"; exit 0",
+            "{ stat -c %a \"$4\" 2>/dev/null || stat -f %Lp \"$4\"; } > \"$(dirname \
+             \"$4\")/mode-seen\"; exit 0",
         );
 
         sign_in(&looking, &kept).expect("signed in");

@@ -17,7 +17,7 @@ use resonate_sync::{
 use rustls::{crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{
         Semaphore,
@@ -44,6 +44,8 @@ const RECORD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
 const FRAMES_READ_AHEAD: usize = 4;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 const A_PAGE_ASKED_AGAIN_AFTER: Duration = Duration::from_millis(5);
+const A_PAGE_ASKER_LEAVES_WITHIN: Duration = Duration::from_secs(2);
+const ASKED_BYTES_READ_OUT_AT_ONCE: usize = 4 * 1024;
 const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(60 * 60);
 const UNUSED_SPACE_KEPT_FOR: i64 = 24 * 60 * 60;
 const WEB_HANDSHAKES_AT_ONCE: usize = 256;
@@ -914,9 +916,17 @@ async fn answered_as_a_page(mut stream: TcpStream, certificates: &[String]) -> O
     let answer = pages::answer(asked, certificates);
     if let Ok(Ok(())) = timeout(HELLO_WITHIN, stream.write_all(&answer)).await {
         let _ = stream.shutdown().await;
+        let _ = timeout(A_PAGE_ASKER_LEAVES_WITHIN, read_out(&mut stream)).await;
     }
 
     None
+}
+
+async fn read_out(stream: &mut TcpStream) {
+    let mut asked = [0; ASKED_BYTES_READ_OUT_AT_ONCE];
+    while let Ok(read) = stream.read(&mut asked).await
+        && read > 0
+    {}
 }
 
 async fn page_asked_of(stream: &TcpStream) -> Option<pages::Asked> {

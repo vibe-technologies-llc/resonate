@@ -1841,8 +1841,10 @@ fn guessed_in(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    use std::os::unix::ffi::OsStrExt as _;
     #[cfg(unix)]
-    use std::os::unix::{ffi::OsStrExt as _, fs as unix_fs, fs::MetadataExt as _};
+    use std::os::unix::{fs as unix_fs, fs::MetadataExt as _};
     use std::{
         env, fs,
         io::Cursor,
@@ -1939,7 +1941,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     fn a_copy_a_dead_writer_staged_beside_a_track_whose_name_is_not_text_is_swept() {
         const NEVER_A_PROCESS: u32 = 999_999_999;
 

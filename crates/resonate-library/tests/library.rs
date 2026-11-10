@@ -2483,7 +2483,7 @@ fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has() -> Result<()>
 {
@@ -2533,7 +2533,7 @@ fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<()> {
     let tree = Tree::new();
@@ -2556,7 +2556,7 @@ fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Result<()> {
     let tree = Tree::new();
@@ -2580,7 +2580,7 @@ fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Re
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_whole() -> Result<()>
 {

@@ -233,6 +233,17 @@ pub(crate) struct Driven {
     pub(crate) cx: VisualTestContext,
 }
 
+impl Drop for Driven {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            return;
+        }
+        self.cx.update(|window, _| window.remove_window());
+        self.cx.run_until_parked();
+        self.cx.cx.update(|cx| cx.clear_globals());
+    }
+}
+
 impl Driven {
     pub(crate) fn open(cx: &mut TestAppContext, library: Arc<Library>) -> Self {
         Self::opened_in(cx, library, &Folder::new())
@@ -5924,11 +5935,13 @@ mod tests {
             Listening::Microphone(Some(resonate_engine::NodeName::new("alsa_input.headset")))
         );
 
-        driven.click("listen-desktop");
-        assert_eq!(
-            driven.read(|root, cx| root.listen.read(cx).from().clone()),
-            Listening::Desktop
-        );
+        if resonate_listen::DESKTOP_IS_HEARD {
+            driven.click("listen-desktop");
+            assert_eq!(
+                driven.read(|root, cx| root.listen.read(cx).from().clone()),
+                Listening::Desktop
+            );
+        }
 
         driven.click("listen-keep-track");
         assert!(driven.read(|root, cx| root.listen.read(cx).keeps_listening()));

@@ -22,8 +22,9 @@ paths:
 # macOS
 
 The whole workspace but the phones' boundary and PipeWire builds for `aarch64-apple-darwin`, and
-nothing in it is ARM-only (`x86_64-apple-darwin` type-checks the same). **No Mac has run any of it.**
-It is checked two ways, neither of which hears a note:
+nothing in it is ARM-only (`x86_64-apple-darwin` type-checks the same). **No Mac has opened the
+window or played a note**: the hosted runner builds it and runs its tests, with no display and no
+output device. It is checked two ways:
 
 - **From Linux, types alone.** `rustup target add aarch64-apple-darwin`, a macOS SDK (the one
   `xtool setup` builds for iOS holds `MacOSX.sdk` beside `iPhoneOS.sdk`) and clang:
@@ -39,6 +40,24 @@ It is checked two ways, neither of which hears a note:
   the Windows job's clippy and tests natively, and `cargo test -p resonate -p resonate-ui`
   (`build.md`). The Core Audio tests skip where there is no output device
   (`RESONATE_COREAUDIO_TESTS=required` makes a skip a failure, for a machine that has one).
+
+**What the runner refuses that Linux allows**, each met by its first run:
+
+- **A Mac's temporary folder is under a symlink** (`/var` for `/private/var`), and the library
+  names a root by its real path, so a test comparing a path it made with one the catalog answered
+  disagrees. The job names `TMPDIR` by its real path before the tests; on a Mac,
+  `TMPDIR=$(cd "$TMPDIR" && pwd -P) cargo test`.
+- **A process is refused threads past about two thousand**, where Linux allows tens of thousands:
+  the window's harness lets go of its engine as each test ends (`ui.md`'s *Driven by tests*).
+- **APFS refuses a name that is not UTF-8** (`EILSEQ`) and folds case: the tests of names that are
+  not text are `cfg(all(unix, not(target_os = "macos")))`, and organise's test of a destination
+  differing only in case takes the name it would link as already there.
+- **A socket closed with bytes unread resets the connection and the reader loses what was sent**,
+  where Linux still hands it over: the server reads a page's request out before closing
+  (`server.md`), and a Cast test's fake keeps what it was fetching through a `STOP`.
+- **A datagram to port 0 is sent**, so a test wanting a search that cannot be sent aims at the
+  broadcast address from a socket never allowed to broadcast.
+- `stat` is BSD's: a test reading a mode asks `stat -c %a`, then `stat -f %Lp`.
 
 `docs/FEATURES.md`'s *macOS parity* lists what is not built and what only a Mac can settle.
 `unsafe_code = "forbid"` holds everywhere but `resonate-apple` (and the two crates

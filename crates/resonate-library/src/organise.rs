@@ -4510,8 +4510,15 @@ mod tests {
             ("meddle/echoes.wav", "Meddle/Echoes.wav"),
             ("meddle/Time.wav", "Meddle/Time.wav"),
         ] {
-            fs::hard_link(folder.join(spelled), folder.join(as_the_layout_spells_it))
-                .expect("a second name for a temporary file");
+            let named_twice =
+                fs::hard_link(folder.join(spelled), folder.join(as_the_layout_spells_it));
+            assert!(
+                named_twice
+                    .as_ref()
+                    .err()
+                    .is_none_or(|error| error.kind() == std::io::ErrorKind::AlreadyExists),
+                "a second name for a temporary file: {named_twice:?}"
+            );
         }
 
         let mut echoes = row(1, "");

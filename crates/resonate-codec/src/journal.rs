@@ -974,7 +974,7 @@ pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     use std::os::unix::ffi::OsStrExt as _;
     use std::{env, slice};
 
@@ -1021,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     fn a_whole_copy_beside_a_track_whose_name_is_not_text_is_named_cut_short_and_written_back() {
         let folder = Folder::new("written-back-bytes");
         let name = OsStr::from_bytes(b"Br\xe9the.flac");

@@ -1629,9 +1629,11 @@ impl Deaf {
     }
 }
 
+const SSDP_PORT: u16 = 1_900;
+
 fn refused_search() -> Searching {
     Searching {
-        to: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+        to: SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), SSDP_PORT),
         within: Duration::from_millis(100),
         every: Duration::from_secs(3_600),
         serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),

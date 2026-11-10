@@ -1341,6 +1341,9 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `track-<id>`, `queued-<id>`, `menu-entry-<n>`, `picker-<id>`, `equaliser-curve`). `Driven::settle`
   runs the executor until it parks and advances the test clock a frame; `Driven::until` waits on the
   real engine and scan threads; `Driven::play` opens rows via `Command::Resume`, the first paused.
+  **A `Driven` dropped closes its window, lets what was pending run and drops the globals**, so
+  the engine it started ends with its test: gpui leaks a test's `App`, each kept an engine's ten
+  threads and a `Drawer`'s two, and a Mac refuses a process its two thousandth thread (`macos.md`).
   Microphones are planted via `ListenModel::hearing_of`; `Driven::recognising` hands the window a
   `Fingerprinters` whose fake printer hears the playing file as another song;
   `Driven::reaching` a `Reaching` naming the reference and providers. A control below the fold is out of reach of a press (`Driven::scroll` the
