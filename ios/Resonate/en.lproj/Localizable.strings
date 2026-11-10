@@ -36,6 +36,7 @@
 "appearance.background" = "Background";
 "appearance.background.footer" = "A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion keeps it still, and Low Power Mode slows it.";
 "appearance.background.moving" = "Flowing";
+"appearance.background.reset" = "Reset to default";
 "appearance.background.strength" = "Strength";
 "appearance.background.subtle" = "Subtle";
 "appearance.background.themed" = "Resonate background";
