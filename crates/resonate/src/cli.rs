@@ -123,7 +123,7 @@ pub struct Cli {
         long,
         global = true,
         value_name = "FILE",
-        help = "Read settings from FILE instead of $XDG_CONFIG_HOME/resonate/config.toml"
+        help = "Read settings from FILE instead of config.toml in the settings folder"
     )]
     pub config: Option<PathBuf>,
 

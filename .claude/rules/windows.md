@@ -11,7 +11,7 @@ paths:
   - "crates/resonate-library/src/reach.rs"
   - "crates/resonate-library/tests/support/**"
   - "crates/resonate/src/interrupts.rs"
-  - "crates/resonate/src/windows_launcher.rs"
+  - "crates/resonate/src/plain_launcher.rs"
   - "crates/resonate/src/awake.rs"
   - "crates/resonate/build.rs"
   - "crates/resonate/resources.rs"
@@ -448,10 +448,11 @@ through the same `Running` calls as on Linux, and `Session::open` is `Ok` withou
 
 ## Awake while playing
 
-`awake.rs` (`resonate-awake` thread, the binary's, since `resonate-mpris` finds no bus) looks at
-every zone's player each second (`play`: its one player; the window: `Zones::listed`, through a weak
-handle) and holds a `keepawake::KeepAwake` (display and idle, as the portal's `IDLE`/`SUSPEND` do on
-Linux) while any is `Playing` or `Buffering`. `SetThreadExecutionState` belongs to the thread that
+`awake.rs` (`resonate-awake` thread, the binary's, since `resonate-mpris` finds no bus; a Mac's too)
+looks at every zone's player each second (`play`: its one player; the window: `Zones::listed`,
+through a weak handle) and holds a `keepawake::KeepAwake` (display and idle, as the portal's
+`IDLE`/`SUSPEND` do on Linux; on a Mac idle alone, `HOLDS_THE_DISPLAY_TOO`, so the screen may still
+sleep) while any is `Playing` or `Buffering`. `SetThreadExecutionState` belongs to the thread that
 set it, so the hold is made and dropped on that thread alone; dropping `Awake` stops and joins it.
 
 ## Capture

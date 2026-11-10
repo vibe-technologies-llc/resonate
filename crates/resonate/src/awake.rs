@@ -10,6 +10,7 @@ use resonate_engine::{PlaybackState, Player};
 const LOOKED_EVERY: Duration = Duration::from_secs(1);
 const REASON: &str = "Playing music";
 const THREAD: &str = "resonate-awake";
+const HOLDS_THE_DISPLAY_TOO: bool = cfg!(windows);
 
 pub(crate) struct Awake {
     stopping: mpsc::Sender<()>,
@@ -55,7 +56,7 @@ fn watch(players: &dyn Fn() -> Vec<Arc<Player>>, stopped: &mpsc::Receiver<()>) {
 
 fn taken() -> Option<KeepAwake> {
     Builder::default()
-        .display(true)
+        .display(HOLDS_THE_DISPLAY_TOO)
         .idle(true)
         .reason(REASON)
         .create()

@@ -11,8 +11,10 @@ the code that says the words.
   `language` key's type), `negotiated` (the first tag a listener reads whose primary language is
   spoken here, else English), `speak`/`spoken` (the one process-wide language, an atomic) and
   `languages_the_listener_reads` (on Unix `LANGUAGE`'s list, passed over under a `C`/`POSIX` or
-  absent locale, then the first of `LC_ALL`, `LC_MESSAGES`, `LANG`, each made a tag; on Windows
-  `sys-locale`). The lyrics sidecar reads the same list (`lyrics.md`).
+  absent locale, then the first of `LC_ALL`, `LC_MESSAGES`, `LANG`, each made a tag; on Windows and
+  macOS `sys-locale`, since a window started from Finder has no such variable and a terminal's
+  `LANG` there follows the region, not the languages the listener put in order). The lyrics sidecar
+  reads the same list (`lyrics.md`).
 - **`Area` holds one `.ftl` file in every language that ships it.** A bundle per language is built
   on first use (`fluent-bundle`'s concurrent bundle, isolation marks off), so English pays nothing
   for languages not spoken. `plain(index)` formats a message with no variables once per language and

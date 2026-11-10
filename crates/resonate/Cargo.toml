@@ -70,14 +70,16 @@ tracing-subscriber.workspace = true
 unicode-width.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-rustix.workspace = true
+rustix = { workspace = true, features = ["system"] }
 signal-hook.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 ctrlc.workspace = true
-keepawake.workspace = true
 crossterm.workspace = true
 resonate-win32.workspace = true
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+keepawake.workspace = true
 trash.workspace = true
 
 [dev-dependencies]

@@ -516,7 +516,7 @@ impl fmt::Display for ValueKind {
     }
 }
 
-#[cfg(all(feature = "ui", unix))]
+#[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IconOp {
     Read,
@@ -597,7 +597,7 @@ pub enum Error {
         source: io::Error,
     },
 
-    #[cfg(all(feature = "ui", unix))]
+    #[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
     #[error("{op:?} failed on the application's icon at {path}", path = path.display())]
     Icon {
         op: IconOp,

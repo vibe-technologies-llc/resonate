@@ -1,10 +1,10 @@
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 const LANGUAGES_LISTED_IN: &str = "LANGUAGE";
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 const LOCALE_NAMED_IN: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];
 const THE_PLAIN_LOCALES: [&str; 2] = ["c", "posix"];
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn languages_the_listener_reads() -> Vec<String> {
     let named = |variable: &str| {
         std::env::var(variable)
@@ -16,7 +16,7 @@ pub fn languages_the_listener_reads() -> Vec<String> {
     read_from(named(LANGUAGES_LISTED_IN).as_deref(), locale.as_deref())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn languages_the_listener_reads() -> Vec<String> {
     let mut languages: Vec<String> = Vec::new();
     for tag in sys_locale::get_locales().filter_map(|locale| tagged(&locale)) {
@@ -27,7 +27,7 @@ pub fn languages_the_listener_reads() -> Vec<String> {
     languages
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn read_from(listed: Option<&str>, locale: Option<&str>) -> Vec<String> {
     let plain = locale.and_then(tagged).is_none();
     let listed = listed.filter(|_| !plain);
@@ -53,7 +53,7 @@ fn tagged(locale: &str) -> Option<String> {
     (!primary.is_empty() && !THE_PLAIN_LOCALES.contains(&primary.as_str())).then_some(tag)
 }
 
-#[cfg(all(test, not(windows)))]
+#[cfg(all(test, not(any(windows, target_os = "macos"))))]
 mod tests {
     use super::*;
 

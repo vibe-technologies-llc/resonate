@@ -233,7 +233,7 @@ what follows describes Unix, where `signals.rs` and termios are used.
   title and artist where it is the row's, else the file's stem.
 - **`lastfm [--forget]` signs in on Last.fm's own page** (`lastfm.rs`): `OnlineOff` and
   `NoLastfmApplication` before anything is asked, a key and secret Last.fm refuses `LastfmRefused`;
-  the page is printed and opened where a browser can be (`xdg-open`, `explorer` on Windows; a
+  the page is printed and opened where a browser can be (`xdg-open`, `open` on macOS, `explorer` on Windows; a
   failure only logged, so it works over SSH), the wait runs under `signals::cancel_when_told`, an end
   without the allowing is `LastfmSignInEnded`, and the session lands in `lastfm-session`. No password
   is read: the unechoed prompt is gone. `signals::leaving_on` leaves on any signals through any
@@ -288,7 +288,15 @@ what follows describes Unix, where `signals.rs` and termios are used.
 
 ## Settings
 
-From `$XDG_CONFIG_HOME/resonate/config.toml` (`%APPDATA%\resonate\config.toml` on Windows) or `--config <FILE>` (must exist, unlike the XDG path).
+From `$XDG_CONFIG_HOME/resonate/config.toml` (`%APPDATA%\resonate\config.toml` on Windows, `~/Library/Application Support/resonate/config.toml` on macOS) or `--config <FILE>` (must exist, unlike the XDG path).
+**A Mac keeps its folders where macOS keeps an application's** (`config::known_folder`,
+`library_folder_for`): settings and data (the catalog, the vault, the equaliser profiles, the sync
+ledger) under `~/Library/Application Support/resonate`, what can be made again (the kept studies)
+under `~/Library/Caches/resonate`; a set `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or `XDG_CACHE_HOME` still
+wins, as it does over the known folders on Windows
+(`a_mac_keeps_settings_and_data_in_application_support_and_what_is_made_again_in_caches`). `--config`'s
+help names no folder, since `build.rs` writes one man page for every system;
+`resonate-config.toml(5)`'s FILES names all three.
 CLI flag > file > `EngineConfig` defaults; an unknown key warns via `tracing`. Every key is a
 `ConfigKey` variant (`ConfigKey::ALL`): a bad value names its key without prose in an error. Keys
 with a flag: the `global` ones plus `volume`; the rest only pane and file. Defaults and meanings:

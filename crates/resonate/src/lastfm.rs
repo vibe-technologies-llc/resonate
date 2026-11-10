@@ -57,7 +57,10 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
 #[cfg(all(feature = "online", windows))]
 const OPENS_A_PAGE: &str = "explorer";
 
-#[cfg(all(feature = "online", not(windows)))]
+#[cfg(all(feature = "online", target_os = "macos"))]
+const OPENS_A_PAGE: &str = "open";
+
+#[cfg(all(feature = "online", not(windows), not(target_os = "macos")))]
 const OPENS_A_PAGE: &str = "xdg-open";
 
 #[cfg(feature = "online")]

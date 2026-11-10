@@ -1429,6 +1429,11 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `resonate_mpris::trash_through_the_portal` (`org.freedesktop.portal.Trash.TrashFile`, the file's
   descriptor passed; zbus is not a library dependency), a portal that refuses or cannot be
   reached being `Kept` (`a_file_the_desktops_trash_would_not_take_is_kept_with_its_row`).
+  **A Mac's is always Finder's Trash** (`trashing::FindersTrash`, the binary's: the `trash` crate
+  told `DeleteMethod::NsFileManager`, so `trashItemAtURL` moves the file and no Automation
+  permission is asked, at the cost of Finder's *Put Back* on some systems), since the freedesktop
+  bin this crate writes by hand would hide a deleted song in `~/.local/share/Trash`, a folder no Mac
+  shows; the hand-written bin still compiles and is tested there, and nothing reaches it.
   **No trash is no deletion**: a file that cannot be trashed
   (`Error::Trash`, `Error::NoTrashFor`) is kept with its rows, never removed for good. The bin is
   `$XDG_DATA_HOME/Trash` (else `~/.local/share/Trash`; `Library::trash_into` overrides the data
@@ -1492,7 +1497,9 @@ guard and re-keys a sleeve-keyed album after moves land.
   lacks `{ext}`; the last segment's budget is 255 less it (`Segment::write_ahead_of_the_extension`),
   else a cut name loses its extension and the next scan prunes the file with its plays. A middle
   segment resolving to nothing is skipped; the *last*: `Refusal::Unidentified`. **Volume limits are
-  per root**: `Naming::of` finds the root's mount in `/proc/self/mounts`; `vfat`, `msdos`, `exfat`,
+  per root**: `Naming::of` finds the root's mount in `/proc/self/mounts`, and on macOS, which has no
+  such table, asks the root's own volume its type (`rustix::fs::statfs`'s `f_fstypename`, read by
+  `type_named_in`; `a_volume_that_says_its_own_type_is_named_in_what_that_type_takes`); `vfat`, `msdos`, `exfat`,
   `ntfs`, `ntfs3`, `fuseblk`, `fat`, `cifs`, `smb3`, `smbfs` give `Naming::Portable` (and every root on
   Windows, which has no mount table), also writing `\ : * ? " < > |` as `-` and a component whose stem
   (up to the first dot, less trailing spaces) is a reserved device (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`9`,
@@ -2248,7 +2255,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
     succeeds on a non-file, or answers `NotFound`/`NotADirectory` (other failures keep the row) and
     the path is on no volume `volumes::is_mounted` finds unmounted, under no root whose directory is
     missing, under no desktop mount point nothing stands at
-    (`volumes::is_under_a_mount_point_not_there`: `/run/media`, `/media`, `/mnt`), under none
+    (`volumes::is_under_a_mount_point_not_there`: `/run/media`, `/media`, `/mnt`; on macOS
+    `/Volumes`), under none
     `/etc/fstab` lists that `/proc/self/mounts` does not (`volumes::listed_and_not_mounted`), and
     either the file's own folder stands or, its folder gone too, the nearest standing folder above
     holds something. **A row notes its volume as added**: `start`, `add`, `import` find the mount

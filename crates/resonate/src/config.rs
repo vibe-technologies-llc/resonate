@@ -76,9 +76,22 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn known_folder(_: &str) -> Option<PathBuf> {
     None
+}
+
+#[cfg(target_os = "macos")]
+fn known_folder(var: &str) -> Option<PathBuf> {
+    home_dir().map(|home| home.join(library_folder_for(var)))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn library_folder_for(var: &str) -> &'static str {
+    match var {
+        "XDG_CACHE_HOME" => "Library/Caches",
+        _ => "Library/Application Support",
+    }
 }
 
 #[cfg(windows)]
@@ -102,7 +115,7 @@ pub fn data_dir() -> Result<PathBuf> {
         .ok_or(Error::NoDataDir)
 }
 
-#[cfg(all(feature = "ui", unix))]
+#[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
 pub fn icon_theme_dir() -> Result<PathBuf> {
     xdg_dir("XDG_DATA_HOME", ".local/share")
         .map(|dir| dir.join("icons").join("hicolor"))
@@ -1995,6 +2008,19 @@ mod tests {
         assert_eq!(windows_variable_for("XDG_CONFIG_HOME"), "APPDATA");
         assert_eq!(windows_variable_for("XDG_DATA_HOME"), "LOCALAPPDATA");
         assert_eq!(windows_variable_for("XDG_CACHE_HOME"), "LOCALAPPDATA");
+    }
+
+    #[test]
+    fn a_mac_keeps_settings_and_data_in_application_support_and_what_is_made_again_in_caches() {
+        assert_eq!(
+            library_folder_for("XDG_CONFIG_HOME"),
+            "Library/Application Support"
+        );
+        assert_eq!(
+            library_folder_for("XDG_DATA_HOME"),
+            "Library/Application Support"
+        );
+        assert_eq!(library_folder_for("XDG_CACHE_HOME"), "Library/Caches");
     }
 
     fn read(text: &str) -> Result<Config> {

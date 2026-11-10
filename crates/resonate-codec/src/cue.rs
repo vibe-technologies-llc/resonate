@@ -342,7 +342,7 @@ fn cut_named_below(sheet: CueSheet, above: &Path, folder: &Path, named: &str) ->
     Some(cut.swap_remove(at))
 }
 
-const THE_FILESYSTEM_FOLDS_NAMES: bool = cfg!(windows);
+const THE_FILESYSTEM_FOLDS_NAMES: bool = cfg!(any(windows, target_os = "macos"));
 
 pub fn folder_named(beside: &Path, named: &str) -> PathBuf {
     the_folders_below(named)

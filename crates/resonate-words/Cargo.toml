@@ -12,7 +12,7 @@ fluent-bundle.workspace = true
 tracing.workspace = true
 unic-langid.workspace = true
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 sys-locale.workspace = true
 
 [lints]

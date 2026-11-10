@@ -454,6 +454,18 @@ fn write_field(field: Field, named: &Named<'_>, into: &mut String) {
     }
 }
 
+#[cfg(any(target_os = "macos", all(test, not(windows))))]
+fn type_named_in(field: &[std::ffi::c_char]) -> String {
+    field
+        .iter()
+        .take_while(|unit| **unit != 0)
+        .map(|unit| {
+            let [byte] = unit.to_ne_bytes();
+            char::from(byte)
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Naming {
     #[default]
@@ -467,7 +479,7 @@ impl Naming {
         Self::Portable
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     pub(crate) fn of(root: &Path) -> Self {
         match fs::read_to_string(crate::volumes::MOUNT_TABLE) {
             Ok(table) => Self::in_table(&table, root),
@@ -478,15 +490,31 @@ impl Naming {
         }
     }
 
-    #[cfg(not(windows))]
-    fn in_table(table: &str, root: &Path) -> Self {
-        let mounted = crate::volumes::mount_points_in(table)
-            .filter(|(point, _)| root.starts_with(point))
-            .max_by_key(|(point, _)| point.components().count());
+    #[cfg(target_os = "macos")]
+    pub(crate) fn of(root: &Path) -> Self {
+        match rustix::fs::statfs(root) {
+            Ok(volume) => Self::of_a_volume_typed(&type_named_in(&volume.f_fstypename)),
+            Err(error) => {
+                tracing::debug!(%error, "the root's volume would not say what it will take");
+                Self::Anything
+            }
+        }
+    }
 
-        match mounted {
-            Some((_, kind)) if PORTABLE_VOLUMES.contains(&kind) => Self::Portable,
-            _ => Self::Anything,
+    #[cfg(all(not(windows), any(not(target_os = "macos"), test)))]
+    fn in_table(table: &str, root: &Path) -> Self {
+        crate::volumes::mount_points_in(table)
+            .filter(|(point, _)| root.starts_with(point))
+            .max_by_key(|(point, _)| point.components().count())
+            .map_or(Self::Anything, |(_, kind)| Self::of_a_volume_typed(kind))
+    }
+
+    #[cfg(not(windows))]
+    fn of_a_volume_typed(kind: &str) -> Self {
+        if PORTABLE_VOLUMES.contains(&kind) {
+            Self::Portable
+        } else {
+            Self::Anything
         }
     }
 
@@ -3290,6 +3318,34 @@ mod tests {
             library.undoable(),
             None,
             "a refused step stayed to be refused again"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_volume_that_says_its_own_type_is_named_in_what_that_type_takes() {
+        let typed = |kind: &str| {
+            let mut field = [0; 16];
+            for (unit, byte) in field.iter_mut().zip(kind.bytes()) {
+                *unit = std::ffi::c_char::from_ne_bytes([byte]);
+            }
+            Naming::of_a_volume_typed(&type_named_in(&field))
+        };
+
+        for kind in ["msdos", "exfat", "ntfs", "smbfs"] {
+            assert_eq!(
+                typed(kind),
+                Naming::Portable,
+                "a {kind} volume was named as if it took anything"
+            );
+        }
+        for kind in ["apfs", "hfs", "nfs", ""] {
+            assert_eq!(typed(kind), Naming::Anything);
+        }
+        assert_eq!(
+            type_named_in(&[std::ffi::c_char::from_ne_bytes(*b"x"); 16]),
+            "x".repeat(16),
+            "a type name filling its field was read past its end or cut short"
         );
     }
 

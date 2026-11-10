@@ -5,7 +5,7 @@ mod said;
 
 mod abx;
 mod analyse;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod awake;
 mod catalog;
 mod cli;
@@ -25,10 +25,10 @@ mod jellyfin;
 mod kinship;
 mod lastfm;
 mod lasting;
-#[cfg(all(feature = "ui", unix))]
+#[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
 mod launcher;
-#[cfg(all(feature = "ui", windows))]
-#[path = "windows_launcher.rs"]
+#[cfg(all(feature = "ui", any(windows, target_os = "macos")))]
+#[path = "plain_launcher.rs"]
 mod launcher;
 mod listen;
 mod mcp;
@@ -2714,7 +2714,7 @@ fn play_queue(
         &player,
     );
     let presenter = discord::start(&player, library.as_ref(), config);
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let _awake = {
         let playing = Arc::clone(&player);
         awake::start(move || vec![Arc::clone(&playing)])
@@ -3195,7 +3195,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let (hears, heard) = crossbeam_channel::unbounded();
     watch_the_desktop(hears);
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let _awake = {
         let zones = Arc::downgrade(&zones);
         awake::start(move || {

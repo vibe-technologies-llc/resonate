@@ -59,7 +59,11 @@ Everywhere else Windows reaches its COM and Win32 calls through safe wrapper cra
 `resonate-listen`'s capture endpoints, loopback capture and measuring playback), `thread-priority`
 (the fallback where MMCSS refuses the stream thread), `interprocess` (Discord's named pipe and the window's own, `resonate-mpris`), `keepawake` (the machine awake while playing), `windows` (`resonate-mpris`'s toasts, connection cost and media transport through the Windows Runtime's safe projections, eight features: `Data_Xml_Dom`, `Foundation`, `Media`, `Media_Playback`, `Networking_Connectivity`, `Storage`, `Storage_Streams`, `UI_Notifications`; the `wasapi` crate again for its safe apartment), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
 recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
-none is built elsewhere; the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
+none is built elsewhere, but for three a Mac takes as well, `cfg(any(windows, target_os = "macos"))`:
+`keepawake` (an IOKit power assertion, idle sleep alone), `trash` (Finder's Trash through
+`NSFileManager`'s `trashItemAtURL`, `DeleteMethod::NsFileManager`, since the crate's default there
+scripts Finder and asks for the Automation permission; its `coinit_apartmentthreaded` feature
+is Windows's and inert there) and `sys-locale` (the languages the listener put in order); the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
 from the Windows tree of the binary.
 
 The binary's **build script** embeds the Windows version resource with `win-resource-builder`, a
@@ -105,7 +109,7 @@ here, add it there.
   every host. The engine takes it on macOS alone, and `resonate-mobile` on iOS (and as a
   dev-dependency, for its stream's host tests).
 - `resonate-words`: no workspace crate; `fluent-bundle`, `unic-langid`, `tracing`, and `sys-locale`
-  on Windows alone (`language.md`). `resonate-words-build` is a build dependency of each crate with
+  on Windows and macOS alone (`language.md`). `resonate-words-build` is a build dependency of each crate with
   words (and a dev-dependency, for the prose check), with `fluent-syntax` and `thiserror` alone. Every
   `only` line in the layering job admits `resonate-words`.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
@@ -187,7 +191,8 @@ here, add it there.
 - **`rustix`**: no `unsafe` in OS calls: `termios`, `getpgrp` (binary), `fs` xattrs
   (`resonate-codec`), `getuid` (`resonate-discord`), `time`'s `clock_gettime(Monotonic)`
   (`resonate-pipewire`'s callback and Oboe's, Android alone, to read how far a device timestamp
-  lies from now; `realtime.md`).
+  lies from now; `realtime.md`), `system`'s `uname` (the binary alone: the host a sync device is
+  named for), `fs::statfs` (the library on macOS: the type a root's volume says it is).
 - **`unicode-width`**: `Table` and the readout (CJK = two columns). `unicode-segmentation` is
   `resonate-ui`'s, text editing.
 - **`jxl-encoder`** (`std`, `jpeg-reencoding`; no `butteraugli-loop`): `resonate-vault`'s alone, the
@@ -198,7 +203,11 @@ here, add it there.
   `resonate-codec`, `-vault`, `-ui`; `-library` dev-only; `-analysis` never.
 - **`proptest`**: dev-dependency of `resonate-core`, `-library`, `-ui` alone; `std` only (defaults
   fork a child process per case).
-- **`notify`**: library's; defaults dropped (macOS FSEvents alone), Linux inotify needs no feature.
+- **`notify`**: library's; defaults dropped, Linux inotify needs no feature. On macOS the crate
+  compiles its FSEvents watcher whatever the features say and takes that watcher's objc2 crates only
+  under `macos_fsevent`, so the library names the feature as a `cfg(target_os = "macos")` target
+  dependency (without it the crate does not build there); `macos_kqueue`, the other way out, holds
+  a descriptor a watched file.
 - **`wayland-protocols`**: `client`, `staging` (`ext-data-control-v1` sets the clipboard). With
   `wayland-client`: `resonate-ui` alone, at gpui's versions.
 - **`ureq`**: `rustls`, `gzip`, not `json`; the one HTTP client, blocking. `json` is off because

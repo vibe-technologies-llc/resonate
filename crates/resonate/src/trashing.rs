@@ -3,7 +3,7 @@ use std::{io, thread};
 use std::{path::Path, sync::Arc};
 
 use resonate_library::{Removal, Trashes};
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 use resonate_mpris::trash_through_the_portal;
 #[cfg(any(windows, test))]
 use thiserror::Error;
@@ -11,13 +11,13 @@ use thiserror::Error;
 #[cfg(any(windows, test))]
 const RECYCLING_THREAD: &str = "resonate-recycle";
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 const FLATPAK_INFO: &str = "/.flatpak-info";
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 struct Portal;
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 impl Trashes for Portal {
     fn trash(&self, file: &Path) -> Removal {
         match trash_through_the_portal(file) {
@@ -31,9 +31,40 @@ impl Trashes for Portal {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub(crate) fn the_desktops() -> Option<Arc<dyn Trashes>> {
     through_the_portal_where_sandboxed_by(Path::new(FLATPAK_INFO))
+}
+
+#[cfg(target_os = "macos")]
+struct FindersTrash;
+
+#[cfg(target_os = "macos")]
+impl Trashes for FindersTrash {
+    fn trash(&self, file: &Path) -> Removal {
+        match taken_by_the_file_manager(file) {
+            Ok(()) => Removal::Removed,
+            Err(_) if !file.exists() => Removal::AlreadyGone,
+            Err(error) => {
+                tracing::warn!(path = %file.display(), %error, "a file asked to be deleted could not be moved to the Trash");
+                Removal::Kept
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn taken_by_the_file_manager(file: &Path) -> Result<(), trash::Error> {
+    use trash::macos::{DeleteMethod, TrashContextExtMacos as _};
+
+    let mut context = trash::TrashContext::default();
+    context.set_delete_method(DeleteMethod::NsFileManager);
+    context.delete(file)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn the_desktops() -> Option<Arc<dyn Trashes>> {
+    Some(Arc::new(FindersTrash))
 }
 
 #[cfg(windows)]
@@ -94,7 +125,7 @@ fn on_a_thread_of_its_own<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T,
     })
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn through_the_portal_where_sandboxed_by(info: &Path) -> Option<Arc<dyn Trashes>> {
     info.exists().then(|| Arc::new(Portal) as Arc<dyn Trashes>)
 }
@@ -131,7 +162,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, unix, not(target_os = "macos")))]
 mod portal_tests {
     use std::fs;
 

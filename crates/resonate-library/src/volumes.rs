@@ -121,7 +121,11 @@ fn not_mounted_of(listed: &str, mounted: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-const WHERE_DESKTOPS_MOUNT: [(&str, usize); 3] = [("/run/media", 2), ("/media", 2), ("/mnt", 1)];
+#[cfg(not(target_os = "macos"))]
+const WHERE_DESKTOPS_MOUNT: &[(&str, usize)] = &[("/run/media", 2), ("/media", 2), ("/mnt", 1)];
+
+#[cfg(target_os = "macos")]
+const WHERE_DESKTOPS_MOUNT: &[(&str, usize)] = &[("/Volumes", 1)];
 
 pub fn is_under_a_mount_point_not_there(path: &Path) -> bool {
     WHERE_DESKTOPS_MOUNT

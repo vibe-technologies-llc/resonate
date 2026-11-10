@@ -544,8 +544,17 @@ enrichment and scrobbling, which earlier builds wrote, still read, as library an
 .TP
 .I $XDG_CONFIG_HOME/resonate/config.toml
 The settings file.
+Where the variable is unset the settings folder is ~/.config/resonate/, on macOS
+~/Library/Application Support/resonate/ and on Windows %APPDATA%\eresonate\e.
 .TP
 .I $XDG_DATA_HOME/resonate/
 The library, the vault, the kept equaliser profiles and the sync ledger.
+Where the variable is unset the folder is ~/.local/share/resonate/, on macOS
+~/Library/Application Support/resonate/ and on Windows %LOCALAPPDATA%\eresonate\e.
+.TP
+.I $XDG_CACHE_HOME/resonate/
+What can be made again, such as the kept studies of a song.
+Where the variable is unset the folder is ~/.cache/resonate/, on macOS ~/Library/Caches/resonate/
+and on Windows %LOCALAPPDATA%\eresonate\e.
 .SH SEE ALSO
 .BR resonate (1)
