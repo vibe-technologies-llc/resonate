@@ -27,13 +27,23 @@ paths:
   boundary, its binding tool and PipeWire, then the tests of every crate but the window, then the
   binary's `signals` test with `mcp` on, which `--no-default-features` leaves out; the library,
   codec, vault and MCP integration suites run there, gated per test; `windows.md`)
-  and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
-  layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
-  default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
-  (`cargo tree -i`; `online`, `mcp`, `discord`), and one `cargo tree --target x86_64-pc-windows-msvc`
+  and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run), and the
+  `macos` job (`macos-latest`, Apple Silicon: the clippy, the headless tests and the `signals` test
+  the `windows` job runs, with its excludes, then the tests of `resonate` and `resonate-ui`, since
+  the window builds for macOS on a Mac alone; `macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
+  layering refusals gets a line. The layering job has six shapes: `refuse`, `refuse_headless` (no
+  default features), `only` (the workspace crates a crate may reach), `only_on` (the same in one
+  target's tree), `reached_by_the_binary_alone` (`cargo tree -i`; `online`, `mcp`, `discord`),
+  `reached_directly_on` (the workspace crates that may name a crate, in one target's tree), and one `cargo tree --target x86_64-pc-windows-msvc`
   refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`, and `resonate-win32`'s Windows tree reaches no workspace crate while only the
-  binary, `resonate-wasapi` and `resonate-codec` reach it directly. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
+  binary, `resonate-wasapi` and `resonate-codec` reach it directly. The macOS lines read
+  `cargo tree --target aarch64-apple-darwin`: PipeWire, Wayland, WASAPI, `resonate-win32` and the
+  `windows` crate stay out of the binary's tree; `resonate-apple` reaches no workspace crate there
+  or on iOS, and is named by `resonate-coreaudio`, `resonate-listen` and `resonate-mpris` (on iOS by
+  `resonate-coreaudio` and `resonate-mobile`) alone; `resonate-coreaudio` reaches core, audio, words
+  and `resonate-apple` alone; `resonate-listen` reaches those and `resonate-dsp` there, never a
+  backend crate. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
   `tag`, empty builds artifacts only; `contents: write`). The `release` job holds the tag to

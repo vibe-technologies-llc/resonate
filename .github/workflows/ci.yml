@@ -151,6 +151,26 @@ jobs:
               fi
             done
           }
+          only_on() {
+            local target=$1 crate=$2 reached
+            shift 2
+            for reached in $(held_by -p "$crate" --target "$target" -e normal | grep '^resonate' | grep -vx "$crate" || true); do
+              if ! printf '%s\n' "$@" | grep -qx "$reached"; then
+                echo "::error::$crate on $target reaches $reached"
+                failed=1
+              fi
+            done
+          }
+          reached_directly_on() {
+            local target=$1 crate=$2 by
+            shift 2
+            for by in $(held_by --workspace -i "$crate" --target "$target" --depth 1 | grep '^resonate' | grep -vx "$crate" || true); do
+              if ! printf '%s\n' "$@" | grep -qx "$by"; then
+                echo "::error::$crate on $target is reached by $by"
+                failed=1
+              fi
+            done
+          }
           refuse resonate-core symphonia pipewire gpui serde
           refuse resonate-library ureq serde serde_json quinn tokio
           refuse resonate-eq gpui resonate-engine resonate-library ureq
@@ -255,6 +275,18 @@ jobs:
             resonate-pipewire pipewire libspa wayland-client wayland-protocols rustix
           check "resonate-mobile on iOS" "$(held_by -p resonate-mobile --target aarch64-apple-ios)" \
             resonate-pipewire pipewire libspa gpui resonate-mpris resonate-discord oboe
+          refuse resonate-coreaudio resonate-codec resonate-dsp resonate-pipewire resonate-wasapi pipewire libspa gpui
+          only resonate-coreaudio resonate-core resonate-audio resonate-apple resonate-words
+          only_on aarch64-apple-darwin resonate-coreaudio resonate-core resonate-audio resonate-apple resonate-words
+          only_on aarch64-apple-darwin resonate-apple
+          only_on aarch64-apple-ios resonate-apple
+          reached_directly_on aarch64-apple-darwin resonate-apple resonate-coreaudio resonate-listen resonate-mobile resonate-mpris
+          reached_directly_on aarch64-apple-ios resonate-apple resonate-coreaudio resonate-mobile
+          only_on aarch64-apple-darwin resonate-listen resonate-core resonate-audio resonate-apple resonate-dsp resonate-words
+          check "resonate-listen on macOS" "$(held_by -p resonate-listen --target aarch64-apple-darwin -e normal)" \
+            resonate-pipewire resonate-wasapi resonate-coreaudio pipewire libspa gpui ureq
+          check "resonate on macOS" "$(held_by -p resonate --target aarch64-apple-darwin)" \
+            resonate-pipewire resonate-wasapi resonate-win32 pipewire libspa wayland-client wayland-protocols wasapi windows
           exit "$failed"
 
   windows:
@@ -281,6 +313,20 @@ jobs:
       - run: rustup target add aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --locked --target aarch64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
+      - run: cargo test --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
+      - run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
+      - run: cargo test --locked -p resonate -p resonate-ui
 
   server-package:
     name: Sync server package
