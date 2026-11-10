@@ -1511,6 +1511,23 @@ impl RootView {
     }
 
     pub(crate) fn send(&self, command: Command, cx: &mut Context<Self>) {
+        let command = match command {
+            Command::Load {
+                items,
+                start_at,
+                autoplay,
+            } => Command::Load {
+                items: self.with_the_versions_chosen(items, false, cx),
+                start_at,
+                autoplay,
+            },
+            Command::Insert { items, at, play } => Command::Insert {
+                items: self.with_the_versions_chosen(items, true, cx),
+                at,
+                play,
+            },
+            other => other,
+        };
         let kind = command.kind();
         if let Err(error) = Self::zones(cx).send(self.switcher.selected(), command) {
             tracing::warn!(%error, command = ?kind, "the engine refused a command");

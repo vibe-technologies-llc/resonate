@@ -31,20 +31,21 @@ use crate::{
     ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, Aged, Album, AlbumFound,
     AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
     ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals,
-    Asked, Billed, Cancelling, Certainty, Clause, Codec, Column, Compacted, Compare, Condition,
-    Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
-    Favoured, Fingerprinters, Found, Fruitless, Genre, Habits, HeldMedium, HeldReleaseTrack,
-    HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept,
-    KeptCorrection, KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan, Link, Listen,
-    ListeningService, LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing, MissingTrack,
-    MostListened, Move, MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions, PassKind,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions, PortraitWanted,
-    Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch, RecordingRelease,
-    Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result, RetagHandle, RetagOptions,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
-    SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
-    Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
-    VaultObject, Verdict, Waits, Want, Window, Word, alternatives, answers,
+    Asked, Billed, Cancelling, Certainty, ChosenVersion, Clause, Codec, Column, Compacted, Compare,
+    Condition, Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions,
+    Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, Habits, HeldMedium,
+    HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported,
+    Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan,
+    Link, Listen, ListeningService, LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing,
+    MissingTrack, MostListened, Move, MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions,
+    PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions,
+    PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch,
+    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
+    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
+    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
+    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
+    Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Version, Waits, Want, Window,
+    Word, alternatives, answers, chosen,
     copies::{self, Copies, NumberedCopy},
     deleted::{self, Deleted, Removal, Trashes, Why},
     elsewhere, enrich, enriched,
@@ -1638,6 +1639,24 @@ impl Library {
             ),
             vec![Value::Integer(id.get() as i64)],
         )
+    }
+
+    pub fn choose_version(&self, track: TrackId, version: &Version) -> Result<bool> {
+        self.inner
+            .write(|transaction| chosen::choose(transaction, track, version, SystemTime::now()))
+    }
+
+    pub fn forget_the_version_chosen(&self, track: TrackId) -> Result<bool> {
+        self.inner
+            .write(|transaction| chosen::forget(transaction, track))
+    }
+
+    pub fn versions_chosen(&self) -> Result<Vec<ChosenVersion>> {
+        self.inner.read(chosen::every)
+    }
+
+    pub fn version_chosen_for(&self, track: TrackId) -> Result<Option<Version>> {
+        self.inner.read(|connection| chosen::of(connection, track))
     }
 
     pub fn track(&self, id: TrackId) -> Result<Option<Track>> {

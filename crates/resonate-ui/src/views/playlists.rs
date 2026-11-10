@@ -1236,6 +1236,7 @@ impl RootView {
         let album = drawn.album;
         let artist_id = drawn.artist_id;
         let scanned = drawn.track;
+        let versioned = entry.track.clone();
         let favourite = drawn.favourite;
         let location = entry.cut.location.clone();
         let span = entry.span();
@@ -1376,6 +1377,10 @@ impl RootView {
                         menu.favours(Favoured::Track(track), favourite)
                     })
                     .reaches(scanned, album, artist_id)
+                    .when_some(versioned.clone(), |menu, track| {
+                        let chosen = this.library.read(cx).has_a_version_chosen(track.id);
+                        menu.looks_for_versions(track, at, chosen)
+                    })
                     .apart()
                     .when_some(scanned, Menu::shares)
                     .offers_the_file(&location, names)

@@ -28,16 +28,16 @@ use resonate_core::{
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
     ArtistLink, ArtistMatch, ArtistOrder, ArtistPressings, ArtistProfile, ArtistQuery,
-    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, Compacted,
-    CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
-    Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
-    GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept, ImageFormat,
-    ImportOptions, ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped, KeepSummary, Kept,
-    KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames, Linked,
-    LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love, Loved,
-    LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing,
-    MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
-    PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions,
+    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, ChosenVersion, Codec,
+    Compacted, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography,
+    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form,
+    Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept,
+    ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped,
+    KeepSummary, Kept, KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames,
+    Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love,
+    Loved, LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium,
+    Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing,
+    Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions,
     PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS,
     Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
     Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal,
@@ -45,8 +45,8 @@ use resonate_library::{
     ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar,
     SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
     TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
-    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Waits, Window, Wording,
-    Written,
+    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Version, Waits, Window,
+    Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -10326,6 +10326,59 @@ fn a_lyrics_offset_is_held_per_row_and_goes_with_the_track() -> Result<()> {
     fs::remove_file(&path).expect("the file goes");
     library.forget_the_gone(std::slice::from_ref(&path))?;
     assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
+    Ok(())
+}
+
+#[test]
+fn a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_track() -> Result<()> {
+    let tree = Tree::new();
+    let opus = tree.write(
+        "echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+    );
+    let flac = tree.write(
+        "elsewhere/echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let song = library.track_at(&opus, None)?.expect("the song is held").id;
+    let copy = library.track_at(&flac, None)?.expect("the copy is held").id;
+    let served = MediaLocation::from_uri("tidal:track/77").expect("a served song");
+
+    assert_eq!(library.version_chosen_for(song)?, None);
+    assert!(library.choose_version(song, &Version::Served(served.clone()))?);
+    assert_eq!(
+        library.version_chosen_for(song)?,
+        Some(Version::Served(served.clone()))
+    );
+    assert!(library.choose_version(song, &Version::Held(copy))?);
+    assert_eq!(
+        library.versions_chosen()?,
+        [ChosenVersion {
+            track: song,
+            version: Version::Held(copy),
+        }]
+    );
+
+    assert!(library.choose_version(song, &Version::Held(song))?);
+    assert_eq!(library.version_chosen_for(song)?, None);
+
+    let unheld = resonate_core::TrackId::new(9_999).expect("an id");
+    assert!(matches!(
+        library.choose_version(unheld, &Version::Served(served.clone())),
+        Err(Error::UnknownTrack(id)) if id == unheld
+    ));
+
+    library.choose_version(song, &Version::Held(copy))?;
+    fs::remove_file(&flac).expect("the copy goes");
+    library.forget_the_gone(std::slice::from_ref(&flac))?;
+    assert_eq!(library.version_chosen_for(song)?, None);
+
+    library.choose_version(song, &Version::Served(served))?;
+    assert!(library.forget_the_version_chosen(song)?);
+    assert!(!library.forget_the_version_chosen(song)?);
     Ok(())
 }
 

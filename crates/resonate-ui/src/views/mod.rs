@@ -2,7 +2,7 @@ mod analysis;
 mod announcing;
 #[cfg(test)]
 mod audit;
-mod better;
+pub(crate) mod better;
 mod browser;
 pub(crate) mod chrome;
 pub(crate) mod dropping;

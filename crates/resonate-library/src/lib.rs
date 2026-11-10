@@ -1,5 +1,6 @@
 mod alternatives;
 mod answers;
+mod chosen;
 mod copies;
 mod credits;
 mod db;
@@ -93,6 +94,7 @@ pub fn read_a_playlist_sheet(text: &str) {
 }
 
 pub use crate::{
+    chosen::{ChosenVersion, Version},
     copies::{Copies, NumberedCopy},
     db::{CatalogStamp, HiddenTracks, Library, WrittenElsewhere},
     deleted::{Deleted, Removal, Trashes},

@@ -1219,6 +1219,7 @@ impl RootView {
                     )
                 });
 
+                let chosen = this.library.read(cx).has_a_version_chosen(track_id);
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
                 let matched = SharedString::from(track.title.clone());
                 let deleting = Deleting::of(track);
@@ -1240,7 +1241,7 @@ impl RootView {
                     .favours(Favoured::Track(track.id), favourite)
                     .reaches(Some(track.id), track.album_id, track.artist_id)
                     .when_some(others, Menu::offers_the_other_copies)
-                    .looks_for_versions(track.clone(), at)
+                    .looks_for_versions(track.clone(), at, chosen)
                     .apart()
                     .shares(track.id)
                     .offers_the_file(&track.location, names)

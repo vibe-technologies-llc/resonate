@@ -936,28 +936,26 @@ impl Menu {
         })
     }
 
-    pub(crate) fn looks_for_versions(self, track: Track, at: Point<Pixels>) -> Self {
+    pub(crate) fn looks_for_versions(self, track: Track, at: Point<Pixels>, chosen: bool) -> Self {
         self.nests(
             Icon::Search,
             words::menu::find_another_version(),
             move |mut menu| {
-                let title = resonate_core::titles::without_its_rating(&track.title).to_owned();
-                let artist = track.artist.clone().unwrap_or_default();
-                let versions = [
-                    ("Clean", words::menu::look_for_clean()),
-                    ("Explicit", words::menu::look_for_explicit()),
-                ];
-                for (version, label) in versions {
-                    let query = format!("{title} {artist} {version}");
-                    menu = menu.does(Icon::Search, label, move |this, window, cx| {
-                        this.search_instead(query.clone(), window, cx);
+                for sought in better::Sought::offered_for(&track) {
+                    let track = track.clone();
+                    menu = menu.does(Icon::Search, sought.label(), move |this, _, cx| {
+                        this.look_for_a_version(sought, track.clone(), at, cx);
                     });
                 }
-                menu.does(
-                    Icon::Search,
-                    better::find_a_better_version(),
-                    move |this, _, cx| this.look_for_a_better_version(track.clone(), at, cx),
-                )
+                if chosen {
+                    let track = track.clone();
+                    menu = menu.does(
+                        Icon::Undo,
+                        words::better::play_your_own_copy(),
+                        move |this, _, cx| this.play_your_own_copy(track.clone(), cx),
+                    );
+                }
+                menu
             },
         )
     }

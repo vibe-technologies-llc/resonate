@@ -53,7 +53,19 @@ const MIGRATIONS: &[&str] = &[
     A_KEPT_SONG_IS_ASKED_FOR_ITS_PICTURE_ONCE,
     HIDDEN_TRACKS_ARE_LISTED_OFF_AN_INDEX,
     A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST,
+    A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
 ];
+
+const A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT: &str = "
+CREATE TABLE versions_chosen (
+    track  INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+    held   INTEGER REFERENCES tracks(id) ON DELETE CASCADE,
+    served TEXT,
+    chosen INTEGER NOT NULL,
+    CHECK ((held IS NULL) <> (served IS NULL))
+) STRICT;
+CREATE INDEX versions_chosen_by_held ON versions_chosen(held) WHERE held IS NOT NULL;
+";
 
 const A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST: &str = "
 UPDATE tracks SET album_id = NULL
@@ -1711,6 +1723,62 @@ mod tests {
         };
         assert_eq!(count("roots"), 1);
         assert_eq!(count("wrapped_years"), 0);
+        assert_eq!(
+            stamped(&connection).expect("the stamp reads back"),
+            Some(SCHEMA_FINGERPRINT)
+        );
+    }
+
+    #[test]
+    fn a_catalog_from_before_versions_were_chosen_keeps_its_tracks_and_gains_the_table() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT)
+            .expect("the step that keeps a chosen version");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'echoes.opus', 'Echoes', 48000, 2, 1, 7, 10, 1, 1, 1),
+                        (2, 'echoes.flac', 'Echoes', 44100, 2, 1, 1, 10, 1, 1, 1);",
+            )
+            .expect("tracks held before");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        connection
+            .execute_batch(
+                "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, 2, NULL, 1);
+                 DELETE FROM tracks WHERE id = 2;",
+            )
+            .expect("a version is chosen and its copy taken away");
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table")
+        };
+        assert_eq!(count("tracks"), 1);
+        assert_eq!(count("versions_chosen"), 0);
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, NULL, NULL, 1)",
+                    [],
+                )
+                .is_err(),
+            "a version that names nothing was kept"
+        );
         assert_eq!(
             stamped(&connection).expect("the stamp reads back"),
             Some(SCHEMA_FINGERPRINT)

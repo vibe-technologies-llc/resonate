@@ -1,8 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
+use ahash::AHashMap;
 use gpui::{Context, Pixels, Point};
-use resonate_core::{MediaLocation, SampleFormat, folded_letters, titles};
-use resonate_library::{Codec, Track, codec_named};
+use resonate_core::{
+    MediaLocation, SampleFormat, TrackId, folded_letters,
+    titles::{self, Rating},
+};
+use resonate_engine::{QueueItem, Unclaimed};
+use resonate_library::{Codec, Track, Version, codec_named};
 
 use crate::{
     ResonateApp, format,
@@ -15,8 +20,49 @@ use crate::{
 
 const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(3);
 
-pub(crate) fn find_a_better_version() -> &'static str {
-    words::better::find_a_better_version()
+const HELD_WEIGHED_AT_MOST: usize = 64;
+
+const NAMES_APART: &str = ", ";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Sought {
+    Better,
+    Rated(Rating),
+}
+
+impl Sought {
+    pub(crate) fn offered_for(track: &Track) -> Vec<Self> {
+        let rated = match rating_of(track) {
+            Rating::Explicit => vec![Self::Rated(Rating::Clean)],
+            Rating::Clean => vec![Self::Rated(Rating::Explicit)],
+            Rating::Unmarked => vec![Self::Rated(Rating::Clean), Self::Rated(Rating::Explicit)],
+        };
+        let mut offered = vec![Self::Better];
+        offered.extend(rated);
+        offered
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Better => words::better::find_a_better_version(),
+            Self::Rated(Rating::Explicit) => words::better::look_for_explicit(),
+            Self::Rated(Rating::Clean | Rating::Unmarked) => words::better::look_for_clean(),
+        }
+    }
+
+    fn looking(self, title: &str) -> String {
+        match self {
+            Self::Better => words::better::looking(title),
+            Self::Rated(Rating::Explicit) => words::better::looking_for_explicit(title),
+            Self::Rated(Rating::Clean | Rating::Unmarked) => {
+                words::better::looking_for_clean(title)
+            }
+        }
+    }
+}
+
+pub(crate) fn rating_of(track: &Track) -> Rating {
+    Rating::of(Rating::flagged(track.explicit), &track.title, None)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,14 +97,15 @@ const fn significant_bits(format: SampleFormat) -> u8 {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Sought {
+pub(crate) struct TheSong {
     title: String,
     artist: Option<String>,
     length: Option<Duration>,
     lossless: bool,
+    rating: Rating,
 }
 
-impl Sought {
+impl TheSong {
     pub(crate) fn of(track: &Track) -> Self {
         Self {
             title: folded_letters(titles::bare(&track.title)),
@@ -67,10 +114,9 @@ impl Sought {
                 .as_deref()
                 .map(folded_letters)
                 .filter(|artist| !artist.is_empty()),
-            length: track
-                .duration
-                .map(|frames| frames.to_duration(track.spec.rate)),
+            length: length_of(track),
             lossless: track.codec.is_lossless(),
+            rating: rating_of(track),
         }
     }
 
@@ -87,25 +133,58 @@ impl Sought {
     }
 
     pub(crate) fn is_bettered_by(&self, song: &ServedSong) -> bool {
-        !self.lossless && served_codec(song).is_some_and(Codec::is_lossless) && self.names(song)
+        !self.lossless
+            && served_codec(song).is_some_and(Codec::is_lossless)
+            && self.names(&song.title, song.artist.as_deref(), song.length)
     }
 
-    fn names(&self, song: &ServedSong) -> bool {
-        let same_title = folded_letters(titles::bare(&song.title)) == self.title;
-        let same_artist = match (&self.artist, song.artist.as_deref().map(folded_letters)) {
+    pub(crate) fn is_rated_as(&self, wanted: Rating, rating: Rating) -> bool {
+        match wanted {
+            Rating::Explicit => rating == Rating::Explicit,
+            Rating::Clean | Rating::Unmarked => {
+                rating == Rating::Clean
+                    || (rating == Rating::Unmarked && self.rating == Rating::Explicit)
+            }
+        }
+    }
+
+    pub(crate) fn served_as(&self, sought: Sought, song: &ServedSong) -> bool {
+        match sought {
+            Sought::Better => self.is_bettered_by(song),
+            Sought::Rated(wanted) => {
+                self.is_rated_as(wanted, song.rating)
+                    && self.names(&song.title, song.artist.as_deref(), song.length)
+            }
+        }
+    }
+
+    pub(crate) fn held_as(&self, wanted: Rating, track: &Track) -> bool {
+        self.is_rated_as(wanted, rating_of(track))
+            && self.names(&track.title, track.artist.as_deref(), length_of(track))
+    }
+
+    fn names(&self, title: &str, artist: Option<&str>, length: Option<Duration>) -> bool {
+        let same_title = folded_letters(titles::bare(title)) == self.title;
+        let same_artist = match (&self.artist, artist.map(folded_letters)) {
             (Some(held), Some(served)) => {
                 served.contains(held.as_str()) || held.contains(served.as_str())
             }
             (None, _) => true,
             (Some(_), None) => false,
         };
-        let same_length = match (self.length, song.length) {
+        let same_length = match (self.length, length) {
             (Some(held), Some(served)) => held.abs_diff(served) <= LENGTHS_AGREE_WITHIN,
             _ => true,
         };
 
         same_title && same_artist && same_length
     }
+}
+
+fn length_of(track: &Track) -> Option<Duration> {
+    track
+        .duration
+        .map(|frames| frames.to_duration(track.spec.rate))
 }
 
 fn served_codec(song: &ServedSong) -> Option<Codec> {
@@ -119,12 +198,32 @@ pub(crate) struct ServedVersion {
 }
 
 impl ServedVersion {
-    fn label(&self) -> String {
-        let codec = served_codec(&self.song).map_or(words::better::lossless(), Codec::as_str);
-        match self.song.album.as_deref().filter(|album| !album.is_empty()) {
-            Some(album) => words::better::play_served_on_album(album, codec, &self.service),
-            None => words::better::play_served(codec, &self.service),
+    fn label(&self, sought: Sought) -> String {
+        let album = self.song.album.as_deref().filter(|album| !album.is_empty());
+        match sought {
+            Sought::Better => {
+                let codec =
+                    served_codec(&self.song).map_or(words::better::lossless(), Codec::as_str);
+                match album {
+                    Some(album) => words::better::play_served_on_album(album, codec, &self.service),
+                    None => words::better::play_served(codec, &self.service),
+                }
+            }
+            Sought::Rated(_) => match album {
+                Some(album) => words::better::play_it_on_album(album, &self.service),
+                None => words::better::play_it_on(&self.service),
+            },
         }
+    }
+}
+
+fn held_label(sought: Sought, copy: &Track, album: Option<&str>) -> String {
+    match (sought, album) {
+        (Sought::Better, _) => {
+            words::better::play_held(copy.codec.as_str(), format::quality(copy.spec))
+        }
+        (Sought::Rated(_), Some(album)) => words::better::play_your_copy_from(album),
+        (Sought::Rated(_), None) => words::better::play_your_copy(copy.codec.as_str()),
     }
 }
 
@@ -141,87 +240,282 @@ pub(crate) fn better_held(track: &Track, copies: Vec<Track>) -> Vec<Track> {
     better
 }
 
-fn asked_of(services: &[Arc<dyn Serves>], words: &str, sought: &Sought) -> Vec<ServedVersion> {
-    services
-        .iter()
-        .filter(|serves| serves.plays_songs())
-        .flat_map(|serves| match serves.search(words) {
-            Ok(found) => found
-                .songs
-                .into_iter()
-                .filter(|song| sought.is_bettered_by(song))
-                .map(|song| ServedVersion {
-                    service: serves.title().to_owned(),
-                    song,
-                })
-                .collect(),
-            Err(error) => {
-                tracing::warn!(%error, service = serves.title(), "a service could not be asked for a better version");
-                Vec::new()
-            }
-        })
+pub(crate) fn rated_held(track: &Track, wanted: Rating, found: Vec<Track>) -> Vec<Track> {
+    let song = TheSong::of(track);
+    found
+        .into_iter()
+        .filter(|copy| copy.id != track.id && song.held_as(wanted, copy))
         .collect()
 }
 
-fn versions_menu(at: Point<Pixels>, held: Vec<Track>, served: Vec<ServedVersion>) -> Menu {
+#[derive(Debug, Default)]
+pub(crate) struct Asked {
+    served: Vec<ServedVersion>,
+    services: Vec<String>,
+    refused: Vec<String>,
+}
+
+fn asked_of(services: &[Arc<dyn Serves>], words: &str, song: &TheSong, sought: Sought) -> Asked {
+    let mut asked = Asked::default();
+    for serves in services.iter().filter(|serves| serves.plays_songs()) {
+        let service = serves.title().to_owned();
+        match serves.search(words) {
+            Ok(found) => asked.served.extend(
+                found
+                    .songs
+                    .into_iter()
+                    .filter(|found| song.served_as(sought, found))
+                    .map(|found| ServedVersion {
+                        service: service.clone(),
+                        song: found,
+                    }),
+            ),
+            Err(error) => {
+                tracing::warn!(%error, service = %service, "a service could not be asked for another version");
+                asked.refused.push(service.clone());
+            }
+        }
+        asked.services.push(service);
+    }
+    asked
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Nothing {
+    AlreadyLossless,
+    NowhereToAsk,
+    NoneOn,
+}
+
+pub(crate) fn nothing_said(
+    sought: Sought,
+    why: Nothing,
+    title: &str,
+    services: &[String],
+) -> String {
+    let services = services.join(NAMES_APART);
+    match (sought, why) {
+        (Sought::Better, Nothing::AlreadyLossless) => words::better::already_lossless(title),
+        (Sought::Better, Nothing::NowhereToAsk) => {
+            words::better::none_held_and_nowhere_to_ask(title)
+        }
+        (Sought::Better, Nothing::NoneOn) => words::better::none_found(&services, title),
+        (Sought::Rated(Rating::Explicit), Nothing::NoneOn) => {
+            words::better::no_explicit_found(&services, title)
+        }
+        (Sought::Rated(Rating::Explicit), _) => {
+            words::better::no_explicit_and_nowhere_to_ask(title)
+        }
+        (Sought::Rated(_), Nothing::NoneOn) => words::better::no_clean_found(&services, title),
+        (Sought::Rated(_), _) => words::better::no_clean_and_nowhere_to_ask(title),
+    }
+}
+
+fn versions_menu(
+    at: Point<Pixels>,
+    sought: Sought,
+    track: TrackId,
+    title: &str,
+    held: Vec<(Track, Option<String>)>,
+    served: Vec<ServedVersion>,
+) -> Menu {
     let mut menu = Menu::at(at);
-    for copy in held {
-        let label = words::better::play_held(copy.codec.as_str(), format::quality(copy.spec));
+    for (copy, album) in held {
+        let label = held_label(sought, &copy, album.as_deref());
+        let chosen = copy.id;
         let playing: Arc<[Track]> = Arc::from([copy]);
+        let title = title.to_owned();
         menu = menu.does(Icon::Play, label, move |this, _, cx| {
             this.play(&playing, 0, cx);
+            this.choose_the_version(track, Version::Held(chosen), &title, cx);
         });
     }
     for version in served {
-        let label = version.label();
+        let label = version.label(sought);
         let location: MediaLocation = version.song.location;
+        let title = title.to_owned();
         menu = menu.does(Icon::Play, label, move |this, _, cx| {
             this.play_served(vec![location.clone()], 0, cx);
+            this.choose_the_version(track, Version::Served(location.clone()), &title, cx);
         });
     }
     menu
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum Played {
+    Held(QueueItem),
+    Served(MediaLocation),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Chosen {
+    for_track: AHashMap<TrackId, (Track, Played)>,
+}
+
+impl Chosen {
+    pub(crate) fn of(versions: Vec<(Track, Played)>) -> Self {
+        Self {
+            for_track: versions
+                .into_iter()
+                .map(|(track, played)| (track.id, (track, played)))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.for_track.is_empty()
+    }
+
+    pub(crate) fn in_place_of(
+        &self,
+        items: Vec<QueueItem>,
+        minting: &mut Unclaimed,
+    ) -> Vec<QueueItem> {
+        items
+            .into_iter()
+            .map(|item| match self.for_track.get(&item.id) {
+                Some((track, played))
+                    if track.location == item.location && track.span == item.span =>
+                {
+                    match played {
+                        Played::Held(copy) => copy.clone(),
+                        Played::Served(location) => {
+                            QueueItem::whole(minting.mint(), location.clone())
+                        }
+                    }
+                }
+                _ => item,
+            })
+            .collect()
+    }
+}
+
 impl RootView {
-    pub(crate) fn look_for_a_better_version(
+    pub(crate) fn look_for_a_version(
         &mut self,
+        sought: Sought,
         track: Track,
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let copies = match track.alternatives {
-            0 => Vec::new(),
-            _ => self.library.read(cx).alternatives_of(track.id),
+        let held = match sought {
+            Sought::Better => {
+                let copies = match track.alternatives {
+                    0 => Vec::new(),
+                    _ => self.library.read(cx).alternatives_of(track.id),
+                };
+                better_held(&track, copies)
+            }
+            Sought::Rated(wanted) => {
+                let found = self
+                    .library
+                    .read(cx)
+                    .tracks_named(&TheSong::words(&track), HELD_WEIGHED_AT_MOST);
+                rated_held(&track, wanted, found)
+            }
         };
-        let held = better_held(&track, copies);
+        let held: Vec<(Track, Option<String>)> = held
+            .into_iter()
+            .map(|copy| {
+                let album = self
+                    .album_named(copy.album_id, &copy.location, copy.span, cx)
+                    .map(|album| album.to_string());
+                (copy, album)
+            })
+            .collect();
         let app = cx.global::<ResonateApp>();
         let services = app.serving.opened(&app.online);
-        let sought = Sought::of(&track);
+        let song = TheSong::of(&track);
+        let title = titles::bare(&track.title).to_owned();
+        let id = track.id;
 
-        if sought.lossless || services.is_empty() {
+        let nothing_to_ask = match sought {
+            Sought::Better if song.lossless => Some(Nothing::AlreadyLossless),
+            _ if services.iter().all(|serves| !serves.plays_songs()) => Some(Nothing::NowhereToAsk),
+            _ => None,
+        };
+        if let Some(why) = nothing_to_ask {
             match held.is_empty() {
-                true => self.report(Notice::Noted(words::better::none_found().to_owned()), cx),
-                false => self.open_a_menu(versions_menu(at, held, Vec::new()), cx),
+                true => self.report(Notice::Noted(nothing_said(sought, why, &title, &[])), cx),
+                false => {
+                    self.report(Notice::Done(words::better::found(held.len(), &title)), cx);
+                    self.open_a_menu(versions_menu(at, sought, id, &title, held, Vec::new()), cx);
+                }
             }
             return;
         }
 
-        self.report(Notice::Noted(words::better::looking().to_owned()), cx);
-        let words = Sought::words(&track);
+        self.report(Notice::Noted(sought.looking(&title)), cx);
+        let words = TheSong::words(&track);
         let asking = cx
             .background_executor()
-            .spawn(async move { asked_of(&services, &words, &sought) });
+            .spawn(async move { asked_of(&services, &words, &song, sought) });
         cx.spawn(async move |this, cx| {
-            let served = asking.await;
+            let asked = asking.await;
             let _ = this.update(cx, |this, cx| {
-                if held.is_empty() && served.is_empty() {
-                    this.report(Notice::Noted(words::better::none_found().to_owned()), cx);
-                } else {
-                    this.open_a_menu(versions_menu(at, held, served), cx);
+                let found = held.len() + asked.served.len();
+                if !asked.refused.is_empty() {
+                    let refused = asked.refused.join(NAMES_APART);
+                    this.report(Notice::Trouble(words::better::could_not_ask(&refused)), cx);
                 }
+                if found == 0 {
+                    let answered: Vec<String> = asked
+                        .services
+                        .iter()
+                        .filter(|service| !asked.refused.contains(service))
+                        .cloned()
+                        .collect();
+                    if !answered.is_empty() {
+                        let said = nothing_said(sought, Nothing::NoneOn, &title, &answered);
+                        this.report(Notice::Noted(said), cx);
+                    }
+                    return;
+                }
+                this.report(Notice::Done(words::better::found(found, &title)), cx);
+                this.open_a_menu(
+                    versions_menu(at, sought, id, &title, held, asked.served),
+                    cx,
+                );
             });
         })
         .detach();
+    }
+
+    pub(crate) fn choose_the_version(
+        &mut self,
+        track: TrackId,
+        version: Version,
+        title: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.library.read(cx).choose_version(track, &version) {
+            self.report(Notice::Done(words::better::chosen(title)), cx);
+        }
+    }
+
+    pub(crate) fn play_your_own_copy(&mut self, track: Track, cx: &mut Context<Self>) {
+        let title = titles::bare(&track.title).to_owned();
+        if self.library.read(cx).forget_the_version_chosen(track.id) {
+            self.report(Notice::Done(words::better::own_copy_again(&title)), cx);
+        }
+        self.play(&[track], 0, cx);
+    }
+
+    pub(crate) fn with_the_versions_chosen(
+        &self,
+        items: Vec<QueueItem>,
+        inserting: bool,
+        cx: &mut Context<Self>,
+    ) -> Vec<QueueItem> {
+        let chosen = self.library.read(cx).chosen_among(&items);
+        if chosen.is_empty() {
+            return items;
+        }
+        let queue = self.player.read(cx).queue();
+        let beside = queue.iter().filter(|_| inserting).map(AsRef::as_ref);
+        let mut minting = Unclaimed::beside(beside.chain(&items));
+        chosen.in_place_of(items, &mut minting)
     }
 }
 
@@ -229,7 +523,7 @@ impl RootView {
 mod tests {
     use std::time::SystemTime;
 
-    use resonate_core::{ChannelLayout, SampleRate, StreamSpec, TrackId};
+    use resonate_core::{ChannelLayout, SampleRate, StreamSpec};
     use resonate_library::Codec;
 
     use super::*;
@@ -263,6 +557,16 @@ mod tests {
             hidden: false,
             alternatives: 0,
             delivered: false,
+        }
+    }
+
+    fn rated(id: u64, explicit: Option<bool>, title: &str) -> Track {
+        Track {
+            id: TrackId::new(id).expect("a valid id"),
+            explicit,
+            title: title.to_owned(),
+            location: MediaLocation::local(format!("/music/{id}.flac")),
+            ..track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100)
         }
     }
 
@@ -301,17 +605,17 @@ mod tests {
 
     #[test]
     fn a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song() {
-        let sought = Sought::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100));
-        let lossless = Sought::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100));
+        let song = TheSong::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100));
+        let lossless = TheSong::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100));
 
-        assert!(sought.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "flac")));
-        assert!(sought.is_bettered_by(&served("ECHOES", "pink floyd", 1_410, "FLAC")));
+        assert!(song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "flac")));
+        assert!(song.is_bettered_by(&served("ECHOES", "pink floyd", 1_410, "FLAC")));
 
-        assert!(!sought.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "mp3")));
-        assert!(!sought.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "m4a")));
-        assert!(!sought.is_bettered_by(&served("Echoes", "Pink Floyd", 1_300, "flac")));
-        assert!(!sought.is_bettered_by(&served("Time", "Pink Floyd", 1_413, "flac")));
-        assert!(!sought.is_bettered_by(&served("Echoes", "Someone Else", 1_413, "flac")));
+        assert!(!song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "mp3")));
+        assert!(!song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "m4a")));
+        assert!(!song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_300, "flac")));
+        assert!(!song.is_bettered_by(&served("Time", "Pink Floyd", 1_413, "flac")));
+        assert!(!song.is_bettered_by(&served("Echoes", "Someone Else", 1_413, "flac")));
         assert!(!lossless.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "flac")));
     }
 
@@ -329,6 +633,123 @@ mod tests {
         assert_eq!(
             better.iter().map(|copy| copy.spec.rate).collect::<Vec<_>>(),
             [SampleRate::HZ_96000, SampleRate::HZ_48000]
+        );
+    }
+
+    #[test]
+    fn a_rating_is_offered_only_where_the_track_is_not_already_it() {
+        let explicit = rated(1, Some(true), "Echoes");
+        let clean = rated(2, None, "Echoes (Clean)");
+        let unmarked = rated(3, None, "Echoes");
+
+        assert_eq!(
+            Sought::offered_for(&explicit),
+            [Sought::Better, Sought::Rated(Rating::Clean)]
+        );
+        assert_eq!(
+            Sought::offered_for(&clean),
+            [Sought::Better, Sought::Rated(Rating::Explicit)]
+        );
+        assert_eq!(
+            Sought::offered_for(&unmarked),
+            [
+                Sought::Better,
+                Sought::Rated(Rating::Clean),
+                Sought::Rated(Rating::Explicit)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked() {
+        let explicit = rated(1, Some(true), "Echoes");
+        let found = vec![
+            rated(1, Some(true), "Echoes"),
+            rated(2, None, "Echoes"),
+            rated(3, None, "Echoes (Clean)"),
+            rated(4, Some(true), "Echoes"),
+            rated(5, None, "Time"),
+        ];
+
+        let clean: Vec<u64> = rated_held(&explicit, Rating::Clean, found.clone())
+            .iter()
+            .map(|copy| copy.id.get())
+            .collect();
+        let unmarked = rated(9, None, "Echoes");
+        let marked: Vec<u64> = rated_held(&unmarked, Rating::Explicit, found.clone())
+            .iter()
+            .map(|copy| copy.id.get())
+            .collect();
+        let strictly_clean: Vec<u64> = rated_held(&unmarked, Rating::Clean, found)
+            .iter()
+            .map(|copy| copy.id.get())
+            .collect();
+
+        assert_eq!(clean, [2, 3]);
+        assert_eq!(marked, [1, 4]);
+        assert_eq!(strictly_clean, [3]);
+    }
+
+    #[test]
+    fn a_song_with_a_version_chosen_is_queued_as_that_version_wherever_it_is_played() {
+        let opus = rated(1, None, "Echoes");
+        let flac = rated(2, None, "Echoes");
+        let other = rated(3, None, "Time");
+        let streamed = MediaLocation::from_uri("tidal:track/7").expect("a location");
+        let row = |track: &Track| QueueItem {
+            id: track.id,
+            location: track.location.clone(),
+            span: track.span,
+        };
+        let chosen = Chosen::of(vec![
+            (opus.clone(), Played::Held(row(&flac))),
+            (other.clone(), Played::Served(streamed.clone())),
+        ]);
+        let minted_apart = QueueItem {
+            id: opus.id,
+            location: MediaLocation::local("/elsewhere/unscanned.flac"),
+            span: None,
+        };
+        let items = vec![row(&opus), row(&other), minted_apart.clone()];
+        let mut minting = Unclaimed::beside(&items);
+
+        let queued = chosen.in_place_of(items, &mut minting);
+
+        assert_eq!(queued[0], row(&flac));
+        assert_eq!(queued[1].location, streamed);
+        assert_ne!(queued[1].id, other.id);
+        assert_eq!(queued[2], minted_apart);
+    }
+
+    #[test]
+    fn nothing_found_says_why_and_where_it_was_looked_for() {
+        let services = ["TIDAL".to_owned(), "Subsonic".to_owned()];
+
+        assert_eq!(
+            nothing_said(Sought::Better, Nothing::NoneOn, "Echoes", &services),
+            "No higher quality version of Echoes in your library or on TIDAL, Subsonic"
+        );
+        assert_eq!(
+            nothing_said(Sought::Better, Nothing::AlreadyLossless, "Echoes", &[]),
+            "Echoes is already lossless, and no copy you hold is better"
+        );
+        assert_eq!(
+            nothing_said(
+                Sought::Rated(Rating::Clean),
+                Nothing::NowhereToAsk,
+                "Echoes",
+                &[]
+            ),
+            "No Clean version of Echoes in your library, and no service is set up to ask"
+        );
+        assert_eq!(
+            nothing_said(
+                Sought::Rated(Rating::Explicit),
+                Nothing::NoneOn,
+                "Echoes",
+                &services[..1]
+            ),
+            "No Explicit version of Echoes in your library or on TIDAL"
         );
     }
 }

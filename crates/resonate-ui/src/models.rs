@@ -4451,6 +4451,98 @@ impl LibraryModel {
         })
     }
 
+    pub fn tracks_named(&self, words: &str, at_most: usize) -> Vec<Track> {
+        let query = resonate_library::TrackQuery {
+            text: Some(words.to_owned()),
+            limit: Some(at_most),
+            ..Default::default()
+        };
+        self.library.tracks(&query).unwrap_or_else(|error| {
+            tracing::warn!(%error, "the songs named alike could not be read");
+            Vec::new()
+        })
+    }
+
+    pub fn choose_version(&self, track: TrackId, version: &resonate_library::Version) -> bool {
+        self.library
+            .choose_version(track, version)
+            .inspect_err(|error| tracing::warn!(%error, "the version chosen could not be kept"))
+            .unwrap_or(false)
+    }
+
+    pub fn forget_the_version_chosen(&self, track: TrackId) -> bool {
+        self.library
+            .forget_the_version_chosen(track)
+            .inspect_err(
+                |error| tracing::warn!(%error, "the version chosen could not be forgotten"),
+            )
+            .unwrap_or(false)
+    }
+
+    pub fn has_a_version_chosen(&self, track: TrackId) -> bool {
+        self.library
+            .version_chosen_for(track)
+            .inspect_err(|error| tracing::warn!(%error, "the version chosen could not be read"))
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    pub(crate) fn chosen_among(
+        &self,
+        items: &[resonate_engine::QueueItem],
+    ) -> crate::views::better::Chosen {
+        use crate::views::better::{Chosen, Played};
+
+        let versions = match self.library.versions_chosen() {
+            Ok(versions) => versions,
+            Err(error) => {
+                tracing::warn!(%error, "the versions chosen could not be read");
+                return Chosen::default();
+            }
+        };
+        let queued: AHashSet<TrackId> = items.iter().map(|item| item.id).collect();
+        let versions: Vec<_> = versions
+            .into_iter()
+            .filter(|chosen| queued.contains(&chosen.track))
+            .collect();
+        if versions.is_empty() {
+            return Chosen::default();
+        }
+
+        let mut wanted: Vec<TrackId> = versions.iter().map(|chosen| chosen.track).collect();
+        wanted.extend(versions.iter().filter_map(|chosen| match chosen.version {
+            resonate_library::Version::Held(copy) => Some(copy),
+            resonate_library::Version::Served(_) => None,
+        }));
+        let held: AHashMap<TrackId, Track> = self
+            .held_tracks(&wanted)
+            .into_iter()
+            .map(|track| (track.id, track))
+            .collect();
+
+        Chosen::of(
+            versions
+                .into_iter()
+                .filter_map(|chosen| {
+                    let track = held.get(&chosen.track)?.clone();
+                    let played = match chosen.version {
+                        resonate_library::Version::Held(copy) => Played::Held({
+                            let copy = held.get(&copy)?;
+                            resonate_engine::QueueItem {
+                                id: copy.id,
+                                location: copy.location.clone(),
+                                span: copy.span,
+                            }
+                        }),
+                        resonate_library::Version::Served(location) => Played::Served(location),
+                    };
+                    Some((track, played))
+                })
+                .collect(),
+        )
+    }
+
     pub fn standing_of(
         &self,
         track: Option<TrackId>,

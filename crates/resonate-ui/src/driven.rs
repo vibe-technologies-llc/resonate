@@ -4011,6 +4011,45 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_playlist_row_plays_the_version_chosen_for_its_song_until_its_own_copy_is_asked_for(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+        let chosen = driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .choose_version(ids[1], &resonate_library::Version::Held(ids[4]))
+        });
+
+        assert!(chosen);
+
+        driven.click(named("entry", 1));
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
+
+        assert_eq!(driven.queue()[..4], [ids[0], ids[4], ids[2], ids[3]]);
+
+        let song = driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .held_tracks(&[ids[1]])
+                .pop()
+                .expect("the song is held")
+        });
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.play_your_own_copy(song, cx));
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        assert_eq!(driven.queue(), [ids[1]]);
+
+        driven.click(named("entry", 1));
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
+
+        assert_eq!(driven.queue(), ids);
+    }
+
+    #[gpui::test]
     fn taking_out_playlist_rows_chosen_apart_is_one_edit_and_one_undo(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
