@@ -1500,6 +1500,13 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   one full tick on a loaded machine ran the ring dry and its underrun pad (marked silence, kept for a
   DAC's lock) landed between the rows
   (`dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them`).
+- **A test of the sleep fade pulls whole blocks and waits for the graph to stand down.** The fade
+  is reckoned in frames from the wall-clock time left, so it ends on the timer only where the graph
+  pulls at least real time; 64-frame pulls a millisecond apart fell below it under a Windows
+  runner's coarse sleep, the timer's pause cut in on a level barely faded, and the transport read
+  `Paused` before the pause's own fade was pulled
+  (`a_sleep_timer_fades_the_music_out_before_it_pauses` pulls `BLOCK_FRAMES` and waits for
+  `!graph.active`).
 - **A test that asserts what the engine does after a command waits for the engine, not for audio
   time.** The graph's pulled frames are a clock the engine's wall time does not follow, so a
   window of pulled frames closes before a starved engine thread has acted. Waiting is on a

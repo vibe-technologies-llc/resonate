@@ -1551,8 +1551,11 @@ notification, task-dismissal pause, audio focus and noisy-output events, a contr
 edits, the service's destruction giving the repository back and a failing poll tick said once. CI uses API 33 (the minimum) and API 36 x86_64
 emulators; the local Pixel_10_Pro AVD additionally exercises 16 KB pages. Real hardware
 remains necessary for Bluetooth, USB DAC and device-fidelity claims. UI checks clear the
-accessibility cache before each poll: an API 36 screenshot can show current controls while the
-cached tree still reports the preceding value. All write tests use copies.
+accessibility cache before each poll (`forgetTheCachedTree`): an API 36 screenshot can show current controls while the
+cached tree still reports the preceding value. `UiAutomation.clearCache` is API 34, so below it the
+cache is cleared by setting the automation's own `serviceInfo` again, which clears it first; left
+alone on API 33, the settings list's cached node stopped reporting a row once the tree moved under
+a swipe and `UiSmokeTest` scrolled past *Online features* for good. All write tests use copies.
 
 ## Together
 
