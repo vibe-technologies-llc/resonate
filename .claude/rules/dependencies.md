@@ -28,10 +28,17 @@ modules `cfg(any(target_vendor = "apple", test))` so their tests run on any host
 reaches no workspace crate, and every `unsafe` block is one call whose preconditions its types make
 true (a unit is owned by `Unit`, which stops, uninitialises and disposes it on drop and frees what
 its callback was handed exactly once; the raw `AudioUnit` never leaves the crate, so no caller can
-hand a call a dangling one). It takes `objc2-audio-toolbox` and `objc2-core-audio-types` on Apple
-targets and `thiserror`; `mach_absolute_time` and `mach_timebase_info` are declared by hand, since
-`libc` deprecates its own and `mach2` would be a second copy beside gpui's. It is reached by
-`resonate-coreaudio` and, on iOS, `resonate-mobile` alone.
+hand a call a dangling one; a property is read into a `Plain` value of exactly its size; a hog is
+an owned `Hog` released on drop only while this process still holds it; a listener is a `Listening`
+whose callback is handed a number, never a pointer, looked up in a registry, so one firing after
+its guard dropped finds nothing). It takes `objc2-audio-toolbox` and `objc2-core-audio-types` on Apple
+targets and `thiserror`; on macOS alone `objc2-core-audio` 0.3.2 (`AudioHardware`, the device,
+stream and property calls, with `objc2-core-audio-types` for the ranged format), `objc2-core-foundation`
+0.3.2 (`CFString`, a device's name and UID; the version gpui's tree already holds) and
+`parking_lot` (the listeners' registry). `mach_absolute_time` and `mach_timebase_info` are declared
+by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
+is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature. It is
+reached by `resonate-coreaudio` and, on iOS, `resonate-mobile` alone.
 
 `resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
@@ -84,9 +91,11 @@ here, add it there.
   The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers, `resonate-upnp` and `resonate-cast`,
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
-- `resonate-coreaudio`: core, `resonate-audio` and, on Apple targets, `resonate-apple` alone; its
-  portable halves (the callback's fill, the drain) build and are tested on every host, and
-  `resonate-mobile` takes it on iOS (and as a dev-dependency, for its stream's host tests).
+- `resonate-coreaudio`: core, `resonate-audio`, `resonate-words` (a hogged sink's name) and, on
+  Apple targets, `resonate-apple` alone, with `crossbeam-channel`, `parking_lot` and, on macOS,
+  `tracing`; no PipeWire, WASAPI, codec, DSP or gpui. Its portable halves build and are tested on
+  every host. The engine takes it on macOS alone, and `resonate-mobile` on iOS (and as a
+  dev-dependency, for its stream's host tests).
 - `resonate-words`: no workspace crate; `fluent-bundle`, `unic-langid`, `tracing`, and `sys-locale`
   on Windows alone (`language.md`). `resonate-words-build` is a build dependency of each crate with
   words (and a dev-dependency, for the prose check), with `fluent-syntax` and `thiserror` alone. Every

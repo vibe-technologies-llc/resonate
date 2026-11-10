@@ -1437,6 +1437,44 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `an_advertisement_through_the_real_parser_keeps_its_positions`). The settled format stays matched
   in order by `named_by`: it echoes the positions the stream asked for.
 
+- **On macOS a device is two sinks, as a WASAPI endpoint is** (`resonate-coreaudio`, over
+  `resonate-apple`'s safe API; `macos.md`). `coreaudio:<device UID>` plays through the HAL's mixer
+  at the device's nominal rate (Float32, the one rate offered, `current_rate` that rate) and is the
+  default sink where the device is the system's default output; `coreaudio-hog:<device UID>`
+  ("<name> (exclusive)", from the crate's catalog) takes the device in hog mode, moves its nominal
+  rate and then its physical format to the song's (each read back within 1.5 s, else
+  `FormatRefused`) and puts the format, the rate and the hog back, in that order, once the unit is
+  disposed. It is offered per word at every rate some physical format carries that word
+  (`formats::hog_formats`: a 16-bit format carries S16; a 24 or 32-bit one S16 and S24; a float one
+  those and F32), each layout its own entry, a range of rates crossed with the rates music comes in;
+  `physical_for` picks the format of the least depth holding the word. **S32 is never offered**: the
+  HAL unit carries the client's words to the device through Float32, which holds 24 bits exactly and
+  32 not, so S24 reaches the unit left-aligned in a packed 32-bit word (`left_aligned`, published
+  `Words::Padded`) and S16 as it is. An aggregate device has no hogged sink; a device another
+  program holds keeps the formats it took while free (`Remembered`). `SinkId` is `sink_id_of` the
+  node name. **A stream is a control thread beside the HAL's own realtime thread**
+  (`serving::launch`, `resonate-coreaudio-stream`): the unit, the hog and what is restored are made
+  and dropped on it, an open is answered within five seconds (`OpenUnanswered`), `SetActive(true)`
+  on a stream already streaming is nothing, a refused start or stop is `StreamEvent::Refused` with
+  the `OSStatus`, `Drain` is told once the source has been empty for the latency and leaves the unit
+  running, and `Close` returns only once the unit is disposed and the hog released. It reads the
+  device every 500 ms (10 ms while draining): the device's latency, safety offset, stream latency
+  and buffer are the clock's delay and the nominal rate its tick, so a rate another program moved
+  reads as `converted_by_the_graph` and the watcher's `Reformatted` has the engine reopen, and a
+  device no longer alive is `StateChanged` to `Failed`, parked for a device as any sink gone. A
+  reshape keeps the unit where the target, spec and latency stand (`refusal_of`) and hands the
+  callback the new source (`handover::Fed`); `request.realtime` asks nothing, the HAL's thread
+  being realtime already. **Devices are told by listeners and checked by a poll**: the watcher
+  thread (`resonate-coreaudio-watch`) listens for the device list, the default output and a
+  restarted audio service, and on each device for its rate, liveness, hog, volume and mute; each
+  only nudges `resonate_audio::watch`, which surveys and tells `changes_between`. The device's
+  volume and mute are the device's own scalar and mute (`set_device_volume`, by UID, both sinks of a
+  device turning the one level; element 0, else the preferred stereo pair); `HardwareVolume::Yes`
+  only where the scalar is settable on a device that is neither virtual nor an aggregate. The
+  portable halves (`ways`, `formats`, `remembered`, `survey`, `clock`, `fill`, `drain`, `serving`)
+  build and are tested on every host; `device`, `opening` and `backend` are
+  `cfg(target_os = "macos")`. Nothing here has been heard on a Mac.
+
 ## Fixtures
 
 - **Capture and playback tests on the desktop graph skip with no daemon:** `PipeWire::start` starts a
@@ -1493,8 +1531,9 @@ receivers it finds, so the engine plays to one with its queue, gapless handover,
 unchanged, while the device pulls a paced live stream and its own clock, read back through
 `GetPositionInfo` or a media `GET_STATUS`, sets the latency (`upnp.md`, `cast.md`). PipeWire implements the traits in its own crate and reexports
 the moved vocabulary for existing callers. The engine has a PipeWire dependency on Linux
-alone and a WASAPI one (`resonate-wasapi`, `windows.md`) on Windows alone; `engine::desktop_backend`
-is the one place either is named, handed to the binary so `sinks`, `explain`, `eq --suggest` and
+alone, a WASAPI one (`resonate-wasapi`, `windows.md`) on Windows alone and a Core Audio one
+(`resonate-coreaudio`, `macos.md`) on macOS alone; `engine::desktop_backend`
+is the one place any is named, handed to the binary so `sinks`, `explain`, `eq --suggest` and
 the renderers' `Beside` survey and wrap whichever the platform has. Android constructs its backend with
 `Player::with_sources_and_backend`.
 

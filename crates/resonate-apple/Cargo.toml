@@ -12,6 +12,26 @@ objc2-audio-toolbox.workspace = true
 objc2-core-audio-types.workspace = true
 thiserror.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-audio = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "AudioHardware",
+        "objc2-core-audio-types"
+    ]
+}
+objc2-core-foundation = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "CFString"
+    ]
+}
+parking_lot.workspace = true
+
 [dev-dependencies]
 objc2-core-audio-types.workspace = true
 parking_lot.workspace = true

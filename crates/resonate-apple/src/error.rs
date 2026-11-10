@@ -4,6 +4,7 @@ use crate::{status::OsStatus, unit::Component};
 
 pub type Result<T> = result::Result<T, Error>;
 
+#[cfg_attr(not(target_vendor = "apple"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     MakeUnit,
@@ -13,6 +14,30 @@ pub enum Op {
     ReadFormat,
     SetCallback,
     Initialize,
+    FindDevices,
+    ReadDefaultOutput,
+    ReadDefaultInput,
+    ReadUid,
+    ReadName,
+    ReadTransport,
+    ReadAlive,
+    ReadStreams,
+    ReadRate,
+    SetRate,
+    ReadRates,
+    ReadPhysicalFormat,
+    SetPhysicalFormat,
+    ReadPhysicalFormats,
+    ReadLatency,
+    ReadJack,
+    ReadHog,
+    TakeHog,
+    ReadVolume,
+    SetVolume,
+    ReadMute,
+    SetMute,
+    Listen,
+    NotifyOnOwnThread,
 }
 
 impl Op {
@@ -25,6 +50,30 @@ impl Op {
             Self::ReadFormat => "read a stream format",
             Self::SetCallback => "set a callback",
             Self::Initialize => "initialise an audio unit",
+            Self::FindDevices => "list the audio devices",
+            Self::ReadDefaultOutput => "name the default output device",
+            Self::ReadDefaultInput => "name the default input device",
+            Self::ReadUid => "read a device's identifier",
+            Self::ReadName => "read a device's name",
+            Self::ReadTransport => "read how a device is connected",
+            Self::ReadAlive => "read whether a device is still there",
+            Self::ReadStreams => "list a device's streams",
+            Self::ReadRate => "read a device's sample rate",
+            Self::SetRate => "set a device's sample rate",
+            Self::ReadRates => "list a device's sample rates",
+            Self::ReadPhysicalFormat => "read a stream's physical format",
+            Self::SetPhysicalFormat => "set a stream's physical format",
+            Self::ReadPhysicalFormats => "list a stream's physical formats",
+            Self::ReadLatency => "read a device's latency",
+            Self::ReadJack => "read whether a device is plugged in",
+            Self::ReadHog => "read who holds a device",
+            Self::TakeHog => "take or release a device",
+            Self::ReadVolume => "read a device's volume",
+            Self::SetVolume => "set a device's volume",
+            Self::ReadMute => "read a device's mute",
+            Self::SetMute => "set a device's mute",
+            Self::Listen => "listen for a device's changes",
+            Self::NotifyOnOwnThread => "move the device notifications off the main run loop",
         }
     }
 }
@@ -45,6 +94,15 @@ pub enum Error {
     },
     #[error("this system has no {component} audio unit")]
     NoComponent { component: Component },
+    #[cfg(target_os = "macos")]
+    #[error("the device is held by process {by}")]
+    Hogged { by: crate::hog::Pid },
+    #[cfg(target_os = "macos")]
+    #[error("the device stayed free though it was asked for")]
+    HogUntaken,
+    #[cfg(target_os = "macos")]
+    #[error("Core Audio answered {bytes} bytes to {op}, which is not what was asked for")]
+    Missized { op: Op, bytes: u32 },
 }
 
 impl Error {

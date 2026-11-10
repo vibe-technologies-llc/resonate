@@ -28,6 +28,9 @@ resonate-pipewire.workspace = true
 [target.'cfg(windows)'.dependencies]
 resonate-wasapi.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+resonate-coreaudio.workspace = true
+
 [dev-dependencies]
 hdf5-writer.workspace = true
 

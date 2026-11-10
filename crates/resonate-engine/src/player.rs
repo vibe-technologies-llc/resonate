@@ -13,6 +13,8 @@ use resonate_analysis::{Analysis, Applied, CUTS_AT_MOST, Cut, KeptAnalyses, Loud
 use resonate_audio::SinkInfo;
 use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation};
+#[cfg(target_os = "macos")]
+use resonate_coreaudio::CoreAudio;
 #[cfg(target_os = "linux")]
 use resonate_pipewire::PipeWire;
 #[cfg(windows)]
@@ -40,6 +42,12 @@ pub fn desktop_backend(app_name: &str) -> Result<Box<dyn Backend>> {
     Ok(Box::new(backend))
 }
 
+#[cfg(target_os = "macos")]
+pub fn desktop_backend(app_name: &str) -> Result<Box<dyn Backend>> {
+    let backend = CoreAudio::start(app_name)?;
+    Ok(Box::new(backend))
+}
+
 pub struct Player {
     commands: Option<Sender<Request>>,
     events: Receiver<Event>,
@@ -51,12 +59,12 @@ pub struct Player {
 }
 
 impl Player {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub fn new(config: EngineConfig) -> Result<Self> {
         Self::with_sources(config, Arc::new(Sources::local()))
     }
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub fn with_sources(config: EngineConfig, sources: Arc<Sources>) -> Result<Self> {
         Self::spawn(config, sources, |config| desktop_backend(&config.app_name))
     }

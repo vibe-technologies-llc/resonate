@@ -5314,6 +5314,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-core-audio"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2"
+dependencies = [
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-core-audio-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6892,7 +6902,9 @@ name = "resonate-apple"
 version = "0.8.0"
 dependencies = [
  "objc2-audio-toolbox",
+ "objc2-core-audio",
  "objc2-core-audio-types",
+ "objc2-core-foundation",
  "parking_lot 0.13.0",
  "thiserror 2.0.21",
 ]
@@ -6978,10 +6990,14 @@ dependencies = [
 name = "resonate-coreaudio"
 version = "0.8.0"
 dependencies = [
+ "crossbeam-channel",
  "parking_lot 0.13.0",
  "resonate-apple",
  "resonate-audio",
  "resonate-core",
+ "resonate-words",
+ "resonate-words-build",
+ "tracing",
 ]
 
 [[package]]
@@ -7037,6 +7053,7 @@ dependencies = [
  "resonate-audio",
  "resonate-codec",
  "resonate-core",
+ "resonate-coreaudio",
  "resonate-dsp",
  "resonate-pipewire",
  "resonate-wasapi",

@@ -1,0 +1,1 @@
+hogged = { $device } (exclusive)
