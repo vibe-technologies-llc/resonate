@@ -119,7 +119,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.7.1] Two of the window's driven tests over rows chosen apart
+- [S · 0.8.1] Two of the window's driven tests over rows chosen apart
   (`deleting_the_rows_chosen_apart_asks_once_for_all_of_them`,
   `dragging_a_playlist_row_chosen_apart_gathers_every_chosen_row_where_it_drops`) fail about one
   run in eight of the whole `resonate-ui` suite and pass alone, so something they read is shared
