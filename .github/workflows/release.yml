@@ -156,7 +156,7 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed base-devel git rustup clang pipewire libpipewire
           libxkbcommon libxkbcommon-x11 wayland fontconfig freetype2 vulkan-icd-loader
-          vulkan-headers webkit2gtk-4.1
+          vulkan-headers webkit2gtk-4.1 inter-font ttf-jetbrains-mono
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.ref }}
