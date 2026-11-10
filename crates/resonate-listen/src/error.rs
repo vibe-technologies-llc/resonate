@@ -13,7 +13,7 @@ pub enum CaptureOp {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[error("capturing sound failed at {op:?}")]
     Capture {
         op: CaptureOp,
@@ -21,29 +21,33 @@ pub enum Error {
         source: Box<resonate_audio::Error>,
     },
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[error("playing through the output failed")]
     Output {
         #[source]
         source: Box<resonate_audio::Error>,
     },
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[error("no output is named {name}")]
     NoSuchSink { name: resonate_audio::NodeName },
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[error("the graph has no output to play through")]
     NoOutput,
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[error("no microphone is named {name}")]
     NoSuchMicrophone { name: resonate_audio::NodeName },
+
+    #[cfg(target_os = "macos")]
+    #[error("what the desktop plays cannot be recorded on macOS")]
+    DesktopUnheard,
 
     #[error("nothing reached the recording before it was given up on")]
     NothingHeard,
 
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[error("the listening was stopped")]
     Stopped,
 
@@ -61,7 +65,7 @@ pub enum Error {
 }
 
 impl Error {
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     pub fn capture(op: CaptureOp, source: impl Into<resonate_audio::Error>) -> Self {
         Self::Capture {
             op,

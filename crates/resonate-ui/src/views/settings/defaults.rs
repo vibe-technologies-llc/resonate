@@ -127,7 +127,7 @@ impl Standing {
             token_given: false,
             submitting_given: false,
             lastfm_given: false,
-            listening_from: Listening::Desktop,
+            listening_from: Listening::default(),
             listening_for: CLIP_BY_DEFAULT,
             resume: RESUME,
             history_kept: HISTORY_KEPT,
@@ -242,7 +242,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Submitting => standing.submitting_given,
         Group::Lastfm => standing.lastfm_given,
         Group::Listening => {
-            standing.listening_from != Listening::Desktop
+            standing.listening_from != Listening::default()
                 || standing.listening_for != CLIP_BY_DEFAULT
         }
         Group::Organising => standing.template_given,

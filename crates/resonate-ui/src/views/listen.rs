@@ -6,7 +6,7 @@ use gpui::{
 };
 use resonate_core::SourceId;
 use resonate_engine::NodeName;
-use resonate_listen::{Heard, Hearing, Listening};
+use resonate_listen::{DESKTOP_IS_HEARD, Heard, Hearing, Listening};
 
 use crate::{
     Pane, ResonateApp, Setting, SettingsCategory,
@@ -806,14 +806,14 @@ impl RootView {
             from.is_a_microphone(),
         );
         let sources = kit::segmented()
-            .child(match pressable {
+            .children(DESKTOP_IS_HEARD.then(|| match pressable {
                 true => self.in_the_pane_ring(
                     desktop,
                     |this, _, cx| this.listen_from(Listening::Desktop, cx),
                     cx,
                 ),
                 false => desktop,
-            })
+            }))
             .child(match pressable {
                 true => self.in_the_pane_ring(
                     microphone,

@@ -1,16 +1,28 @@
 mod error;
 mod heard;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 mod hearing;
 #[cfg(target_os = "linux")]
 mod listener;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 mod recording;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 mod session;
 
+#[cfg(target_os = "macos")]
+mod coreaudio_capture;
+#[cfg(any(target_os = "macos", test))]
+mod coreaudio_conform;
+#[cfg(target_os = "macos")]
+mod coreaudio_listener;
+#[cfg(any(target_os = "macos", test))]
+mod coreaudio_names;
+#[cfg(target_os = "macos")]
+mod coreaudio_playback;
 #[cfg(any(windows, test))]
 mod endpoints;
+#[cfg(any(windows, target_os = "macos", test))]
+mod microphone;
 #[cfg(windows)]
 mod wasapi_apartment;
 #[cfg(windows)]
@@ -25,13 +37,15 @@ mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }
 
-#[cfg(windows)]
-pub use crate::endpoints::Microphone;
-#[cfg(any(target_os = "linux", windows))]
-pub use crate::hearing::{CLIP_BY_DEFAULT, Hearing, Listening};
+#[cfg(target_os = "macos")]
+pub use crate::coreaudio_listener::Listener;
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
+pub use crate::hearing::{CLIP_BY_DEFAULT, DESKTOP_IS_HEARD, Hearing, Listening};
 #[cfg(target_os = "linux")]
 pub use crate::listener::Listener;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(windows, target_os = "macos"))]
+pub use crate::microphone::Microphone;
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 pub use crate::recording::Recording;
 #[cfg(windows)]
 pub use crate::wasapi_listener::Listener;

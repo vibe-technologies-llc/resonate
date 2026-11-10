@@ -10,11 +10,22 @@ use resonate_audio::NodeName;
 
 pub const CLIP_BY_DEFAULT: Duration = Duration::from_secs(12);
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub const DESKTOP_IS_HEARD: bool = cfg!(not(target_os = "macos"));
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Listening {
-    #[default]
     Desktop,
     Microphone(Option<NodeName>),
+}
+
+impl Default for Listening {
+    fn default() -> Self {
+        if DESKTOP_IS_HEARD {
+            Self::Desktop
+        } else {
+            Self::Microphone(None)
+        }
+    }
 }
 
 const DESKTOP: &str = "desktop";
@@ -23,7 +34,8 @@ const ANY_MICROPHONE: &str = "microphone";
 impl Listening {
     pub fn named(text: &str) -> Self {
         match text.trim() {
-            "" | DESKTOP => Self::Desktop,
+            "" => Self::default(),
+            DESKTOP => Self::Desktop,
             ANY_MICROPHONE => Self::Microphone(None),
             node => Self::Microphone(Some(NodeName::new(node.to_owned()))),
         }

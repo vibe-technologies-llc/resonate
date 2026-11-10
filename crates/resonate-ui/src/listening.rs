@@ -142,8 +142,10 @@ fn stage_after(error: &ListenError) -> Stage {
         | ListenError::Output { .. }
         | ListenError::NoSuchSink { .. }
         | ListenError::NoOutput => Stage::CaptureFailed,
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         ListenError::NoSuchMicrophone { .. } => Stage::CaptureFailed,
+        #[cfg(target_os = "macos")]
+        ListenError::DesktopUnheard => Stage::CaptureFailed,
         ListenError::Unreachable { .. } => Stage::Unreached,
         ListenError::Refused { .. }
         | ListenError::Unreadable { .. }
@@ -477,9 +479,13 @@ fn noted(error: &ListenError) {
         | ListenError::NoOutput => {
             tracing::warn!(%error, "nothing could be listened to");
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         ListenError::NoSuchMicrophone { .. } => {
             tracing::warn!(%error, "the microphone chosen is not on this machine");
+        }
+        #[cfg(target_os = "macos")]
+        ListenError::DesktopUnheard => {
+            tracing::warn!(%error, "the desktop was asked for where only a microphone is heard");
         }
         ListenError::Unreachable { .. }
         | ListenError::Refused { .. }

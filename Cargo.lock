@@ -7142,8 +7142,10 @@ name = "resonate-listen"
 version = "0.8.0"
 dependencies = [
  "crossbeam-channel",
+ "resonate-apple",
  "resonate-audio",
  "resonate-core",
+ "resonate-coreaudio",
  "resonate-dsp",
  "resonate-pipewire",
  "resonate-wasapi",

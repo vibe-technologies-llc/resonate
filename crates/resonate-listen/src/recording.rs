@@ -50,6 +50,17 @@ impl Recording {
             .collect()
     }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn heard_since(&self, taken: usize) -> Vec<f32> {
+        let filled = self.filled();
+        self.samples
+            .iter()
+            .take(filled)
+            .skip(taken)
+            .map(|bits| f32::from_bits(bits.load(Ordering::Relaxed)))
+            .collect()
+    }
+
     pub fn silence_for(&self, frames: usize, channels: usize) {
         let channels = channels.max(1);
         let from = self
@@ -99,6 +110,11 @@ impl Recorder {
 }
 
 impl Recorder {
+    #[cfg(target_os = "macos")]
+    pub(crate) fn room(&self) -> usize {
+        self.recording.capacity()
+    }
+
     pub(crate) fn admit(&mut self, bytes: &[u8]) {
         if self.admitting.load(Ordering::Acquire) {
             self.recording.keep(bytes);

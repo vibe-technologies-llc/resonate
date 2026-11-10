@@ -1,17 +1,11 @@
 use resonate_audio::NodeName;
 
 use crate::Listening;
+pub(crate) use crate::microphone::Microphone;
 
 const CAPTURE_PREFIX: &str = "wasapi-capture:";
 const SHARED_PREFIX: &str = "wasapi:";
 const EXCLUSIVE_PREFIX: &str = "wasapi-exclusive:";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Microphone {
-    pub name: NodeName,
-    pub description: String,
-    pub is_default: bool,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Endpoint {

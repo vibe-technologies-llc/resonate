@@ -38,7 +38,8 @@ stream and property calls, with `objc2-core-audio-types` for the ranged format),
 `parking_lot` (the listeners' registry). `mach_absolute_time` and `mach_timebase_info` are declared
 by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
 is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature. It is
-reached by `resonate-coreaudio` and, on iOS, `resonate-mobile` alone.
+reached by `resonate-coreaudio`, on macOS `resonate-listen` (the microphone and the measuring
+sweep) and, on iOS, `resonate-mobile` alone.
 
 `resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
@@ -110,7 +111,10 @@ here, add it there.
 - `resonate-lyrics`, `-eq`, `-listen`, `-analysis`: none of gpui, engine, library, `ureq`. `-listen`
   is core + `-audio` + `-pipewire` alone on Linux and core + `-audio` + the `wasapi` crate on Windows,
   never `resonate-pipewire` or `resonate-wasapi` there (`resonate-wasapi` is its dev-dependency, which
-  pins the endpoint naming the two agree on; recognisers that reach HTTP are `resonate-online`'s, handed in by the
+  pins the endpoint naming the two agree on), and core + `-audio` + `resonate-apple` + `resonate-dsp`
+  on macOS, never `resonate-coreaudio` there (its dev-dependency, pinning the node names the same
+  way; `-dsp` because the HAL's input unit does not resample, so a microphone at another rate is
+  brought to the clip's 48 kHz through `Resampler`; recognisers that reach HTTP are `resonate-online`'s, handed in by the
   binary). `resonate-mpris`: no gpui, no library.
 - `resonate-ui`: no `resonate-codec`, no image decoding of its own; `resonate-codec::Drawing`
   decodes and scales cover art to a `Raster`.

@@ -22,10 +22,16 @@ resonate-pipewire.workspace = true
 resonate-audio.workspace = true
 wasapi = "0.27.0"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+resonate-apple.workspace = true
+resonate-audio.workspace = true
+resonate-dsp.workspace = true
+
 [build-dependencies]
 resonate-words-build.workspace = true
 
 [dev-dependencies]
+resonate-coreaudio.workspace = true
 resonate-dsp.workspace = true
 resonate-wasapi.workspace = true
 resonate-words-build.workspace = true
