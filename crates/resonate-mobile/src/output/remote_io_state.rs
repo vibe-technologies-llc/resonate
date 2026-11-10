@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU32, AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
@@ -13,7 +10,6 @@ use resonate_core::{Frames, SampleRate};
 use super::formats::{OutputFormat, OutputMixer, OutputStream};
 
 pub(crate) const OUTPUT: SinkId = SinkId::new(1);
-const SHORTEST_DRAIN: Duration = Duration::from_millis(20);
 const MILLISECONDS_A_SECOND: f64 = 1000.0;
 
 pub(crate) struct Routing {
@@ -96,44 +92,6 @@ impl Routing {
 
     pub(crate) fn latency(&self) -> Frames {
         Frames(self.latency.load(Ordering::Relaxed))
-    }
-}
-
-pub(crate) struct Drain {
-    requested: bool,
-    ready_at: Option<Instant>,
-}
-
-impl Drain {
-    pub(crate) const fn new() -> Self {
-        Self {
-            requested: false,
-            ready_at: None,
-        }
-    }
-
-    pub(crate) fn request(&mut self) {
-        self.requested = true;
-    }
-
-    pub(crate) const fn is_requested(&self) -> bool {
-        self.requested
-    }
-
-    pub(crate) fn settled(&mut self, empty: bool, latency: Duration, now: Instant) -> bool {
-        if !(self.requested && empty) {
-            self.ready_at = None;
-            return false;
-        }
-        let ready_at = *self
-            .ready_at
-            .get_or_insert_with(|| now + latency.max(SHORTEST_DRAIN));
-        if now < ready_at {
-            return false;
-        }
-        self.requested = false;
-        self.ready_at = None;
-        true
     }
 }
 
@@ -265,57 +223,5 @@ mod tests {
         assert!(!routing.select(7));
         assert_eq!(routing.actual(), 0);
         assert_eq!(routing.requested(), 0);
-    }
-
-    #[test]
-    fn a_drain_waits_the_latency_after_the_ring_empties_and_then_settles_once() {
-        let mut drain = Drain::new();
-        let start = Instant::now();
-        let latency = Duration::from_millis(100);
-
-        drain.request();
-
-        assert!(!drain.settled(true, latency, start));
-        assert!(!drain.settled(true, latency, start + Duration::from_millis(99)));
-        assert!(drain.settled(true, latency, start + latency));
-        assert!(!drain.is_requested());
-        assert!(!drain.settled(true, latency, start + latency * 2));
-    }
-
-    #[test]
-    fn a_drain_never_waits_less_than_the_shortest() {
-        let mut drain = Drain::new();
-        let start = Instant::now();
-
-        drain.request();
-
-        assert!(!drain.settled(true, Duration::ZERO, start));
-        assert!(!drain.settled(true, Duration::ZERO, start + Duration::from_millis(19)));
-        assert!(drain.settled(true, Duration::ZERO, start + SHORTEST_DRAIN));
-    }
-
-    #[test]
-    fn a_source_that_fills_again_restarts_the_wait() {
-        let mut drain = Drain::new();
-        let start = Instant::now();
-        let latency = Duration::from_millis(100);
-
-        drain.request();
-        assert!(!drain.settled(true, latency, start));
-        assert!(!drain.settled(false, latency, start + Duration::from_millis(90)));
-
-        assert!(!drain.settled(true, latency, start + Duration::from_millis(120)));
-        assert!(!drain.settled(true, latency, start + Duration::from_millis(200)));
-        assert!(drain.settled(true, latency, start + Duration::from_millis(220)));
-    }
-
-    #[test]
-    fn nothing_settles_that_was_never_asked_to_drain() {
-        let mut drain = Drain::new();
-        let start = Instant::now();
-
-        assert!(!drain.settled(true, Duration::ZERO, start));
-        assert!(!drain.settled(true, Duration::ZERO, start + Duration::from_secs(60)));
-        assert!(!drain.is_requested());
     }
 }

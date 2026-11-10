@@ -15,11 +15,23 @@ paths:
   `result_large_err = "deny"` do not apply. `forbid` is never downgraded locally; a binding needing
   `unsafe` is raised (it ruled out `pipewire::thread_loop`, whose constructors are `unsafe fn`).
 
-The listener approved two exceptions, each one crate whose explicit lints allow `unsafe_code` and
-keep `result_large_err` denied: `resonate-mobile` admits UniFFI scaffolding, the owned-descriptor
-bridge and the iOS RemoteIO unit at the native boundary (`mobile.md`), and `resonate-win32` holds
-the Win32 and COM calls no reviewed safe crate wraps, behind a safe API (`windows.md`'s *The Win32
-exception*). No other crate weakens `unsafe_code = "forbid"`.
+The listener approved three exceptions, each one crate whose explicit lints allow `unsafe_code` and
+keep `result_large_err` denied: `resonate-mobile` admits UniFFI scaffolding and the owned-descriptor
+bridge at the native boundary (`mobile.md`), `resonate-win32` holds the Win32 and COM calls no
+reviewed safe crate wraps, behind a safe API (`windows.md`'s *The Win32 exception*), and
+`resonate-apple` holds the Core Audio and AudioToolbox calls of iOS and macOS, behind a safe API
+(below). No other crate weakens `unsafe_code = "forbid"`.
+
+`resonate-apple` is shaped as `resonate-win32` is: it is empty on every target that is not Apple's
+(each module is `cfg(target_vendor = "apple")` or narrower, the sequencing and pointer-handling
+modules `cfg(any(target_vendor = "apple", test))` so their tests run on any host against a fake),
+reaches no workspace crate, and every `unsafe` block is one call whose preconditions its types make
+true (a unit is owned by `Unit`, which stops, uninitialises and disposes it on drop and frees what
+its callback was handed exactly once; the raw `AudioUnit` never leaves the crate, so no caller can
+hand a call a dangling one). It takes `objc2-audio-toolbox` and `objc2-core-audio-types` on Apple
+targets and `thiserror`; `mach_absolute_time` and `mach_timebase_info` are declared by hand, since
+`libc` deprecates its own and `mach2` would be a second copy beside gpui's. It is reached by
+`resonate-coreaudio` and, on iOS, `resonate-mobile` alone.
 
 `resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
@@ -72,6 +84,9 @@ here, add it there.
   The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers, `resonate-upnp` and `resonate-cast`,
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
+- `resonate-coreaudio`: core, `resonate-audio` and, on Apple targets, `resonate-apple` alone; its
+  portable halves (the callback's fill, the drain) build and are tested on every host, and
+  `resonate-mobile` takes it on iOS (and as a dev-dependency, for its stream's host tests).
 - `resonate-words`: no workspace crate; `fluent-bundle`, `unic-langid`, `tracing`, and `sys-locale`
   on Windows alone (`language.md`). `resonate-words-build` is a build dependency of each crate with
   words (and a dev-dependency, for the prose check), with `fluent-syntax` and `thiserror` alone. Every
@@ -239,11 +254,12 @@ here, add it there.
 - **`uniffi`** 0.32.2: the mobile boundary's scaffolding (Kotlin and Swift), with `cli` only in
   `resonate-bindgen`.
   **`oboe`** 0.6.1 (`shared-stdcxx`): Android-target-only; NDK libc++ ships in the APK.
-  **`objc2-audio-toolbox`** 0.3.2: iOS-target-only, pure-Rust framework bindings for the RemoteIO
-  output, only the features it calls. **`objc2-core-audio-types`** 0.3.2 with `CoreAudioBaseTypes`
-  alone is plain C structs and builds on every host, so `resonate-mobile` takes it everywhere (the
-  buffer list's tests run on the host); `objc2` itself, which refuses a non-Apple target, comes in
-  only with the toolbox.
+  **`objc2-audio-toolbox`** 0.3.2: `resonate-apple`'s on Apple targets alone, pure-Rust framework
+  bindings for the RemoteIO and HAL units, only the features it calls. **`objc2-core-audio-types`**
+  0.3.2 with `CoreAudioBaseTypes` alone is plain C structs and builds on every host, so
+  `resonate-apple` takes it as a dev-dependency everywhere (the buffer list's and the unit's tests
+  run on the host) and as a dependency on Apple targets; `objc2` itself, which refuses a non-Apple
+  target, comes in only with the toolbox.
 
 ## C-backed crates kept, and duplicates third parties force
 

@@ -7,9 +7,10 @@ paths:
   - "crates/resonate-audio/src/aligned.rs"
   - "crates/resonate-wasapi/src/fill.rs"
   - "crates/resonate-wasapi/src/render.rs"
-  - "crates/resonate-mobile/src/output/remote_io_render.rs"
-  - "crates/resonate-mobile/src/output/remote_io_buffers.rs"
-  - "crates/resonate-mobile/src/output/remote_io_fill.rs"
+  - "crates/resonate-apple/src/render.rs"
+  - "crates/resonate-apple/src/buffers.rs"
+  - "crates/resonate-apple/src/clock.rs"
+  - "crates/resonate-coreaudio/src/fill.rs"
   - "crates/resonate-pipewire/**/*.rs"
   - "crates/resonate-dsp/**/*.rs"
   - "crates/resonate-listen/src/recording.rs"
@@ -37,7 +38,7 @@ In the RT modules and everything they call:
   off-thread via an SPSC queue whose atomic overflow counter surfaces as `RtFault::Dropped`. Only
   `Underrun` and `Dropped` exist (what the ring raises), so `collect_faults` matches exhaustively.
 
-Thirteen RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+Fourteen RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
 clippy::unreachable, clippy::indexing_slicing)]` (allocation, locks, `assert!`, unguarded division
 rest on this discipline alone):
 
@@ -50,7 +51,7 @@ rest on this discipline alone):
   (one handed in, two spent), as `process::Fed` is PipeWire's: `Fed::source` pops a handed source
   first thing in each callback, swaps it in and pushes the old one onto the way back, so the callback
   never drops a source (it takes nothing while the way back is full). `Handing`, on the stream's
-  side, lets the spent go and reports room. Oboe's `Rendering`, RemoteIO's `Rendering` and WASAPI's
+  side, lets the spent go and reports room. Oboe's `Rendering`, the AudioUnit callbacks' `Rendering` (RemoteIO and the HAL unit) and WASAPI's
   `Playing` all read `Fed::source` (`resonate-mobile` reexports it as `output::handover`).
 - `resonate-audio/src/aligned.rs`: `left_aligned` shifts each 24-bit word of a buffer against the
   top of its 32-bit container in place, for the devices that carry it there (WASAPI's 24-in-32, the
@@ -65,12 +66,18 @@ rest on this discipline alone):
   publishes the frames between the write head and the device position through `StreamClock::note`; unlike the three callbacks above it is a loop on a thread the crate owns,
   not a function the system calls, so a panic would end that stream's thread only (`panic = "abort"`
   makes it the process in a release build all the same).
-- `resonate-mobile/src/output/remote_io_render.rs`, `remote_io_buffers.rs` and `remote_io_fill.rs`:
-  the RemoteIO render callback (`render`, which catches a panic through `guarded` and aborts) hands the system's own
-  interleaved float buffer (`rendered`, reading the buffer list) to `Rendering::fill`, which fills it
-  from the source, zeroes a short fill and publishes emptiness through an atomic; it allocates
-  nothing and touches no lock. The buffer handling and the fill are on the host as well, so their
-  tests run there.
+- `resonate-apple/src/render.rs`, `buffers.rs` and `clock.rs`, and `resonate-coreaudio/src/fill.rs`:
+  the AudioUnit callbacks, RemoteIO's on iOS and the HAL unit's on macOS. `render` (which catches a
+  panic through `guarded` and aborts) reads `mach_absolute_time` (`clock::host_ticks`), hands the
+  system's own interleaved buffer (`rendered`, reading the buffer list) and the host time in
+  nanoseconds (`HostClock::nanos`, an integer multiply and a `NonZero` divide by the timebase read
+  as the unit opened) to a `Render`, which is `Rendering::fill`: it fills the buffer from the
+  source, zeroes a short fill, lays a 24-bit word against the top of its 32 bits where the stream
+  carries one (`left_aligned`) and publishes emptiness through an atomic; `hear` is the input
+  unit's callback, pulling the device's frames into a scratch buffer allocated as the unit opened
+  (`heard`, never past it) and handing them to a `Hear`. They allocate nothing and touch no lock.
+  The buffer handling, the clock's arithmetic and the fill are on the host as well, so their tests
+  run there.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
   state from atomics, each rendered level's start from a preallocated SPSC queue (a gapless turn
   between rows steps to a heard level held in a fixed array of `TURNS_HELD` atomics, one slot a

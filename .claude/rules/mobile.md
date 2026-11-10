@@ -19,16 +19,18 @@ listener's own file.
 
 ## Unsafe
 
-`resonate-mobile` is one of the two exceptions to the workspace's unsafe prohibition, explicitly
-approved for the native boundary (the other is `resonate-win32`, the Windows calls no safe crate
-wraps: `windows.md`). UniFFI generates the FFI scaffolding; the handwritten unsafe operations are
-two. **An owned descriptor**: the front end hands Rust a descriptor it opened (Android detaches
+`resonate-mobile` is one of the three exceptions to the workspace's unsafe prohibition, explicitly
+approved for the native boundary (the others are `resonate-win32`, the Windows calls no safe crate
+wraps, `windows.md`, and `resonate-apple`, the Core Audio and AudioToolbox calls, `dependencies.md`).
+UniFFI generates the FFI scaffolding; the handwritten unsafe operation is one. **An owned
+descriptor**: the front end hands Rust a descriptor it opened (Android detaches
 `ParcelFileDescriptor`, iOS calls `open(2)`), transferred once and closed by Rust's `File`; a
 negative descriptor is refused (`documents::owned`, for a document read through `Documents` and one replaced through `DocumentRewriting` alike). The same transfer (`downloads::fresh_destination`) owns a newly
 created download or received-song destination, never an existing music document. **The iOS audio
-unit**: `output/remote_io.rs` holds the AudioToolbox calls that create, configure and dispose a RemoteIO unit
-(`objc2-audio-toolbox`), sequenced by `output/remote_io_unit.rs`, and `output/remote_io_render.rs` is the render callback, whose `output/remote_io_buffers.rs` reads the
-buffer list the system hands it and passes the bytes on to `Rendering::fill`. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
+unit is no longer here**: the AudioToolbox calls that create, configure and dispose a RemoteIO unit,
+their sequencing, the render callback and its reading of the system's buffer list are
+`resonate-apple`'s (`Unit`, shared with the macOS backend), reached through its safe API, so
+`output/remote_io*.rs` holds no `unsafe`. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
 are typed and bounded as in `errors.md`.
 
 ## A panic is an error on the phones
@@ -530,27 +532,30 @@ test).
   `a_device_chosen_since_the_stream_opened_is_refused_so_the_stream_opens_on_it`,
   `a_route_that_now_offers_the_song_its_own_way_is_refused_so_the_stream_opens_that_way`).
 - **iOS**: RemoteIO at the session's hardware rate, interleaved Float32 stereo; the engine resamples
-  into it. **What does not touch CoreAudio is compiled on the host too, so its tests run there**:
-  `output/remote_io_state.rs` holds `Routing` (the rate, latency and sink-change atomics and channels)
-  and `Drain` (when a drain is over: the latency after the ring empties, never under 20 ms, restarted
-  by a source that fills again), `output/remote_io_fill.rs` holds `Rendering::fill` (a short fill
-  zeroed, the `empty` flag set exactly when the source gave nothing). `remote_io_buffers.rs` reads the system's buffer list
-  (`objc2-core-audio-types`, plain C structs that build on the host, so the pointer handling is proved
-  there: `the_systems_buffer_is_filled_up_to_the_bytes_it_declares_and_no_further`, a null list, a
-  buffer with no memory, one declaring no bytes, the list's size and alignment). **The unit's sequence
-  and the output thread are generic over what touches CoreAudio, so they run on the host too**:
-  `remote_io_unit.rs` holds `Toolbox` (the nine AudioToolbox calls a RemoteIO unit takes: find the
-  component, make an instance, set the format, set the render callback, initialize, start, stop,
-  uninitialize, dispose) and `Unit<T: Toolbox>` (the open path: the format asked for is interleaved
-  Float32 stereo at the route's rate, the callback is handed the `Rendering`, every refused step is
-  an `Error::Backend` naming `Operation::Open` and the `OSStatus`, a unit made is taken down by
-  `Drop` in the order stop, uninitialize, dispose and the `Rendering` is freed exactly once however
-  far the open got); `remote_io_stream.rs` holds `Hardware` (start and stop), `launch` (the
+  into it. **The unit is `resonate_apple::Unit` and the fill `resonate_coreaudio::Rendering`, both
+  shared with the macOS backend**; what is the phone's alone stays here and is compiled on the host
+  too, so its tests run there. `resonate-apple` holds the sequence (`Sequenced<T: Toolbox>` over
+  the AudioToolbox calls a unit takes: find the component, make an instance, set the format, set the
+  callback, initialize, start, stop, uninitialize, dispose; every refused step an `Error::Refused`
+  naming its `Op` and the `OsStatus`, a unit made taken down by `Drop` in the order stop,
+  uninitialize, dispose and what the callback was handed freed exactly once however far the open
+  got), the callback's `extern "C-unwind"` shell and its reading of the system's buffer list
+  (`buffers::rendered`: the buffer filled up to the bytes it declares and no further, a null list, a
+  buffer with no memory, one declaring no bytes, the list's size and alignment; `guarded` is the
+  panic catch, taking what to do on a panic, `process::abort` in `render`), all tested on the host
+  against a fake `Toolbox`. `resonate-coreaudio` holds `Rendering::fill` (a short fill zeroed, the
+  `empty` flag set exactly when the source gave nothing, the stamp) and `Drain` (when a drain is
+  over: the latency after the ring empties, never under 20 ms, restarted by a source that fills
+  again). `output/remote_io_state.rs` holds `Routing` (the rate, latency and sink-change atomics and
+  channels); `remote_io_stream.rs` holds `Hardware` (start, stop and `reformat(rate)`), `launch` (the
   format check, the open thread, the `UNIT_WITHIN`-bounded wait for the unit, the close that waits
   for disposal) and `serve` (the commands, a refused start or stop told as `StreamEvent::Refused`
-  with the status, the drain, the moved latency). Their tests drive a fake `Toolbox` and a fake
-  `Hardware`. **The unit is kept across a rebind and a turn of the route's rate**: `Hardware` also
-  has `reformat(rate)` (`Unit`: stop, uninitialize, set the format, initialize, stopping at the
+  with the status, the drain, the moved latency), tested against a fake `Hardware`; `remote_io.rs`
+  is `cfg(target_os = "ios")` and holds `IosAudio`, the `Hardware` over `resonate_apple::Unit`
+  (`Component::RemoteIo`, no device, Float32 stereo at the route's rate) and the reading of a
+  `resonate_apple::Error` into `Error::Backend` naming `Operation::Open` (a missing component
+  `NotFound`). **The unit is kept across a rebind and a turn of the route's rate**: `reformat` is
+  `Unit::reformatted` (stop, uninitialize, set the format, initialize, stopping at the
   first step the system refuses and returning its status), and `launch` gives the stream a
   `Reshaper` that sends the output thread `Order::Reshape { rate }` (the route's rate now), waits at
   most `UNIT_WITHIN` for its status and only then hands the source to the render callback through
@@ -561,19 +566,16 @@ test).
   `a_drain_asked_before_a_reshape_is_called_off_so_the_new_source_is_not_drained`,
   `a_stream_that_drained_is_reshaped_and_started_again_rather_than_reopened`,
   `a_rate_the_route_took_since_the_unit_opened_reformats_the_unit_and_says_so`,
-  `a_reformat_the_system_refuses_hands_the_source_back_and_announces_nothing`,
+  `a_reformat_the_system_refuses_hands_the_source_back_and_announces_nothing`; in `resonate-apple`,
   `a_unit_reformatted_is_stopped_uninitialised_set_and_initialised_again_at_the_new_rate`; a unit
   reformatted on a device is not proved, below). The shape is still the route's alone
   (`a_shape_other_than_the_routes_is_refused_before_the_unit_is_touched`).
-  Their other tests (`a_step_refused_after_the_instance_took_the_unit_down_and_frees_the_source_once`,
+  Their other tests (`a_step_refused_after_the_instance_took_the_unit_down_and_frees_the_render_once`,
   `a_refused_start_is_told_with_its_status_and_leaves_the_stream_failed`,
   `an_open_that_never_answers_times_out_and_the_late_unit_is_disposed_by_its_own_thread`,
-  `closing_returns_only_once_the_unit_is_disposed`). `remote_io_buffers::guarded` is the callback's
-  panic catch, taking what to do on a panic (`process::abort` in `render`;
-  `a_render_that_panics_is_caught_and_answered_by_the_abort_alone`). `remote_io.rs` and
-  `remote_io_render.rs` are `cfg(target_os = "ios")` and keep only `CoreAudio`, the `Toolbox` whose
-  methods are the unsafe AudioToolbox calls, and the callback's `extern "C-unwind"` shell
-  (`a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
+  `closing_returns_only_once_the_unit_is_disposed`,
+  `a_callback_that_panics_is_caught_and_answered_by_the_abort_alone`,
+  `a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
   `a_drain_waits_the_latency_after_the_ring_empties_and_then_settles_once`,
   `a_moved_rate_is_announced_once_and_an_unmoved_one_is_not`). Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s
@@ -585,7 +587,7 @@ test).
   ended). The output thread sleeps until a command or a moved latency (`Routing::route_changed`) wakes it, and polls every 10 ms only while draining. The render callback writes the source's bytes straight into the system's buffer and zeroes a short
   fill; the stream clock is the reported latency, and a fill is stamped at the buffer's
   `AudioTimeStamp::mHostTime` (where `HostTimeValid`, read in nanoseconds through the
-  `mach_timebase_info` read at open, against `mach_absolute_time` in the callback) plus that latency
+  `mach_timebase_info` read as the unit opens, `HostClock`, against `mach_absolute_time` in the callback) plus that latency
   less the buffer's own frames (the `ioBufferDuration` the host time already counts; `realtime.md`).
   Drain waits that latency after the ring empties.
   `close` returns once the output thread has disposed the unit (waiting at most 3 s), so a rebind

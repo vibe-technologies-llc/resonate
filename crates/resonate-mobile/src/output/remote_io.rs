@@ -1,37 +1,20 @@
-use std::{
-    ffi::c_void,
-    io,
-    ptr::{self, NonNull},
-    sync::Arc,
-    time::Duration,
-};
+use std::{io, num::NonZeroU32, sync::Arc, time::Duration};
 
 use crossbeam_channel::Receiver;
-use objc2_audio_toolbox::{
-    AURenderCallbackStruct, AudioComponent, AudioComponentDescription, AudioComponentFindNext,
-    AudioComponentInstanceDispose, AudioComponentInstanceNew, AudioOutputUnitStart,
-    AudioOutputUnitStop, AudioUnit, AudioUnitInitialize, AudioUnitSetProperty,
-    AudioUnitUninitialize, kAudioUnitManufacturer_Apple, kAudioUnitProperty_SetRenderCallback,
-    kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kAudioUnitType_Output,
-};
-use objc2_core_audio_types::AudioStreamBasicDescription;
+use resonate_apple::{Component, Format, OsStatus, Shape, Unit, Word};
 use resonate_audio::{
     AudioSource, Backend, Error, HardwareVolume, NodeName, Opener, Operation, Plugged, Result,
     SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamRequest, Surveyor,
     Words,
 };
-use resonate_core::{ChannelLayout, Gain, SampleFormat};
+use resonate_core::{ChannelLayout, Gain, SampleFormat, SampleRate};
 
 use super::{
-    remote_io_fill::Rendering,
-    remote_io_render::render,
     remote_io_state::Routing,
-    remote_io_stream::launch,
-    remote_io_unit::{Toolbox, Unit},
+    remote_io_stream::{Hardware, launch},
 };
 
-const REMOTE_IO: u32 = u32::from_be_bytes(*b"rioc");
-const OUTPUT_BUS: u32 = 0;
+const STEREO: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
 const UNIT_WITHIN: Duration = Duration::from_secs(3);
 
 pub(crate) struct IosAudio {
@@ -76,86 +59,52 @@ impl Surveyor for Device {
     }
 }
 
-struct CoreAudio;
+struct RemoteIo(Unit);
 
-impl CoreAudio {
-    fn set<T>(unit: AudioUnit, property: u32, value: &T) -> i32 {
-        unsafe {
-            AudioUnitSetProperty(
-                unit,
-                property,
-                kAudioUnitScope_Input,
-                OUTPUT_BUS,
-                ptr::from_ref(value).cast::<c_void>(),
-                size_of::<T>() as u32,
-            )
-        }
-    }
+fn stereo_float(rate: SampleRate) -> Format {
+    Format::new(f64::from(rate.hz()), STEREO, Word::Float32)
+}
 
-    fn component() -> AudioComponent {
-        let description = AudioComponentDescription {
-            componentType: kAudioUnitType_Output,
-            componentSubType: REMOTE_IO,
-            componentManufacturer: kAudioUnitManufacturer_Apple,
-            componentFlags: 0,
-            componentFlagsMask: 0,
-        };
-        unsafe { AudioComponentFindNext(ptr::null_mut(), NonNull::from(&description)) }
+fn status_of(answered: std::result::Result<(), OsStatus>) -> i32 {
+    answered.map_or_else(OsStatus::get, |()| 0)
+}
+
+fn unopened(error: resonate_apple::Error) -> Error {
+    let source = match error {
+        resonate_apple::Error::NoComponent { .. } => io::ErrorKind::NotFound.into(),
+        refused @ resonate_apple::Error::Refused { .. } => io::Error::other(refused),
+    };
+    Error::Backend {
+        op: Operation::Open,
+        source,
     }
 }
 
-impl Toolbox for CoreAudio {
-    type Instance = AudioUnit;
-
-    fn has_component(&self) -> bool {
-        !Self::component().is_null()
+impl Hardware for RemoteIo {
+    fn start(&self) -> i32 {
+        status_of(self.0.start())
     }
 
-    fn instantiate(&self) -> std::result::Result<AudioUnit, i32> {
-        let mut unit: AudioUnit = ptr::null_mut();
-        match unsafe { AudioComponentInstanceNew(Self::component(), NonNull::from(&mut unit)) } {
-            0 => Ok(unit),
-            status => Err(status),
-        }
+    fn stop(&self) -> i32 {
+        status_of(self.0.stop())
     }
 
-    fn set_format(&self, unit: AudioUnit, format: &AudioStreamBasicDescription) -> i32 {
-        Self::set(unit, kAudioUnitProperty_StreamFormat, format)
-    }
-
-    fn set_render(&self, unit: AudioUnit, rendering: NonNull<Rendering>) -> i32 {
-        let callback = AURenderCallbackStruct {
-            inputProc: Some(render),
-            inputProcRefCon: rendering.as_ptr().cast::<c_void>(),
-        };
-        Self::set(unit, kAudioUnitProperty_SetRenderCallback, &callback)
-    }
-
-    fn initialize(&self, unit: AudioUnit) -> i32 {
-        unsafe { AudioUnitInitialize(unit) }
-    }
-
-    fn start(&self, unit: AudioUnit) -> i32 {
-        unsafe { AudioOutputUnitStart(unit) }
-    }
-
-    fn stop(&self, unit: AudioUnit) -> i32 {
-        unsafe { AudioOutputUnitStop(unit) }
-    }
-
-    fn uninitialize(&self, unit: AudioUnit) -> i32 {
-        unsafe { AudioUnitUninitialize(unit) }
-    }
-
-    fn dispose(&self, unit: AudioUnit) -> i32 {
-        unsafe { AudioComponentInstanceDispose(unit) }
+    fn reformat(&self, rate: SampleRate) -> i32 {
+        status_of(self.0.reformatted(stereo_float(rate)))
     }
 }
 
 impl Opener for Device {
     fn open(&self, request: &StreamRequest, source: Box<dyn AudioSource>) -> Result<SinkStream> {
         launch(&self.0, request, source, UNIT_WITHIN, |rate, rendering| {
-            Unit::opened(CoreAudio, rate, rendering)
+            let shape = Shape {
+                component: Component::RemoteIo,
+                device: None,
+                format: stereo_float(rate),
+            };
+            Unit::playing(shape, rendering)
+                .map(RemoteIo)
+                .map_err(unopened)
         })
     }
 }

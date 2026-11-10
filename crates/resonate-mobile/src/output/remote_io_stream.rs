@@ -16,12 +16,9 @@ use resonate_audio::{
     StreamCommand, StreamEvent, StreamRequest, StreamState, Unreshapable, Words,
 };
 use resonate_core::{ChannelLayout, Frames, Ratio, SampleFormat, SampleRate, StreamSpec};
+use resonate_coreaudio::{Drain, Rendering, Shaped};
 
-use super::{
-    handover::Handing,
-    remote_io_fill::Rendering,
-    remote_io_state::{Drain, Routing},
-};
+use super::{handover::Handing, remote_io_state::Routing};
 
 const COMMAND_POLL: Duration = Duration::from_millis(10);
 const QUIET_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
@@ -121,7 +118,12 @@ where
     let (disposed, closed) = bounded(1);
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let empty = Arc::new(AtomicBool::new(false));
-    let (rendering, handing) = Rendering::fed_by(source, Arc::clone(&empty), Arc::clone(&clock));
+    let (rendering, handing) = Rendering::fed_by(
+        source,
+        Arc::clone(&empty),
+        Arc::clone(&clock),
+        Shaped::float_stereo_behind_a_route(),
+    );
     let thread_clock = Arc::clone(&clock);
     let routing = Arc::clone(routing);
     let reshape = reshaper(Arc::clone(&routing), commands.clone(), handing, within);

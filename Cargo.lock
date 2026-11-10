@@ -6888,6 +6888,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-apple"
+version = "0.8.0"
+dependencies = [
+ "objc2-audio-toolbox",
+ "objc2-core-audio-types",
+ "parking_lot 0.13.0",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "resonate-audio"
 version = "0.8.0"
 dependencies = [
@@ -6962,6 +6972,16 @@ dependencies = [
  "same-file",
  "thiserror 2.0.21",
  "unicode-normalization",
+]
+
+[[package]]
+name = "resonate-coreaudio"
+version = "0.8.0"
+dependencies = [
+ "parking_lot 0.13.0",
+ "resonate-apple",
+ "resonate-audio",
+ "resonate-core",
 ]
 
 [[package]]
@@ -7154,15 +7174,15 @@ dependencies = [
  "crc32fast",
  "crossbeam-channel",
  "hdf5-writer",
- "objc2-audio-toolbox",
- "objc2-core-audio-types",
  "oboe",
  "parking_lot 0.13.0",
  "resonate-analysis",
+ "resonate-apple",
  "resonate-audio",
  "resonate-cast",
  "resonate-codec",
  "resonate-core",
+ "resonate-coreaudio",
  "resonate-driven",
  "resonate-dsp",
  "resonate-engine",

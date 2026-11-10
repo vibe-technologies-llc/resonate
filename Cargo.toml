@@ -3,12 +3,14 @@ resolver = "3"
 members = [
     "crates/resonate",
     "crates/resonate-analysis",
+    "crates/resonate-apple",
     "crates/resonate-audio",
     "crates/resonate-cast",
     "crates/resonate-mobile",
     "crates/resonate-bindgen",
     "crates/resonate-core",
     "crates/resonate-codec",
+    "crates/resonate-coreaudio",
     "crates/resonate-discord",
     "crates/resonate-driven",
     "crates/resonate-dsp",
@@ -270,11 +272,13 @@ clap = {
 }
 
 resonate-analysis = { version = "0.8.0", path = "crates/resonate-analysis" }
+resonate-apple = { version = "0.8.0", path = "crates/resonate-apple" }
 resonate-audio = { version = "0.8.0", path = "crates/resonate-audio" }
 resonate-cast = { version = "0.8.0", path = "crates/resonate-cast" }
 resonate-core = { version = "0.8.0", path = "crates/resonate-core" }
 resonate-signin = { version = "0.8.0", path = "crates/resonate-signin", default-features = false }
 resonate-codec = { version = "0.8.0", path = "crates/resonate-codec" }
+resonate-coreaudio = { version = "0.8.0", path = "crates/resonate-coreaudio" }
 resonate-discord = { version = "0.8.0", path = "crates/resonate-discord" }
 resonate-driven = { version = "0.8.0", path = "crates/resonate-driven" }
 resonate-dsp = { version = "0.8.0", path = "crates/resonate-dsp" }

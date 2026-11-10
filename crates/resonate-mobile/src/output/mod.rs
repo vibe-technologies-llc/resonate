@@ -16,17 +16,9 @@ mod oboe_state;
 #[cfg(target_os = "ios")]
 mod remote_io;
 #[cfg(any(target_os = "ios", test))]
-mod remote_io_buffers;
-#[cfg(any(target_os = "ios", test))]
-mod remote_io_fill;
-#[cfg(target_os = "ios")]
-mod remote_io_render;
-#[cfg(any(target_os = "ios", test))]
 mod remote_io_state;
 #[cfg(any(target_os = "ios", test))]
 mod remote_io_stream;
-#[cfg(any(target_os = "ios", test))]
-mod remote_io_unit;
 #[cfg(any(target_os = "android", test))]
 mod waits;
 

@@ -2,12 +2,14 @@
 paths:
   - "ios/**"
   - "crates/resonate-mobile/src/output/remote_io.rs"
-  - "crates/resonate-mobile/src/output/remote_io_render.rs"
-  - "crates/resonate-mobile/src/output/remote_io_buffers.rs"
-  - "crates/resonate-mobile/src/output/remote_io_fill.rs"
   - "crates/resonate-mobile/src/output/remote_io_state.rs"
   - "crates/resonate-mobile/src/output/remote_io_stream.rs"
-  - "crates/resonate-mobile/src/output/remote_io_unit.rs"
+  - "crates/resonate-apple/src/unit.rs"
+  - "crates/resonate-apple/src/toolbox.rs"
+  - "crates/resonate-apple/src/render.rs"
+  - "crates/resonate-apple/src/buffers.rs"
+  - "crates/resonate-coreaudio/src/fill.rs"
+  - "crates/resonate-coreaudio/src/drain.rs"
 ---
 
 # iOS
