@@ -100,6 +100,7 @@ impl RootView {
                     return;
                 }
             };
+            let waiting_on = code.clone();
             let shown = this.update(cx, |this, cx| {
                 this.jellyfin_quick.shown = Shown::Waiting(code);
                 cx.notify();
@@ -109,7 +110,7 @@ impl RootView {
             }
             let answered = cx
                 .background_executor()
-                .spawn(async move { signs_in.approved(&stopped) })
+                .spawn(async move { signs_in.approved(&waiting_on, &stopped) })
                 .await;
             let told = this.update(cx, |this, cx| {
                 this.jellyfin_quick.shown = Shown::Idle;

@@ -95,7 +95,10 @@ pub fn sign_in(program: &Path, kept: &Kept) -> Result<()> {
     let id = child.id();
     SIGNING_IN.lock().push(child);
     match Outcome::of(waited(id)?) {
-        Outcome::SignedIn => Ok(()),
+        Outcome::SignedIn => {
+            resonate_ytmusic::interrupt_the_tools();
+            Ok(())
+        }
         Outcome::Closed => Err(Error::YoutubeMusicSignInClosed),
         Outcome::Failed { code } => Err(Error::YoutubeMusicSignInFailed { code }),
     }
@@ -147,6 +150,7 @@ pub fn stop_signing_in() {
 }
 
 pub fn sign_out(kept: &Kept) -> Result<()> {
+    resonate_ytmusic::interrupt_the_tools();
     gone(fs::remove_file(&kept.jar)).map_err(|source| Error::YoutubeMusicSignOut {
         op: SignOutOp::Jar,
         source,

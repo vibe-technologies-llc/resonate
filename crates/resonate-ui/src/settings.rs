@@ -966,7 +966,7 @@ pub enum JellyfinSignIn {
 pub trait SignsInToJellyfin: Send + Sync {
     fn begun(&self, address: &str) -> JellyfinBegun;
 
-    fn approved(&self, stopped: &AtomicBool) -> JellyfinSignIn;
+    fn approved(&self, code: &str, stopped: &AtomicBool) -> JellyfinSignIn;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

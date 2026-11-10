@@ -883,7 +883,11 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   (`LM` is *Liked songs* whatever it says). Albums and artists are `Found` left empty.
 - **Every child is reachable on the way out.** `pre_exec` would need `unsafe`, so `Reaped` registers
   each live child in a process-wide list and `stop_the_tools` kills them and refuses new ones; `main`,
-  `signals::leave` and the window's end call it. A SIGKILLed parent still orphans a child until its pipe
+  `signals::leave` and the window's end call it. `interrupt_the_tools` kills them and refuses nothing:
+  `yt-dlp` saves its cookie jar back into `--cookies` as it exits, so a sign-out and a finished
+  sign-in kill every running child first (SIGKILL saves nothing) lest one write the old session over
+  the jar, or back after it was taken away
+  (`a_tool_interrupted_is_dead_and_the_next_one_still_starts`). A SIGKILLed parent still orphans a child until its pipe
   closes.
 - **A cookie value names a file where it holds a path separator or an extension.** A browser's name
   (`firefox`, `chromium+gnomekeyring:Default`) goes to `yt-dlp` as a browser; a bare word with no dot

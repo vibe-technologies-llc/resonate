@@ -5083,6 +5083,7 @@ mod tests {
         begun: crate::JellyfinBegun,
         answer: crate::JellyfinSignIn,
         asked: parking_lot::Mutex<Vec<String>>,
+        awaited: parking_lot::Mutex<Vec<String>>,
     }
 
     impl QuickConnectsOnce {
@@ -5091,6 +5092,7 @@ mod tests {
                 begun,
                 answer,
                 asked: parking_lot::Mutex::default(),
+                awaited: parking_lot::Mutex::default(),
             })
         }
     }
@@ -5101,7 +5103,8 @@ mod tests {
             self.begun.clone()
         }
 
-        fn approved(&self, _: &AtomicBool) -> crate::JellyfinSignIn {
+        fn approved(&self, code: &str, _: &AtomicBool) -> crate::JellyfinSignIn {
+            self.awaited.lock().push(code.to_owned());
             self.answer.clone()
         }
     }
@@ -5151,6 +5154,7 @@ mod tests {
         driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
 
         assert_eq!(*signs_in.asked.lock(), ["http://music.local:8096"]);
+        assert_eq!(*signs_in.awaited.lock(), ["123456"]);
         driven.cx.update(|_, cx| {
             let online = &cx.global::<ResonateApp>().online;
             assert_eq!(online.jellyfin_user_id, "0a1b");

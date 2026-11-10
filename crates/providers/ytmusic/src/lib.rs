@@ -27,7 +27,7 @@ use crate::search::Row;
 pub use crate::{
     connection::Connection,
     playlists::{Playlist, playlist_id},
-    tool::{Cookies, Formats, Tier, Tool, VideoId, stop_the_tools},
+    tool::{Cookies, Formats, Tier, Tool, VideoId, interrupt_the_tools, stop_the_tools},
 };
 
 const YTMUSIC: &str = "ytmusic";

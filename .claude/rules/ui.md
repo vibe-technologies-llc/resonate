@@ -131,7 +131,9 @@ is never named.
   `JellyfinBegun`, `JellyfinSignIn`, `JellyfinSession` with its token withheld) behind *Sign in with
   Quick Connect* (`jellyfin-quick-connect`) beside an address not under `/emby`; the code
   (`jellyfin-quick-connect-code`) waits beside *Cancel* (`jellyfin-quick-connect-cancel`) and the
-  sentence to approve it, and signed in the user field holds the server's name for the user, the
+  sentence to approve it. `approved` is asked by the code shown, and `QuickConnects` keeps each
+  waiting approval under its code, so a begin left over from an address since changed never stands in
+  for the one shown. Signed in the user field holds the server's name for the user, the
   password field empties and the three session settings are written. Quick Connect off is a note that
   keeps the password; a password typed, the address changed or the account forgotten lets the session
   go (`let_go_of_the_jellyfin_session`;

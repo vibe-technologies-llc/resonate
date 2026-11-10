@@ -330,6 +330,14 @@ static LIVING: Mutex<Living> = Mutex::new(Living {
 pub fn stop_the_tools() {
     let mut living = LIVING.lock();
     living.stopped = true;
+    killed(&mut living);
+}
+
+pub fn interrupt_the_tools() {
+    killed(&mut LIVING.lock());
+}
+
+fn killed(living: &mut Living) {
     for child in living
         .children
         .drain(..)

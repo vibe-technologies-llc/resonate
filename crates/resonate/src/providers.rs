@@ -210,12 +210,14 @@ pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::Ch
 #[cfg(all(feature = "ui", feature = "online"))]
 #[derive(Default)]
 struct QuickConnects {
-    waiting: parking_lot::Mutex<
-        Option<(
-            resonate_jellyfin::QuickConnect,
-            resonate_jellyfin::Approving,
-        )>,
-    >,
+    waiting: parking_lot::Mutex<std::collections::HashMap<String, Waiting>>,
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+struct Waiting {
+    asking: resonate_jellyfin::QuickConnect,
+    approving: resonate_jellyfin::Approving,
+    began: std::time::Instant,
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]
@@ -235,7 +237,18 @@ impl resonate_ui::SignsInToJellyfin for QuickConnects {
         match asking.begun() {
             Ok(approving) => {
                 let code = approving.code.clone();
-                *self.waiting.lock() = Some((asking, approving));
+                let mut waiting = self.waiting.lock();
+                waiting.retain(|_, held| {
+                    held.began.elapsed() < resonate_jellyfin::A_QUICK_CONNECT_LAPSES_AFTER
+                });
+                waiting.insert(
+                    code.clone(),
+                    Waiting {
+                        asking,
+                        approving,
+                        began: std::time::Instant::now(),
+                    },
+                );
                 JellyfinBegun::Code(code)
             }
             Err(error) => {
@@ -245,13 +258,20 @@ impl resonate_ui::SignsInToJellyfin for QuickConnects {
         }
     }
 
-    fn approved(&self, stopped: &std::sync::atomic::AtomicBool) -> resonate_ui::JellyfinSignIn {
+    fn approved(
+        &self,
+        code: &str,
+        stopped: &std::sync::atomic::AtomicBool,
+    ) -> resonate_ui::JellyfinSignIn {
         use std::sync::atomic::Ordering;
 
         use resonate_providers::Error as Refused;
         use resonate_ui::{JellyfinSession, JellyfinSignIn};
 
-        let Some((asking, approving)) = self.waiting.lock().take() else {
+        let Some(Waiting {
+            asking, approving, ..
+        }) = self.waiting.lock().remove(code)
+        else {
             return JellyfinSignIn::Failed;
         };
         match asking.approved(&approving, &|| stopped.load(Ordering::SeqCst)) {
