@@ -20,12 +20,51 @@ list; `resonate-config.toml.5`, the settings file's manual, is written by hand a
 `binary.md` for what holds its keys in step). Desktop
 entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 
+`packaging/macos/` is the Apple Silicon disk image's recipe (`macos.md`), not a package either:
+
+- **`build.sh [VERSION] [OUTPUT]`** builds `resonate` and `resonate-signin` for
+  `aarch64-apple-darwin` in two `cargo` runs (`RUSTFLAGS=""`, `MACOSX_DEPLOYMENT_TARGET=13.0`; the
+  version read from `Cargo.toml` where none is given) and assembles `Resonate.app`:
+  `Contents/MacOS` holds both programs, `Contents/Info.plist` is the template with `@VERSION@`
+  filled by the version's `major.minor.patch`, and `Contents/Resources` holds `resonate.icns`, the
+  licence, the man pages (`man/man1`, `man/man5`), the completions (`completions/`) and the two
+  faces (`Fonts/`, where the window looks for them). It signs the application, stages it beside a
+  link to `/Applications`, the README and the licence, and makes
+  `resonate-<version>-aarch64-macos.dmg` with `hdiutil` (`UDZO`; tried up to three times, a hosted
+  runner's `hdiutil` now and then finding the folder busy), then signs the image.
+- **`sign.sh APPLICATION` and `sign.sh --image DISK_IMAGE`** sign ad hoc where no certificate is
+  set (`codesign --sign -`: an Apple Silicon program runs only signed) and say so, the image being
+  left as it is. With `RESONATE_MACOS_CERTIFICATE_BASE64` and `RESONATE_MACOS_CERTIFICATE_PASSWORD`
+  the certificate goes into a keychain of the script's own (deleted, and the search list put back,
+  on exit) and signs the sign-in window, then the bundle (hardened runtime, a secure timestamp,
+  `entitlements.plist`: the microphone alone), then the image; with
+  `RESONATE_MACOS_NOTARY_KEY_BASE64`, `RESONATE_MACOS_NOTARY_KEY_ID` and
+  `RESONATE_MACOS_NOTARY_ISSUER` as well, the image is sent to the notary (`notarytool submit
+  --wait`) and the ticket stapled to it. The bundle's main program is signed by signing the
+  bundle, never apart, and nothing is signed `--deep`.
+- **`Info.plist`** names the bundle `org.resonate.Resonate` (`APP_USER_MODEL_ID`), asks for macOS
+  13.0, declares one *Audio* document type at rank `Alternate` (it claims no default) over
+  `public.audio` and an imported `org.resonate.audio` listing every `AUDIO_EXTENSIONS` entry, takes
+  the `resonate` scheme, and says why the microphone and the local network are asked for (English,
+  `language.md`).
+- **`icon.py` renders the committed `resonate.icns` from `resonate.svg`** with `rsvg-convert`, on
+  Linux, so no runner tool draws it: the drawing inset to 824 of 1 024 px, as an icon sits on
+  macOS's grid, in eight PNG entries from 32 to 1 024 px (`ic11`, `ic12`, `ic07`, `ic13`, `ic08`,
+  `ic14`, `ic09`, `ic10`).
+- **`crates/resonate/tests/bundle.rs`** holds the property list to `AUDIO_EXTENSIONS`,
+  `APP_USER_MODEL_ID`, the desktop entry's scheme and the script's deployment target, its
+  placeholder to the script, what it names to what the script copies, the icon's entries to their
+  sides, the five variables to the workflow and the script, and the faces' addresses and digests to
+  the Flatpak's, which are the only addresses the recipe may hold.
+
 - **Inter and JetBrains Mono come with every package**, since the window draws in them and embeds
   neither (`ui.md`): `inter-font` and `ttf-jetbrains-mono` in both Arch recipes (and `.SRCINFO`),
   `rsms-inter-fonts` and `jetbrains-mono-fonts` required by the spec, `fonts-inter` a DEB `Depends`
   and `fonts-jetbrains-mono` only `Recommends` (Debian dropped it from testing in May 2026, so a hard
   dependency could leave the player uninstallable there), and the Flatpak builds each from its
-  release archive, checksummed, into `/app/share/fonts` (the runtime holds neither)
+  release archive, checksummed, into `/app/share/fonts` (the runtime holds neither); the macOS
+  recipe fetches the same two archives under the same digests into the bundle's
+  `Contents/Resources/Fonts`, each with its licence
   (`every_package_brings_the_reading_face_and_the_face_for_codes`).
 - **`yt-dlp` and `deno` are suggested, never depended on**: `optdepends` in both Arch recipes (and
   `.SRCINFO`), `Suggests` in the spec and the player's DEB control. Only YouTube Music runs it
@@ -40,13 +79,15 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   player's control `Recommends` it. Each depends on WebKitGTK 4.1; each builds it with `--package
   resonate-signin` in a `cargo` run apart from the player's, which is `--package resonate --bin
   resonate`, never `--workspace` (`dependencies.md`). The Windows zip and installer carry
-  `resonate-signin.exe` beside `resonate.exe` (`SourceSignIn`, signed with it). The Flatpak, having
+  `resonate-signin.exe` beside `resonate.exe` (`SourceSignIn`, signed with it), and the macOS
+  bundle `resonate-signin` beside `resonate` in `Contents/MacOS`. The Flatpak, having
   no `yt-dlp`, carries none.
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment
   `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
   build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the
   requirement said in the Arch `pkgdesc` and the DEB description
-  (`every_release_recipe_builds_for_x86_64_v3_alone`). The `-git` PKGBUILDs append `native` in
+  (`every_release_recipe_builds_for_x86_64_v3_alone`). The macOS recipe empties `RUSTFLAGS`, which
+  leaves `aarch64-apple-darwin` at the target's own baseline. The `-git` PKGBUILDs append `native` in
   `build` and `check` (AUR builds target the building machine) and keep `aarch64`; the Flatpak
   keeps its own baseline (`x86-64` / `generic`) and is no release asset.
 - **Spec: `--locked`, built from a source archive** of the release tag, prefixed
@@ -92,7 +133,7 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   PulseAudio), own+talk `org.mpris.MediaPlayer2.resonate` and `.resonate.*`,
   `org.freedesktop.Notifications`, system-bus `org.bluez` (headset controls, `mpris.md`),
   `discord-ipc-0`..`-9` plus Discord and Vesktop runtime directories. No `--share=ipc`, no `x11` or
-  `fallback-x11`: gpui is built with `wayland` alone (`the_flatpak_grants_no_x11_to_a_wayland_only_build`).
+  `fallback-x11`: on Linux gpui is built with `wayland` alone (`the_flatpak_grants_no_x11_to_a_wayland_only_build`).
 - **The spec's `Version` is the workspace's with `-` as `~`** (`the_rpm_spec_builds_the_version_cargo_declares`);
   the `-git` PKGBUILD's `pkgver()` reads `Cargo.toml` itself.
 

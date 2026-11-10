@@ -4,12 +4,13 @@ const DESKTOP_ENTRY: &str = "resonate.desktop";
 const FLATPAK_MANIFEST: &str = "org.resonate.Resonate.yml";
 const METAINFO: &str = "org.resonate.Resonate.metainfo.xml";
 const CONFIG_MAN_PAGE: &str = "resonate-config.toml.5";
-const PACKAGE_RECIPES: [&str; 5] = [
+const PACKAGE_RECIPES: [&str; 6] = [
     "PKGBUILD",
     "resonate.spec",
     FLATPAK_MANIFEST,
     "release/PKGBUILD",
     DEB_SCRIPT,
+    MACOS_SCRIPT,
 ];
 const SERVER_RECIPES: [&str; 4] = [
     "server/PKGBUILD",
@@ -31,9 +32,10 @@ const RELEASE_PKGBUILDS: [&str; 3] = [
     "release/signin/PKGBUILD",
 ];
 const DEB_SCRIPT: &str = "deb/build.sh";
+const MACOS_SCRIPT: &str = "macos/build.sh";
 const SERVER_FILES: [&str; 2] = ["resonate-server.service", "resonate-server.env"];
 const ARCH_FACES: [&str; 2] = ["inter-font", "ttf-jetbrains-mono"];
-const FACES_BROUGHT: [(&str, [&str; 2]); 6] = [
+const FACES_BROUGHT: [(&str, [&str; 2]); 7] = [
     ("PKGBUILD", ARCH_FACES),
     ("release/PKGBUILD", ARCH_FACES),
     (".SRCINFO", ARCH_FACES),
@@ -46,6 +48,7 @@ const FACES_BROUGHT: [(&str, [&str; 2]); 6] = [
         FLATPAK_MANIFEST,
         ["/app/share/fonts/inter", "/app/share/fonts/jetbrains-mono"],
     ),
+    (MACOS_SCRIPT, ["Inter-*.ttf", "JetBrainsMono-*.ttf"]),
 ];
 
 fn packaging(name: &str) -> String {
@@ -300,6 +303,39 @@ fn the_release_workflow_attaches_a_windows_archive_and_installer_for_each_archit
 }
 
 #[test]
+fn the_release_workflow_attaches_the_macos_disk_image_and_publishes_without_it_where_it_failed() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/release.yml");
+    let workflow =
+        fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    let script = packaging(MACOS_SCRIPT);
+
+    assert!(
+        workflow.contains("runs-on: macos-latest")
+            && workflow.contains("packaging/macos/build.sh \"$VERSION\" assets"),
+        "release.yml does not build the disk image on a Mac"
+    );
+    assert!(
+        workflow.contains("name: resonate-macos-aarch64") && workflow.contains("assets/*.dmg"),
+        "release.yml's disk image would not be collected with the other assets"
+    );
+    assert!(
+        workflow
+            .lines()
+            .any(|line| line.trim_start().starts_with("needs: [") && line.contains("macos-dmg")),
+        "the checksums would be written before the disk image exists"
+    );
+    assert!(
+        workflow.contains("if: ${{ !cancelled() && needs.release.result == 'success' }}"),
+        "a failed disk image would keep every other asset off the release"
+    );
+    assert!(
+        script.contains("resonate-$version-aarch64-macos.dmg"),
+        "the macOS recipe names its disk image for something other than the version and the architecture"
+    );
+}
+
+#[test]
 fn no_release_recipe_builds_a_debug_package() {
     for spec in ["resonate.spec", "server/resonate-server.spec"] {
         assert!(
@@ -328,6 +364,7 @@ fn no_recipe_builds_the_player_beside_the_sign_in_windows_engine() {
         "resonate.spec",
         DEB_SCRIPT,
         "org.resonate.Resonate.yml",
+        MACOS_SCRIPT,
     ] {
         let text = packaging(recipe);
 

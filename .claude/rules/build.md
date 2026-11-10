@@ -43,12 +43,12 @@ paths:
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
   `git archive` of the tag, the `packaging/release/` recipes, each set to the released version first so
   a recipe left behind still builds the tag), `windows-zip` (`windows-latest`, a matrix of
-  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`: the zip and the Inno Setup installer, signed where the certificate secrets exist) and `android-apk`; `publish` collects
+  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`: the zip and the Inno Setup installer, signed where the certificate secrets exist), `macos-dmg` (`macos-latest`, `packaging/macos/build.sh`: the Apple Silicon application in a disk image, signed ad hoc, or with a Developer ID and notarised where the secrets exist) and `android-apk`; `publish` collects
   every artifact, fills the winget and Scoop manifests from the Windows files (`fill-manifests.sh`), writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
-  release is immutable. Everything but the APK and the Windows ARM64 archive is x86-64-v3
+  release is immutable; a job that failed leaves the others' assets, `publish` running whenever `release` succeeded. Everything but the APK, the Windows ARM64 archive and the macOS disk image is x86-64-v3
   (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release
   keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
-  `RESONATE_SIGNING_KEY_PASSWORD`; the Windows job reads `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` when they exist and signs nothing when they do not. The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
+  `RESONATE_SIGNING_KEY_PASSWORD`; the Windows job reads `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` when they exist and signs nothing when they do not; the macOS job reads `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_BASE64`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER` when they exist and signs ad hoc when they do not (`packaging.md`). The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
   for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
   `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens.
 
@@ -86,7 +86,7 @@ the listener, never by a script.
   stay on.
 - **`--profile profiling`** is release with symbols for `perf` and `cargo flamegraph`.
 - **`.cargo/config.toml` sets `target-cpu=native`** so the resampler vectorises. The `-git` Arch packages
-  keep it; the release assets build for `x86-64-v3`, the Flatpak and CI for the baseline, and
+  keep it; the release assets build for `x86-64-v3` (the macOS disk image for `aarch64-apple-darwin`'s own baseline, `RUSTFLAGS` emptied), the Flatpak and CI for the baseline, and
   anything producing a binary for another machine sets `RUSTFLAGS` back over it (`packaging.md`).
 
 ## Fuzzing

@@ -223,6 +223,32 @@ jobs:
             assets/*-setup.exe
           if-no-files-found: error
 
+  macos-dmg:
+    name: macOS disk image
+    needs: release
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Build the application and its disk image
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          RESONATE_MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          RESONATE_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          RESONATE_MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          RESONATE_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          RESONATE_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: packaging/macos/build.sh "$VERSION" assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: resonate-macos-aarch64
+          path: assets/*.dmg
+          if-no-files-found: error
+
   android-apk:
     name: Signed Android APK
     needs: release
@@ -280,7 +306,7 @@ jobs:
 
   publish:
     name: Checksums and assets
-    needs: [release, fedora-rpm, ubuntu-deb, arch-package, windows-zip, android-apk]
+    needs: [release, fedora-rpm, ubuntu-deb, arch-package, windows-zip, macos-dmg, android-apk]
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15

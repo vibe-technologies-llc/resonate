@@ -20,7 +20,8 @@ paths:
 - **Each ecosystem spells a pre-release its own way**: Cargo and the tag, as `0.1.0-rc1`; RPM and Debian
   `0.1.0~rc1`, which sorts below `0.1.0`; Arch `0.1.0rc1`, since `pkgver` may not hold a hyphen;
   AppStream `0.1.0~rc1`. iOS's `CFBundleShortVersionString` allows digits only, so it stays
-  `0.1.0` and `CFBundleVersion` counts builds. `crates/resonate/tests/packaging.rs` holds each
+  `0.1.0` and `CFBundleVersion` counts builds; the macOS bundle's two keys are both that
+  `major.minor.patch`, cut from the version by `packaging/macos/build.sh`. `crates/resonate/tests/packaging.rs` holds each
   recipe to the manifest's version.
 
 ## Branches, tags and releases
@@ -69,6 +70,16 @@ paths:
   is a manual step the maintainer takes after the release is published**: a pull request of the
   winget folder to winget-pkgs (`wingetcreate` or `winget validate` first), and the JSON
   added to a Scoop bucket. A candidate (`-rcN`) is not submitted.
+- **The macOS file is `resonate-<version>-aarch64-macos.dmg`**: `Resonate.app` for Apple Silicon
+  alone (`aarch64-apple-darwin`, macOS 13 or later) beside a link to `/Applications`, the licence
+  and a README, from `packaging/macos/build.sh` on `macos-latest` (`packaging.md`). The
+  application is signed with a Developer ID (`sign.sh`, hardened runtime) only where the repository
+  holds `MACOS_CERTIFICATE_BASE64` (a Developer ID Application `.p12`, base64) and
+  `MACOS_CERTIFICATE_PASSWORD`, and the image notarised and stapled only where it also holds
+  `MACOS_NOTARY_KEY_BASE64` (an App Store Connect API key, the `.p8`, base64),
+  `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER`; none exists, so the application is signed ad
+  hoc and Gatekeeper refuses a first run until the listener allows it under Privacy & Security,
+  which the README walks through. No Homebrew cask is made.
 - **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
   then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
   and its secrets are never echoed.
