@@ -2110,6 +2110,8 @@ mod tests {
 
     #[test]
     fn every_kit_control_says_what_it_is_and_what_state_it_stands_in() {
+        let _worn = crate::theme::alongside();
+
         spoken::listened_to(true);
 
         let labelled = node_of(&button(
@@ -2151,6 +2153,8 @@ mod tests {
 
     #[test]
     fn the_text_the_kit_draws_is_headings_and_plain_text_a_reader_can_reach() {
+        let _worn = crate::theme::alongside();
+
         spoken::listened_to(true);
 
         let eyebrow = node_of(&eyebrow("Search")).expect("an eyebrow is a node");
@@ -2181,6 +2185,8 @@ mod tests {
 
     #[test]
     fn the_controls_a_pointer_alone_once_reached_are_named_buttons() {
+        let _worn = crate::theme::alongside();
+
         spoken::listened_to(true);
 
         let sort = div()
@@ -2220,6 +2226,8 @@ mod tests {
 
     #[test]
     fn a_choice_row_and_a_swatch_are_radio_buttons_naming_what_they_choose() {
+        let _worn = crate::theme::alongside();
+
         spoken::listened_to(true);
 
         let device = node_of(&choice_row(

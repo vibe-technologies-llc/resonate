@@ -581,7 +581,16 @@ tested.
   then swaps chain, plan, trim and recall between the arms; nothing is rebuilt and nothing is added
   to the callback. A switch while a splice waits for the graph or a boundary waits is owed
   (`switch_owed`), and where none can be made (DoP, a draining tail, a ring holding too little, a
-  chain swapped since) it rebinds. **Two arms the plan and the chain render alike are refused**
+  chain swapped since) it rebinds. **A switch to an arm that has rendered further ahead than the
+  ring has room to take again waits for room rather than rebinding:** the other arm's kept frames
+  from the point run on past what the ring holds by the arms' difference in latency (a low-latency
+  resampler against a very high one), so on a ring nearly full the frames to lay again exceed the
+  free slots. Each drained frame lowers the first and raises the second, so the switch is owed
+  (`switch_waits_for_room`) while the pump stands still, the graph drains
+  `(laid again - room) / 2` frames and the splice is made; if the ring holds less than that and the
+  blend past the point, or the transport is paused, it rebinds as before
+  (`switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step`, which lets
+  the ring fill before each switch). **Two arms the plan and the chain render alike are refused**
   (`Contest::renders_alike`: `OutputPlan::renders_alike`, and the quality and phase under a
   resampler, the dither's kind under a dither, which the chain reads itself; `Error::ArmsAlike`), as
   is nothing playing or a DoP stream (`NothingToAudition`); both read `Cause::NothingToCompare` or

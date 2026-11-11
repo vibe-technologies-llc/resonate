@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     hash::{BuildHasher, RandomState},
     io::{self, Write},
-    net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket},
+    net::{self, IpAddr, Shutdown, SocketAddr, UdpSocket},
     sync::{
         Arc, Weak,
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -11,6 +11,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use mio::{
+    Events, Interest, Poll, Registry, Token as Source, Waker,
+    net::{TcpListener, TcpStream},
+};
 use parking_lot::Mutex;
 
 use crate::{
@@ -21,9 +25,13 @@ use crate::{
 
 const STREAMS_UNDER: &str = "/resonate/";
 
-const ACCEPTS_EVERY: Duration = Duration::from_millis(100);
+const LISTENER: Source = Source(0);
 
-const HEADS_POLLED_EVERY: Duration = Duration::from_millis(10);
+const WAKER: Source = Source(1);
+
+const FIRST_HEAD: usize = 2;
+
+const EVENTS_AT_MOST: usize = 64;
 
 const HEAD_ENDS_WITHIN: Duration = Duration::from_secs(5);
 
@@ -67,6 +75,17 @@ pub struct Server {
     feeds: Mutex<BTreeMap<Token, Arc<Feed>>>,
     minted: AtomicU64,
     keys: RandomState,
+    waker: Waker,
+    #[cfg(test)]
+    polls: AtomicUsize,
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        if let Err(error) = self.waker.wake() {
+            tracing::debug!(%error, "the stream server's thread could not be woken to end");
+        }
+    }
 }
 
 impl Server {
@@ -77,27 +96,32 @@ impl Server {
     fn start_limited(serving_on: IpAddr, limits: Limits) -> Result<Arc<Self>> {
         let failed = |op| move |source| Error::Serve { op, source };
 
-        let listener =
+        let mut listener =
             TcpListener::bind(SocketAddr::new(serving_on, 0)).map_err(failed(ServeOp::Bind))?;
-        listener
-            .set_nonblocking(true)
-            .map_err(failed(ServeOp::Listen))?;
         let port = listener
             .local_addr()
             .map_err(failed(ServeOp::Listen))?
             .port();
+        let poll = Poll::new().map_err(failed(ServeOp::Listen))?;
+        poll.registry()
+            .register(&mut listener, LISTENER, Interest::READABLE)
+            .map_err(failed(ServeOp::Listen))?;
+        let waker = Waker::new(poll.registry(), WAKER).map_err(failed(ServeOp::Listen))?;
         let server = Arc::new(Self {
             serving_on,
             port,
             feeds: Mutex::new(BTreeMap::new()),
             minted: AtomicU64::new(0),
             keys: RandomState::new(),
+            waker,
+            #[cfg(test)]
+            polls: AtomicUsize::new(0),
         });
 
         let held = Arc::downgrade(&server);
         thread::Builder::new()
             .name("resonate-upnp-serve".to_owned())
-            .spawn(move || accept(&listener, &held, limits))
+            .spawn(move || accept(poll, &listener, &held, limits))
             .map_err(failed(ServeOp::Listen))?;
         Ok(server)
     }
@@ -193,13 +217,16 @@ enum Next {
 }
 
 impl Pending {
-    fn new(stream: TcpStream) -> io::Result<Self> {
-        stream.set_nonblocking(true)?;
-        Ok(Self {
+    fn new(stream: TcpStream) -> Self {
+        Self {
             stream,
             held: Vec::new(),
             since: Instant::now(),
-        })
+        }
+    }
+
+    fn waits_another(&self, head_ends_within: Duration) -> Duration {
+        head_ends_within.saturating_sub(self.since.elapsed())
     }
 
     fn advance(&mut self, server: &Server, head_ends_within: Duration) -> Next {
@@ -214,7 +241,7 @@ impl Pending {
                 Ok(0) => return Next::Dropped,
                 Ok(_) => {}
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    return if self.since.elapsed() > head_ends_within {
+                    return if self.waits_another(head_ends_within).is_zero() {
                         Next::Dropped
                     } else {
                         Next::Waiting
@@ -243,61 +270,148 @@ impl Pending {
             None => Next::Refused(NOT_HERE),
         }
     }
-}
 
-fn accept(listener: &TcpListener, held: &Weak<Server>, limits: Limits) {
-    let fetching = Arc::new(AtomicUsize::new(0));
-    let mut pending: Vec<Pending> = Vec::new();
-    loop {
-        let Some(server) = held.upgrade() else {
-            return;
-        };
-        loop {
-            match listener.accept() {
-                Ok((stream, _)) if pending.len() < limits.heads_at_most => {
-                    match Pending::new(stream) {
-                        Ok(asking) => pending.push(asking),
-                        Err(error) => {
-                            tracing::debug!(%error, "a renderer's connection could not be read");
-                        }
-                    }
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) => {
-                    tracing::warn!(%error, "the stream server stopped accepting renderers");
-                    return;
-                }
-            }
-        }
+    fn handed_over(mut self, registry: &Registry) -> io::Result<net::TcpStream> {
+        registry.deregister(&mut self.stream)?;
+        Ok(net::TcpStream::from(self.stream))
+    }
 
-        let mut waiting = Vec::with_capacity(pending.len());
-        for mut asking in pending.drain(..) {
-            match asking.advance(&server, limits.head_ends_within) {
-                Next::Waiting => waiting.push(asking),
-                Next::Dropped => {}
-                Next::Refused(refusal) => refuse(asking.stream, refusal),
-                Next::Fetch { head_only, feed } => {
-                    match Fetching::begin(&fetching, limits.fetches_at_most) {
-                        Some(slot) => begin_fetch(asking.stream, head_only, feed, slot),
-                        None => refuse(asking.stream, BUSY),
-                    }
-                }
-            }
-        }
-        pending = waiting;
-
-        drop(server);
-        thread::sleep(if pending.is_empty() {
-            ACCEPTS_EVERY
-        } else {
-            HEADS_POLLED_EVERY
-        });
+    fn let_go(mut self, registry: &Registry) {
+        let _ = registry.deregister(&mut self.stream);
     }
 }
 
-fn refuse(mut stream: TcpStream, refusal: &[u8]) {
+struct Heads {
+    waiting: BTreeMap<Source, Pending>,
+    next: usize,
+}
+
+impl Heads {
+    fn new() -> Self {
+        Self {
+            waiting: BTreeMap::new(),
+            next: FIRST_HEAD,
+        }
+    }
+
+    fn admit(&mut self, registry: &Registry, mut stream: TcpStream) -> Option<Source> {
+        let source = Source(self.next);
+        if let Err(error) = registry.register(&mut stream, source, Interest::READABLE) {
+            tracing::debug!(%error, "a renderer's connection could not be read");
+            return None;
+        }
+        self.next = self.next.wrapping_add(1).max(FIRST_HEAD);
+        self.waiting.insert(source, Pending::new(stream));
+        Some(source)
+    }
+
+    fn nearest_deadline(&self, head_ends_within: Duration) -> Option<Duration> {
+        self.waiting
+            .values()
+            .map(|asking| asking.waits_another(head_ends_within))
+            .min()
+    }
+
+    fn expired(&self, head_ends_within: Duration) -> Vec<Source> {
+        self.waiting
+            .iter()
+            .filter(|(_, asking)| asking.waits_another(head_ends_within).is_zero())
+            .map(|(source, _)| *source)
+            .collect()
+    }
+}
+
+fn admitted(
+    listener: &TcpListener,
+    registry: &Registry,
+    heads: &mut Heads,
+    heads_at_most: usize,
+) -> Option<Vec<Source>> {
+    let mut admitted = Vec::new();
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) if heads.waiting.len() < heads_at_most => {
+                admitted.extend(heads.admit(registry, stream));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Some(admitted),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => {
+                tracing::warn!(%error, "the stream server stopped accepting renderers");
+                return None;
+            }
+        }
+    }
+}
+
+fn accept(mut poll: Poll, listener: &TcpListener, held: &Weak<Server>, limits: Limits) {
+    let fetching = Arc::new(AtomicUsize::new(0));
+    let mut heads = Heads::new();
+    let mut events = Events::with_capacity(EVENTS_AT_MOST);
+    loop {
+        let timeout = heads.nearest_deadline(limits.head_ends_within);
+        match poll.poll(&mut events, timeout) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                tracing::warn!(%error, "the stream server stopped waiting on renderers");
+                return;
+            }
+        }
+        let Some(server) = held.upgrade() else {
+            return;
+        };
+        #[cfg(test)]
+        server.polls.fetch_add(1, Ordering::Relaxed);
+
+        let mut ready: Vec<Source> = Vec::new();
+        for event in &events {
+            match event.token() {
+                LISTENER => {
+                    let Some(admitted) =
+                        admitted(listener, poll.registry(), &mut heads, limits.heads_at_most)
+                    else {
+                        return;
+                    };
+                    ready.extend(admitted);
+                }
+                WAKER => {}
+                source => ready.push(source),
+            }
+        }
+        ready.extend(heads.expired(limits.head_ends_within));
+        ready.sort_unstable();
+        ready.dedup();
+
+        for source in ready {
+            let Some(mut asking) = heads.waiting.remove(&source) else {
+                continue;
+            };
+            match asking.advance(&server, limits.head_ends_within) {
+                Next::Waiting => {
+                    heads.waiting.insert(source, asking);
+                }
+                Next::Dropped => asking.let_go(poll.registry()),
+                Next::Refused(refusal) => handed(asking, &poll, |stream| refuse(stream, refusal)),
+                Next::Fetch { head_only, feed } => handed(asking, &poll, |stream| {
+                    match Fetching::begin(&fetching, limits.fetches_at_most) {
+                        Some(slot) => begin_fetch(stream, head_only, feed, slot),
+                        None => refuse(stream, BUSY),
+                    }
+                }),
+            }
+        }
+    }
+}
+
+fn handed(asking: Pending, poll: &Poll, then: impl FnOnce(net::TcpStream)) {
+    match asking.handed_over(poll.registry()) {
+        Ok(stream) => then(stream),
+        Err(error) => tracing::debug!(%error, "a renderer's connection could not be taken over"),
+    }
+}
+
+fn refuse(mut stream: net::TcpStream, refusal: &[u8]) {
     let written = stream
         .set_nonblocking(false)
         .and_then(|()| stream.set_write_timeout(Some(REFUSAL_WRITTEN_WITHIN)))
@@ -307,7 +421,7 @@ fn refuse(mut stream: TcpStream, refusal: &[u8]) {
     }
 }
 
-fn begin_fetch(stream: TcpStream, head_only: bool, feed: Arc<Feed>, slot: Fetching) {
+fn begin_fetch(stream: net::TcpStream, head_only: bool, feed: Arc<Feed>, slot: Fetching) {
     let spawned = thread::Builder::new()
         .name("resonate-upnp-feed".to_owned())
         .spawn(move || {
@@ -321,7 +435,7 @@ fn begin_fetch(stream: TcpStream, head_only: bool, feed: Arc<Feed>, slot: Fetchi
     }
 }
 
-fn answer(feed: &Feed, mut stream: TcpStream, head_only: bool) -> io::Result<()> {
+fn answer(feed: &Feed, mut stream: net::TcpStream, head_only: bool) -> io::Result<()> {
     stream.set_nonblocking(false)?;
     let served = feed.serve(&mut stream, head_only);
     let _ = stream.shutdown(Shutdown::Both);
@@ -330,7 +444,10 @@ fn answer(feed: &Feed, mut stream: TcpStream, head_only: bool) -> io::Result<()>
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, net::Ipv4Addr};
+    use std::{
+        io::Read,
+        net::{Ipv4Addr, TcpStream},
+    };
 
     use super::*;
     use crate::testing::silent_feed as feed;
@@ -338,6 +455,10 @@ mod tests {
     const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
     const HEARD_WITHIN: Duration = Duration::from_secs(5);
+
+    const AN_ADMISSION: Duration = Duration::from_millis(100);
+
+    const AN_IDLE_WHILE: Duration = Duration::from_millis(400);
 
     fn connected(server: &Server) -> TcpStream {
         let stream = TcpStream::connect(SocketAddr::new(LOOPBACK, server.port)).expect("connects");
@@ -440,5 +561,35 @@ mod tests {
         assert!(status_of(&mut turned_away).contains("503"));
         first.close();
         second.close();
+    }
+
+    #[test]
+    fn a_server_waiting_on_a_slow_head_wakes_for_nothing_until_it_moves_or_its_deadline_comes() {
+        let server = limited(4, 8, Duration::from_secs(30));
+        let mut slow = connected(&server);
+        slow.write_all(b"GET /resonate/").expect("starts a head");
+        thread::sleep(AN_ADMISSION);
+        let before = server.polls.load(Ordering::Relaxed);
+
+        thread::sleep(AN_IDLE_WHILE);
+
+        assert_eq!(server.polls.load(Ordering::Relaxed), before);
+        slow.write_all(b"0000000000000001.wav HTTP/1.1\r\n\r\n")
+            .expect("goes on");
+        assert!(status_of(&mut slow).contains("404"));
+    }
+
+    #[test]
+    fn a_server_dropped_stops_listening_at_once() {
+        let server = limited(4, 8, Duration::from_secs(30));
+        let address = SocketAddr::new(LOOPBACK, server.port);
+
+        drop(server);
+
+        let deadline = Instant::now() + HEARD_WITHIN;
+        while TcpStream::connect(address).is_ok() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(TcpStream::connect(address).is_err());
     }
 }

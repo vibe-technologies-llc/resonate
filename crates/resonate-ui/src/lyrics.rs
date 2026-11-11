@@ -1611,6 +1611,8 @@ mod tests {
 
     #[test]
     fn every_line_is_drawn_on_whole_pixels_and_never_steps_back_through_a_glide() {
+        let _worn = crate::theme::alongside();
+
         let factor = 1.25;
         let scale = Scale::of(factor);
         let start = Instant::now() + RISE * 4;
@@ -1646,6 +1648,8 @@ mod tests {
 
     #[test]
     fn a_line_further_ahead_lags_further_behind_the_glide_and_catches_up_once_it_settles() {
+        let _worn = crate::theme::alongside();
+
         let now = Instant::now() + RISE * 4;
         let midway = now + Duration::from_millis(120);
         let settled = now + GLIDE + LAG_PER_LINE * 8;
@@ -1666,6 +1670,8 @@ mod tests {
 
     #[test]
     fn a_set_rises_into_place_from_the_read_line_outwards_once_it_has_been_placed() {
+        let _worn = crate::theme::alongside();
+
         let now = Instant::now();
         let mut model = verse(8);
 
@@ -1691,6 +1697,8 @@ mod tests {
 
     #[test]
     fn a_line_is_held_open_only_once_two_layouts_running_were_measured_alike() {
+        let _worn = crate::theme::alongside();
+
         let now = Instant::now();
         let mut model = verse(4);
 
@@ -1713,6 +1721,8 @@ mod tests {
 
     #[test]
     fn the_measures_of_a_line_are_whole_device_pixels_at_any_scale() {
+        let _worn = crate::theme::alongside();
+
         for factor in [1.0, 1.25, 1.5, 1.75, 2.0, 2.25] {
             for growth in [1.0, 1.3, 1.77, GROWS_AT_MOST] {
                 let measures = Measures::at(Scale::of(factor), Growth(growth));
@@ -1746,6 +1756,8 @@ mod tests {
 
     #[test]
     fn the_sheet_grows_with_its_pane_by_the_tighter_of_its_two_sides() {
+        let _worn = crate::theme::alongside();
+
         assert_eq!(Growth::of(sized(0.0, 0.0)), Growth::NONE);
         assert_eq!(Growth::of(sized(600.0, 400.0)), Growth::NONE);
         assert_eq!(Growth::of(PANE_AT_RESTING_SIZE), Growth::NONE);
@@ -1766,6 +1778,8 @@ mod tests {
 
     #[test]
     fn the_column_widens_with_the_pane_and_never_outruns_its_gutters() {
+        let _worn = crate::theme::alongside();
+
         let resting = Measures::at(Scale::ONE, Growth::NONE);
         let wide = sized(1568.0, 1200.0);
         let grown = Measures::at(Scale::ONE, Growth::of(wide));
@@ -2134,6 +2148,8 @@ mod tests {
 
     #[test]
     fn a_pane_is_drawn_nowhere_until_the_layout_it_was_measured_from_is_the_one_it_has() {
+        let _worn = crate::theme::alongside();
+
         let now = Instant::now();
         let mut model = verse(4);
 
@@ -2156,6 +2172,8 @@ mod tests {
 
     #[test]
     fn a_track_change_puts_the_pane_back_to_being_placed_rather_than_gliding_from_the_last_one() {
+        let _worn = crate::theme::alongside();
+
         let mut model = verse(4);
         model.placed = true;
         model.steady = true;

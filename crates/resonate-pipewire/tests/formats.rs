@@ -3,14 +3,14 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
 };
 
-use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{ChannelLayout, ChannelPosition, Places, SampleFormat, SampleRate, StreamSpec};
 use resonate_pipewire::{
     AudioSource, LatencyRequest, MediaRole, PipeWire, Reshaped, SinkChange, SinkInfo, SinkStream,
     StreamEvent, StreamRequest, StreamState, StreamVolume, Unreshapable, Words,
@@ -72,6 +72,18 @@ context.objects = [
             audio.format = S32LE
             audio.rate = 96000
             audio.position = [ FL FR FC LFE RL RR SL SR ]
+            object.linger = true
+            adapter.auto-port-config = { mode = passthrough monitor = false control = false position = preserve }
+        }
+    }
+    { factory = adapter
+        args = {
+            factory.name = support.null-audio-sink
+            node.name = resonate-seven-oh
+            media.class = Audio/Sink
+            audio.format = S16LE
+            audio.rate = 48000
+            audio.position = [ FL FR FC RL RR SL SR ]
             object.linger = true
             adapter.auto-port-config = { mode = passthrough monitor = false control = false position = preserve }
         }
@@ -146,52 +158,76 @@ struct Hosting {
     positions: &'static [&'static str],
 }
 
-const HOSTED: [Hosting; 4] = [
-    Hosting {
-        sink: "resonate-sixteen-surround",
-        spec: StreamSpec::new(
-            SampleRate::HZ_44100,
-            ChannelLayout::Surround51,
-            SampleFormat::S16,
-        ),
-        words: Words::Whole,
-        wire: "S16LE",
-        positions: &["FL", "FR", "FC", "LFE", "RL", "RR"],
-    },
-    Hosting {
-        sink: "resonate-thirty-two-surround",
-        spec: StreamSpec::new(
-            SampleRate::HZ_96000,
-            ChannelLayout::Surround71,
-            SampleFormat::S32,
-        ),
-        words: Words::Whole,
-        wire: "S32LE",
-        positions: &["FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR"],
-    },
-    Hosting {
-        sink: "resonate-twenty-four-packed",
-        spec: StreamSpec::new(
-            SampleRate::HZ_48000,
-            ChannelLayout::Stereo,
-            SampleFormat::S24,
-        ),
-        words: Words::Packed,
-        wire: "S24LE",
-        positions: &["FL", "FR"],
-    },
-    Hosting {
-        sink: "resonate-twenty-four-padded",
-        spec: StreamSpec::new(
-            SampleRate::HZ_48000,
-            ChannelLayout::Stereo,
-            SampleFormat::S24,
-        ),
-        words: Words::Padded,
-        wire: "S24_32LE",
-        positions: &["FL", "FR"],
-    },
-];
+static HOSTED: LazyLock<[Hosting; 5]> = LazyLock::new(|| {
+    [
+        Hosting {
+            sink: "resonate-sixteen-surround",
+            spec: StreamSpec::new(
+                SampleRate::HZ_44100,
+                ChannelLayout::Surround51,
+                SampleFormat::S16,
+            ),
+            words: Words::Whole,
+            wire: "S16LE",
+            positions: &["FL", "FR", "FC", "LFE", "RL", "RR"],
+        },
+        Hosting {
+            sink: "resonate-thirty-two-surround",
+            spec: StreamSpec::new(
+                SampleRate::HZ_96000,
+                ChannelLayout::Surround71,
+                SampleFormat::S32,
+            ),
+            words: Words::Whole,
+            wire: "S32LE",
+            positions: &["FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR"],
+        },
+        Hosting {
+            sink: "resonate-twenty-four-packed",
+            spec: StreamSpec::new(
+                SampleRate::HZ_48000,
+                ChannelLayout::Stereo,
+                SampleFormat::S24,
+            ),
+            words: Words::Packed,
+            wire: "S24LE",
+            positions: &["FL", "FR"],
+        },
+        Hosting {
+            sink: "resonate-twenty-four-padded",
+            spec: StreamSpec::new(
+                SampleRate::HZ_48000,
+                ChannelLayout::Stereo,
+                SampleFormat::S24,
+            ),
+            words: Words::Padded,
+            wire: "S24_32LE",
+            positions: &["FL", "FR"],
+        },
+        Hosting {
+            sink: "resonate-seven-oh",
+            spec: StreamSpec::new(SampleRate::HZ_48000, seven_oh(), SampleFormat::S16),
+            words: Words::Whole,
+            wire: "S16LE",
+            positions: &["FL", "FR", "FC", "RL", "RR", "SL", "SR"],
+        },
+    ]
+});
+
+fn seven_oh() -> ChannelLayout {
+    let placed = ChannelLayout::placed(Places::of([
+        ChannelPosition::FrontLeft,
+        ChannelPosition::FrontRight,
+        ChannelPosition::FrontCenter,
+        ChannelPosition::RearLeft,
+        ChannelPosition::RearRight,
+        ChannelPosition::SideLeft,
+        ChannelPosition::SideRight,
+    ]))
+    .expect("seven places are a layout");
+    assert!(matches!(placed, ChannelLayout::Placed(_)));
+    placed
+}
 
 struct Silence;
 
@@ -267,7 +303,7 @@ fn every_word_and_map_is_read_as_the_sink_names_it(_: &Path) {
     let sinks = the_hosted_sinks(&pipewire);
     let _ = pipewire.shutdown();
 
-    for hosting in HOSTED {
+    for hosting in *HOSTED {
         let sink = named(&sinks, hosting.sink);
         let entry = sink
             .formats
@@ -297,7 +333,7 @@ fn every_word_and_map_is_taken_by_the_daemon_with_nothing_converting(_: &Path) {
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
 
-    for hosting in HOSTED {
+    for hosting in *HOSTED {
         let sink = named(&sinks, hosting.sink);
         let stream = pipewire
             .open(&request(sink, hosting.spec), Box::new(Silence))
@@ -454,7 +490,7 @@ fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Pat
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
 
-    for hosting in HOSTED {
+    for hosting in *HOSTED {
         let sink = named(&sinks, hosting.sink);
         let pulled = Arc::new(AtomicUsize::new(0));
         let stream = pipewire

@@ -11,6 +11,7 @@ doctest = false
 crossbeam-channel.workspace = true
 flacenc.workspace = true
 httparse.workspace = true
+mio.workspace = true
 parking_lot.workspace = true
 resonate-audio.workspace = true
 resonate-core.workspace = true

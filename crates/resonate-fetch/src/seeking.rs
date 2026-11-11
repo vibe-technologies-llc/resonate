@@ -5,7 +5,7 @@ use std::{
 
 use ureq::{Agent, Body, http::Response};
 
-use crate::ranged::{Ranged, Unfetched};
+use crate::ranged::{Known, Ranged, Unfetched};
 
 pub const SKIPPED_RATHER_THAN_ASKED: u64 = 256 * 1024;
 
@@ -15,6 +15,7 @@ pub struct Seeking {
     length: Option<u64>,
     at: u64,
     reading: Option<Ranged>,
+    known: Known,
     bearer: Option<String>,
     resumed_after: Duration,
 }
@@ -32,6 +33,10 @@ impl Seeking {
             url,
             length: reading.length(),
             at: 0,
+            known: Known {
+                validator: reading.validator().cloned(),
+                total: reading.total(),
+            },
             reading: Some(reading),
             bearer: None,
             resumed_after,
@@ -58,10 +63,17 @@ impl Seeking {
                 self.url.clone(),
                 self.at,
                 self.bearer.clone(),
+                &self.known,
                 self.resumed_after,
             )
             .map_err(Unfetched::into_io)?,
         };
+        self.known.validator = self
+            .known
+            .validator
+            .take()
+            .or_else(|| reading.validator().cloned());
+        self.known.total = self.known.total.or(reading.total());
         Ok(self.reading.insert(reading))
     }
 
@@ -109,5 +121,95 @@ impl Seek for Seeking {
         self.reading = None;
         self.at = target;
         Ok(target)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::ErrorKind;
+
+    use super::*;
+    use crate::{
+        Trusted, configured,
+        testing::{WHOLE_BODY, answering, lower, partial_from, serving},
+    };
+
+    const READ_FIRST: usize = 30;
+    const SOUGHT_BACK_TO: u64 = 10;
+
+    fn seeking_over(url: &str) -> Seeking {
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+        let response = agent.get(url).call().expect("the first answer");
+        Seeking::continuing(agent, url.to_owned(), response, Duration::ZERO)
+    }
+
+    fn read_then_seek_back(seeking: &mut Seeking) {
+        seeking
+            .read_exact(&mut [0; READ_FIRST])
+            .expect("the first part");
+        seeking
+            .seek(SeekFrom::Start(SOUGHT_BACK_TO))
+            .expect("the seek moves the place");
+    }
+
+    fn whole_with(headers: &[&str]) -> Vec<u8> {
+        answering("200 OK", headers, WHOLE_BODY, WHOLE_BODY.len())
+    }
+
+    #[test]
+    fn a_seek_asks_the_range_with_the_validator_of_the_first_answer_and_reads_on() {
+        let (url, heads) = serving(vec![
+            Box::new(|_| whole_with(&["ETag: \"v1\""])),
+            Box::new(|_| {
+                partial_from(SOUGHT_BACK_TO as usize, WHOLE_BODY.len(), &["ETag: \"v1\""])
+            }),
+        ]);
+        let mut seeking = seeking_over(&url);
+        read_then_seek_back(&mut seeking);
+        let mut read = Vec::new();
+
+        seeking.read_to_end(&mut read).expect("the rest is read");
+
+        assert_eq!(read, &WHOLE_BODY[SOUGHT_BACK_TO as usize..]);
+        let asked = lower(&heads.lock()[1]);
+        assert!(
+            asked.contains(&format!("range: bytes={SOUGHT_BACK_TO}-")),
+            "{asked}"
+        );
+        assert!(asked.contains("if-range: \"v1\""), "{asked}");
+    }
+
+    #[test]
+    fn a_file_replaced_between_two_seeks_is_not_joined_old_to_new() {
+        let (url, _) = serving(vec![
+            Box::new(|_| whole_with(&["ETag: \"v1\""])),
+            Box::new(|_| whole_with(&["ETag: \"v2\""])),
+        ]);
+        let mut seeking = seeking_over(&url);
+        read_then_seek_back(&mut seeking);
+
+        let error = seeking
+            .read_to_end(&mut Vec::new())
+            .expect_err("the change is refused");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn a_range_naming_another_total_than_the_first_answer_is_refused() {
+        let (url, _) = serving(vec![
+            Box::new(|_| whole_with(&[])),
+            Box::new(|_| partial_from(SOUGHT_BACK_TO as usize, WHOLE_BODY.len() + 50, &[])),
+        ]);
+        let mut seeking = seeking_over(&url);
+        read_then_seek_back(&mut seeking);
+
+        let error = seeking
+            .read_to_end(&mut Vec::new())
+            .expect_err("the change is refused");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
     }
 }

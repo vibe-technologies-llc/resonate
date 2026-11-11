@@ -3,6 +3,8 @@ mod failed;
 mod ranged;
 mod seeking;
 mod stall;
+#[cfg(test)]
+mod testing;
 mod trust;
 mod waited;
 mod words;
@@ -14,7 +16,7 @@ pub use crate::{
     },
     failed::{as_io, unreached},
     ranged::{
-        ASKED_LATER, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, validator_of,
+        ASKED_LATER, Known, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, validator_of,
         waited_before,
     },
     seeking::{SKIPPED_RATHER_THAN_ASKED, Seeking},

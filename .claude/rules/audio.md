@@ -397,9 +397,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   passed every boundary on time (`TrackFinished`, `TrackStarted` as the graph hears them) it fails
   as ever (`fail_what_waited_for_the_boundary`), so the leaving row's tail is heard whole rather
   than faded out by `start` retiring the output
-  (`a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole`). Where that
-  cannot be spliced (another output's boundary, the graph already past it, a boundary still inside
-  the chain's latency, a splice or discard in flight) it passes every boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
+  (`a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole`). **A row
+  failing before its frames have passed the chain's latency** has written nothing past the
+  boundary (`at` is `written` plus what the carried chain holds), so the leaving row's last frames
+  still wait in the chain: the failure is held, and once the ring has room for
+  `max_flush_frames` the pump flushes the chain into it (`hand_on_the_leaving_tail`), then splices
+  away what lies past `at` as above; if that splice cannot be asked it fails as a plain refusal
+  (`Waiting::NoLonger`)
+  (`a_row_failing_before_its_frames_pass_the_chains_latency_lets_the_leaving_tail_play_out_whole`).
+  Where that cannot be spliced (another output's boundary, the graph already past it, a splice or
+  discard in flight, a chain whose flush would not fit the ring) it passes every boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
   and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
   and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
   wherever the rate, word or channels move. Refused also: a sleep timer ending at
@@ -476,7 +483,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   from the wanted plan (`OutputPlan::build_the_back`, sized by the old `Back`), runs it over the
   recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle
   (`rendered_again`, into a buffer of its own), and only then **takes the point again**, no sooner
-  than the first (`splice_from_here`), since building a long room response and rendering a deep
+  than the first (`splice_from_here`; `splice_after_rendering` is the one place the two points are
+  taken, the render a closure it calls between them, which is the seam a test holds to pull the
+  graph meanwhile), since building a long room response and rendering a deep
   recall can take longer than the lead and the graph would pass a point taken before them on the
   old curve (`a_point_taken_again_once_the_back_has_rendered_lies_ahead_of_what_the_graph_pulled_meanwhile`).
   It blends the first `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the
@@ -1450,7 +1459,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone`); one that truly
   differs plays silence until the rebuild (`realtime.md`). A hosted daemon proves the settled format
   only for the layout and word asked for (`frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked`);
-  it has no session manager to settle on another.
+  it has no session manager to settle on another. Its `HOSTED` table is a `LazyLock` since it holds a
+  7.0 sink whose layout is `ChannelLayout::placed` over seven places (no named layout holds that
+  set, so it is `Placed`), asked for, advertised and flowed through like the named ones.
 - **A sink's advertised layouts are read the same way** (`format::advertised_layout`, over
   `ChannelLayout::placed`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
   array whatever their order, and gives each offered count whose array is that long and names a

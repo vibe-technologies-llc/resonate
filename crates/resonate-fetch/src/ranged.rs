@@ -109,6 +109,12 @@ pub fn asking_to_resume(
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Known {
+    pub validator: Option<Validator>,
+    pub total: Option<u64>,
+}
+
 #[derive(Clone, Copy, Default)]
 struct Expecting<'a> {
     validator: Option<&'a Validator>,
@@ -285,7 +291,7 @@ impl Ranged {
         from: u64,
         resumed_after: Duration,
     ) -> Result<Self, Unfetched> {
-        Self::opened_bearing(agent, url, from, None, resumed_after)
+        Self::opened_bearing(agent, url, from, None, &Known::default(), resumed_after)
     }
 
     pub fn opened_bearing(
@@ -293,11 +299,16 @@ impl Ranged {
         url: String,
         from: u64,
         bearer: Option<String>,
+        known: &Known,
         resumed_after: Duration,
     ) -> Result<Self, Unfetched> {
+        let expecting = Expecting {
+            validator: known.validator.as_ref(),
+            total: known.total,
+        };
         let mut tried = 0;
         let answered = loop {
-            match asked(&agent, &url, from, bearer.as_deref(), Expecting::default()) {
+            match asked(&agent, &url, from, bearer.as_deref(), expecting) {
                 Ok(answered) => break answered,
                 Err(Unfetched::AskedLater { asked_for, .. }) if tried < RESUMES_AT_MOST => {
                     tried += 1;
@@ -319,8 +330,8 @@ impl Ranged {
             bearer,
             reader: answered.reader,
             length: answered.length,
-            total: answered.total,
-            validator: answered.validator,
+            total: answered.total.or(known.total),
+            validator: answered.validator.or_else(|| known.validator.clone()),
             read: from,
             from,
             broken: 0,
@@ -341,6 +352,10 @@ impl Ranged {
 
     pub fn validator(&self) -> Option<&Validator> {
         self.validator.as_ref()
+    }
+
+    pub fn total(&self) -> Option<u64> {
+        self.total
     }
 
     pub fn into_resumed(self) -> Resumed {
@@ -431,91 +446,10 @@ impl Read for Ranged {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::Write,
-        net::{Ipv4Addr, TcpListener},
-        sync::Arc,
-    };
-
-    use parking_lot::Mutex;
-
     use super::*;
-    use crate::{Trusted, configured};
-
-    const WHOLE_BODY: &[u8] =
-        b"0123456789abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    const CUT_AT: usize = 20;
-
-    type Answer = Box<dyn Fn(&str) -> Vec<u8> + Send>;
-
-    fn answering(status: &str, headers: &[&str], body: &[u8], declared: usize) -> Vec<u8> {
-        let mut answer =
-            format!("HTTP/1.1 {status}\r\nContent-Length: {declared}\r\nConnection: close\r\n");
-        for header in headers {
-            answer.push_str(header);
-            answer.push_str("\r\n");
-        }
-        answer.push_str("\r\n");
-        let mut answer = answer.into_bytes();
-        answer.extend_from_slice(body);
-        answer
-    }
-
-    fn cut_first_answer(headers: &[&str]) -> Vec<u8> {
-        answering("200 OK", headers, &WHOLE_BODY[..CUT_AT], WHOLE_BODY.len())
-    }
-
-    fn serving(answers: Vec<Answer>) -> (String, Arc<Mutex<Vec<String>>>) {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("binds");
-        let url = format!("http://{}/song", listener.local_addr().expect("an address"));
-        let heads = Arc::new(Mutex::new(Vec::new()));
-        let seen = Arc::clone(&heads);
-        thread::spawn(move || {
-            for answer in answers {
-                let Ok((mut stream, _)) = listener.accept() else {
-                    return;
-                };
-                let mut head = Vec::new();
-                let mut buffer = [0; 1024];
-                while !head.ends_with(b"\r\n\r\n") {
-                    match stream.read(&mut buffer) {
-                        Ok(0) | Err(_) => break,
-                        Ok(read) => head.extend_from_slice(&buffer[..read]),
-                    }
-                }
-                let head = String::from_utf8_lossy(&head).into_owned();
-                let reply = answer(&head);
-                seen.lock().push(head);
-                let _ = stream.write_all(&reply);
-            }
-        });
-        (url, heads)
-    }
-
-    fn opened(url: &str) -> Ranged {
-        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
-            .build()
-            .new_agent();
-        let response = agent.get(url).call().expect("the first answer");
-        Ranged::continuing(agent, url.to_owned(), response, Duration::ZERO)
-    }
-
-    fn partial_from(at: usize, total: usize, headers: &[&str]) -> Vec<u8> {
-        let range = format!("Content-Range: bytes {at}-{}/{total}", WHOLE_BODY.len() - 1);
-        let mut all = vec![range.as_str()];
-        all.extend_from_slice(headers);
-        answering(
-            "206 Partial Content",
-            &all,
-            &WHOLE_BODY[at..],
-            WHOLE_BODY.len() - at,
-        )
-    }
-
-    fn lower(head: &str) -> String {
-        head.to_ascii_lowercase()
-    }
+    use crate::testing::{
+        CUT_AT, WHOLE_BODY, answering, cut_first_answer, lower, opened, partial_from, serving,
+    };
 
     #[test]
     fn a_download_cut_off_is_asked_for_again_with_its_validator_and_read_on() {

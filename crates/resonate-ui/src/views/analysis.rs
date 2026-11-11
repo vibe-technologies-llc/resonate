@@ -1201,6 +1201,8 @@ mod tests {
 
     #[test]
     fn every_verdict_is_drawn_in_a_colour_of_its_own() {
+        let _worn = crate::theme::alongside();
+
         let verdicts = [
             Verdict::Genuine,
             Verdict::Suspect,

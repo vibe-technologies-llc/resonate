@@ -253,6 +253,12 @@ impl Ahead {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Waiting {
+    ForTheBoundary,
+    NoLonger,
+}
+
 struct Boundary {
     at: u64,
     made: u64,
@@ -485,6 +491,7 @@ struct Output {
     rendered_for_another: bool,
     arms: Option<Arms>,
     switch_owed: bool,
+    switch_waits_for_room: bool,
     recall_spoiled: bool,
 }
 
@@ -640,6 +647,7 @@ impl Output {
             rendered_for_another: false,
             arms: None,
             switch_owed: false,
+            switch_waits_for_room: false,
             recall_spoiled: false,
         })
     }
@@ -805,7 +813,11 @@ impl Output {
         if self.draining.is_some() {
             return true;
         }
-        if self.ended || self.producer.is_discarding() || self.waits_for_room_to_reshape() {
+        if self.ended
+            || self.producer.is_discarding()
+            || self.waits_for_room_to_reshape()
+            || self.switch_waits_for_room
+        {
             return false;
         }
         self.producer.free_frames() >= self.chain.max_process_frames()
@@ -1318,7 +1330,7 @@ impl Engine {
             && self
                 .output
                 .as_ref()
-                .is_some_and(|output| output.splice_owed)
+                .is_some_and(|output| output.splice_owed || output.switch_waits_for_room)
         {
             budget.min(SHORTEST_TICK)
         } else {
@@ -3017,6 +3029,7 @@ impl Engine {
             .as_ref()
             .is_some_and(|arms| arms.heard() == heard)
         {
+            output.switch_waits_for_room = false;
             return Ok(());
         }
         let downstream = output.holds_seconds_downstream();
@@ -3027,7 +3040,7 @@ impl Engine {
             }
             return Ok(());
         }
-        let switched = output.hear_the_other_arm();
+        let switched = output.hear_the_other_arm(self.playing);
         if downstream {
             self.owe_a_downstream_restart();
         }
@@ -3065,6 +3078,7 @@ impl Engine {
         if let Some(output) = self.output.as_mut() {
             output.let_go_of_the_other_arm();
             output.switch_owed = false;
+            output.switch_waits_for_room = false;
         }
     }
 
@@ -3582,6 +3596,7 @@ impl Engine {
     fn pump(&mut self) {
         self.fill_owed = false;
         if self.failing_past_the_boundary.is_some() {
+            self.hand_on_the_leaving_tail();
             return;
         }
         let outcome = {
@@ -3849,6 +3864,38 @@ impl Engine {
         reachable
     }
 
+    fn the_leaving_tail_waits_in_the_chain(&self) -> bool {
+        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_ref()) else {
+            return false;
+        };
+        let producer = &output.producer;
+        output.made == boundary.made
+            && producer.read() < boundary.at
+            && producer.written() < boundary.at
+            && !producer.is_splicing()
+            && !producer.is_discarding()
+            && output.chain.max_flush_frames() > 0
+            && output.chain.max_flush_frames() <= output.capacity
+    }
+
+    fn hand_on_the_leaving_tail(&mut self) {
+        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_mut()) else {
+            return;
+        };
+        if output.producer.written() >= boundary.at
+            || output.producer.free_frames() < output.chain.max_flush_frames()
+        {
+            return;
+        }
+        output.hand_on_what_the_chain_holds();
+        if self.drop_what_lies_past_the_boundary() {
+            return;
+        }
+        if let Some(error) = self.failing_past_the_boundary.take() {
+            self.failing(error, Waiting::NoLonger);
+        }
+    }
+
     fn fail_what_waited_for_the_boundary(&mut self) {
         if !self.boundaries.is_empty() {
             return;
@@ -4013,7 +4060,7 @@ impl Engine {
     }
 
     fn fill(track: &mut Track, output: &mut Output) -> Result<Filled> {
-        if output.producer.is_discarding() {
+        if output.producer.is_discarding() || output.switch_waits_for_room {
             return Ok(Filled::AsFarAsItGoes);
         }
         if output.draining.is_some() {
@@ -4745,10 +4792,17 @@ impl Engine {
     }
 
     fn fail(&mut self, error: Error) {
+        self.failing(error, Waiting::ForTheBoundary);
+    }
+
+    fn failing(&mut self, error: Error, waiting: Waiting) {
         if !self.boundaries.is_empty() {
             let entering = self.track.as_ref().map(|track| track.id);
             if entering.is_some() && error.track() == entering {
-                if self.drop_what_lies_past_the_boundary() {
+                if waiting == Waiting::ForTheBoundary
+                    && (self.drop_what_lies_past_the_boundary()
+                        || self.the_leaving_tail_waits_in_the_chain())
+                {
                     self.failing_past_the_boundary = Some(error);
                     return;
                 }

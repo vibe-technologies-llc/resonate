@@ -7493,6 +7493,7 @@ dependencies = [
  "crossbeam-channel",
  "flacenc",
  "httparse",
+ "mio",
  "parking_lot 0.13.0",
  "resonate-audio",
  "resonate-codec",

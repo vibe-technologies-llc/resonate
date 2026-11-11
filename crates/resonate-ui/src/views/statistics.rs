@@ -1574,6 +1574,8 @@ mod tests {
 
     #[test]
     fn a_reader_hears_each_bar_as_a_place_in_the_list_of_days_saying_what_was_played() {
+        let _worn = crate::theme::alongside();
+
         spoken::listened_to(true);
 
         let days = [

@@ -135,7 +135,7 @@ pub(crate) fn head_end(held: &[u8]) -> Option<usize> {
         .map(|at| at + 4)
 }
 
-pub(crate) fn read_more(stream: &mut TcpStream, held: &mut Vec<u8>) -> io::Result<usize> {
+pub(crate) fn read_more(stream: &mut impl Read, held: &mut Vec<u8>) -> io::Result<usize> {
     let mut buffer = [0; READ_IN];
     let read = stream.read(&mut buffer)?;
     held.extend_from_slice(buffer.get(..read).unwrap_or_default());
