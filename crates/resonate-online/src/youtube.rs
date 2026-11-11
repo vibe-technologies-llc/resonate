@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(
             first.asking,
             Some(Asking {
-                key: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8".to_owned(),
+                key: "AIza-fixture-key".to_owned(),
                 version: "2.20261023.01.00".to_owned(),
             })
         );
