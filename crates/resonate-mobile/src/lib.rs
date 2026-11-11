@@ -4,6 +4,8 @@ mod arranged;
 mod artist_discography;
 mod catalog;
 mod catalog_extras;
+#[cfg(test)]
+mod catalog_steps_tests;
 mod collections;
 mod deleting;
 mod documents;

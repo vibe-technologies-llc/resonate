@@ -19,16 +19,18 @@ paths:
   features, the workspace headless, the binary without `ui` and with each feature alone, so code
   dead without a feature is warned), headless tests of every crate but the window (the job
   reruns the MPRIS bus tests under `dbus-run-session`, which a plain `cargo test` skips) and, in
-  the whole-workspace job, only the tests of `resonate` and `resonate-ui`, the two crates whose
-  default features the headless job does not build; no job runs `cargo build` before `cargo test`,
+  the whole-workspace job, only the tests of `resonate` and `resonate-ui`, two of the three crates whose
+  default features the headless job does not build (the third, `resonate-signin`, whose `window`
+  feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo test`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
   (`server-package`), the `windows` job (`windows-latest`: clippy with `--all-targets` of the workspace but the phones'
-  boundary, its binding tool and PipeWire, then the tests of every crate but the window, then the
+  boundary, its binding tool and PipeWire, then the same headless and per-feature clippy lines as
+  Linux, then the tests of every crate but the window, then the
   binary's `signals` test with `mcp` on, which `--no-default-features` leaves out; the library,
   codec, vault and MCP integration suites run there, gated per test; `windows.md`)
-  and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run), and the
-  `macos` job (`macos-latest`, Apple Silicon: the clippy, the headless tests and the `signals` test
+  and `windows-arm64` (the same clippy lines for `aarch64-pc-windows-msvc`, never run), and the
+  `macos` job (`macos-latest`, Apple Silicon: the same clippy lines, the headless tests and the `signals` test
   the `windows` job runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time (`macos.md`), then the tests of `resonate` and `resonate-ui`, since
   the window builds for macOS on a Mac alone; its test steps run `--no-fail-fast` and each whatever
   the one before answered, so one run names every failure of a build no machine here can run;
@@ -45,7 +47,13 @@ paths:
   or on iOS, and is named by `resonate-coreaudio`, `resonate-listen` and `resonate-mpris` (on iOS by
   `resonate-coreaudio` and `resonate-mobile`) alone; `resonate-coreaudio` reaches core, audio, words
   and `resonate-apple` alone; `resonate-listen` reaches those and `resonate-dsp` there, never a
-  backend crate. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
+  backend crate. `RUSTFLAGS` is emptied over `target-cpu=native` in the Linux and macOS jobs; the
+  Windows jobs cannot empty it, since a variable set to the empty string is removed there and the
+  checkout's `target-cpu=native` would apply, so each sets the flags its release asset builds with
+  (`windows.md`'s *Release*): `-C target-cpu=x86-64-v3` for `windows` and `-C target-cpu=generic` for
+  `windows-arm64`, both with `-C target-feature=+crt-static`. The `fuzz` job installs `cargo-fuzz`
+  after `rust-cache` so the cache restores it, and `layering` installs `git` and `rustup` alone,
+  the only things `cargo tree` needs, with the cargo caches and no `target`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
   `tag`, empty builds artifacts only). The workflow holds `contents: read`; only `release` and `publish` raise it to `contents: write`, and they reach the API through `GH_TOKEN`, so every `actions/checkout` sets `persist-credentials: false` and no build step runs beside a token in `.git/config`. The `release` job holds the tag to

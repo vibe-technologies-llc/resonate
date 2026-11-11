@@ -439,8 +439,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   caller made, so the library never sees a correction.
 - **A study kept before the bands were measured is measured alone, never studied again.**
   `to_study` lists a current study whose `band_levels` or `band_peaks` is missing or of another
-  length as `unmeasured` (the thirteenth step, `PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN`, clears
-  the 58-byte peaks of the layout that kept one moment, and the phones' seventeenth does the same); the pool decodes it once through `resonate_analysis::band_figures` (the
+  length as `unmeasured` (the thirteenth step clears
+  the 58-byte peaks of the layout that kept one moment, and the phones' seventeenth, `PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN`, does the same); the pool decodes it once through `resonate_analysis::band_figures` (the
   study's own transform and bank, so the same figures) and updates those two columns, leaving the
   print, the recognition, the verdict and the `studied` stamp where they stood
   (`a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it_held`,
@@ -449,7 +449,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   fit decodes it if it is queued and passes it over otherwise. **Peaks kept before what came together
   need no schema step**: the 472 bytes of the build before stay where they are and a fit folds them
   (`BandPeaks::from_kept`, no figures, the bound it always made), so an upgrade never fits to fewer
-  songs than before, while `to_study` and `studies_without_bands` still ask for the whole length, so
+  songs than before, while `to_study` and `bands_to_measure` still ask for the whole length, so
   the pass replaces each in its own time
   (`peaks_kept_before_what_came_together_still_fit_and_are_measured_again`, the phones'
   `peaks_kept_before_what_came_together_still_fit_and_are_owed_a_new_measure`,
@@ -474,7 +474,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   still reads the catalog. The pass and the analysis pane keep the bands with the study
   (`keep_studied`, `keep_study`). **A study kept before the bands is measured alone, as on the
   desktop**: `enrichment::measure_the_unmeasured` runs first in an opted-in recognition pass's study thread
-  (a recognition key is required, so fetching artwork alone spends no battery decoding audio), over `Catalog::studies_without_bands`
+  (a recognition key is required, so fetching artwork alone spends no battery decoding audio), over `Catalog::bands_to_measure`
   (every visible document whose study lacks the 29-byte `band_levels` or the whole `band_peaks` of `BAND_PEAKS_BYTES`),
   decoding each once through `resonate_analysis::band_figures` and writing those two columns
   through `Catalog::keep_bands`, which leaves the verdict, true peak, print and agreement where they

@@ -50,7 +50,9 @@ sweep) and `resonate-mpris` (Now Playing, `macos.md`) and, on iOS, `resonate-mob
 
 `resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
-`#[implement]` and `HSTRING`), at the `wasapi` crate's versions, so no second copy is built. It
+`#[implement]` and `HSTRING`), at the `wasapi` crate's versions, so no second copy is built: `wasapi`,
+`windows` (no features) and `windows-core` are written once in `[workspace.dependencies]`, and each
+crate adds the features it calls, so a bump moves every user together. It
 reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and the binary
 alone (the binary's tests take `console`); the layering job holds both. Its sequencing is compiled
 for `test` on every host (`thiserror` and, for the tests, `parking_lot` are not Windows-only) and
@@ -232,7 +234,7 @@ here, add it there.
   without `online` still reads a sidecar `.lyricsfile.yaml`. Its node, depth and document budgets
   make a network document parseable at all. **`roxmltree`** (`std`) is `resonate-lyrics`' for TTML
   (`read_ttml`), with no DTD and a node limit, for the same reason.
-- **`rusqlite`**: `bundled`, `cache`, `hooks`, `functions`. `hooks` feeds `db::watch_the_names`
+- **`rusqlite`**: `bundled` (a C build of SQLite, kept under *C-backed crates kept*), `cache`, `hooks`, `functions`. `hooks` feeds `db::watch_the_names`
   (derived from SQLite's `update_hook`, so no later write path leaves a stale spelling suggestion);
   `functions` lets `schema::configure` register the `words_of` fold.
 - **`lofty`**: tag *writer*, `resonate-codec`'s alone; `id3v2_compression_support` required (0.25.4
@@ -277,7 +279,10 @@ here, add it there.
   `resonate-server` takes `tokio-tungstenite` as a dev-dependency alone, for the test that speaks
   WebSocket itself.
 - **`ring`** (direct): sealing (ChaCha20-Poly1305), HKDF, SHA-256, randomness and the peer
-  signature check in `resonate-sync`; the crate rustls already links. **`rcgen`** (`ring`): the
+  signature check in `resonate-sync`; the crate rustls already links. **`x25519-dalek`**
+  (`static_secrets`, pure Rust) is `resonate-sync`'s Diffie-Hellman for sealing a removal's new
+  code to each person who stays (`shared/moved.rs`), the one piece of its cryptography `ring` does
+  not carry. **`rcgen`** (`ring`): the
   space's peer certificate (a dev-dependency of `resonate-server` and `resonate-cast`, for the tests'
   self-signed ones). **`rustls-pki-types`** (`std`):
   PEM reading (`sync-server-certificate`, the server's chain and key). `rustls` takes `ring` there
@@ -288,8 +293,9 @@ here, add it there.
 - **`jiff`**: `resonate-core`'s, the one zone database (`Calendar`): `std`, `tz-system` (the
   desktop's zone, `Calendar::local`) and `tzdb-zoneinfo` (a zone by name from `/usr/share/zoneinfo`:
   Linux, Flatpak, iOS). The phones add `tzdb-bundle-always`, and Android `tzdb-concatenated`, as
-  target dependencies (`library.md`'s *A day is the listener's*); the desktop bundles nothing, since
-  its system database is always there and updated with the system.
+  target dependencies (`library.md`'s *A day is the listener's*); Windows has no zone database on disk,
+  so its target dependency adds `tzdb-bundle-platform`, which bundles one there alone; Linux and
+  macOS bundle nothing, since the system database is always there and updated with the system.
 - **`toml_edit`**, not `toml` (`display`, `parse`): the binary's settings pane rewrites the listener's
   `config.toml`, and `resonate-server` reads its gateway's, since a value model loses comments, key
   order and spacing.
@@ -306,6 +312,10 @@ here, add it there.
 
 ## C-backed crates kept, and duplicates third parties force
 
+- **`rusqlite`** (`bundled`, via `libsqlite3-sys`): the catalog, the sync ledger, the server's and the phones' store.
+  SQLite is built from source into every binary and the phones' library, so one version, with FTS5,
+  triggers and the update hook the schema relies on, runs on every host and no system library is
+  asked for; no pure-Rust engine carries those.
 - **`zstd`** (via `zstd-sys`): `resonate-vault`'s, and `resonate-musicbrainz`'s with
   `zdict_builder`. The WAVE form packs at `ARCHIVED_AT` (19) in
   pledged frames, and `the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs` pins the
@@ -318,6 +328,13 @@ here, add it there.
   and a Cast receiver's TLS (`resonate-cast`, so also in the binary without `online` or `sync`),
   linked whether or not `resonate-sync` names it; `resonate-sync` uses the same crate directly for
   sealing, HKDF, SHA-256, randomness and the peer signature check rather than link a second provider.
+- **`parking_lot` 0.12** beside the workspace's 0.13 (with `lock_api` and `parking_lot_core`): gpui and
+  `crossterm` take 0.12, and `resonate-ui`'s `RecursiveRwLock` (`theme.rs`) exists from 0.13, so the
+  workspace cannot come down to share one copy.
+- **`base64` 0.22** beside the workspace's 0.23: `usvg` (under gpui) takes it while `ureq` and `wry`
+  take 0.23, which is why the workspace stays at 0.23. **`sha2` 0.10** beside 0.11 (with `digest`):
+  `oo7` (gpui) and `wry` take it; lowering ours would still build `digest` 0.11 for the `sha1`
+  `tungstenite` takes.
 - **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder` and `flacenc` take it; **`miniz_oxide`
   0.8** beside 0.9: `png` and `exr` (under `image`, and `gpui`'s) take it while `flate2` takes 0.9.
-  Neither is ours to move; each goes when its dependent moves.
+  None is ours to move; each goes when its dependent moves.

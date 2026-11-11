@@ -97,11 +97,14 @@ jobs:
     container: archlinux:latest
     timeout-minutes: 15
     steps:
-      - name: Install the build dependencies
-        run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
+      - name: Install what cargo tree needs
+        run: pacman -Syu --noconfirm --needed git rustup
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: "false"
       - name: Refuse the dependencies each crate must stay free of
         shell: bash
         run: |
@@ -293,12 +296,23 @@ jobs:
     name: Windows
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      RUSTFLAGS: -C target-cpu=x86-64-v3 -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
+      - run: cargo clippy --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets --no-default-features -- -D warnings
+      - run: cargo clippy --locked -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
+      - name: Lint the binary with each feature alone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for feature in ui online mcp discord sync; do
+            cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
+          done
       - run: cargo test --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
       - run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
 
@@ -306,13 +320,24 @@ jobs:
     name: Windows ARM64
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      RUSTFLAGS: -C target-cpu=generic -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - run: rustup target add aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --locked --target aarch64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire
+      - run: cargo clippy --locked --target aarch64-pc-windows-msvc --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
+      - run: cargo clippy --locked --target aarch64-pc-windows-msvc --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets --no-default-features -- -D warnings
+      - run: cargo clippy --locked --target aarch64-pc-windows-msvc -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
+      - name: Lint the binary with each feature alone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for feature in ui online mcp discord sync; do
+            cargo clippy --locked --target aarch64-pc-windows-msvc -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
+          done
 
   macos:
     name: macOS
@@ -324,6 +349,15 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
+      - run: cargo clippy --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets --no-default-features -- -D warnings
+      - run: cargo clippy --locked -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
+      - name: Lint the binary with each feature alone
+        shell: bash
+        run: |
+          set -euo pipefail
+          for feature in ui online mcp discord sync; do
+            cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
+          done
       - name: Name the temporary folder by its real path
         run: echo "TMPDIR=$(cd "$TMPDIR" && pwd -P)" >> "$GITHUB_ENV"
       - run: cargo test --locked --no-fail-fast --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --exclude resonate-engine --no-default-features
@@ -362,13 +396,13 @@ jobs:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
       - uses: actions/checkout@v7
-      - name: Install nightly and cargo-fuzz
-        run: |
-          rustup toolchain install nightly --profile minimal
-          cargo +nightly install cargo-fuzz --locked
+      - name: Install nightly
+        run: rustup toolchain install nightly --profile minimal
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --locked
       - name: Build every target
         working-directory: fuzz
         run: cargo +nightly fuzz build

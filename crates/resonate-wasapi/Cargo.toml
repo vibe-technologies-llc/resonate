@@ -17,7 +17,7 @@ tracing.workspace = true
 [target.'cfg(windows)'.dependencies]
 resonate-win32.workspace = true
 thread-priority = { version = "3.1.1", default-features = false }
-wasapi = "0.27.0"
+wasapi.workspace = true
 
 [lints]
 workspace = true

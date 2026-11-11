@@ -2212,7 +2212,7 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `QueueStamp` `engine::stamp_of` reads off the loaded rows (locations and spans, not handed ids);
   it answers only where stamps agree. The queue restamps on every row arriving/leaving (a sum of a
   term a row, each hashed with its load-order place: `audio.md`);
-  `stamp_what_is_playing_from` stamps the rows outside the queued-next run, which the engine
+  `Queue::playing_from` stamps the rows outside the queued-next run, which the engine
   publishes as `PlayerState::queue_stamp`: an `Insert` into the playlist's rows or a `Remove` takes
   the badge off wherever it came from; rows queued next leave it; `Queue::split` restamps;
   reordering the same rows stamps the same (read off `items`, not `order`).  `QueueItem` derives no
