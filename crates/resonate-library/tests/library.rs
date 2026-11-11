@@ -27379,6 +27379,59 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_h
 }
 
 #[test]
+fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_one() -> Result<()> {
+    const HEARD_FIRST: Duration = Duration::from_secs(90);
+    const HEARD_SECOND: Duration = Duration::from_secs(5);
+    let tree = Tree::new();
+    let credited = tree.write(
+        "scanned/echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").build(),
+    );
+    let still_unheld = tree.write(
+        "later/seamus.wav",
+        &Wav::new().text(TITLE, "Seamus").build(),
+    );
+    let library = Library::open_in_memory()?;
+
+    let first = library
+        .track_played(&MediaLocation::local(&credited), None, Duration::ZERO)?
+        .expect("an unheld play is still kept");
+    scan(
+        &library,
+        &ScanOptions {
+            roots: vec![tree.path().join("scanned")],
+            ..options(&tree)
+        },
+    )?;
+    let second = library
+        .track_played(&MediaLocation::local(&still_unheld), None, Duration::ZERO)?
+        .expect("an unheld play is still kept");
+
+    assert!(matches!(first.listen, resonate_library::Listen::Unheld(_)));
+    assert!(matches!(second.listen, resonate_library::Listen::Unheld(_)));
+    assert_ne!(
+        second.listen, first.listen,
+        "a credited unheld listen's id was handed out again"
+    );
+
+    library.listened(first.listen, HEARD_FIRST)?;
+    library.listened(second.listen, HEARD_SECOND)?;
+    let heard = library.statistics(Window::Everything)?;
+    let row = library
+        .track_at(&credited, None)?
+        .expect("the row the scan credited");
+
+    assert_eq!(row.plays, 1);
+    assert_eq!(heard.plays, 2);
+    assert_eq!(
+        heard.listened,
+        HEARD_FIRST + HEARD_SECOND,
+        "the time heard after the scan did not reach the credited listen"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed() -> Result<()> {
     let tree = Tree::new();
     let before = tree.write(

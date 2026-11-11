@@ -36,7 +36,21 @@ CREATE TABLE marks (
 ) WITHOUT ROWID;
 ";
 
-const MIGRATIONS: &[&str] = &[V1];
+const AN_ANSWERS_NUMBER_NEVER_GOES_BACK: &str = "
+CREATE TABLE numbered (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last INTEGER NOT NULL
+) STRICT;
+INSERT INTO numbered (id, last) SELECT 1, coalesce(max(seq), 0) FROM answers;
+";
+
+const MIGRATIONS: &[&str] = &[V1, AN_ANSWERS_NUMBER_NEVER_GOES_BACK];
+
+const A_MARK_NO_DEVICE_REACHES: i64 = i64::MAX / 2;
+
+const THE_NEXT_NUMBER: &str = "UPDATE numbered SET last = last + 1 RETURNING last";
+
+const NUMBERED_PAST_A_MARK: &str = "UPDATE numbered SET last = ?1 WHERE last < ?1 AND ?1 <= ?2";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeptAnswer {
@@ -188,6 +202,12 @@ impl Kept {
 
     pub fn after(&self, seq: u64, most: usize, asker: &str) -> Result<Vec<KeptAnswer>> {
         let connection = self.connection.lock();
+        connection
+            .execute(
+                NUMBERED_PAST_A_MARK,
+                params![signed(seq), A_MARK_NO_DEVICE_REACHES],
+            )
+            .map_err(Error::store(Store::Kept, StoreOp::Write))?;
         let mut statement = connection
             .prepare_cached(
                 "SELECT seq, at, key, packed FROM answers \
@@ -219,10 +239,10 @@ impl Kept {
 
     pub fn last_seq(&self) -> Result<u64> {
         let connection = self.connection.lock();
-        let last: Option<i64> = connection
-            .query_row("SELECT max(seq) FROM answers", [], |row| row.get(0))
+        let last: i64 = connection
+            .query_row("SELECT last FROM numbered", [], |row| row.get(0))
             .map_err(Error::store(Store::Kept, StoreOp::Read))?;
-        Ok(last.and_then(|last| u64::try_from(last).ok()).unwrap_or(0))
+        Ok(u64::try_from(last).unwrap_or(0))
     }
 
     pub fn mark_of(&self, device: &str) -> Result<u64> {
@@ -318,9 +338,7 @@ fn written(
         return Ok(false);
     }
     let seq: i64 = transaction
-        .query_row("SELECT coalesce(max(seq), 0) + 1 FROM answers", [], |row| {
-            row.get(0)
-        })
+        .query_row(THE_NEXT_NUMBER, [], |row| row.get(0))
         .map_err(write())?;
     transaction
         .execute("DELETE FROM answers WHERE key = ?1", [key])
@@ -341,4 +359,40 @@ fn written(
             .map_err(write())?;
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kept_at_the_first_shape(newest: i64) -> Connection {
+        let connection = Connection::open_in_memory().expect("a store in memory");
+        connection.execute_batch(V1).expect("the first shape");
+        connection
+            .pragma_update(None, "user_version", 1)
+            .expect("the first shape's stamp");
+        connection
+            .execute(
+                "INSERT INTO answers (key, at, seq, came_from, packed) VALUES (?1, ?2, ?3, NULL, ?4)",
+                params![vec![1_u8], signed(now()), newest, vec![0_u8]],
+            )
+            .expect("an answer of the first shape");
+        connection
+    }
+
+    #[test]
+    fn answers_kept_before_they_were_numbered_go_on_from_the_newest_number() {
+        let kept = Kept::over(kept_at_the_first_shape(5)).expect("carried forward");
+
+        let last = kept.last_seq().expect("read");
+        let next: i64 = kept
+            .connection
+            .lock()
+            .query_row(THE_NEXT_NUMBER, [], |row| row.get(0))
+            .expect("numbered");
+
+        assert_eq!(last, 5);
+        assert_eq!(next, 6);
+        assert_eq!(kept.counted().expect("counted"), 1);
+    }
 }
