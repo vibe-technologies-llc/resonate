@@ -29,7 +29,7 @@ the code that says the words.
   (through referenced messages too), each `impl Into<Arg>` (numbers, `&str`, `String`, `Cow`). An id
   is kebab-case and becomes snake_case; a keyword is raised (`r#type`).
 - **The build refuses what would rot**: a parse error, a comment (the no-comment rule holds in
-  `.ftl`), a message with attributes or no value, an id named twice, an area or language folder
+  `.ftl`; every other source is walked by the test `rust-style.md` names), a message with attributes or no value, an id named twice, an area or language folder
   missing from English or not in it, and a second language's message missing, extra or taking other
   variables than English's. A tag no `Language` carries fails to compile (`Language::by_tag` is a
   `const fn`). **An unused message is `dead_code`**, so clippy's `-D warnings` refuses dead words.
