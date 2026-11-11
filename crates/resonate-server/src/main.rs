@@ -245,6 +245,7 @@ fn run(args: Args) -> Result<(), Error> {
     let keeping = Keeping {
         tracks,
         searches_for: Duration::from_secs(args.search_minutes.saturating_mul(SECONDS_PER_MINUTE)),
+        ..Keeping::default()
     };
     let gateway_acceptor = hifi
         .as_ref()

@@ -19,10 +19,7 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{
-        Semaphore,
-        mpsc::{Sender, channel},
-    },
+    sync::Semaphore,
     time::{Instant, interval, timeout},
 };
 
@@ -31,6 +28,7 @@ use crate::{
     guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice, notice_weight, relayed_weight},
     pages,
+    reading::{Read, read_ahead},
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
     store::{Appended, CaughtUp, Claim, Closing, Compacted, Store},
@@ -41,7 +39,6 @@ const KEEP_EVERY: Duration = Duration::from_secs(30);
 const SILENT_FOR: Duration = Duration::from_secs(90);
 const RECORDS_PER_FRAME: usize = 256;
 const RECORD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
-const FRAMES_READ_AHEAD: usize = 4;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 const A_PAGE_ASKED_AGAIN_AFTER: Duration = Duration::from_millis(5);
 const A_PAGE_ASKER_LEAVES_WITHIN: Duration = Duration::from_secs(2);
@@ -444,6 +441,9 @@ impl Server {
             if let (Some(viewer), Claim::Made | Claim::Held) = (viewer.as_ref(), claim) {
                 store.allow_viewers(space, viewer)?;
             }
+            if viewer.is_none() && claim == Claim::Held && store.is_shared(space)? {
+                return Ok(Claim::Refused);
+            }
             Ok(claim)
         })
         .await?;
@@ -596,8 +596,7 @@ impl Server {
         send.send(&FromServer::RoomWelcome { members, host }.encoded())
             .await?;
 
-        let (frames_in, mut frames) = channel(FRAMES_READ_AHEAD);
-        let reading = tokio::spawn(read_frames(recv, frames_in, ROOM_FRAME_AT_MOST));
+        let (mut frames, reading) = read_ahead(recv, ROOM_FRAME_AT_MOST);
         let mut window = Instant::now();
         let mut counted = 0_u32;
         let mut allowance = Bucket::new(self.limits.room_bytes_per_second);
@@ -605,7 +604,7 @@ impl Server {
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
-                    let Some(Ok(frame)) = frame else {
+                    let Some(Read { frame: Ok(frame), held: _held }) = frame else {
                         break Ok(());
                     };
                     if window.elapsed() >= RATE_WINDOW {
@@ -706,8 +705,7 @@ impl Server {
             send.send(&FromServer::Closed { sealed }.encoded()).await?;
         }
 
-        let (frames_in, mut frames) = channel(FRAMES_READ_AHEAD);
-        let reading = tokio::spawn(read_frames(recv, frames_in, LARGEST_FRAME));
+        let (mut frames, reading) = read_ahead(recv, LARGEST_FRAME);
         let mut window = Instant::now();
         let mut counted = 0_u32;
         let mut allowance = Bucket::new(self.limits.relay_bytes_per_second);
@@ -715,10 +713,7 @@ impl Server {
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
-                    let Some(frame) = frame else {
-                        break Ok(());
-                    };
-                    let Ok(frame) = frame else {
+                    let Some(Read { frame: Ok(frame), held: _held }) = frame else {
                         break Ok(());
                     };
                     let frame = match frame {
@@ -962,20 +957,6 @@ async fn page_asked_of(stream: &TcpStream) -> Option<pages::Asked> {
 async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {
     send.send(&FromServer::Refused(refusal).encoded()).await?;
     Ok(())
-}
-
-async fn read_frames(mut recv: Reader, frames: Sender<Result<ToServer>>, most: usize) {
-    loop {
-        let frame = match recv.read_at_most(most).await {
-            Ok(Some(bytes)) => ToServer::decoded(&bytes).map_err(Error::from),
-            Ok(None) => return,
-            Err(error) => Err(Error::from(error)),
-        };
-        let failed = frame.is_err();
-        if frames.send(frame).await.is_err() || failed {
-            return;
-        }
-    }
 }
 
 async fn in_the_store<T: Send + 'static>(

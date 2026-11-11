@@ -6,6 +6,7 @@ mod hub;
 mod keys;
 mod pages;
 mod ranges;
+mod reading;
 mod relay;
 mod rooms;
 mod searches;
@@ -37,7 +38,7 @@ pub fn read_a_request(request: &[u8], total: u64) {
 pub use crate::{
     cache::{Cache, Fill, Hit},
     error::{CacheOp, ConfigField, Error, PemOp, Result, StoreOp},
-    gateway::{Gateway, Keeping, gateway_tls},
+    gateway::{Crowd, Gateway, Keeping, gateway_tls},
     guard::{Admitted, Allowance, Guard},
     keys::{Digest, Hifi, Keys, Minted},
     searches::{Recalled, Searches},

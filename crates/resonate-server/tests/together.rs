@@ -475,6 +475,38 @@ async fn a_viewer_reads_a_shared_space_and_can_write_nothing_to_it() {
 }
 
 #[tokio::test]
+async fn a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets_stay_apart() {
+    let server = hosted(Limits::default()).await;
+
+    let _editor = share_opened(server).await;
+    let mut as_a_personal_space = Link::to(server).await;
+    as_a_personal_space
+        .say(ToServer::Hello {
+            version: PROTOCOL_VERSION,
+            space: SPACE,
+            token: token(5),
+            device: device(43),
+            after: 0,
+        })
+        .await;
+    let mut shared_again = share_opened_as(server, 44).await;
+    shared_again
+        .say(ToServer::Append {
+            blobs: vec![SEALED.to_vec()],
+        })
+        .await;
+
+    assert_eq!(
+        as_a_personal_space.heard().await,
+        Some(FromServer::Refused(Refusal::Token))
+    );
+    assert!(matches!(
+        shared_again.heard().await,
+        Some(FromServer::Records { .. } | FromServer::Appended { .. })
+    ));
+}
+
+#[tokio::test]
 async fn a_view_link_cannot_claim_a_shared_list_before_its_owner_does() {
     let server = hosted(Limits::default()).await;
     let edit = resonate_sync::shared::Access::minted().expect("a key");
