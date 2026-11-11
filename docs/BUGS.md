@@ -43,13 +43,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [M · 0.8.1] Forgetting a folder deletes its vaulted rows and their listens: `remove_root` deletes
-  every `tracks` row of the root (`db.rs`), where every other removal leaves a row holding a
-  `vault_key` (`store.rs`'s `rooted_paths_at`, `forget_paths`), so the next `vault --prune --apply`
-  deletes audio the vault held as its only copy (`vault.md`: a vaulted row outlives its file), and
-  the listens cascade with the rows without the `unheld_listens` copy `deleted.rs` makes, leaving
-  Statistics, the unfrozen Wrapped years and the scrobbles not yet sent. The window's *Forget*, the
-  CLI's `forget` and MCP's `forget_folder` all reach it
+- [S · 0.8.1] Tidying the gone and a scan's tidy delete listens without keeping them: `forget_paths`
+  (`forget_the_gone`, the scan's tidy) deletes the rows' listens with them and makes no
+  `unheld_listens` copy as `remove_root` (`deleted::forget_a_root`) and `deleted.rs` do, so a file
+  moved off a mount and back is counted from nothing and Statistics, unfrozen Wrapped years and
+  scrobbles not yet sent lose it
 - [S · 0.8.1] Online off does not stop a build of the local MusicBrainz copy: the binary's
   `musicbrainz::build` asks `online_enabled` once before a 7.5 GB download, `Mirroring` holds the
   config cloned as the window opened (so *Build it now* reads Online as it stood at start),
@@ -57,16 +55,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   switched off holds it again from its own forced config, and `keep_fresh` asks `LATEST` past the
   metered lookup gate; `online.md` has `online = false` stop every request. `musicbrainz.rs` holds
   no test
-- [S · 0.8.1] A moved file can be left under two names: `linked_over_nothing` (`unreplacing.rs`:
-  every rename on Windows, and on a filesystem refusing `RENAME_NOREPLACE`) hard-links and then
-  unlinks, and an unlink refused (another program holding the file without delete sharing) returns
-  its error with the link left; organise's `put_back` covers only the steps pushed, so the next scan
-  catalogues a second row. The link wants removing before the error is answered
-- [S · 0.8.1] Exporting a playlist over a symlinked `.m3u` or `.xspf` replaces the link with a
-  file: `sheet.rs`'s staging renames over the path as given and is held by no `writer::Held`, so a
-  stage left by a kill is never swept; the cue-sheet writer canonicalises and holds its stage
-  (`sheeted.rs`), and organise's cue-sheet rewrite (`organise.rs`'s `staged_over`) stages with
-  `fs::write`, though `rust-style.md` holds every staging file under `writer::Held`
 - [S · 0.8.1] A resumed download of the MusicBrainz export shows more read than there is:
   `download.rs` takes the total from `source.length()`, which on a `206` is the bytes still to
   come, while `written` starts at what the part held, so the settings pane reads past 100 %; the

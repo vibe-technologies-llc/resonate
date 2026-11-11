@@ -125,12 +125,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [M · 0.8.1] Organise's copy across filesystems, the one path that deletes the listener's
-  original, is tested within one folder alone (`a_file_copied_whole_carries_its_time_mode_and_attributes`):
-  nothing holds the order of sync, commit and delete, a killed run resumed through
-  `already_copied`, or a failed `files_moved` leaving the source and taking the copy; the `/dev/shm`
-  volume of `tests/library.rs` could hold all three, beside an unlink refused in
-  `linked_over_nothing`
 - [S · 0.8.1] The engine's workers are untested at their edges: `streaming.rs`, `surveying.rs` and
   `lending.rs` hold no test, `Streaming::stop` drains the answers without joining, so an open
   landing after it leaves its `SinkStream` in the channel to be dropped unclosed, and a survey
