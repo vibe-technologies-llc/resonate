@@ -1459,7 +1459,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone`); one that truly
   differs plays silence until the rebuild (`realtime.md`). A hosted daemon proves the settled format
   only for the layout and word asked for (`frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked`);
-  it has no session manager to settle on another.
+  it has no session manager to settle on another. Its `HOSTED` table is a `LazyLock` since it holds a
+  7.0 sink whose layout is `ChannelLayout::placed` over seven places (no named layout holds that
+  set, so it is `Placed`), asked for, advertised and flowed through like the named ones.
 - **A sink's advertised layouts are read the same way** (`format::advertised_layout`, over
   `ChannelLayout::placed`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
   array whatever their order, and gives each offered count whose array is that long and names a
