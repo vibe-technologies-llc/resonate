@@ -384,8 +384,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rebuilds the row first takes the boundary back** (`take_the_boundary_back`, from `rebind_with`,
   a seek, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
   back at its heard position, the entering one is dropped and the output is marked
-  `rendered_for_another`, so no seek reuses it in place; a failure of the entering row passes the
-  boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
+  `rendered_for_another`, so no seek reuses it in place. **A failure of the entering row waits for
+  the graph to reach its boundary**: `drop_what_lies_past_the_boundary` splices away only what was
+  written past the last boundary's `at` (`splice(at, written)`), the failure is held in
+  `failing_past_the_boundary` while nothing more is pumped, and once `reach_the_boundary` has
+  passed every boundary on time (`TrackFinished`, `TrackStarted` as the graph hears them) it fails
+  as ever (`fail_what_waited_for_the_boundary`), so the leaving row's tail is heard whole rather
+  than faded out by `start` retiring the output
+  (`a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole`). Where that
+  cannot be spliced (another output's boundary, the graph already past it, a boundary still inside
+  the chain's latency, a splice or discard in flight) it passes every boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
   and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
   and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
   wherever the rate, word or channels move. Refused also: a sleep timer ending at
