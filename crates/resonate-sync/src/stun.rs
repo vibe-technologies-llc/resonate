@@ -189,7 +189,7 @@ fn looks_like_stun(datagram: &[u8]) -> bool {
         && datagram[4..8] == MAGIC_COOKIE
 }
 
-fn binding_answer(datagram: &[u8]) -> Option<(Transaction, SocketAddr)> {
+pub(crate) fn binding_answer(datagram: &[u8]) -> Option<(Transaction, SocketAddr)> {
     if !looks_like_stun(datagram) {
         return None;
     }

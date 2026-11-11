@@ -125,12 +125,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.8.1] Readers of bytes from outside have no fuzz target: the IPC frames of `resonate-mpris`'s
-  `wire.rs` (a Windows pipe or a Mac's socket, up to 64 MiB), STUN answers on the QUIC socket
-  (`stun.rs`'s `binding_answer`), a measurement or calibration file (`resonate-eq`'s
-  `read_response`), the AutoEq index whose `DeviceId::new` keeps `..` out of a path
-  (`catalogue.rs`), and `probe_scanned` and `probe_pictured`, which the `probe` target never calls;
-  a release build aborts on a panic in any of them
 - [M · 0.8.1] The settings pane changes as often as `root.rs` and is held by almost nothing:
   `views/settings/mod.rs` (107 commits) and `appearance.rs` hold no test, `output.rs` one and
   `equaliser.rs` four, and `driven.rs` only opens a page; each page opened, a setting changed and

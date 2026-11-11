@@ -112,7 +112,7 @@ the listener, never by a script.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-nine targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-three targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
   `cue`, `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader), `padding` (the tag writer's padded heads and its Matroska rewrite, kind 5), `journal` (an undo journal,
@@ -123,22 +123,27 @@ the listener, never by a script.
   (a lookup and an answer read back as themselves, and a line of the export's COPY text), `upnp` (an SSDP
   answer, a renderer's description, a chunked body, a SOAP answer and an address, holding that no
   control address leaves the host that described the renderer), `cast` (a Cast frame's protobuf and the
-  JSON in it, read back as itself) and `server` (the sync server's invitation page request, the
+  JSON in it, read back as itself), `server` (the sync server's invitation page request, the
   gateway's request head and its `Range` header over a total, holding that a span lies within it; the
-  input's first eight bytes are the total).
+  input's first eight bytes are the total), `ipc` (the frames `resonate-mpris`'s `wire.rs` carries
+  over a Windows pipe or a Mac's socket, read as requests and as replies and held to re-encode to
+  the same bytes), `stun` (an answer on the QUIC socket, `binding_answer`), `measurement`
+  (`read_response`: a measurement or calibration file, holding its points ascending and every
+  interpolation finite) and `catalogue` (the AutoEq index, holding that no `DeviceId` leaves its
+  folder).
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and
   `cue`): the last byte's low bit serves it as a pipe (`held::Arrival::Piped`: no seek, no length,
   the spool path), the next asks DSD as samples rather than DoP, the six above hint an extension off
   `AUDIO_EXTENSIONS` (zero hints none); the two before it are seeks, each a 256th of the length, then
-  a seek back to the start and `settle_the_spool`. `cue` resolves every `FILE` line against names a
+  a seek back to the start and `settle_the_spool`. Beside `probe_stream`, `probe_cover_art` and `probe_span` the target runs `probe_scanned` and `probe_pictured` (both pictures). `cue` resolves every `FILE` line against names a
   folder could list through `the_one_a_cue_names`, `the_best_a_cue_names`, `the_folder_a_cue_names`.
 - **What a fuzz run found stays found**: a failing input is copied into
   `crates/resonate-codec/tests/found/` and `tests/found.rs` probes and decodes each, holding every
   block to what a decoder makes (a WavPack packet claiming hours of a hole once asked for 16 GiB in
   one block); the same test replays `fuzz/seeds/probe`.
   `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same. `lrc`,
-  `lyricsfile`, `ttml`, `playlist`, `mcp` and the targets above that reach a private reader use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
+  `lyricsfile`, `ttml`, `playlist`, `mcp`, `ipc`, `stun` and the targets above that reach a private reader use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
   lines and envelopes and never dispatches, a tool being free to touch the filesystem.
 - **`fuzz/seeds/<target>`** holds the smallest file of each thing a target reads, a second corpus
   folder; a grown `corpus/` is gitignored. Seeds are added by hand; nothing but a person runs the
