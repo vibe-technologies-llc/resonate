@@ -1412,7 +1412,11 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   point); the graph's choice returns via `param_changed` as `StreamEvent::FormatChanged` and is kept
   on `OutputStatus::words`. **Packing is in the graph's own buffer, forward, allocation-free:**
   `process::pack` reads the low three bytes of the word at `4i`, writes them at `3i`, never reaching
-  an unread word; the ring still fills at the padded stride and `Silence::write` still lays DoP
+  an unread word. The quantum is counted in packed frames against the buffer; one whose padded
+  words would not fit there (a quantum near the buffer's size, as at the quantum limit) is filled
+  into `Cycle::widened`, allocated as the stream opens for `QUANTUM_LIMIT_FRAMES`, and packed across
+  (`packed_into`), so the graph is never handed three quarters of what it asked
+  (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); the ring still fills at the padded stride and `Silence::write` still lays DoP
   markers as four-byte words (the marker is byte 2, so a DoP carrier survives).
 - **The settled layout is read from the format's positions, never its count** (`format::placed`):
   the `position` array is matched against `spa_position` of each named layout, else `Discrete`; a
