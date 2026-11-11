@@ -125,12 +125,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.8.1] Readers of bytes from outside have no fuzz target: the IPC frames of `resonate-mpris`'s
-  `wire.rs` (a Windows pipe or a Mac's socket, up to 64 MiB), STUN answers on the QUIC socket
-  (`stun.rs`'s `binding_answer`), a measurement or calibration file (`resonate-eq`'s
-  `read_response`), the AutoEq index whose `DeviceId::new` keeps `..` out of a path
-  (`catalogue.rs`), and `probe_scanned` and `probe_pictured`, which the `probe` target never calls;
-  a release build aborts on a panic in any of them
 - [M · 0.8.1] The settings pane changes as often as `root.rs` and is held by almost nothing:
   `views/settings/mod.rs` (107 commits) and `appearance.rs` hold no test, `output.rs` one and
   `equaliser.rs` four, and `driven.rs` only opens a page; each page opened, a setting changed and
@@ -186,10 +180,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · 0.8.1] `parking_lot` 0.12 and 0.13, `base64` 0.22 and 0.23 and `sha2` 0.10 and 0.11 (with
-  `lock_api`, `parking_lot_core` and `digest` beside them) are built twice into the player, gpui's
-  tree holding the older; `base64` could come down to `usvg`'s 0.22, and `dependencies.md`'s
-  duplicates third parties force name `md-5` and `miniz_oxide` alone
 - [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
   0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
   `hdf5-reader` never calls the `LruCache::pop` the advisory names

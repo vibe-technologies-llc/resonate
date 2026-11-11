@@ -16,6 +16,8 @@ mod desk_bus;
 mod desk_toast;
 mod desktop;
 mod error;
+#[cfg(fuzzing)]
+mod fuzzing;
 #[cfg(target_os = "linux")]
 mod gaming;
 mod host;
@@ -63,6 +65,9 @@ mod words {
 
 #[cfg(target_os = "linux")]
 pub use gaming::watch_game_mode;
+
+#[cfg(fuzzing)]
+pub use crate::fuzzing::read_what_a_peer_says;
 
 #[cfg(windows)]
 pub use crate::costing::watch_the_meter;

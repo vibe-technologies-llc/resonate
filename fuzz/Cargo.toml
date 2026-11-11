@@ -18,6 +18,7 @@ resonate-eq.path = "../crates/resonate-eq"
 resonate-library.path = "../crates/resonate-library"
 resonate-lyrics.path = "../crates/resonate-lyrics"
 resonate-mcp.path = "../crates/resonate-mcp"
+resonate-mpris.path = "../crates/resonate-mpris"
 resonate-musicbrainz.path = "../crates/resonate-musicbrainz"
 resonate-online.path = "../crates/resonate-online"
 resonate-server.path = "../crates/resonate-server"
@@ -228,6 +229,34 @@ bench = false
 [[bin]]
 name = "server"
 path = "fuzz_targets/server.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ipc"
+path = "fuzz_targets/ipc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stun"
+path = "fuzz_targets/stun.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "measurement"
+path = "fuzz_targets/measurement.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "catalogue"
+path = "fuzz_targets/catalogue.rs"
 test = false
 doc = false
 bench = false

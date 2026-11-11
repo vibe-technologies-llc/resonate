@@ -2730,6 +2730,7 @@ dependencies = [
  "resonate-library",
  "resonate-lyrics",
  "resonate-mcp",
+ "resonate-mpris",
  "resonate-musicbrainz",
  "resonate-online",
  "resonate-server",

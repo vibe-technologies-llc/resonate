@@ -4,8 +4,8 @@ mod held;
 
 use libfuzzer_sys::fuzz_target;
 use resonate_codec::{
-    DecodeStatus, Decoder, Delivery, FormatHint, MediaInfo, Packing, probe, probe_cover_art,
-    probe_span, probe_stream,
+    DecodeStatus, Decoder, Delivery, FormatHint, MediaInfo, Packing, Picturing, probe,
+    probe_cover_art, probe_pictured, probe_scanned, probe_span, probe_stream,
 };
 use resonate_core::{AUDIO_EXTENSIONS, AudioBuffer, FrameSpan, Frames, SampleFormat};
 
@@ -83,6 +83,9 @@ fuzz_target!(|bytes: &[u8]| {
     let _ = probe(&sources, &location);
     let _ = probe_stream(&sources, &location);
     let _ = probe_cover_art(&sources, &location);
+    let _ = probe_scanned(&sources, &location);
+    let _ = probe_pictured(&sources, &location, Picturing::Whether);
+    let _ = probe_pictured(&sources, &location, Picturing::Copied);
     let _ = probe_span(
         &sources,
         &location,

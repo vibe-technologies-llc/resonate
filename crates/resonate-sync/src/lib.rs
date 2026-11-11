@@ -2,6 +2,8 @@ mod catalog;
 mod change;
 mod consulted;
 mod error;
+#[cfg(fuzzing)]
+mod fuzzing;
 mod key;
 mod ledger;
 mod merge;
@@ -22,6 +24,8 @@ mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }
 
+#[cfg(fuzzing)]
+pub use crate::fuzzing::read_a_stun_answer;
 pub use crate::{
     catalog::{
         Catalog, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened,
