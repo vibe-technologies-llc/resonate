@@ -46,6 +46,8 @@ const PADDED_RINGS_PULLED_TIMES_REAL_TIME: u32 = 1;
 const SHORTEST_PAUSE_BETWEEN_PULLS: Duration = Duration::from_millis(1);
 const SECOND_ROW: Frames = Frames(RATE as u64 * 15 / 75);
 const A_SHORT_DOZE: Duration = Duration::from_millis(150);
+const A_DOZE_A_STALLED_ENGINE_STILL_FADES: Duration = Duration::from_millis(400);
+const A_DEVICE_PULLS_AT_REAL_TIME: u32 = 1;
 const A_LONG_DOZE: Duration = Duration::from_secs(30);
 const RING_DEPTH: Duration = Duration::from_millis(200);
 const A_RAMP_AT_MOST: Duration = Duration::from_millis(50);
@@ -1874,10 +1876,11 @@ fn a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_
 
     let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
     let (at, row, sounding) = (handover.at(), handover.row(), handover.sounding());
-    play_until(
+    play_paced_until(
         &first,
         &outgoing,
-        block,
+        BLOCK_FRAMES * stride,
+        A_DEVICE_PULLS_AT_REAL_TIME,
         |player, graph| {
             player.state().playback == PlaybackState::Stopped && graph.closes > closed_before
         },
@@ -5643,33 +5646,60 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
         autoplay: true,
     })?;
 
+    let pull = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
     let mut started = Vec::new();
     let mut finished = Vec::new();
     let mut published_early = Vec::new();
-    play_until(
-        &player,
-        &graph,
-        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
-        |player, graph| {
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let (played, pause) = {
+            let mut held = graph.lock();
+            held.pull(pull);
+            (
+                held.played.len(),
+                held.pause_after_pulling(pull, PULL_TIMES_REAL_TIME_AT_MOST),
+            )
+        };
+        let passed = boundaries.iter().filter(|at| played > **at).count();
+        loop {
             for event in player.events().try_iter() {
                 match event {
-                    Event::TrackStarted(id) => started.push((id.get(), graph.played.len())),
-                    Event::TrackFinished(id) => finished.push((id.get(), graph.played.len())),
+                    Event::TrackStarted(id) => started.push((id.get(), played)),
+                    Event::TrackFinished(id) => finished.push((id.get(), played)),
                     Event::Failed { error, .. } => panic!("playback failed: {error}"),
                     _ => {}
                 }
             }
-            for (row, boundary) in boundaries.iter().enumerate() {
-                let entering = row as u64 + 2;
-                if graph.played.len() < *boundary && plays(player, entering) {
-                    published_early.push((entering, graph.played.len()));
-                }
+            let announced = passed == 0 || (started.len() > passed && finished.len() >= passed);
+            if announced {
+                break;
             }
-            graph.played.len() >= heard.len()
-                && started.last().is_some_and(|(id, _)| *id == SHORT_ROWS + 1)
-        },
-        "every short row and the long one after them to be heard",
-    );
+            assert!(
+                Instant::now() < deadline,
+                "row {} was never announced; {}, {}",
+                passed + 1,
+                transport(&player),
+                pulls(&graph.lock())
+            );
+            thread::sleep(SHORTEST_PAUSE_BETWEEN_PULLS);
+        }
+        for (row, boundary) in boundaries.iter().enumerate() {
+            let entering = row as u64 + 2;
+            if played < *boundary && plays(&player, entering) {
+                published_early.push((entering, played));
+            }
+        }
+        if played >= heard.len() && started.last().is_some_and(|(id, _)| *id == SHORT_ROWS + 1) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for every short row and the long one after them to be heard; {}, {}",
+            transport(&player),
+            pulls(&graph.lock())
+        );
+        thread::sleep(pause);
+    }
 
     let graph = graph.lock();
     assert!(
@@ -9714,7 +9744,7 @@ fn a_stop_fades_the_level_out_before_the_stream_closes() -> Result<()> {
     play_until(
         &player,
         &graph,
-        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
         |_, graph| graph.closes == 1,
         "the stream to close once the level had faded out",
     );
@@ -9738,7 +9768,9 @@ fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
     let (player, graph, _tree) = a_steady_level_playing(16_000)?;
 
     player
-        .request(Command::SleepUntil(Some(Until::After(A_SHORT_DOZE))))?
+        .request(Command::SleepUntil(Some(Until::After(
+            A_DOZE_A_STALLED_ENGINE_STILL_FADES,
+        ))))?
         .wait_for(PATIENCE)?;
     play_until(
         &player,

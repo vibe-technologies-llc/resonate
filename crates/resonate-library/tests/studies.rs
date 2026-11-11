@@ -16,7 +16,7 @@ use resonate_library::{
     ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
     EnrichSummary, Error, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions,
     Isrc, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LookupOp, LyricText,
-    LyricsAsked, Mbid, Medium, PlaylistLink, Printed, ProfileLink, Recording, RecordingAsked,
+    LyricsAsked, Mbid, Medium, Pace, PlaylistLink, Printed, ProfileLink, Recording, RecordingAsked,
     RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
     Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded, Sources, StreamAsked,
     StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
@@ -426,7 +426,10 @@ fn enriched(
         .enrich(
             Arc::new(reference),
             Arc::new(fingerprinters),
-            EnrichOptions::default(),
+            EnrichOptions {
+                pace: Pace::Hurried,
+                ..EnrichOptions::default()
+            },
         )?
         .join()?;
     assert!(!summary.cancelled);
@@ -1063,6 +1066,7 @@ fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_aske
             Arc::new(Fingerprinters::none()),
             EnrichOptions {
                 refresh: true,
+                pace: Pace::Hurried,
                 ..EnrichOptions::default()
             },
         )?

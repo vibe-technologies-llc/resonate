@@ -266,6 +266,21 @@ mod tests {
         }
     }
 
+    fn heard_a_write_first(watch: &RootsWatch, scratch: &Scratch) {
+        let proof = scratch.path.join("album/heard first.flac");
+        fs::write(&proof, b"fLaC").expect("a file");
+        let started = Instant::now();
+        while watch.moved.lock().roots.is_empty() {
+            assert!(
+                started.elapsed() < HEARD_WITHIN,
+                "the watch never heard the write that proves it listens"
+            );
+            thread::sleep(LOOKED_EVERY);
+        }
+        thread::sleep(EVERY_EVENT_OF_ONE_WRITE_LANDS_WITHIN);
+        watch.settled(Duration::ZERO);
+    }
+
     fn settled_within(watch: &RootsWatch, wait: Duration) -> Vec<PathBuf> {
         let started = Instant::now();
         while started.elapsed() < wait {
@@ -463,6 +478,7 @@ mod tests {
         fs::write(&first, b"fLaC").expect("a file");
         fs::write(&second, b"fLaC").expect("a file");
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+        heard_a_write_first(&watch, &scratch);
 
         fs::remove_file(&first).expect("the file taken away");
         fs::remove_file(&second).expect("the file taken away");
@@ -484,6 +500,7 @@ mod tests {
         let after = scratch.path.join("album/06 Echoes.flac");
         fs::write(&before, b"fLaC").expect("a file");
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+        heard_a_write_first(&watch, &scratch);
 
         fs::rename(&before, &after).expect("the file renamed");
 

@@ -1506,7 +1506,13 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   runner's coarse sleep, the timer's pause cut in on a level barely faded, and the transport read
   `Paused` before the pause's own fade was pulled
   (`a_sleep_timer_fades_the_music_out_before_it_pauses` pulls `BLOCK_FRAMES` and waits for
-  `!graph.active`).
+  `!graph.active`). It dozes for `A_DOZE_A_STALLED_ENGINE_STILL_FADES` (400 ms), since a fade that
+  begins with under about 20 ms left is the pause's own, too steep for the test, and a Mac runner
+  has stalled the engine for longer than the 150 ms the other timer tests doze. A stop's and a
+  handover's fade out are pulled in whole blocks for the same reason: at 64 frames a pull, a Mac's
+  overshot sleeps had `QUIET_WITHIN_AT_LEAST` (40 ms) close the stream partway down the fade. The
+  handover's blocks come at real time, as the wait for the other zone would see eight times real
+  time run the ring dry.
 - **A test that asserts what the engine does after a command waits for the engine, not for audio
   time.** The graph's pulled frames are a clock the engine's wall time does not follow, so a
   window of pulled frames closes before a starved engine thread has acted. Waiting is on a
@@ -1515,7 +1521,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   has passed the last (`play_waiting_on_the_engine` pulls a block, then waits
   `THE_ENGINE_IS_WAITED_FOR` on the event channel, so the graph does not pass a splice point
   before the engine has published it:
-  `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last`).
+  `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last`), or a row's
+  announcement (`a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announced_as_the_graph_reaches_it`
+  stops pulling at each boundary it has passed until that row is announced).
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**

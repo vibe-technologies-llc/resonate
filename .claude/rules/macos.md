@@ -57,6 +57,13 @@ output device. It is checked two ways:
   (`server.md`), and a Cast test's fake keeps what it was fetching through a `STOP`.
 - **A datagram to port 0 is sent**, so a test wanting a search that cannot be sent aims at the
   broadcast address from a socket never allowed to broadcast.
+- **A watch on a Mac starts late and hears a little of the past.** FSEvents can miss what happens
+  in the moments after a stream starts and deliver a folder made just before it, which reads as a
+  change no test has settled, so `taken_away` answers nothing. A test acting on files made before
+  its watch first proves the watch listens (`heard_a_write_first`).
+- **The hosted runner's sleeps overshoot and it stalls threads for tens of milliseconds**, which the
+  engine's transport tests read as a device falling behind. The job runs `resonate-engine`'s tests
+  one at a time, on top of what `audio.md`'s *Fixtures* holds them to.
 - `stat` is BSD's: a test reading a mode asks `stat -c %a`, then `stat -f %Lp`.
 
 `docs/FEATURES.md`'s *macOS parity* lists what is not built and what only a Mac can settle.

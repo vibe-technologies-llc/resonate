@@ -326,7 +326,9 @@ jobs:
       - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
       - name: Name the temporary folder by its real path
         run: echo "TMPDIR=$(cd "$TMPDIR" && pwd -P)" >> "$GITHUB_ENV"
-      - run: cargo test --locked --no-fail-fast --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
+      - run: cargo test --locked --no-fail-fast --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --exclude resonate-engine --no-default-features
+      - if: ${{ !cancelled() }}
+        run: cargo test --locked --no-fail-fast -p resonate-engine --no-default-features -- --test-threads=1
       - if: ${{ !cancelled() }}
         run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
       - if: ${{ !cancelled() }}
