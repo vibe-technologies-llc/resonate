@@ -7,7 +7,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_sync::{DeviceId, SpaceId, Token, wire::Refusal};
+use resonate_sync::{DeviceId, SpaceId, wire::Refusal};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 pub const ROOM_BACKLOG_BYTES_AT_MOST: usize = 1024 * 1024;
@@ -87,7 +87,7 @@ impl Rooms {
                 let Some(host_token) = asked.host_token else {
                     return Err(Refusal::NoSuchRoom);
                 };
-                if !asked.room.may_be_made_by(&Token(*host_token).digest()) {
+                if !asked.room.may_be_made_by(host_token) {
                     return Err(Refusal::Token);
                 }
                 if rooms_held >= limits.rooms {
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn a_room_committed_to_its_host_is_made_by_that_host_alone_even_once_it_has_ended() {
         let rooms = Rooms::default();
-        let committed = SpaceId::committed_to(&Token(HOST_TOKEN).digest());
+        let committed = SpaceId::committed_to(&HOST_TOKEN);
         let knocking = |member, host_token| Asked {
             room: committed,
             token: &TOKEN,
