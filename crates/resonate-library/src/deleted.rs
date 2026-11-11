@@ -174,7 +174,15 @@ fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bo
     cuts_the_file
 }
 
-pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf], why: Why) -> Result<Forgotten> {
+pub(crate) fn note_before_removing(tx: &Transaction<'_>, files: &BTreeSet<PathBuf>) -> Result<()> {
+    for path in files {
+        synced::note_deleted(tx, &store::path_text(path))?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Forgotten> {
     let mut forgotten = Forgotten {
         tracks: 0,
         vault_keys: AHashSet::new(),
@@ -193,10 +201,6 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf], why: Why) ->
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         forgotten.vault_keys.extend(held);
-
-        if why == Why::Deleted {
-            synced::note_deleted(tx, &named)?;
-        }
 
         tx.execute(LISTENS_KEPT_AS_UNHELD, params![named])
             .map_err(|source| Error::store(StoreOp::Insert, source))?;

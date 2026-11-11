@@ -565,7 +565,7 @@ rows read via `Player::media` like any unscanned row.
   ranks by correlated `count(*)` of listens in the last thirty days, `tracks.plays` tie-break.
   Playlist twin: `playlist_plays`, a row per play a playlist was loaded for; no cascade from the
   playlist row (`undo.rs` re-creates a playlist); the history span ages it. SQLite reuses a
-  discarded playlist's id, so `playlist::created` clears `playlist_plays` under the new id.
+  discarded playlist's id, so `playlist::created` and the sync's `synced::made` clear `playlist_plays` and `playlist_sources` (a link a removal kept for undo) under the new id (`a_playlist_a_sync_makes_inherits_no_link_from_a_deleted_one_whose_id_it_takes`).
 - **Moved files are followed, not forgotten and refound.** A hand rename/move (not `organise`) =
   gone-file row + unnamed file. `moves::follow_the_moved` (before the prune) pairs a whole-file row
   (only row at its path, file missing) with a row this scan added alike in `file_size`, `duration`,
@@ -621,7 +621,7 @@ rows read via `Player::media` like any unscanned row.
   and folded album with lengths within 2 s, the first best copy; a remote listen is a `listens` row
   with `elsewhere = 1` and the `origin_device` and `origin_id` it came from, unique together, so
   crediting one twice changes nothing and counts nothing (counted in plays and statistics, passed over by `THE_LISTENS_AFTER` and by
-  `listens_to_sync`, which also stops at a listen not yet settled). **A saved query is read and
+  `listens_to_sync`, which stops at the first listen not yet settled: one whose count or last heard moment, `max(at, began + heard)`, falls inside `LISTEN_SETTLES_AFTER` (15 minutes; `settle_listens_after` moves it for a test), since the engine raises `heard` every `TOLD_EVERY` while the song plays and the remote credit is `INSERT OR IGNORE`, so a listen sent mid-song would count short on every device for good: `a_listen_still_being_heard_is_offered_only_once_it_has_settled`). **A saved query is read and
   written as its text, order and reading codes and row cap** (`synced_queries`, `write_synced_query`:
   a taken name aliased like a list's, a query written over a list made anew, an unknown code
   `None`; `a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_asked_there`).

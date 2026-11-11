@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
     process,
     sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
+        Arc, OnceLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -15,9 +15,9 @@ use resonate_analysis::Watch;
 use resonate_core::{Answer, Answered, Chromaprint, Link, Mbid, MediaLocation, Recording};
 use resonate_library::{
     Agreement, Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeardAs,
-    HeldTags, ImageFormat, ImportOptions, Layout, Library, LyricText, Medium, Release,
-    ReleaseTrack, Removal, Result, SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder,
-    Sources, SyncedQueryBody, TrackQuery, Trashes, Vault, WAITS,
+    HeldTags, ImageFormat, ImportOptions, Layout, Library, LyricText, Medium, PlaylistLink,
+    Release, ReleaseTrack, Removal, Result, SavedQuery, ScanOptions, ScanStats, SongFiled,
+    SortOrder, Sources, SyncedQueryBody, TrackQuery, Trashes, Upkeep, Vault, WAITS,
 };
 
 const RATE: u32 = 44_100;
@@ -435,6 +435,7 @@ fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_s
         .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
         .expect("a counted play");
     library.listened(counted.listen, Duration::from_secs(2))?;
+    library.settle_listens_after(Duration::ZERO);
     let listens = library.listens_to_sync(0, 10)?;
     assert_eq!(listens.len(), 1);
     assert_eq!(listens[0].recording.title, "Echoes");
@@ -1262,6 +1263,47 @@ fn a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not
     Ok(())
 }
 
+struct MarkedBeforeTheFileGoes {
+    library: Arc<OnceLock<Arc<Library>>>,
+    recording: Recording,
+    marked_as_it_went: Arc<AtomicBool>,
+}
+
+impl Trashes for MarkedBeforeTheFileGoes {
+    fn trash(&self, file: &Path) -> Removal {
+        let library = self.library.get().expect("the library is set");
+        let marked = library
+            .deleted_recording(&self.recording)
+            .expect("the mark is read");
+        self.marked_as_it_went.store(marked, Ordering::Release);
+        fs::remove_file(file).expect("the desktop takes the file");
+        Removal::Removed
+    }
+}
+
+#[test]
+fn a_song_is_marked_deleted_before_its_file_goes_so_a_follow_meanwhile_does_not_fetch_it_back()
+-> Result<()> {
+    let tree = Tree::new();
+    let gone = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let library = Arc::new(Library::open_in_memory()?);
+    let marked_as_it_went = Arc::new(AtomicBool::new(false));
+    let seat = Arc::new(OnceLock::new());
+    library.trash_through(Some(Arc::new(MarkedBeforeTheFileGoes {
+        library: Arc::clone(&seat),
+        recording: song("Fearless", "Pink Floyd", "Meddle"),
+        marked_as_it_went: Arc::clone(&marked_as_it_went),
+    })));
+    seat.set(Arc::clone(&library)).ok();
+    scan(&library, &tree.root)?;
+
+    let doomed = library.track_at(&gone, None)?.expect("scanned");
+    library.delete_tracks(&[doomed.id])?;
+
+    assert!(marked_as_it_went.load(Ordering::Acquire));
+    Ok(())
+}
+
 fn answers_of(answered: &[Answered]) -> Vec<(&str, &Answer)> {
     let mut answers = answered
         .iter()
@@ -1865,4 +1907,46 @@ mod shared_lists {
             "a row whose id was reused is another list"
         );
     }
+}
+
+#[test]
+fn a_listen_still_being_heard_is_offered_only_once_it_has_settled() -> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    scan(&library, &tree.root)?;
+
+    let counted = library
+        .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+        .expect("a counted play");
+    library.listened(counted.listen, Duration::from_secs(30))?;
+
+    assert_eq!(library.listens_to_sync(0, 10)?, []);
+
+    library.listened(counted.listen, Duration::from_secs(1))?;
+    library.settle_listens_after(Duration::ZERO);
+
+    let listens = library.listens_to_sync(0, 10)?;
+    assert_eq!(listens.len(), 1);
+    assert_eq!(listens[0].heard, Duration::from_secs(1));
+    Ok(())
+}
+
+#[test]
+fn a_playlist_a_sync_makes_inherits_no_link_from_a_deleted_one_whose_id_it_takes() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let linked = library
+        .fill_from_the_link(&PlaylistLink::Deezer(7), "Night drive", &[], Upkeep::InStep)?
+        .playlist;
+    assert!(library.playlist_source(linked)?.is_some());
+    library.remove_playlist(linked)?;
+
+    let made = library.write_synced_playlist(None, "Morning", &[])?;
+
+    assert_eq!(
+        made.id, linked,
+        "the deleted playlist's id was not taken again"
+    );
+    assert_eq!(library.playlist_source(made.id)?, None);
+    Ok(())
 }

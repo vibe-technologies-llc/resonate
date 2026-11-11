@@ -63,6 +63,7 @@ pub struct Inside {
     pub resumed: Option<Resumed>,
     pub deleted_by_hand: Vec<String>,
     pub deleted_here: Vec<String>,
+    pub deleted_after_the_first_look: Vec<String>,
     pub answers: Vec<Answered>,
     pub takes_no_answers: bool,
     pub covers: BTreeMap<String, Vec<u8>>,
@@ -530,7 +531,18 @@ impl Catalog for Shelf {
     }
 
     fn deleted_here(&self, recording: &Recording) -> Result<bool, Refused> {
-        Ok(self.inside.lock().deleted_here.contains(&recording.title))
+        let mut inside = self.inside.lock();
+        if let Some(at) = inside
+            .deleted_after_the_first_look
+            .iter()
+            .position(|title| *title == recording.title)
+        {
+            let title = inside.deleted_after_the_first_look.remove(at);
+            inside.deleted_here.push(title);
+            return Ok(false);
+        }
+
+        Ok(inside.deleted_here.contains(&recording.title))
     }
 
     fn forgive_deletion(&self, recording: &Recording) -> Result<(), Refused> {
