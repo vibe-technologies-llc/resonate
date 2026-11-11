@@ -1100,7 +1100,10 @@ fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
                             let Some(root) = handle.downcast::<RootView>() else {
                                 continue;
                             };
-                            let arrives = matches!(followed, Followed::PartyOffered(_));
+                            let arrives = matches!(
+                                followed,
+                                Followed::PartyOffered(_) | Followed::ListOffered(_)
+                            );
                             let _ = root.update(cx, |root, window, cx| {
                                 root.follow(followed.clone(), cx);
                                 if arrives {

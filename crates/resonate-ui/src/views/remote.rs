@@ -444,7 +444,7 @@ impl RootView {
             controls = controls.child(Self::ringed(
                 &handle,
                 button,
-                move |this, _, cx| this.press_on_the_device(&device, at, key, cx),
+                move |this, _, cx| this.press_on_the_device(&device, at, key, None, cx),
                 cx,
             ));
         }

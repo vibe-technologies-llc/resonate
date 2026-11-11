@@ -54,7 +54,7 @@ use crate::{
     models::{Picture, Scale, Sorting},
     motion,
     serving::ServerModel,
-    settings::SettingsWriter,
+    settings::{ListOffered, SettingsWriter},
     theme,
     toast::{self, Toaster},
     together::is_an_invitation,
@@ -524,6 +524,7 @@ pub struct RootView {
     pub(crate) typed_words: Entity<Field>,
     pub(crate) typed_isrc: Entity<Field>,
     pub(crate) party_offered: Option<String>,
+    pub(crate) list_offered: Option<ListOffered>,
     pub(crate) incoming: Option<Incoming>,
     pub(crate) taking_in: Option<TakingIn>,
     pub(crate) watching_the_drag: Task<()>,
@@ -1226,6 +1227,7 @@ impl RootView {
             typed_words,
             typed_isrc,
             party_offered: None,
+            list_offered: None,
             incoming: None,
             taking_in: None,
             watching_the_drag: Task::ready(()),
@@ -4331,6 +4333,8 @@ impl RootView {
             self.leave_the_matching(window, cx);
         } else if self.party_offered.is_some() {
             self.not_joining_the_party(cx);
+        } else if self.list_offered.is_some() {
+            self.not_joining_the_list(cx);
         } else if self.listening_open {
             self.close_the_listener(cx);
         } else if self.magnified.is_some() {
@@ -4368,6 +4372,7 @@ impl RootView {
             || self.deleting.is_some()
             || self.matching.is_some()
             || self.party_offered.is_some()
+            || self.list_offered.is_some()
     }
 
     fn reach_by_hand(&mut self, cx: &mut Context<Self>) {
@@ -6371,6 +6376,13 @@ impl Render for RootView {
                     motion::ARRIVES_OVER,
                 ))
             })
+            .when(self.list_offered.is_some(), |app| {
+                app.child(motion::faded_in(
+                    self.list_offer_sheet(cx),
+                    "list-offer-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
             .when(self.matching.is_some(), |app| {
                 app.child(motion::faded_in(
                     self.matching_sheet(cx),
@@ -6952,7 +6964,7 @@ mod tests {
         use resonate_library::{Cut, Direction, Library, PlaylistOrder};
 
         use crate::{
-            Followed, Notice, ResonateApp, SettingsCategory,
+            Followed, ListOffered, Notice, ResonateApp, SettingsCategory,
             app::About,
             driven::{Driven, Folder},
             toast,
@@ -7385,6 +7397,94 @@ mod tests {
                 vec![(A_PARTY_LINK.to_owned(), zone)]
             );
             assert_eq!(driven.read(|root, _| root.pane), Pane::Party);
+        }
+
+        const A_LIST_LINK: &str =
+            "resonate://shared/E-ABCDE?server=wss%3A%2F%2Fstranger.example%2F";
+
+        fn offering_a_list(driven: &mut Driven) {
+            let root = driven.root.clone();
+
+            driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| {
+                    root.follow(
+                        Followed::ListOffered(ListOffered {
+                            link: A_LIST_LINK.to_owned(),
+                            server: "wss://stranger.example/".to_owned(),
+                        }),
+                        cx,
+                    );
+                });
+            });
+            driven.settle();
+            driven.settle();
+        }
+
+        #[gpui::test]
+        fn a_list_on_a_stranger_server_from_outside_asks_first_and_focus_lands_on_the_control_that_declines(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            let joining = Arc::new(party_offer::joined::Joining::default());
+            together_over(&mut driven, joining.clone());
+
+            offering_a_list(&mut driven);
+
+            assert!(driven.read(|root, _| root.list_offered.is_some()));
+            assert!(focused_is(&mut driven, "not-joining-the-list"));
+            assert!(!focused_is(&mut driven, "join-the-list"));
+            assert!(joining.accepted.lock().is_empty(), "nothing joins unasked");
+
+            driven.cx.simulate_keystrokes("enter");
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.list_offered.is_none()));
+            assert!(
+                joining.accepted.lock().is_empty(),
+                "no key confirms a join, enter included"
+            );
+        }
+
+        #[gpui::test]
+        fn escape_declines_a_list_on_another_server_and_the_sheet_holds_the_keys_back(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+            let joining = Arc::new(party_offer::joined::Joining::default());
+            together_over(&mut driven, joining.clone());
+
+            driven.cx.simulate_keystrokes("down down");
+            offering_a_list(&mut driven);
+            driven.focus_the_window();
+            nothing_behind_the_sheet_answers_to(
+                &mut driven,
+                3,
+                "backspace alt-up down secondary-z",
+            );
+
+            driven.cx.simulate_keystrokes("escape");
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.list_offered.is_none()));
+            assert!(joining.accepted.lock().is_empty());
+        }
+
+        #[gpui::test]
+        fn joining_an_offered_list_hands_the_link_to_the_seam(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            let joining = Arc::new(party_offer::joined::Joining::default());
+            together_over(&mut driven, joining.clone());
+
+            offering_a_list(&mut driven);
+            driven.click("join-the-list");
+            driven.settle();
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.list_offered.is_none()));
+            assert_eq!(*joining.accepted.lock(), vec![A_LIST_LINK.to_owned()]);
         }
 
         #[gpui::test]

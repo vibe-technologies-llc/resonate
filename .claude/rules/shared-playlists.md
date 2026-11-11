@@ -54,6 +54,19 @@ touches the pairing key, there are no accounts, and the server reads nothing it 
 A list on a server other than the hosted one names it in its links, and its page is on that server
 (`Running::named_in_a_link`), so a self-hosted list is never sent to the hosted page.
 
+**A link from outside that names a server other than this device's asks before it joins**, since joining
+makes the device reach that server every five minutes. `together::accepted` with `Arrival::FromOutside`
+(an argument, `OpenUri`) compares the link's server with `HOME_SERVER`, the address `server_of` gave
+the settings (the hosted one by default; `Invitation::naming_a_server_other_than` ignores case and a trailing slash): a link
+naming none, or the device's own, joins at once as before, and any other goes to `party_room::offer`,
+which tells the window `Followed::ListOffered(ListOffered { link, server })` as it does a party's. A
+build with no window refuses it. The window's sheet is `views/list_offer.rs` (`Sheet::OfferingAList`,
+*Join a playlist on another server?*, saying the server named; focus lands on *Cancel*, no key
+confirms, escape declines and the window is raised), and *Join* hands the link to
+`Together::accept`, as pasting does. A link pasted or typed (`Arrival::Pasted`) joins at once. The phones ask the same way (`mobile.md`)
+(`a_link_names_another_server_only_where_it_is_not_the_one_this_device_uses`,
+`a_list_on_a_stranger_server_from_outside_asks_first_and_focus_lands_on_the_control_that_declines`).
+
 ## The merge
 
 **An op log, not a whole list last writer wins** (`shared/op.rs`), since two people editing at once is
@@ -67,6 +80,7 @@ compaction needs no second format; an op of a later build is passed over. **A li
 server cannot fill a catalog playlist with millions and every device cuts the same rows whatever
 order the ops arrived in; the diff, the catalog write and a look all read `rows()`, so none sees a
 row the others do not (`a_list_shows_only_so_many_rows_the_same_ones_whatever_order_they_arrived_in`).
+**A list keeps at most `ENTRIES_KEPT_AT_MOST` (4 × `ROWS_AT_MOST`) entries in memory**, a removed one's tombstone counted: an op naming an entry past the smallest that many entry ids seen so far is dropped, and one that pushes the largest out evicts it for good. Since the set of the smallest ids only ever shrinks its largest, the entries kept are the smallest ids among every entry any op named, whatever order the ops came in, so every device folds to the same rows and a snapshot carries the same ones; a hostile writer within the server's space limit costs a follower no more than that map (`a_list_keeps_only_so_many_entries_the_same_ones_whatever_order_the_ops_arrived_in`). Removals do not free a slot, since freeing one would need the evicted rows back.
 
 ## The seam
 
@@ -120,5 +134,9 @@ seconds while a list is shown (`Shared::watch`), and a session only for a space 
 to the server or owes something, so a person in many lists holds no connections and stays inside
 `--attempts-per-minute`. Offline, sharing and editing work, and what is owed goes when the server is
 back. Under *This network only* nothing can be shared. An old server drops the frames it does not know,
-read as `ServerTooOld`. `shared.lock` keeps one process per catalog, since two would mint two entries for
+read as `ServerTooOld` only after `CLOSES_BEFORE_ANSWER_FOR_TOO_OLD` (3) clean closes in a row from one
+server before any answer to `Heads`; one close, as a tunnel or a draining server sends, is `Unreached`
+and tried again (`one_clean_close_is_a_server_lost_and_not_a_server_too_old`,
+`a_server_that_closes_every_connection_reads_as_too_old`); a close while a reset waits for its answer
+is `Error::ServerSilent`. `shared.lock` keeps one process per catalog, since two would mint two entries for
 one edit (`SharedBusy`). `resonate shared` is the terminal's way in (`binary.md`).

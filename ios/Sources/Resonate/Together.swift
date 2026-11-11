@@ -3,6 +3,11 @@ import Observation
 import ResonateLogic
 import ResonateNative
 
+struct ListOffer: Equatable {
+    let link: String
+    let server: String
+}
+
 @MainActor
 @Observable
 final class TogetherState {
@@ -20,6 +25,7 @@ final class TogetherState {
     private(set) var name: String
     var toShow: InvitationKind?
     var partyOffered: String?
+    var listOffered: ListOffer?
 
     init(library: Library) {
         self.library = library
@@ -90,8 +96,19 @@ final class TogetherState {
     func arrive(_ text: String) {
         if invitationKind(text: text) == .party {
             partyOffered = text
-        } else {
-            accept(text)
+            return
+        }
+        Task {
+            guard let native = try? await library.player() else {
+                accept(text)
+                return
+            }
+            let server = try? await Work.aside { native.invitationNamingAnotherServer(text: text) }
+            if let server {
+                listOffered = ListOffer(link: text, server: server)
+            } else {
+                accept(text)
+            }
         }
     }
 

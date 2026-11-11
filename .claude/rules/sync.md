@@ -653,9 +653,13 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   the stream, so a watch that hears nothing asks again with tag 9 on the same connection, its
   mirror carries no revision and every command goes as tag 8, unguarded as before
   (`a_device_too_old_to_carry_queue_revisions_is_watched_as_it_always_was`); an older controller
-  asks tag 9 and sends tag 8, which `control` applies as it always did. The revision is the
-  service's latest mirror at the moment the command leaves, not the one a front end drew: a mirror
-  landing between a draw and a press is the window left, a few hundred milliseconds at most.
+  asks tag 9 and sends tag 8, which `control` applies as it always did. **The revision is the one the
+  front end drew**: `Sync::ask_to_control` takes it (`drawn`, `RemoteZone::queue_revision` of the mirror
+  the row came from) and `Sync::control` is the same with the service's latest mirror, for a caller that
+  drew nothing; the window's rows pass `RemoteZoneShown::queue_revision` through `Syncing::press`, the
+  phones `RemoteZoneState::queue_revision` through `sync_control`, and `resonate sync --control` the
+  mirror it printed, so a mirror landing between a draw and a press cannot let a stale *Remove* through
+  (`an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue_moved`).
 - **The mirror is pushed, not polled.** The watched device looks at its zones every
   `MIRROR_LOOKED_AT_EVERY` (250 ms) and sends a frame only where they moved otherwise than by
   playing on (`told_alike`: a position more than a second off where it would have played to, or

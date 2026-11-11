@@ -243,6 +243,7 @@ struct NowPlayingView: View {
             .modifier(ZonesPresentation(insidePlayer: true))
             .modifier(PairingOffer(insidePlayer: true))
             .modifier(PartyOffer(insidePlayer: true))
+            .modifier(ListOfferAlert(insidePlayer: true))
         }
     }
 

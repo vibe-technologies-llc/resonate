@@ -270,6 +270,7 @@ struct RootView: View {
         .modifier(SharingSheet(insidePlayer: false))
         .modifier(PairingOffer(insidePlayer: false))
         .modifier(PartyOffer(insidePlayer: false))
+        .modifier(ListOfferAlert(insidePlayer: false))
         .onChange(of: library.features.playlistToShow) { _, shown in
             guard let shown else { return }
             library.features.playlistToShow = nil
@@ -396,6 +397,31 @@ struct PartyOffer: ViewModifier {
             Button("common.cancel", role: .cancel) {}
         } message: { _ in
             Text(TogetherWords.joinThisPartySays)
+        }
+    }
+}
+
+struct ListOfferAlert: ViewModifier {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let insidePlayer: Bool
+
+    func body(content: Content) -> some View {
+        content.alert(
+            TogetherWords.joinAListOnAnotherServerAsks,
+            isPresented: Binding(
+                get: { navigation.nowPlaying == insidePlayer && library.features.together.listOffered != nil },
+                set: { shown in if !shown { library.features.together.listOffered = nil } }
+            ),
+            presenting: library.features.together.listOffered
+        ) { offered in
+            Button("common.join") {
+                library.features.together.listOffered = nil
+                library.features.together.accept(offered.link)
+            }
+            Button("common.cancel", role: .cancel) {}
+        } message: { offered in
+            Text(TogetherWords.joinAListOnAnotherServerSays(offered.server))
         }
     }
 }

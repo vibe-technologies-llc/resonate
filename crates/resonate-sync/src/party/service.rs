@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use quinn::{ClientConfig, Endpoint};
 use tokio::{
     runtime,
@@ -102,7 +102,29 @@ pub struct Party {
     asked: mpsc::UnboundedSender<Asked>,
     shown: Arc<RwLock<PartyShown>>,
     clock: Arc<RwLock<ServerClock>>,
+    claimed: Mutex<Vec<PartyWantingASong>>,
     thread: Option<JoinHandle<()>>,
+}
+
+fn taking_ask(shown: &RwLock<PartyShown>, request: &PartyWantingASong) {
+    let mut shown = shown.write();
+    if let Some(at) = shown.asked_for.iter().position(|asked| asked == request) {
+        shown.asked_for.remove(at);
+    }
+}
+
+pub struct RequestClaim<'a> {
+    party: &'a Party,
+    request: PartyWantingASong,
+}
+
+impl Drop for RequestClaim<'_> {
+    fn drop(&mut self) {
+        self.party
+            .claimed
+            .lock()
+            .retain(|claimed| *claimed != self.request);
+    }
 }
 
 impl Party {
@@ -173,6 +195,7 @@ impl Party {
             asked,
             shown,
             clock,
+            claimed: Mutex::new(Vec::new()),
             thread: Some(thread),
         })
     }
@@ -197,7 +220,21 @@ impl Party {
         let _ = self.asked.send(Asked::Ask(song));
     }
 
+    pub fn claim_a_request(&self, request: &PartyWantingASong) -> Option<RequestClaim<'_>> {
+        let mut claimed = self.claimed.lock();
+        if claimed.contains(request) {
+            return None;
+        }
+        claimed.push(request.clone());
+
+        Some(RequestClaim {
+            party: self,
+            request: request.clone(),
+        })
+    }
+
     pub fn take_a_request(&self, request: PartyWantingASong) {
+        taking_ask(&self.shown, &request);
         let _ = self.asked.send(Asked::TakeAsk(request));
     }
 
@@ -314,10 +351,7 @@ impl Running {
     }
 
     fn take_ask(&self, request: &PartyWantingASong) {
-        let mut shown = self.shown.write();
-        if let Some(at) = shown.asked_for.iter().position(|asked| asked == request) {
-            shown.asked_for.remove(at);
-        }
+        taking_ask(&self.shown, request);
     }
 
     async fn send_what_waited(&mut self, send: &mut Outgoing) -> Result<()> {

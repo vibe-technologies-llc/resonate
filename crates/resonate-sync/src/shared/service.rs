@@ -54,6 +54,8 @@ const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
 
 const BUNDLE_OPS_AT_MOST: usize = 256;
 
+const CLOSES_BEFORE_ANSWER_FOR_TOO_OLD: u32 = 3;
+
 const LARGEST_BUNDLE: usize = LARGEST_RECORD / 2;
 
 #[derive(Clone, Debug, Default)]
@@ -162,6 +164,7 @@ impl Shared {
             watched: None,
             revision: None,
             standings: BTreeMap::new(),
+            closes_before_answer: BTreeMap::new(),
             shown: Arc::clone(&shown),
             held: Arc::clone(&held),
             poll_due: Instant::now(),
@@ -274,6 +277,7 @@ struct Running {
     watched: Option<SpaceId>,
     revision: Option<u64>,
     standings: BTreeMap<SpaceId, SharedStanding>,
+    closes_before_answer: BTreeMap<String, u32>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
     held: Arc<RwLock<Vec<HeldShare>>>,
     poll_due: Instant,
@@ -899,9 +903,10 @@ impl Running {
         let answer = timeout(FIRST_RETRY * 3, recv.read()).await;
         let frame = match answer {
             Ok(Ok(Some(frame))) => frame,
-            Ok(Ok(None)) => return Err(SharedStanding::ServerTooOld),
+            Ok(Ok(None)) => return Err(self.closed_before_answering(address)),
             Ok(Err(_)) | Err(_) => return Err(SharedStanding::Unreached),
         };
+        self.closes_before_answer.remove(address);
         send.finish().await;
 
         match FromServer::decoded(&frame) {
@@ -911,6 +916,20 @@ impl Running {
                 .collect()),
             Ok(FromServer::Refused(refusal)) => Err(SharedStanding::TurnedAway(refusal)),
             Ok(_) | Err(_) => Err(SharedStanding::ServerTooOld),
+        }
+    }
+
+    fn closed_before_answering(&mut self, address: &str) -> SharedStanding {
+        let closes = self
+            .closes_before_answer
+            .entry(address.to_owned())
+            .or_default();
+        *closes += 1;
+
+        if *closes >= CLOSES_BEFORE_ANSWER_FOR_TOO_OLD {
+            SharedStanding::ServerTooOld
+        } else {
+            SharedStanding::Unreached
         }
     }
 
@@ -1287,7 +1306,7 @@ impl Running {
         let kept_word = loop {
             let frame = within(async { recv.read().await }).await?;
             let Some(frame) = frame else {
-                return Err(Error::ServerTooOld);
+                return Err(Error::ServerSilent);
             };
             match FromServer::decoded(&frame)? {
                 FromServer::Closed { sealed } => break sealed,

@@ -25,6 +25,8 @@ import org.resonate.android.nativecore.invitationKind
 private const val NAME_FOR_OTHERS_KEY = "shared-name"
 private const val INVITATION_WAITS_FOR_SYNC_AT_MOST_MS = 20_000L
 
+data class ListOffer(val link: String, val server: String)
+
 class Together(
     private val context: Context,
     private val library: LibraryRepository,
@@ -45,6 +47,7 @@ class Together(
     val arrived = MutableStateFlow<ArrivalPage?>(null)
     val playlistsAsked = MutableStateFlow(false)
     val partyOffered = MutableStateFlow<String?>(null)
+    val listOffered = MutableStateFlow<ListOffer?>(null)
 
     val keepsTheServiceForeground: Boolean
         get() = mutableParty.value?.let { !TogetherWords.isOver(it.connection) } == true
@@ -80,7 +83,12 @@ class Together(
     }
 
     fun arriving(link: String, party: Boolean) {
-        if (party) partyOffered.value = link else arrive(link)
+        if (party) partyOffered.value = link else askBeforeAnotherServer(link)
+    }
+
+    private fun askBeforeAnotherServer(link: String) = work { native ->
+        val server = native.invitationNamingAnotherServer(link)
+        if (server == null) arrive(link) else listOffered.value = ListOffer(link, server)
     }
 
     fun arrive(link: String) = work { native ->

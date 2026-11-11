@@ -73,7 +73,7 @@ struct DrivenDeviceView: View {
         .accessibilityElement(children: .combine)
         if let length = zone.lengthMillis, length > 0 {
             DrivenSeek(zone: zone.zone, positionMillis: zone.positionMillis, lengthMillis: length) { control in
-                press(zone.zone, control)
+                press(zone, control)
             }
         }
         HStack(spacing: 24) {
@@ -94,35 +94,35 @@ struct DrivenDeviceView: View {
             let up = DrivenRows.moveUp(row)
             let down = DrivenRows.moveDown(row, queueLength: zone.queueLength)
             Button {
-                press(zone.zone, .jump(row: row))
+                press(zone, .jump(row: row))
             } label: {
                 DrivenQueueRow(song: song, playing: zone.playingRow == row)
             }
             .buttonStyle(.plain)
             .swipeActions(edge: .trailing) {
                 Button("driven.queue.remove", systemImage: "minus.circle", role: .destructive) {
-                    press(zone.zone, .remove(row: row))
+                    press(zone, .remove(row: row))
                 }
                 .tint(.red)
             }
             .contextMenu {
                 if let up {
-                    Button("driven.queue.move-up", systemImage: "arrow.up") { press(zone.zone, up) }
+                    Button("driven.queue.move-up", systemImage: "arrow.up") { press(zone, up) }
                 }
                 if let down {
-                    Button("driven.queue.move-down", systemImage: "arrow.down") { press(zone.zone, down) }
+                    Button("driven.queue.move-down", systemImage: "arrow.down") { press(zone, down) }
                 }
                 Button("driven.queue.remove", systemImage: "minus.circle", role: .destructive) {
-                    press(zone.zone, .remove(row: row))
+                    press(zone, .remove(row: row))
                 }
             }
-            .accessibilityAction(named: "driven.queue.remove") { press(zone.zone, .remove(row: row)) }
+            .accessibilityAction(named: "driven.queue.remove") { press(zone, .remove(row: row)) }
         }
     }
 
     private func control(_ title: String, _ symbol: String, _ zone: RemoteZoneState, _ remote: RemoteControl) -> some View {
         Button(title, systemImage: symbol) {
-            press(zone.zone, remote)
+            press(zone, remote)
         }
         .labelStyle(.iconOnly)
         .font(.title2)
@@ -147,12 +147,14 @@ struct DrivenDeviceView: View {
         }
     }
 
-    private func press(_ zone: UInt32, _ remote: RemoteControl) {
+    private func press(_ zone: RemoteZoneState, _ remote: RemoteControl) {
         let id = device.id
+        let number = zone.zone
+        let drawn = zone.queueRevision
         Task {
             do {
                 let native = try await library.player()
-                let answer = try await Work.aside { try native.syncControl(device: id, zone: zone, control: remote) }
+                let answer = try await Work.aside { try native.syncControl(device: id, zone: number, control: remote, queueRevision: drawn) }
                 if let refused = Self.refusal(answer) { library.notice(refused) }
             } catch {
                 library.report(error)

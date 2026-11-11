@@ -13,6 +13,7 @@ mod gives_way;
 pub(crate) mod hint;
 mod inspector;
 pub(crate) mod kit;
+mod list_offer;
 mod listen;
 mod listing;
 mod lyrics;

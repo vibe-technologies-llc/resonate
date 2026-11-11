@@ -22,6 +22,7 @@ class DrivenWordsTest {
             volumePermille = volume,
             queueLength = 4u,
             firstRow = 2u,
+            queueRevision = 7uL,
             rows = listOf(RemoteSong("Echoes", "Pink Floyd", null), RemoteSong("Time", "", null)),
         )
 

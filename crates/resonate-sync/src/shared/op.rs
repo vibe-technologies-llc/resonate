@@ -13,6 +13,7 @@ pub const ENTRY_BYTES: usize = 16;
 pub const MEMBER_BYTES: usize = 16;
 pub const PUBLIC_BYTES: usize = 32;
 pub const ROWS_AT_MOST: usize = 10_000;
+pub const ENTRIES_KEPT_AT_MOST: usize = 4 * ROWS_AT_MOST;
 
 const LARGEST_OP: usize = 256 * 1024;
 const OP_AT_LEAST: usize = 1;
@@ -254,8 +255,9 @@ impl SharedList {
                 by,
                 stamp,
             } => {
-                let row = self.rows.entry(*entry).or_default();
-                if row.removed.is_none() {
+                if let Some(row) = self.row_of(*entry)
+                    && row.removed.is_none()
+                {
                     row.recording.get_or_insert_with(|| recording.clone());
                     row.by = row.by.or(*by);
                     placed_later(row, place, *stamp);
@@ -266,17 +268,19 @@ impl SharedList {
                 place,
                 stamp,
             } => {
-                let row = self.rows.entry(*entry).or_default();
-                if row.removed.is_none() {
+                if let Some(row) = self.row_of(*entry)
+                    && row.removed.is_none()
+                {
                     placed_later(row, place, *stamp);
                 }
             }
             SharedOp::Removed { entry, stamp } => {
-                let row = self.rows.entry(*entry).or_default();
-                row.recording = None;
-                row.by = None;
-                row.placed = None;
-                row.removed = Some(row.removed.map_or(*stamp, |held| held.max(*stamp)));
+                if let Some(row) = self.row_of(*entry) {
+                    row.recording = None;
+                    row.by = None;
+                    row.placed = None;
+                    row.removed = Some(row.removed.map_or(*stamp, |held| held.max(*stamp)));
+                }
             }
             SharedOp::Renamed { name, stamp } => {
                 if self.name.as_ref().is_none_or(|(_, held)| *stamp > *held) {
@@ -314,6 +318,18 @@ impl SharedList {
                 person.left = Some(person.left.map_or(*stamp, |held| held.max(*stamp)));
             }
         }
+    }
+
+    fn row_of(&mut self, entry: EntryId) -> Option<&mut Row> {
+        if !self.rows.contains_key(&entry) && self.rows.len() >= ENTRIES_KEPT_AT_MOST {
+            let largest = *self.rows.last_key_value()?.0;
+            if entry > largest {
+                return None;
+            }
+            self.rows.remove(&largest);
+        }
+
+        Some(self.rows.entry(entry).or_default())
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -493,6 +509,62 @@ mod tests {
                 .map(|row| row.entry)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn a_list_keeps_only_so_many_entries_the_same_ones_whatever_order_the_ops_arrived_in() {
+        let numbered = |at: usize| {
+            let mut id = [0; ENTRY_BYTES];
+            id[..8].copy_from_slice(&u64::try_from(at).expect("a number").to_be_bytes());
+            EntryId(id)
+        };
+        let flood = ENTRIES_KEPT_AT_MOST + 50;
+        let mut ops = Vec::new();
+        for at in 0..flood {
+            ops.push(SharedOp::Added {
+                entry: numbered(at),
+                recording: song("Row"),
+                place: Place(vec![1, 0, 0, 1]),
+                by: None,
+                stamp: stamp(1, 1),
+            });
+            if at % 7 == 0 {
+                ops.push(SharedOp::Moved {
+                    entry: numbered(at),
+                    place: Place(vec![1, 0, 0, 2]),
+                    stamp: stamp(2, 1),
+                });
+            }
+            if at % 11 == 0 {
+                ops.push(SharedOp::Removed {
+                    entry: numbered(at),
+                    stamp: stamp(3, 1),
+                });
+            }
+        }
+        let mut forwards = SharedList::default();
+        let mut backwards = SharedList::default();
+        let mut interleaved = SharedList::default();
+
+        for op in &ops {
+            forwards.apply(op);
+        }
+        for op in ops.iter().rev() {
+            backwards.apply(op);
+        }
+        let (front, back) = ops.split_at(ops.len() / 2);
+        for pair in front.iter().zip(back.iter().rev()) {
+            interleaved.apply(pair.1);
+            interleaved.apply(pair.0);
+        }
+        for op in back.iter().rev().skip(front.len()) {
+            interleaved.apply(op);
+        }
+
+        assert_eq!(forwards.as_ops().len(), ENTRIES_KEPT_AT_MOST);
+        assert_eq!(forwards.as_ops(), backwards.as_ops());
+        assert_eq!(forwards.as_ops(), interleaved.as_ops());
+        assert_eq!(forwards.rows(), backwards.rows());
     }
 
     #[test]
