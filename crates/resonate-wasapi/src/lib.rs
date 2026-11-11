@@ -1,6 +1,7 @@
 mod clock;
 mod fill;
 mod formats;
+mod serving;
 mod ways;
 
 #[cfg(windows)]
@@ -26,5 +27,6 @@ pub use crate::{
     formats::{
         PROBED_LAYOUTS, PROBED_RATES, Wire, format_of, formats_taken, mask_of, rates_of, wire_of,
     },
+    serving::{Cycled, Feeding, Hardware, Woken, launch, words_of},
     ways::{Way, endpoint_of, node_of},
 };

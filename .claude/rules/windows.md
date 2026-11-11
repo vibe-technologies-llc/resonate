@@ -132,7 +132,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   none of PipeWire, Wayland, `rustix` or `signal-hook` (the layering job).
 - **`resonate-wasapi` is `resonate-audio`'s `Backend` over the `wasapi` crate** and reaches core,
   audio and (on Windows) `resonate-win32` alone. Its portable halves compile and are tested everywhere (`ways`, `formats`,
-  `fill`, `clock`); `device`, `stream`, `render`, `priority` and
+  `fill`, `clock`, `serving`); `device`, `stream`, `render`, `priority` and
   `backend` are `cfg(windows)`. **What every desktop backend past PipeWire does the same way is
   `resonate-audio`'s** and reexported here: `sink_id_of`, `changes_between`, `watch` and `Pace`,
   `refusal_of`, `scalar_of` and `gain_of`, `left_aligned` (`resonate-coreaudio` is the other user).
@@ -161,8 +161,27 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   reshape taken). `SetActive(true)` fills the buffer once and starts the client (and is nothing on a
   stream already streaming, as the engine sends it after every reshape), `SetActive(false)` stops
   and resets it, `Drain` is told once the device position has passed the last frame music reached,
-  and a failure of any call is `StateChanged` to `Failed` so the engine waits for the device as for
-  any sink gone.
+  and a failure of any call stops the client and is `StateChanged` to `Failed` so the engine waits
+  for the device as for any sink gone.
+- **The loop is generic over a `Hardware` trait, so it runs on every host against a fake**, as
+  Core Audio's `serving.rs` does (`macos.md`). `serving::launch` owns the thread, the channels, the
+  reshaper and the loop (`serve`, `handled`); `Hardware` is what it asks of a client:
+  `wait_for_room` (the event, 100 ms), `cycle` (one fill, answering a `Cycled` whose
+  `has_played_out` is the drain's test), `start`, `pause` (stop and reset), `stop` and `prioritise`
+  (MMCSS, set as the stream opens and on every reshape). `render::Playing` implements it over the
+  `wasapi` crate under `cfg(windows)`, and `stream.rs` is only the open: the target's endpoint, the
+  client's `Initialize` and the `Playing` handed back to `launch`'s `make`. The fake in
+  `serving.rs`' tests logs every call and refuses the one a test names.
+- **`Close` returns only once the thread has let go of its client** (a `disposed` signal waited on
+  within `OPEN_WITHIN`, else `Error::Backend { op: Close }`), since the engine closes the retiring
+  output and opens the next in one pass and an exclusive endpoint holds one client, so a rate, word
+  or layout change met `AUDCLNT_E_DEVICE_IN_USE` while the old client lingered
+  (`closing_returns_only_once_the_hardware_is_let_go`). A `Close` sent to a thread already ended
+  answers `Ok` at once: its receiver goes only after the client. **A stream dropped unclosed stops**:
+  the `SinkStream`'s control and reshaper hold the only senders, so dropping it disconnects the
+  order channel, and the loop stops the client and lets it go on `Disconnected` whether streaming or
+  paused (`a_streaming_stream_dropped_unclosed_stops_and_lets_the_hardware_go`), never keeping an
+  exclusive device from other programs.
 - **A stream is reshaped where its client stays the same.** The render cycle reads `Fed::source`
   (`realtime.md`), and the stream's `Reshaper` hands a new source through `Handing` and tells the
   loop (`Order::Reshaped`), which calls off a drain and moves the thread's priority; so a rebind

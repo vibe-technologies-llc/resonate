@@ -9,12 +9,12 @@ doctest = false
 
 [dependencies]
 crossbeam-channel.workspace = true
+parking_lot.workspace = true
 resonate-audio.workspace = true
 resonate-core.workspace = true
 tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-parking_lot.workspace = true
 resonate-win32.workspace = true
 thread-priority = { version = "3.1.1", default-features = false }
 wasapi = "0.27.0"
