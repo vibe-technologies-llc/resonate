@@ -174,7 +174,11 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   stream (`cast.md`). One `Server` per `Network` (`resonate-upnp-serve`, a `TcpListener` on `Searching::serving_on`, all
   addresses by default) offers each stream under `/resonate/<token>.<flac|wav|pcm>`, the token a
   `RandomState` hash so another machine cannot guess one. The accept thread reads every head itself,
-  on non-blocking sockets (at most `HEADS_AT_MOST`, 32, waiting, the rest closed at once; a head
+  on non-blocking sockets woken by readiness (`mio`'s `Poll`, `os-poll` and `net` alone: the listener,
+  each waiting head and a `Waker` the `Server`'s drop rings so the thread ends with it; the wait is
+  bounded only by the nearest head's deadline, so an idle server never wakes
+  (`a_server_waiting_on_a_slow_head_wakes_for_nothing_until_it_moves_or_its_deadline_comes`); at most
+  `HEADS_AT_MOST`, 32, waiting, the rest closed at once; a head
   not whole in `HEAD_ENDS_WITHIN`, 5 s over all, is dropped), answers a path that is no
   16-hex-digit token and an extension (or names no stream offered) with `404` and a method but
   `GET` and `HEAD` with `405` itself, and spawns a `resonate-upnp-feed` thread only for a head naming
