@@ -522,7 +522,6 @@ pub enum IconOp {
     Read,
     Stage,
     Place,
-    Remove,
 }
 
 #[cfg(feature = "online")]

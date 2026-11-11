@@ -11,25 +11,23 @@ const OPENS_OVER_THE_PACKAGED: &str =
 const LIFTED_TOWARD_WHITE: f32 = 0.3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AppIcon {
-    Packaged,
-    Recoloured(String),
-}
+pub struct AppIcon(String);
 
 impl AppIcon {
     pub fn of(appearance: Appearance) -> Self {
         let accent = theme::sample(appearance).accent;
-        if accent == theme::sample(Appearance::DEFAULT).accent {
-            return Self::Packaged;
-        }
-
         let [lit, deep] = PACKAGED_STOPS;
-        Self::Recoloured(
+
+        Self(
             PACKAGED
                 .replacen(OPENS, OPENS_RECOLOURED, 1)
                 .replacen(lit, &stop(theme::lifted(accent, LIFTED_TOWARD_WHITE)), 1)
                 .replacen(deep, &stop(accent), 1),
         )
+    }
+
+    pub fn drawing(&self) -> &str {
+        &self.0
     }
 
     pub fn drawn_here(held: &[u8]) -> bool {
@@ -39,18 +37,6 @@ impl AppIcon {
 
     pub fn is_the_packaged_copy(held: &[u8]) -> bool {
         held == PACKAGED.as_bytes()
-    }
-
-    pub fn written_over_the_packaged_copy(held: &[u8]) -> bool {
-        held.starts_with(OPENS_OVER_THE_PACKAGED.as_bytes())
-    }
-
-    pub fn over_the_packaged_copy(drawn: &str) -> String {
-        drawn.replacen(OPENS_RECOLOURED, OPENS_OVER_THE_PACKAGED, 1)
-    }
-
-    pub const fn packaged_copy() -> &'static str {
-        PACKAGED
     }
 }
 
@@ -98,37 +84,30 @@ mod tests {
     }
 
     #[test]
-    fn the_default_appearance_keeps_the_packaged_icon() {
-        assert_eq!(AppIcon::of(Appearance::DEFAULT), AppIcon::Packaged);
-    }
-
-    #[test]
-    fn only_an_appearance_wearing_the_default_accent_keeps_the_packaged_icon() {
-        let default = theme::sample(Appearance::DEFAULT).accent;
-
+    fn every_appearance_wears_its_accent_on_the_icon_the_default_one_included() {
         for appearance in every_appearance() {
             let worn = theme::sample(appearance).accent;
-            match AppIcon::of(appearance) {
-                AppIcon::Packaged => assert_eq!(worn, default, "{appearance:?}"),
-                AppIcon::Recoloured(drawn) => {
-                    assert_ne!(worn, default, "{appearance:?}");
-                    assert!(drawn.contains(&stop(worn)), "{appearance:?}");
-                }
-            }
+
+            assert!(
+                AppIcon::of(appearance).drawing().contains(&stop(worn)),
+                "{appearance:?}"
+            );
         }
+        assert_ne!(
+            AppIcon::of(Appearance::DEFAULT).drawing(),
+            PACKAGED,
+            "the default accent kept the packaged gradient"
+        );
     }
 
     #[test]
     fn a_recoloured_icon_is_the_packaged_mark_graded_in_the_accent_alone() {
-        let recoloured =
-            every_appearance().filter_map(|appearance| match AppIcon::of(appearance) {
-                AppIcon::Recoloured(drawn) => Some(drawn),
-                AppIcon::Packaged => None,
-            });
+        for appearance in every_appearance() {
+            let icon = AppIcon::of(appearance);
+            let drawn = icon.drawing();
 
-        for drawn in recoloured {
             assert!(AppIcon::drawn_here(drawn.as_bytes()));
-            assert_eq!(marks(&drawn), marks(PACKAGED));
+            assert_eq!(marks(drawn), marks(PACKAGED));
             for packaged in PACKAGED_STOPS {
                 assert!(!drawn.contains(packaged), "{drawn}");
             }

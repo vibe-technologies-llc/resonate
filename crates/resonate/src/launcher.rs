@@ -90,7 +90,7 @@ fn icon_path(theme: &Path) -> PathBuf {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Standing {
     Nothing,
-    Ours { over_the_packaged_copy: bool },
+    Ours,
     ThePackagedCopy,
     Somebody,
 }
@@ -100,9 +100,7 @@ impl Standing {
         match held {
             None => Self::Nothing,
             Some(held) if AppIcon::is_the_packaged_copy(held) => Self::ThePackagedCopy,
-            Some(held) if AppIcon::drawn_here(held) => Self::Ours {
-                over_the_packaged_copy: AppIcon::written_over_the_packaged_copy(held),
-            },
+            Some(held) if AppIcon::drawn_here(held) => Self::Ours,
             Some(_) => Self::Somebody,
         }
     }
@@ -122,50 +120,15 @@ fn placed(icon: &AppIcon, theme: &Path) -> Result<Placing> {
         }
     };
 
-    let wanted = match (icon, Standing::of(held.as_deref())) {
-        (_, Standing::Somebody) => return Ok(Placing::NotOurs),
-        (AppIcon::Packaged, Standing::Nothing | Standing::ThePackagedCopy) => {
-            return Ok(Placing::Standing);
-        }
-        (
-            AppIcon::Packaged,
-            Standing::Ours {
-                over_the_packaged_copy: false,
-            },
-        ) => {
-            fs::remove_file(&path).map_err(|source| Error::Icon {
-                op: IconOp::Remove,
-                path,
-                source,
-            })?;
-            return Ok(Placing::Moved);
-        }
-        (
-            AppIcon::Packaged,
-            Standing::Ours {
-                over_the_packaged_copy: true,
-            },
-        ) => AppIcon::packaged_copy().to_owned(),
-        (AppIcon::Recoloured(drawn), Standing::Nothing) => drawn.clone(),
-        (
-            AppIcon::Recoloured(drawn),
-            Standing::ThePackagedCopy
-            | Standing::Ours {
-                over_the_packaged_copy: true,
-            },
-        ) => AppIcon::over_the_packaged_copy(drawn),
-        (
-            AppIcon::Recoloured(drawn),
-            Standing::Ours {
-                over_the_packaged_copy: false,
-            },
-        ) => drawn.clone(),
-    };
-
+    match Standing::of(held.as_deref()) {
+        Standing::Somebody => return Ok(Placing::NotOurs),
+        Standing::Nothing | Standing::Ours | Standing::ThePackagedCopy => {}
+    }
+    let wanted = icon.drawing();
     if held.as_deref() == Some(wanted.as_bytes()) {
         return Ok(Placing::Standing);
     }
-    written(&path, &wanted)?;
+    written(&path, wanted)?;
     Ok(Placing::Moved)
 }
 
@@ -255,7 +218,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use resonate_core::{Accent, Appearance};
+    use resonate_core::{Accent, Appearance, Theme};
 
     use super::*;
 
@@ -285,15 +248,12 @@ mod tests {
         }
     }
 
-    fn recoloured() -> (AppIcon, String) {
-        let icon = AppIcon::of(Appearance {
-            accent: Some(Accent::Teal),
+    fn worn(theme: Theme, accent: Option<Accent>) -> AppIcon {
+        AppIcon::of(Appearance {
+            theme,
+            accent,
             ..Appearance::DEFAULT
-        });
-        let AppIcon::Recoloured(drawn) = icon.clone() else {
-            panic!("a teal accent is not the packaged icon's");
-        };
-        (icon, drawn)
+        })
     }
 
     #[test]
@@ -310,13 +270,13 @@ mod tests {
     #[test]
     fn an_accent_is_placed_once_and_then_stands() {
         let scratch = Scratch::new();
-        let (icon, drawn) = recoloured();
+        let icon = worn(Theme::Resonate, Some(Accent::Teal));
 
         assert_eq!(
             placed(&icon, &scratch.theme).expect("placed"),
             Placing::Moved
         );
-        assert_eq!(scratch.held().as_deref(), Some(drawn.as_bytes()));
+        assert_eq!(scratch.held().as_deref(), Some(icon.drawing().as_bytes()));
         assert_eq!(
             placed(&icon, &scratch.theme).expect("placed"),
             Placing::Standing
@@ -324,80 +284,63 @@ mod tests {
     }
 
     #[test]
-    fn the_packaged_icon_takes_the_drawn_one_away_and_then_stands() {
+    fn the_default_accent_is_placed_in_its_own_colour_rather_than_left_to_the_packaged_icon() {
         let scratch = Scratch::new();
-        let (icon, _) = recoloured();
-        placed(&icon, &scratch.theme).expect("placed");
+        let teal = worn(Theme::Resonate, Some(Accent::Teal));
+        let its_own = worn(Theme::Resonate, None);
+        placed(&teal, &scratch.theme).expect("placed");
 
         assert_eq!(
-            placed(&AppIcon::Packaged, &scratch.theme).expect("taken away"),
+            placed(&its_own, &scratch.theme).expect("placed"),
             Placing::Moved
         );
-        assert_eq!(scratch.held(), None);
         assert_eq!(
-            placed(&AppIcon::Packaged, &scratch.theme).expect("nothing to do"),
-            Placing::Standing
+            scratch.held().as_deref(),
+            Some(its_own.drawing().as_bytes())
         );
+        assert!(!AppIcon::is_the_packaged_copy(
+            &scratch.held().expect("an icon in the accent")
+        ));
     }
 
     #[test]
     fn a_new_accent_writes_over_the_icon_the_last_one_drew() {
         let scratch = Scratch::new();
-        let (teal, _) = recoloured();
-        let red = AppIcon::of(Appearance {
-            accent: Some(Accent::Red),
-            ..Appearance::DEFAULT
-        });
+        let teal = worn(Theme::Midnight, Some(Accent::Teal));
+        let red = worn(Theme::Midnight, Some(Accent::Red));
         placed(&teal, &scratch.theme).expect("placed");
 
         assert_eq!(
             placed(&red, &scratch.theme).expect("placed"),
             Placing::Moved
         );
-        let AppIcon::Recoloured(drawn) = red else {
-            panic!("a red accent is not the packaged icon's");
-        };
-        assert_eq!(scratch.held().as_deref(), Some(drawn.as_bytes()));
+        assert_eq!(scratch.held().as_deref(), Some(red.drawing().as_bytes()));
     }
 
     #[test]
-    fn a_copy_of_the_packaged_icon_takes_the_accent_and_is_put_back_after_it() {
+    fn a_copy_of_the_packaged_icon_or_an_earlier_builds_takes_the_accent() {
         let scratch = Scratch::new();
         let path = icon_path(&scratch.theme);
         fs::create_dir_all(path.parent().expect("a folder")).expect("a scratch folder");
-        fs::write(&path, AppIcon::packaged_copy()).expect("a copy of the packaged icon");
-        let (icon, drawn) = recoloured();
-
-        assert_eq!(
-            placed(&icon, &scratch.theme).expect("placed"),
-            Placing::Moved
-        );
-        let held = scratch.held().expect("an icon in the accent");
-        assert!(AppIcon::drawn_here(&held));
-        assert!(AppIcon::written_over_the_packaged_copy(&held));
-        assert_ne!(
-            held,
-            drawn.as_bytes(),
-            "the copy it wrote over was forgotten"
-        );
-        assert_eq!(
-            placed(&icon, &scratch.theme).expect("placed"),
-            Placing::Standing
+        let icon = worn(Theme::Resonate, Some(Accent::Mauve));
+        let earlier = icon.drawing().replacen(
+            "<svg id=\"resonate-in-the-accent\" ",
+            "<svg id=\"resonate-in-the-accent\" data-written-over=\"the-packaged-icon\" ",
+            1,
         );
 
-        assert_eq!(
-            placed(&AppIcon::Packaged, &scratch.theme).expect("put back"),
-            Placing::Moved
-        );
-        assert_eq!(
-            scratch.held().as_deref(),
-            Some(AppIcon::packaged_copy().as_bytes()),
-            "the packaged copy it wrote over was taken away rather than put back"
-        );
-        assert_eq!(
-            placed(&AppIcon::Packaged, &scratch.theme).expect("nothing to do"),
-            Placing::Standing
-        );
+        for standing in [
+            include_str!("../../../packaging/resonate.svg"),
+            earlier.as_str(),
+        ] {
+            fs::write(&path, standing).expect("an icon standing");
+
+            assert_eq!(
+                placed(&icon, &scratch.theme).expect("placed"),
+                Placing::Moved
+            );
+            assert_eq!(scratch.held().as_deref(), Some(icon.drawing().as_bytes()));
+        }
     }
 
     #[test]
@@ -406,14 +349,10 @@ mod tests {
         let path = icon_path(&scratch.theme);
         fs::create_dir_all(path.parent().expect("a folder")).expect("a scratch folder");
         fs::write(&path, b"<svg aria-label=\"mine\"/>").expect("a scratch icon");
-        let (icon, _) = recoloured();
+        let icon = worn(Theme::Resonate, Some(Accent::Teal));
 
         assert_eq!(
             placed(&icon, &scratch.theme).expect("read"),
-            Placing::NotOurs
-        );
-        assert_eq!(
-            placed(&AppIcon::Packaged, &scratch.theme).expect("read"),
             Placing::NotOurs
         );
         assert_eq!(

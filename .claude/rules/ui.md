@@ -443,7 +443,7 @@ is never named.
     on light as it goes up on dark, and ink on an accent is still `ink_over`'s pitch-or-paper pick.
     The waveform, spectrogram ramp (`surface` through the accent to `text`), visualiser and
     selection wash are all drawn from palette colours and need nothing of their own. The launcher
-    icon is recoloured from the worn palette's accent as ever (`AppIcon::of(theme::worn())`).
+    icon is recoloured from the worn palette's accent (`AppIcon::of(theme::worn())`).
   - **A fresh install wears the palette's own accent** (`native`; `Appearance::DEFAULT` names none);
     the Colour card offers it as a ringed swatch ahead of the seven; choosing none again =
     `Setting::Accent(None)`, removing the `accent` key. Theme cards are `theme_swatch()` wide, five a
@@ -742,19 +742,22 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `svg`s. No control uses a glyph. **A control's box and mark are one declaration:**
   `theme::Control::of` asserts in a `const` that the mark leaves `MARK_MARGIN_AT_LEAST` on every side;
   a control borrowing another's mark gets its own (`CLEAR`, `FILTER_CLEAR`, `CHECK_MARK`).
-- **The launcher's icon wears the accent; the binary puts it there.** `launcher::AppIcon::of` is the
-  whole decision: worn accent = `Appearance::DEFAULT`'s → `Packaged`, else `Recoloured`
-  (`packaging/resonate.svg`'s gradient stops → the accent; root `id="resonate-in-the-accent"`).
-  `AppIcon::drawn_here` reads that id; an icon under that name nobody here drew is left alone
-  **unless it is a byte-for-byte copy of the packaged icon**, which takes the accent but is written
-  with `data-written-over="the-packaged-icon"` so returning to Resonate's accent writes the packaged
-  copy back (`a_copy_of_the_packaged_icon_takes_the_accent_and_is_put_back_after_it`). `run` shows the
-  opening appearance, `RootView::dress` every later one, via the `Launcher` seam on `Stored` (no I/O in
+- **The launcher's icon always wears the accent; the binary puts it there.** `launcher::AppIcon::of`
+  is the whole decision: `packaging/resonate.svg` with its gradient stops turned to the worn accent
+  (root `id="resonate-in-the-accent"`), for every appearance, the default one included. The packaged
+  blue-to-green mark matches no accent, so where the default's mauve once kept it (Resonate and
+  AMOLED, their own accent or mauve) the icon stopped following the accent; it is now seen only
+  before the window first runs (`every_appearance_wears_its_accent_on_the_icon_the_default_one_included`).
+  `AppIcon::drawn_here` reads that id (and the `data-written-over="the-packaged-icon"` an earlier
+  build wrote); an icon under that name nobody here drew is left alone **unless it is a byte-for-byte
+  copy of the packaged icon**, which takes the accent
+  (`a_copy_of_the_packaged_icon_or_an_earlier_builds_takes_the_accent`). `run` shows the opening
+  appearance, `RootView::dress` every later one, via the `Launcher` seam on `Stored` (no I/O in
   `resonate-ui`); the binary's `launcher::Icons` waits `SETTLES_AFTER` of quiet, writes a staged copy
-  over `$XDG_DATA_HOME/icons/hicolor/scalable/apps/resonate.svg` or removes it, and only where that
-  moved anything flushes the caches (theme folder mtime, `kbuildsycoca6`,
-  `resonate_mpris::tell_the_icons_changed`, `gtk-update-icon-cache`). **The gradient is
-  `userSpaceOnUse`**: under `objectBoundingBox` each stroke is a zero-width box that paints nothing.
+  over `$XDG_DATA_HOME/icons/hicolor/scalable/apps/resonate.svg`, and only where that moved anything
+  flushes the caches (theme folder mtime, `kbuildsycoca6`, `resonate_mpris::tell_the_icons_changed`,
+  `gtk-update-icon-cache`). **The gradient is `userSpaceOnUse`**: under `objectBoundingBox` each
+  stroke is a zero-width box that paints nothing.
 - **The catalog is read while gpui starts, so the first frame holds it.** `run` starts `FirstRead`
   before `Application::new` (`Asked::at_first`, also what `LibraryModel::new` is built from) while gpui
   spends forty-odd ms on system fonts and Vulkan; the first read takes it synchronously where landed,

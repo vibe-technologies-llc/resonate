@@ -69,7 +69,7 @@ update-desktop-database ~/.local/share/applications
 kbuildsycoca6 --noincremental
 ```
 
-The window rewrites that icon to take the accent and restores it at Resonate's own accent. To read
+The window rewrites that icon to wear the accent, whatever accent is worn. To read
 what it writes without touching the real one, run with `XDG_DATA_HOME` at a scratch folder and read
 `icons/hicolor/scalable/apps/resonate.svg` there.
 
