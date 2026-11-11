@@ -41,7 +41,7 @@ class SongDeletionTest {
         }
 
     private fun indexed(library: LibraryRepository, uri: Uri, name: String): Track =
-        runBlocking { library.native().indexDocument(uri.toString(), name) }
+        runBlocking { library.holding { it.indexDocument(uri.toString(), name) } }
 
     @Test
     fun aDeletedSongLeavesItsFileAndTheCatalog() {
@@ -74,10 +74,10 @@ class SongDeletionTest {
                 val library = (context.applicationContext as ResonateApplication).library
                 val a = indexed(library, first, "Identical a.wav")
                 val b = indexed(library, second, "Identical b.wav")
-                runBlocking { library.native().favourite(a.id, true) }
+                runBlocking { library.holding { it.favourite(a.id, true) } }
 
                 val sets =
-                    runBlocking { library.native().identicalSongs() }.filter { set ->
+                    runBlocking { library.holding { it.identicalSongs() } }.filter { set ->
                         (listOf(set.kept) + set.copies).any { it.id == a.id || it.id == b.id }
                     }
                 assertEquals(1, sets.size)

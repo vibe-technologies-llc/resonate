@@ -172,10 +172,10 @@ class PlaybackLifecycleTest {
 
     @Test
     fun aPollTickThatThrowsIsSaidOnceAndPollingGoesOn() {
-        val native = runBlocking { withTimeout(OPENED_WITHIN_MS) { library.native() } }
+        runBlocking { withTimeout(OPENED_WITHIN_MS) { library.ready() } }
         library.dismissStatus()
 
-        native.shutdown()
+        runBlocking { library.holding { it.shutdown() } }
 
         eventually { library.status.value != null }
         val said = library.status.value
