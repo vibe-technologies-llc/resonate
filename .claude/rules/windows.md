@@ -63,7 +63,33 @@ exists (*The Win32 exception*, below).
 
 `resonate-win32` is the one crate besides `resonate-mobile` whose lints allow `unsafe_code`
 (approved by the listener, `dependencies.md`). It is empty on every other target (each module is
-`cfg(windows)`), reaches no workspace crate, and hands out a safe API over the `windows` crate:
+`cfg(windows)`, or `cfg(any(windows, test))` for the sequencing the next bullet describes), reaches
+no workspace crate, and hands out a safe API over the `windows` crate:
+
+- **Each module's raw calls are a trait, so its sequencing runs on every host against a fake**, as
+  `resonate-apple`'s `Toolbox` does (`macos.md`): `Scheduling` (MMCSS), `Counting`, `Naming`,
+  `Attachment` (the console), `Identifying`, `PowerModes`, `Endpoints` (COM), `Securing`,
+  `Streaming` and, under `console`, `Terminal`. The unit struct `system::Windows` implements each
+  in a `cfg(windows)` `mod real` at the foot of its module, and that is the only place the module's
+  `unsafe` blocks and `windows` imports are; the module's generic type or function over the trait
+  (`Joined<T>`, `Opened<T>`, `carrying_security`, `Pseudo<T>`) holds every decision (which `Op` a
+  refusal is, what is freed or closed on which path, the order of the calls, how a buffer is sized,
+  how a flag is chosen), and the public type is a newtype over it instantiated with `Windows`
+  (`ProAudioClass(Joined<Windows>)`), so the safe API callers see is unchanged. A handle the
+  system returns is `Copy` in the trait and closed by the sequencing's `Drop` through a trait
+  method (`close_handle`, `close_pseudo_console`, `delete_attribute_list`, `unregister`); a COM
+  interface or a security descriptor is an owned associated type whose own `Drop` releases it, which
+  the fake's `Drop` logs, so a test sees the release order. The calls cross the trait as plain
+  data: `Raw<T>` is `Result<T, HResult>`, a path as a `Wide`, an event as `ConsoleEvent`, a buffer as
+  a slice the sequencing sized (`attribute_list_bytes`, then `initialize_attribute_list` over
+  `bytes.div_ceil(size_of::<usize>())` words).
+- **A fake is written in the module's test, never shared**, logging each call into an
+  `Arc<Mutex<Vec<Call>>>` and refusing the call a test names. It runs on Linux, so a name's UTF-16
+  (`wide::units_of`, `text_of`, the one pair that differs by target) and the pipes and files the
+  console and stream code touch through `std` are the portable ones. The few constants the real impl
+  turns into the crate's own (`HResult::HANDLE_EOF`, `GAME_MODE`, the console's line-input flags) are
+  checked against the `windows` crate's in a Windows-only test inside `mod real`, since a fake
+  cannot. `GameModeWatch` keeps one process-wide `ACTIVE` flag, so its tests hold a lock.
 
 - **Every `unsafe` block is one call**, its preconditions made true by the wrapper's types rather
   than said beside it: a name is a `Wide` (UTF-16 ending in its NUL, refused as `NulInName` where
@@ -91,10 +117,11 @@ exists (*The Win32 exception*, below).
 - **COM is the caller's**: `EndpointVolume::of` makes its enumerator with `CoCreateInstance`, so
   the thread must already be in an apartment (the WASAPI threads enter the multithreaded one
   through `wasapi::initialize_mta`); one in none is refused `CO_E_NOTINITIALIZED` as an `Error`.
-- Errors are `Error::{Windows, WindowsOnFile} { op: Op, source: windows_core::Error }`, `Io` for
-  a stream copied through `std`, `NulInName`, `CounterStandsStill`; the command-line quoting and
-  the environment block are its own tests, on a Windows host with `console` on (the workspace's
-  tests turn it on through the binary).
+- Errors are `Error::{Windows, WindowsOnFile} { op: Op, source: HResult }` (the code the call
+  returned, printed as eight hex digits with the system's message beside it on Windows), `Io` for a
+  stream copied through `std`, `NulInName`, `CounterStandsStill`; the command-line quoting, the
+  environment block and every `Terminal` sequence are tests on every host, the `console` module being
+  compiled for `test` as well as under the feature.
 
 ## The seam is what Linux already had
 

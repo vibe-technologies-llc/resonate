@@ -1,26 +1,28 @@
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod attached;
-#[cfg(all(windows, feature = "console"))]
+#[cfg(any(all(windows, feature = "console"), test))]
 mod console;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod counter;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod endpoint;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod error;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod files;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod gaming;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod identity;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod mmcss;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod security;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 mod streams;
 #[cfg(windows)]
+mod system;
+#[cfg(any(windows, test))]
 mod wide;
 
 #[cfg(all(windows, feature = "console"))]
@@ -32,7 +34,7 @@ pub use crate::{
     attached::{Console, hear_console_interrupts, leave_a_console_of_its_own},
     counter::{PerformanceCounter, performance_counter},
     endpoint::{EndpointVolume, Level, VolumeWatch},
-    error::{Error, Op, Result},
+    error::{Error, HResult, Op, Result},
     files::{FileIdentity, file_identity},
     gaming::GameModeWatch,
     identity::name_the_process,

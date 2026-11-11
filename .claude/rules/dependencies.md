@@ -52,7 +52,10 @@ sweep) and `resonate-mpris` (Now Playing, `macos.md`) and, on iOS, `resonate-mob
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
 `#[implement]` and `HSTRING`), at the `wasapi` crate's versions, so no second copy is built. It
 reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and the binary
-alone (the binary's tests take `console`); the layering job holds both.
+alone (the binary's tests take `console`); the layering job holds both. Its sequencing is compiled
+for `test` on every host (`thiserror` and, for the tests, `parking_lot` are not Windows-only) and
+its `windows` and `windows-core` stay `cfg(windows)`: `HResult` stands for `windows_core::Error`
+in its errors.
 
 Everywhere else Windows reaches its COM and Win32 calls through safe wrapper crates: `wasapi`
 (`resonate-wasapi`'s device enumeration, endpoint notifications, render client and audio clock;
