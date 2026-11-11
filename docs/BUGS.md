@@ -4,17 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] Android's `ArtworkProvider` is exported with no permission (`AndroidManifest.xml`), so
-  any installed app can step through `content://<pkg>.art/track/<n>` and read every cover in the
-  library, past the media session's trusted-controller check; grant each URI to the controllers it
-  is handed to, or guard the provider with a signature permission beside `BROWSING_HOSTS`
-- [L · 0.8.1] A view link can claim a shared playlist before its owner does: `share` hands out the
-  links while the space still waits (sharing offline is allowed), the first token to arrive claims
-  the space and sets its viewer digest (`serve.rs`), and the view key derives the sealer, so whoever
-  holds the view link and reaches the server first writes records the viewers take for the owner's,
-  and the owner is refused `Refusal::Token`; a party room left past its grace is open the same way.
-  The space id wants to commit to the write token, or the records to be signed by a key the edit
-  key derives, with a step for the links already handed out
 - [S · 0.8.1] A `resonate://shared/…?server=` link opened from outside joins at once
   (`together.rs` `accepted`, a recorded decision) whatever server it names (`invitation.rs`), so a
   link clicked in a browser has the desktop reach a stranger's server every five minutes; ask before
@@ -28,17 +17,16 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   nothing
 
 ## Sync and together
+- [S · 0.8.1] A command sent to a driven device carries the queue revision of the controller's
+  latest mirror when it leaves, not the one the front end drew (`resonate-driven`), so a mirror
+  landing between a draw and a press lets a stale *Remove* through; the revision wants passing from
+  the row drawn
 - [S · 0.8.1] A shared playlist reads one clean close as `ServerTooOld`, as a party did:
   `shared/service.rs` ends on `Ok(Ok(None))` in the heads read and on a `None` in the close path,
   where a tunnel or a draining server sends a WebSocket `Close`; take several in a row before any
   answer, as `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` does
 - [S · 0.8.1] Two presses of *Play next* on one party request while its search runs queue it twice:
   `take_a_request` takes the request named, but nothing marks it taken until the search lands
-- [L · 0.8.1] A device driven from another removes, moves or jumps by bare row index
-  (`resonate-driven` `command_for`, sent with a plain `send`), so an edit made on the driven device
-  meanwhile has a remote *Remove* take another song; the wire carries no queue revision for
-  `send_if_the_queue_is_still` (`audio.md`'s *An edit by position names its queue*) to weigh, and
-  older peers must keep working
 - [L · 0.8.1] An unheld listen's handle goes stale once a scan credits it: `unheld_listens` keeps a
   plain rowid (`schema.rs`), `credit_the_unheld` (`history.rs`) moves the row into `listens`
   mid-song and deletes it, and the window goes on calling `listened` with that rowid, so the
@@ -51,36 +39,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   goes back wants a migration step
 
 ## Playback and output
+- [S · 0.8.1] A row failing before its frames have passed the chain's latency still fades the
+  leaving song's tail out: the gapless handover's failure waits for the graph only where the
+  boundary is wholly written (`engine.rs`), so a song failing in its first milliseconds takes the
+  old path
 - [S · 0.8.1] A seek in a fetched song asks each range with `Ranged::opened_from` (`Seeking`), which
   carries no validator or total to weigh, so a file replaced between two seeks is joined old to new
   with no `If-Range` and no `Changed` guard; carry the first answer's validator and total into it
-- [L · 0.8.1] A 3.0, 2.1, 3.1, 4.0 with a centre, 4.1, 6.0 or 7.0 source is mixed down by index
-  though its container placed every channel: `positioned_layout` (`container.rs`) names Quad, 5.0,
-  5.1, 6.1 and 7.1 alone and calls any other mask `Discrete`, which `Remix` routes in turn
-  (`remix.rs`), so a 3.0 DSF (a three-channel SACD) on stereo plays its centre in the left speaker
-  alone, a 2.1 sends its LFE right and a 7.0 crosses its sides; `audio.md` routes by index only
-  where positions are unknown. The layouts (or a placed mask) want adding to `resonate-audio`'s
-  vocabulary and PipeWire's matcher
-- [S · 0.8.1] A seek into the second or a later link of a chained Ogg Opus takes no pre-roll and no
-  `start_ts` floor: only `seek_the_first_link` takes `pre_roll` (`decoder.rs`), and
-  `seek_along_the_chain` seeks to the link's exact timestamp, so `audio.md`'s *Seeks start early*
-  holds for the first link alone and a seek into a stream rip's later link lands on CELT's burst
-- [M · 0.8.1] A song failing just after a gapless handover fades the leaving song's tail out
-  unheard: `fail` passes the boundary and `skip` reaches `start`, which retires the output still
-  holding up to a ring (500 ms) of the leaving row before `boundary.at` (`engine.rs`), and
-  `TrackFinished` and `TrackStarted` are told that much early; drop only what lies past `at` and let
-  the graph reach it before moving on
-- [S · 0.8.1] (investigate) The ring's callback stores `quiet` from a read of `silenced` a whole
-  `take_into` old (`ring.rs` `pulled`), so a pause then play landing in that window leaves `quiet`
-  set over music, `is_sounding` false, and the next pause or track change stops the stream without
-  its fade
-- [S · 0.8.1] (investigate) An equaliser splice point is chosen 10 ms or two pulls ahead and
-  published only after the whole recall is rendered again (`splicing.rs`), so a slow re-render (a
-  long room response, Very high) lets the graph pass the point on the old curve and the 20 ms blend
-  is lost
-- [S · 0.8.1] (investigate) A packed 24-bit (`S24_3LE`) fill sizes the quantum in padded frames and
-  caps it at the packed buffer's length (`resonate-pipewire` `process.rs` `write`, `asked_for`), so
-  a quantum reaching the buffer's capacity is filled three quarters, every cycle
 
 ## Catalog
 - [S · 0.8.1] Lengthening a file in place still cannot see a reader root runs: `held_open_elsewhere`
@@ -100,55 +65,17 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## The window
-- [S · 0.8.1] The window writes `last-tab = "server"`, which the loader refuses: the Server pane is
-  remembered like any tab (`root.rs` `set_pane`), and the binary's `tab()` (`config.rs`) has no
-  `server` arm though the man page lists it, so the next start opens on Tracks and every command
-  warns of a setting it cannot read until another tab is opened; the man page's test lists the tabs
-  by hand rather than walking `Pane`
-- [S · 0.8.1] A volume change is kept 400 ms later for whichever zone is shown then (`root.rs`
-  `set_volume`; `store` reads `switcher.selected()` as it writes), and `show_zone` does not cancel
-  the wait, so a second zone's volume changed just before switching is kept as the first zone's, and
-  one changed just before quitting is lost
-- [S · 0.8.1] A queue selection outlives a change of zone (`zones.rs` `show_zone` keeps `reach` and
-  `landed_by_a_jump`), so Delete, Enter or a move key after switching acts on the other zone's rows
-  at the same positions, under that queue's own revision
-- [S · 0.8.1] An album cell's artist cut by an ellipsis leaves a gap before the `·` and the year
-  (`browser.rs` `album_cell_captioned`): the link keeps the room it was given while the cut text
-  ends well short of it, so *Björk Ásgeirsdóttir…* stands some twenty pixels off its year
-- [S · 0.8.1] A hint can come up over a sheet its own control opened: a press on the header's
-  microphone with the pointer left at rest shows *Listen for a song…* above the Listen sheet's
-  scrim until the pointer next moves, gpui scheduling the hint from the move it replays after the
-  press and never weighing the scrim that then covers the control
 
 ## The phones
-- [S · 0.8.1] A headset or lock-screen play after Android ended the app loses a queue's songs
-  played in place and starts the wrong song part-way: `onPlaybackResumption` hands Media3 the whole
-  saved queue (`PlaybackService.kt`), Media3 sets it on the player, and `handleSetMediaItems`
-  (`RustMediaPlayer.kt`) loads served ids only where every item is served, so a mixed queue goes
-  through `BrowseIds.playable`, which drops each served row and moves the start to the next library
-  song, at the served song's position
+- [S · 0.8.1] An Android read holding a `MobilePlayer` taken before `access` (`pagedTracks`, the
+  poll, a `LibraryFeatures` `work` block) may still run against a closed native object; only the
+  queued transport actions are guarded, by `OpenEngine` (`LibraryRepository.kt`)
+- [S · 0.8.1] A mixed queue another Android controller sets still loses its served rows:
+  `handleSetMediaItems` keeps the queue the engine holds when it names the same rows, but any other
+  mixed list goes through `BrowseIds.playable`, which drops each served row; it wants a boundary
+  call taking library and served rows together
 - [L · 0.8.1] The phones keep no shuffle, list order or rows played next: `save_zone` keeps the
   rows, the row and the place, and `resume_saved_in` sends `..Resumption::default()`
   (`resonate-mobile` `lib.rs`), so a queue shuffled when the app was ended comes back in its
   shuffled order with shuffle off and the list order gone, where the desktop keeps all three; the
   phones' `resume` and `zone_resume` want them through a migration step
-- [S · 0.8.1] One saved queue row whose URI does not read stops the phone's player opening:
-  `resume_saved_in` applies `location(&track.uri)?` to every row, so a `resonate-displaced:` row
-  organise left in a saved queue (`vanished.rs`) fails `MobilePlayer::new` with `InvalidUri` at
-  every start; pass over it as `save_zone` passes over a row gone
-- [S · 0.8.1] One queue row whose catalog row is gone makes the phones' whole queue unreadable:
-  `queue()` reads through `tracks_at`, which answers `UnknownTrack` for any missing row, so the
-  `break` written for a row not held never runs (`lib.rs`); `each_in_may_hold` was meant
-- [S · 0.8.1] An Android controller's `seekTo(index, ms)` sends `jumpTo` and `seek` apart
-  (`RustMediaPlayer.kt`), and `seek` converts at the rate of the song still current (`lib.rs`), so
-  a car's seek into a song of another rate lands at about half or twice the place
-- [S · 0.8.1] A transport action queued on Android while the engine closes runs against the closed
-  player: the worker takes `native` before `access` and the close's `finally` takes `access` first
-  (`LibraryRepository.kt`), so the action is lost and the banner shows the native object's internal
-  message
-- [S · 0.8.1] (investigate) `MobilePlayer::shutdown` reports a zone stopped where
-  `Arc::try_unwrap` fails because the listening thread holds it that moment (`zoning.rs`), so the
-  engine stops later on that thread and a service made at once may open a second engine beside it
-- [S · 0.8.1] (investigate) Android never gives the bit-perfect mixer preference back when its
-  stream closes or the app shuts down (`oboe_state.rs`'s `mix_freely` is reached only by the next
-  open), which may leave a USB DAC's mixer bit-perfect and other apps silent after Resonate leaves

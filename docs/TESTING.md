@@ -125,19 +125,15 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.8.1] Two of the window's driven tests over rows chosen apart
-  (`deleting_the_rows_chosen_apart_asks_once_for_all_of_them`,
-  `dragging_a_playlist_row_chosen_apart_gathers_every_chosen_row_where_it_drops`) fail about one
-  run in eight of the whole `resonate-ui` suite and pass alone, so something they read is shared
-  with a test running beside them. The likely share is the theme: `theme::WORN` is one for the
-  process, the theme tests guard it with a `WEARING` lock of their own while every `Driven` wears
-  the default without it (`driven.rs`) and one wears a 1.5 text scale, so a theme test wearing
-  Larger between a test reading a row's place and clicking it moves every row (`theme.rs`); a lock
-  for the whole crate held by `Driven` for its life would settle it
-- [S · 0.8.1] The no-comment rule is checked in `.ftl` alone (`resonate-words-build`); nothing
-  refuses a comment in `.rs`, `.kt`, `.swift` or the workflows, and `rust-formatter --check` cannot
-  run in CI, so the strictest rule of style rests on review. A walk beside `prose_in`, which already
-  knows a string literal from code, would hold it
+- [S · 0.8.1] `switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step`
+  (`resonate-engine`) fails some runs under the whole suite's load, before and after the equaliser
+  splice moved
+- [S · 0.8.1] The equaliser splice published after its re-render has no test that fails on the
+  old order: the race wants a timing seam in `splicing.rs` a test can hold
+- [S · 0.8.1] The PipeWire hosted-daemon test (`tests/formats.rs`) never asks for a placed layout:
+  its `HOSTED` table is `const` and `ChannelLayout::placed` is not
+- [S · 0.8.1] Unit tests reading theme colours or measures outside `Driven` take no part in
+  `theme::WEARING`, so a theme test wearing another palette could race them
 - [M · 0.8.1] `resonate-win32`'s unsafe calls (`endpoint.rs`, `console.rs`, `security.rs`,
   `streams.rs`, `gaming.rs`, some 43 sites) have four tests, where `resonate-apple` runs its
   sequencing against a fake `Toolbox` on every host; the Win32 crate has no such seam
@@ -184,10 +180,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · 0.8.1] `resvg` 0.49 (`text`, `system-fonts`) is taken for the Wrapped card alone
-  (`wrapped_card.rs`) beside gpui's 0.46, building a second SVG and font stack (`usvg`, `fontdb`
-  0.24, `harfrust` 0.12, `skrifa`) and loading a second system font database at run time;
-  `dependencies.md` takes gpui's version of a crate elsewhere and gives this one no reason
 - [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
   0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
   `hdf5-reader` never calls the `LruCache::pop` the advisory names
@@ -197,30 +189,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `zvariant` and `zbus_names` unmaintained since they were merged into zbus 6; `rustybuzz` and
   `ttf-parser` under gpui's `usvg`; and the build-time `paste` (lofty), `proc-macro-error` (glib)
   and `basic-toml` (uniffi's askama)
-
-## Docs and agents
-- [S · 0.8.1] `README.md` is wrong in four places: it says no release is published (the tags reach
-  v0.8.0); it builds with `cargo build --release --workspace`, which turns on `resonate-signin`'s
-  `window` feature and links WebKitGTK into the player (`dependencies.md`); it lists the binary's
-  default features without `sync`; and it says media keys, notifications, capture, Discord and the
-  window's remote control are not on Windows, which `windows.md` describes as shipped
-- [S · 0.8.1] `dependencies.md`'s lists of who takes a crate are stale: `proptest` is
-  `resonate-sync`'s too, `serde` and `serde_json` `resonate-ytmusic`'s, `rustfft`
-  `resonate-codec`'s (`sofa.rs`), `sha2` `resonate-musicbrainz`'s, `uuid` `resonate-online`'s and
-  `toml_edit` `resonate-server`'s
-- [S · 0.8.1] `language.md` leaves out `resonate-coreaudio`'s prose check; CLAUDE.md's *CI runs
-  exactly this list* is not so (the benches, nextest and the profiling build are not in `ci.yml`);
-  `AGENTS.md`'s checks leave out the bus tests under `dbus-run-session`, `android/check-release.py`
-  and the iOS Python checks
-- [S · 0.8.1] `docs/superpowers/` keeps four plans and two specs of work since landed (the YouTube
-  Music provider and its sign-in window, Jellyfin Quick Connect, Last.fm's browser approval), each
-  opening on a directive to an agent and citing a `.superpowers/` file that does not exist, against
-  `AGENTS.md`'s *no plan files*; what they hold beyond the rules wants moving into `providers.md` and
-  `online.md`, and the folder goes
-- [S · 0.8.1] `.claude/settings.json` allows `cargo build`, `test`, `clippy` and `tree` but none of
-  the other routine checks CLAUDE.md lists (`dbus-run-session -- cargo test`, `cargo nextest run`,
-  `cargo xwin check`, `cargo bench`, `python3 -m unittest discover -s ios`, `ios/check-build.py`,
-  `ios/test-logic.py`, `android/check-release.py`), so each asks first
 
 ## Later: Structure
 - [L] `LibraryModel` holds 174 fields and 357 methods in a 9 423-line `models.rs`, and `RootView`
