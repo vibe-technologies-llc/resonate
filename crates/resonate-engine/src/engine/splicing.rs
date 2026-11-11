@@ -1,15 +1,16 @@
-use std::{num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, ops::Range, time::Duration};
 
 use resonate_codec::Packing;
 use resonate_core::{AudioBuffer, Frames, Gain, StreamSpec};
 use resonate_dsp::{Chain, Recall};
 
 use super::{CHAIN_BLOCK, LARGEST_RING, Output, Track};
-use crate::{EngineConfig, Error, OutputPlan, OutputStatus, Result};
+use crate::{EngineConfig, Error, OutputPlan, OutputStatus, Result, ring::RingProducer};
 
 pub const SPLICED_AHEAD_AT_LEAST: Duration = Duration::from_millis(10);
 pub const SPLICE_BLENDED_OVER: Duration = Duration::from_millis(20);
 pub const ROLLED_IN_BEFORE_A_SPLICE: Duration = Duration::from_millis(100);
+const WRITTEN_BEFORE_A_SPLICE_IS_PUBLISHED: Duration = Duration::from_millis(50);
 const RECALL_SAMPLE_BYTES: u64 = size_of::<f64>() as u64;
 
 pub enum Splicing {
@@ -41,6 +42,27 @@ impl Blend {
     fn weight_of_the_new(&self, heard: u64) -> f64 {
         (heard - self.from + 1) as f64 / (self.over + 1) as f64
     }
+}
+
+fn splice_from_here(
+    producer: &RingProducer,
+    recall: &Recall,
+    ahead: Frames,
+    over: Frames,
+    no_sooner_than: u64,
+) -> Option<Blend> {
+    let at = producer.splice_point(ahead, over)?.max(no_sooner_than);
+    let from = producer.heard_as(at);
+    let entered = recall.entered();
+    let rendered_again = entered.saturating_sub(from);
+    (from >= recall.oldest()
+        && from <= entered
+        && rendered_again <= producer.room_to_splice() as u64)
+        .then_some(Blend {
+            from,
+            at,
+            over: over.get(),
+        })
 }
 
 impl Output {
@@ -86,7 +108,7 @@ impl Output {
         let rate = self.plan.stream.rate;
         let over = Frames::from_duration(SPLICE_BLENDED_OVER, rate);
         let ahead = Frames::from_duration(SPLICED_AHEAD_AT_LEAST, rate);
-        let Some(first) = self.splice_from_here(ahead, over, 0) else {
+        let Some(first) = splice_from_here(&self.producer, &self.recall, ahead, over, 0) else {
             return Ok(Splicing::Unspliceable);
         };
         let from = first.from;
@@ -105,11 +127,19 @@ impl Output {
             })?;
 
         let rendered = self.rendered_again(&mut back, rolled, from);
-        let Some(blend) = self.splice_from_here(ahead, over, first.at) else {
+        let Some(blend) = splice_from_here(&self.producer, &self.recall, ahead, over, first.at)
+        else {
             return Ok(Splicing::Unspliceable);
         };
-        self.producer.splice(blend.at, self.producer.written());
-        self.write_blended(&back, &rendered, &blend);
+        let stale_to = self.producer.written();
+        let published_after = blend.from.saturating_add(
+            Frames::from_duration(WRITTEN_BEFORE_A_SPLICE_IS_PUBLISHED, rate)
+                .get()
+                .max(blend.over),
+        );
+        self.write_blended(&back, &rendered, &blend, blend.from..published_after);
+        self.producer.splice(blend.at, stale_to);
+        self.write_blended(&back, &rendered, &blend, published_after..u64::MAX);
 
         let front = self.chain.take_what_comes_before_the_back();
         let chain = Chain::rejoined(front, back, CHAIN_BLOCK);
@@ -121,21 +151,6 @@ impl Output {
         let status = self.take_chain(chain, wanted);
         self.note_the_rendered_level();
         Ok(Splicing::Spliced(status))
-    }
-
-    fn splice_from_here(&self, ahead: Frames, over: Frames, no_sooner_than: u64) -> Option<Blend> {
-        let at = self.producer.splice_point(ahead, over)?.max(no_sooner_than);
-        let from = self.producer.heard_as(at);
-        let entered = self.recall.entered();
-        let rendered_again = entered.saturating_sub(from);
-        (from >= self.recall.oldest()
-            && from <= entered
-            && rendered_again <= self.producer.room_to_splice() as u64)
-            .then_some(Blend {
-                from,
-                at,
-                over: over.get(),
-            })
     }
 
     fn rendered_again(&mut self, back: &mut Chain, rolled: u64, kept_from: u64) -> Rendered {
@@ -172,7 +187,13 @@ impl Output {
         rendered
     }
 
-    fn write_blended(&mut self, back: &Chain, rendered: &Rendered, blend: &Blend) {
+    fn write_blended(
+        &mut self,
+        back: &Chain,
+        rendered: &Rendered,
+        blend: &Blend,
+        heard: Range<u64>,
+    ) {
         let channels = self.plan.stream.channel_count().get() as usize;
         let block = back.max_output_frames().max(back.back().frames_in).max(1);
         let mut before = vec![0.0; blend.over as usize * channels];
@@ -181,11 +202,13 @@ impl Output {
 
         self.producer
             .render_at(back.gain_amplitude().unwrap_or(Gain::UNITY.get()), 0);
-        let passed_over = blend.from.saturating_sub(rendered.from) as usize;
-        let Some(kept) = rendered.samples.get(passed_over * channels..) else {
+        let held = (rendered.samples.len() / channels) as u64;
+        let first = heard.start.saturating_sub(rendered.from).min(held) as usize;
+        let last = heard.end.saturating_sub(rendered.from).min(held) as usize;
+        let Some(kept) = rendered.samples.get(first * channels..last * channels) else {
             return;
         };
-        let mut made_from = blend.from;
+        let mut made_from = heard.start;
         for run in kept.chunks(block * channels) {
             let made = run.len() / channels;
             let Some(laying) = laid.get_mut(..run.len()) else {
@@ -229,4 +252,62 @@ impl Output {
 struct Rendered {
     from: u64,
     samples: Vec<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_audio::AudioSource;
+    use resonate_core::{ChannelLayout, SampleFormat, SampleRate, Silence};
+
+    use super::*;
+    use crate::ring::{Entering, Level, ring};
+
+    const RING_FRAMES: usize = 4_096;
+    const PULLED_FRAMES: usize = 256;
+    const PULLED_WHILE_THE_BACK_RENDERS: usize = 4;
+
+    #[test]
+    fn a_point_taken_again_once_the_back_has_rendered_lies_ahead_of_what_the_graph_pulled_meanwhile()
+     {
+        let spec = StreamSpec::new(
+            SampleRate::HZ_44100,
+            ChannelLayout::Stereo,
+            SampleFormat::S16,
+        );
+        let (mut producer, mut consumer, _) = ring(
+            spec,
+            Frames(RING_FRAMES as u64),
+            Silence::Unmarked,
+            Frames::ZERO,
+            Entering::Whole,
+            Level::WHOLE,
+        );
+        let mut recall = Recall::new(NonZeroUsize::MIN.saturating_add(1), 2 * RING_FRAMES);
+        let ahead = Frames::from_duration(SPLICED_AHEAD_AT_LEAST, spec.rate);
+        let over = Frames::from_duration(SPLICE_BLENDED_OVER, spec.rate);
+        let mut pulled = vec![0_u8; PULLED_FRAMES * spec.bytes_per_frame().get() as usize];
+
+        producer.write(&AudioBuffer::silence(spec, RING_FRAMES));
+        recall.enter(&vec![0.0; RING_FRAMES * 2]);
+        consumer.fill(&mut pulled);
+        let first = splice_from_here(&producer, &recall, ahead, over, 0)
+            .expect("a ring this deep has a point to splice at");
+        for _ in 0..PULLED_WHILE_THE_BACK_RENDERS {
+            consumer.fill(&mut pulled);
+        }
+        let taken = splice_from_here(&producer, &recall, ahead, over, first.at)
+            .expect("the ring still has a point to splice at");
+
+        assert!(
+            first.at < producer.read(),
+            "the graph did not pull past the first point"
+        );
+        assert!(
+            taken.at >= producer.read() + 2 * PULLED_FRAMES as u64,
+            "the point taken again at {} is not two pulls ahead of the graph at {}",
+            taken.at,
+            producer.read()
+        );
+        assert_eq!(taken.from, producer.heard_as(taken.at));
+    }
 }
