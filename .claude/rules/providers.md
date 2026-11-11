@@ -352,8 +352,10 @@ plumbing, so a `ureq` bump is made once:
   (`a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on`,
   `a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_start`).
 - **`Seeking` is a stream a decoder can seek**: it reads on the first answer, and a seek moves
-  only its place; the next read asks `Range: bytes=<place>-` (`Ranged::opened_from`, so it resumes
-  as any `Ranged` does), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
+  only its place; the next read asks `Range: bytes=<place>-` (`Ranged::opened_bearing`, so it resumes
+  as any `Ranged` does), carrying the first answer's validator and total as a `Known` (`If-Range`
+  and the `Changed` guard, so a file replaced between two seeks is refused, never joined old to
+  new: `a_file_replaced_between_two_seeks_is_not_joined_old_to_new`), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
   reads on and discards. Its length is the first answer's `Content-Length`; a read at or past it
   answers nothing without asking (`a_seek_a_little_ahead_reads_on_rather_than_asking_again_and_one_past_the_end_reads_nothing`).
   A server ignoring `Range` is read from its start past the place (`asked`'s `WHOLE`). `Seeking::bearing`
