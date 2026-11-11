@@ -139,29 +139,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `term_holds`, `shaped`) and the desktop's as SQL (`db.rs`'s `Term`), over one grammar, and no
   test runs the same rows and queries through both, so a `Term` added to one is answered otherwise
   by the other
-- [S · 0.8.1] Rules name code that is gone: `ui.md` two renamed tests
-  (`a_found_song_that_landed_is_listed_once_as_the_held_track`,
-  `a_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`), `upnp.md` one
-  (`a_renderer_added_by_address_is_listed_where_the_search_hears_nothing_and_forgotten_with_it`),
-  `library.md` `stamp_what_is_playing_from` and `eq.md` and `mobile.md` `studies_without_bands`, both
-  removed; `dependencies.md` says the desktop bundles nothing though `jiff` bundles the zone
-  database on Windows, leaves `rusqlite`'s bundled C build out of the C-backed crates kept and
-  `x25519-dalek` out of the sync crate's cryptography, and `build.md` names two crates whose default
-  features the headless job skips where `resonate-signin` (`window`) is a third. A test reading
-  every backticked function name of the rules would hold them
-- [S · 0.8.1] The Windows and macOS jobs run clippy with default features alone, where Linux also
-  lints the headless workspace and each feature of the binary, so code dead under a platform and a
-  feature together (`cfg(all(feature = "sync", windows))` in the binary's `sync.rs`, `lastfm.rs`)
-  warns unseen, as `99148eaa` found. What `RUSTFLAGS: ""` does there wants a look: on Windows an
-  empty variable is removed, so either `+crt-static` is dropped and CI tests a build no asset ships,
-  or `windows-arm64` is checked with the x86 host's `target-cpu=native`
-- [S · 0.8.1] CI pays for work it need not: the fuzz job installs `cargo-fuzz` before `rust-cache`
-  restores `~/.cargo/bin`, so builds it from source every run, and the `layering` job, which runs
-  `cargo tree` alone, installs every Arch package and keeps no cargo cache
-- [S · 0.8.1] `mobile.md` numbers the phones' catalog steps inconsistently: it calls
-  `A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD` the thirty-first step though it stands where the thirty-second
-  does, and counts `ZONES_KEEP_THEIR_OWN_QUEUES` and `DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC` one higher;
-  a test reading the step names off `MIGRATIONS` would hold the count
 - [S · 0.8.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
   the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
   Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game
@@ -209,17 +186,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · 0.8.1] `wasapi` (three crates), `windows` (two) and `windows-core` are written in each
-  crate's own manifest, not `[workspace.dependencies]`, though `dependencies.md` keeps shared
-  dependencies there and holds `windows` at `wasapi`'s versions; a bump in one builds two copies,
-  on Windows alone, where the layering job checks no duplicate
 - [S · 0.8.1] `parking_lot` 0.12 and 0.13, `base64` 0.22 and 0.23 and `sha2` 0.10 and 0.11 (with
   `lock_api`, `parking_lot_core` and `digest` beside them) are built twice into the player, gpui's
   tree holding the older; `base64` could come down to `usvg`'s 0.22, and `dependencies.md`'s
   duplicates third parties force name `md-5` and `miniz_oxide` alone
-- [S · 0.8.1] `soxr-comparison`'s lockfile and the drag skill's `fakein` lag the root's
-  (`smallvec`, `syn`, `cc`, `rustix`), and `fakein` takes `wayland-client` and
-  `wayland-protocols-plasma` with default features
 - [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
   0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
   `hdf5-reader` never calls the `LruCache::pop` the advisory names
