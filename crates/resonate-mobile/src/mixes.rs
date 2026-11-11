@@ -14,6 +14,7 @@ use crate::{
     MobilePlayer, Result, Track,
     catalog::Catalog,
     catalog_extras::the_listeners_calendar,
+    features::TrackPage,
     saved_searches::SavedSearch,
     search::{Index, LISTED_AT_MOST, Searching},
 };
@@ -339,6 +340,27 @@ impl MobilePlayer {
             offset as usize,
             limit.min(LISTED_AT_MOST) as usize,
         )
+    }
+
+    pub fn saved_search_walk(
+        &self,
+        search: SavedSearch,
+        offset: u32,
+        limit: u32,
+        pinned: Option<u64>,
+    ) -> Result<TrackPage> {
+        let walked = self.services.searching.saved_walked(
+            &self.catalog,
+            &search.query(),
+            offset as usize,
+            limit.min(LISTED_AT_MOST) as usize,
+            pinned,
+        )?;
+
+        Ok(TrackPage {
+            tracks: walked.tracks,
+            revision: walked.revision,
+        })
     }
 }
 

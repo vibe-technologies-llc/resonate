@@ -171,8 +171,13 @@ revision the first answered, and `Searching::walked` keeps up to `WALKS_PINNED_A
 walk asked within `A_WALK_PINS_ITS_INDEX_FOR` (10 s), so enrichment writing once a second rebuilds
 the index once a walk, not once a page; a page whose pin was let go answers the current revision and
 the walk starts again (`a_walk_of_pages_reads_every_page_from_the_index_it_began_on_while_the_catalog_moves`,
-`a_walk_whose_index_is_no_longer_pinned_is_answered_from_the_catalog_as_it_stands`). Android's
-`pagedPinned` and iOS's `Paging.pinned` are those walks. A playlist file or a link's matches take the lock per song over the
+`a_walk_whose_index_is_no_longer_pinned_is_answered_from_the_catalog_as_it_stands`). A saved search's
+pages are walked the same way (`saved_search_walk(search, offset, limit, pinned)` over
+`Searching::saved_walked`, which sorts the matches from the pinned index and numbers each by its place
+in them as `saved_search_page` does:
+`a_walk_of_a_saved_searchs_pages_reads_every_page_from_the_index_it_began_on`,
+`a_walk_of_a_saved_searchs_pages_whose_index_is_no_longer_pinned_starts_from_the_catalog_as_it_stands`).
+Android's `pagedPinned` and iOS's `Paging.pinned` are those walks. A playlist file or a link's matches take the lock per song over the
 `folded(name)`, `folded(title)` and `recording` indexes
 (`a_playlist_import_looks_each_song_up_by_index_not_by_scanning_the_catalog`).
 

@@ -12,10 +12,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.MobilePlayer
+import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.pagedPinned
-import org.resonate.android.pagedSteadily
 import org.resonate.android.ui.Resonate
 
 sealed interface Loaded<out T> {
@@ -95,8 +95,10 @@ fun Resonate.currentRows(tracks: Flow<Loaded<List<Track>>>): Flow<Loaded<List<Tr
         }
     }
 
-fun pagedFully(native: MobilePlayer, page: (offset: UInt, limit: UInt) -> List<Track>): List<Track> =
-    pagedSteadily(PAGE_ROWS, native::catalogRevision, Track::id, { true }, page)
+fun savedSearchFully(native: MobilePlayer, search: SavedSearch): List<Track> =
+    pagedPinned(PAGE_ROWS, Track::id, { true }) { offset, limit, pinned ->
+        native.savedSearchWalk(search, offset, limit, pinned).let { it.tracks to it.revision }
+    }
 
 fun filteredFully(native: MobilePlayer, filter: TrackFilter): List<Track> =
     pagedPinned(PAGE_ROWS, Track::id, { true }) { offset, limit, pinned ->

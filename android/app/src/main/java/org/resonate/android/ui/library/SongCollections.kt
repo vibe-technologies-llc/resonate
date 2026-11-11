@@ -83,7 +83,7 @@ class SuggestedViewModel(private val resonate: Resonate, search: SuggestedSearch
                 resonate.catalogRead(retry, follow = false) { native ->
                     val asked = search.native()
                     MixPage(
-                        pagedFully(native) { offset, limit -> native.savedSearchPage(asked, offset, limit) },
+                        savedSearchFully(native, asked),
                         native.measureSavedSearch(asked).covers,
                     )
                 },

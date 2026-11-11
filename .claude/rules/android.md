@@ -751,7 +751,7 @@ song the scan indexed there (`keep_folder_cover`), not once a song. Albums group
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
 request. `refresh()` and `reload()` take the repository's `access` lock one 500-row page at a time
 (`pagedTracks`), so the poll and queued transport actions run between the pages of a big library's
-read, and a `reload` a newer request overtook stops at its next page. **A walk of the library's pages is read from one index** (`pagedPinned`, also `filteredFully`): each page after the first asks `filtered_page` with the revision the first answered, so the boundary reads it from the index the walk began on however the catalog moves meanwhile (`mobile.md`), and only a page whose pin was let go starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times; each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key. A saved search's pages (`pagedFully`) still read `catalog_revision` before and after and walk again on a moved one (`pagedSteadily`) (`PagedSteadilyTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
+read, and a `reload` a newer request overtook stops at its next page. **A walk of the library's pages is read from one index** (`pagedPinned`, also `filteredFully`): each page after the first asks `filtered_page` with the revision the first answered, so the boundary reads it from the index the walk began on however the catalog moves meanwhile (`mobile.md`), and only a page whose pin was let go starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times; each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key. A saved search's pages are the same walk (`savedSearchFully`, over `saved_search_walk`), so a mix opens on one index too (`PagedWalkTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
 another spelling, no album artist or a shared title opens its own album, and the song sheet's
 heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music files
@@ -834,7 +834,7 @@ turning daily. Home's *Made for you* shelf shows up to twelve of the first three
 and the cover mosaic the boundary measured, and the Made for you page (`SuggestionsScreen`) lists every
 shelf under its name after the *Your favourites* card. A card opens `Screen.Suggested`, which carries the
 list's name, detail and search as plain values (`SuggestedSearch`, so a restored back stack needs no
-catalog) and reads its songs with `saved_search_page` and its covers with `measure_saved_search`
+catalog) and reads its songs with `saved_search_walk` and its covers with `measure_saved_search`
 (`SuggestedViewModel`); its overflow menu offers *Keep as a playlist that fills itself*
 (`LibraryFeatures.keepSearchAsPlaylist`, `keep_search_as_playlist`: keeping the same list twice says
 *Already kept as ...* and makes no second playlist). The four filter `Mix`es (*Never heard*, *Most played*, *Recently added*, *High
