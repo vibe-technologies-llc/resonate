@@ -196,8 +196,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · 0.8.1] `resonate-server` declares `futures-util` and `tokio-tungstenite` and uses neither
-  (its WebSocket framing is `resonate-sync`'s), which `dependencies.md` calls a defect
 - [S · 0.8.1] `resvg` 0.49 (`text`, `system-fonts`) is taken for the Wrapped card alone
   (`wrapped_card.rs`) beside gpui's 0.46, building a second SVG and font stack (`usvg`, `fontdb`
   0.24, `harfrust` 0.12, `skrifa`) and loading a second system font database at run time;

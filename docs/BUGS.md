@@ -4,19 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] The sync server queues without bound for a session that reads nothing: every `Close`
-  of a space already closed sends the stored `Closed` blob again (up to 256 KiB; `store.rs`'s
-  `coalesce` keeps the first, so a one-byte `Close` still costs the whole blob) to every device
-  (`serve.rs` `close`), and `Hub::punch` queues a `Punched` of any size up to `LARGEST_FRAME` with
-  no backlog charge (`hub.rs`), each into the session's unbounded channel. A space claimed for free,
-  eight devices that never read and eight sending small `Close` frames queue gigabytes a minute,
-  where `server.md` promises a slow reader a bounded queue: tell `Closed` only when a blob was
-  stored, cap a punch's `sealed`, charge every notice to the `backlog` relays already keep
-- [S · 0.8.1] The sync server's address table refuses every new address once full: past
-  `MOST_ADDRESSES_KEPT` (100 000, one per IPv6 `/64`) `guard.rs` `admit` lets go only of accounts
-  quiet for a day, so one connection from each `/64` of an ordinary hosting `/47` refuses every new
-  device and every listener idle a day, for a day; evict the account seen least lately with nothing
-  open
 - [S · 0.8.1] `shared.sqlite` and `sync.sqlite` are readable by other local accounts: the data
   folder is made by a plain `create_dir_all` (`together.rs`, `sync.rs`, `config.rs`) and SQLite
   makes the files and their `-wal` and `-shm` 0644, though they hold shared-playlist edit codes and
@@ -26,10 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   any installed app can step through `content://<pkg>.art/track/<n>` and read every cover in the
   library, past the media session's trusted-controller check; grant each URI to the controllers it
   is handed to, or guard the provider with a signature permission beside `BROWSING_HOSTS`
-- [S · 0.8.1] The sync server reads a frame of up to `LARGEST_FRAME` (32 MiB) before `Hello` is
-  checked (`quic.rs` `read_frame`, `web.rs`, `serve.rs`'s first read) and holds up to
-  `FRAMES_READ_AHEAD` more in a stalled session or room, so each admitted connection pins some 160
-  MiB having proved nothing; the first frame and every room frame want a ceiling of a few KiB
 - [S · 0.8.1] The renderers' stream server spawns a thread for every connection it accepts and
   reads a request's head with a 5 s timeout on each `read` and no deadline over all
   (`resonate-upnp` `serve.rs`), so any host on the network (a café's Wi-Fi) holds thousands of
@@ -40,10 +23,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`description.rs` through `Located::join`, `ssdp.rs`), so a device answering the search points the
   SOAP posts (the stream's token and the song's title among them) at another host or a loopback
   service; keep control on the host that described the renderer
-- [S · 0.8.1] A party guest can take another guest's place: `rooms.rs` protects the host's
-  `DeviceId` alone, so a guest joining under another's id (every member's is in `RoomWelcome`)
-  replaces them (`RoomNotice::Replaced`) and its requests are heard as theirs; bind a member's id to
-  a secret of its own on its first join, as the host token is
 - [L · 0.8.1] A view link can claim a shared playlist before its owner does: `share` hands out the
   links while the space still waits (sharing offline is allowed), the first token to arrive claims
   the space and sets its viewer digest (`serve.rs`), and the view key derives the sealer, so whoever
@@ -51,13 +30,17 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   and the owner is refused `Refusal::Token`; a party room left past its grace is open the same way.
   The space id wants to commit to the write token, or the records to be signed by a key the edit
   key derives, with a step for the links already handed out
-- [S · 0.8.1] (investigate) A `resonate://shared/…?server=` link opened from outside joins at once
-  (`together.rs` `accepted`, a recorded decision) whatever server it names (`invitation.rs`); the
-  hosted `/s/` page copies its fragment into the link unfiltered (`pages.rs`), and nothing bounds the
-  rows a shared list receives, so a link clicked in a browser has the desktop reach a stranger's
-  server every five minutes, which may fill a catalog playlist with millions of rows. Ask before
-  joining a server other than the default, drop the fragment's `?` part on the page, cap a shared
-  list's rows
+- [S · 0.8.1] A `resonate://shared/…?server=` link opened from outside joins at once
+  (`together.rs` `accepted`, a recorded decision) whatever server it names (`invitation.rs`), so a
+  link clicked in a browser has the desktop reach a stranger's server every five minutes; ask before
+  joining a server other than the default, a sheet of its own as `party_offer.rs` is
+- [S · 0.8.1] A shared list's op log is unbounded in memory: `SharedList` keeps every `Added` row
+  in its map though `rows()` shows `ROWS_AT_MOST` (10 000), so a hostile writer within the server's
+  64 MiB space limit still costs every follower the whole map; drop the rows past the cap
+  deterministically as the log is folded
+- [S · 0.8.1] A guest from a build older than the party seat can still be taken over: the room binds
+  a member's id to the seat it first joined with, and a member that never sends one is bound to
+  nothing
 
 ## Sync and together
 - [S · 0.8.1] A listen is offered to the other devices once its `heard` leaves zero, not once it has
