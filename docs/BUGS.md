@@ -4,41 +4,8 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] A shared playlist's editor or a party guest can make every follower or host inflate
-  64 MiB a record: `seal::opened` caps every sealed blob at `LARGEST_OPENED` whatever it carries,
-  though an honest bundle is at most `LARGEST_BUNDLE` and `BUNDLE_OPS_AT_MOST` ops, and
-  `shared/service.rs` clones the whole list (up to 40 000 entries) for each record it opens; the
-  party host opens every guest's `RoomHeard` under the same cap. `opened` wants a ceiling per
-  caller, the ops of a record capped, and a change flag from `apply` in place of the clone
-- [S · 0.8.1] A sync server can make every device dial any address: the observed address a
-  `Punched` frame carries joins the candidates before the sealed ones are opened and stays where
-  they do not open (`service.rs`'s answer to a punch), and `punched_back` keeps an entry for every
-  `DeviceId` the server names; nothing wants dialling unless the candidates open, and only devices
-  the ledger knows answering
-- [S · 0.8.1] A party guest can drain the host's server allowance: every guest `Hello` has the host
-  tell the whole `People` list to everyone (`party/service.rs`), a name may be `LONGEST_TEXT`
-  (4 KiB), and the server drops a host's `RoomSay` past 512 KiB a second, so a guest repeating
-  `Hello` under up to 32 ids starves the room of its `Now` frames; `People` wants telling again only
-  where a name changed, at most every few seconds, and a name cutting short where it is read
 
 ## Sync and together
-- [S · 0.8.1] A party host on a phone dismisses or plays next by a row's place in a list that
-  moves: `party_play_next` and `party_pass_over` take a `u32` and read it against `asked_for` as it
-  stands at the press (`resonate-mobile`'s `together.rs`), while iOS's rows are `enumerated()`
-  offsets refreshed by a poll (`TogetherViews.swift`, `Together.swift`) and Android's are the same
-  (`Together.kt`), so a second dismissal right after a first, or a request arriving between a read
-  and a press, acts on another guest's request; `party.md` has a dismissal name its request, never
-  an index
-- [S · 0.8.1] A party seat keeping its queue ahead edits by place without naming the queue:
-  `Seat::keep_ahead` reads `state()` and `queued()` apart and sends `Remove` and `Insert` at
-  `first_unlike` through a plain `request` (`seat.rs`), so a skip or an edit landing between the
-  reads and the removal takes the wrong rows (after a *Next*, the song now playing and everything
-  after it); `request_if_the_queue_is_still` with the revision read, `QueueChanged` read as not kept
-- [S · 0.8.1] The relay's synthetic address table grows without end and then shares addresses:
-  `relay.rs`'s `address_of` numbers each new `DeviceId` the server names `len + 1`, saturating at
-  `u16::MAX`, after which every new device gets one address and datagrams are told as another's;
-  only devices the ledger knows or that are online want mapping, the least recently used evicted
-  past a cap
 
 ## Playback and output
 
