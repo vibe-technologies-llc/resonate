@@ -730,7 +730,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `request_if_the_queue_is_still` carry the `Queued::revision` the gesture saw; `dispatch` answers
   `Error::QueueChanged` (`Cause::QueueMoved`) if it moved, so another client's edit between draw and
   click moves or removes nothing. `PlayerModel::send_by_position` sends the queue's `Remove`, `RemoveAll`,
-  `Move`, `JumpTo`; `Insert`, the bus and MCP (rows named by id) are unguarded.
+  `Move`, `JumpTo`; another device's `Move`, `Remove` and `Jump` carry the revision its mirror showed
+  (`sync.md`, *An edit by row names the queue it was aimed at*), unguarded only from an older build;
+  `Insert`, the bus and MCP (rows named by id) are unguarded.
 - **Ids.** A file no scan has seen takes its `TrackId` from `unclaimed_id` (down from `u64::MAX`).
   **A catalog file is queued under the catalog's id wherever a catalog exists** (`Host::held_as`;
   `AddTrack`, `OpenUri`, `mpris::claimed_by` and a resumed row ask before minting). **A row's id names

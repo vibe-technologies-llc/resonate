@@ -112,7 +112,18 @@ taken back out and asks the host (`PartySeat::added_here`, `PartySaid::Ask`).
 ## The room
 
 First frame `Room` (`server.md`): a guest's frame reaches only the host and a host's everyone, so nobody
-forges the host, who proves itself with a random token that is not in the link. **The party's words are
+forges the host, who proves itself with a random token that is not in the link. **The room's id commits
+to that token** (`PartyKey::hosted_by`, `PartyKey::Committed`): the link is a 20-byte secret (salt
+`resonate-party/2`, the guests' token and the sealer) and 12 bytes of the host token's commitment, the
+room being `SpaceId::of_commitment` of them, so the server makes the room for that host token alone. A
+room left past its grace is no longer open to whichever guest knocks first with a token of its own: the
+host coming back with the token it kept makes it again, and anyone else is refused `Token`
+(`a_new_party_names_a_room_only_its_host_may_make`,
+`a_room_committed_to_its_host_is_made_by_that_host_alone_even_once_it_has_ended`). The code is 55 symbols;
+a 35-symbol code from an older host (`PartyKey::FirstToClaim`, salt `resonate-party/1`) reads the room it
+always did and is made first come, as before
+(`a_party_code_handed_out_before_rooms_committed_reads_the_room_it_always_did`). An older guest build
+cannot read a party code made now. **The party's words are
 sealed under its key**, and a typed name, empty by default, travels only in them: `Hello` to the host, who
 tells everyone through `People`. `Now` (the song and next rows, playing, position and the server moment it
 was true at) is told on any change, on a jump past `HOST_MOVED_PAST`, and every 2 s; a late guest is told

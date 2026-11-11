@@ -7,7 +7,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_sync::{DeviceId, SpaceId, wire::Refusal};
+use resonate_sync::{DeviceId, SpaceId, Token, wire::Refusal};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 pub const ROOM_BACKLOG_BYTES_AT_MOST: usize = 1024 * 1024;
@@ -87,6 +87,9 @@ impl Rooms {
                 let Some(host_token) = asked.host_token else {
                     return Err(Refusal::NoSuchRoom);
                 };
+                if !asked.room.may_be_made_by(&Token(*host_token).digest()) {
+                    return Err(Refusal::Token);
+                }
                 if rooms_held >= limits.rooms {
                     return Err(Refusal::Busy);
                 }
@@ -566,6 +569,38 @@ mod tests {
         }
         assert!(ended);
         assert!(matches!(guest(&rooms, GUEST), Err(Refusal::NoSuchRoom)));
+    }
+
+    #[test]
+    fn a_room_committed_to_its_host_is_made_by_that_host_alone_even_once_it_has_ended() {
+        let rooms = Rooms::default();
+        let committed = SpaceId::committed_to(&Token(HOST_TOKEN).digest());
+        let knocking = |member, host_token| Asked {
+            room: committed,
+            token: &TOKEN,
+            host_token,
+            member,
+            seat: None,
+        };
+
+        let stranger_first = rooms.join(&knocking(GUEST, Some(&TOKEN)), &LIMITS, || true);
+        let hosting = rooms
+            .join(&knocking(HOST, Some(&HOST_TOKEN)), &LIMITS, || true)
+            .expect("the host makes the room");
+        let _waiting = rooms
+            .join(&knocking(OTHER, None), &LIMITS, || true)
+            .expect("a guest joins");
+        assert_eq!(
+            rooms.leave(committed, HOST, hosting.session),
+            Leaving::TheHostLeft
+        );
+        assert!(rooms.end_unless_the_host_came_back(committed));
+        let stranger_after = rooms.join(&knocking(GUEST, Some(&TOKEN)), &LIMITS, || true);
+        let host_back = rooms.join(&knocking(HOST, Some(&HOST_TOKEN)), &LIMITS, || true);
+
+        assert!(matches!(stranger_first, Err(Refusal::Token)));
+        assert!(matches!(stranger_after, Err(Refusal::Token)));
+        assert!(host_back.is_ok());
     }
 
     #[test]

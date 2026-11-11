@@ -42,7 +42,7 @@ pub use crate::{
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER, Mirror,
         Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone,
-        Uncontrolled, Watched, ZONES_MIRRORED_AT_MOST,
+        Revisions, Uncontrolled, Watched, ZONES_MIRRORED_AT_MOST,
     },
     seal::{opened, sealed},
     service::{

@@ -200,6 +200,7 @@ impl Store {
                 Ok(Claim::Held)
             }
             Some(_) => Ok(Claim::Refused),
+            None if !space.may_be_made_by(token) => Ok(Claim::Refused),
             None => {
                 let (spaces, bytes) = self.totals()?;
                 if spaces >= self.capacity.spaces || bytes >= self.capacity.bytes {
@@ -615,6 +616,25 @@ mod tests {
             store.claim(SPACE, &[4; 32], 3, || true).expect("refused"),
             Claim::Refused
         );
+    }
+
+    #[test]
+    fn a_space_committed_to_a_write_token_is_made_by_that_token_alone_and_held_by_it_after() {
+        let mut store = Store::in_memory().expect("a store");
+        let owner = resonate_sync::Token([5; 32]).digest();
+        let committed = SpaceId::committed_to(&owner);
+
+        let first_viewer = store
+            .claim(committed, &[6; 32], 1, || true)
+            .expect("refused");
+        let owner_after = store.claim(committed, &owner, 2, || true).expect("made");
+        let owner_again = store.claim(committed, &owner, 3, || true).expect("held");
+        let unmarked_first = store.claim(SPACE, &[6; 32], 4, || true).expect("made");
+
+        assert_eq!(first_viewer, Claim::Refused);
+        assert_eq!(owner_after, Claim::Made);
+        assert_eq!(owner_again, Claim::Held);
+        assert_eq!(unmarked_first, Claim::Made);
     }
 
     #[test]

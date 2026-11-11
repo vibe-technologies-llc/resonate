@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use ring::{
     aead::{CHACHA20_POLY1305, LessSafeKey, UnboundKey},
-    digest::{SHA256, digest},
+    digest::{Context, SHA256, digest},
     hkdf::{self, HKDF_SHA256, KeyType, Salt},
     rand::{SecureRandom, SystemRandom},
     signature::{Ed25519KeyPair, KeyPair},
@@ -16,12 +16,15 @@ pub const SPACE_BYTES: usize = 16;
 pub const DEVICE_BYTES: usize = 16;
 pub const PEER_PUBLIC_KEY_BYTES: usize = 32;
 
+pub const COMMITMENT_BYTES: usize = 12;
+pub const COMMITTED_KEY_BYTES: usize = SYNC_KEY_BYTES + COMMITMENT_BYTES;
+
 const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const BITS_PER_SYMBOL: usize = 5;
-const KEY_SYMBOLS: usize = SYNC_KEY_BYTES * 8 / BITS_PER_SYMBOL;
 const CHECK_SYMBOLS: usize = 3;
-const CODE_SYMBOLS: usize = KEY_SYMBOLS + CHECK_SYMBOLS;
 const GROUP_SYMBOLS: usize = 5;
+const COMMITTED_MARK: [u8; SPACE_BYTES - COMMITMENT_BYTES] = *b"RSc1";
+const COMMITMENT_SALT: &[u8] = b"resonate-committed/1";
 pub const PAIRING_LINK: &str = "resonate://pair/";
 const DERIVATION_SALT: &[u8] = b"resonate-sync/1";
 const SPACE_INFO: &[u8] = b"space";
@@ -84,29 +87,7 @@ impl SyncKey {
     }
 
     pub fn from_code(code: &str) -> Result<Self> {
-        let symbols = code
-            .chars()
-            .filter(|letter| !matches!(letter, '-' | ' ' | '\t'))
-            .collect::<Vec<_>>();
-        if symbols.len() != CODE_SYMBOLS {
-            return Err(Error::Code(CodeRefused::Length {
-                found: symbols.len(),
-            }));
-        }
-        let mut values = Vec::with_capacity(CODE_SYMBOLS);
-        for (at, letter) in symbols.iter().enumerate() {
-            let value = symbol_value(*letter).ok_or(Error::Code(CodeRefused::Symbol { at }))?;
-            values.push(value);
-        }
-
-        let mut key = [0; SYNC_KEY_BYTES];
-        unpacked(&values[..KEY_SYMBOLS], &mut key);
-        let key = Self(key);
-
-        if values[KEY_SYMBOLS..] != key.check_values() {
-            return Err(Error::Code(CodeRefused::Check));
-        }
-        Ok(key)
+        read_spelled(code).map(Self)
     }
 
     pub fn from_link(link: &str) -> Result<Self> {
@@ -123,27 +104,7 @@ impl SyncKey {
     }
 
     pub fn code(&self) -> String {
-        let mut values = packed(&self.0);
-        values.extend_from_slice(&self.check_values());
-
-        let mut code = String::with_capacity(CODE_SYMBOLS + CODE_SYMBOLS / GROUP_SYMBOLS);
-        for (at, value) in values.iter().enumerate() {
-            if at > 0 && at % GROUP_SYMBOLS == 0 {
-                code.push('-');
-            }
-            code.push(char::from(ALPHABET[usize::from(*value)]));
-        }
-        code
-    }
-
-    fn check_values(&self) -> [u8; CHECK_SYMBOLS] {
-        let digested = digest(&SHA256, &self.0);
-        let bytes = digested.as_ref();
-        let mut values = [0; CHECK_SYMBOLS];
-        for (at, value) in values.iter_mut().enumerate() {
-            *value = bytes[at] & 0x1f;
-        }
-        values
+        spelled(&self.0)
     }
 
     pub fn derived(&self) -> Result<Derived> {
@@ -203,8 +164,60 @@ fn symbol_value(letter: char) -> Option<u8> {
         .and_then(|at| u8::try_from(at).ok())
 }
 
+const fn symbols_spelling(bytes: usize) -> usize {
+    (bytes * 8).div_ceil(BITS_PER_SYMBOL)
+}
+
+pub(crate) fn spelled(bytes: &[u8]) -> String {
+    let mut values = packed(bytes);
+    values.extend_from_slice(&check_values(bytes));
+
+    let mut code = String::with_capacity(values.len() + values.len() / GROUP_SYMBOLS);
+    for (at, value) in values.iter().enumerate() {
+        if at > 0 && at % GROUP_SYMBOLS == 0 {
+            code.push('-');
+        }
+        code.push(char::from(ALPHABET[usize::from(*value)]));
+    }
+    code
+}
+
+pub(crate) fn read_spelled<const N: usize>(code: &str) -> Result<[u8; N]> {
+    let symbols = code
+        .chars()
+        .filter(|letter| !matches!(letter, '-' | ' ' | '\t'))
+        .collect::<Vec<_>>();
+    let spelling = symbols_spelling(N);
+    if symbols.len() != spelling + CHECK_SYMBOLS {
+        return Err(Error::Code(CodeRefused::Length {
+            found: symbols.len(),
+        }));
+    }
+    let mut values = Vec::with_capacity(symbols.len());
+    for (at, letter) in symbols.iter().enumerate() {
+        let value = symbol_value(*letter).ok_or(Error::Code(CodeRefused::Symbol { at }))?;
+        values.push(value);
+    }
+
+    let mut bytes = [0; N];
+    if !unpacked(&values[..spelling], &mut bytes) || values[spelling..] != check_values(&bytes) {
+        return Err(Error::Code(CodeRefused::Check));
+    }
+    Ok(bytes)
+}
+
+fn check_values(bytes: &[u8]) -> [u8; CHECK_SYMBOLS] {
+    let digested = digest(&SHA256, bytes);
+    let digested = digested.as_ref();
+    let mut values = [0; CHECK_SYMBOLS];
+    for (at, value) in values.iter_mut().enumerate() {
+        *value = digested[at] & 0x1f;
+    }
+    values
+}
+
 fn packed(bytes: &[u8]) -> Vec<u8> {
-    let mut values = Vec::with_capacity(bytes.len() * 8 / BITS_PER_SYMBOL + 1);
+    let mut values = Vec::with_capacity(symbols_spelling(bytes.len()));
     let mut held = 0_u32;
     let mut bits = 0;
     for byte in bytes {
@@ -215,10 +228,13 @@ fn packed(bytes: &[u8]) -> Vec<u8> {
             values.push(((held >> bits) & 0x1f) as u8);
         }
     }
+    if bits > 0 {
+        values.push(((held << (BITS_PER_SYMBOL - bits)) & 0x1f) as u8);
+    }
     values
 }
 
-fn unpacked(values: &[u8], out: &mut [u8]) {
+fn unpacked(values: &[u8], out: &mut [u8]) -> bool {
     let mut held = 0_u32;
     let mut bits = 0;
     let mut at = 0;
@@ -227,10 +243,14 @@ fn unpacked(values: &[u8], out: &mut [u8]) {
         bits += BITS_PER_SYMBOL;
         if bits >= 8 {
             bits -= 8;
-            out[at] = ((held >> bits) & 0xff) as u8;
+            let Some(byte) = out.get_mut(at) else {
+                return false;
+            };
+            *byte = ((held >> bits) & 0xff) as u8;
             at += 1;
         }
     }
+    at == out.len() && held & ((1 << bits) - 1) == 0
 }
 
 impl fmt::Debug for SyncKey {
@@ -281,6 +301,42 @@ impl fmt::Display for SpaceId {
     }
 }
 
+impl SpaceId {
+    pub fn committed_to(digest: &[u8; 32]) -> Self {
+        let mut hashing = Context::new(&SHA256);
+        hashing.update(COMMITMENT_SALT);
+        hashing.update(digest);
+        let hashed = hashing.finish();
+        let mut commitment = [0; COMMITMENT_BYTES];
+        commitment.copy_from_slice(&hashed.as_ref()[..COMMITMENT_BYTES]);
+
+        Self::of_commitment(commitment)
+    }
+
+    pub fn of_commitment(commitment: [u8; COMMITMENT_BYTES]) -> Self {
+        let mut space = [0; SPACE_BYTES];
+        space[..COMMITTED_MARK.len()].copy_from_slice(&COMMITTED_MARK);
+        space[COMMITTED_MARK.len()..].copy_from_slice(&commitment);
+
+        Self(space)
+    }
+
+    pub fn commitment(&self) -> Option<[u8; COMMITMENT_BYTES]> {
+        let (mark, commitment) = self.0.split_at(COMMITTED_MARK.len());
+        if mark != COMMITTED_MARK {
+            return None;
+        }
+        let mut held = [0; COMMITMENT_BYTES];
+        held.copy_from_slice(commitment);
+
+        Some(held)
+    }
+
+    pub fn may_be_made_by(&self, digest: &[u8; 32]) -> bool {
+        self.commitment().is_none() || *self == Self::committed_to(digest)
+    }
+}
+
 impl Token {
     pub fn digest(&self) -> [u8; 32] {
         let mut digested = [0; 32];
@@ -308,7 +364,7 @@ mod tests {
         let key = SyncKey::minted().expect("randomness");
         let code = key.code();
 
-        assert_eq!(code.len(), CODE_SYMBOLS + CODE_SYMBOLS / GROUP_SYMBOLS - 1);
+        assert_eq!(code.len(), 35 + 35 / GROUP_SYMBOLS - 1);
         assert_eq!(SyncKey::from_code(&code).expect("its own code"), key);
         assert_eq!(
             SyncKey::from_code(&code.to_ascii_lowercase().replace('-', " ")).expect("lowered"),
@@ -378,6 +434,58 @@ mod tests {
         assert_eq!(here.peer_public, there.peer_public);
         assert_ne!(here.space, elsewhere.space);
         assert_ne!(here.space.0[..], here.token.0[..SPACE_BYTES]);
+    }
+
+    #[test]
+    fn a_pairing_code_is_spelled_as_it_always_was() {
+        let key = SyncKey([0xA5; SYNC_KEY_BYTES]);
+
+        assert_eq!(key.code(), "MPJTB-9D5MP-JTB9D-5MPJT-B9D5M-PJTB9-D53QJ");
+    }
+
+    #[test]
+    fn a_longer_spelling_reads_back_and_refuses_bits_past_its_bytes() {
+        let bytes = [0xC3; COMMITTED_KEY_BYTES];
+        let code = spelled(&bytes);
+
+        assert_eq!(read_spelled::<COMMITTED_KEY_BYTES>(&code).ok(), Some(bytes));
+        assert!(matches!(
+            read_spelled::<SYNC_KEY_BYTES>(&code),
+            Err(Error::Code(CodeRefused::Length { found: 55 }))
+        ));
+
+        let mut values = packed(&bytes);
+        let last = values.len() - 1;
+        values[last] |= 1;
+        let padded: String = values
+            .iter()
+            .chain(check_values(&bytes).iter())
+            .map(|value| char::from(ALPHABET[usize::from(*value)]))
+            .collect();
+        assert!(matches!(
+            read_spelled::<COMMITTED_KEY_BYTES>(&padded),
+            Err(Error::Code(CodeRefused::Check))
+        ));
+    }
+
+    #[test]
+    fn a_space_committed_to_a_token_may_be_made_by_that_token_alone() {
+        let token = Token([8; TOKEN_BYTES]);
+        let stranger = Token([9; TOKEN_BYTES]);
+        let committed = SpaceId::committed_to(&token.digest());
+        let unmarked = SyncKey([3; SYNC_KEY_BYTES])
+            .derived()
+            .expect("derived")
+            .space;
+
+        assert!(committed.may_be_made_by(&token.digest()));
+        assert!(!committed.may_be_made_by(&stranger.digest()));
+        assert!(unmarked.commitment().is_none());
+        assert!(unmarked.may_be_made_by(&stranger.digest()));
+        assert_eq!(
+            committed.commitment().map(SpaceId::of_commitment),
+            Some(committed)
+        );
     }
 
     #[test]

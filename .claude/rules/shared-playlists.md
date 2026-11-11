@@ -14,10 +14,36 @@ touches the pairing key, there are no accounts, and the server reads nothing it 
 
 ## Keys and what a link gives
 
-- **An edit key derives a view key, never the reverse** (`shared/key.rs`, HKDF salt
-  `resonate-shared/1`, so one set of bytes is never both a pairing code and a shared list). The view
-  key derives the space, the sealer and a read token; the edit key adds a write token. A code is the
-  pairing code's spelling behind `E-` or `V-`.
+- **An edit key derives a view key, never the reverse** (`shared/key.rs`, so one set of bytes is
+  never both a pairing code and a shared list). The view key derives the sealer and a read token;
+  the edit key adds a write token. A code is the pairing code's spelling behind `E-` or `V-`.
+- **A list's space commits to its write token, so a view link cannot claim it first** (`EditKey`,
+  `ViewKey`, `Committed`). The server cannot tell an owner from a viewer by anything but the space id,
+  and a list may be shared offline, links handed out while its space still waits: were the space
+  derived from the view key alone, whoever reached the server first with a token of their own would
+  claim it and write records every viewer opens as the owner's, and the owner would be refused
+  `Token`. So a list minted now has a 32-byte edit key (HKDF salt `resonate-shared/2`): it derives the
+  write token and a 20-byte view secret, and its space is `SpaceId::committed_to` the write token's
+  digest (four marker bytes and 12 of a salted SHA-256, `key.rs`), which the server checks before it
+  makes the space (`server.md`). The view key is the secret and those 12 bytes, 32 bytes again, so
+  both codes are 55 symbols where an older one is 35, and the length is the version
+  (`a_new_list_names_a_space_only_its_write_token_may_make_and_its_links_say_so`). This is chosen
+  over signing records with a key the edit key derives: a viewer would need the public key, 32 bytes
+  in the view link beside a secret, every record and snapshot would carry a signature checked on
+  every device, and the trust model stays the one the server already enforces (a view link cannot
+  write because the server refuses it); the commitment needs nothing of the record format or the
+  merge and nothing of an older server, which simply does not check it.
+- **A link handed out before commitments keeps working, claimed first come as it was**
+  (`EditKey::FirstToClaim`, `ViewKey::FirstToClaim`, salt `resonate-shared/1`): a 35-symbol code
+  reads the space and keys it always did
+  (`a_link_handed_out_before_spaces_committed_reads_the_same_space_and_keys_as_it_did`), and its
+  unmarked space is claimed by the first token. No step moves it: a list its owner has reached the
+  server with is already held by the owner's token, and moving it to a committed space would strand
+  every view link that never joined (a reset leaves those without a seat). What stays open is only a
+  list shared offline before this build whose space a viewer claims before its owner arrives; the
+  owner sees `SharedStanding::TurnedAway(Token)`, and sharing the list anew gives it a committed space. An older build reads a
+  55-symbol code as a wrong length, so a list minted now cannot be joined, adopted from
+  `Change::Share` or found in a reset's seat by a build that predates it (it keeps its copy).
 - **A view link cannot write because the server refuses it**, not because anything is signed: `View`
   has no way to ask (`server.md`). So editors need no signatures, and trust each other: an editor can
   compact, and could write nonsense, and removal is the answer to that.

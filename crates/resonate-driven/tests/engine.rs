@@ -14,7 +14,7 @@ use std::{
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use resonate_core::{
     ChannelLayout, Frames, Gain, MediaLocation, Recording, RemoteTrust, SampleFormat, SampleRate,
-    TrackId, ZoneId,
+    Span, TrackId, ZoneId,
 };
 use resonate_driven::{ByTheirTags, Driven, RowNames, unnamed};
 use resonate_engine::{
@@ -373,6 +373,46 @@ fn a_real_engine_is_mirrored_and_takes_every_command_a_device_may_send() {
 
     drop(driven);
     player.send(Command::Stop).expect("stopped");
+}
+
+#[test]
+fn an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothing() {
+    let folder = Folder::new();
+    let player = Arc::new(player());
+    let driven = Driven::player(&player);
+    let first = ZoneId::FIRST;
+    load_three(&player, &folder, false);
+    eventually("the three rows mirrored", || {
+        the_zone(&driven, first).queue_length == 3
+    });
+    let seen = the_zone(&driven, first)
+        .queue_revision
+        .expect("a driven zone names its queue's revision");
+
+    player
+        .settle(Command::Move {
+            rows: Span::one(2),
+            to: 0,
+        })
+        .expect("an edit made on the driven device");
+    eventually("the edit made here mirrored", || {
+        titles(&the_zone(&driven, first)) == ["money", "Echoes", "time"]
+    });
+    let aimed_at_the_old_queue =
+        driven.control_if_the_queue_is_still(first, seen, RemoteCommand::Remove(1));
+    let jumped_in_the_old_queue =
+        driven.control_if_the_queue_is_still(first, seen, RemoteCommand::Jump(2));
+    let now = the_zone(&driven, first).queue_revision.expect("a revision");
+    let aimed_at_the_queue_as_it_is =
+        driven.control_if_the_queue_is_still(first, now, RemoteCommand::Remove(2));
+
+    assert_ne!(seen, now);
+    assert_eq!(aimed_at_the_old_queue, Err(Uncontrolled::QueueMoved));
+    assert_eq!(jumped_in_the_old_queue, Err(Uncontrolled::QueueMoved));
+    assert_eq!(aimed_at_the_queue_as_it_is, Ok(()));
+    eventually("only the row aimed at in the queue as it is gone", || {
+        titles(&the_zone(&driven, first)) == ["money", "Echoes"]
+    });
 }
 
 #[test]

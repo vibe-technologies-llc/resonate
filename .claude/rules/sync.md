@@ -634,6 +634,28 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   more) until the asker stops reading, or one `Controlled` refusal. A command kind a later build
   adds fails the decode, so the stream drops, and a build without either request drops the stream
   too: both read as `Unanswered` (`a_command_or_answer_of_a_kind_a_later_build_adds_is_refused_or_read_as_unanswered`).
+- **An edit by row names the queue it was aimed at** (`audio.md`'s *An edit by position names its
+  queue*, across devices). `ToPeer::Watch` asked with `Revisions::Carried` is tag 12 and answered by
+  `FromPeer::Zones` as tag 19, each zone followed by a flag and its `Queued::revision`
+  (`RemoteZone::queue_revision`); with `Revisions::Unsaid` it is the old tag 9 answered by the old
+  tag 14, byte for byte. A `Move`, `Remove` or `Jump` (`RemoteCommand::names_a_row`) leaves
+  `Sync::control` with the revision of the mirror the service holds of that zone, as
+  `ToPeer::Control` tag 13 (tag 8's fields, then the revision); any other command, or a zone mirrored
+  without one, is the old tag 8. The driven side hands tag 13 to
+  `Controlled::control_if_the_queue_is_still`: `Driven` asks the engine
+  `request_if_the_queue_is_still` and waits `AN_EDIT_BY_ROW_ANSWERED_WITHIN` (2 s; a command still
+  pending behind an opening has passed the check and counts as taken), and a queue edited there since
+  is `Uncontrolled::QueueMoved`, told on the wire as `NoSuchRow` (*That song is no longer in its
+  queue*) so no phone needs a new answer
+  (`an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothing`,
+  `an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue_moved`).
+  **Older builds keep working both ways**: an older driven device fails to decode tag 12 and drops
+  the stream, so a watch that hears nothing asks again with tag 9 on the same connection, its
+  mirror carries no revision and every command goes as tag 8, unguarded as before
+  (`a_device_too_old_to_carry_queue_revisions_is_watched_as_it_always_was`); an older controller
+  asks tag 9 and sends tag 8, which `control` applies as it always did. The revision is the
+  service's latest mirror at the moment the command leaves, not the one a front end drew: a mirror
+  landing between a draw and a press is the window left, a few hundred milliseconds at most.
 - **The mirror is pushed, not polled.** The watched device looks at its zones every
   `MIRROR_LOOKED_AT_EVERY` (250 ms) and sends a frame only where they moved otherwise than by
   playing on (`told_alike`: a position more than a second off where it would have played to, or
@@ -641,8 +663,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `heard_at` and plays the position on itself (`Mirror::position_of`, held at the song's length),
   so a second's readout needs no frame; a watch hearing nothing for `MIRROR_GOES_STALE_AFTER`
   (15 s) ends (`a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on`).
-- **The seam is `Controlled`** (`zones`, `control`; `Uncontrolled::{NoSuchZone, NoSuchRow,
-  Failed}`), handed to a running `Sync` by `control_with(controlled, trust)`; `trust` changes it
+- **The seam is `Controlled`** (`zones`, `control`, `control_if_the_queue_is_still`;
+  `Uncontrolled::{NoSuchZone, NoSuchRow, QueueMoved, Failed}`), handed to a running `Sync` by `control_with(controlled, trust)`; `trust` changes it
   live and `uncontrolled` takes it away. A device given none answers `Uncontrollable`, so a
   `resonate sync` run answers so while it is the one holding `sync.lock`.
 - **Which commands a paired device is trusted with is one `RemoteTrust` (core) per device**:
