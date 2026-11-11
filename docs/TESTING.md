@@ -125,6 +125,58 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [M · 0.8.1] Organise's copy across filesystems, the one path that deletes the listener's
+  original, is tested within one folder alone (`a_file_copied_whole_carries_its_time_mode_and_attributes`):
+  nothing holds the order of sync, commit and delete, a killed run resumed through
+  `already_copied`, or a failed `files_moved` leaving the source and taking the copy; the `/dev/shm`
+  volume of `tests/library.rs` could hold all three, beside an unlink refused in
+  `linked_over_nothing`
+- [M · 0.8.1] The WASAPI stream loop has never run: `stream.rs` (`serve`, `handled`, the drain
+  through `Cycled::has_played_out`) is `cfg(windows)` and holds no test, where Core Audio's loop is
+  generic over a `Hardware` trait with ten host tests (`serving.rs`); the two WASAPI defects in
+  BUGS.md sit in it, and the same trait would hold them on every host
+- [S · 0.8.1] The engine's workers are untested at their edges: `streaming.rs`, `surveying.rs` and
+  `lending.rs` hold no test, `Streaming::stop` drains the answers without joining, so an open
+  landing after it leaves its `SinkStream` in the channel to be dropped unclosed, and a survey
+  worker that ends leaves `asked` set (`Surveying::answered`), so no survey is asked again and a row
+  waiting on one stays loading
+- [S · 0.8.1] Readers of bytes from outside have no fuzz target: the IPC frames of `resonate-mpris`'s
+  `wire.rs` (a Windows pipe or a Mac's socket, up to 64 MiB), STUN answers on the QUIC socket
+  (`stun.rs`'s `binding_answer`), a measurement or calibration file (`resonate-eq`'s
+  `read_response`), the AutoEq index whose `DeviceId::new` keeps `..` out of a path
+  (`catalogue.rs`), and `probe_scanned` and `probe_pictured`, which the `probe` target never calls;
+  a release build aborts on a panic in any of them
+- [M · 0.8.1] The settings pane changes as often as `root.rs` and is held by almost nothing:
+  `views/settings/mod.rs` (107 commits) and `appearance.rs` hold no test, `output.rs` one and
+  `equaliser.rs` four, and `driven.rs` only opens a page; each page opened, a setting changed and
+  the `SettingChange` written would pin it
+- [M · 0.8.1] The phones' search is evaluated in memory (`resonate-mobile`'s `search.rs`:
+  `term_holds`, `shaped`) and the desktop's as SQL (`db.rs`'s `Term`), over one grammar, and no
+  test runs the same rows and queries through both, so a `Term` added to one is answered otherwise
+  by the other
+- [S · 0.8.1] Three tests hold a wall-clock bound under load: `resonate-providers`' `provider.rs`
+  (a provider left behind is not waited on again, within 100 ms), `crew.rs` and `pass.rs` (within
+  1 s); what each holds is countable without a clock, and runner timing has needed fixing four
+  times (`f6aa0f4d` the latest)
+- [S · 0.8.1] Rules name code that is gone: `ui.md` two renamed tests
+  (`a_found_song_that_landed_is_listed_once_as_the_held_track`,
+  `a_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`), `upnp.md` one
+  (`a_renderer_added_by_address_is_listed_where_the_search_hears_nothing_and_forgotten_with_it`),
+  `library.md` `stamp_what_is_playing_from` and `eq.md` and `mobile.md` `studies_without_bands`, both
+  removed; `dependencies.md` says the desktop bundles nothing though `jiff` bundles the zone
+  database on Windows, leaves `rusqlite`'s bundled C build out of the C-backed crates kept and
+  `x25519-dalek` out of the sync crate's cryptography, and `build.md` names two crates whose default
+  features the headless job skips where `resonate-signin` (`window`) is a third. A test reading
+  every backticked function name of the rules would hold them
+- [S · 0.8.1] The Windows and macOS jobs run clippy with default features alone, where Linux also
+  lints the headless workspace and each feature of the binary, so code dead under a platform and a
+  feature together (`cfg(all(feature = "sync", windows))` in the binary's `sync.rs`, `lastfm.rs`)
+  warns unseen, as `99148eaa` found. What `RUSTFLAGS: ""` does there wants a look: on Windows an
+  empty variable is removed, so either `+crt-static` is dropped and CI tests a build no asset ships,
+  or `windows-arm64` is checked with the x86 host's `target-cpu=native`
+- [S · 0.8.1] CI pays for work it need not: the fuzz job installs `cargo-fuzz` before `rust-cache`
+  restores `~/.cargo/bin`, so builds it from source every run, and the `layering` job, which runs
+  `cargo tree` alone, installs every Arch package and keeps no cargo cache
 - [S · 0.8.1] `mobile.md` numbers the phones' catalog steps inconsistently: it calls
   `A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD` the thirty-first step though it stands where the thirty-second
   does, and counts `ZONES_KEEP_THEIR_OWN_QUEUES` and `DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC` one higher;
@@ -176,6 +228,17 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
+- [S · 0.8.1] `wasapi` (three crates), `windows` (two) and `windows-core` are written in each
+  crate's own manifest, not `[workspace.dependencies]`, though `dependencies.md` keeps shared
+  dependencies there and holds `windows` at `wasapi`'s versions; a bump in one builds two copies,
+  on Windows alone, where the layering job checks no duplicate
+- [S · 0.8.1] `parking_lot` 0.12 and 0.13, `base64` 0.22 and 0.23 and `sha2` 0.10 and 0.11 (with
+  `lock_api`, `parking_lot_core` and `digest` beside them) are built twice into the player, gpui's
+  tree holding the older; `base64` could come down to `usvg`'s 0.22, and `dependencies.md`'s
+  duplicates third parties force name `md-5` and `miniz_oxide` alone
+- [S · 0.8.1] `soxr-comparison`'s lockfile and the drag skill's `fakein` lag the root's
+  (`smallvec`, `syn`, `cc`, `rustix`), and `fakein` takes `wayland-client` and
+  `wayland-protocols-plasma` with default features
 - [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
   0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
   `hdf5-reader` never calls the `LruCache::pop` the advisory names
@@ -196,6 +259,37 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `PICTURES_WAITING_AT_MOST` and `PERFORMERS_WEIGHED_AT_MOST`) beside `resonate-library`'s
   `enrich.rs`; the strict rules are shared, the queueing, backoff and stopping are not, so a fix to
   one is made twice. One pass over a small catalog trait both catalogs fill
+- [L] Three more files every change lands in: the binary's `main.rs` (4 914 lines, with `scan`,
+  `enrich`, `tag`, `organise`, `playlist`, `play_queue` and `launch` written in it, while `vault`,
+  `served` and `ytmusic` have modules of their own), `Library`'s `impl` in `db.rs` (some 7 400
+  lines and 294 public functions, the search compiled to SQL among them, though `sourced.rs` and
+  `supply.rs` already hold parts of it) and `impl Engine` (some 3 950 lines and 196 methods beside
+  `arms.rs` and `splicing.rs`)
+- [L] A setting is spelled in some nine files (`enrich-on-metered`: the binary's `config.rs`,
+  `error.rs` and `settings.rs`, the window's `settings.rs` and four panes, the man page), with
+  `SettingKey` mapped to `ConfigKey` by hand; one table of keys, types, defaults and groups both
+  read would make a new setting one entry
+- [M] The window draws pictures through six copies of one cache (`app.rs` twice, `serving.rs`, and
+  `models.rs` for covers, covers not held and portraits), and they have drifted: `DECODES_AT_ONCE`
+  defined twice, a failed picture asked again after 30 s in one and 60 s in two, four or six
+  fetches at once
+- [M] The binary and the phones each carry the adapter that plays a service's song in place
+  (`ServedSongs` and `Streaming` in `resonate`'s and `resonate-mobile`'s `served.rs`) and each build
+  their providers from settings (`providers.rs`, `downloads.rs`), and the second pair already
+  differs: the desktop registers `resonate` beside `hifi-api` where the phones turn a keyed hifi-api
+  account into `resonate` alone; `resonate-library` reaches both seams and could hold one of each
+- [M] Identical songs mean two things: the desktop folds a name ending ` (N)` alone
+  (`numbered_copies`), the phones any files of the same bytes (`identical_songs`, `deleting.rs`), by
+  two folding paths
+- [M] The vault builds two JPEG XL encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder`
+  for a JPEG's transcode, though `jxl-encoder` 0.3.4 encodes losslessly and carries an ICC profile,
+  which would let a cover with a profile become JXL too (`vault.md` keeps it as it came); whether it
+  is as small and as fast as zune at its highest effort is unmeasured
+- [S] Dead code hides behind allowances and tests: `resonate-mpris`'s `blocking.rs` allows dead code
+  over the whole file, so `receive_all_signals` and `ObjectServer::at`, which nothing calls, are
+  never warned; `Sync::unconsulted`, which `sync.md` names as how the consulting seam is taken away,
+  is never called; `Decoder::open_reader_span` and `Producer::is_fading_out` are public for tests
+  alone
 
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its

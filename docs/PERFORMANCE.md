@@ -4,6 +4,12 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## The window
+- [S · 0.8.1] Choosing a version, *Play your own copy again* and *Look for missing covers* write
+  the catalog on the window's thread (`better.rs`'s `choose_the_version` and `play_your_own_copy`,
+  `models.rs`'s `look_for_missing_covers`), behind the one writer a scan holds for each batch and
+  SQLite's ten-second `busy_timeout` where another process writes; every other edit goes through
+  `edited_then`. Every `Load` and `Insert` also reads the whole `versions_chosen` table and its
+  tracks there (`with_the_versions_chosen`)
 - [S · 0.8.1] Playing a row of a browse list held in several chunks copies the whole list once
   (`Rows::whole`) beside the copy the queue makes; the queue could take the chunks as they are
 
@@ -15,6 +21,17 @@ are in [ROADMAP.md](ROADMAP.md).
   as `filtered_page` gives the library's pages
 
 ## Performance and scale
+- [S · 0.8.1] Importing a playlist whose unresolved names are not ASCII reads every path of the
+  catalog and searches a `Vec` of those names for each (`playlist.rs`'s `held_named`): tracks times
+  names comparisons, some 10⁸ for a few hundred names on a large catalog; the names want a set
+- [S · 0.8.1] Paging an artist's releases from the local MusicBrainz copy unpacks every one of its
+  release groups at every page (`mirror/mod.rs`'s `releases_of_artist`, up to
+  `GROUPS_OF_AN_ARTIST_KEPT`) before it takes a page of a hundred, so a large artist costs pages
+  times groups block decodes under the one connection's lock
+- [M · 0.8.1] Rewriting an Ogg head that changes its page count reads the rest of the file into
+  memory to renumber its pages (`writing.rs`'s `copied_with_head`, and `laid_head` alike), though
+  `ogg::renumbered` works a page at a time, so embedding a cover in a multi-gigabyte Opus or Vorbis
+  file holds the whole file in memory
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

@@ -113,6 +113,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `MACOS_NOTARY_ISSUER` are set
 
 ## Playback and output
+- [M · 0.9.0] A version chosen for a song is played as such in the window alone: `RootView::send`
+  swaps it in (`better.rs`'s `with_the_versions_chosen`), and `resonate play`, `resonate playlist`,
+  MCP's queue tools and the phones never read `versions_chosen`, so *plays this version from now
+  on* holds only where it was said; moving `Chosen::in_place_of` into `resonate-library` would let
+  each caller take it
+- [M · 0.9.0] MCP reaches one player: no tool lists the zones, names one or moves playback
+  (`controlling.rs`'s `Reach`, no zone in `resonate-mcp`), though `queue --zone` and `--move-to`
+  do it from the terminal and each zone is its own MPRIS player
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
@@ -123,6 +131,25 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   *Match the song's sample rate* is on, or a route moving between mixed, exclusive and bit-perfect)
   still closes the Oboe stream and opens another: an open stream's rate, format and channel count
   are fixed, and the callback is typed by them
+
+## The window
+- [M · 0.9.0] The window has no page for identical songs: `resonate dedupe` and the phones'
+  *Identical songs* fold them, and the window calls neither (the copies a device fetch leaves are
+  folded from the terminal alone)
+- [M · 0.9.0] The window's Vault group imports and chooses a folder alone: checking the vault, and
+  pruning, releasing and compacting it (`vault --verify`, `--prune`, `--release`, `--compact`) are
+  the terminal's
+
+## Sync and together
+- [M · 0.9.0] A phone cannot name a STUN server or the server's certificate: `SyncConfig` carries
+  neither and `resonate-mobile`'s `sync.rs` hands `trusted: None` and `stun: None` to sync and to
+  shared playlists, so a `resonate-server` behind a private CA pairs no phone, and a phone on a
+  `ws` or `wss` server never offers a public address to punch with; the desktop passes both
+  (`sync-server-certificate`, `sync-stun`)
+- [L · 0.9.0] The phones have no *Find another version*: the lookup across services played in
+  place and the choice it keeps (`better.rs`, `Library::choose_version`) are the window's, though
+  both phones hold every such service; the phones' catalog has no `versions_chosen`, so it wants a
+  step of its own
 
 ## Formats
 - [M · blocked: ape-decoder] A 32-bit stereo Monkey's Audio, integer or float, is refused:
