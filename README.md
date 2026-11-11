@@ -1,326 +1,111 @@
 # Resonate
 
-A music player for audio enthusiasts, targeting Linux first (with Windows and macOS ports), with
-high-fidelity, high-performance playback as the guiding constraint.
+A music player for people who care how their files reach the speaker. Linux is the main platform,
+with Windows, macOS, Android and iOS builds sharing the same Rust engine.
 
-- A **native PipeWire client** rather than a PulseAudio or ALSA compatibility layer. It reads the
-  rates a sink advertises, switches the graph to the source's own rate where the hardware takes it,
-  and resamples with its own filters where it does not — so a lossless file reaches the
-  device bit-accurate wherever the device allows it. ReplayGain, a true-peak guard, dither with
-  noise shaping and DoP for DSD sit in the same chain.
-- A **GPUI front end** running natively on Wayland: a library with albums, artists, playlists,
-  favourites and suggestions, a search grammar, synced lyrics, an analysis pane, an equaliser and a
-  settings pane that writes `config.toml` back.
-- **MPRIS on the session bus**, which is how media keys, notifications and every desktop's own
-  player controls reach the transport — the player itself reads no key. A second `resonate`
-  reaches a running one over the same interface.
-- **A catalog that knows what it holds.** A scan reads tags, cue sheets and embedded pictures into
-  SQLite; an optional lookup against MusicBrainz, the Cover Art Archive, LRCLIB and Better Lyrics
-  fills in releases, covers, artist portraits and lyrics (two singers word by word where a service
-  has them), lists the tracks of a release you are missing, and writes only what matched strictly.
-- **Every track studied once.** A whole decode yields a waveform, a spectrum, BS.1770 loudness, a
-  DR reading and a Chromaprint, and a verdict on whether a "lossless" file is really an upsampled
-  or transcoded lossy one.
-- **A managed vault**: an archive of the smallest bit-exact copy of each track, stripped of tags
-  and validated by decoding it back, that never writes to the library it was imported from.
-- **An equaliser** bound per output device, reading EqualizerAPO and AutoEq GraphicEQ files and
-  fetching the AutoEq measurement for a pair of headphones.
-- **Listen**: record what the desktop or a microphone is playing and name the song through Shazam
-  or AudD.
-- Optional **Discord presence** and a **Model Context Protocol** server that hands the catalog and
-  the running player to a language model.
+On Linux it talks to PipeWire directly. It reads the rates a sink offers, switches the graph to the
+file's own rate where the hardware accepts it, and resamples with its own filters where it doesn't.
+A lossless file stays bit-accurate wherever the device allows. ReplayGain, a true-peak limiter,
+noise-shaped dither and DoP for DSD all run in that one chain.
 
-On Windows the sound goes through WASAPI instead and on macOS through Core Audio (see *Windows* and
-*macOS* below). Releases are published on GitHub; or build from source.
+Also in the box:
 
-## Building
+- A GPUI window, native on Wayland, with albums, artists, playlists, search, synced lyrics, an
+  equaliser and an analysis pane.
+- A SQLite catalog filled from tags and cue sheets. MusicBrainz, the Cover Art Archive and LRCLIB
+  fill in releases, covers and lyrics, and only strict matches are written.
+- A per-track study (waveform, spectrum, BS.1770 loudness, DR, Chromaprint) that flags "lossless"
+  files that were upsampled or transcoded from lossy.
+- A vault that keeps the smallest bit-exact copy of each track, validated by decoding it back.
+- An equaliser bound per output device, reading EqualizerAPO and AutoEq profiles.
+- UPnP and Google Cast renderers as outputs beside the local ones.
+- Sync between your own devices, shared playlists and listening parties, all without accounts.
+- Song recognition, MPRIS, Discord presence and an MCP server.
 
-```
-cargo build --release --package resonate --bin resonate                         # the player, the window included
-cargo build --release --workspace --exclude resonate-ui --no-default-features   # the audio stack alone
-```
+Formats: FLAC, ALAC, AAC, MP3, Vorbis, Opus, WavPack, Monkey's Audio, WAV, AIFF, CAF, Matroska,
+MP4 and DSD (DSF, DFF). Cue sheets are read from a sidecar or from a FLAC's own `CUESHEET`.
 
-The binary's features are `ui`, `online`, `mcp`, `discord` and `sync`, all on by default. The YouTube Music sign-in window is a program of its own (`cargo build --release --package resonate-signin`), kept out of the player's build because it links WebKitGTK. Turning `online`
-off leaves the audio stack with no HTTP client; the window's toolkit still brings its own.
+## Install
 
-## Windows
+Each [GitHub release](https://github.com/vibe-technologies-llc/resonate/releases) carries:
 
-A release archive, `resonate-<version>-x86_64_v3-windows.zip`, holds `resonate.exe` and needs nothing
-installed. To build it, install the MSVC build tools and a current Rust, then:
+| Platform | Asset |
+|---|---|
+| Fedora 44 | `.rpm` |
+| Ubuntu 24.04 | `.deb` |
+| Arch | `.pkg.tar.zst`, or `resonate-player-git` from the AUR |
+| Windows (x64, ARM64) | installer `.exe` or `.zip` |
+| macOS 13+ (Apple Silicon) | `.dmg` |
+| Android 13+ | `.apk` |
+| iOS 26+ | `.ipa`, plus an AltStore/SideStore source |
 
-```
-./packaging/windows/build.ps1
-```
+The Linux packages target x86-64-v3; older CPUs need a source build. The Windows and macOS builds
+are unsigned, so SmartScreen and Gatekeeper will ask on first run. The IPA is signed ad hoc, so you
+sign it with your own Apple ID when sideloading. The macOS build has been type-checked and tested in
+CI but not yet run on a real Mac.
 
-Settings live in `%APPDATA%\resonate\config.toml`, the catalog and everything else in
-`%LOCALAPPDATA%\resonate`. `resonate sinks` lists every output twice: the plain name plays through
-the Windows mixer, the same name marked *(WASAPI exclusive)* takes the device for Resonate alone at
-the song's own rate and word. Media keys and the lock screen's player, toasts, microphone and
-loopback capture, Discord presence and the remote control of a running window are on Windows; the
-MPRIS bus is not (`.claude/rules/windows.md`). Nothing here has been heard on a real Windows machine yet.
+## Build
 
-## macOS
-
-A release disk image, `resonate-<version>-aarch64-macos.dmg`, holds `Resonate.app` for Apple
-Silicon and macOS 13 or later. It is signed ad hoc and not notarised, so the first run is opened
-from *Privacy & Security*; the image's `README.txt` says how. To build it on a Mac with Xcode's
-command line tools and a current Rust:
-
-```
-./packaging/macos/build.sh
-```
-
-Settings and the catalog live in `~/Library/Application Support/resonate`, studies in
-`~/Library/Caches/resonate`. `resonate sinks` lists every output twice: the plain name plays through
-the system's mixer at the device's rate, the same name marked *(exclusive)* takes the device in hog
-mode and moves it to the song's own rate and word. The window steers with Command, has a menu bar
-and answers the media keys through Now Playing. Notifications, metered-connection detection and
-recording the desktop's sound are not on macOS yet; the roadmap lists them (`docs/FEATURES.md`).
-Nothing here has run on a real Mac yet: it is type-checked from Linux and built and tested on a
-hosted runner.
-
-## Building on Linux
-
-The audio stack needs PipeWire and a C toolchain for its bindings; the window adds Wayland,
-xkbcommon, Vulkan, fontconfig and freetype. On Arch that is
-`pipewire libpipewire libxkbcommon wayland fontconfig freetype2 vulkan-icd-loader` to run, and
-`rust cargo clang pkgconf vulkan-headers libxkbcommon-x11` to build — gpui links the X11 half of
-xkbcommon even in a Wayland-only build, and the linker drops it from the binary again.
-`packaging/PKGBUILD` is the package, published on the AUR as `resonate-player-git`.
-
-On Fedora 44, build the RPM from a committed checkout with `packaging/resonate.spec`:
-
-```
-sudo dnf install git rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-devel \
-  wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel \
-  freetype-devel vulkan-headers vulkan-loader-devel
-mkdir -p "$HOME/rpmbuild/SOURCES"
-git archive --format=tar.gz --prefix=resonate-0.8.0/ HEAD \
-  -o "$HOME/rpmbuild/SOURCES/resonate-0.8.0.tar.gz"
-rpmbuild -ba packaging/resonate.spec
-sudo dnf install "$HOME"/rpmbuild/RPMS/$(uname -m)/resonate-0.8.0-1.fc44.$(uname -m).rpm
-```
-
-The spec builds the default feature set and installs the launcher, icon, metainfo, man pages and
-shell completions. The build needs access to crates.io for Cargo's locked dependencies.
-Publishing a GitHub release tagged `v0.8.0` or `0.8.0` builds the Fedora 44 x86_64 RPM and attaches
-it and the source RPM to that release. The tag must match the spec version.
-
-`packaging/org.resonate.Resonate.yml` is the Flatpak. It builds this checkout with the
-Freedesktop 25.08 SDK, and it needs `flatpak`, `flatpak-builder` and these runtimes:
-
-```
-flatpak install --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 \
-  org.freedesktop.Sdk.Extension.rust-stable//25.08
-flatpak-builder --force-clean --user --install flatpak-build packaging/org.resonate.Resonate.yml
-flatpak run org.resonate.Resonate
-```
-
-`.cargo/config.toml` builds for `target-cpu=native`, which is worth 1.25x on the resampler's Low latency level; the other three pick their vector width at run time.
-The Arch PKGBUILD keeps it for the machine building the package. The Fedora RPM and the Flatpak
-select the architecture's baseline CPU so a build runs on other machines.
-
-## Android and Android Studio
-
-The Android app is Jetpack Compose with Material 3 on Resonate's Rust playback engine and Android's
-media session. Android 13 or newer (API 33+) is required. The app supports granted music folders, song/album/artist
-browsing, search, favourites, queue, background media controls, saved resumption, equalisation,
-ReplayGain, DSP controls and sleep timers. The interface uses a violet accent, system light/dark appearance, glass navigation and artwork-led player colors. It plays files in place; no all-files permission is needed.
-
-**Library** pins Favourites above your playlists and albums, with search and album/artist filters.
-Collection pages have artwork, Play/Shuffle controls and track lists; playlist pages offer song
-selection, renaming, reordering and undo. The expanded player opens its album or artist on tap. Artwork-derived ambient colors, cover
-fades, spring controls and collection transitions follow Android's animation settings.
-**Settings** groups sound, music folders and connected services, with search and a persisted
-online switch enabled by default. **Library tools** opens filters, suggestions, statistics,
-document playlists,
-metadata/artwork enrichment, animated timed lyrics, analysis, a live visualizer and the inspector.
-**Online search** has song/album/artist search, release browsing and song-link
-lookup, including shared album/artist/playlist links. Save recordings for later, see which are
-missing locally, or import a shared playlist's matching local songs. Download providers support
-Monochrome, hifi-api, Subsonic and your TIDAL
-account, saving into a chosen write-granted folder. AutoEq, parametric profile import,
-ListenBrainz/Last.fm scrobbling live in Settings; recording identification is in Analysis.
-The floating player shows artwork, progress, a favourite heart and previous/play/next controls. Playback continues
-when you go Home and pauses when the app is dismissed from Recents. The media notification shows
-cover art and opens the app when tapped.
-Account credentials are encrypted with Android Keystore. The remaining feature-parity work is
-listed in [FEATURES.md](docs/FEATURES.md#android-parity).
-
-Install Android Studio, Python 3, Rust stable, and the Android SDK components below in
-**Tools → SDK Manager**:
-
-- Android SDK Platform 36 and Build-Tools 36.0.0.
-- NDK (Side by side) 28.2.13676358; enable **Show Package Details** to select the version.
-- Android Emulator and an Android 16+ system image. Use x86_64 on an Intel/AMD host or ARM64
-  on an ARM host.
-
-Install both Rust targets:
+Linux needs PipeWire, Wayland, xkbcommon, Vulkan, fontconfig, freetype, clang and pkg-config. On
+Arch:
 
 ```sh
-rustup target add aarch64-linux-android x86_64-linux-android
+sudo pacman -S --needed rust clang pkgconf pipewire libxkbcommon libxkbcommon-x11 wayland \
+  fontconfig freetype2 vulkan-icd-loader vulkan-headers
+cargo build --release -p resonate
 ```
 
-In Android Studio, use **File → Open** and select this repository's **`android/` directory**.
-Allow Gradle to sync, then choose **Resonate Android** from the run configuration dropdown beside the Run button.
-The shared configuration lives in `android/.run/`; the generated **app** Android configuration
-also works. Create or select a device in **Tools → Device Manager** and click **Run**.
-Gradle builds the Rust libraries and the Kotlin bindings automatically. The first build
-takes longer; subsequent runs rebuild changed sources. Rust and Python must be on Android
-Studio's process PATH. The existing `Pixel_10_Pro` AVD works on this checkout's host.
-
-To add test music, drag a copied audio file onto the emulator, then move it into a Music subfolder
-with the Files app. In Resonate, select **Choose music folder** and grant that folder. Playback
-controls also appear in Android's notification area while music plays. Open **Settings → Equaliser
-and sound** for sound processing; the sleep timer is available in **Settings** and **Now playing**.
-Output currently uses Android's shared 48 kHz stereo path; physical DAC fidelity needs hardware validation.
-
-From the repository root, without Android Studio:
+The `resonate` binary has the features `ui`, `online`, `mcp`, `discord` and `sync`, all on by
+default. Without `online` there is no HTTP client in the build at all. To build the audio stack
+without the window:
 
 ```sh
-android/gradlew -p android :app:assembleDebug :app:lintDebug
-android/gradlew -p android :app:installDebug
-adb shell am start -n org.resonate.android/.MainActivity
-android/gradlew -p android :app:connectedDebugAndroidTest
-python3 android/check-native.py --sdk "$ANDROID_HOME"
+cargo build --release --workspace --exclude resonate-ui --no-default-features
 ```
 
-For terminal builds, use JDK 21+ (`JAVA_HOME` or `java` on PATH). Set `ANDROID_HOME` to your SDK
-folder, or let Android Studio write `android/local.properties`.
-On Windows, use `android\gradlew.bat` and `python`. The debug APK is
-`android/app/build/outputs/apk/debug/app-debug.apk`; it contains ARM64 and x86_64 native libraries
-and supports devices and emulators with 16 KB memory pages. Test commands need a running device
-or emulator; Bluetooth and USB audio still require physical devices.
+`.cargo/config.toml` sets `target-cpu=native`, so a binary built this way may not run on another
+machine. The YouTube Music sign-in window is a separate binary (`-p resonate-signin`) because it
+links WebKitGTK.
 
-## Playing
+Packaging recipes live in `packaging/`: `PKGBUILD`, `resonate.spec`, `deb/build.sh`, the Flatpak
+manifest `org.resonate.Resonate.yml`, `windows/build.ps1` and `macos/build.sh`.
 
-```
-resonate                          # the window, on the queue the last run left, paused where it
-                                  #   stopped
-resonate <files>                  # the window, with those files queued; paths or file:// URIs
-resonate play <files>             # a queue on the command line, with transport keys on stdin
-resonate queue <files>            # add them to the player already running, over MPRIS; --next,
-                                  #   --play, --playlist <name> and --player <name>
-resonate players                  # the players running on the session bus and what each plays
-resonate sleep <spec>             # stop the running player after so many minutes, at the end of
-                                  #   the track, or at the end of the queue
-resonate share [file]             # the link a track is shared as
-```
+Android: open `android/` in Android Studio (SDK 36, NDK 28.2.13676358, the
+`aarch64-linux-android` and `x86_64-linux-android` Rust targets) and run it. Gradle builds the Rust
+library and Kotlin bindings itself. From a terminal, `android/gradlew -p android :app:installDebug`.
 
-## Together
+iOS: built and installed from Linux with [xtool](https://github.com/xtool-org/xtool) and the SDK
+from your Xcode download. `python3 ios/install.py` does the whole thing for an attached device.
 
-```
-resonate party start <files>      # begin a listening party and print the link to join it
-resonate party join <link>        # join one, hearing each song from your own copy or service
-resonate shared                   # the playlists you share with other people
-resonate shared --share <name>    # print a link to edit it with you and a link to follow it
-resonate shared --join <link>     # take up someone's list; --leave, --remove-person, --reset
-resonate wrapped                  # a year of listening; --year, --summary
+## Use
+
+```sh
+resonate                      # the window, on the queue you left
+resonate song.flac album/     # the window, with these queued
+resonate play song.flac       # play in the terminal
+resonate scan ~/Music         # add a folder to the library
+resonate sinks                # outputs and the rates each takes
+resonate explain song.flac    # how a file will be played on the chosen output
+resonate analyse song.flac    # is this lossless file really lossless
 ```
 
-There are no accounts. A party or a shared playlist has a key of its own, passed as a link or a QR
-code; the server keeps it sealed and cannot read it, and the name other people see is one you type,
-empty until you do. No sound passes between people: at a party everyone plays their own copy, or a
-service they already have, and sits out a song they lack. The window has a Party pane, a Share entry
-on each playlist and a Wrapped button on Statistics; the phones have the same.
+There are about forty subcommands. `resonate --help` lists them, and the man pages and shell
+completions are generated from the same definitions.
 
-## The library
-
-```
-resonate scan <roots>             # walk directories into the library, then look them up
-resonate roots                    # the roots a bare `scan` walks
-resonate forget <roots>           # drop roots and every track scanned from them
-resonate enrich                   # ask MusicBrainz about what has not been asked lately
-resonate missing                  # the release tracks the library holds no file for;
-                                  #   --dismiss, --dismiss-release put one away
-resonate wants                    # the tracks marked wanted, and where a delivery landed;
-                                  #   --add, --remove want a missing track or stop
-resonate poll                     # ask the registered providers for what is wanted
-resonate tidal                    # sign in to TIDAL: approve a code, keep the refresh token
-resonate tag                      # the tags that would be written back to say what the lookup
-                                  #   learned; --apply writes them
-resonate organise                 # the moves that would file every track under a layout;
-                                  #   --apply makes them
-resonate vault                    # what the vault holds; --import, --verify, --prune, --release,
-                                  #   --compact
-resonate studies                  # what the study of every track found; --fakes, --suspects,
-                                  #   --misnamed
-resonate playlists                # the playlists the library holds
-resonate playlist <name>          # play one, add to it, order it, export it, save a query as one
-resonate import <sheets>          # read M3U, PLS and XSPF in
-resonate stats                    # what was played and listened to most
-resonate favourites               # the tracks, albums and artists marked a favourite;
-                                  #   --tracks --add <title> marks one, --remove takes it off
-resonate suggest                  # the playlists the catalog suggests making out of what it holds
-```
-
-## Inspecting
-
-```
-resonate info <file>              # tags, ReplayGain, container layout, bitrate
-resonate analyse <file>           # the verdict on a lossless claim, levels, loudness, DR, spectrum
-resonate explain <file>           # the output plan for a file against the chosen sink
-resonate sinks                    # what PipeWire advertises, and what the graph will switch to
-resonate eq                       # the equaliser: bind a correction to a device, import one, or
-                                  #   fetch the one AutoEq measured for your headphones
-resonate listen                   # name the song the desktop or a microphone is playing
-resonate mcp                      # serve the catalog and the player over the Model Context
-                                  #   Protocol on stdin and stdout
-```
-
-`--help` is the whole of it, and the man pages and shell completions are generated from the same
-grammar at build time.
-
-## Formats
-
-FLAC, ALAC, AAC (bare ADTS included), MP3, Vorbis, Opus, WavPack, Monkey's Audio, uncompressed PCM in
-WAV, AIFF and CAF, Matroska and MP4 (fragmented included), and DSD in DSF and DFF — decoded to PCM or
-carried over DoP where the device takes it. Cue sheets are read beside a single-file rip or out of a
-FLAC's own `CUESHEET`, so one file is an album's worth of tracks.
-
-## Settings
-
-`$XDG_CONFIG_HOME/resonate/config.toml`, or `--config <FILE>`. A flag outranks the file and the file
-outranks the defaults; an unknown key warns rather than failing the run. The settings pane writes
-the same file back with `toml_edit`, so hand-written comments and key order survive.
-
-The library lives in `$XDG_DATA_HOME/resonate/library.db`, or wherever `--library` names, and the
-vault in `$XDG_DATA_HOME/resonate/vault`, created only when something is imported into it. The
-library also keeps what was playing, so `resonate` with no files opens on the queue the last run
-left — in the order it was playing, shuffle and all — paused where it stopped; `resume = false`
-turns that off and discards what was kept.
+Settings live in `$XDG_CONFIG_HOME/resonate/config.toml` (`%APPDATA%\resonate` on Windows,
+`~/Library/Application Support/resonate` on macOS). The settings pane edits the same file and keeps
+your comments and key order. `man 5 resonate-config` documents every key.
 
 ## Privacy
 
-A request identifies itself as `resonate/<version>` and nothing else. A contact is added only
-where `contact` holds one.
-
-`online` is on by default, and so is looking the library up after a scan. While online is on,
-that lookup can reach MusicBrainz, the Cover Art Archive, Wikimedia Commons, Wikidata, LRCLIB,
-Better Lyrics, AutoEq, Deezer, Apple Music, Spotify and SoundCloud. `online = false` stops every one of those.
-
-Listen, while online is on, sends Shazam a signature of what was heard and asks for no key of
-yours. AudD is sent the clip only where `audd-token` is set.
-
-ListenBrainz is sent what was heard only where `listenbrainz-token` is set, a Subsonic server is
-asked for wanted tracks only where `subsonic`, `subsonic-user` and `subsonic-password` name one of
-yours, a Jellyfin or Emby server is browsed and played in place only where `jellyfin`, `jellyfin-user` and `jellyfin-password` name one of yours (its password is sent to sign in and nothing else), and TIDAL only where `tidal-client-id` and `tidal-refresh-token` name a subscription of
-yours — the window's *Sign in to TIDAL* fetches the token with a client id you give — or where
-`hifi-api` names a [hifi-api](https://github.com/binimum/hifi-api) server you run on your own
-subscription, and a wanted track found there is downloaded whole, as lossless FLAC, into the vault, or into your music folder
-where no vault is open, never a preview, a lossy stream or an encrypted one. While online is on,
-[Monochrome](https://monochrome.st)'s track streamer, or the one `monochrome` names, is asked for
-wanted tracks too, matched by ISRC alone and taken only as the whole FLAC. The hosted hifi-api and
-Monochrome services are asked unless `hosted-services` is turned off (on by default); a server you name
-needs no such switch. `online = false` stops all of them.
-
-Discord is told nothing unless `discord` is on and names an application of yours. What it is
-told is handed to the Discord client on this machine, and the cover is a public Cover Art
-Archive address.
+Requests identify as `resonate/<version>` and nothing else. `online = false` stops every network
+request. With it on, a scan looks tracks up on MusicBrainz and its neighbours (Cover Art Archive,
+Wikidata, Wikimedia Commons, LRCLIB, Better Lyrics, Deezer, Apple Music, Spotify, SoundCloud).
+Song recognition sends Shazam a signature, not the audio. Wanted tracks are asked of the hosted
+hifi-api and Monochrome services unless `hosted-services` is off. ListenBrainz, Last.fm, AudD, Subsonic, Jellyfin, TIDAL and Discord are contacted only once you
+fill in their settings, and all of them start empty. The sync server stores only records sealed
+with keys it never sees.
 
 ## Licence
 
-Copyright (C) 2026 Vibe Technologies LLC. Resonate is free software under the GNU Affero General
-Public License, version 3 or later. You may use, study, share and change it, but anything you
-distribute that is built from it, or offer to users over a network, must be released under the
-same licence with its complete source. See [LICENSE](LICENSE).
+AGPL-3.0-or-later. Copyright (C) 2026 Vibe Technologies LLC. See [LICENSE](LICENSE).
