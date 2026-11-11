@@ -275,6 +275,52 @@ async fn a_guest_without_a_secret_of_its_own_still_joins_as_before() {
 }
 
 #[tokio::test]
+async fn a_guest_without_a_secret_keeps_its_place_while_its_session_lives_and_gets_it_back_after() {
+    let server = hosted(Limits::default()).await;
+
+    let mut host = in_the_room(server, 1, Some(token(9))).await;
+    assert!(host.heard().await.is_some());
+    let mut old = in_the_room(server, 2, None).await;
+    assert!(matches!(
+        old.heard().await,
+        Some(FromServer::RoomWelcome { .. })
+    ));
+
+    let mut thief = in_the_room(server, 2, None).await;
+    let mut thief_with_a_secret = seated_in_the_room(server, 2, None, Some(token(21))).await;
+    assert_eq!(
+        thief.heard().await,
+        Some(FromServer::Refused(Refusal::Busy))
+    );
+    assert_eq!(
+        thief_with_a_secret.heard().await,
+        Some(FromServer::Refused(Refusal::Busy))
+    );
+
+    old.say(ToServer::RoomPing { nonce: 3 }).await;
+    assert!(matches!(
+        old.heard_past_presence().await,
+        Some(FromServer::RoomPong { nonce: 3, .. })
+    ));
+
+    old.say(ToServer::Bye).await;
+    drop(old);
+    loop {
+        match host.heard().await {
+            Some(FromServer::RoomLeft { member }) if member == device(2) => break,
+            Some(_) => {}
+            None => panic!("the host stopped hearing before the guest left"),
+        }
+    }
+
+    let mut back = in_the_room(server, 2, None).await;
+    assert!(matches!(
+        back.heard().await,
+        Some(FromServer::RoomWelcome { .. })
+    ));
+}
+
+#[tokio::test]
 async fn a_guest_finds_no_room_before_its_host_and_a_wrong_token_is_turned_away() {
     let server = hosted(Limits::default()).await;
 

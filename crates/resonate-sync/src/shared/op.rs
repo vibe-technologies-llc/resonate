@@ -14,6 +14,7 @@ pub const MEMBER_BYTES: usize = 16;
 pub const PUBLIC_BYTES: usize = 32;
 pub const ROWS_AT_MOST: usize = 10_000;
 pub const ENTRIES_KEPT_AT_MOST: usize = 4 * ROWS_AT_MOST;
+pub const PEOPLE_KEPT_AT_MOST: usize = 1024;
 
 const LARGEST_OP: usize = 256 * 1024;
 const OP_AT_LEAST: usize = 1;
@@ -293,12 +294,14 @@ impl SharedList {
                 public,
                 stamp,
             } => {
-                let person = self.people.entry(*member).or_insert_with(|| Person {
+                let Some(person) = self.person_of(*member, || Person {
                     name: name.clone(),
                     public: *public,
                     stamp: *stamp,
                     left: None,
-                });
+                }) else {
+                    return;
+                };
                 if *stamp >= person.stamp {
                     person.name.clone_from(name);
                     person.public = *public;
@@ -306,7 +309,7 @@ impl SharedList {
                 }
             }
             SharedOp::Left { member, stamp } => {
-                let person = self.people.entry(*member).or_insert_with(|| Person {
+                let Some(person) = self.person_of(*member, || Person {
                     name: String::new(),
                     public: [0; PUBLIC_BYTES],
                     stamp: Stamp {
@@ -314,7 +317,9 @@ impl SharedList {
                         device: stamp.device,
                     },
                     left: None,
-                });
+                }) else {
+                    return;
+                };
                 person.left = Some(person.left.map_or(*stamp, |held| held.max(*stamp)));
             }
         }
@@ -330,6 +335,18 @@ impl SharedList {
         }
 
         Some(self.rows.entry(entry).or_default())
+    }
+
+    fn person_of(&mut self, member: MemberId, new: impl FnOnce() -> Person) -> Option<&mut Person> {
+        if !self.people.contains_key(&member) && self.people.len() >= PEOPLE_KEPT_AT_MOST {
+            let largest = *self.people.last_key_value()?.0;
+            if member > largest {
+                return None;
+            }
+            self.people.remove(&largest);
+        }
+
+        Some(self.people.entry(member).or_insert_with(new))
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -565,6 +582,65 @@ mod tests {
         assert_eq!(forwards.as_ops(), backwards.as_ops());
         assert_eq!(forwards.as_ops(), interleaved.as_ops());
         assert_eq!(forwards.rows(), backwards.rows());
+    }
+
+    #[test]
+    fn a_list_keeps_only_so_many_people_the_same_ones_whatever_order_the_ops_arrived_in() {
+        let numbered = |at: usize| {
+            let mut id = [0; MEMBER_BYTES];
+            id[..8].copy_from_slice(&u64::try_from(at).expect("a number").to_be_bytes());
+            MemberId(id)
+        };
+        let flood = PEOPLE_KEPT_AT_MOST + 50;
+        let mut ops = Vec::new();
+        for at in 0..flood {
+            ops.push(SharedOp::Member {
+                member: numbered(at),
+                name: String::from("Ada"),
+                public: [7; PUBLIC_BYTES],
+                stamp: stamp(1, 1),
+            });
+            if at % 7 == 0 {
+                ops.push(SharedOp::Member {
+                    member: numbered(at),
+                    name: String::from("Grace"),
+                    public: [8; PUBLIC_BYTES],
+                    stamp: stamp(2, 1),
+                });
+            }
+            if at % 11 == 0 {
+                ops.push(SharedOp::Left {
+                    member: numbered(at),
+                    stamp: stamp(3, 1),
+                });
+            }
+        }
+        let mut forwards = SharedList::default();
+        let mut backwards = SharedList::default();
+        let mut interleaved = SharedList::default();
+
+        for op in &ops {
+            forwards.apply(op);
+        }
+        for op in ops.iter().rev() {
+            backwards.apply(op);
+        }
+        let (front, back) = ops.split_at(ops.len() / 2);
+        for pair in front.iter().zip(back.iter().rev()) {
+            interleaved.apply(pair.1);
+            interleaved.apply(pair.0);
+        }
+        for op in back.iter().rev().skip(front.len()) {
+            interleaved.apply(op);
+        }
+
+        assert_eq!(forwards.people.len(), PEOPLE_KEPT_AT_MOST);
+        assert_eq!(
+            forwards.people.keys().next_back(),
+            Some(&numbered(PEOPLE_KEPT_AT_MOST - 1))
+        );
+        assert_eq!(forwards.as_ops(), backwards.as_ops());
+        assert_eq!(forwards.as_ops(), interleaved.as_ops());
     }
 
     #[test]
