@@ -1,5 +1,5 @@
 use resonate_audio::{SinkFormats, Words};
-use resonate_core::{ChannelLayout, SampleFormat, SampleRate};
+use resonate_core::{ChannelLayout, ChannelPosition, SampleFormat, SampleRate};
 
 pub const PROBED_RATES: [u32; 8] = [
     44_100, 48_000, 88_200, 96_000, 176_400, 192_000, 352_800, 384_000,
@@ -18,6 +18,7 @@ const SPEAKER_FRONT_CENTER: u32 = 0x4;
 const SPEAKER_LOW_FREQUENCY: u32 = 0x8;
 const SPEAKER_BACK_LEFT: u32 = 0x10;
 const SPEAKER_BACK_RIGHT: u32 = 0x20;
+const SPEAKER_BACK_CENTER: u32 = 0x100;
 const SPEAKER_SIDE_LEFT: u32 = 0x200;
 const SPEAKER_SIDE_RIGHT: u32 = 0x400;
 
@@ -63,41 +64,25 @@ pub const fn format_of(wire: Wire) -> Option<SampleFormat> {
     }
 }
 
-pub const fn mask_of(layout: ChannelLayout) -> u32 {
-    match layout {
-        ChannelLayout::Mono => SPEAKER_FRONT_CENTER,
-        ChannelLayout::Stereo => SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT,
-        ChannelLayout::Quad => {
-            SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT
-        }
-        ChannelLayout::Surround50 => {
-            SPEAKER_FRONT_LEFT
-                | SPEAKER_FRONT_RIGHT
-                | SPEAKER_FRONT_CENTER
-                | SPEAKER_BACK_LEFT
-                | SPEAKER_BACK_RIGHT
-        }
-        ChannelLayout::Surround51 => {
-            SPEAKER_FRONT_LEFT
-                | SPEAKER_FRONT_RIGHT
-                | SPEAKER_FRONT_CENTER
-                | SPEAKER_LOW_FREQUENCY
-                | SPEAKER_BACK_LEFT
-                | SPEAKER_BACK_RIGHT
-        }
-        ChannelLayout::Surround61 => 0,
-        ChannelLayout::Surround71 => {
-            SPEAKER_FRONT_LEFT
-                | SPEAKER_FRONT_RIGHT
-                | SPEAKER_FRONT_CENTER
-                | SPEAKER_LOW_FREQUENCY
-                | SPEAKER_BACK_LEFT
-                | SPEAKER_BACK_RIGHT
-                | SPEAKER_SIDE_LEFT
-                | SPEAKER_SIDE_RIGHT
-        }
-        ChannelLayout::Discrete(_) => 0,
+const fn speaker_of(position: ChannelPosition) -> u32 {
+    match position {
+        ChannelPosition::FrontLeft => SPEAKER_FRONT_LEFT,
+        ChannelPosition::FrontRight => SPEAKER_FRONT_RIGHT,
+        ChannelPosition::FrontCenter => SPEAKER_FRONT_CENTER,
+        ChannelPosition::Lfe => SPEAKER_LOW_FREQUENCY,
+        ChannelPosition::RearLeft => SPEAKER_BACK_LEFT,
+        ChannelPosition::RearRight => SPEAKER_BACK_RIGHT,
+        ChannelPosition::RearCenter => SPEAKER_BACK_CENTER,
+        ChannelPosition::SideLeft => SPEAKER_SIDE_LEFT,
+        ChannelPosition::SideRight => SPEAKER_SIDE_RIGHT,
     }
+}
+
+pub fn mask_of(layout: ChannelLayout) -> u32 {
+    layout
+        .positions()
+        .iter()
+        .fold(0, |mask, position| mask | speaker_of(*position))
 }
 
 pub fn formats_taken(
@@ -144,6 +129,8 @@ const fn words_of(format: SampleFormat) -> Words {
 
 #[cfg(test)]
 mod tests {
+    use resonate_core::{ChannelCount, Places};
+
     use super::*;
 
     #[test]
@@ -199,5 +186,25 @@ mod tests {
         assert_eq!(mask_of(ChannelLayout::Surround51), 0x3F);
         assert_eq!(mask_of(ChannelLayout::Surround71), 0x63F);
         assert_eq!(mask_of(ChannelLayout::Mono), 0x4);
+        assert_eq!(
+            mask_of(
+                ChannelLayout::placed(Places::of([
+                    ChannelPosition::FrontLeft,
+                    ChannelPosition::FrontRight,
+                    ChannelPosition::FrontCenter,
+                    ChannelPosition::RearCenter,
+                    ChannelPosition::SideLeft,
+                    ChannelPosition::SideRight,
+                ]))
+                .expect("six places")
+            ),
+            0x707
+        );
+        assert_eq!(
+            mask_of(ChannelLayout::Discrete(
+                ChannelCount::new(3).expect("three")
+            )),
+            0
+        );
     }
 }

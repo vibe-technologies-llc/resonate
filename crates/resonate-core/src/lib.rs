@@ -61,7 +61,7 @@ pub use crate::{
     },
     buffer::{AudioBuffer, SampleData},
     calendar::Calendar,
-    channel::{ChannelCount, ChannelLayout, ChannelPosition},
+    channel::{ChannelCount, ChannelLayout, ChannelPosition, Places},
     date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
     eq::{HeadYaw, SpeakerAngle, SpeakerElevation, Speakers},
     error::{Error, Result},

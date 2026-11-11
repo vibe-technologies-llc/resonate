@@ -925,6 +925,7 @@ pub struct Engine {
     opening: Option<Opening>,
     ahead: Option<Ahead>,
     boundaries: VecDeque<Boundary>,
+    failing_past_the_boundary: Option<Error>,
     announced: Option<u64>,
     stale_sinks: bool,
     formats_owed: bool,
@@ -1110,6 +1111,7 @@ impl Engine {
             opening: None,
             ahead: None,
             boundaries: VecDeque::new(),
+            failing_past_the_boundary: None,
             announced: None,
             stale_sinks,
             formats_owed: false,
@@ -1178,6 +1180,7 @@ impl Engine {
                 self.watch_discard();
                 self.take_what_was_decoded();
                 self.reach_the_boundary();
+                self.fail_what_waited_for_the_boundary();
                 self.pump();
                 self.open_ahead();
                 self.finish_reshaping();
@@ -2177,6 +2180,7 @@ impl Engine {
         self.retire_the_output();
         self.track = None;
         self.boundaries.clear();
+        self.failing_past_the_boundary = None;
         self.ahead = None;
         self.opening = None;
         self.answer_the_deferred(Ok(()));
@@ -2630,6 +2634,7 @@ impl Engine {
         self.retire_the_output();
         self.track = None;
         self.boundaries.clear();
+        self.failing_past_the_boundary = None;
         if self.opening.take().is_some() {
             self.answer_the_deferred(Ok(()));
         }
@@ -3576,6 +3581,9 @@ impl Engine {
 
     fn pump(&mut self) {
         self.fill_owed = false;
+        if self.failing_past_the_boundary.is_some() {
+            return;
+        }
         let outcome = {
             let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
                 return;
@@ -3824,6 +3832,32 @@ impl Engine {
         }
     }
 
+    fn drop_what_lies_past_the_boundary(&mut self) -> bool {
+        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_mut()) else {
+            return false;
+        };
+        let producer = &mut output.producer;
+        let written = producer.written();
+        let reachable = output.made == boundary.made
+            && producer.read() < boundary.at
+            && boundary.at <= written
+            && !producer.is_splicing()
+            && !producer.is_discarding();
+        if reachable {
+            producer.splice(boundary.at, written);
+        }
+        reachable
+    }
+
+    fn fail_what_waited_for_the_boundary(&mut self) {
+        if !self.boundaries.is_empty() {
+            return;
+        }
+        if let Some(error) = self.failing_past_the_boundary.take() {
+            self.fail(error);
+        }
+    }
+
     fn until_the_boundary(&self) -> Option<Duration> {
         let (boundary, output) = (self.boundaries.front()?, self.output.as_ref()?);
         let frames = boundary.at.saturating_sub(output.producer.read());
@@ -3903,6 +3937,7 @@ impl Engine {
             return false;
         };
         self.boundaries.clear();
+        self.failing_past_the_boundary = None;
         self.track = Some(boundary.leaving);
         if let Some(output) = self.output.as_mut() {
             output.rendered_for_another = true;
@@ -4713,6 +4748,10 @@ impl Engine {
         if !self.boundaries.is_empty() {
             let entering = self.track.as_ref().map(|track| track.id);
             if entering.is_some() && error.track() == entering {
+                if self.drop_what_lies_past_the_boundary() {
+                    self.failing_past_the_boundary = Some(error);
+                    return;
+                }
                 if !self.pass_every_boundary() {
                     tracing::warn!(%error, "a row failed after the queue had moved past it");
                     return;

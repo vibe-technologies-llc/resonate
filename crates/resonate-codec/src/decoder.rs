@@ -1429,9 +1429,18 @@ impl Decoder {
         };
 
         let into = to.saturating_sub(origin).rescaled(clock, linked.rate);
-        let ts = Timestamp::ZERO
+        let exact = Timestamp::ZERO
             .checked_add(Ticks::new(into.get()))
             .unwrap_or(Timestamp::ZERO);
+        let rolled = linked
+            .timeline
+            .rolled_back(exact, pre_roll(coded.params.codec));
+        let ts = coded
+            .reader
+            .tracks()
+            .iter()
+            .find(|track| track.id == coded.track.0)
+            .map_or(rolled, |track| rolled.max(track.start_ts));
         let landed = coded
             .reader
             .seek(

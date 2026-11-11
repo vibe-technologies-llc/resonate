@@ -18,8 +18,8 @@ use resonate_codec::{
     probe_stream,
 };
 use resonate_core::{
-    AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
-    SampleRate, SourceId, StreamSpec,
+    AudioBuffer, ChannelCount, ChannelLayout, ChannelPosition, FrameSpan, Frames, MediaLocation,
+    Places, SampleFormat, SampleRate, SourceId, StreamSpec,
 };
 
 const RATE: u32 = 44_100;
@@ -3087,18 +3087,30 @@ fn a_dsf_offers_the_cover_its_id3_tag_carries_however_large_the_tag() {
 fn a_dsf_places_its_channels_by_the_type_it_declares_rather_than_their_count() {
     const CHANNEL_TYPE_AT: usize = 48;
 
+    let placed = |positions: &[ChannelPosition]| {
+        ChannelLayout::placed(Places::of(positions.iter().copied())).expect("places")
+    };
     let cases: [(u16, u32, ChannelLayout); 7] = [
         (2, 2, ChannelLayout::Stereo),
         (
             3,
             3,
-            ChannelLayout::Discrete(ChannelCount::new(3).expect("three")),
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+            ]),
         ),
         (4, 4, ChannelLayout::Quad),
         (
             4,
             5,
-            ChannelLayout::Discrete(ChannelCount::new(4).expect("four")),
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+                ChannelPosition::Lfe,
+            ]),
         ),
         (5, 6, ChannelLayout::Surround50),
         (6, 7, ChannelLayout::Surround51),
@@ -4644,6 +4656,78 @@ fn a_seek_into_a_later_link_lands_there_and_a_seek_back_rewinds_to_the_first() {
         [ChannelLayout::Mono, ChannelLayout::Stereo]
     );
     assert_eq!(decoder.position(), Frames(2 * MONO_AT_CD_RATE.frames()));
+}
+
+const OPUS_IN_OGG: [&str; 6] = ["-c:a", "libopus", "-b:a", "320k", "-f", "ogg"];
+
+const STEREO_A_FIFTH_UP: Link = Link {
+    hertz: 990,
+    ..STEREO_AT_DAT_RATE
+};
+
+#[test]
+fn a_seek_into_a_later_link_of_a_chained_opus_hears_what_decoding_through_hears_there() {
+    let tree = Tree::new();
+    let links = [STEREO_AT_DAT_RATE, STEREO_A_FIFTH_UP];
+    let Some(path) = joined(&tree, "chained.opus", &links, &OPUS_IN_OGG) else {
+        return;
+    };
+    let whole = decode(&path).samples;
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+        .expect("a chained ogg opus opens");
+    let at = Frames(STEREO_AT_DAT_RATE.frames() + STEREO_A_FIFTH_UP.frames() / 2);
+    assert_eq!(decoder.seek(at).expect("a seek into the second link"), at);
+    let from_there = drain(&mut decoder, info.spec);
+
+    let skipped = at.get() as usize * usize::from(info.spec.channel_count().get());
+    assert_eq!(from_there.len(), whole.len() - skipped);
+    let apart = drift(&from_there, &whole[skipped..]);
+    assert!(
+        apart < 1e-6,
+        "a seek into the second link landed {apart:e} RMS of full scale away from what decoding through holds there"
+    );
+}
+
+#[test]
+fn a_seek_to_the_head_of_a_later_link_starting_after_zero_lands_there() {
+    let tree = Tree::new();
+    let links = [STEREO_AT_DAT_RATE, STEREO_A_FIFTH_UP];
+    let Some(path) = joined(
+        &tree,
+        "offset.opus",
+        &links,
+        &[
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
+            "-output_ts_offset",
+            "0.0005",
+            "-f",
+            "ogg",
+        ],
+    ) else {
+        return;
+    };
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+        .expect("a chained ogg opus opens");
+    let mut block = AudioBuffer::empty(info.spec);
+    let second = STEREO_AT_DAT_RATE.frames();
+
+    for target in [Frames(second + 100), Frames(second)] {
+        assert_eq!(
+            decoder.seek(target).expect("a seek inside the second link"),
+            target
+        );
+        assert_eq!(
+            decoder
+                .next_block(&mut block)
+                .expect("a block after the seek"),
+            DecodeStatus::Decoded
+        );
+    }
 }
 
 #[test]

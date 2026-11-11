@@ -18,8 +18,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `declared_bits` asks each container (ALAC magic cookie, WAV `wValidBitsPerSample`, FLAC
   `STREAMINFO`, Matroska `BitDepth`). Padding lies about the master.
 - **Layout named only where the container places every channel as that layout does.**
-  `positioned_layout` weighs symphonia's speaker mask against named layouts, else
-  `ChannelLayout::Discrete` (a same-count guess lets a downmix drop a 6.0's fourth channel as LFE).
+  `positioned_layout` turns symphonia's speaker mask into core's `Places` and asks
+  `ChannelLayout::placed`: a set a named layout holds is that layout (a side pair standing for the
+  rear pair of a named layout with no sides, so a 5.1 on its sides is 5.1); any other set of three
+  or more of the nine positions is `ChannelLayout::Placed`, its channels laid out in WAVE order as
+  they arrive (3.0, 2.1, 3.1, 4.0 with a centre, 4.1, 6.0, hexagonal, 7.0 and the rest, so a
+  downmix routes each by where it sits, never by index); a mask naming a position outside the nine
+  (a front-centre pair, the tops) is `ChannelLayout::Discrete` (a same-count guess lets a downmix
+  drop a 6.0's fourth channel as LFE).
 - **Tags are read under the writer's naming, not only the container spec's.** `tags::Naming` decides
   from the key set (one `VORBIS_COMMENT_ONLY` name = Vorbis comments; ffmpeg's Matroska `ALBUM`,
   `DATE` otherwise reached the `TagSet` through nothing). What a reader never exposes is taken off
@@ -55,7 +61,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   track's last block neither keeps nor replaces it, so the track the decoder selected is the one
   asked); declared length is counted from each packet's TOC byte (`Segment::opus_music`, for the
   counted track only), trusted only if nothing escaped the count. **Seeks start early** (`PRE_ROLL`, 19 200 frames: CELT
-  predicts band energy from the previous frame) and discard those frames, never earlier than the track's own `start_ts` (an Ogg Opus file whose first granule is a few frames past zero, as ffmpeg writes one given a start offset, refuses a seek before its first packet as `OutOfRange`, which made Previous on such a song fail). **AAC seeks start
+  predicts band energy from the previous frame) and discard those frames, never earlier than the track's own `start_ts` (an Ogg Opus file whose first granule is a few frames past zero, as ffmpeg writes one given a start offset, refuses a seek before its first packet as `OutOfRange`, which made Previous on such a song fail). A seek into a later link of a chained Ogg rolls back and floors the same way on that link's own timeline and track (`seek_along_the_chain`), so a stream rip's later link is not landed on CELT's burst. **AAC seeks start
   early too** (`AAC_PRE_ROLL`, four packets: the MDCT overlaps the previous packet, so a landing
   with no lead-in plays a fade-in), and every jump of a spliced M4A is a seek. The roll is taken in
   timestamps (`Timeline::rolled_back`), so it may reach into the priming but never before the
@@ -384,8 +390,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rebuilds the row first takes the boundary back** (`take_the_boundary_back`, from `rebind_with`,
   a seek, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
   back at its heard position, the entering one is dropped and the output is marked
-  `rendered_for_another`, so no seek reuses it in place; a failure of the entering row passes the
-  boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
+  `rendered_for_another`, so no seek reuses it in place. **A failure of the entering row waits for
+  the graph to reach its boundary**: `drop_what_lies_past_the_boundary` splices away only what was
+  written past the last boundary's `at` (`splice(at, written)`), the failure is held in
+  `failing_past_the_boundary` while nothing more is pumped, and once `reach_the_boundary` has
+  passed every boundary on time (`TrackFinished`, `TrackStarted` as the graph hears them) it fails
+  as ever (`fail_what_waited_for_the_boundary`), so the leaving row's tail is heard whole rather
+  than faded out by `start` retiring the output
+  (`a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole`). Where that
+  cannot be spliced (another output's boundary, the graph already past it, a boundary still inside
+  the chain's latency, a splice or discard in flight) it passes every boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
   and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
   and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
   wherever the rate, word or channels move. Refused also: a sleep timer ending at
@@ -460,10 +474,17 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Output::splice_the_back` takes a point (`RingProducer::splice_point`: the graph's read position
   plus `SPLICED_AHEAD_AT_LEAST` or two of its last pulls, whichever is more), builds a fresh back
   from the wanted plan (`OutputPlan::build_the_back`, sized by the old `Back`), runs it over the
-  recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle, blends
-  the first `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the producer
-  mirrors what it pushed, `widen_what_was_written`), writes the rest behind everything the ring
-  holds (`write_spliced`) and publishes `splice(at, to)`: the consumer plays to `at`, passes over
+  recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle
+  (`rendered_again`, into a buffer of its own), and only then **takes the point again**, no sooner
+  than the first (`splice_from_here`), since building a long room response and rendering a deep
+  recall can take longer than the lead and the graph would pass a point taken before them on the
+  old curve (`a_point_taken_again_once_the_back_has_rendered_lies_ahead_of_what_the_graph_pulled_meanwhile`).
+  It blends the first `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the
+  producer mirrors what it pushed, `widen_what_was_written`), writes them and the rest of
+  `WRITTEN_BEFORE_A_SPLICE_IS_PUBLISHED` (50 ms) behind everything the ring holds
+  (`write_spliced`, `write_blended`), publishes `splice(at, to)`, then writes the rest, so writing
+  a second of frames never eats the lead and the graph, reaching the point, always finds what
+  follows it (`a_splice_published_before_its_frames_are_written_plays_them_from_its_point`): the consumer plays to `at`, passes over
   the stale frames to `to` and plays on from the new ones; reaching it late, it passes over as many
   new frames as it played past `at`, so time is kept. The front is rejoined to the new back
   (`Chain::rejoined`): no resampler or convolver is rebuilt and the decoder never seeks. **The ring
@@ -1154,8 +1175,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   format. `Remix` runs first, so resampler and dither cost the sink's channels. Matrix from
   `ChannelPosition`: a channel the target has is copied at unity; lacking: folded into nearest
   neighbours at -3 dB (`MINUS_3_DB`); LFE dropped, not folded; an unfed target channel is silent.
-  Routing is by position, never index, except where positions are unknown (`ChannelLayout::Discrete`
-  either side): channel *i* to output *i* mod the output count at the one gain
+  Routing is by position, never index (a `Placed` layout as much as a named one), except where
+  positions are unknown (`ChannelLayout::Discrete` either side): channel *i* to output *i* mod the output count at the one gain
   `1 / ceil(inputs / outputs)` (`in_turn`). Each row sums to at most one gain: no downmix clips a
   full-scale source.
   **No decoded stream carries downmix coefficients a reader could take**, so the matrix never
@@ -1414,10 +1435,15 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   point); the graph's choice returns via `param_changed` as `StreamEvent::FormatChanged` and is kept
   on `OutputStatus::words`. **Packing is in the graph's own buffer, forward, allocation-free:**
   `process::pack` reads the low three bytes of the word at `4i`, writes them at `3i`, never reaching
-  an unread word; the ring still fills at the padded stride and `Silence::write` still lays DoP
+  an unread word. The quantum is counted in packed frames against the buffer; one whose padded
+  words would not fit there (a quantum near the buffer's size, as at the quantum limit) is filled
+  into `Cycle::widened`, allocated as the stream opens for `QUANTUM_LIMIT_FRAMES`, and packed across
+  (`packed_into`), so the graph is never handed three quarters of what it asked
+  (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); the ring still fills at the padded stride and `Silence::write` still lays DoP
   markers as four-byte words (the marker is byte 2, so a DoP carrier survives).
 - **The settled layout is read from the format's positions, never its count** (`format::placed`):
-  the `position` array is matched against `spa_position` of each named layout, else `Discrete`; a
+  the `position` array, read in WAVE order through `Places::in_order`, is the layout
+  `ChannelLayout::placed` names where its `spa_position` echoes it exactly, else `Discrete`; a
   format naming no positions keeps the layout asked for where the count agrees, else `from_count`.
   So a 5.0 or 6.1 stream reads back as itself and is not rebuilt
   (`every_layout_asked_for_reads_back_as_itself_once_the_graph_settles_on_it`,
@@ -1425,10 +1451,11 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   differs plays silence until the rebuild (`realtime.md`). A hosted daemon proves the settled format
   only for the layout and word asked for (`frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked`);
   it has no session manager to settle on another.
-- **A sink's advertised layouts are read the same way** (`format::advertised_layout` over
-  `named_by`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
+- **A sink's advertised layouts are read the same way** (`format::advertised_layout`, over
+  `ChannelLayout::placed`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
   array whatever their order, and gives each offered count whose array is that long and names a
-  channel the layout holding the same set of places (`holds_the_places_of`), else `Discrete`; no
+  channel the layout holding the same set of places (`Places::of`, a placed layout where no name
+  holds it), else `Discrete` (a position outside the nine, a place named twice); no
   array, an all-zero one or one of another length falls back to `from_count`. The set, not the
   order, decides, since the stream names its own positions and the graph routes by name: ALSA's
   5.1 (`FL FR RL RR FC LFE`) is 5.1. A side pair stands for a rear pair the device lacks, as

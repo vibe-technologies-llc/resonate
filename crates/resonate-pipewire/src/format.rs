@@ -10,7 +10,10 @@ use libspa::{
     sys,
     utils::{ChoiceEnum, Direction, Id},
 };
-use resonate_core::{ChannelCount, ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{
+    ChannelCount, ChannelLayout, ChannelPosition, Gain, Places, SampleFormat, SampleRate,
+    StreamSpec,
+};
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
@@ -73,71 +76,41 @@ fn one_of_each(raw: impl Iterator<Item = u32>) -> Vec<(SampleFormat, Words)> {
     kept
 }
 
-pub(crate) const fn spa_position(layout: ChannelLayout) -> [u32; 8] {
-    match layout {
-        ChannelLayout::Mono => [sys::SPA_AUDIO_CHANNEL_MONO, 0, 0, 0, 0, 0, 0, 0],
-        ChannelLayout::Stereo => [
-            sys::SPA_AUDIO_CHANNEL_FL,
-            sys::SPA_AUDIO_CHANNEL_FR,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ],
-        ChannelLayout::Quad => [
-            sys::SPA_AUDIO_CHANNEL_FL,
-            sys::SPA_AUDIO_CHANNEL_FR,
-            sys::SPA_AUDIO_CHANNEL_RL,
-            sys::SPA_AUDIO_CHANNEL_RR,
-            0,
-            0,
-            0,
-            0,
-        ],
-        ChannelLayout::Surround50 => [
-            sys::SPA_AUDIO_CHANNEL_FL,
-            sys::SPA_AUDIO_CHANNEL_FR,
-            sys::SPA_AUDIO_CHANNEL_FC,
-            sys::SPA_AUDIO_CHANNEL_RL,
-            sys::SPA_AUDIO_CHANNEL_RR,
-            0,
-            0,
-            0,
-        ],
-        ChannelLayout::Surround61 => [
-            sys::SPA_AUDIO_CHANNEL_FL,
-            sys::SPA_AUDIO_CHANNEL_FR,
-            sys::SPA_AUDIO_CHANNEL_FC,
-            sys::SPA_AUDIO_CHANNEL_LFE,
-            sys::SPA_AUDIO_CHANNEL_RC,
-            sys::SPA_AUDIO_CHANNEL_SL,
-            sys::SPA_AUDIO_CHANNEL_SR,
-            0,
-        ],
-        ChannelLayout::Surround51 => [
-            sys::SPA_AUDIO_CHANNEL_FL,
-            sys::SPA_AUDIO_CHANNEL_FR,
-            sys::SPA_AUDIO_CHANNEL_FC,
-            sys::SPA_AUDIO_CHANNEL_LFE,
-            sys::SPA_AUDIO_CHANNEL_RL,
-            sys::SPA_AUDIO_CHANNEL_RR,
-            0,
-            0,
-        ],
-        ChannelLayout::Surround71 => [
-            sys::SPA_AUDIO_CHANNEL_FL,
-            sys::SPA_AUDIO_CHANNEL_FR,
-            sys::SPA_AUDIO_CHANNEL_FC,
-            sys::SPA_AUDIO_CHANNEL_LFE,
-            sys::SPA_AUDIO_CHANNEL_RL,
-            sys::SPA_AUDIO_CHANNEL_RR,
-            sys::SPA_AUDIO_CHANNEL_SL,
-            sys::SPA_AUDIO_CHANNEL_SR,
-        ],
-        ChannelLayout::Discrete(_) => [0; 8],
+pub(crate) const PLACES_AT_MOST: usize = ChannelPosition::IN_WAVE_ORDER.len();
+
+const fn spa_channel(position: ChannelPosition) -> u32 {
+    match position {
+        ChannelPosition::FrontLeft => sys::SPA_AUDIO_CHANNEL_FL,
+        ChannelPosition::FrontRight => sys::SPA_AUDIO_CHANNEL_FR,
+        ChannelPosition::FrontCenter => sys::SPA_AUDIO_CHANNEL_FC,
+        ChannelPosition::Lfe => sys::SPA_AUDIO_CHANNEL_LFE,
+        ChannelPosition::RearLeft => sys::SPA_AUDIO_CHANNEL_RL,
+        ChannelPosition::RearRight => sys::SPA_AUDIO_CHANNEL_RR,
+        ChannelPosition::RearCenter => sys::SPA_AUDIO_CHANNEL_RC,
+        ChannelPosition::SideLeft => sys::SPA_AUDIO_CHANNEL_SL,
+        ChannelPosition::SideRight => sys::SPA_AUDIO_CHANNEL_SR,
     }
+}
+
+fn placed_at(channel: u32) -> Option<ChannelPosition> {
+    match channel {
+        sys::SPA_AUDIO_CHANNEL_MONO => Some(ChannelPosition::FrontCenter),
+        other => ChannelPosition::IN_WAVE_ORDER
+            .into_iter()
+            .find(|position| spa_channel(*position) == other),
+    }
+}
+
+pub(crate) fn spa_position(layout: ChannelLayout) -> [u32; PLACES_AT_MOST] {
+    let mut position = [0; PLACES_AT_MOST];
+    if layout == ChannelLayout::Mono {
+        position[0] = sys::SPA_AUDIO_CHANNEL_MONO;
+        return position;
+    }
+    for (slot, place) in position.iter_mut().zip(layout.positions()) {
+        *slot = spa_channel(*place);
+    }
+    position
 }
 
 fn first_id(value: &Value) -> Option<u32> {
@@ -298,16 +271,6 @@ impl Negotiated {
 
 const PACKED_WORD_BYTES: u16 = 3;
 
-const NAMED_LAYOUTS: [ChannelLayout; 7] = [
-    ChannelLayout::Mono,
-    ChannelLayout::Stereo,
-    ChannelLayout::Quad,
-    ChannelLayout::Surround50,
-    ChannelLayout::Surround51,
-    ChannelLayout::Surround61,
-    ChannelLayout::Surround71,
-];
-
 fn placed(info: &AudioInfoRaw, channels: ChannelCount, asked: StreamSpec) -> ChannelLayout {
     let count = usize::from(channels.get());
     let unspoken = info.flags().contains(AudioInfoRawFlags::UNPOSITIONED)
@@ -330,11 +293,16 @@ fn placed(info: &AudioInfoRaw, channels: ChannelCount, asked: StreamSpec) -> Cha
 fn named_by(answered: &[u32], channels: ChannelCount) -> ChannelLayout {
     let count = usize::from(channels.get());
     let said = answered.get(..count);
-    NAMED_LAYOUTS
-        .into_iter()
-        .filter(|layout| layout.count() == channels)
-        .find(|layout| spa_position(*layout).get(..count) == said)
-        .unwrap_or(ChannelLayout::Discrete(channels))
+    said.and_then(|said| {
+        let places = said
+            .iter()
+            .map(|channel| placed_at(*channel))
+            .collect::<Option<SmallVec<[ChannelPosition; PLACES_AT_MOST]>>>()?;
+        Places::in_order(places)
+    })
+    .and_then(ChannelLayout::placed)
+    .filter(|layout| layout.count() == channels && spa_position(*layout).get(..count) == said)
+    .unwrap_or(ChannelLayout::Discrete(channels))
 }
 
 fn advertised_layout(position: &[u32], channels: ChannelCount) -> ChannelLayout {
@@ -344,32 +312,14 @@ fn advertised_layout(position: &[u32], channels: ChannelCount) -> ChannelLayout 
         return ChannelLayout::from_count(channels);
     }
 
-    NAMED_LAYOUTS
-        .into_iter()
-        .filter(|layout| layout.count() == channels)
-        .find(|layout| holds_the_places_of(position, *layout))
-        .unwrap_or(ChannelLayout::Discrete(channels))
-}
-
-fn holds_the_places_of(position: &[u32], layout: ChannelLayout) -> bool {
-    let count = usize::from(layout.count().get());
-    let mut named = spa_position(layout)[..count].to_vec();
-    named.sort_unstable();
-
-    let rears_on_the_sides = !named.contains(&sys::SPA_AUDIO_CHANNEL_SL)
-        && !position.contains(&sys::SPA_AUDIO_CHANNEL_RL)
-        && !position.contains(&sys::SPA_AUDIO_CHANNEL_RR);
-    let mut said: Vec<u32> = position
+    position
         .iter()
-        .map(|channel| match *channel {
-            sys::SPA_AUDIO_CHANNEL_SL if rears_on_the_sides => sys::SPA_AUDIO_CHANNEL_RL,
-            sys::SPA_AUDIO_CHANNEL_SR if rears_on_the_sides => sys::SPA_AUDIO_CHANNEL_RR,
-            other => other,
-        })
-        .collect();
-    said.sort_unstable();
-
-    named == said
+        .map(|channel| placed_at(*channel))
+        .collect::<Option<SmallVec<[ChannelPosition; PLACES_AT_MOST]>>>()
+        .map(Places::of)
+        .and_then(ChannelLayout::placed)
+        .filter(|layout| layout.count() == channels)
+        .unwrap_or(ChannelLayout::Discrete(channels))
 }
 
 pub(crate) fn negotiated(param: &Pod, asked: StreamSpec) -> Option<Negotiated> {
@@ -1208,7 +1158,7 @@ mod tests {
 
     #[test]
     fn every_named_layout_a_sink_places_is_advertised_as_itself() {
-        for layout in NAMED_LAYOUTS {
+        for layout in ChannelLayout::NAMED {
             assert_eq!(
                 advertised_as(layout),
                 vec![layout],
@@ -1244,9 +1194,65 @@ mod tests {
             parse_enum_format(&placed_advertisement(6, Some(six_oh)))
                 .expect("an audio format")
                 .layouts,
-            vec![ChannelLayout::Discrete(
-                ChannelCount::new(6).expect("six channels")
-            )]
+            vec![
+                ChannelLayout::placed(Places::of([
+                    ChannelPosition::FrontLeft,
+                    ChannelPosition::FrontRight,
+                    ChannelPosition::FrontCenter,
+                    ChannelPosition::RearCenter,
+                    ChannelPosition::SideLeft,
+                    ChannelPosition::SideRight,
+                ]))
+                .expect("six places")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_layout_no_name_covers_is_advertised_and_settled_as_the_places_it_holds() {
+        let placed = |positions: &[ChannelPosition]| {
+            ChannelLayout::placed(Places::of(positions.iter().copied())).expect("places")
+        };
+        for layout in [
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+            ]),
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::Lfe,
+            ]),
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+                ChannelPosition::RearLeft,
+                ChannelPosition::RearRight,
+                ChannelPosition::SideLeft,
+                ChannelPosition::SideRight,
+            ]),
+        ] {
+            let count = layout.count();
+            let asked = spa_position(layout);
+
+            assert_eq!(advertised_as(layout), vec![layout]);
+            assert_eq!(
+                named_by(&asked, count),
+                layout,
+                "{layout} did not read back as itself once the graph settled on it"
+            );
+        }
+        let crossed = [
+            sys::SPA_AUDIO_CHANNEL_FL,
+            sys::SPA_AUDIO_CHANNEL_FC,
+            sys::SPA_AUDIO_CHANNEL_FR,
+        ];
+        assert_eq!(
+            named_by(&crossed, ChannelCount::new(3).expect("three channels")),
+            ChannelLayout::Discrete(ChannelCount::new(3).expect("three channels")),
+            "a format echoing its places in another order was read as the order asked"
         );
     }
 

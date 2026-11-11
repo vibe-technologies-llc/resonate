@@ -784,6 +784,70 @@ impl MediaProvider for Trickling {
     }
 }
 
+struct Breaking {
+    source: SourceId,
+    bytes: Vec<u8>,
+    broken: Arc<AtomicBool>,
+}
+
+struct Broken {
+    bytes: Vec<u8>,
+    broken: Arc<AtomicBool>,
+    at: usize,
+}
+
+impl std::io::Read for Broken {
+    fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+        if self.broken.load(Ordering::Acquire) {
+            return Err(std::io::ErrorKind::InvalidData.into());
+        }
+        let read = into.len().min(self.bytes.len() - self.at);
+        into[..read].copy_from_slice(&self.bytes[self.at..self.at + read]);
+        self.at += read;
+        Ok(read)
+    }
+}
+
+impl std::io::Seek for Broken {
+    fn seek(&mut self, to: std::io::SeekFrom) -> std::io::Result<u64> {
+        let length = self.bytes.len() as i64;
+        let at = match to {
+            std::io::SeekFrom::Start(at) => at as i64,
+            std::io::SeekFrom::End(by) => length + by,
+            std::io::SeekFrom::Current(by) => self.at as i64 + by,
+        };
+        self.at = at.clamp(0, length) as usize;
+        Ok(self.at as u64)
+    }
+}
+
+impl MediaStream for Broken {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        Some(self.bytes.len() as u64)
+    }
+}
+
+impl MediaProvider for Breaking {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _: &MediaLocation) -> CodecResult<Media> {
+        Ok(Media {
+            stream: Box::new(Broken {
+                bytes: self.bytes.clone(),
+                broken: Arc::clone(&self.broken),
+                at: 0,
+            }),
+            hint: None,
+        })
+    }
+}
+
 fn player_over(sinks: Vec<SinkInfo>, sources: Arc<Sources>) -> Result<(Player, Arc<Mutex<Graph>>)> {
     settled_over(sinks, sources, config())
 }
@@ -5595,6 +5659,83 @@ fn a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_i
     );
     assert_eq!(graph.lock().opens, 1);
     assert_eq!(player.state().queue_position, Some(1));
+    Ok(())
+}
+
+const BROKEN_THIS_FAR_BEFORE_THE_BOUNDARY: usize = 3_000;
+
+#[test]
+fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole() -> Result<()>
+{
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let boundary = source.stream.len();
+    let named = SourceId::new("breaking").expect("a lowercase name");
+    let broken = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Breaking {
+        source: named.clone(),
+        bytes: source.file.clone(),
+        broken: Arc::clone(&broken),
+    }));
+    let breaks_at = boundary - BROKEN_THIS_FAR_BEFORE_THE_BOUNDARY * frame_bytes(SampleFormat::S16);
+
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![
+            track(&first, 1),
+            QueueItem {
+                id: TrackId::new(2).expect("a non-zero track id"),
+                location: MediaLocation::new(named, "second.wav"),
+                span: None,
+            },
+        ],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut finished_at = None;
+    let mut failed_at = None;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| {
+            if graph.played.len() >= breaks_at {
+                broken.store(true, Ordering::Release);
+            }
+            for event in player.events().try_iter() {
+                match event {
+                    Event::TrackFinished(id) if id.get() == 1 => {
+                        finished_at = Some(graph.played.len());
+                    }
+                    Event::Failed { track, .. } if track.get() == 2 => {
+                        failed_at = Some(graph.played.len());
+                    }
+                    _ => {}
+                }
+            }
+            failed_at.is_some()
+        },
+        "the row that breaks to fail and the first row's tail to play",
+    );
+
+    let played = graph.lock().played.clone();
+    assert!(
+        played.get(..boundary) == Some(&source.stream[..]),
+        "the first row's tail was not heard whole before the failing row was passed over"
+    );
+    assert!(
+        finished_at.is_some_and(|at| at >= boundary),
+        "the first row was finished at {finished_at:?} of {boundary} bytes"
+    );
+    assert!(
+        failed_at.is_some_and(|at| at >= boundary),
+        "the failing row was passed over at {failed_at:?} of {boundary} bytes"
+    );
     Ok(())
 }
 

@@ -21,13 +21,17 @@ use resonate_audio::DeviceTime;
 use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
 use rustix::time::{ClockId, clock_gettime};
 
-use crate::{AudioSink, AudioSource, GraphTime, Stamp, StreamClock, format::WireWord};
+use crate::{
+    AudioSink, AudioSource, GraphTime, Stamp, StreamClock,
+    format::{WireWord, packs_narrower},
+};
 
 const PADDED_WORD: usize = 4;
 const PACKED_WORD: usize = 3;
 const FEEDS_HANDED_AT_ONCE: usize = 1;
 const FEEDS_SPENT_AT_ONCE: usize = 2;
 const NANOS_A_SECOND: u64 = 1_000_000_000;
+const QUANTUM_LIMIT_FRAMES: usize = 8_192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Taken {
@@ -114,7 +118,8 @@ pub(crate) struct Fed {
 impl Fed {
     pub(crate) fn run(&mut self, stream: &Stream) {
         self.take_what_was_handed();
-        self.feed.cycle.run(stream, self.feed.source.as_mut());
+        let Feed { cycle, source } = &mut self.feed;
+        cycle.run(stream, source.as_mut());
     }
 
     fn take_what_was_handed(&mut self) {
@@ -173,12 +178,18 @@ pub(crate) struct Cycle {
     taking: Arc<Taking>,
     clock: Arc<StreamClock>,
     last_filled: AtomicU64,
+    widened: Vec<u8>,
 }
 
 impl Cycle {
     pub(crate) fn new(spec: StreamSpec, taking: Arc<Taking>, clock: Arc<StreamClock>) -> Self {
         let bytes_per_frame = spec.bytes_per_frame().get() as usize;
         let packed_stride = packed_stride(spec);
+        let widened = if packs_narrower(spec.format) {
+            vec![0; QUANTUM_LIMIT_FRAMES.saturating_mul(bytes_per_frame)]
+        } else {
+            Vec::new()
+        };
 
         Self {
             rate: spec.rate,
@@ -187,10 +198,11 @@ impl Cycle {
             taking,
             clock,
             last_filled: AtomicU64::new(0),
+            widened,
         }
     }
 
-    pub(crate) fn run(&self, stream: &Stream, source: &mut dyn AudioSource) {
+    pub(crate) fn run(&mut self, stream: &Stream, source: &mut dyn AudioSource) {
         let device = self.note_latency(stream);
         let stamp = self.clock.stamp_by(device);
 
@@ -217,28 +229,56 @@ impl Cycle {
     }
 
     fn write(
-        &self,
+        &mut self,
         taken: Taken,
         asked: u64,
         slice: &mut [u8],
         source: &mut dyn AudioSource,
         stamp: Stamp,
     ) -> usize {
+        if taken == Taken::AsAsked(WireWord::Packed) {
+            return self.write_packed(asked, slice, source, stamp);
+        }
         let frame = self.ring_frame_of(taken);
         let Some(quantum) = slice.get_mut(..asked_for(asked, frame, slice.len())) else {
             return 0;
         };
         match taken {
-            Taken::AsAsked(WireWord::Padded) => source.fill_stamped(quantum, stamp),
-            Taken::AsAsked(WireWord::Packed) => {
-                let written = source.fill_stamped(quantum, stamp);
-                pack(quantum, written)
-            }
+            Taken::AsAsked(_) => source.fill_stamped(quantum, stamp),
             Taken::Otherwise { .. } => {
                 quantum.fill(0);
                 quantum.len()
             }
         }
+    }
+
+    fn write_packed(
+        &mut self,
+        asked: u64,
+        slice: &mut [u8],
+        source: &mut dyn AudioSource,
+        stamp: Stamp,
+    ) -> usize {
+        let padded = self.padded_frame;
+        let wanted = asked_for(asked, self.packed_frame, slice.len()) / self.packed_frame;
+        let fit_in_place = slice.len() / padded;
+        let widened_at_most = self.widened.len() / padded;
+
+        if wanted > fit_in_place && widened_at_most > fit_in_place {
+            let frames = wanted.min(widened_at_most);
+            let Some(quantum) = self.widened.get_mut(..frames.saturating_mul(padded.get())) else {
+                return 0;
+            };
+            let written = source.fill_stamped(quantum, stamp);
+            return packed_into(quantum, written, slice);
+        }
+
+        let frames = wanted.min(fit_in_place);
+        let Some(quantum) = slice.get_mut(..frames.saturating_mul(padded.get())) else {
+            return 0;
+        };
+        let written = source.fill_stamped(quantum, stamp);
+        pack(quantum, written)
     }
 
     fn ring_frame_of(&self, taken: Taken) -> NonZeroUsize {
@@ -330,6 +370,21 @@ fn pack(slice: &mut [u8], written: usize) -> usize {
         filled = filled.saturating_add(PACKED_WORD);
     }
 
+    filled
+}
+
+fn packed_into(widened: &[u8], written: usize, slice: &mut [u8]) -> usize {
+    let held = widened.get(..written).unwrap_or_default();
+    let mut filled = 0_usize;
+    for ([low @ .., _], place) in held
+        .as_chunks::<PADDED_WORD>()
+        .0
+        .iter()
+        .zip(slice.as_chunks_mut::<PACKED_WORD>().0)
+    {
+        *place = *low;
+        filled = filled.saturating_add(PACKED_WORD);
+    }
     filled
 }
 
@@ -491,7 +546,7 @@ mod tests {
 
     #[test]
     fn a_packed_quantum_asks_the_ring_for_every_padded_frame_the_graph_wants() {
-        let cycle = cycling(SampleFormat::S24);
+        let mut cycle = cycling(SampleFormat::S24);
         let frames = 256;
         let mut source = Counting::of(vec![0x5A; 4 * 2 * 1_024]);
         let mut buffer = vec![0; 4 * 2 * 1_024];
@@ -517,8 +572,37 @@ mod tests {
     }
 
     #[test]
+    fn a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole() {
+        let mut cycle = cycling(SampleFormat::S24);
+        let frames = 1_024;
+        let mut source = Counting::of(words(frames * 2 * 2));
+        let mut buffer = vec![0xFF; frames * 2 * PACKED_WORD];
+
+        let filled = cycle.write(
+            Taken::AsAsked(WireWord::Packed),
+            frames as u64,
+            &mut buffer,
+            &mut source,
+            now(),
+        );
+
+        assert_eq!(
+            filled,
+            frames * 2 * PACKED_WORD,
+            "a quantum as long as the graph's buffer was filled short of it"
+        );
+        assert_eq!(source.asked, frames * 2 * PADDED_WORD);
+        assert_eq!(&buffer[..9], &[0, 0, 0, 1, 0, 0, 2, 0, 0]);
+        assert_eq!(
+            &buffer[filled - PACKED_WORD..filled],
+            &[0xFF, 0x07, 0x00],
+            "the last word handed over is not the last one the ring filled"
+        );
+    }
+
+    #[test]
     fn a_ring_laid_out_for_another_layout_is_never_written_into_the_graphs_buffer() {
-        let cycle = cycling(SampleFormat::S16);
+        let mut cycle = cycling(SampleFormat::S16);
         let five_wide = NonZeroU16::new(5 * 2).expect("a five-channel frame");
         let mut source = Counting::of(vec![0x5A; 4_096]);
         let mut buffer = vec![0xFF; 4_096];
@@ -555,7 +639,7 @@ mod tests {
     #[test]
     fn the_ring_is_told_how_far_its_quantum_lies_ahead_of_the_device() {
         let clock = Arc::new(StreamClock::default());
-        let cycle = Cycle::new(
+        let mut cycle = Cycle::new(
             stereo(SampleFormat::S16),
             Arc::new(Taking::default()),
             Arc::clone(&clock),
@@ -616,7 +700,7 @@ mod tests {
 
     #[test]
     fn a_ring_laid_out_as_the_graph_took_it_is_handed_over_as_ever() {
-        let cycle = cycling(SampleFormat::S16);
+        let mut cycle = cycling(SampleFormat::S16);
         let mut source = Counting::of((0..=255).collect());
         let mut buffer = vec![0; 4_096];
 

@@ -10,7 +10,7 @@ use std::{
     num::NonZeroU32,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering, fence},
+        atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering, fence},
     },
     time::Duration,
 };
@@ -307,11 +307,59 @@ struct Hold {
     lead_in: Arc<AtomicU64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum Fading {
+    Open,
+    Silencing,
+    Quiet,
+}
+
+impl Fading {
+    const fn from_raw(raw: u8) -> Self {
+        match raw {
+            1 => Self::Silencing,
+            2 => Self::Quiet,
+            _ => Self::Open,
+        }
+    }
+}
+
+#[derive(Default)]
+struct FadeState(AtomicU8);
+
+impl FadeState {
+    fn read(&self) -> Fading {
+        Fading::from_raw(self.0.load(Ordering::Acquire))
+    }
+
+    fn silence(&self) {
+        let _ = self.0.compare_exchange(
+            Fading::Open as u8,
+            Fading::Silencing as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
+    fn open(&self) {
+        self.0.store(Fading::Open as u8, Ordering::Release);
+    }
+
+    fn went_quiet(&self) {
+        let _ = self.0.compare_exchange(
+            Fading::Silencing as u8,
+            Fading::Quiet as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+}
+
 #[derive(Clone, Default)]
 struct Fader {
-    silenced: Arc<AtomicBool>,
+    fading: Arc<FadeState>,
     over: Arc<AtomicU64>,
-    quiet: Arc<AtomicBool>,
     whole: Arc<AtomicBool>,
     pulls: Arc<AtomicU64>,
 }
@@ -382,21 +430,20 @@ impl RingProducer {
 
     pub fn fade_out(&self, over: Frames) {
         self.fader.over.store(over.get().max(1), Ordering::Release);
-        self.fader.silenced.store(true, Ordering::Release);
+        self.fader.fading.silence();
     }
 
     pub fn fade_in(&self, over: Frames) {
         self.fader.over.store(over.get().max(1), Ordering::Release);
-        self.fader.quiet.store(false, Ordering::Release);
-        self.fader.silenced.store(false, Ordering::Release);
+        self.fader.fading.open();
     }
 
     pub fn is_fading_out(&self) -> bool {
-        self.fader.silenced.load(Ordering::Acquire)
+        self.fader.fading.read() != Fading::Open
     }
 
     pub fn is_quiet(&self) -> bool {
-        self.fader.quiet.load(Ordering::Acquire)
+        self.fader.fading.read() == Fading::Quiet
     }
 
     pub fn is_audible(&self) -> bool {
@@ -998,9 +1045,9 @@ impl RingConsumer {
         if self.refilling() {
             return self.pad(dst);
         }
-        let silenced = self.fader.silenced.load(Ordering::Acquire);
+        let silenced = self.fader.fading.read() != Fading::Open;
         if silenced && (!self.fades || self.level <= SILENT) {
-            self.fader.quiet.store(true, Ordering::Release);
+            self.fader.fading.went_quiet();
             return self.hush(dst);
         }
 
@@ -1035,7 +1082,7 @@ impl RingConsumer {
         }
 
         if silenced && self.level <= SILENT {
-            self.fader.quiet.store(true, Ordering::Release);
+            self.fader.fading.went_quiet();
             return match dst.get_mut(filled..) {
                 Some(gap) => filled.saturating_add(self.hush(gap)),
                 None => filled,
@@ -1769,6 +1816,28 @@ mod tests {
     }
 
     #[test]
+    fn a_splice_published_before_its_frames_are_written_plays_them_from_its_point() {
+        let (mut producer, mut consumer, _) = whole_ring(64);
+        producer.write(&counted(0, 48));
+        let mut sunk = vec![0_u8; 10 * 4];
+        consumer.fill(&mut sunk);
+
+        producer.splice(14, producer.written());
+        let mut before = vec![0_u8; 4 * 4];
+        consumer.fill(&mut before);
+        producer.write_spliced(&counted(1_014, 20));
+        let mut sunk = vec![0_u8; 8 * 4];
+        consumer.fill(&mut sunk);
+
+        assert_eq!(left_of(&before), vec![10, 11, 12, 13]);
+        assert_eq!(
+            left_of(&sunk),
+            (1_014..1_022).collect::<Vec<_>>(),
+            "the frames written for the splice were not heard from its point"
+        );
+    }
+
+    #[test]
     fn a_discard_lets_go_of_a_splice_the_graph_had_not_reached() {
         let (mut producer, mut consumer, _) = whole_ring(64);
         producer.write(&counted(0, 48));
@@ -1863,6 +1932,36 @@ mod tests {
             vec![250, 500, 750, 1_000, 1_000, 1_000, 1_000, 1_000]
         );
         assert_eq!(faults.next_fault(), None);
+    }
+
+    #[test]
+    fn a_play_landing_while_a_pull_fades_out_leaves_the_ring_sounding() {
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S16),
+            Frames(256),
+            Silence::Unmarked,
+            FADED_OVER,
+            Entering::Whole,
+            Level::WHOLE,
+        );
+        producer.write(&steady(64));
+        producer.fade_out(FADED_OVER);
+
+        let read_as_the_pull_began = consumer.fader.fading.read();
+        producer.fade_in(FADED_OVER);
+        consumer.fader.fading.went_quiet();
+
+        assert_eq!(read_as_the_pull_began, Fading::Silencing);
+        assert!(
+            !producer.is_quiet(),
+            "a pull that began fading out marked quiet a ring played again meanwhile"
+        );
+        assert!(!producer.is_fading_out());
+
+        let mut sunk = vec![0_u8; 8 * 4];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert!(!producer.is_quiet());
+        assert_eq!(left_of(&sunk).last().copied(), Some(1_000));
     }
 
     #[test]

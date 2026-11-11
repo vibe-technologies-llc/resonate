@@ -218,7 +218,7 @@ fn is_identity(rows: &[f64], input: ChannelLayout, output: ChannelLayout) -> boo
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::{ChannelCount, SampleFormat, SampleRate};
+    use resonate_core::{ChannelCount, Places, SampleFormat, SampleRate};
 
     use super::*;
 
@@ -274,6 +274,58 @@ mod tests {
         assert!(close(out[3], 0.4), "the LFE moved");
         assert!(close(out[4], 0.6 * MINUS_3_DB) && close(out[5], 0.6 * MINUS_3_DB));
         assert!(close(out[6], 0.7) && close(out[7], 0.8));
+    }
+
+    fn placed(positions: &[ChannelPosition]) -> ChannelLayout {
+        ChannelLayout::placed(Places::of(positions.iter().copied())).expect("places to lay out")
+    }
+
+    #[test]
+    fn a_placed_source_reaches_stereo_by_position_not_by_index() {
+        use ChannelPosition::{
+            FrontCenter, FrontLeft, FrontRight, Lfe, RearLeft, RearRight, SideLeft, SideRight,
+        };
+
+        let three = run(
+            placed(&[FrontLeft, FrontRight, FrontCenter]),
+            ChannelLayout::Stereo,
+            &[0.0, 0.0, 0.5],
+        );
+        assert!(
+            close(three[0], three[1]) && three[0] > 0.0,
+            "a 3.0 centre reached the speakers as {three:?}"
+        );
+
+        let two_one = run(
+            placed(&[FrontLeft, FrontRight, Lfe]),
+            ChannelLayout::Stereo,
+            &[0.0, 0.0, 1.0],
+        );
+        assert_eq!(two_one, [0.0, 0.0], "a 2.1's LFE was played in a speaker");
+
+        let seven = Remix::new(
+            placed(&[
+                FrontLeft,
+                FrontRight,
+                FrontCenter,
+                RearLeft,
+                RearRight,
+                SideLeft,
+                SideRight,
+            ]),
+            ChannelLayout::Surround71,
+        );
+        for channel in 0..3 {
+            assert_eq!(seven.gain(channel, channel), Some(UNITY));
+        }
+        assert_eq!(seven.gain(3, 3), Some(0.0), "a 7.0 fed the LFE");
+        for (into, from) in [(4, 3), (5, 4), (6, 5), (7, 6)] {
+            assert_eq!(
+                seven.gain(into, from),
+                Some(UNITY),
+                "a 7.0's channel {from} did not reach its own place {into}"
+            );
+        }
     }
 
     #[test]

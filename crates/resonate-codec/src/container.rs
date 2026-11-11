@@ -6,8 +6,8 @@ use std::{
 };
 
 use resonate_core::{
-    ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat, SampleRate,
-    StreamSpec,
+    ChannelCount, ChannelLayout, ChannelPosition, FrameSpan, Frames, MediaLocation, Places,
+    SampleFormat, SampleRate, StreamSpec,
 };
 use symphonia::core::{
     audio::{Channels, Position, sample::SampleFormat as SymphoniaSampleFormat},
@@ -841,43 +841,36 @@ pub(crate) fn laid_out(
     }
 }
 
-const FRONT_PAIR: Position = Position::FRONT_LEFT.union(Position::FRONT_RIGHT);
-const REAR_PAIR: Position = Position::REAR_LEFT.union(Position::REAR_RIGHT);
-const SIDE_PAIR: Position = Position::SIDE_LEFT.union(Position::SIDE_RIGHT);
-const FRONT_THREE: Position = FRONT_PAIR.union(Position::FRONT_CENTER);
-const FRONT_THREE_AND_LFE: Position = FRONT_THREE.union(Position::LFE1);
+const PLACED_BY_POSITION: [(Position, ChannelPosition); 9] = [
+    (Position::FRONT_LEFT, ChannelPosition::FrontLeft),
+    (Position::FRONT_RIGHT, ChannelPosition::FrontRight),
+    (Position::FRONT_CENTER, ChannelPosition::FrontCenter),
+    (Position::LFE1, ChannelPosition::Lfe),
+    (Position::REAR_LEFT, ChannelPosition::RearLeft),
+    (Position::REAR_RIGHT, ChannelPosition::RearRight),
+    (Position::REAR_CENTER, ChannelPosition::RearCenter),
+    (Position::SIDE_LEFT, ChannelPosition::SideLeft),
+    (Position::SIDE_RIGHT, ChannelPosition::SideRight),
+];
 
 pub(crate) fn positioned_layout(positions: Position, count: ChannelCount) -> ChannelLayout {
     if matches!(count, ChannelCount::MONO | ChannelCount::STEREO) {
         return discrete_layout(count);
     }
-    let named = [
-        (FRONT_PAIR.union(REAR_PAIR), ChannelLayout::Quad),
-        (FRONT_PAIR.union(SIDE_PAIR), ChannelLayout::Quad),
-        (FRONT_THREE.union(REAR_PAIR), ChannelLayout::Surround50),
-        (FRONT_THREE.union(SIDE_PAIR), ChannelLayout::Surround50),
-        (
-            FRONT_THREE_AND_LFE
-                .union(Position::REAR_CENTER)
-                .union(SIDE_PAIR),
-            ChannelLayout::Surround61,
-        ),
-        (
-            FRONT_THREE_AND_LFE.union(REAR_PAIR),
-            ChannelLayout::Surround51,
-        ),
-        (
-            FRONT_THREE_AND_LFE.union(SIDE_PAIR),
-            ChannelLayout::Surround51,
-        ),
-        (
-            FRONT_THREE_AND_LFE.union(REAR_PAIR).union(SIDE_PAIR),
-            ChannelLayout::Surround71,
-        ),
-    ];
-    named
-        .into_iter()
-        .find_map(|(held, layout)| (held == positions).then_some(layout))
+    let known = PLACED_BY_POSITION
+        .iter()
+        .fold(Position::empty(), |known, (position, _)| known | *position);
+    if !known.contains(positions) {
+        return ChannelLayout::Discrete(count);
+    }
+    let places = Places::of(
+        PLACED_BY_POSITION
+            .iter()
+            .filter(|(position, _)| positions.contains(*position))
+            .map(|(_, place)| *place),
+    );
+    ChannelLayout::placed(places)
+        .filter(|layout| layout.count() == count)
         .unwrap_or(ChannelLayout::Discrete(count))
 }
 
@@ -1011,6 +1004,12 @@ mod tests {
 
     use super::*;
     use crate::source::Reading;
+
+    const FRONT_PAIR: Position = Position::FRONT_LEFT.union(Position::FRONT_RIGHT);
+    const REAR_PAIR: Position = Position::REAR_LEFT.union(Position::REAR_RIGHT);
+    const SIDE_PAIR: Position = Position::SIDE_LEFT.union(Position::SIDE_RIGHT);
+    const FRONT_THREE: Position = FRONT_PAIR.union(Position::FRONT_CENTER);
+    const FRONT_THREE_AND_LFE: Position = FRONT_THREE.union(Position::LFE1);
 
     fn wave_of(channels: u16) -> Vec<u8> {
         let mut fmt = vec![0_u8; 16];
@@ -1558,8 +1557,10 @@ mod tests {
 
     #[test]
     fn a_layout_is_named_only_where_the_container_places_every_channel_where_that_layout_does() {
+        use ChannelPosition::{
+            FrontCenter, FrontLeft, FrontRight, RearCenter, RearLeft, RearRight,
+        };
         let six = ChannelCount::new(6).expect("six channels");
-        let four = ChannelCount::new(4).expect("four channels");
 
         assert_eq!(
             layout_of(Channels::Positioned(FRONT_THREE_AND_LFE | SIDE_PAIR)),
@@ -1573,19 +1574,35 @@ mod tests {
             layout_of(Channels::Positioned(
                 FRONT_PAIR | Position::FRONT_CENTER | REAR_PAIR | Position::REAR_CENTER
             )),
-            ChannelLayout::Discrete(six),
+            ChannelLayout::placed(Places::of([
+                FrontLeft,
+                FrontRight,
+                FrontCenter,
+                RearLeft,
+                RearRight,
+                RearCenter
+            ]))
+            .expect("six places"),
             "a 6.0 file was read as 5.1, so a downmix would drop its fourth channel as LFE"
         );
         assert_eq!(
             layout_of(Channels::Positioned(
                 FRONT_PAIR | Position::FRONT_CENTER | Position::REAR_CENTER
-            )),
-            ChannelLayout::Discrete(four),
+            ))
+            .positions(),
+            [FrontLeft, FrontRight, FrontCenter, RearCenter],
             "an LCRS file was read as quad"
         );
         assert_eq!(
             layout_of(Channels::Discrete(6)),
             ChannelLayout::Discrete(six)
+        );
+        assert_eq!(
+            layout_of(Channels::Positioned(
+                FRONT_THREE | Position::FRONT_LEFT_CENTER | Position::FRONT_RIGHT_CENTER
+            )),
+            ChannelLayout::Discrete(ChannelCount::new(5).expect("five channels")),
+            "a layout placing a channel no position names was placed"
         );
         assert_eq!(layout_of(Channels::Discrete(1)), ChannelLayout::Mono);
         assert_eq!(
@@ -1593,6 +1610,57 @@ mod tests {
             ChannelLayout::Mono,
             "a mono stream placed on the left was read as one discrete channel"
         );
+    }
+
+    #[test]
+    fn a_three_two_one_and_seven_channel_file_are_placed_where_the_container_says() {
+        use ChannelPosition::{
+            FrontCenter, FrontLeft, FrontRight, Lfe, RearCenter, RearLeft, RearRight, SideLeft,
+            SideRight,
+        };
+
+        for (positions, placed) in [
+            (FRONT_THREE, &[FrontLeft, FrontRight, FrontCenter][..]),
+            (FRONT_PAIR | Position::LFE1, &[FrontLeft, FrontRight, Lfe]),
+            (
+                FRONT_THREE_AND_LFE,
+                &[FrontLeft, FrontRight, FrontCenter, Lfe],
+            ),
+            (
+                FRONT_THREE_AND_LFE | Position::REAR_CENTER,
+                &[FrontLeft, FrontRight, FrontCenter, Lfe, RearCenter],
+            ),
+            (
+                FRONT_THREE | Position::REAR_CENTER | SIDE_PAIR,
+                &[
+                    FrontLeft,
+                    FrontRight,
+                    FrontCenter,
+                    RearCenter,
+                    SideLeft,
+                    SideRight,
+                ],
+            ),
+            (
+                FRONT_THREE | REAR_PAIR | SIDE_PAIR,
+                &[
+                    FrontLeft,
+                    FrontRight,
+                    FrontCenter,
+                    RearLeft,
+                    RearRight,
+                    SideLeft,
+                    SideRight,
+                ],
+            ),
+        ] {
+            let layout = layout_of(Channels::Positioned(positions));
+            assert!(
+                matches!(layout, ChannelLayout::Placed(_)),
+                "{positions:?} was read as {layout}"
+            );
+            assert_eq!(layout.positions(), placed);
+        }
     }
 
     #[test]
