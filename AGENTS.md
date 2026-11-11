@@ -74,6 +74,7 @@ cargo clippy -p resonate --all-targets --no-default-features --features online,m
 cargo clippy -p resonate --all-targets --no-default-features --features <f> -- -D warnings   # each of ui online mcp discord sync
 cargo test  --workspace --exclude resonate-ui --no-default-features   # the usual inner loop
 cargo test  --workspace                                               # everything, gpui included
+dbus-run-session -- cargo test -p resonate-mpris --test bus          # the session-bus tests, on a bus of their own
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP costs under ceilings
 RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets   # Windows; CI's `windows` job runs it natively; `--target aarch64-pc-windows-msvc` is ARM64
 RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo clippy --target aarch64-apple-darwin --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets -- -D warnings   # macOS, types alone; CI's `macos` job builds and tests it natively (`macos.md` has the SDK and the shader file)
@@ -81,7 +82,11 @@ rust-formatter --check                                                # local on
 cd fuzz && cargo +nightly fuzz build                                  # the parsers' fuzz targets
 android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
 python3 android/check-native.py --sdk "$ANDROID_HOME"
+python3 android/check-release.py --sdk "$ANDROID_HOME"               # after :app:assembleRelease
 android/gradlew -p android :app:connectedDebugAndroidTest
+python3 -m unittest discover -s ios                                   # the iOS Python checks, on the host
+python3 ios/check-build.py                                            # local only; a clean xtool build that fails on a warning
+python3 ios/test-logic.py                                             # local only; the Swift logic's tests on the host
 python3 ios/build-native.py && (cd ios && xtool dev build && python3 app-intents.py --ipa)  # local only; needs the Darwin SDK
 ```
 

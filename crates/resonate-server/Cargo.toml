@@ -33,7 +33,6 @@ tracing-subscriber.workspace = true
 
 [build-dependencies]
 resonate-words-build.workspace = true
-tokio-tungstenite.workspace = true
 
 [dev-dependencies]
 base64.workspace = true

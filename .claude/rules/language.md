@@ -29,7 +29,7 @@ the code that says the words.
   (through referenced messages too), each `impl Into<Arg>` (numbers, `&str`, `String`, `Cow`). An id
   is kebab-case and becomes snake_case; a keyword is raised (`r#type`).
 - **The build refuses what would rot**: a parse error, a comment (the no-comment rule holds in
-  `.ftl`), a message with attributes or no value, an id named twice, an area or language folder
+  `.ftl`; every other source is walked by the test `rust-style.md` names), a message with attributes or no value, an id named twice, an area or language folder
   missing from English or not in it, and a second language's message missing, extra or taking other
   variables than English's. A tag no `Language` carries fails to compile (`Language::by_tag` is a
   `const fn`). **An unused message is `dead_code`**, so clippy's `-D warnings` refuses dead words.
@@ -116,7 +116,9 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   `every_word_the_equaliser_names_for_a_listener_is_said_through_its_catalog`, `resonate-vault`'s
   `every_reason_the_vault_gives_a_listener_is_said_through_its_catalog`, `resonate-upnp`'s
   `every_word_a_renderer_is_shown_by_is_said_through_its_catalog`, `resonate-cast`'s
-  `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-listen`'s
+  `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-coreaudio`'s
+  `every_word_a_device_is_shown_by_is_said_through_its_catalog` (`survey.rs`, a Mac's output names),
+  `resonate-listen`'s
   `every_word_a_recording_is_named_by_is_said_through_its_catalog` (the PipeWire stream names),
   `resonate-online`'s `every_word_a_spotify_sign_in_shows_a_listener_is_said_through_its_catalog`,
   `resonate-ytmusic`'s `every_word_a_youtube_music_account_names_is_said_through_its_catalog`,

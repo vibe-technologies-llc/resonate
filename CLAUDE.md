@@ -270,7 +270,7 @@ Invariants the layering protects (the rules files have the rest):
   measured against the system libsoxr, the tables of `docs/RESAMPLING.md` on stdout (`build.md`,
   the `compare-resamplers` skill). Not in CI: it needs libsoxr, and an idle machine for its timings.
 
-CI runs exactly this list, iOS and the SoXR comparison aside (`release.yml` runs on tags only); the debug profile is optimised and `target-cpu=native` is set
+CI (`ci.yml`) runs the clippy and test lines, the bus tests, the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, `cargo nextest`, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

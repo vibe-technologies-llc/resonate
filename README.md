@@ -31,17 +31,16 @@ high-fidelity, high-performance playback as the guiding constraint.
   the running player to a language model.
 
 On Windows the sound goes through WASAPI instead and on macOS through Core Audio (see *Windows* and
-*macOS* below). Until the first release is
-published, build from source.
+*macOS* below). Releases are published on GitHub; or build from source.
 
 ## Building
 
 ```
-cargo build --release --workspace                                    # everything, the window included
+cargo build --release --package resonate --bin resonate                         # the player, the window included
 cargo build --release --workspace --exclude resonate-ui --no-default-features   # the audio stack alone
 ```
 
-The binary's features are `ui`, `online`, `mcp` and `discord`, all on by default. Turning `online`
+The binary's features are `ui`, `online`, `mcp`, `discord` and `sync`, all on by default. The YouTube Music sign-in window is a program of its own (`cargo build --release --package resonate-signin`), kept out of the player's build because it links WebKitGTK. Turning `online`
 off leaves the audio stack with no HTTP client; the window's toolkit still brings its own.
 
 ## Windows
@@ -56,9 +55,9 @@ installed. To build it, install the MSVC build tools and a current Rust, then:
 Settings live in `%APPDATA%\resonate\config.toml`, the catalog and everything else in
 `%LOCALAPPDATA%\resonate`. `resonate sinks` lists every output twice: the plain name plays through
 the Windows mixer, the same name marked *(WASAPI exclusive)* takes the device for Resonate alone at
-the song's own rate and word. Desktop integration (media keys, notifications), microphone and
-loopback capture, Discord and remote control of a running window are not on Windows yet; the
-roadmap lists them (`docs/FEATURES.md`). Nothing here has been heard on a real Windows machine yet.
+the song's own rate and word. Media keys and the lock screen's player, toasts, microphone and
+loopback capture, Discord presence and the remote control of a running window are on Windows; the
+MPRIS bus is not (`.claude/rules/windows.md`). Nothing here has been heard on a real Windows machine yet.
 
 ## macOS
 
@@ -105,8 +104,7 @@ sudo dnf install "$HOME"/rpmbuild/RPMS/$(uname -m)/resonate-0.8.0-1.fc44.$(uname
 The spec builds the default feature set and installs the launcher, icon, metainfo, man pages and
 shell completions. The build needs access to crates.io for Cargo's locked dependencies.
 Publishing a GitHub release tagged `v0.8.0` or `0.8.0` builds the Fedora 44 x86_64 RPM and attaches
-it and the source RPM to that release. The tag must match the spec version. No release is
-published yet.
+it and the source RPM to that release. The tag must match the spec version.
 
 `packaging/org.resonate.Resonate.yml` is the Flatpak. It builds this checkout with the
 Freedesktop 25.08 SDK, and it needs `flatpak`, `flatpak-builder` and these runtimes:
