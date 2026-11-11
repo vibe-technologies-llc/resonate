@@ -1,6 +1,6 @@
 use std::{
     fmt, io,
-    net::{SocketAddr, ToSocketAddrs},
+    net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
 use crate::{Error, Result};
@@ -83,6 +83,16 @@ impl Located {
         &self.path
     }
 
+    pub(crate) fn is_on_host_of(&self, other: &Self) -> bool {
+        self.host.eq_ignore_ascii_case(&other.host)
+    }
+
+    pub(crate) fn is_at(&self, ip: IpAddr) -> bool {
+        let host = self.host.split('%').next().unwrap_or_default();
+        host.parse::<IpAddr>()
+            .is_ok_and(|named| named.to_canonical() == ip.to_canonical())
+    }
+
     pub fn authority(&self) -> String {
         if self.host.contains(':') {
             format!("[{}]:{}", self.host, self.port)
@@ -140,6 +150,48 @@ mod tests {
         assert_eq!(six.authority(), "[fe80::1]:8080");
         assert!(Located::parse("https://secure/").is_err());
         assert!(Located::parse("http://host:port/").is_err());
+    }
+
+    #[test]
+    fn an_address_is_at_an_ip_only_when_it_names_that_ip_and_not_a_host_that_resolves_to_it() {
+        let ip: IpAddr = "192.168.1.20".parse().expect("an ip");
+        let six: IpAddr = "fe80::1".parse().expect("an ip");
+
+        assert!(
+            Located::parse("http://192.168.1.20:49152/d.xml")
+                .expect("reads")
+                .is_at(ip)
+        );
+        assert!(
+            !Located::parse("http://192.168.1.21/d.xml")
+                .expect("reads")
+                .is_at(ip)
+        );
+        assert!(
+            !Located::parse("http://renderer.local/d.xml")
+                .expect("reads")
+                .is_at(ip)
+        );
+        assert!(
+            Located::parse("http://[fe80::1%eth0]:80/d.xml")
+                .expect("reads")
+                .is_at(six)
+        );
+        assert!(
+            !Located::parse("http://127.0.0.1/d.xml")
+                .expect("reads")
+                .is_at(ip)
+        );
+    }
+
+    #[test]
+    fn two_addresses_share_a_host_whatever_their_port_path_or_case() {
+        let one = Located::parse("http://Renderer.local:80/a").expect("reads");
+        let two = Located::parse("http://renderer.LOCAL:1400/b").expect("reads");
+        let other = Located::parse("http://renderer.local.evil:80/a").expect("reads");
+
+        assert!(one.is_on_host_of(&two));
+        assert!(!one.is_on_host_of(&other));
     }
 
     #[test]

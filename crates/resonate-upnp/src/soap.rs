@@ -77,7 +77,7 @@ fn envelope(kind: &str, action: Action, arguments: &[(&str, &str)]) -> String {
     )
 }
 
-fn answered(text: &str, action: Action) -> Result<Answered> {
+pub(crate) fn answered(text: &str, action: Action) -> Result<Answered> {
     let document = document(text, Asked::Action(action))?;
     let response = format!("{}Response", action.name());
     let answer = document
@@ -98,7 +98,7 @@ fn answered(text: &str, action: Action) -> Result<Answered> {
     ))
 }
 
-fn fault_code(text: &str, action: Action) -> Option<u32> {
+pub(crate) fn fault_code(text: &str, action: Action) -> Option<u32> {
     let document = document(text, Asked::Action(action)).ok()?;
     document
         .descendants()

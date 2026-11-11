@@ -334,7 +334,13 @@ plumbing, so a `ureq` bump is made once:
   is no wait. `resonate-online` reads it too.
 - **`Ranged` is a download that resumes** with `Range: bytes=<read>-`, up to `RESUMES_AT_MOST` (5)
   times running: a `206` whose `Content-Range` starts there is read on, a `200` is read past what was
-  held, another refusal ends it. The first resume is at once, each later one waits `waited_before`
+  held, another refusal ends it. A resume carries `If-Range` with the first answer's strong
+  validator (`Ranged::validator`, kept from the first answer whichever way it was opened) and holds
+  the answer to the total it has seen: a `206` or `200` naming another total, or a validator other
+  than the one held (a `200` answering `If-Range` meaning the file was replaced), is
+  `Unfetched::Changed`, not retried and read as `ErrorKind::InvalidData`, so a file a server
+  re-transcoded meanwhile is never joined old head to new tail
+  (`a_file_replaced_between_the_break_and_the_resume_is_not_joined_old_head_to_new_tail`). The first resume is at once, each later one waits `waited_before`
   (`resumed_after` doubling, at most 8 s), or a 429/502/503/504's `Retry-After`. `Ranged::opened`
   asks a first request answered 429/502/503/504 again the same way.
 - **A `Held` that can be checked is asked with `Range` and `If-Range`** (`asking_to_resume`; a partial

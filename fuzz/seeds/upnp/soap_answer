@@ -1,0 +1,1 @@
+<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:GetPositionInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><Track>1</Track><RelTime>0:00:12</RelTime></u:GetPositionInfoResponse></s:Body></s:Envelope>

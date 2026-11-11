@@ -17,6 +17,23 @@ mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }
 
+#[cfg(fuzzing)]
+pub fn read_a_request(request: &[u8], total: u64) {
+    if let Some(asked) = pages::asked_of(request) {
+        let _ = pages::answer(asked, &[]);
+    }
+    gateway::read_a_head(request, total);
+    if let Ok(text) = std::str::from_utf8(request) {
+        for line in text.lines() {
+            let wanted = ranges::Wanted::parse(line);
+            if let Ok(Some(span)) = ranges::windowed(wanted, Some(total)) {
+                assert!(span.first <= span.last);
+                assert!(span.last < total);
+            }
+        }
+    }
+}
+
 pub use crate::{
     cache::{Cache, Fill, Hit},
     error::{CacheOp, ConfigField, Error, PemOp, Result, StoreOp},
