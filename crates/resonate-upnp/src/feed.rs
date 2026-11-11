@@ -117,6 +117,8 @@ impl Feed {
         let Some(mut source) = self.taken(mine) else {
             return Ok(());
         };
+        self.served.store(0, Ordering::Release);
+        self.ended_at.store(NOT_ENDED, Ordering::Release);
         let poured = self.pour(stream, source.as_mut(), &mut wire, mine);
         *self.source.lock() = Some(source);
         poured
@@ -245,7 +247,65 @@ fn lasting(frames: u64, rate: u64) -> Duration {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::Read,
+        net::{Ipv4Addr, TcpListener},
+    };
+
     use super::*;
+    use crate::testing::silent_feed;
+
+    const A_QUANTUM_OF_BYTES: u64 = 441 * 4;
+
+    fn fetched_by_a_thread(
+        feed: &Arc<Feed>,
+        listener: &TcpListener,
+    ) -> (TcpStream, thread::JoinHandle<()>) {
+        let client =
+            TcpStream::connect(listener.local_addr().expect("an address")).expect("connects");
+        let (mut served, _) = listener.accept().expect("accepts");
+        let feed = Arc::clone(feed);
+        let fetch = thread::spawn(move || {
+            let _ = feed.serve(&mut served, false);
+        });
+        (client, fetch)
+    }
+
+    fn waited_for(mut ready: impl FnMut() -> bool) {
+        let until = Instant::now() + Duration::from_secs(10);
+        while !ready() {
+            assert!(Instant::now() < until, "never became ready");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn a_second_fetch_of_the_stream_counts_its_own_frames_from_zero() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("binds");
+        let feed = silent_feed();
+        feed.set_active(true);
+
+        let (first, first_fetch) = fetched_by_a_thread(&feed, &listener);
+        waited_for(|| feed.served.load(Ordering::Acquire) > 10 * A_QUANTUM_OF_BYTES);
+        let heard_by_the_first = feed.served.load(Ordering::Acquire);
+
+        let (mut second, second_fetch) = fetched_by_a_thread(&feed, &listener);
+        first_fetch.join().expect("the first fetch ends");
+        let mut buffer = vec![0; 4096];
+        let mut read = 0;
+        while read < 2048 {
+            read += second.read(&mut buffer).expect("the second fetch is read");
+        }
+        let counted = feed.served.load(Ordering::Acquire);
+
+        assert!(
+            counted < heard_by_the_first,
+            "{counted} against {heard_by_the_first}"
+        );
+        feed.close();
+        drop(first);
+        second_fetch.join().expect("the second fetch ends");
+    }
 
     #[test]
     fn frames_and_their_lasting_agree() {

@@ -16,5 +16,8 @@ tracing.workspace = true
 ureq.workspace = true
 webpki-root-certs.workspace = true
 
+[dev-dependencies]
+parking_lot.workspace = true
+
 [lints]
 workspace = true

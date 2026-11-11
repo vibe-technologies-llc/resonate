@@ -70,10 +70,10 @@ pub(crate) fn document(text: &str, asked: Asked) -> Result<Document<'_>> {
 pub(crate) fn read(location: &Located, text: &str) -> Result<Described> {
     let document = document(text, Asked::Description)?;
     let root = document.root_element();
-    let base = match text_of(root, "URLBase") {
-        Some(base) => Located::parse(base).unwrap_or_else(|_| location.clone()),
-        None => location.clone(),
-    };
+    let base = text_of(root, "URLBase")
+        .and_then(|base| Located::parse(base).ok())
+        .filter(|base| base.is_on_host_of(location))
+        .unwrap_or_else(|| location.clone());
 
     let devices: Vec<Node<'_, '_>> = root
         .descendants()
@@ -87,11 +87,12 @@ pub(crate) fn read(location: &Located, text: &str) -> Result<Described> {
         .or_else(|| {
             devices
                 .iter()
-                .find(|device| service_of(**device, &base, TRANSPORT_KIND).is_some())
+                .find(|device| service_of(**device, location, &base, TRANSPORT_KIND).is_some())
         })
         .ok_or(Error::NotARenderer)?;
 
-    let transport = service_of(*device, &base, TRANSPORT_KIND).ok_or(Error::NotARenderer)?;
+    let transport =
+        service_of(*device, location, &base, TRANSPORT_KIND).ok_or(Error::NotARenderer)?;
     let udn = child_text(*device, "UDN").ok_or(Error::NotARenderer)?;
     let name = child_text(*device, "friendlyName").unwrap_or(udn);
 
@@ -99,13 +100,18 @@ pub(crate) fn read(location: &Located, text: &str) -> Result<Described> {
         udn: Udn::new(udn),
         name: name.to_owned(),
         transport,
-        rendering: service_of(*device, &base, RENDERING_KIND),
-        openhome_volume: service_of(*device, &base, OPENHOME_VOLUME_KIND),
-        connection: service_of(*device, &base, CONNECTION_KIND),
+        rendering: service_of(*device, location, &base, RENDERING_KIND),
+        openhome_volume: service_of(*device, location, &base, OPENHOME_VOLUME_KIND),
+        connection: service_of(*device, location, &base, CONNECTION_KIND),
     })
 }
 
-fn service_of(device: Node<'_, '_>, base: &Located, kind: &str) -> Option<Service> {
+fn service_of(
+    device: Node<'_, '_>,
+    described_at: &Located,
+    base: &Located,
+    kind: &str,
+) -> Option<Service> {
     device
         .children()
         .filter(|node| node.tag_name().name() == "serviceList")
@@ -117,6 +123,10 @@ fn service_of(device: Node<'_, '_>, base: &Located, kind: &str) -> Option<Servic
                 return None;
             }
             let control = base.join(child_text(service, "controlURL")?).ok()?;
+            if !control.is_on_host_of(described_at) {
+                tracing::debug!(%control, %described_at, "a renderer's description names a control address on another host");
+                return None;
+            }
             Some(Service {
                 kind: named.into(),
                 control,
@@ -219,6 +229,50 @@ mod tests {
             Some("http://10.0.0.4:80/volume".to_owned())
         );
         assert!(described.rendering.is_none());
+    }
+
+    #[test]
+    fn a_control_address_on_another_host_than_the_description_is_not_taken() {
+        let location = Located::parse("http://10.0.0.4:1400/d.xml").expect("reads");
+        let device = |base: &str, control: &str| {
+            format!(
+                r#"<root>{base}<device><deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType><UDN>uuid:x</UDN><serviceList>
+                <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>{control}</controlURL></service>
+                <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType><controlURL>/rc</controlURL></service>
+                </serviceList></device></root>"#
+            )
+        };
+
+        assert!(matches!(
+            read(&location, &device("", "http://127.0.0.1:8080/av")),
+            Err(Error::NotARenderer)
+        ));
+        assert!(matches!(
+            read(&location, &device("", "http://10.0.0.5/av")),
+            Err(Error::NotARenderer)
+        ));
+
+        let same_host = read(&location, &device("", "http://10.0.0.4:9000/av")).expect("describes");
+        assert_eq!(
+            same_host.transport.control.to_string(),
+            "http://10.0.0.4:9000/av"
+        );
+
+        let elsewhere = read(
+            &location,
+            &device("<URLBase>http://10.9.9.9:80/</URLBase>", "/av"),
+        )
+        .expect("describes");
+        assert_eq!(
+            elsewhere.transport.control.to_string(),
+            "http://10.0.0.4:1400/av"
+        );
+        assert_eq!(
+            elsewhere
+                .rendering
+                .map(|service| service.control.to_string()),
+            Some("http://10.0.0.4:1400/rc".to_owned())
+        );
     }
 
     #[test]

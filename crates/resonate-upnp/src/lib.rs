@@ -4,6 +4,8 @@ mod description;
 mod error;
 mod feed;
 mod flac;
+#[cfg(fuzzing)]
+mod fuzzing;
 mod http;
 mod located;
 mod network;
@@ -12,6 +14,8 @@ mod serve;
 mod soap;
 mod ssdp;
 mod stream;
+#[cfg(test)]
+mod testing;
 mod wave;
 mod wire;
 
@@ -21,6 +25,8 @@ mod words {
 
 pub use resonate_audio::RENDERER_NODES;
 
+#[cfg(fuzzing)]
+pub use crate::fuzzing::read_what_a_network_says;
 pub use crate::{
     beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},

@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+CACHE-CONTROL: max-age=1800
+Location: http://10.0.0.9:49152/desc.xml
+ST: urn:schemas-upnp-org:device:MediaRenderer:1
+USN: uuid:a::x
+

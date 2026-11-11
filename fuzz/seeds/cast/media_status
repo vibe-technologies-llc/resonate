@@ -1,0 +1,1 @@
+{"type":"MEDIA_STATUS","requestId":4,"status":[{"mediaSessionId":2,"playerState":"PLAYING","currentTime":12.5},{"mediaSessionId":3,"playerState":"IDLE","idleReason":"FINISHED"}]}

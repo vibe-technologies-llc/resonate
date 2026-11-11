@@ -52,7 +52,9 @@ impl Drop for Steering {
     }
 }
 
-type Lane = Arc<Mutex<Option<u64>>>;
+const NOBODY: u64 = u64::MAX;
+
+type Lane = Arc<AtomicU64>;
 
 #[derive(Default)]
 pub(crate) struct Lanes {
@@ -62,9 +64,14 @@ pub(crate) struct Lanes {
 
 impl Lanes {
     fn taken(&self, at: SocketAddr) -> Hold {
-        let lane = Arc::clone(self.lanes.lock().entry(at).or_default());
+        let lane = Arc::clone(
+            self.lanes
+                .lock()
+                .entry(at)
+                .or_insert_with(|| Arc::new(AtomicU64::new(NOBODY))),
+        );
         let mine = self.minted.fetch_add(1, Ordering::Relaxed);
-        *lane.lock() = Some(mine);
+        lane.store(mine, Ordering::Release);
         Hold { lane, mine }
     }
 }
@@ -75,18 +82,19 @@ struct Hold {
 }
 
 impl Hold {
+    fn is_mine(&self) -> bool {
+        self.lane.load(Ordering::Acquire) == self.mine
+    }
+
     fn steer<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
-        let held = self.lane.lock();
-        (*held == Some(self.mine)).then(call)
+        self.is_mine().then(call)
     }
 
     fn let_go<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
-        let mut held = self.lane.lock();
-        if *held != Some(self.mine) {
-            return None;
-        }
-        *held = None;
-        Some(call())
+        self.lane
+            .compare_exchange(self.mine, NOBODY, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+            .then(call)
     }
 }
 
@@ -223,9 +231,9 @@ impl Watch {
                 Ok(Steer::Active(true)) => {
                     self.feed.set_active(true);
                     match self.hold.steer(|| self.play(&mut played)) {
-                        Some(Ok(())) => state = self.moved(state, StreamState::Streaming),
+                        Some(Ok(true)) => state = self.moved(state, StreamState::Streaming),
                         Some(Err(error)) => state = self.failed(state, &error),
-                        None => {}
+                        Some(Ok(false)) | None => {}
                     }
                 }
                 Ok(Steer::Active(false)) => {
@@ -340,11 +348,14 @@ impl Watch {
         }
     }
 
-    fn play(&self, played: &mut Option<Played>) -> Result<()> {
+    fn play(&self, played: &mut Option<Played>) -> Result<bool> {
         if let Some(played) = played {
-            return self.media(played, Asked::Play).map(drop);
+            return self.media(played, Asked::Play).map(|_| true);
         }
         let session = device::launched(&self.link)?;
+        if !self.hold.is_mine() {
+            return Ok(false);
+        }
         self.link.tell(
             Namespace::Connection,
             &session.transport,
@@ -384,7 +395,7 @@ impl Watch {
             transport: session.transport,
             session: entry.session,
         });
-        Ok(())
+        Ok(true)
     }
 
     fn media(&self, played: &Played, asked: Asked) -> Result<Json> {
@@ -517,7 +528,55 @@ fn entries_in(said: &Json) -> Option<Vec<Entry>> {
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use crossbeam_channel::bounded;
+
     use super::*;
+
+    fn receiver() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8009)
+    }
+
+    #[test]
+    fn a_stream_taking_a_receiver_over_does_not_wait_for_a_call_the_old_one_is_making() {
+        let lanes = Lanes::default();
+        let old = lanes.taken(receiver());
+        let (started, running) = bounded(0);
+        let (finish, finished) = bounded::<()>(0);
+
+        thread::scope(|scope| {
+            let call = scope.spawn(|| {
+                old.steer(|| {
+                    started.send(()).expect("the call is heard");
+                    finished.recv().expect("the call is let finish");
+                })
+            });
+            running.recv().expect("the call began");
+
+            let new = lanes.taken(receiver());
+
+            assert!(new.is_mine());
+            assert!(!old.is_mine());
+            finish.send(()).expect("the call finishes");
+            assert_eq!(call.join().expect("the call ends"), Some(()));
+            assert_eq!(old.steer(|| ()), None);
+            assert_eq!(old.let_go(|| ()), None);
+            assert_eq!(new.steer(|| ()), Some(()));
+        });
+    }
+
+    #[test]
+    fn a_stream_lets_go_of_its_receiver_once_and_only_while_it_holds_it() {
+        let lanes = Lanes::default();
+        let hold = lanes.taken(receiver());
+        let elsewhere = lanes.taken(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8010));
+
+        assert_eq!(hold.let_go(|| ()), Some(()));
+        assert_eq!(hold.let_go(|| ()), None);
+        assert_eq!(hold.steer(|| ()), None);
+        assert!(elsewhere.is_mine());
+    }
 
     #[test]
     fn a_media_status_gives_each_session_its_place_and_whether_it_ended() {

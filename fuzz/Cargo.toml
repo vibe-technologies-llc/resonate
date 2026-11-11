@@ -11,6 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = { version = "0.4.13", default-features = false, features = ["link_libfuzzer"] }
 resonate-analysis.path = "../crates/resonate-analysis"
+resonate-cast.path = "../crates/resonate-cast"
 resonate-core.path = "../crates/resonate-core"
 resonate-codec.path = "../crates/resonate-codec"
 resonate-eq.path = "../crates/resonate-eq"
@@ -19,7 +20,9 @@ resonate-lyrics.path = "../crates/resonate-lyrics"
 resonate-mcp.path = "../crates/resonate-mcp"
 resonate-musicbrainz.path = "../crates/resonate-musicbrainz"
 resonate-online.path = "../crates/resonate-online"
+resonate-server.path = "../crates/resonate-server"
 resonate-tidal.path = "../crates/providers/tidal"
+resonate-upnp.path = "../crates/resonate-upnp"
 resonate-vault.path = "../crates/resonate-vault"
 resonate-sync.path = "../crates/resonate-sync"
 
@@ -204,6 +207,27 @@ test = false
 [[bin]]
 name = "musicbrainz"
 path = "fuzz_targets/musicbrainz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "upnp"
+path = "fuzz_targets/upnp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cast"
+path = "fuzz_targets/cast.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "server"
+path = "fuzz_targets/server.rs"
 test = false
 doc = false
 bench = false

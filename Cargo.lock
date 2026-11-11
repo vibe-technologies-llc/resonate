@@ -7139,6 +7139,7 @@ dependencies = [
 name = "resonate-fetch"
 version = "0.8.0"
 dependencies = [
+ "parking_lot 0.13.0",
  "resonate-core",
  "resonate-providers",
  "rustls",

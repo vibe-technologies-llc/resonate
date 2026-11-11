@@ -32,7 +32,7 @@ pub(crate) struct Answer {
     pub body: Vec<u8>,
 }
 
-enum Length {
+pub(crate) enum Length {
     Declared(usize),
     Chunked,
     UntilClosed,
@@ -142,7 +142,7 @@ pub(crate) fn read_more(stream: &mut TcpStream, held: &mut Vec<u8>) -> io::Resul
     Ok(read)
 }
 
-fn length_of(headers: &[httparse::Header<'_>]) -> Length {
+pub(crate) fn length_of(headers: &[httparse::Header<'_>]) -> Length {
     let named = |name: &str| {
         headers
             .iter()
@@ -158,7 +158,7 @@ fn length_of(headers: &[httparse::Header<'_>]) -> Length {
         .map_or(Length::UntilClosed, Length::Declared)
 }
 
-fn unchunked(mut chunked: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn unchunked(mut chunked: &[u8]) -> Option<Vec<u8>> {
     let mut body = Vec::new();
     loop {
         let line_ends = chunked.windows(2).position(|pair| pair == b"\r\n")?;

@@ -389,6 +389,38 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Opti
     }
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_a_head(request: &[u8], total: u64) {
+    use std::sync::OnceLock;
+
+    use tokio::runtime::{Builder, Runtime};
+
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    let runtime = RUNTIME.get_or_init(|| {
+        Builder::new_current_thread()
+            .build()
+            .expect("a current-thread runtime builds")
+    });
+
+    let mut request = request;
+    let Ok(Some(head)) = runtime.block_on(read_head(&mut request)) else {
+        return;
+    };
+    for verb in [Verb::Get, Verb::Delete] {
+        if let Some(target) = routed(verb, &head.target) {
+            assert!(target.bytes().all(|byte| byte.is_ascii_graphic()));
+        }
+    }
+    let _ = is_search(&head.target);
+    let _ = file_of(&head.target);
+    let wanted = head.range.as_deref().and_then(Wanted::parse);
+    if let Ok(Some(span)) = windowed(wanted, Some(total)) {
+        assert!(span.first <= span.last);
+        assert!(span.last < total);
+        assert!(span.bytes() <= total);
+    }
+}
+
 fn is_search(target: &str) -> bool {
     target.split_once('?').map_or(target, |(path, _)| path) == SEARCH_ROUTE
 }

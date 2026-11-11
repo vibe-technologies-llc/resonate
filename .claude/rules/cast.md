@@ -160,7 +160,10 @@ codec are dev-dependencies, for the end-to-end tests.
   answered.
 - **One stream steers a receiver at a time** (`Lanes`, one lane per receiver id, as UPnP's
   `Holders`): a new stream takes the lane at open, and a stream no longer holding it sends nothing
-  and reports no failure. A new `LOAD` replaces what the receiver plays, dropping its buffer, so no
+  and reports no failure. A lane is an atomic holding the owning stream's number, weighed before
+  a call and never held through one, so a stream taking over never waits on a slow `LAUNCH` or
+  `LOAD`; `play` weighs it again between the launch and the load and stops without loading when
+  it has lost it (`a_stream_taking_a_receiver_over_does_not_wait_for_a_call_the_old_one_is_making`). A new `LOAD` replaces what the receiver plays, dropping its buffer, so no
   `STOP` is needed before it; a stream closing while it holds the lane sends media `STOP` for its
   own session. The receiver application is never stopped, so the next stream needs no launch.
 - **The receiver's clock is read**: every `STATUS_ASKED_EVERY` (500 ms) while streaming, a media

@@ -3,6 +3,8 @@ mod casting;
 mod device;
 mod error;
 mod frame;
+#[cfg(fuzzing)]
+mod fuzzing;
 mod given;
 mod json;
 mod link;
@@ -13,6 +15,8 @@ mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }
 
+#[cfg(fuzzing)]
+pub use crate::fuzzing::read_what_a_receiver_says;
 pub use crate::{
     bonjour::CAST_SERVICE,
     casting::{Casting, Finding, Searching},

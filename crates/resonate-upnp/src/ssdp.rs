@@ -52,8 +52,10 @@ pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
             .set_read_timeout(Some(left))
             .map_err(failed(SearchOp::Receive))?;
         match socket.recv_from(&mut buffer) {
-            Ok((read, _)) => {
-                if let Some(location) = buffer.get(..read).and_then(location_answered)
+            Ok((read, sender)) => {
+                if let Some(location) = buffer
+                    .get(..read)
+                    .and_then(|answer| location_answered(answer, sender.ip()))
                     && !found.contains(&location)
                 {
                     found.push(location);
@@ -92,7 +94,7 @@ fn asking(to: SocketAddr, within: Duration) -> String {
     )
 }
 
-fn location_answered(answer: &[u8]) -> Option<Located> {
+pub(crate) fn location_answered(answer: &[u8], sender: IpAddr) -> Option<Located> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
     let mut response = httparse::Response::new(&mut headers);
     match response.parse(answer) {
@@ -109,7 +111,9 @@ fn location_answered(answer: &[u8]) -> Option<Located> {
     if !named("ST").is_some_and(|kind| kind.contains(RENDERER_KIND)) {
         return None;
     }
-    named("LOCATION").and_then(|location| Located::parse(location).ok())
+    named("LOCATION")
+        .and_then(|location| Located::parse(location).ok())
+        .filter(|location| location.is_at(sender))
 }
 
 #[cfg(test)]
@@ -124,12 +128,29 @@ mod tests {
         let server = b"HTTP/1.1 200 OK\r\nLOCATION: http://10.0.0.8/d.xml\r\nST: \
                        urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
 
+        let sender: IpAddr = "10.0.0.9".parse().expect("an ip");
+
         assert_eq!(
-            location_answered(renderer).map(|location| location.to_string()),
+            location_answered(renderer, sender).map(|location| location.to_string()),
             Some("http://10.0.0.9:49152/desc.xml".to_owned())
         );
-        assert_eq!(location_answered(server), None);
-        assert_eq!(location_answered(b"NOTIFY * HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(location_answered(server, sender), None);
+        assert_eq!(
+            location_answered(b"NOTIFY * HTTP/1.1\r\n\r\n", sender),
+            None
+        );
+    }
+
+    #[test]
+    fn a_location_naming_a_host_other_than_the_one_that_answered_is_passed_over() {
+        let renderer = b"HTTP/1.1 200 OK\r\nLOCATION: http://127.0.0.1:8080/desc.xml\r\nST: \
+                         urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let named = b"HTTP/1.1 200 OK\r\nLOCATION: http://renderer.local/desc.xml\r\nST: \
+                      urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let sender: IpAddr = "10.0.0.9".parse().expect("an ip");
+
+        assert_eq!(location_answered(renderer, sender), None);
+        assert_eq!(location_answered(named, sender), None);
     }
 
     #[test]

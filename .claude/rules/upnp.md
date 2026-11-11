@@ -55,11 +55,15 @@ dev-dependency, for the end-to-end test.
 
 - **SSDP `M-SEARCH` for `urn:schemas-upnp-org:device:MediaRenderer:1`**, sent twice to
   `239.255.255.250:1900` with two hops and `MX` the wait in whole seconds (1 to 5); every `200`
-  answer whose `ST` names a MediaRenderer gives its `LOCATION` (`ssdp::search`, deduplicated). The
+  answer whose `ST` names a MediaRenderer gives its `LOCATION` (`ssdp::search`, deduplicated), taken
+  only where that names the IP the answer came from (`Located::is_at`), never a hostname or another
+  machine, since the description it points at is fetched and its controls posted to. The
   address searched is `Searching::to`, so tests answer on loopback and nothing reaches the network.
 - **The description is read as the device wrote it**: `URLBase` where present, else the description's
   own address, joins every `controlURL` (absolute, rooted or relative to the description's folder:
-  `Located::join`); the renderer is the `device` (nested in a `deviceList` or not) whose `deviceType`
+  `Located::join`); a `URLBase` or a `controlURL` naming another host than the description's
+  (`Located::is_on_host_of`, the port free) is not taken, so no description points the SOAP posts
+  (a stream's token and a song's title among them) at another machine or a loopback service; the renderer is the `device` (nested in a `deviceList` or not) whose `deviceType`
   names a MediaRenderer, else the first holding an AVTransport service. XML through `roxmltree`
   with no DTD and `NODES_AT_MOST` nodes; HTTP answers capped at `ANSWER_BYTES_AT_MOST` (1 MiB).
 - **What it takes decides how it is fed** (`Carriage`, from `ConnectionManager`'s
@@ -169,7 +173,13 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   `Server`, `Feed` and `Carriage::new` are public because a Cast receiver pulls the very same
   stream (`cast.md`). One `Server` per `Network` (`resonate-upnp-serve`, a `TcpListener` on `Searching::serving_on`, all
   addresses by default) offers each stream under `/resonate/<token>.<flac|wav|pcm>`, the token a
-  `RandomState` hash so another machine cannot guess one; the address handed to the renderer is the
+  `RandomState` hash so another machine cannot guess one. The accept thread reads every head itself,
+  on non-blocking sockets (at most `HEADS_AT_MOST`, 32, waiting, the rest closed at once; a head
+  not whole in `HEAD_ENDS_WITHIN`, 5 s over all, is dropped), answers a path that is no
+  16-hex-digit token and an extension (or names no stream offered) with `404` and a method but
+  `GET` and `HEAD` with `405` itself, and spawns a `resonate-upnp-feed` thread only for a head naming
+  a stream, at most `FETCHES_AT_MOST` (16) at once (the rest `503`), so a host on the network
+  holds no thread by connecting and saying nothing; the address handed to the renderer is the
   local address the system routes toward it (`address_toward`). `Network::open` refuses a spec the
   carriage does not carry (`FormatRefused`), offers the `Feed`, sends `SetAVTransportURI` with a
   DIDL-Lite item naming the title and `protocolInfo`, and answers a `SinkStream` with a
@@ -184,7 +194,9 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   drain the ring and write that silence into the music. Where the renderer stops reading (its buffer
   full, a slower clock) writes block and the debt past one quantum is forgiven, so the renderer's
   clock governs and the pull never bursts to catch up. A second fetch of the same stream takes the
-  source over and the first ends (renderers sniff an address before playing it). Inactive, nothing
+  source over and the first ends (renderers sniff an address before playing it); the fetch that
+  takes it over resets `served` and `ended_at`, since its stream begins from frame zero
+  (`a_second_fetch_of_the_stream_counts_its_own_frames_from_zero`). Inactive, nothing
   is pulled.
 - **FLAC is encoded live from the ring, bit for bit** (`flac::Live`, over `flacenc`, which exposes
   what a stream with no end needs: the STREAMINFO is written first with an unknown total
