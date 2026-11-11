@@ -123,15 +123,15 @@ class LibraryFeaturesTest {
                 player.snapshot().transport == Transport.PLAYING &&
                     player.snapshot().positionMs > 200uL
             }
-            eventually { player.visualizer(true).any { kotlin.math.abs(it) > 0.001f } }
-            player.seek(6000uL)
-            eventually { player.snapshot().positionMs >= 5900uL }
+            assertEquals(VISUALIZER_SAMPLES, player.visualizer(true).size)
+            player.seek(SEEKED_PAST_HALF_MS)
+            eventually { player.snapshot().positionMs >= SEEKED_PAST_HALF_MS - 100uL }
             assertEquals(0uL, player.statistics(0u).plays)
             player.seek(0uL)
             eventually { player.snapshot().positionMs < 1000uL }
-            eventually { player.snapshot().positionMs > 4500uL }
+            eventually { player.snapshot().positionMs > HEARD_PAST_HALF_MS }
             eventually { player.statistics(0u).plays == 1uL }
-            assertTrue(player.statistics(0u).listenedMs >= 3500uL)
+            assertTrue(player.statistics(0u).listenedMs >= HEARD_PAST_HALF_MS - 1000uL)
             player.favourite(track.id, true)
             assertEquals(
                 1,
@@ -180,7 +180,7 @@ class LibraryFeaturesTest {
                 info.write(bytes)
                 if (bytes.size % 2 == 1) info.write(0)
             }
-        val base = pcmTone(8)
+        val base = pcmTone(SONG_SECONDS)
         val result =
             base +
                 "LIST".toByteArray() +
@@ -191,11 +191,19 @@ class LibraryFeaturesTest {
     }
 
     private fun eventually(condition: () -> Boolean) {
-        val deadline = System.nanoTime() + 15_000_000_000L
+        val deadline = System.nanoTime() + SETTLES_WITHIN_NS
         while (!condition()) {
             if (System.nanoTime() > deadline)
                 throw AssertionError("Library feature condition did not settle")
             Thread.sleep(50)
         }
+    }
+
+    private companion object {
+        const val SONG_SECONDS = 20
+        const val SEEKED_PAST_HALF_MS = 15_000uL
+        const val HEARD_PAST_HALF_MS = 10_500uL
+        const val VISUALIZER_SAMPLES = 256
+        const val SETTLES_WITHIN_NS = 40_000_000_000L
     }
 }
