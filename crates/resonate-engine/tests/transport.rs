@@ -8810,6 +8810,84 @@ fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap
     Ok(())
 }
 
+const PULLED_ON_THROUGH_A_SLOW_RENDER_TIMES_REAL_TIME: u32 = 32;
+
+#[test]
+fn an_equaliser_change_the_graph_pulls_on_through_is_still_blended_in() -> Result<()> {
+    let tree = Tree::new();
+    let level = 16_000_i16;
+    let path = tree.write("steady.wav", &steady(level, RATE as usize * 6));
+    let halved = Arc::new(Equalisation {
+        enabled: true,
+        bound: BTreeMap::new(),
+        fallback: Some(Arc::new(
+            Profile::new(Preamp::from_decibels(-6.0).expect("in range"), Vec::new())
+                .expect("no bands"),
+        )),
+    });
+    let frame = frame_bytes(SampleFormat::S16);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let deep_and_slow_to_render = EngineConfig {
+        buffer: Duration::from_millis(500),
+        ..correcting_the_room(10.0)
+    };
+    let player = Player::with_backend(deep_and_slow_to_render, move |_| Ok(Box::new(backend)))?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let pulled_past =
+        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(RATE as usize),
+        "the corrected level to play",
+    );
+
+    player.send(Command::SetEqualisation(halved))?;
+    let asked_at = graph.lock().played.len() / frame;
+    play_paced_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        PULLED_ON_THROUGH_A_SLOW_RENDER_TIMES_REAL_TIME,
+        pulled_past(asked_at + 40_000),
+        "the equaliser to take hold",
+    );
+
+    let played = graph.lock().played.clone();
+    let left: Vec<i32> = played
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|frame| i32::from(i16::from_le_bytes([frame[0], frame[1]])))
+        .collect();
+    let heard = &left[asked_at..];
+    let largest_step = heard
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .max()
+        .unwrap_or_default();
+    let halfway = i32::from(level) / 2;
+
+    assert!(
+        heard
+            .last()
+            .is_some_and(|sample| (sample - halfway).abs() < 64),
+        "the equaliser had not taken the level down to half {} frames after it was asked for",
+        left.len() - asked_at
+    );
+    assert!(
+        largest_step < 64,
+        "the level stepped by {largest_step} where the equaliser came in while the graph pulled on"
+    );
+    Ok(())
+}
+
 #[test]
 fn an_equaliser_switched_on_while_the_tail_drains_lets_the_whole_tail_play() -> Result<()> {
     let tree = Tree::new();

@@ -1816,6 +1816,28 @@ mod tests {
     }
 
     #[test]
+    fn a_splice_published_before_its_frames_are_written_plays_them_from_its_point() {
+        let (mut producer, mut consumer, _) = whole_ring(64);
+        producer.write(&counted(0, 48));
+        let mut sunk = vec![0_u8; 10 * 4];
+        consumer.fill(&mut sunk);
+
+        producer.splice(14, producer.written());
+        let mut before = vec![0_u8; 4 * 4];
+        consumer.fill(&mut before);
+        producer.write_spliced(&counted(1_014, 20));
+        let mut sunk = vec![0_u8; 8 * 4];
+        consumer.fill(&mut sunk);
+
+        assert_eq!(left_of(&before), vec![10, 11, 12, 13]);
+        assert_eq!(
+            left_of(&sunk),
+            (1_014..1_022).collect::<Vec<_>>(),
+            "the frames written for the splice were not heard from its point"
+        );
+    }
+
+    #[test]
     fn a_discard_lets_go_of_a_splice_the_graph_had_not_reached() {
         let (mut producer, mut consumer, _) = whole_ring(64);
         producer.write(&counted(0, 48));

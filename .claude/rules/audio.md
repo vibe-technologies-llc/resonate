@@ -460,10 +460,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Output::splice_the_back` takes a point (`RingProducer::splice_point`: the graph's read position
   plus `SPLICED_AHEAD_AT_LEAST` or two of its last pulls, whichever is more), builds a fresh back
   from the wanted plan (`OutputPlan::build_the_back`, sized by the old `Back`), runs it over the
-  recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle, blends
-  the first `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the producer
-  mirrors what it pushed, `widen_what_was_written`), writes the rest behind everything the ring
-  holds (`write_spliced`) and publishes `splice(at, to)`: the consumer plays to `at`, passes over
+  recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle
+  (`rendered_again`, into a buffer of its own), and only then **takes the point again**, no sooner
+  than the first (`splice_from_here`), since building a long room response and rendering a deep
+  recall can take longer than the lead and the graph would pass a point taken before them on the
+  old curve. It publishes `splice(at, to)` at once and then blends the first
+  `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the producer mirrors what
+  it pushed, `widen_what_was_written`) and writes the rest behind everything the ring holds
+  (`write_spliced`, `write_blended`), so writing a second of frames never eats the lead either
+  (`an_equaliser_change_the_graph_pulls_on_through_is_still_blended_in`,
+  `a_splice_published_before_its_frames_are_written_plays_them_from_its_point`): the consumer plays to `at`, passes over
   the stale frames to `to` and plays on from the new ones; reaching it late, it passes over as many
   new frames as it played past `at`, so time is kept. The front is rejoined to the new back
   (`Chain::rejoined`): no resampler or convolver is rebuilt and the decoder never seeks. **The ring
