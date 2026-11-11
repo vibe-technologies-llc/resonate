@@ -784,6 +784,45 @@ fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> R
 }
 
 #[test]
+fn a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns() -> Result<()> {
+    let tree = Tree::new();
+    let bytes = Wav::new().text(TITLE, "Echoes").build();
+    let echoes = tree.write("echoes.wav", &bytes);
+    tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    for _ in 0..2 {
+        let counted = library
+            .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+            .expect("a counted play");
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    let before = library.statistics(Window::Everything)?;
+
+    fs::remove_file(&echoes).expect("the file goes");
+    assert_eq!(library.forget_the_gone(slice::from_ref(&echoes))?, 1);
+
+    let after = library.statistics(Window::Everything)?;
+
+    assert_eq!(titles(&all(&library)?), vec!["Dogs"]);
+    assert_eq!(before.plays, 2);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+
+    tree.write("echoes.wav", &bytes);
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(
+        library.track_at(&echoes, None)?.expect("held again").plays,
+        2
+    );
+    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+    Ok(())
+}
+
+#[test]
 #[cfg(unix)]
 fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result<()> {
     let tree = Tree::new();

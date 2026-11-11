@@ -494,6 +494,11 @@ rows read via `Player::media` like any unscanned row.
   `vault.md`), and the listens of every row it forgets are copied into `unheld_listens` first, so
   Statistics, Wrapped and unsent scrobbles keep them and a folder added again is credited back
   (`forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows_it_forgets`).
+  **Every forgetting keeps the listens through `deleted::keep_listens_as_unheld`**: `forget_files`,
+  `forget_a_root` and `store::forget_paths` (`forget_the_gone`, the scan's tidy of a root it did not
+  walk) each name the rows to forget as one condition, so a file moved off a mount and back is
+  counted from where it was
+  (`a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns`).
 - **A version chosen for a song is kept by the song's row.** `versions_chosen` (`chosen.rs`): `track`
   primary, either `held` (another row) or `served` (a `MediaLocation::to_uri` of a song a service
   plays in place), never both, and when chosen; both ids `ON DELETE CASCADE`, so a song or a held

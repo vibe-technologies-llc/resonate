@@ -16,11 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [S · 0.8.1] Tidying the gone and a scan's tidy delete listens without keeping them: `forget_paths`
-  (`forget_the_gone`, the scan's tidy) deletes the rows' listens with them and makes no
-  `unheld_listens` copy as `remove_root` (`deleted::forget_a_root`) and `deleted.rs` do, so a file
-  moved off a mount and back is counted from nothing and Statistics, unfrozen Wrapped years and
-  scrobbles not yet sent lose it
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
