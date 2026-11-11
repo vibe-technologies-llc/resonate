@@ -3,7 +3,7 @@ use std::{
     cmp::Ordering as Ranking,
     ffi::OsStr,
     fmt, fs,
-    io::{self, Read as _},
+    io::{self, Read as _, Write as _},
     iter, mem,
     num::NonZeroU32,
     path::{Path, PathBuf},
@@ -2809,12 +2809,15 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
         path: staged.clone(),
         source,
     };
-    let landed = fs::write(&staged, written)
+    let held = Held::taken_over(&staged).map_err(landing)?;
+    let mut file = held.file();
+    let landed = file
+        .write_all(written)
         .and_then(|()| {
             if let Ok(standing) = fs::metadata(sheet) {
                 carries_what_the_file_did(&standing, sheet, &staged);
             }
-            file_facts::sync_file(&staged)
+            file.sync_all()
         })
         .map_err(landing)
         .and_then(|()| {
@@ -2824,6 +2827,7 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
                 source,
             })
         });
+    drop(held);
     if landed.is_ok()
         && let Some(folder) = sheet.parent()
     {
@@ -4665,6 +4669,42 @@ mod tests {
 
         assert_eq!(plan.moves.len(), 2);
         assert_eq!(plan.folders, vec![set.join("CD1"), set.join("CD2")]);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_sheet_rewritten_beside_a_moved_file_stands_back_from_a_stage_a_living_writer_holds() {
+        let folder = a_folder_of_its_own();
+        let library = Library::open_in_memory().expect("a catalog");
+        let sheet = folder.join("Meddle.cue");
+        let staged = folder.join(format!("Meddle.cue{STAGED}"));
+        fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
+
+        let living = Held::made(&staged).expect("a stage another run holds");
+        let refused = staged_over(&library, &sheet, b"FILE \"Meddle.wav\" WAVE\n");
+        let held_through = staged.exists();
+        let unchanged = fs::read(&sheet).expect("the sheet");
+        drop(living);
+
+        staged_over(&library, &sheet, b"FILE \"Meddle.wav\" WAVE\n")
+            .expect("the sheet is rewritten once the stage is let go");
+
+        assert!(matches!(
+            refused,
+            Err(Error::Move {
+                op: MoveOp::Rewrite,
+                ..
+            })
+        ));
+        assert!(held_through, "a living writer's stage was taken away");
+        assert_eq!(unchanged, b"FILE \"old.wav\" WAVE\n");
+        assert_eq!(
+            fs::read(&sheet).expect("the sheet"),
+            b"FILE \"Meddle.wav\" WAVE\n"
+        );
+        assert!(!staged.exists(), "the stage was left beside the sheet");
+        assert!(library.staged_writes().expect("the notes").is_empty());
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

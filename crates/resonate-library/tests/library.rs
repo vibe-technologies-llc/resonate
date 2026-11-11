@@ -6861,7 +6861,8 @@ fn a_window_narrows_on_how_often_a_track_was_heard_inside_it() -> Result<()> {
 }
 
 #[test]
-fn forgetting_a_root_takes_the_listens_counted_under_it_with_it() -> Result<()> {
+fn forgetting_a_root_keeps_the_listens_counted_under_it_for_the_rows_that_come_back() -> Result<()>
+{
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
     library.track_played(&cold, None, Duration::ZERO)?;
@@ -6873,11 +6874,8 @@ fn forgetting_a_root_takes_the_listens_counted_under_it_with_it() -> Result<()> 
 
     scan(&library, &options(&tree))?;
     assert_eq!(titles(&all(&library)?), vec!["Cold", "Heat"]);
-    assert_eq!(matched(&library, "plays:0")?, vec!["Cold", "Heat"]);
-    assert!(
-        matched(&library, "plays:>0@30d")?.is_empty(),
-        "a rescanned row answered for the listens a forgotten root left orphaned"
-    );
+    assert_eq!(matched(&library, "plays:0")?, vec!["Heat"]);
+    assert_eq!(matched(&library, "plays:>1@30d")?, vec!["Cold"]);
     Ok(())
 }
 
@@ -18377,6 +18375,209 @@ fn a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands() 
     Ok(())
 }
 
+#[cfg(unix)]
+struct AnotherVolume(PathBuf);
+
+#[cfg(unix)]
+impl AnotherVolume {
+    fn beside(tree: &Tree) -> Option<Self> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let folder = Path::new("/dev/shm").join(format!(
+            "resonate-organise-{}-{}",
+            process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&folder).ok()?;
+        let volume = Self(folder);
+        let apart = fs::metadata(&volume.0).map(|held| held.dev()).ok()
+            != fs::metadata(tree.path()).map(|held| held.dev()).ok();
+        if !apart {
+            eprintln!("skipping: the shared memory folder is on the fixture tree's volume");
+            return None;
+        }
+        Some(volume)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for AnotherVolume {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(unix)]
+const LONG_AGO: Duration = Duration::from_secs(60 * 60 * 24 * 400);
+
+#[cfg(unix)]
+fn ripped_on_another_volume(
+    tree: &Tree,
+    far: &AnotherVolume,
+) -> Result<(Library, PathBuf, PathBuf)> {
+    let rip = far.0.join("1.wav");
+    fs::write(&rip, meddle("One of These Days", "1")).expect("the second volume is writable");
+    fs::File::options()
+        .write(true)
+        .open(&rip)
+        .and_then(|file| file.set_modified(SystemTime::now() - LONG_AGO))
+        .expect("the rip takes an old time");
+    std::os::unix::fs::symlink(&far.0, tree.path().join("rips"))
+        .expect("the fixture tree takes a link");
+
+    let library = Library::open(&tree.path().join("library.db"))?;
+    scan(
+        &library,
+        &ScanOptions {
+            follow_symlinks: true,
+            ..options(tree)
+        },
+    )?;
+    let source = filed_under(tree).join("rips/1.wav");
+    let landing = filed_under(tree).join("Pink Floyd/Meddle/01 One of These Days.wav");
+    assert!(library.track_at(&source, None)?.is_some());
+    Ok((library, source, landing))
+}
+
+#[cfg(unix)]
+fn staged_beside(folder: &Path) -> Vec<PathBuf> {
+    fs::read_dir(folder)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                .filter(|path| path.to_string_lossy().ends_with(".resonate-staging"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_organised_onto_another_volume_lands_whole_before_the_catalog_follows_and_its_source_goes_after()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(far) = AnotherVolume::beside(&tree) else {
+        return Ok(());
+    };
+    let (library, source, landing) = ripped_on_another_volume(&tree, &far)?;
+    let bytes = fs::read(&source).expect("the rip");
+    let stood = fs::metadata(&source)
+        .and_then(|held| held.modified())
+        .expect("a stamped rip");
+
+    let summary = applied(&library)?;
+
+    let landed = fs::metadata(&landing).expect("the copy landed");
+
+    assert_eq!(summary.stats.moved, 1);
+    assert_eq!(summary.stats.failed, 0);
+    assert_eq!(fs::read(&landing).expect("the copy"), bytes);
+    assert_eq!(landed.modified().expect("a stamped copy"), stood);
+    assert_ne!(
+        landed.dev(),
+        fs::metadata(&far.0).expect("the volume").dev()
+    );
+    assert!(
+        !far.0.join("1.wav").exists(),
+        "the source outlived its copy"
+    );
+    assert!(library.track_at(&landing, None)?.is_some());
+    assert!(library.track_at(&source, None)?.is_none());
+    assert_eq!(
+        staged_beside(landing.parent().expect("a folder")),
+        Vec::<PathBuf>::new()
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_copy_a_killed_run_landed_on_another_volume_is_taken_as_copied_and_one_that_differs_is_not()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(far) = AnotherVolume::beside(&tree) else {
+        return Ok(());
+    };
+    let (library, source, landing) = ripped_on_another_volume(&tree, &far)?;
+    let bytes = fs::read(&source).expect("the rip");
+    let stood = fs::metadata(&source)
+        .and_then(|held| held.modified())
+        .expect("a stamped rip");
+    let mut spoiled = bytes.clone();
+    *spoiled.last_mut().expect("a rip holds bytes") ^= 1;
+    fs::create_dir_all(landing.parent().expect("a folder")).expect("the landing folder");
+    let landed_by_the_killed_run = |held: &[u8]| {
+        fs::write(&landing, held).expect("the copy the killed run landed");
+        fs::File::options()
+            .write(true)
+            .open(&landing)
+            .and_then(|file| file.set_modified(stood))
+            .expect("the copy carries the rip's time");
+    };
+
+    landed_by_the_killed_run(&spoiled);
+    let collided = applied(&library)?;
+    let source_kept = fs::read(&source).expect("the rip stays");
+    let copy_kept = fs::read(&landing).expect("the differing copy stays");
+
+    landed_by_the_killed_run(&bytes);
+    let resumed = applied(&library)?;
+
+    assert_eq!(collided.stats.moved, 0);
+    assert_eq!(collided.stats.collided, 1);
+    assert_eq!(source_kept, bytes);
+    assert_eq!(copy_kept, spoiled);
+    assert_eq!(resumed.stats.moved, 1);
+    assert_eq!(resumed.stats.failed, 0);
+    assert!(
+        resumed.plan.refused.is_empty(),
+        "{:?}",
+        resumed.plan.refused
+    );
+    assert_eq!(fs::read(&landing).expect("the copy"), bytes);
+    assert!(
+        !far.0.join("1.wav").exists(),
+        "the source outlived its copy"
+    );
+    assert!(library.track_at(&landing, None)?.is_some());
+    assert!(library.track_at(&source, None)?.is_none());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_catalog_that_will_not_follow_a_copy_onto_another_volume_keeps_the_source_and_takes_the_copy()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(far) = AnotherVolume::beside(&tree) else {
+        return Ok(());
+    };
+    let (library, source, landing) = ripped_on_another_volume(&tree, &far)?;
+    let bytes = fs::read(&source).expect("the rip");
+    beside(&tree.path().join("library.db"))
+        .execute_batch(
+            "CREATE TRIGGER moves_refused BEFORE UPDATE OF path ON tracks
+             BEGIN SELECT RAISE(ABORT, 'the catalog refuses the move'); END",
+        )
+        .expect("the catalog takes a trigger");
+
+    let summary = applied(&library)?;
+
+    assert_eq!(summary.stats.moved, 0);
+    assert_eq!(summary.stats.failed, 1);
+    assert_eq!(fs::read(&source).expect("the rip stays"), bytes);
+    assert!(
+        !landing.exists(),
+        "the copy the catalog never named was left"
+    );
+    assert!(library.track_at(&source, None)?.is_some());
+    assert!(library.track_at(&landing, None)?.is_none());
+    assert_eq!(
+        staged_beside(landing.parent().expect("a folder")),
+        Vec::<PathBuf>::new()
+    );
+    Ok(())
+}
+
 #[test]
 fn a_stale_row_naming_a_destination_is_taken_out_of_the_way_rather_than_failing_its_batch()
 -> Result<()> {
@@ -22039,6 +22240,55 @@ fn a_vaulted_row_outlives_the_file_it_came_from_and_keeps_its_object() -> Result
 }
 
 #[test]
+fn forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows_it_forgets()
+-> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let echoes = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    let dogs = tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
+    scan(&library, &options(&tree))?;
+    fs::remove_file(&echoes).expect("the source goes");
+
+    for path in [&echoes, &dogs, &dogs] {
+        let counted = library
+            .track_played(&MediaLocation::local(path), None, Duration::from_secs(2))?
+            .expect("a counted play");
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    let before = library.statistics(Window::Everything)?;
+
+    assert!(library.remove_root(tree.path())?);
+
+    let rows = all(&library)?;
+    let after = library.statistics(Window::Everything)?;
+
+    assert_eq!(titles(&rows), vec!["Echoes"]);
+    assert!(
+        library
+            .stand_in()
+            .stands_in(&rows[0].location, rows[0].span)
+            .is_some(),
+        "the only copy's row no longer reaches its object"
+    );
+    assert!(library.vault_objects_nothing_names()?.is_empty());
+    assert!(library.roots()?.is_empty());
+    assert_eq!(before.plays, 3);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+
+    library.add_root(tree.path())?;
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(library.track_at(&dogs, None)?.expect("held again").plays, 2);
+    assert_eq!(library.statistics(Window::Everything)?.plays, 3);
+    Ok(())
+}
+
+#[test]
 fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_old_object()
 -> Result<()> {
     let tree = Tree::new();
@@ -22792,7 +23042,7 @@ fn the_rows_a_sheet_cuts_are_weighed_against_their_share_of_the_file_and_play_as
 fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
-    tree.write(
+    let echoes = tree.write(
         "echoes.wav",
         &Wav::new()
             .text(TITLE, "Echoes")
@@ -22807,6 +23057,9 @@ fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
     assert!(library.vault_objects_nothing_names()?.is_empty());
 
     assert!(library.remove_root(tree.path())?);
+    assert!(library.vault_objects_nothing_names()?.is_empty());
+
+    assert!(library.forget_delivered(&echoes)?);
 
     let loose = library.vault_objects_nothing_names()?;
     assert_eq!(loose.len(), 1);
@@ -22850,7 +23103,7 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
 
     let tree = Tree::new();
     let held = Tree::new();
-    tree.write(
+    let echoes = tree.write(
         "echoes.wav",
         &Wav::new()
             .text(TITLE, "Echoes")
@@ -22861,6 +23114,7 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
     assert!(library.remove_root(tree.path())?);
+    assert!(library.forget_delivered(&echoes)?);
     let loose = library.vault_objects_nothing_names()?;
     let folder = vault
         .root()

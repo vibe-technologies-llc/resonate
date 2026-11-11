@@ -17,7 +17,7 @@ use rusqlite::{
 use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
-    Clause, Cut, Direction, Error, Exported, Imported, Kept, NamedPlaylist, OrderedColumn,
+    Clause, Cut, Direction, Error, Exported, Imported, Kept, Library, NamedPlaylist, OrderedColumn,
     Playlist, PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search,
     Sources, StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, Narrowed, RawTrack, TRACK_COLUMNS},
@@ -1588,8 +1588,8 @@ type HeldNamed = HashMap<String, Vec<(Vec<String>, PathBuf, u32)>>;
 
 fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldNamed> {
     let mut held = HeldNamed::new();
-    let (plain, beyond_ascii): (Vec<&str>, Vec<&str>) =
-        names.iter().copied().partition(|name| name.is_ascii());
+    let plain = names.iter().copied().filter(|name| name.is_ascii());
+    let beyond_ascii = |name: &str| !name.is_ascii() && names.contains(name);
 
     let mut statement = connection
         .prepare_cached(
@@ -1610,7 +1610,7 @@ fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldName
     }
     drop(statement);
 
-    if beyond_ascii.is_empty() {
+    if names.iter().all(|name| name.is_ascii()) {
         return Ok(held);
     }
     let mut statement = connection
@@ -1624,7 +1624,7 @@ fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldName
         let name = path
             .file_name()
             .map(|name| name.to_string_lossy().to_lowercase());
-        if let Some(name) = name.filter(|name| beyond_ascii.contains(&name.as_str())) {
+        if let Some(name) = name.filter(|name| beyond_ascii(name)) {
             held.entry(name)
                 .or_default()
                 .push((trailing_components(&path), path, rate));
@@ -1678,13 +1678,13 @@ fn probed_rate(
     })
 }
 
-pub fn export(inner: &Inner, id: PlaylistId, path: &Path) -> Result<Exported> {
-    let found = one(inner, id)?.ok_or(Error::UnknownPlaylist(id))?;
-    let entries = entries(inner, id, None)?;
+pub fn export(library: &Library, id: PlaylistId, path: &Path) -> Result<Exported> {
+    let found = one(library.inner(), id)?.ok_or(Error::UnknownPlaylist(id))?;
+    let entries = entries(library.inner(), id, None)?;
 
     Ok(Exported {
         rows: entries.len(),
-        format: sheet::write(path, &found.name, &entries)?,
+        format: sheet::write(library, path, &found.name, &entries)?,
     })
 }
 

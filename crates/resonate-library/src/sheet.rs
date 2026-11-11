@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, Read as _, Write as _},
     path::{self, Component, Path, PathBuf},
     process,
@@ -12,13 +12,16 @@ use std::{
 use resonate_codec::carries_what_the_file_did;
 use resonate_core::{
     FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, file_facts, naming, os_bytes, text,
+    writer::Held,
 };
 
-use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, xspf};
+use crate::{
+    Error, Library, PlaylistEntry, PlaylistFormat, Result, m3u,
+    organise::{self, STAGED},
+    pls, xspf,
+};
 
 const LARGEST_PLAYLIST_FILE: u64 = 64 * 1024 * 1024;
-
-const STAGING_SUFFIX: &str = ".new";
 
 const HIDDEN_MARK: &str = ".";
 
@@ -218,14 +221,30 @@ pub fn text_of(
     }
 }
 
-pub fn write(path: &Path, name: &str, entries: &[PlaylistEntry]) -> Result<PlaylistFormat> {
+pub(crate) fn write(
+    library: &Library,
+    path: &Path,
+    name: &str,
+    entries: &[PlaylistEntry],
+) -> Result<PlaylistFormat> {
     let beside = path.parent().unwrap_or_else(|| Path::new("."));
     let format = PlaylistFormat::of(path);
     let text = text_of(format, name, &rows_of(entries), beside)?;
 
     read_back_within(path, &text, LARGEST_PLAYLIST_FILE)?;
-    staged_over(path, &text)?;
+    staged_over(library, &landing_of(path)?, &text)?;
     Ok(format)
+}
+
+fn landing_of(path: &Path) -> Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(landing) => Ok(landing),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(source) => Err(Error::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 pub fn timed(entry: &PlaylistEntry) -> Option<Timed> {
@@ -553,39 +572,39 @@ fn too_large(path: &Path, held: u64) -> Error {
     }
 }
 
-fn staged_over(path: &Path, text: &str) -> Result<()> {
+fn staged_over(library: &Library, path: &Path, text: &str) -> Result<()> {
     let Some(name) = path.file_name() else {
         return Err(Error::NotAPlaylistFile {
             path: path.to_path_buf(),
         });
     };
+    let staged = path.with_file_name(staging_name_for(name));
+    library.staging(&staged)?;
+
+    let landed = staged_into(path, &staged, text);
+    organise::staged_left(library, &staged);
+    landed
+}
+
+fn staged_into(path: &Path, staged: &Path, text: &str) -> Result<()> {
     let failed = |source| Error::Io {
         path: path.to_path_buf(),
         source,
     };
 
-    let staged = path.with_file_name(staging_name_for(name));
-    let mut staging = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&staged)
-        .map_err(failed)?;
-    let landed = staging
+    let held = Held::made(staged).map_err(failed)?;
+    let mut staging = held.file();
+    staging
         .write_all(text.as_bytes())
         .and_then(|()| {
             if let Ok(standing) = fs::metadata(path) {
-                carries_what_the_file_did(&standing, path, &staged);
+                carries_what_the_file_did(&standing, path, staged);
             }
             staging.sync_all()
         })
-        .and_then(|()| fs::rename(&staged, path))
-        .and_then(|()| settled_folder_of(path));
-    drop(staging);
-
-    if landed.is_err() {
-        let _ = fs::remove_file(&staged);
-    }
-    landed.map_err(failed)
+        .and_then(|()| fs::rename(staged, path))
+        .and_then(|()| settled_folder_of(path))
+        .map_err(failed)
 }
 
 fn settled_folder_of(path: &Path) -> io::Result<()> {
@@ -599,12 +618,12 @@ fn settled_folder_of(path: &Path) -> io::Result<()> {
 }
 
 fn staging_name_for(name: &OsStr) -> OsString {
-    static STAGED: AtomicU64 = AtomicU64::new(0);
+    static STAGINGS_MADE: AtomicU64 = AtomicU64::new(0);
 
     let stamped = format!(
-        ".{}-{}{STAGING_SUFFIX}",
+        ".{}-{}{STAGED}",
         process::id(),
-        STAGED.fetch_add(1, Ordering::Relaxed)
+        STAGINGS_MADE.fetch_add(1, Ordering::Relaxed)
     );
     naming::named_within(HIDDEN_MARK, name, stamped)
 }
@@ -666,7 +685,8 @@ mod tests {
         fs::write(&path, "#EXTM3U\n").expect("a playlist");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("a mode");
 
-        staged_over(&path, "#EXTM3U\na.flac\n").expect("the playlist is rewritten");
+        let staged = folder.join(staging_name_for(OsStr::new("favourites.m3u")));
+        staged_into(&path, &staged, "#EXTM3U\na.flac\n").expect("the playlist is rewritten");
 
         assert_eq!(
             fs::read_to_string(&path).expect("the playlist"),
