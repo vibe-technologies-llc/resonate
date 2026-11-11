@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use futures_util::StreamExt;
 use parking_lot::Mutex;
 use resonate_core::Recording;
 use resonate_server::{Limits, Server, Store};
@@ -911,7 +912,12 @@ impl Doorman {
             if closes_cleanly {
                 links.spawn(async move {
                     if let Ok(mut socket) = tokio_tungstenite::accept_async(client).await {
+                        let _ = timeout(ANSWERS_WITHIN, socket.next()).await;
                         let _ = socket.close(None).await;
+                        let _ = timeout(ANSWERS_WITHIN, async {
+                            while socket.next().await.is_some() {}
+                        })
+                        .await;
                     }
                 });
             } else {

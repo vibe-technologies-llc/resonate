@@ -1554,11 +1554,14 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   stream heard waits for it at real time beside `PATIENCE`** (`play_paced_within`): a Mac runner
   has pulled the test graph at real time, not eight times it, so
   `a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each_only_adds_to_the_last`
-  is given `PROFILED_SECONDS` more. A stop's and a
+  is given `PROFILED_SECONDS` more. A pause's, a stop's and a
   handover's fade out are pulled in whole blocks for the same reason: at 64 frames a pull, a Mac's
   overshot sleeps had `QUIET_WITHIN_AT_LEAST` (40 ms) close the stream partway down the fade. The
   handover's blocks come at real time, as the wait for the other zone would see eight times real
-  time run the ring dry.
+  time run the ring dry. **A nudge measured across an underrun is nudged again** (`nudged_once`,
+  up to `NUDGES_TRIED_WHILE_THE_RING_RUNS_DRY`, read off `OutputStatus::underruns`): a Mac runner
+  starving the engine thread pads the ring with silence after the step, leaving the zone that much
+  behind the clock, which is the runner's and not the nudge's.
 - **A test that asserts what the engine does after a command waits for the engine, not for audio
   time.** The graph's pulled frames are a clock the engine's wall time does not follow, so a
   window of pulled frames closes before a starved engine thread has acted. Waiting is on a

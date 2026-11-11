@@ -7375,6 +7375,7 @@ version = "0.9.0"
 dependencies = [
  "base64 0.23.1",
  "clap",
+ "futures-util",
  "httparse",
  "parking_lot 0.13.0",
  "quinn",

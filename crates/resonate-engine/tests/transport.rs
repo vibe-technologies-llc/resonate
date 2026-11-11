@@ -2297,15 +2297,51 @@ fn nudged_towards(frames_ahead: i64) -> Result<(i64, bool)> {
         "the zone to be heard a while",
     );
 
+    let mut measured = nudged_once(&first, &device, &mut clocked, frames_ahead)?;
+    for _ in 1..NUDGES_TRIED_WHILE_THE_RING_RUNS_DRY {
+        if !measured.ran_dry {
+            break;
+        }
+        measured = nudged_once(&first, &device, &mut clocked, frames_ahead)?;
+    }
+
+    Ok((measured.apart, playing(&first)))
+}
+
+const NUDGES_TRIED_WHILE_THE_RING_RUNS_DRY: usize = 3;
+
+struct Nudged {
+    apart: i64,
+    ran_dry: bool,
+}
+
+fn underruns(player: &Player) -> u64 {
+    player
+        .state()
+        .output
+        .as_ref()
+        .map_or(0, |output| output.underruns)
+}
+
+fn nudged_once(
+    first: &Player,
+    device: &Device,
+    clocked: &mut Clocked,
+    frames_ahead: i64,
+) -> Result<Nudged> {
     let heard = first.heard_at().expect("the zone is heard");
+    let underruns_before = underruns(first);
     let afar = HeardClock::default();
     afar.tell(Some(HeardAt {
         frame: Frames(heard.frame.get().saturating_add_signed(frames_ahead)),
         ..heard
     }));
-    zones.send(ZoneId::FIRST, Command::Nudge(afar.clone()))?;
+
+    first
+        .request(Command::Nudge(afar.clone()))?
+        .wait_for(PATIENCE)?;
     clocked.run_until(
-        &[&device],
+        &[device],
         || matches!(first.stepping(), Stepping::Joined(_)),
         "the zone to step back in",
     );
@@ -2314,7 +2350,7 @@ fn nudged_towards(frames_ahead: i64) -> Result<(i64, bool)> {
         _ => Moment::now(),
     };
     clocked.run_until(
-        &[&device],
+        &[device],
         || {
             first
                 .heard_at()
@@ -2326,10 +2362,10 @@ fn nudged_towards(frames_ahead: i64) -> Result<(i64, bool)> {
     let own = first.heard_at().expect("the zone is heard again");
     let wanted = afar.read().expect("told").frame_at(own.at);
 
-    Ok((
-        own.frame.get() as i64 - wanted.round() as i64,
-        playing(&first),
-    ))
+    Ok(Nudged {
+        apart: own.frame.get() as i64 - wanted.round() as i64,
+        ran_dry: underruns(first) > underruns_before,
+    })
 }
 
 #[test]
@@ -10035,7 +10071,7 @@ fn a_steady_level_playing_for(
 fn a_pause_fades_the_level_out_and_a_play_fades_it_back_in() -> Result<()> {
     let level = 16_000_i16;
     let (player, graph, _tree) = a_steady_level_playing(level)?;
-    let pull = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
+    let pull = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
 
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
     play_until(

@@ -36,6 +36,7 @@ resonate-words-build.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+futures-util.workspace = true
 rcgen.workspace = true
 resonate-words-build.workspace = true
 tokio-tungstenite.workspace = true
