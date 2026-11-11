@@ -80,19 +80,20 @@ class RoomCorrectionState(
         }
     }
 
-    fun turn(on: Boolean) = step { apply(library.native(), on) }
+    fun turn(on: Boolean) = step { library.holding { native -> apply(native, on) } }
 
     fun choose(uri: Uri) {
         view.value = view.value.copy(reading = true)
         step {
             try {
-                val native = library.native()
-                val name = resolver.displayNameOf(uri)
-                val kept = withContext(Dispatchers.IO) { stage(native, uri, roomExtension(name)) }
-                val stem = roomStem(name)
-                settings.edit().putString(NAME_KEY, stem).apply()
-                view.value = view.value.copy(kept = kept, name = stem)
-                apply(native, true)
+                library.holding { native ->
+                    val name = resolver.displayNameOf(uri)
+                    val kept = withContext(Dispatchers.IO) { stage(native, uri, roomExtension(name)) }
+                    val stem = roomStem(name)
+                    settings.edit().putString(NAME_KEY, stem).apply()
+                    view.value = view.value.copy(kept = kept, name = stem)
+                    apply(native, true)
+                }
             } finally {
                 view.value = view.value.copy(reading = false)
             }
@@ -108,21 +109,22 @@ class RoomCorrectionState(
         view.value = view.value.copy(reading = true)
         step {
             try {
-                val native = library.native()
-                val right = resolver.displayNameOf(uri)
-                val leftBytes = withContext(Dispatchers.IO) { read(left.uri) }
-                val rightBytes = withContext(Dispatchers.IO) { read(uri) }
-                val kept =
-                    native.keepBinauralRoomCorrection(
-                        leftBytes,
-                        roomExtension(left.name),
-                        rightBytes,
-                        roomExtension(right),
-                    )
-                val named = pairedRoomName(library.words, left.name, right)
-                settings.edit().putString(NAME_KEY, named).apply()
-                view.value = view.value.copy(kept = kept, name = named)
-                apply(native, true)
+                library.holding { native ->
+                    val right = resolver.displayNameOf(uri)
+                    val leftBytes = withContext(Dispatchers.IO) { read(left.uri) }
+                    val rightBytes = withContext(Dispatchers.IO) { read(uri) }
+                    val kept =
+                        native.keepBinauralRoomCorrection(
+                            leftBytes,
+                            roomExtension(left.name),
+                            rightBytes,
+                            roomExtension(right),
+                        )
+                    val named = pairedRoomName(library.words, left.name, right)
+                    settings.edit().putString(NAME_KEY, named).apply()
+                    view.value = view.value.copy(kept = kept, name = named)
+                    apply(native, true)
+                }
             } finally {
                 view.value = view.value.copy(reading = false, left = null)
             }
@@ -130,24 +132,27 @@ class RoomCorrectionState(
     }
 
     fun speakAt(angle: Int) = step {
-        val native = library.native()
-        val kept = native.setSpeakerAngle(angle.toUByte())
-        settings.edit().putInt(ANGLE_KEY, angle).apply()
-        view.value = view.value.copy(angle = angle, kept = kept ?: view.value.kept)
+        library.holding { native ->
+            val kept = native.setSpeakerAngle(angle.toUByte())
+            settings.edit().putInt(ANGLE_KEY, angle).apply()
+            view.value = view.value.copy(angle = angle, kept = kept ?: view.value.kept)
+        }
     }
 
     fun raiseTo(elevation: Int) = step {
-        val native = library.native()
-        val kept = native.setSpeakerElevation(elevation.toShort())
-        settings.edit().putInt(ELEVATION_KEY, elevation).apply()
-        view.value = view.value.copy(elevation = elevation, kept = kept ?: view.value.kept)
+        library.holding { native ->
+            val kept = native.setSpeakerElevation(elevation.toShort())
+            settings.edit().putInt(ELEVATION_KEY, elevation).apply()
+            view.value = view.value.copy(elevation = elevation, kept = kept ?: view.value.kept)
+        }
     }
 
     fun turnTo(yaw: Int) = step {
-        val native = library.native()
-        val kept = native.setHeadYaw(yaw.toShort())
-        settings.edit().putInt(YAW_KEY, yaw).apply()
-        view.value = view.value.copy(yaw = yaw, kept = kept ?: view.value.kept)
+        library.holding { native ->
+            val kept = native.setHeadYaw(yaw.toShort())
+            settings.edit().putInt(YAW_KEY, yaw).apply()
+            view.value = view.value.copy(yaw = yaw, kept = kept ?: view.value.kept)
+        }
     }
 
     fun cancelPair() {
@@ -155,7 +160,7 @@ class RoomCorrectionState(
     }
 
     fun forget() = step {
-        library.native().forgetRoomCorrection()
+        library.holding { it.forgetRoomCorrection() }
         settings.edit().remove(NAME_KEY).apply()
         view.value = view.value.copy(kept = null, name = null)
         remember(false)

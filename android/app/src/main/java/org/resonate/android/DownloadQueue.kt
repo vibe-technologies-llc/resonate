@@ -125,10 +125,11 @@ class DownloadQueue(
     private suspend fun keepAsking() {
         while (scope.isActive && mayAsk()) {
             try {
-                val native = library.native()
-                val next = native.nextWantedDue() ?: return
-                delay(DownloadPlan.waitForWants(next.toLong(), System.currentTimeMillis() / 1000))
-                if (mayAsk()) askDueWants(native)
+                library.holding { native ->
+                    val next = native.nextWantedDue() ?: return
+                    delay(DownloadPlan.waitForWants(next.toLong(), System.currentTimeMillis() / 1000))
+                    if (mayAsk()) askDueWants(native)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -175,28 +176,29 @@ class DownloadQueue(
             }
             val accounts = seams.accounts()
             check(accounts.isNotEmpty()) { "Set up a download provider first" }
-            val native = library.native()
-            val song = checkNotNull(job(key)).song
-            val folder = Uri.parse(checkNotNull(job(key)).folder)
-            val id = native.beginDownload(song)
-            change(key) { it.copy(native = id) }
-            if (job(key)?.cancelling == true) native.cancelDownload(id)
-            val offer = native.findDownload(id, accounts)
-            native.refreshedTidalToken()?.let(seams::renewed)
-            change(key) { it.copy(state = DownloadState.DOWNLOADING, name = offer.name) }
-            val uri = MusicDocuments.create(context, folder, mimeOf(offer.extension), offer.name)
-            created = uri
-            journal(uri)
-            val descriptor =
-                requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
-            val count = native.downloadOffer(id, descriptor)
-            change(key) { it.copy(state = DownloadState.VALIDATING, received = count) }
-            native.indexDownload(id, uri.toString(), offer.name)
-            created = null
-            MusicDocuments.publish(context, uri)
-            forgetJournal(uri)
-            change(key) { it.copy(state = DownloadState.DONE, received = count) }
-            seams.landed()
+            library.holding { native ->
+                val song = checkNotNull(job(key)).song
+                val folder = Uri.parse(checkNotNull(job(key)).folder)
+                val id = native.beginDownload(song)
+                change(key) { it.copy(native = id) }
+                if (job(key)?.cancelling == true) native.cancelDownload(id)
+                val offer = native.findDownload(id, accounts)
+                native.refreshedTidalToken()?.let(seams::renewed)
+                change(key) { it.copy(state = DownloadState.DOWNLOADING, name = offer.name) }
+                val uri = MusicDocuments.create(context, folder, mimeOf(offer.extension), offer.name)
+                created = uri
+                journal(uri)
+                val descriptor =
+                    requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
+                val count = native.downloadOffer(id, descriptor)
+                change(key) { it.copy(state = DownloadState.VALIDATING, received = count) }
+                native.indexDownload(id, uri.toString(), offer.name)
+                created = null
+                MusicDocuments.publish(context, uri)
+                forgetJournal(uri)
+                change(key) { it.copy(state = DownloadState.DONE, received = count) }
+                seams.landed()
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

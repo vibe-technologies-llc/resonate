@@ -9,13 +9,17 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::ZoneId;
+use resonate_core::{Span, ZoneId};
 use rusqlite::{
     CachedStatement, Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags,
     hooks::Action, params,
 };
 
-use crate::{Error, Result, StoreOp, Track, served::ServedSong};
+use crate::{
+    Error, Result, StoreOp, Track,
+    arranged::{Arranged, Laid},
+    served::ServedSong,
+};
 
 const LISTENS_NAME_THEIR_ORIGIN: &str = "
 ALTER TABLE listens ADD COLUMN origin_device BLOB;
@@ -318,6 +322,18 @@ CREATE TABLE wrapped_years (
 ) STRICT;
 ";
 
+const QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT: &str = "
+ALTER TABLE queue ADD COLUMN loaded INTEGER;
+ALTER TABLE zone_queue ADD COLUMN loaded INTEGER;
+ALTER TABLE served_rows ADD COLUMN loaded INTEGER;
+ALTER TABLE resume ADD COLUMN shuffle INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE resume ADD COLUMN next_first INTEGER;
+ALTER TABLE resume ADD COLUMN next_last INTEGER;
+ALTER TABLE zone_resume ADD COLUMN shuffle INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE zone_resume ADD COLUMN next_first INTEGER;
+ALTER TABLE zone_resume ADD COLUMN next_last INTEGER;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -351,6 +367,7 @@ const MIGRATIONS: &[&str] = &[
     UNHELD_RELEASES_KEEP_THEIR_SLEEVE,
     DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC,
     A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD,
+    QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT,
 ];
 
 #[cfg(test)]
@@ -853,15 +870,17 @@ impl Catalog {
         at: u32,
         position_ms: u64,
     ) -> Result<()> {
-        let rows: Vec<KeptRow> = ids.iter().copied().map(KeptRow::Document).collect();
-        self.save_rows_of(zone, &rows, at, position_ms)
+        let arranged = Arranged {
+            row: at as usize,
+            ..Arranged::in_play_order(ids.iter().copied().map(KeptRow::Document))
+        };
+        self.save_rows_of(zone, &arranged, position_ms)
     }
 
     pub(crate) fn save_rows_of(
         &self,
         zone: ZoneId,
-        rows: &[KeptRow],
-        at: u32,
+        arranged: &Arranged<KeptRow>,
         position_ms: u64,
     ) -> Result<()> {
         let kept = QueueKept::of(zone);
@@ -875,14 +894,17 @@ impl Catalog {
         transaction
             .execute(SERVED_ROWS_CLEARED, [zone.get()])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        for (position, row) in rows.iter().enumerate() {
-            match row {
-                KeptRow::Document(id) => transaction
-                    .execute(kept.row, params![zone.get(), position as i64, *id as i64]),
+        for (position, laid) in arranged.rows.iter().enumerate() {
+            let loaded = laid.loaded as i64;
+            match &laid.row {
+                KeptRow::Document(id) => transaction.execute(
+                    kept.row,
+                    params![zone.get(), position as i64, *id as i64, loaded],
+                ),
                 KeptRow::Served(served) => transaction.execute(
                     "INSERT INTO served_rows
-                         (zone, position, uri, title, artist, album, track, duration_ms, format, cover, rate)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                         (zone, position, uri, title, artist, album, track, duration_ms, format, cover, rate, loaded)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         zone.get(),
                         position as i64,
@@ -895,6 +917,7 @@ impl Catalog {
                         served.song.format,
                         served.song.cover,
                         served.rate,
+                        loaded,
                     ],
                 ),
             }
@@ -902,8 +925,15 @@ impl Catalog {
         }
         transaction
             .execute(
-                kept.place,
-                params![zone.get(), at, position_ms.min(i64::MAX as u64) as i64],
+                kept.arranged,
+                params![
+                    zone.get(),
+                    arranged.row as i64,
+                    position_ms.min(i64::MAX as u64) as i64,
+                    arranged.shuffle,
+                    arranged.next.map(|next| next.first() as i64),
+                    arranged.next.map(|next| next.last() as i64),
+                ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         transaction
@@ -935,10 +965,12 @@ impl Catalog {
 
     #[cfg(test)]
     pub(crate) fn resume_of(&self, zone: ZoneId) -> Result<(Vec<u64>, u32, u64)> {
-        let (rows, at, position) = self.resume_rows_of(zone)?;
-        let ids = rows
+        let (arranged, position) = self.resume_rows_of(zone)?;
+        let at = arranged.row as u32;
+        let ids = arranged
+            .rows
             .into_iter()
-            .filter_map(|row| match row {
+            .filter_map(|laid| match laid.row {
                 KeptRow::Document(id) => Some(id),
                 KeptRow::Served(_) => None,
             })
@@ -946,22 +978,28 @@ impl Catalog {
         Ok((ids, at, position))
     }
 
-    pub(crate) fn resume_rows_of(&self, zone: ZoneId) -> Result<(Vec<KeptRow>, u32, u64)> {
+    pub(crate) fn resume_rows_of(&self, zone: ZoneId) -> Result<(Arranged<KeptRow>, u64)> {
         let kept = QueueKept::of(zone);
         let connection = self.0.lock();
         let mut query = connection
             .prepare(kept.rows)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let mut rows: Vec<(i64, KeptRow)> = query
+        let mut rows: Vec<(i64, Laid<KeptRow>)> = query
             .query_map([zone.get()], |row| {
-                Ok((row.get(0)?, KeptRow::Document(row.get::<_, i64>(1)? as u64)))
+                Ok((
+                    row.get(0)?,
+                    Laid {
+                        row: KeptRow::Document(row.get::<_, i64>(1)? as u64),
+                        loaded: row.get::<_, i64>(2)?.max(0) as usize,
+                    },
+                ))
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .collect::<rusqlite::Result<_>>()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut served = connection
             .prepare(
-                "SELECT position, uri, title, artist, album, track, duration_ms, format, cover, rate
+                "SELECT position, uri, title, artist, album, track, duration_ms, format, cover, rate, coalesce(loaded, position)
                  FROM served_rows WHERE zone = ?1",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -970,22 +1008,25 @@ impl Catalog {
                 .query_map([zone.get()], |row| {
                     Ok((
                         row.get(0)?,
-                        KeptRow::Served(KeptServed {
-                            song: ServedSong {
-                                uri: row.get(1)?,
-                                title: row.get(2)?,
-                                artist: row.get(3)?,
-                                album: row.get(4)?,
-                                track: row.get(5)?,
-                                duration_ms: row
-                                    .get::<_, Option<i64>>(6)?
-                                    .map(|length| length.max(0) as u64),
-                                format: row.get(7)?,
-                                cover: row.get(8)?,
-                                favourite: None,
-                            },
-                            rate: row.get(9)?,
-                        }),
+                        Laid {
+                            row: KeptRow::Served(KeptServed {
+                                song: ServedSong {
+                                    uri: row.get(1)?,
+                                    title: row.get(2)?,
+                                    artist: row.get(3)?,
+                                    album: row.get(4)?,
+                                    track: row.get(5)?,
+                                    duration_ms: row
+                                        .get::<_, Option<i64>>(6)?
+                                        .map(|length| length.max(0) as u64),
+                                    format: row.get(7)?,
+                                    cover: row.get(8)?,
+                                    favourite: None,
+                                },
+                                rate: row.get(9)?,
+                            }),
+                            loaded: row.get::<_, i64>(10)?.max(0) as usize,
+                        },
                     ))
                 })
                 .map_err(|source| Error::store(StoreOp::Read, source))?
@@ -993,20 +1034,55 @@ impl Catalog {
                 .map_err(|source| Error::store(StoreOp::Read, source))?,
         );
         rows.sort_by_key(|(position, _)| *position);
-        let (at, position) = connection
-            .query_row(kept.read_place, [zone.get()], |row| {
-                Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
+        let place = connection
+            .query_row(kept.read_arranged, [zone.get()], |row| {
+                Ok(KeptPlace {
+                    row_at: row.get(0)?,
+                    position_ms: row.get::<_, i64>(1)?.max(0) as u64,
+                    shuffle: row.get(2)?,
+                    next_first: row.get(3)?,
+                    next_last: row.get(4)?,
+                })
             })
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?
-            .unwrap_or((0, 0));
-        let (at, position) = place_among_rows(&connection, zone, at, position)
+            .unwrap_or_default();
+        let (at, position) = place_among_rows(&connection, zone, place.row_at, place.position_ms)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let next = place.next_among(rows.iter().map(|(position, _)| *position));
+
         Ok((
-            rows.into_iter().map(|(_, row)| row).collect(),
-            at as u32,
+            Arranged {
+                rows: rows.into_iter().map(|(_, laid)| laid).collect(),
+                row: at,
+                shuffle: place.shuffle,
+                next,
+            },
             position,
         ))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct KeptPlace {
+    row_at: i64,
+    position_ms: u64,
+    shuffle: bool,
+    next_first: Option<i64>,
+    next_last: Option<i64>,
+}
+
+impl KeptPlace {
+    fn next_among(&self, positions: impl Iterator<Item = i64>) -> Option<Span> {
+        let (Some(first), Some(last)) = (self.next_first, self.next_last) else {
+            return None;
+        };
+        let mut held = positions
+            .enumerate()
+            .filter(|(_, position)| (first..=last).contains(position))
+            .map(|(at, _)| at);
+        let opening = held.next()?;
+        Some(Span::between(opening, held.last().unwrap_or(opening)))
     }
 }
 
@@ -1035,8 +1111,10 @@ pub(crate) struct QueueKept {
     cleared: &'static str,
     row: &'static str,
     place: &'static str,
+    arranged: &'static str,
     rows: &'static str,
     pub(crate) read_place: &'static str,
+    read_arranged: &'static str,
     among: &'static str,
     among_documents: &'static str,
     pub(crate) held: &'static str,
@@ -1046,10 +1124,12 @@ pub(crate) struct QueueKept {
 impl QueueKept {
     const FIRST: Self = Self {
         cleared: "DELETE FROM queue WHERE ?1 = ?1",
-        row: "INSERT INTO queue VALUES (?2, ?3)",
-        place: "INSERT INTO resume VALUES (1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
-        rows: "SELECT position, track FROM queue WHERE ?1 = ?1 ORDER BY position",
+        row: "INSERT INTO queue(position, track, loaded) VALUES (?2, ?3, ?4)",
+        place: "INSERT INTO resume(id, row_at, position_ms) VALUES (1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
+        arranged: "INSERT INTO resume(id, row_at, position_ms, shuffle, next_first, next_last) VALUES (1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms, shuffle = excluded.shuffle, next_first = excluded.next_first, next_last = excluded.next_last",
+        rows: "SELECT position, track, coalesce(loaded, position) FROM queue WHERE ?1 = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM resume WHERE id = 1 AND ?1 = ?1",
+        read_arranged: "SELECT row_at, position_ms, shuffle, next_first, next_last FROM resume WHERE id = 1 AND ?1 = ?1",
         among: "SELECT (SELECT count(*) FROM queue WHERE position < ?2) + (SELECT count(*) FROM served_rows WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2) OR EXISTS(SELECT 1 FROM served_rows WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM queue) + (SELECT count(*) FROM served_rows WHERE zone = ?1)",
         among_documents: "SELECT (SELECT count(*) FROM queue WHERE position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2), (SELECT count(*) FROM queue) WHERE ?1 = ?1",
         held: "SELECT count(*) FROM queue q JOIN documents d ON d.id = q.track WHERE ?1 = ?1",
@@ -1058,10 +1138,12 @@ impl QueueKept {
 
     const ANOTHER: Self = Self {
         cleared: "DELETE FROM zone_queue WHERE zone = ?1",
-        row: "INSERT INTO zone_queue(zone, position, track) VALUES (?1, ?2, ?3)",
-        place: "INSERT INTO zone_resume VALUES (?1, ?2, ?3) ON CONFLICT(zone) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
-        rows: "SELECT position, track FROM zone_queue WHERE zone = ?1 ORDER BY position",
+        row: "INSERT INTO zone_queue(zone, position, track, loaded) VALUES (?1, ?2, ?3, ?4)",
+        place: "INSERT INTO zone_resume(zone, row_at, position_ms) VALUES (?1, ?2, ?3) ON CONFLICT(zone) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
+        arranged: "INSERT INTO zone_resume(zone, row_at, position_ms, shuffle, next_first, next_last) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(zone) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms, shuffle = excluded.shuffle, next_first = excluded.next_first, next_last = excluded.next_last",
+        rows: "SELECT position, track, coalesce(loaded, position) FROM zone_queue WHERE zone = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM zone_resume WHERE zone = ?1",
+        read_arranged: "SELECT row_at, position_ms, shuffle, next_first, next_last FROM zone_resume WHERE zone = ?1",
         among: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2) + (SELECT count(*) FROM served_rows WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2) OR EXISTS(SELECT 1 FROM served_rows WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1) + (SELECT count(*) FROM served_rows WHERE zone = ?1)",
         among_documents: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1)",
         held: "SELECT count(*) FROM zone_queue q JOIN documents d ON d.id = q.track WHERE q.zone = ?1",
@@ -2061,5 +2143,142 @@ mod tests {
                 .expect("an answer"),
             [None]
         );
+    }
+
+    fn kept_rows(arranged: &Arranged<KeptRow>) -> Vec<(KeptRow, usize)> {
+        arranged
+            .rows
+            .iter()
+            .map(|laid| (laid.row.clone(), laid.loaded))
+            .collect()
+    }
+
+    #[test]
+    fn a_catalog_of_before_queues_kept_their_order_resumes_them_in_play_order_unshuffled() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-arranged-{unique}.sqlite"));
+        let step = laid_before(QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT);
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for laid in &MIGRATIONS[..step] {
+            connection.execute_batch(laid).expect("an earlier version");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
+                     VALUES (7, 'content://a/7', '7', '7', '', '', 0, 44100, 'FLAC'),
+                            (8, 'content://a/8', '8', '8', '', '', 0, 44100, 'FLAC'),
+                            (9, 'content://a/9', '9', '9', '', '', 0, 44100, 'FLAC');
+                 INSERT INTO queue VALUES (0, 7), (1, 8), (3, 9);
+                 INSERT INTO resume VALUES (1, 1, 2500);
+                 INSERT INTO served_rows (zone, position, uri, title) VALUES (1, 2, 'subsonic:track/x', 'X');
+                 INSERT INTO zones (id, name) VALUES (2, 'Kitchen');
+                 INSERT INTO zone_queue VALUES (2, 0, 9), (2, 1, 7);
+                 INSERT INTO zone_resume VALUES (2, 1, 900);",
+            )
+            .expect("queues of before");
+        connection
+            .pragma_update(None, "user_version", u32::try_from(step).expect("a count"))
+            .expect("its stamp");
+        drop(connection);
+        let kitchen = ZoneId::new(2).expect("a zone");
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let (first, first_at) = opened
+            .resume_rows_of(ZoneId::FIRST)
+            .expect("the first queue");
+        let (other, other_at) = opened.resume_rows_of(kitchen).expect("the kitchen's queue");
+
+        assert_eq!(
+            kept_rows(&first)
+                .into_iter()
+                .map(|(row, loaded)| (
+                    match row {
+                        KeptRow::Document(id) => id,
+                        KeptRow::Served(_) => 0,
+                    },
+                    loaded
+                ))
+                .collect::<Vec<_>>(),
+            vec![(7, 0), (8, 1), (0, 2), (9, 3)]
+        );
+        assert_eq!(
+            (first.row, first.shuffle, first.next, first_at),
+            (1, false, None, 2500)
+        );
+        assert_eq!(
+            kept_rows(&other),
+            vec![(KeptRow::Document(9), 0), (KeptRow::Document(7), 1)]
+        );
+        assert_eq!(
+            (other.row, other.shuffle, other.next, other_at),
+            (1, false, None, 900)
+        );
+
+        let shuffled = Arranged {
+            rows: vec![
+                Laid {
+                    row: KeptRow::Document(9),
+                    loaded: 2,
+                },
+                Laid {
+                    row: KeptRow::Document(7),
+                    loaded: 0,
+                },
+                Laid {
+                    row: KeptRow::Document(8),
+                    loaded: 1,
+                },
+            ],
+            row: 1,
+            shuffle: true,
+            next: Some(Span::one(2)),
+        };
+        opened
+            .save_rows_of(kitchen, &shuffled, 1200)
+            .expect("a shuffled queue saved");
+        opened
+            .save_place_of(kitchen, 2, 300)
+            .expect("a later place");
+        let (kept, at) = opened.resume_rows_of(kitchen).expect("the shuffled queue");
+
+        assert_eq!(kept_rows(&kept), kept_rows(&shuffled));
+        assert_eq!(
+            (kept.row, kept.shuffle, kept.next, at),
+            (2, true, Some(Span::one(2)), 300)
+        );
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rows_played_next_follow_the_rows_left_when_a_kept_row_is_gone() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        catalog
+            .0
+            .lock()
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+                 INSERT INTO queue (position, track, loaded) VALUES (0, 7, 0), (2, 9, 2), (3, 10, 3);
+                 INSERT INTO resume (id, row_at, position_ms, shuffle, next_first, next_last) VALUES (1, 3, 40, 0, 1, 2);",
+            )
+            .expect("a queue whose second row went");
+
+        let (kept, at) = catalog.resume_rows_of(ZoneId::FIRST).expect("the queue");
+
+        assert_eq!(kept.rows.len(), 3);
+        assert_eq!(kept.row, 2);
+        assert_eq!(kept.next, Some(Span::one(1)));
+        assert_eq!(at, 40);
     }
 }

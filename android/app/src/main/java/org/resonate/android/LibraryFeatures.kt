@@ -205,7 +205,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 library.refresh()
                 refreshArtwork()
                 enrichment.begin()
-                refreshWanted(library.native())
+                library.holding { refreshWanted(it) }
             }
         }
     val downloads = DownloadQueue(context, library, scope, settings, downloadSeams)
@@ -393,9 +393,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     }
                 try {
                     val count =
-                        library
-                            .native()
-                            .submitScrobbles(account, playing?.takeIf { it != lastPlaying })
+                        library.holding {
+                            it.submitScrobbles(account, playing?.takeIf { it != lastPlaying })
+                        }
                     lastPlaying = playing
                     if (count > 0uL)
                         scrobbleStatus.value =
@@ -410,7 +410,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     scrobbleStatus.value = failure.message
                 }
                 try {
-                    lovesSaid(library.words, library.native().tellLoves(account))?.let {
+                    lovesSaid(library.words, library.holding { it.tellLoves(account) })?.let {
                         scrobbleStatus.value = it
                     }
                 } catch (cancelled: CancellationException) {
@@ -489,7 +489,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     private suspend fun inStepQuietly(action: suspend (MobilePlayer) -> Unit) {
         try {
-            action(library.native())
+            library.holding { action(it) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -814,7 +814,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     suspend fun syncUntilQuiet(): BackgroundPass {
-        library.native()
+        library.ready()
         withTimeoutOrNull(BackgroundSync.RUNS_AT_MOST_MS) { syncApplied.first { it } }
             ?: return BackgroundPass.OUT_OF_TIME
         val began = SystemClock.elapsedRealtime()
@@ -987,26 +987,27 @@ class LibraryFeatures(private val context: Context, private val library: Library
             val quick = foreground || transferring.value || backgroundSyncs.get() > 0
             withTimeoutOrNull(if (quick) 2000L else 30000L) { pollSoon.receive() }
             try {
-                val native = library.native()
-                val polledAt = SystemClock.elapsedRealtime()
-                val status = native.syncStatus()
-                syncStatus.value = status
-                val waiting = native.syncReceived()
-                transferring.value = status.moving > 0u || waiting.isNotEmpty()
-                if (transferring.value) holdTransfers()
-                if (waiting.isNotEmpty()) landReceived(native, waiting) else syncKeeping.value = 0
-                syncHandoffs.value =
-                    if (status.standing == SyncStanding.OFF) emptyList() else native.syncHandoffs()
-                if (arrivals != status.arrivals) {
-                    arrivals = status.arrivals
-                    library.refresh()
-                    playlists.value = native.playlists()
-                    together.readLists(native)
-                    openPlaylist.value?.let { id ->
-                        if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
+                library.holding { native ->
+                    val polledAt = SystemClock.elapsedRealtime()
+                    val status = native.syncStatus()
+                    syncStatus.value = status
+                    val waiting = native.syncReceived()
+                    transferring.value = status.moving > 0u || waiting.isNotEmpty()
+                    if (transferring.value) holdTransfers()
+                    if (waiting.isNotEmpty()) landReceived(native, waiting) else syncKeeping.value = 0
+                    syncHandoffs.value =
+                        if (status.standing == SyncStanding.OFF) emptyList() else native.syncHandoffs()
+                    if (arrivals != status.arrivals) {
+                        arrivals = status.arrivals
+                        library.refresh()
+                        playlists.value = native.playlists()
+                        together.readLists(native)
+                        openPlaylist.value?.let { id ->
+                            if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)
+                        }
                     }
+                    syncPolled.value = SyncPass(status, polledAt)
                 }
-                syncPolled.value = SyncPass(status, polledAt)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -1288,14 +1289,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
         missingChecked = now
         scope.launch {
             try {
-                val native = library.native()
-                val folders = readableFolders()
-                if (folders.isEmpty()) return@launch
-                val prefixes = folders.map { MusicDocuments.prefix(it) }
-                val listed = folders.flatMap { MusicDocuments.listed(context, it) }
-                val changed = native.hideUnlistedSongs(prefixes, listed)
-                hidingFailure = null
-                afterHiding(native, changed)
+                library.holding { native ->
+                    val folders = readableFolders()
+                    if (folders.isEmpty()) return@launch
+                    val prefixes = folders.map { MusicDocuments.prefix(it) }
+                    val listed = folders.flatMap { MusicDocuments.listed(context, it) }
+                    val changed = native.hideUnlistedSongs(prefixes, listed)
+                    hidingFailure = null
+                    afterHiding(native, changed)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -1344,8 +1346,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     .commit()
                 refreshFolders()
                 if (folder.uri != MusicDocuments.downloads) {
-                    val native = library.native()
-                    afterHiding(native, native.hideSongsUnder(MusicDocuments.prefix(folder.uri)))
+                    library.holding { native ->
+                        afterHiding(native, native.hideSongsUnder(MusicDocuments.prefix(folder.uri)))
+                    }
                 }
             } catch (failure: Exception) {
                 library.report(failure)
@@ -1377,10 +1380,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
     suspend fun artworkBitmap(song: ULong, edge: Int, generation: Int = 0, stamp: Int = 0): Bitmap? =
         withContext(Dispatchers.IO) {
             try {
-                val native = library.native()
-                val picture = native.artworkPicture(song) ?: return@withContext null
-                seenPictures[song] = SeenPicture(picture, generation, stamp)
-                bitmapOf(native, picture, edge)
+                library.holding { native ->
+                    val picture = native.artworkPicture(song) ?: return@withContext null
+                    seenPictures[song] = SeenPicture(picture, generation, stamp)
+                    bitmapOf(native, picture, edge)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -1394,20 +1398,21 @@ class LibraryFeatures(private val context: Context, private val library: Library
     suspend fun artworkJpeg(song: ULong, edge: Int): ByteArray? =
         withContext(Dispatchers.IO) {
             try {
-                val native = library.native()
-                val picture = native.artworkPicture(song) ?: return@withContext null
-                val key = "$picture:$edge"
-                encoded.get(key)?.let {
-                    return@withContext it
-                }
-                val bitmap = bitmapOf(native, picture, edge) ?: return@withContext null
-                val jpeg =
-                    java.io.ByteArrayOutputStream().use { output ->
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
-                        output.toByteArray()
+                library.holding { native ->
+                    val picture = native.artworkPicture(song) ?: return@withContext null
+                    val key = "$picture:$edge"
+                    encoded.get(key)?.let {
+                        return@withContext it
                     }
-                encoded.put(key, jpeg)
-                jpeg
+                    val bitmap = bitmapOf(native, picture, edge) ?: return@withContext null
+                    val jpeg =
+                        java.io.ByteArrayOutputStream().use { output ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
+                            output.toByteArray()
+                        }
+                    encoded.put(key, jpeg)
+                    jpeg
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -1638,8 +1643,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 val at = place.value?.takeIf { it.track == sheet.trackId } ?: continue
                 val position = at.now().toULong()
                 lyricFrame.value =
-                    native.keptLyricFrame(sheet.trackId, position)
-                        ?: native.lyricFrame(sheet.trackId, position)
+                    library.openEngine.holding(native) {
+                        it.keptLyricFrame(sheet.trackId, position)
+                            ?: it.lyricFrame(sheet.trackId, position)
+                    }
                 failing = null
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -2142,17 +2149,18 @@ class LibraryFeatures(private val context: Context, private val library: Library
         visualization = null
         if (enabled)
             visualization = scope.launch {
-                val native = library.native()
-                try {
-                    while (isActive) {
-                        samples.value = native.visualizer(true)
-                        delay(33)
-                    }
-                } finally {
+                library.holding { native ->
                     try {
-                        native.visualizer(false)
-                    } catch (failure: Exception) {
-                        samples.value = emptyList()
+                        while (isActive) {
+                            samples.value = native.visualizer(true)
+                            delay(33)
+                        }
+                    } finally {
+                        try {
+                            native.visualizer(false)
+                        } catch (failure: Exception) {
+                            samples.value = emptyList()
+                        }
                     }
                 }
             }
@@ -2212,7 +2220,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private fun work(action: suspend (MobilePlayer) -> Unit) {
         scope.launch {
             try {
-                action(library.native())
+                library.holding { action(it) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

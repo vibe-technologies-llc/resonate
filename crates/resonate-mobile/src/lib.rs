@@ -1,5 +1,6 @@
 mod abx;
 mod album_songs;
+mod arranged;
 mod artist_discography;
 mod catalog;
 mod catalog_extras;
@@ -71,6 +72,7 @@ use resonate_engine::{
 };
 
 use crate::{
+    arranged::{Arranged, Laid},
     catalog::Catalog,
     documents::{GRANTED_SCHEMES, GrantedFiles, document_uri, location},
     stamp::DocumentStamp,
@@ -146,6 +148,39 @@ impl Track {
     }
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct QueueWindow {
+    pub first: u32,
+    pub total: u32,
+    pub tracks: Vec<Track>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Shown {
+    first: usize,
+    rows: usize,
+}
+
+impl Shown {
+    fn around(
+        playing: Option<usize>,
+        rows: usize,
+        heard_at_most: usize,
+        ahead_at_most: usize,
+    ) -> Self {
+        let playing = playing.unwrap_or(0).min(rows);
+        let first = playing.saturating_sub(heard_at_most);
+        let end = playing
+            .saturating_add(1)
+            .saturating_add(ahead_at_most)
+            .min(rows);
+        Self {
+            first,
+            rows: end.saturating_sub(first),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Transport {
     Stopped,
@@ -172,6 +207,7 @@ fn place_to_save(state: &PlayerState, rows: &QueueRows, revision: u64) -> Option
     }
     Some(SavedPlace {
         revision,
+        shuffle: state.shuffle,
         row: state.queue_position.unwrap_or(0) as u32,
         position_ms: state.current.map_or(0, |track| {
             track.position.to_duration(track.source.rate).as_millis() as u64
@@ -239,8 +275,15 @@ pub struct Snapshot {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SavedPlace {
     revision: u64,
+    shuffle: bool,
     row: u32,
     position_ms: u64,
+}
+
+impl SavedPlace {
+    fn arranged_as(&self, other: &Self) -> bool {
+        self.revision == other.revision && self.shuffle == other.shuffle
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -403,26 +446,30 @@ impl MobilePlayer {
 
     pub fn queue(&self) -> Result<Vec<Track>> {
         let rows = self.playing.player()?.queued().rows;
+        self.tracks_of_rows(&rows.iter().collect::<Vec<_>>())
+    }
 
-        let uris = rows
-            .iter()
-            .filter(|item| !served::Served::names(&item.location))
-            .map(|item| document_uri(&item.location))
-            .collect::<Result<Vec<_>>>()?;
-        let mut held = self.catalog.tracks_held_at(&uris)?.into_iter();
-        let mut tracks = Vec::with_capacity(rows.len());
-        for item in rows.iter() {
-            let mut track = if served::Served::names(&item.location) {
-                self.served.track_of(item)
-            } else {
-                held.next()
-                    .flatten()
-                    .unwrap_or_else(|| Track::gone(&item.location))
-            };
-            track.queue_id = Some(item.id.get());
-            tracks.push(track);
-        }
-        Ok(tracks)
+    pub fn queue_window(&self, heard_at_most: u32, ahead_at_most: u32) -> Result<QueueWindow> {
+        let player = self.playing.player()?;
+        let rows = player.queued().rows;
+        let shown = Shown::around(
+            player.state().queue_position,
+            rows.len(),
+            heard_at_most as usize,
+            ahead_at_most as usize,
+        );
+        let tracks = self.tracks_of_rows(
+            &rows
+                .iter()
+                .skip(shown.first)
+                .take(shown.rows)
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(QueueWindow {
+            first: shown.first as u32,
+            total: rows.len() as u32,
+            tracks,
+        })
     }
 
     pub fn load(&self, ids: Vec<u64>, start_at: u32, autoplay: bool) -> Result<()> {
@@ -641,24 +688,25 @@ impl MobilePlayer {
         }
         let zoned = self.playing.zoned(zone.id)?;
         let mut saved = zoned.saved.lock();
-        let (place, rows, rate) = {
+        let (place, queue, rate) = {
             let state = zone.player.state();
             let queue = zone.player.queued();
             let Some(place) = place_to_save(&state, &queue.rows, queue.revision) else {
                 return Ok(());
             };
             let rate = state.current.map(|track| track.source.rate.hz());
-            (place, queue.rows, rate)
+            (place, queue, rate)
         };
         if saved.as_ref() == Some(&place) {
             return Ok(());
         }
-        let served_playing = rows
+        let served_playing = queue
+            .rows
             .get(place.row as usize)
             .is_some_and(|item| served::Served::names(&item.location));
         if saved
             .as_ref()
-            .is_some_and(|saved| saved.revision == place.revision)
+            .is_some_and(|saved| saved.arranged_as(&place))
         {
             self.catalog
                 .save_place_of(zone.id, place.row, place.position_ms)?;
@@ -666,46 +714,41 @@ impl MobilePlayer {
                 self.catalog.keep_served_rate_of(zone.id, place.row, rate)?;
             }
         } else {
-            let uris = rows
+            let uris = queue
+                .rows
                 .iter()
                 .filter(|item| !served::Served::names(&item.location))
                 .map(|item| document_uri(&item.location))
                 .collect::<Result<Vec<_>>>()?;
             let mut ids = self.catalog.ids_held_at(&uris)?.into_iter();
-            let mut passed_before_the_place: u32 = 0;
-            let mut the_place_passed_over = false;
-            let mut passed_over_any = false;
-            let kept = rows
-                .iter()
-                .enumerate()
-                .filter_map(|(at, item)| {
-                    if served::Served::names(&item.location) {
-                        return Some(catalog::KeptRow::Served(catalog::KeptServed {
-                            song: self.served.song_at(&item.location),
-                            rate: rate.filter(|_| at == place.row as usize),
-                        }));
-                    }
-                    let held = ids.next().flatten();
-                    if held.is_none() {
-                        passed_over_any = true;
-                        match at.cmp(&(place.row as usize)) {
-                            std::cmp::Ordering::Less => passed_before_the_place += 1,
-                            std::cmp::Ordering::Equal => the_place_passed_over = true,
-                            std::cmp::Ordering::Greater => {}
-                        }
-                    }
-                    held.map(catalog::KeptRow::Document)
-                })
-                .collect::<Vec<_>>();
-            let row = place.row.saturating_sub(passed_before_the_place);
-            let position_ms = if the_place_passed_over {
+            let loaded = queue.rows.in_load_order();
+            let arranged = Arranged {
+                rows: queue
+                    .rows
+                    .iter()
+                    .zip(loaded)
+                    .map(|(item, loaded)| Laid { row: item, loaded })
+                    .collect(),
+                row: place.row as usize,
+                shuffle: place.shuffle,
+                next: queue.next,
+            };
+            let (kept, passed) = arranged.retained(|at, item| {
+                if served::Served::names(&item.location) {
+                    return Some(catalog::KeptRow::Served(catalog::KeptServed {
+                        song: self.served.song_at(&item.location),
+                        rate: rate.filter(|_| at == place.row as usize),
+                    }));
+                }
+                ids.next().flatten().map(catalog::KeptRow::Document)
+            });
+            let position_ms = if passed.the_place {
                 0
             } else {
                 place.position_ms
             };
-            self.catalog
-                .save_rows_of(zone.id, &kept, row, position_ms)?;
-            if passed_over_any {
+            self.catalog.save_rows_of(zone.id, &kept, position_ms)?;
+            if passed.any {
                 *saved = None;
                 return Ok(());
             }
@@ -715,49 +758,37 @@ impl MobilePlayer {
     }
 
     pub(crate) fn resume_saved_in(&self, zone: ZoneId) -> Result<()> {
-        let (kept, at, position) = self.catalog.resume_rows_of(zone)?;
+        let (kept, position) = self.catalog.resume_rows_of(zone)?;
         if kept.is_empty() {
             return Ok(());
         }
         let ids: Vec<u64> = kept
+            .rows
             .iter()
-            .filter_map(|row| match row {
-                catalog::KeptRow::Document(id) => Some(*id),
+            .filter_map(|laid| match laid.row {
+                catalog::KeptRow::Document(id) => Some(id),
                 catalog::KeptRow::Served(_) => None,
             })
             .collect();
         let mut tracks = self.catalog.tracks_by_id(&ids)?.into_iter();
+        let place = kept.row;
         let mut playing_rate = None;
-        let mut passed_before_the_place = 0;
-        let mut rows = Vec::with_capacity(kept.len());
-        for (row, held) in kept.into_iter().enumerate() {
+        let (resumed, _) = kept.retained(|row, held| {
             let (resumable, its_rate) = match held {
                 catalog::KeptRow::Document(_) => {
-                    let Some(track) = tracks.next() else {
-                        continue;
-                    };
-                    let Ok(location) = location(&track.uri) else {
-                        if row < at as usize {
-                            passed_before_the_place += 1;
-                        }
-                        continue;
-                    };
+                    let track = tracks.next()?;
+                    let location = location(&track.uri).ok()?;
                     (
                         Resumable {
                             location,
                             span: None,
-                            held: Some(TrackId::new(track.id)?),
+                            held: TrackId::new(track.id).ok(),
                         },
                         SampleRate::new(track.rate).ok(),
                     )
                 }
                 catalog::KeptRow::Served(served) => {
-                    let Some(location) = MediaLocation::from_uri(&served.song.uri) else {
-                        if row < at as usize {
-                            passed_before_the_place += 1;
-                        }
-                        continue;
-                    };
+                    let location = MediaLocation::from_uri(&served.song.uri)?;
                     let its_rate = served.rate.and_then(|rate| SampleRate::new(rate).ok());
                     self.served.kept(std::slice::from_ref(&served.song));
                     (
@@ -770,25 +801,42 @@ impl MobilePlayer {
                     )
                 }
             };
-            if row == at as usize {
+            if row == place {
                 playing_rate = its_rate;
             }
-            rows.push(resumable);
-        }
+            Some(resumable)
+        });
         let at_ms = if playing_rate.is_some() { position } else { 0 };
-        self.playing.send_to(
-            zone,
-            Command::Resume(Resumption {
-                rows,
-                row: (at as usize).saturating_sub(passed_before_the_place),
-                at: Frames::from_duration(
-                    Duration::from_millis(at_ms),
-                    playing_rate.unwrap_or(SampleRate::HZ_48000),
-                ),
-                ..Resumption::default()
-            }),
-        )?;
+        let at = Frames::from_duration(
+            Duration::from_millis(at_ms),
+            playing_rate.unwrap_or(SampleRate::HZ_48000),
+        );
+        self.playing
+            .send_to(zone, Command::Resume(resumed.resumption(at)))?;
         Ok(())
+    }
+
+    fn tracks_of_rows(&self, rows: &[&Arc<QueueItem>]) -> Result<Vec<Track>> {
+        let uris = rows
+            .iter()
+            .filter(|item| !served::Served::names(&item.location))
+            .map(|item| document_uri(&item.location))
+            .collect::<Result<Vec<_>>>()?;
+        let mut held = self.catalog.tracks_held_at(&uris)?.into_iter();
+        Ok(rows
+            .iter()
+            .map(|item| {
+                let mut track = if served::Served::names(&item.location) {
+                    self.served.track_of(item)
+                } else {
+                    held.next()
+                        .flatten()
+                        .unwrap_or_else(|| Track::gone(&item.location))
+                };
+                track.queue_id = Some(item.id.get());
+                track
+            })
+            .collect())
     }
 
     fn queue_track(&self, rows: &QueueRows, id: TrackId) -> Option<Track> {
@@ -818,7 +866,7 @@ impl MobilePlayer {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::{ChannelLayout, Frames, SampleFormat, StreamSpec};
+    use resonate_core::{ChannelLayout, Frames, SampleFormat, Span, StreamSpec};
     use resonate_engine::{OutputMode, SinkId, StreamVolume};
 
     use super::*;
@@ -921,6 +969,106 @@ mod tests {
             Some(harness.song('c').id)
         );
         assert_eq!(resumed.queue_index, 1);
+    }
+
+    fn arrangement(harness: &crate::harness::Harness) -> (String, String, bool, Option<Span>) {
+        let player = harness.player.playing.player().expect("an open player");
+        let queued = player.queued();
+        let named = |track: &Track| crate::harness::name_of(track);
+        let titled = |item: &QueueItem| {
+            harness
+                .songs
+                .iter()
+                .find(|song| location(&song.uri).ok().as_ref() == Some(&item.location))
+                .map_or('?', named)
+        };
+
+        (
+            harness.queued(),
+            queued
+                .in_list_order()
+                .iter()
+                .map(|item| titled(item))
+                .collect(),
+            player.state().shuffle,
+            queued.next,
+        )
+    }
+
+    #[test]
+    fn a_shuffled_queue_comes_back_shuffled_with_its_list_order_and_the_rows_played_next() {
+        let harness = crate::harness::Harness::new();
+        harness.resumed("abcd", 0, 0);
+        harness.player.set_shuffle(true).expect("shuffle on");
+        harness.settled(|snapshot| snapshot.shuffle);
+        harness
+            .player
+            .play_next(harness.ids("c"))
+            .expect("a row played next");
+        harness.settled(|snapshot| snapshot.next_count == 1);
+        let saved = arrangement(&harness);
+
+        harness.player.save().expect("a save");
+        harness.resumed("dcba", 0, 0);
+        harness
+            .player
+            .resume_saved_in(ZoneId::FIRST)
+            .expect("the saved queue resumed");
+        harness.settled(|snapshot| snapshot.shuffle && snapshot.next_count == 1);
+        let resumed = arrangement(&harness);
+
+        assert!(saved.2);
+        assert_eq!(saved.1, "acbcd");
+        assert_eq!(resumed, saved);
+    }
+
+    #[test]
+    fn a_window_of_the_queue_holds_the_rows_around_the_one_playing_and_says_where_it_begins() {
+        assert_eq!(
+            Shown::around(Some(10), 100, 3, 5),
+            Shown { first: 7, rows: 9 }
+        );
+        assert_eq!(
+            Shown::around(Some(1), 100, 3, 5),
+            Shown { first: 0, rows: 7 }
+        );
+        assert_eq!(
+            Shown::around(Some(98), 100, 3, 5),
+            Shown { first: 95, rows: 5 }
+        );
+        assert_eq!(Shown::around(None, 4, 3, 5), Shown { first: 0, rows: 4 });
+        assert_eq!(Shown::around(None, 0, 3, 5), Shown { first: 0, rows: 0 });
+    }
+
+    #[test]
+    fn the_queue_is_read_as_a_window_around_the_row_playing() {
+        let harness = crate::harness::Harness::new();
+        harness.resumed("abcd", 2, 0);
+
+        let window = harness.player.queue_window(1, 0).expect("a window");
+        let whole = harness.player.queue().expect("the queue");
+
+        assert_eq!(window.first, 1);
+        assert_eq!(window.total, 4);
+        assert_eq!(
+            window
+                .tracks
+                .iter()
+                .map(crate::harness::name_of)
+                .collect::<String>(),
+            "bc"
+        );
+        assert_eq!(
+            window
+                .tracks
+                .iter()
+                .map(|track| track.queue_id)
+                .collect::<Vec<_>>(),
+            whole[1..3]
+                .iter()
+                .map(|track| track.queue_id)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

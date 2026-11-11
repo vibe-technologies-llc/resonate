@@ -161,7 +161,7 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
     fun attempt(scope: CoroutineScope, action: suspend (MobilePlayer) -> Unit): Job =
         scope.launch {
             try {
-                action(library.native())
+                library.holding { action(it) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -174,7 +174,7 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
 
     suspend fun <T> read(action: suspend (MobilePlayer) -> T): Result<T> =
         try {
-            Result.success(action(library.native()))
+            Result.success(library.holding { action(it) })
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

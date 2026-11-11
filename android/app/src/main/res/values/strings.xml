@@ -437,6 +437,14 @@
     </plurals>
     <string name="queue_history">History</string>
     <string name="queue_up_next">Up next</string>
+    <plurals name="queue_earlier">
+        <item quantity="one">%1$d earlier song</item>
+        <item quantity="other">%1$d earlier songs</item>
+    </plurals>
+    <plurals name="queue_more">
+        <item quantity="one">%1$d more song</item>
+        <item quantity="other">%1$d more songs</item>
+    </plurals>
     <string name="queue_clear_title">Clear the queue?</string>
     <string name="queue_clear_detail">Songs up next and in your history are removed. The playing song keeps playing.</string>
     <string name="queue_clear_confirm">Clear queue</string>

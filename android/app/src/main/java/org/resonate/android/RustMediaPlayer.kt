@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.Transport
@@ -39,7 +40,8 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     private val wifi = StreamingWifi(context)
     @Volatile private var snapshot: Snapshot? = null
     private var snapshotAt = 0L
-    private var tracks = emptyList<Track>()
+    private var shown = QueueRead.EMPTY
+    private var built = emptyList<MediaItemData>()
     private var artwork: ByteArray? = null
     private var artworkKey: String? = null
     private var resumeAfterFocus = false
@@ -116,8 +118,10 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             }
         }
         scope.launch {
-            library.queue.collect {
-                tracks = it
+            library.queueRead.collectLatest { read ->
+                val items = withContext(Dispatchers.Default) { read.tracks.map { it.itemData() } }
+                shown = read
+                built = items
                 invalidateState()
             }
         }
@@ -153,29 +157,25 @@ class RustMediaPlayer(private val context: Context, private val library: Library
 
     private fun playlistOf(value: Snapshot?): List<MediaItemData> {
         val cover = artwork
+        val read = shown
         val coverIndex =
             if (cover == null) null
             else
-                value?.queueIndex?.toInt()?.takeIf { index ->
-                    val track = tracks.getOrNull(index)
+                value?.queueIndex?.toInt()?.minus(read.first)?.takeIf { index ->
+                    val track = read.tracks.getOrNull(index)
                     track != null &&
                         track.pictureKey == value.current?.pictureKey &&
                         track.pictureKey == artworkKey
                 }
         playlist
-            ?.takeIf { it.tracks === tracks && it.cover === cover && it.coverIndex == coverIndex }
+            ?.takeIf { it.built === built && it.cover === cover && it.coverIndex == coverIndex }
             ?.let {
                 return it.items
             }
         val items =
-            tracks.mapIndexed { index, track ->
-                MediaItemData.Builder((track.queueId ?: track.id).toString())
-                    .setMediaItem(track.mediaItem(cover.takeIf { index == coverIndex }))
-                    .setDurationUs(track.durationMs.toLong() * 1000)
-                    .setIsSeekable(true)
-                    .build()
-            }
-        playlist = BuiltPlaylist(tracks, cover, coverIndex, items)
+            if (coverIndex == null || coverIndex !in built.indices) built
+            else built.toMutableList().also { it[coverIndex] = read.tracks[coverIndex].itemData(cover) }
+        playlist = BuiltPlaylist(built, cover, coverIndex, items)
         return items
     }
 
@@ -210,7 +210,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             .setPlaylist(playlist)
             .setCurrentMediaItemIndex(
                 if (playlist.isEmpty()) C.INDEX_UNSET
-                else (value?.queueIndex?.toInt() ?: 0).coerceIn(playlist.indices)
+                else ((value?.queueIndex?.toInt() ?: 0) - shown.first).coerceIn(playlist.indices)
             )
             .setContentPositionMs { snapshot?.positionMs?.toLong() ?: 0L }
             .setPlayWhenReady(
@@ -248,28 +248,19 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
-        val held = library.queue.value
-        if (mediaItems.isNotEmpty() && namesTheQueueHeld(mediaItems.map { it.mediaId }, held)) {
-            library.request {
-                it.jumpToAt(startIndex.coerceIn(held.indices).toUInt(), startPositionMs.coerceAtLeast(0).toULong())
-            }
+        val held = library.queueRead.value
+        if (mediaItems.isNotEmpty() && namesTheQueueHeld(mediaItems.map { it.mediaId }, held.tracks)) {
+            val row = held.first + startIndex.coerceIn(held.tracks.indices)
+            library.request { it.jumpToAt(row.toUInt(), startPositionMs.coerceAtLeast(0).toULong()) }
             return Futures.immediateVoidFuture()
         }
 
-        val served = mediaItems.mapNotNull { servedMediaId(it.mediaId) }
-        if (served.isNotEmpty() && served.size == mediaItems.size) {
-            library.request {
-                it.loadServed(served, startIndex.coerceIn(served.indices).toUInt(), false)
-                if (startPositionMs > 0) it.seek(startPositionMs.toULong())
-            }
-            return Futures.immediateVoidFuture()
-        }
-
-        val (ids, start) = BrowseIds.playable(mediaItems.map { it.mediaId }, startIndex)
-        if (ids.isEmpty()) return Futures.immediateVoidFuture()
+        val (songs, start) =
+            BrowseIds.playable(mediaItems.map { it.mediaId }, startIndex, BrowseIds::queueSongOf)
+        if (songs.isEmpty()) return Futures.immediateVoidFuture()
 
         library.request {
-            it.load(ids, start.toUInt(), false)
+            it.loadSongs(songs, start.toUInt(), false)
             if (startPositionMs > 0) it.seek(startPositionMs.toULong())
         }
         return Futures.immediateVoidFuture()
@@ -280,7 +271,8 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         mediaItems: List<MediaItem>,
     ): ListenableFuture<*> {
         val ids = mediaItems.mapNotNull { BrowseIds.trackOf(it.mediaId) }
-        val moves = QueueEdits.appendedThenMoved(tracks.size, index, ids.size)
+        val read = shown
+        val moves = QueueEdits.appendedThenMoved(read.total, read.first + index, ids.size)
         library.request { native ->
             native.addToQueue(ids)
             moves.forEach { native.moveInQueue(it.from.toUInt(), it.to.toUInt()) }
@@ -293,7 +285,14 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         toIndex: Int,
         newIndex: Int,
     ): ListenableFuture<*> {
-        val moves = QueueEdits.rangeMoved(tracks.size, fromIndex, toIndex, newIndex)
+        val read = shown
+        val moves =
+            QueueEdits.rangeMoved(
+                read.total,
+                read.first + fromIndex,
+                read.first + toIndex,
+                read.first + newIndex,
+            )
         library.request { native ->
             moves.forEach { native.moveInQueue(it.from.toUInt(), it.to.toUInt()) }
         }
@@ -301,7 +300,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     }
 
     override fun handleRemoveMediaItems(fromIndex: Int, toIndex: Int): ListenableFuture<*> {
-        val rows = QueueEdits.rowsIn(tracks.map { it.queueId }, fromIndex, toIndex)
+        val rows = QueueEdits.rowsIn(shown.tracks.map { it.queueId }, fromIndex, toIndex)
         library.request { native -> rows.forEach { native.removeFromQueue(it) } }
         return Futures.immediateVoidFuture()
     }
@@ -311,13 +310,14 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         positionMs: Long,
         seekCommand: Int,
     ): ListenableFuture<*> {
-        val playing = snapshot?.queueIndex?.toInt()
+        val first = shown.first
+        val playing = snapshot?.queueIndex?.toInt()?.minus(first)
         val moves =
             seekCommand != Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM && mediaItemIndex != playing
         val position = positionMs.coerceAtLeast(0).toULong()
 
         library.request {
-            if (moves) it.jumpToAt(mediaItemIndex.coerceAtLeast(0).toUInt(), position)
+            if (moves) it.jumpToAt((first + mediaItemIndex.coerceAtLeast(0)).toUInt(), position)
             else it.seek(position)
         }
         return Futures.immediateVoidFuture()
@@ -360,11 +360,19 @@ class RustMediaPlayer(private val context: Context, private val library: Library
 
 @UnstableApi
 private class BuiltPlaylist(
-    val tracks: List<Track>,
+    val built: List<SimpleBasePlayer.MediaItemData>,
     val cover: ByteArray?,
     val coverIndex: Int?,
     val items: List<SimpleBasePlayer.MediaItemData>,
 )
+
+@UnstableApi
+private fun Track.itemData(cover: ByteArray? = null): SimpleBasePlayer.MediaItemData =
+    SimpleBasePlayer.MediaItemData.Builder((queueId ?: id).toString())
+        .setMediaItem(mediaItem(cover))
+        .setDurationUs(durationMs.toLong() * 1000)
+        .setIsSeekable(true)
+        .build()
 
 private data class StateKey(
     val transport: Transport,

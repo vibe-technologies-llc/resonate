@@ -94,7 +94,8 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
     var devicesOpen by rememberSaveable { mutableStateOf(false) }
     var clearing by rememberSaveable { mutableStateOf(false) }
     val handoffRows = if (queue.handoffs.isNotEmpty()) 1 else 0
-    val historyRows = if (queue.history.isNotEmpty()) 1 + queue.history.size else 0
+    val earlierRows = if (queue.history.isNotEmpty() && queue.earlier > 0) 1 else 0
+    val historyRows = if (queue.history.isNotEmpty()) 1 + earlierRows + queue.history.size else 0
     val list = rememberLazyListState()
     val selection = rememberSelection<String>()
     val rows = remember(queue) { queue.history + listOfNotNull(queue.current) + queue.upNext }
@@ -109,7 +110,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             keyOf = { rowKey(it) },
             firstIndex = { handoffRows + historyRows + currentRows + 1 },
             anchor = { queue.firstUpNext },
-            onMove = { from, to -> model.move(from, to) },
+            onMove = { from, to -> model.move(queue.first + from, queue.first + to) },
         )
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
         if (selection.active) {
@@ -198,8 +199,17 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             }
             if (queue.history.isNotEmpty()) {
                 item("history") { SectionHeader(stringResource(R.string.queue_history)) }
+                if (queue.earlier > 0) {
+                    item("earlier") {
+                        MoreRows(
+                            pluralStringResource(R.plurals.queue_earlier, queue.earlier, queue.earlier)
+                        ) {
+                            model.widen(earlier = true)
+                        }
+                    }
+                }
                 items(queue.history, key = { rowKey(it) }) { track ->
-                    val index = queue.history.indexOf(track)
+                    val index = queue.first + queue.history.indexOf(track)
                     QueueRow(model, track, onClick = { model.jump(index) }, sheets = sheets, selection = selection.row(rowKey(track)))
                 }
             }
@@ -220,7 +230,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             items(reorder.shown.filter { rowKey(it) !in standing }, key = { rowKey(it) }) { track ->
                 val key = rowKey(track)
                 val at = queue.upNext.indexOfFirst { rowKey(it) == key }
-                val absolute = queue.firstUpNext + at
+                val absolute = queue.first + queue.firstUpNext + at
                 Box(reorderable(reorder, key)) {
                     QueueRow(
                         model,
@@ -234,6 +244,13 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                             else null,
                         handle = { DragHandle(reorder, key, track.shownTitle) },
                     )
+                }
+            }
+            if (queue.later > 0) {
+                item("later") {
+                    MoreRows(pluralStringResource(R.plurals.queue_more, queue.later, queue.later)) {
+                        model.widen(earlier = false)
+                    }
                 }
             }
             item("end") { Spacer(Modifier.height(24.dp)) }
@@ -291,6 +308,13 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MoreRows(label: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Text(label)
     }
 }
 

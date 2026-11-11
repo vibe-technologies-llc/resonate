@@ -252,6 +252,12 @@ pub struct ArtistInformation {
     pub picture: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TrackPage {
+    pub tracks: Vec<Track>,
+    pub revision: u64,
+}
+
 #[uniffi::export]
 pub fn default_track_filter() -> TrackFilter {
     TrackFilter::default()
@@ -401,6 +407,23 @@ impl MobilePlayer {
         self.services
             .searching
             .filtered(&self.catalog, &filter, offset, limit)
+    }
+
+    pub fn filtered_page(
+        &self,
+        filter: TrackFilter,
+        offset: u32,
+        limit: u32,
+        pinned: Option<u64>,
+    ) -> Result<TrackPage> {
+        let walked =
+            self.services
+                .searching
+                .walked(&self.catalog, &filter, offset, limit, pinned)?;
+        Ok(TrackPage {
+            tracks: walked.tracks,
+            revision: walked.revision,
+        })
     }
 
     pub fn statistics(&self, days: u32) -> Result<LibraryStatistics> {

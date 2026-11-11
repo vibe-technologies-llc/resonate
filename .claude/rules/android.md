@@ -139,9 +139,10 @@ plays where the listener left off (checked on the emulator by force-stopping the
 `albums`, `artists`, `playlists`, `album_tracks`, `artist_tracks`, `playlist_tracks` and `filtered_tracks`
 (at most 500 songs a folder). A song is listed as `<id>@<folder id>`, so one the car picks arrives with
 the folder it was listed in and `onSetMediaItems` expands it to that folder's songs at its place, as
-the app's own tap does; a plain catalog id passes through. Every id a controller sets or adds is read
-by `BrowseIds.trackOf` (a folder song or a plain id; anything else is left out and the start index
-follows the song it named, `BrowseIds.playable`), and a song no longer in its folder (a search result
+the app's own tap does; a plain catalog id passes through. Every id a controller adds is read
+by `BrowseIds.trackOf` (a folder song or a plain id), and every id it sets by `BrowseIds.queueSongOf`
+(a served song's uri too); anything else is left out and the start index
+follows the song it named (`BrowseIds.playable`), and a song no longer in its folder (a search result
 listed under the root, a playlist past row 500) plays alone. A voice request (`requestMetadata.searchQuery`,
 or `MEDIA_PLAY_FROM_SEARCH` on `MainActivity`) plays `search_library`'s first 100 songs. Android Auto, the
 Assistant, the car-assistant and the Auto simulator connect as controllers beside the trusted ones
@@ -166,7 +167,10 @@ place, repeat, shuffle, volume or song moved, or the position jumped more than a
 the last snapshot and the time since put it (`positionJumped`: a seek or a restart within the song,
 which the system session would otherwise go on extrapolating past); the position is read live from
 the latest snapshot, so *previous* past 3 s restarts the song and the notification's bar moves, and its playlist is
-rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
+the window of the queue the repository read (`QueueRead`: `first`, `total` and the rows), its items
+built off the main thread as each read lands and only the playing row's cover set on the main
+thread, so a controller's index is the window's and `RustMediaPlayer` adds `first` back for a seek,
+an add, a move or a jump onto the rows the controller handed back. An Activity's recreation does not own or close the
 audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread, then clears the
 published snapshot, so a service made afterwards never draws the playing state the closed engine last
@@ -188,12 +192,21 @@ foreground change and the boundary's `watch_player` (registered once the engine 
 started or finished, an output change, a failure or a wait) wake it early, as on iOS. The poll catches a failing tick (a snapshot, queue read, save or listening count refused by
 a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
 ends for any other reason clears `started`, so the next retain reopens the engine. The queue is read
-only when `Snapshot.queue_revision` moved, or `catalog_revision` moved and three seconds have passed
-since the last read (`QueueReads`, as iOS's `catalogRereadAfter`), since every enrichment step, scan
-upsert and favourite moves the catalog.
-**A queued action runs only against the engine still open** (`OpenEngine`): the worker takes the
-engine before `access`, and the close takes `access` first and marks the engine closing inside it, so
-an action that lost the race is dropped instead of reaching a closed native object.
+off the poll and off `access`, by a reader of its own (`readQueues`, sent each tick's `QueueAsk` on a
+conflated channel), so pause, seek and skip never wait behind it, and as a window (`queue_window`)
+of `QueueShown`'s 50 rows heard and 200 ahead around the playing row, widened 200 at a time by the
+queue sheet's *N earlier songs* and *N more songs* rows (`widenQueue`), as iOS's `QueueParts` shows
+it; a whole queue is read only when asked (*Save queue as playlist*, `wholeQueue`). It is read
+again only when the zone, `Snapshot.queue_revision`, the playing row or the window moved, or
+`catalog_revision` moved and three seconds have passed since the last read (`QueueReads`, as iOS's
+`catalogRereadAfter`), since every enrichment step, scan upsert and favourite moves the catalog.
+**Nothing reaches a closed native object** (`OpenEngine`): every use of the engine holds it
+(`OpenEngine.run` for a queued action, under `access`; `LibraryRepository.holding` for the poll, the
+queue reader, a page walk, the lyric clock and every feature, tool and page), and the close takes
+`access`, marks the engine closing inside it, shuts it down and asks `closed`, which closes the
+native object at once where nobody holds it and otherwise when the last holder lets go. A holding
+asked once the engine is closing throws `EngineClosed`, a `CancellationException`, so a late read
+ends quietly instead of reporting a failure, and a queued action that lost the race is dropped.
 Native shutdown stops sync, then the enrichment pass
 (leaving its mark to carry on), analysis, downloads and the shared online client before releasing
 playback; a failed final listen or save is answered after the player has stopped, never in its place. Long analysis, enrichment and HTTP work run on
@@ -461,7 +474,9 @@ name) is kept by `NetworkRenderers.addReceiver` and `forgetReceiver` as `receive
 added again at `begin`.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
-next; a handle drags a row (`Reorder`, its rows counted from Up next's first row as it stood when the
+next, the window the repository read (`QueueView.first`, `total`; the header counts the whole queue
+and a jump or move adds `first`), each end a row counting the rest (`queue_earlier`, `queue_more`)
+that widens it; a handle drags a row (`Reorder`, its rows counted from Up next's first row as it stood when the
 drag began, so a song ending mid-drag moves the row dragged; a drop over a list that changed meanwhile
 shows the engine's order), sent as `queueLanding(from, to)` since the engine's
 `move_in_queue` counts the landing row before the move, so a downward drag adds one and the end is
@@ -733,7 +748,7 @@ song the scan indexed there (`keep_folder_cover`), not once a song. Albums group
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
 request. `refresh()` and `reload()` take the repository's `access` lock one 500-row page at a time
 (`pagedTracks`), so the poll and queued transport actions run between the pages of a big library's
-read, and a `reload` a newer request overtook stops at its next page. **A walk of pages is read again where the catalog moved under it** (`pagedSteadily`, also `pagedFully`): `catalog_revision` is read before and after, a moved one starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times, and each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key (`PagedSteadilyTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
+read, and a `reload` a newer request overtook stops at its next page. **A walk of the library's pages is read from one index** (`pagedPinned`, also `filteredFully`): each page after the first asks `filtered_page` with the revision the first answered, so the boundary reads it from the index the walk began on however the catalog moves meanwhile (`mobile.md`), and only a page whose pin was let go starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times; each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key. A saved search's pages (`pagedFully`) still read `catalog_revision` before and after and walk again on a moved one (`pagedSteadily`) (`PagedSteadilyTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
 another spelling, no album artist or a shared title opens its own album, and the song sheet's
 heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music files
@@ -1437,8 +1452,10 @@ Every row, card and page has *Play*, *Play next* and *Add to queue* in a menu; a
 is expanded to its songs off the main thread (`served_song_uris`, in `ServerActions`) before the
 controller or the queue is given them, since a network call must not hold the ordered worker. **A
 served song plays through the controller as a library one does**: `Playback.playServed` sets media
-items whose id is the song's uri, `RustMediaPlayer.handleSetMediaItems` reads such ids
-(`servedMediaId`, which `BrowseIds.trackOf` leaves out) and calls `load_served`. **A served row has
+items whose id is the song's uri, `RustMediaPlayer.handleSetMediaItems` reads each id as a
+`QueueSong` (`BrowseIds.queueSongOf`: a served uri, `servedMediaId`, else a library id,
+`BrowseIds.trackOf`) and calls `load_songs`, so a list another controller sets keeps its served
+rows beside its library ones. **A served row has
 id 0**, told by `Track.served` (id 0 and a uri of one of `SERVED_SCHEMES`: `subsonic:`, `jellyfin:`, `tidal:`,
 `resonate:`, `hifi-api:`, `monochrome:`); everything keyed by song id keys it by `Track.pictureKey`
 (its uri) or `Track.rowKey` (its queue row) instead, and `findTrack(0)` is nothing. A queue holding

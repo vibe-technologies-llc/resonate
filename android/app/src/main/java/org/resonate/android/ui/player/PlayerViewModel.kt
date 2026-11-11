@@ -44,9 +44,17 @@ data class QueueView(
     val current: Track?,
     val upNext: List<Track>,
     val handoffs: List<HandedOff>,
+    val first: Int = 0,
+    val total: Int = history.size + (if (current == null) 0 else 1) + upNext.size,
 ) {
     val size: Int
-        get() = history.size + (if (current == null) 0 else 1) + upNext.size
+        get() = total
+
+    val earlier: Int
+        get() = first
+
+    val later: Int
+        get() = (total - first - history.size - (if (current == null) 0 else 1) - upNext.size).coerceAtLeast(0)
 
     val firstUpNext: Int
         get() = history.size + (if (current == null) 0 else 1)
@@ -104,16 +112,19 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val queue: StateFlow<QueueView> =
-        combine(library.queue, playing, resonate.features.syncHandoffs) { rows, now, handoffs ->
+        combine(library.queueRead, playing, resonate.features.syncHandoffs) { read, now, handoffs ->
+                val rows = read.tracks
                 val currentRow = now?.track?.queueId
                 val at = rows.indexOfFirst { currentRow != null && it.queueId == currentRow }
-                if (at < 0) QueueView(emptyList(), null, rows, handoffs)
+                if (at < 0) QueueView(emptyList(), null, rows, handoffs, read.first, read.total)
                 else
                     QueueView(
                         rows.subList(0, at),
                         rows[at],
                         rows.subList(at + 1, rows.size),
                         handoffs,
+                        read.first,
+                        read.total,
                     )
             }
             .stateIn(
@@ -167,9 +178,11 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
         resonate.features.continueFrom(handoff) { resonate.playback.resume() }
     }
 
+    fun widen(earlier: Boolean) = library.widenQueue(earlier)
+
     fun saveAsPlaylist(name: String) {
-        val rows = library.queue.value.filterNot { it.served }.map { it.id }
         resonate.attempt(viewModelScope) { native ->
+            val rows = library.wholeQueue().filterNot { it.served }.map { it.id }
             withContext(Dispatchers.IO) {
                 val id = native.createPlaylist(name)
                 if (rows.isNotEmpty()) native.addToPlaylist(id, rows)

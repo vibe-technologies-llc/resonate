@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.Track
+import org.resonate.android.nativecore.TrackFilter
+import org.resonate.android.pagedPinned
 import org.resonate.android.pagedSteadily
 import org.resonate.android.ui.Resonate
 
@@ -95,6 +97,11 @@ fun Resonate.currentRows(tracks: Flow<Loaded<List<Track>>>): Flow<Loaded<List<Tr
 
 fun pagedFully(native: MobilePlayer, page: (offset: UInt, limit: UInt) -> List<Track>): List<Track> =
     pagedSteadily(PAGE_ROWS, native::catalogRevision, Track::id, { true }, page)
+
+fun filteredFully(native: MobilePlayer, filter: TrackFilter): List<Track> =
+    pagedPinned(PAGE_ROWS, Track::id, { true }) { offset, limit, pinned ->
+        native.filteredPage(filter, offset, limit, pinned).let { it.tracks to it.revision }
+    }
 
 fun Resonate.playInOrder(tracks: List<Track>, index: Int = 0) {
     if (tracks.isEmpty()) return

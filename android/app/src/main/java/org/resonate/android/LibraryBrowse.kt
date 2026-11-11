@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.CollectionOrder
 import org.resonate.android.nativecore.MobilePlayer
+import org.resonate.android.nativecore.QueueSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.defaultTrackFilter
 
@@ -97,11 +98,16 @@ object BrowseIds {
 
     fun trackOf(id: String): ULong? = songOf(id)?.first ?: id.toULongOrNull()
 
-    fun playable(ids: List<String>, start: Int): Pair<List<ULong>, Int> {
-        val read = ids.map(::trackOf)
-        val kept = read.filterNotNull()
+    fun playable(ids: List<String>, start: Int): Pair<List<ULong>, Int> = playable(ids, start, ::trackOf)
 
-        val before = read.take(start.coerceAtLeast(0)).count { it != null }
+    fun queueSongOf(id: String): QueueSong? =
+        servedMediaId(id)?.let { QueueSong.Served(it) } ?: trackOf(id)?.let { QueueSong.Library(it) }
+
+    fun <T : Any> playable(ids: List<String>, start: Int, read: (String) -> T?): Pair<List<T>, Int> {
+        val readIds = ids.map(read)
+        val kept = readIds.filterNotNull()
+
+        val before = readIds.take(start.coerceAtLeast(0)).count { it != null }
         return kept to before.coerceAtMost((kept.size - 1).coerceAtLeast(0))
     }
 }
@@ -179,7 +185,7 @@ class LibraryBrowse(private val context: Context, private val library: LibraryRe
             ?: item.buildUpon().setMediaId(track.toString()).build()
 
     private suspend fun <T> reading(read: (MobilePlayer) -> T): T =
-        withContext(Dispatchers.IO) { read(library.native()) }
+        withContext(Dispatchers.IO) { library.holding { read(it) } }
 
     private fun titled(node: BrowseNode): MediaItem? =
         when (node) {
