@@ -1,16 +1,16 @@
 use std::{collections::HashMap, time::Duration};
 
-use resonate_core::{TrackId, Volume};
+use resonate_core::{TrackId, Volume, ZoneId};
 use resonate_engine::{Placement, Until};
 use resonate_library::{Library, PlaylistName};
-use resonate_mpris::{PlaybackStatus, Queueing, Seeking};
+use resonate_mpris::{PlaybackStatus, Queueing, Seeking, ZoneAsked};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
     Error, Result,
     catalog::{self, Wanted},
-    controlling::Controlling,
+    controlling::{Controlling, Reach},
     written::{self, compact, percent, seconds},
 };
 
@@ -52,6 +52,87 @@ pub struct Adding {
     pub wanted: Wanted,
     pub next: bool,
     pub play: bool,
+}
+
+pub(crate) fn player_in(
+    players: &dyn Reach,
+    zone: Option<&ZoneAsked>,
+) -> Result<Box<dyn Controlling>> {
+    match zone {
+        Some(zone) => players.zoned(zone),
+        None => players.player(),
+    }
+}
+
+pub(crate) fn zones(players: &dyn Reach) -> Result<Value> {
+    let mut read: Vec<(Option<ZoneId>, Value)> = players
+        .zones()?
+        .iter()
+        .filter_map(|zone| match zone_standing(&**zone) {
+            Ok(standing) => Some((zone.zone_number(), standing)),
+            Err(error) => {
+                tracing::debug!(
+                    %error,
+                    name = %zone.name(),
+                    "a zone stopped answering while it was being listed"
+                );
+                None
+            }
+        })
+        .collect();
+    read.sort_by_key(|(number, _)| *number);
+
+    Ok(json!({
+        "zones": read.into_iter().map(|(_, standing)| standing).collect::<Vec<_>>(),
+    }))
+}
+
+fn zone_standing(zone: &dyn Controlling) -> Result<Value> {
+    let mut standing = zone_named(zone);
+    let device = zone.device().unwrap_or_else(|unread| {
+        tracing::debug!(%unread, "a zone too old to name its device was listed without one");
+        None
+    });
+    let reading = compact(json!({
+        "device": device,
+        "status": zone.playback()?.map(PlaybackStatus::as_str),
+        "track": zone.metadata()?.as_ref().map(written::row),
+        "rows": zone.queued()?.len(),
+    }));
+    if let (Value::Object(fields), Value::Object(read)) = (&mut standing, reading) {
+        fields.extend(read);
+    }
+    Ok(standing)
+}
+
+fn zone_named(zone: &dyn Controlling) -> Value {
+    compact(json!({
+        "zone": zone.zone_number().map(ZoneId::get),
+        "name": zone.zone().ok(),
+        "player": zone.name(),
+    }))
+}
+
+pub(crate) fn move_playback(
+    players: &dyn Reach,
+    from: Option<&ZoneAsked>,
+    to: &ZoneAsked,
+) -> Result<Value> {
+    let leaving = player_in(players, from)?;
+    let taking = players.zoned(to)?;
+    let target = taking
+        .zone_number()
+        .ok_or_else(|| Error::NoSuchZone { zone: to.clone() })?;
+    if leaving.name() == taking.name() {
+        return Err(Error::MovedToItself { zone: target });
+    }
+
+    leaving.hand_over(target)?;
+
+    Ok(json!({
+        "from": zone_named(&*leaving),
+        "to": zone_named(&*taking),
+    }))
 }
 
 pub(crate) fn now_playing(player: &dyn Controlling) -> Result<Value> {
@@ -177,7 +258,7 @@ fn positions_in(order: &[TrackId]) -> HashMap<TrackId, usize> {
 }
 
 pub(crate) fn add(player: &dyn Controlling, library: &Library, adding: &Adding) -> Result<Value> {
-    let rows = catalog::wanted_rows(library, &adding.wanted)?;
+    let rows = catalog::rows_played(library, &adding.wanted)?;
     let before = player.queued()?.len();
 
     let queued = player

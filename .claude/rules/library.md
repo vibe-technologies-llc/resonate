@@ -500,9 +500,22 @@ rows read via `Player::media` like any unscanned row.
   copy forgotten, deleted or folded takes the choice with it, and an organise or a followed move,
   which keep the row's id, keep it. `Library::choose_version` refuses an unheld row
   (`Error::UnknownTrack`) and treats the row itself as forgetting; `forget_the_version_chosen`,
-  `versions_chosen`, `versions_chosen_among` (the choices of the tracks asked for alone, which the window reads for the rows it sends), `version_chosen_for` read and drop it. The window plays a row as its version
-  (`ui.md`'s *Find another version*)
-  (`a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_track`,
+  `versions_chosen`, `versions_chosen_among` (the choices of the tracks asked for alone), `version_chosen_for` read and drop it.
+  **Every caller that queues catalog rows plays a song as its version**: `Library::chosen_among`
+  reads the choices of the rows about to be queued alone, with the song's and the held copy's rows,
+  into a `Chosen`; `Chosen::in_place_of(track, location, span)` answers the `Played` (`Held` with the
+  copy's id and `Cut`, or `Served` with its location) only where the row is still that song's file
+  and cut, so a row the queue minted apart for a file of the same id is left alone. The library sees
+  no queue, so each caller maps its own rows: the window (`ui.md`'s *Find another version*), the
+  binary's `versions::played_as_chosen` (`resonate play`, `resonate playlist`, `queue --playlist`,
+  files the window opens with, and a playlist activated over the bus, which `play_playlist` reaches),
+  and MCP's `add_to_queue` (`catalog::rows_played`). A served version is queued under an id minted
+  beside the rows. A playlist keeps the song itself: only a queue swaps it. The phones' catalog has no
+  `versions_chosen`, so nothing there swaps
+  (`a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_the_song`,
+  `a_song_with_a_version_chosen_is_played_as_that_version_from_the_terminal_and_a_playlist`,
+  `a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_a_playlist`,
+  `a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_track`,
   `a_catalog_from_before_versions_were_chosen_keeps_its_tracks_and_gains_the_table`).
 - **Music filters narrow listings, keep the catalog whole.** `MusicFilters` = supported extension
   selection + `MinimumLength` bounded to ten minutes. `Library::filter_music` sets it for this

@@ -1,7 +1,7 @@
 use resonate_core::TrackId;
 use resonate_library::{
-    AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Library, PlaylistName,
-    PlaylistOrder, SortOrder, TrackQuery, Window,
+    AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Library, Played, PlaylistName,
+    PlaylistOrder, SortOrder, Track, TrackQuery, Window,
 };
 use resonate_mpris::utc_stamp;
 use serde_json::{Value, json};
@@ -19,29 +19,44 @@ pub enum Wanted {
 }
 
 pub(crate) fn wanted_rows(library: &Library, wanted: &Wanted) -> Result<Vec<Row>> {
+    Ok(wanted_tracks(library, wanted)?
+        .into_iter()
+        .map(|track| (track.location, track.span))
+        .collect())
+}
+
+pub(crate) fn rows_played(library: &Library, wanted: &Wanted) -> Result<Vec<Row>> {
+    let tracks = wanted_tracks(library, wanted)?;
+    let ids: Vec<TrackId> = tracks.iter().map(|track| track.id).collect();
+    let chosen = library.chosen_among(&ids)?;
+
+    Ok(tracks
+        .into_iter()
+        .map(
+            |track| match chosen.in_place_of(track.id, &track.location, track.span) {
+                Some(Played::Held { cut, .. }) => (cut.location.clone(), cut.span),
+                Some(Played::Served(location)) => (location.clone(), None),
+                None => (track.location, track.span),
+            },
+        )
+        .collect())
+}
+
+fn wanted_tracks(library: &Library, wanted: &Wanted) -> Result<Vec<Track>> {
     match wanted {
         Wanted::Tracks(ids) => ids
             .iter()
-            .map(|id| {
-                library
-                    .track(*id)?
-                    .map(|track| (track.location, track.span))
-                    .ok_or(Error::NoSuchTrack { track: *id })
-            })
+            .map(|id| library.track(*id)?.ok_or(Error::NoSuchTrack { track: *id }))
             .collect(),
         Wanted::Matching { query, most } => {
             let sort = SortOrder::AlbumThenTrack;
-            let matched = library.tracks(&TrackQuery {
+            Ok(library.tracks(&TrackQuery {
                 text: Some(query.clone()),
                 sort,
                 reading: sort.reads(),
                 limit: Some(*most),
                 ..TrackQuery::default()
-            })?;
-            Ok(matched
-                .into_iter()
-                .map(|track| (track.location, track.span))
-                .collect())
+            })?)
         }
     }
 }

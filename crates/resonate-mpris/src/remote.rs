@@ -239,6 +239,12 @@ impl Running {
         self.peer.zone()
     }
 
+    pub fn device(&self) -> Result<Option<String>> {
+        let device = self.peer.device()?;
+
+        Ok(Some(device).filter(|device| !device.is_empty()))
+    }
+
     pub fn standing(&self) -> Result<Standing> {
         let playback = self.playback()?;
         let playing = self.peer.metadata()?;

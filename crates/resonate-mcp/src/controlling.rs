@@ -1,10 +1,10 @@
 use std::{cell::RefCell, time::Duration};
 
-use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume};
+use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume, ZoneId};
 use resonate_engine::{Asleep, Until};
 use resonate_mpris::{
     Described, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Queueing, Running, Seeking,
-    Session,
+    Session, ZoneAsked,
 };
 
 use crate::{Error, Result};
@@ -57,10 +57,22 @@ pub trait Controlling {
     fn sleep(&self) -> resonate_mpris::Result<Option<Asleep>>;
 
     fn set_sleep(&self, until: Option<Until>) -> resonate_mpris::Result<()>;
+
+    fn zone_number(&self) -> Option<ZoneId>;
+
+    fn zone(&self) -> resonate_mpris::Result<String>;
+
+    fn device(&self) -> resonate_mpris::Result<Option<String>>;
+
+    fn hand_over(&self, to: ZoneId) -> resonate_mpris::Result<()>;
 }
 
 pub trait Reach {
     fn player(&self) -> Result<Box<dyn Controlling>>;
+
+    fn zones(&self) -> Result<Vec<Box<dyn Controlling>>>;
+
+    fn zoned(&self, asked: &ZoneAsked) -> Result<Box<dyn Controlling>>;
 }
 
 #[derive(Default)]
@@ -85,13 +97,11 @@ impl OnTheBus {
         };
         Ok(Box::new(found))
     }
-}
 
-impl Reach for OnTheBus {
-    fn player(&self) -> Result<Box<dyn Controlling>> {
+    fn within<T>(&self, reach: impl Fn(&Session) -> Result<T>) -> Result<T> {
         let kept = self.session.borrow().clone();
         if let Some(session) = kept {
-            match self.found_in(&session) {
+            match reach(&session) {
                 Err(Error::Mpris(_)) => {
                     self.session.take();
                 }
@@ -100,11 +110,35 @@ impl Reach for OnTheBus {
         }
 
         let session = Session::open()?;
-        let reached = self.found_in(&session);
+        let reached = reach(&session);
         if !matches!(reached, Err(Error::Mpris(_))) {
             *self.session.borrow_mut() = Some(session);
         }
         reached
+    }
+}
+
+impl Reach for OnTheBus {
+    fn player(&self) -> Result<Box<dyn Controlling>> {
+        self.within(|session| self.found_in(session))
+    }
+
+    fn zones(&self) -> Result<Vec<Box<dyn Controlling>>> {
+        self.within(|session| {
+            Ok(Running::listed_in(session)?
+                .into_iter()
+                .map(|running| Box::new(running) as Box<dyn Controlling>)
+                .collect())
+        })
+    }
+
+    fn zoned(&self, asked: &ZoneAsked) -> Result<Box<dyn Controlling>> {
+        self.within(|session| {
+            let found = Running::zoned_in(session, asked)?.ok_or_else(|| Error::NoSuchZone {
+                zone: asked.clone(),
+            })?;
+            Ok(Box::new(found) as Box<dyn Controlling>)
+        })
     }
 }
 
@@ -199,5 +233,21 @@ impl Controlling for Running {
 
     fn set_sleep(&self, until: Option<Until>) -> resonate_mpris::Result<()> {
         Running::set_sleep(self, until)
+    }
+
+    fn zone_number(&self) -> Option<ZoneId> {
+        Running::zone_number(self)
+    }
+
+    fn zone(&self) -> resonate_mpris::Result<String> {
+        Running::zone(self)
+    }
+
+    fn device(&self) -> resonate_mpris::Result<Option<String>> {
+        Running::device(self)
+    }
+
+    fn hand_over(&self, to: ZoneId) -> resonate_mpris::Result<()> {
+        Running::hand_over(self, to)
     }
 }

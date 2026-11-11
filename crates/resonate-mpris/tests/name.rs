@@ -230,6 +230,10 @@ impl Host for Zoned {
     fn zone(&self) -> ZoneName {
         ZoneName::given("Study").expect("a name")
     }
+
+    fn device(&self) -> Option<String> {
+        Some("Desk speakers".to_owned())
+    }
 }
 
 #[test]
@@ -264,6 +268,9 @@ fn a_second_zone_is_a_player_of_its_own_named_for_its_number_and_found_by_number
                 .expect("the zone says how it stands")
                 .zone
         });
+    let device = Running::zoned_in(&session, &ZoneAsked::Numbered(second))
+        .expect("the bus lists its players")
+        .map(|running| running.device().expect("the zone names its device"));
 
     assert!(
         named == "org.mpris.MediaPlayer2.resonate.zone2"
@@ -277,5 +284,6 @@ fn a_second_zone_is_a_player_of_its_own_named_for_its_number_and_found_by_number
     assert_eq!(by_number.as_deref(), Some(named.as_str()));
     assert_eq!(by_name.as_deref(), Some(named.as_str()));
     assert_eq!(standing, Some(Some("Study".to_owned())));
+    assert_eq!(device, Some(Some("Desk speakers".to_owned())));
     mpris.shutdown();
 }

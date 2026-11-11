@@ -1,13 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use ahash::AHashMap;
 use gpui::{Context, Pixels, Point};
 use resonate_core::{
     MediaLocation, SampleFormat, TrackId, folded_letters,
     titles::{self, Rating},
 };
 use resonate_engine::{QueueItem, Unclaimed};
-use resonate_library::{Codec, Track, Version, codec_named};
+use resonate_library::{Chosen, Codec, Played, Track, Version, codec_named};
 
 use crate::{
     ResonateApp, format,
@@ -342,53 +341,27 @@ fn versions_menu(
     menu
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum Played {
-    Held(QueueItem),
-    Served(MediaLocation),
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Chosen {
-    for_track: AHashMap<TrackId, (Track, Played)>,
-}
-
-impl Chosen {
-    pub(crate) fn of(versions: Vec<(Track, Played)>) -> Self {
-        Self {
-            for_track: versions
-                .into_iter()
-                .map(|(track, played)| (track.id, (track, played)))
-                .collect(),
-        }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.for_track.is_empty()
-    }
-
-    pub(crate) fn in_place_of(
-        &self,
-        items: Vec<QueueItem>,
-        minting: &mut Unclaimed,
-    ) -> Vec<QueueItem> {
-        items
-            .into_iter()
-            .map(|item| match self.for_track.get(&item.id) {
-                Some((track, played))
-                    if track.location == item.location && track.span == item.span =>
-                {
-                    match played {
-                        Played::Held(copy) => copy.clone(),
-                        Played::Served(location) => {
-                            QueueItem::whole(minting.mint(), location.clone())
-                        }
-                    }
+pub(crate) fn played_as_chosen(
+    chosen: &Chosen,
+    items: Vec<QueueItem>,
+    minting: &mut Unclaimed,
+) -> Vec<QueueItem> {
+    items
+        .into_iter()
+        .map(
+            |item| match chosen.in_place_of(item.id, &item.location, item.span) {
+                Some(Played::Held { track, cut }) => QueueItem {
+                    id: *track,
+                    location: cut.location.clone(),
+                    span: cut.span,
+                },
+                Some(Played::Served(location)) => {
+                    QueueItem::whole(minting.mint(), location.clone())
                 }
-                _ => item,
-            })
-            .collect()
-    }
+                None => item,
+            },
+        )
+        .collect()
 }
 
 impl RootView {
@@ -528,7 +501,7 @@ impl RootView {
         let queue = self.player.read(cx).queue();
         let beside = queue.iter().filter(|_| inserting).map(AsRef::as_ref);
         let mut minting = Unclaimed::beside(beside.chain(&items));
-        chosen.in_place_of(items, &mut minting)
+        played_as_chosen(&chosen, items, &mut minting)
     }
 }
 
@@ -537,7 +510,7 @@ mod tests {
     use std::time::SystemTime;
 
     use resonate_core::{ChannelLayout, SampleRate, StreamSpec};
-    use resonate_library::Codec;
+    use resonate_library::{ChosenVersion, Codec};
 
     use super::*;
 
@@ -714,10 +687,19 @@ mod tests {
             location: track.location.clone(),
             span: track.span,
         };
-        let chosen = Chosen::of(vec![
-            (opus.clone(), Played::Held(row(&flac))),
-            (other.clone(), Played::Served(streamed.clone())),
-        ]);
+        let chosen = Chosen::of(
+            vec![
+                ChosenVersion {
+                    track: opus.id,
+                    version: Version::Held(flac.id),
+                },
+                ChosenVersion {
+                    track: other.id,
+                    version: Version::Served(streamed.clone()),
+                },
+            ],
+            &[opus.clone(), flac.clone(), other.clone()],
+        );
         let minted_apart = QueueItem {
             id: opus.id,
             location: MediaLocation::local("/elsewhere/unscanned.flac"),
@@ -726,7 +708,7 @@ mod tests {
         let items = vec![row(&opus), row(&other), minted_apart.clone()];
         let mut minting = Unclaimed::beside(&items);
 
-        let queued = chosen.in_place_of(items, &mut minting);
+        let queued = played_as_chosen(&chosen, items, &mut minting);
 
         assert_eq!(queued[0], row(&flac));
         assert_eq!(queued[1].location, streamed);

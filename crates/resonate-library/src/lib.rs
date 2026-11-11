@@ -95,7 +95,7 @@ pub fn read_a_playlist_sheet(text: &str) {
 }
 
 pub use crate::{
-    chosen::{ChosenVersion, Version},
+    chosen::{Chosen, ChosenVersion, Played, Version},
     copies::{Copies, NumberedCopy},
     db::{CatalogStamp, HiddenTracks, Library, WrittenElsewhere},
     deleted::{Deleted, Removal, Trashes},

@@ -39,10 +39,11 @@ pub enum Call {
     HandOver,
     Zone,
     Waiting,
+    Device,
 }
 
 impl Call {
-    const ALL: [Self; 25] = [
+    const ALL: [Self; 26] = [
         Self::CanRaise,
         Self::Told,
         Self::Seek,
@@ -68,6 +69,7 @@ impl Call {
         Self::HandOver,
         Self::Zone,
         Self::Waiting,
+        Self::Device,
     ];
 
     fn of(tag: u8) -> Option<Self> {
@@ -200,6 +202,7 @@ pub(crate) enum Request {
     HandOver(u32),
     Zone,
     Waiting,
+    Device,
 }
 
 impl Request {
@@ -230,6 +233,7 @@ impl Request {
             Self::HandOver(_) => Call::HandOver,
             Self::Zone => Call::Zone,
             Self::Waiting => Call::Waiting,
+            Self::Device => Call::Device,
         }
     }
 
@@ -247,7 +251,8 @@ impl Request {
             | Self::PlayOrder
             | Self::Sleep
             | Self::Zone
-            | Self::Waiting => {}
+            | Self::Waiting
+            | Self::Device => {}
             Self::Told(act) => out.u8(*act as u8),
             Self::Seek(micros) => out.i64(*micros),
             Self::SetPosition { track, micros } => {
@@ -351,6 +356,7 @@ impl Request {
             Call::HandOver => Self::HandOver(reader.u32()?),
             Call::Zone => Self::Zone,
             Call::Waiting => Self::Waiting,
+            Call::Device => Self::Device,
         };
         reader.end()?;
         Ok(request)
@@ -943,6 +949,7 @@ mod tests {
             Request::HandOver(2),
             Request::Zone,
             Request::Waiting,
+            Request::Device,
         ]
     }
 

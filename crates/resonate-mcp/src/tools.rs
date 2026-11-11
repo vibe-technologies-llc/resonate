@@ -1,9 +1,9 @@
 use std::{fmt, num::NonZeroU64, path::PathBuf, time::Duration};
 
-use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, Span, TrackId, Volume};
+use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, Span, TrackId, Volume, ZoneId};
 use resonate_engine::Until;
 use resonate_library::{Favoured, Library, PlaylistLink, ProfileLink, Upkeep, Window};
-use resonate_mpris::Seeking;
+use resonate_mpris::{Seeking, ZoneAsked};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
@@ -26,6 +26,8 @@ pub(crate) const TOP_BY_DEFAULT: usize = 10;
 pub(crate) const MISSING_BY_DEFAULT: usize = 100;
 const SECONDS_A_MINUTE: u64 = 60;
 const WHOLE: f64 = 100.0;
+const ZONE_ACTED_ON: &str = "The zone to act on, by the number or name list_zones gives it; none is \
+                             the running player.";
 
 const GRAMMAR: &str = "Words match the title, artist and album. `artist:`, `album:`, `title:`, \
                        `genre:` and `lyrics:` scope the words after them; `year:1970-1979`, \
@@ -65,6 +67,8 @@ pub enum Tool {
     RemoveFromQueue,
     PlayPlaylist,
     SleepTimer,
+    Zones,
+    MovePlayback,
     StartScan,
     ForgetFolder,
     StartLookup,
@@ -74,7 +78,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 35] = [
+    pub const ALL: [Self; 37] = [
         Self::Search,
         Self::Playlists,
         Self::PlaylistTracks,
@@ -104,6 +108,8 @@ impl Tool {
         Self::RemoveFromQueue,
         Self::PlayPlaylist,
         Self::SleepTimer,
+        Self::Zones,
+        Self::MovePlayback,
         Self::StartScan,
         Self::ForgetFolder,
         Self::StartLookup,
@@ -143,6 +149,8 @@ impl Tool {
             Self::RemoveFromQueue => "remove_from_queue",
             Self::PlayPlaylist => "play_playlist",
             Self::SleepTimer => "set_sleep_timer",
+            Self::Zones => "list_zones",
+            Self::MovePlayback => "move_playback",
             Self::StartScan => "start_scan",
             Self::ForgetFolder => "forget_folder",
             Self::StartLookup => "start_lookup",
@@ -168,6 +176,7 @@ impl Tool {
                 | Self::Missing
                 | Self::NowPlaying
                 | Self::Queue
+                | Self::Zones
                 | Self::LibraryPasses
         )
     }
@@ -181,6 +190,7 @@ impl Tool {
                 | Self::UndoEdit
                 | Self::RemoveFromQueue
                 | Self::PlayPlaylist
+                | Self::MovePlayback
                 | Self::ForgetFolder
         )
     }
@@ -319,8 +329,8 @@ impl Tool {
                  search_library, playlist_tracks or favourites, or a search whose matches are \
                  queued in album order. They go after whatever is already queued to play next and \
                  before the rest of the album or playlist playing, or straight after the row \
-                 being played with next, and play starts on the first of them with play. \
-                 {GRAMMAR}"
+                 being played with next, and play starts on the first of them with play. A song \
+                 the listener chose another version of is queued as that version. {GRAMMAR}"
             ),
             Self::RemoveFromQueue => "Take one row out of the running player's queue, by the \
                                       queue_id show_queue gives it."
@@ -331,6 +341,17 @@ impl Tool {
             Self::SleepTimer => "Pause the running player after a number of minutes, at the end \
                                  of the track playing or at the end of the queue, or take a timer \
                                  away with off. Give minutes or at, not both."
+                .to_owned(),
+            Self::Zones => "List the zones playing, each a player of its own with its own queue and \
+                            device: the zone's number and name, which the other player tools take \
+                            as zone, the player it is on the session bus, the device it plays to, \
+                            whether it is playing and the track it plays."
+                .to_owned(),
+            Self::MovePlayback => "Move what one zone plays onto another, as list_zones names \
+                                   them: the other zone's queue is replaced by this one's, it \
+                                   carries on from the same row and moment, and this zone stops. \
+                                   Answers once the move has begun; list_zones or now_playing with \
+                                   the zone says where it landed."
                 .to_owned(),
             Self::StartScan => "Start reading the library's folders into its catalog, or new \
                                 folders given as roots, which are kept as library roots from \
@@ -521,7 +542,12 @@ impl Tool {
             Self::WantTracks => json!({
                 "release_track_ids": ids("Release track ids, as list_missing gives them."),
             }),
-            Self::Suggestions | Self::NowPlaying | Self::LibraryPasses => json!({}),
+            Self::Suggestions | Self::Zones | Self::LibraryPasses => json!({}),
+            Self::NowPlaying => json!({ "zone": zone(ZONE_ACTED_ON) }),
+            Self::MovePlayback => json!({
+                "zone": zone("The zone to move playback from; none is the running player."),
+                "to": zone("The zone to move it to."),
+            }),
             Self::StartScan => json!({
                 "roots": {
                     "type": "array",
@@ -574,12 +600,14 @@ impl Tool {
                     "enum": Action::ALL.map(Action::name),
                     "description": "What to do.",
                 },
+                "zone": zone(ZONE_ACTED_ON),
             }),
             Self::Seek => json!({
                 "seconds": {
                     "type": "number",
                     "description": "How far to move; negative goes back.",
                 },
+                "zone": zone(ZONE_ACTED_ON),
             }),
             Self::SetVolume => json!({
                 "percent": {
@@ -588,9 +616,11 @@ impl Tool {
                     "maximum": WHOLE,
                     "description": "The volume, from 0 for silence to 100 for full.",
                 },
+                "zone": zone(ZONE_ACTED_ON),
             }),
             Self::Queue => json!({
                 "limit": limit(QUEUED_BY_DEFAULT, "The most rows to answer with."),
+                "zone": zone(ZONE_ACTED_ON),
             }),
             Self::AddToQueue => json!({
                 "track_ids": ids("Catalog track ids, queued in the order given."),
@@ -610,14 +640,20 @@ impl Tool {
                     "default": false,
                     "description": "Start playing the first of them now.",
                 },
+                "zone": zone(ZONE_ACTED_ON),
             }),
             Self::RemoveFromQueue => json!({
                 "queue_id": {
                     "type": "string",
                     "description": "The row's queue_id, exactly as show_queue gives it.",
                 },
+                "zone": zone(ZONE_ACTED_ON),
             }),
-            Self::PlayPlaylist | Self::DiscardPlaylist => json!({
+            Self::PlayPlaylist => json!({
+                "playlist": { "type": "string", "description": "The playlist's name." },
+                "zone": zone(ZONE_ACTED_ON),
+            }),
+            Self::DiscardPlaylist => json!({
                 "playlist": { "type": "string", "description": "The playlist's name." },
             }),
             Self::SleepTimer => json!({
@@ -632,6 +668,7 @@ impl Tool {
                     "description": "Pause at the end of the track or the queue, or take the \
                                     timer away.",
                 },
+                "zone": zone(ZONE_ACTED_ON),
             }),
         };
 
@@ -660,6 +697,7 @@ impl Tool {
             Self::Seek => &["seconds"],
             Self::SetVolume => &["percent"],
             Self::RemoveFromQueue => &["queue_id"],
+            Self::MovePlayback => &["to"],
             Self::StopPass => &["pass"],
             Self::ForgetFolder => &["folder"],
             Self::Playlists
@@ -669,6 +707,7 @@ impl Tool {
             | Self::Missing
             | Self::MarkFavourite
             | Self::NowPlaying
+            | Self::Zones
             | Self::Queue
             | Self::AddToQueue
             | Self::SleepTimer
@@ -829,58 +868,72 @@ impl Tool {
                 edits::want(library, &release_tracks)
             }
             Self::NowPlaying => {
+                let zone = self.zone_in(&arguments)?;
                 let _: Nothing = self.taken(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::now_playing(&*player))
             }
             Self::Control => {
+                let zone = self.zone_in(&arguments)?;
                 let asked: Controlled = self.taken(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::control(&*player, asked.action))
             }
             Self::Seek => {
+                let zone = self.zone_in(&arguments)?;
                 let by = self.seeking(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::seek(&*player, by))
             }
             Self::SetVolume => {
+                let zone = self.zone_in(&arguments)?;
                 let volume = self.volume(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::set_volume(&*player, volume))
             }
             Self::Queue => {
+                let zone = self.zone_in(&arguments)?;
                 let asked: Limited = self.taken(arguments)?;
-                players.player().and_then(|player| {
+                transport::player_in(players, zone.as_ref()).and_then(|player| {
                     transport::queue(&*player, rows(asked.limit, QUEUED_BY_DEFAULT))
                 })
             }
             Self::AddToQueue => {
+                let zone = self.zone_in(&arguments)?;
                 let adding = self.adding(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::add(&*player, library, &adding))
             }
             Self::RemoveFromQueue => {
+                let zone = self.zone_in(&arguments)?;
                 let row = self.queue_row(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::remove(&*player, row))
             }
             Self::PlayPlaylist => {
+                let zone = self.zone_in(&arguments)?;
                 let asked: Choosing = self.taken(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::play_playlist(&*player, &asked.playlist))
             }
             Self::SleepTimer => {
+                let zone = self.zone_in(&arguments)?;
                 let until = self.sleeping(arguments)?;
-                players
-                    .player()
+                transport::player_in(players, zone.as_ref())
                     .and_then(|player| transport::set_sleep(&*player, until))
+            }
+            Self::Zones => {
+                let _: Nothing = self.taken(arguments)?;
+                transport::zones(players)
+            }
+            Self::MovePlayback => {
+                let asked: Moving = self.taken(arguments)?;
+                let from = asked
+                    .zone
+                    .map(|zone| self.zone_asked(Field("zone"), zone))
+                    .transpose()?;
+                let to = self.zone_asked(Field("to"), asked.to)?;
+                transport::move_playback(players, from.as_ref(), &to)
             }
             Self::StartScan => {
                 let asked: Scanning = self.taken(arguments)?;
@@ -922,6 +975,29 @@ impl Tool {
     ) -> std::result::Result<Asked, Refusal> {
         serde_json::from_value(arguments)
             .map_err(|source| Refusal::BadArguments { tool: self, source })
+    }
+
+    fn zone_in(self, arguments: &Value) -> std::result::Result<Option<ZoneAsked>, Refusal> {
+        let asked: Zoned = self.taken(arguments.clone())?;
+
+        asked
+            .zone
+            .map(|zone| self.zone_asked(Field("zone"), zone))
+            .transpose()
+    }
+
+    fn zone_asked(self, field: Field, zone: ZoneArg) -> std::result::Result<ZoneAsked, Refusal> {
+        match zone {
+            ZoneArg::Numbered(number) => u32::try_from(number)
+                .ok()
+                .and_then(ZoneId::new)
+                .map(ZoneAsked::Numbered)
+                .ok_or(Refusal::OutOfRange { tool: self, field }),
+            ZoneArg::Named(name) if name.trim().is_empty() => {
+                Err(Refusal::Unreadable { tool: self, field })
+            }
+            ZoneArg::Named(name) => Ok(ZoneAsked::read(&name)),
+        }
     }
 
     fn profile(self, text: &str) -> std::result::Result<ProfileLink, Refusal> {
@@ -1151,12 +1227,38 @@ fn ids(description: &str) -> Value {
     })
 }
 
+fn zone(description: &str) -> Value {
+    json!({
+        "type": ["integer", "string"],
+        "minimum": 1,
+        "description": description,
+    })
+}
+
 fn rows(asked: Option<usize>, default: usize) -> usize {
     asked.unwrap_or(default).clamp(1, MOST_ROWS)
 }
 
 #[derive(Deserialize)]
 struct Nothing {}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ZoneArg {
+    Numbered(u64),
+    Named(String),
+}
+
+#[derive(Deserialize)]
+struct Zoned {
+    zone: Option<ZoneArg>,
+}
+
+#[derive(Deserialize)]
+struct Moving {
+    zone: Option<ZoneArg>,
+    to: ZoneArg,
+}
 
 #[derive(Deserialize)]
 struct Searching {

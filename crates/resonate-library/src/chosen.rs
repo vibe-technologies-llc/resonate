@@ -1,9 +1,10 @@
 use std::time::SystemTime;
 
-use resonate_core::{MediaLocation, TrackId};
+use ahash::AHashMap;
+use resonate_core::{FrameSpan, MediaLocation, TrackId};
 use rusqlite::{Connection, OptionalExtension, Transaction, params, params_from_iter};
 
-use crate::{Error, Result, StoreOp, store};
+use crate::{Cut, Error, Result, StoreOp, Track, store};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Version {
@@ -15,6 +16,55 @@ pub enum Version {
 pub struct ChosenVersion {
     pub track: TrackId,
     pub version: Version,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Played {
+    Held { track: TrackId, cut: Cut },
+    Served(MediaLocation),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Chosen {
+    for_track: AHashMap<TrackId, (Cut, Played)>,
+}
+
+impl Chosen {
+    pub fn is_empty(&self) -> bool {
+        self.for_track.is_empty()
+    }
+
+    pub fn in_place_of(
+        &self,
+        track: TrackId,
+        location: &MediaLocation,
+        span: Option<FrameSpan>,
+    ) -> Option<&Played> {
+        self.for_track
+            .get(&track)
+            .filter(|(held, _)| held.location == *location && held.span == span)
+            .map(|(_, played)| played)
+    }
+
+    pub fn of(versions: Vec<ChosenVersion>, held: &[Track]) -> Self {
+        let held: AHashMap<TrackId, &Track> = held.iter().map(|track| (track.id, track)).collect();
+        let for_track = versions
+            .into_iter()
+            .filter_map(|chosen| {
+                let song = Cut::of(held.get(&chosen.track)?);
+                let played = match chosen.version {
+                    Version::Held(copy) => Played::Held {
+                        track: copy,
+                        cut: Cut::of(held.get(&copy)?),
+                    },
+                    Version::Served(location) => Played::Served(location),
+                };
+                Some((chosen.track, (song, played)))
+            })
+            .collect();
+
+        Self { for_track }
+    }
 }
 
 const THE_TRACK_HELD: &str = "SELECT 1 FROM tracks WHERE id = ?1";

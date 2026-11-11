@@ -1,8 +1,8 @@
 use std::{fmt, io, path::PathBuf, result};
 
-use resonate_core::TrackId;
+use resonate_core::{TrackId, ZoneId};
 use resonate_library::PlaylistName;
-use resonate_mpris::PlayerName;
+use resonate_mpris::{PlayerName, ZoneAsked};
 use thiserror::Error;
 
 use crate::{passes::Pass, prompts::Prompt, tools::Tool};
@@ -27,6 +27,12 @@ pub enum Error {
 
     #[error("no player named {name} is on the session bus")]
     NoSuchPlayer { name: PlayerName },
+
+    #[error("no zone numbered or named {zone} is on the session bus")]
+    NoSuchZone { zone: ZoneAsked },
+
+    #[error("zone {zone} is the zone playback would move from")]
+    MovedToItself { zone: ZoneId },
 
     #[error("no playlist named {0}")]
     NoSuchPlaylist(PlaylistName),

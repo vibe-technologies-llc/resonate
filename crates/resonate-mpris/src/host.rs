@@ -109,6 +109,10 @@ pub trait Host: Send + Sync + 'static {
         ZoneName::first_given_to(ZoneId::FIRST)
     }
 
+    fn device(&self) -> Option<String> {
+        None
+    }
+
     fn desktop_entry(&self) -> Option<String> {
         None
     }

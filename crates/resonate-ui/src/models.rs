@@ -4577,60 +4577,13 @@ impl LibraryModel {
             .is_some()
     }
 
-    pub(crate) fn chosen_among(
-        &self,
-        items: &[resonate_engine::QueueItem],
-    ) -> crate::views::better::Chosen {
-        use crate::views::better::{Chosen, Played};
+    pub(crate) fn chosen_among(&self, items: &[QueueItem]) -> resonate_library::Chosen {
+        let queued: Vec<TrackId> = items.iter().map(|item| item.id).collect();
 
-        let queued: Vec<TrackId> = items
-            .iter()
-            .map(|item| item.id)
-            .collect::<AHashSet<_>>()
-            .into_iter()
-            .collect();
-        let versions = match self.library.versions_chosen_among(&queued) {
-            Ok(versions) => versions,
-            Err(error) => {
-                tracing::warn!(%error, "the versions chosen could not be read");
-                return Chosen::default();
-            }
-        };
-        if versions.is_empty() {
-            return Chosen::default();
-        }
-
-        let mut wanted: Vec<TrackId> = versions.iter().map(|chosen| chosen.track).collect();
-        wanted.extend(versions.iter().filter_map(|chosen| match chosen.version {
-            resonate_library::Version::Held(copy) => Some(copy),
-            resonate_library::Version::Served(_) => None,
-        }));
-        let held: AHashMap<TrackId, Track> = self
-            .held_tracks(&wanted)
-            .into_iter()
-            .map(|track| (track.id, track))
-            .collect();
-
-        Chosen::of(
-            versions
-                .into_iter()
-                .filter_map(|chosen| {
-                    let track = held.get(&chosen.track)?.clone();
-                    let played = match chosen.version {
-                        resonate_library::Version::Held(copy) => Played::Held({
-                            let copy = held.get(&copy)?;
-                            resonate_engine::QueueItem {
-                                id: copy.id,
-                                location: copy.location.clone(),
-                                span: copy.span,
-                            }
-                        }),
-                        resonate_library::Version::Served(location) => Played::Served(location),
-                    };
-                    Some((track, played))
-                })
-                .collect(),
-        )
+        self.library
+            .chosen_among(&queued)
+            .inspect_err(|error| tracing::warn!(%error, "the versions chosen could not be read"))
+            .unwrap_or_default()
     }
 
     pub fn standing_of(

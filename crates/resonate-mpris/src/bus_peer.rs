@@ -34,6 +34,7 @@ const RELOAD: &str = "Reload";
 const HAND_OVER: &str = "HandOver";
 const PLAYING_NEXT: &str = "PlayingNext";
 const ZONE: &str = "Zone";
+const DEVICE: &str = "Device";
 const PLAY_ORDER: &str = "PlayOrder";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
@@ -306,6 +307,12 @@ impl Peer for BusPeer {
     fn zone(&self) -> Result<String> {
         self.proxy(OWN_INTERFACE)?
             .get_property(ZONE)
+            .map_err(|source| Error::bus(BusOp::Read, source))
+    }
+
+    fn device(&self) -> Result<String> {
+        self.proxy(OWN_INTERFACE)?
+            .get_property(DEVICE)
             .map_err(|source| Error::bus(BusOp::Read, source))
     }
 

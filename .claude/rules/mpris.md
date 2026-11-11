@@ -154,7 +154,10 @@ connection, poll thread, notifications and idle inhibit, and only the first regi
 (`answers_headsets`). **`Identity` names the zone once there are several** (`Resonate (Study)`, the
 binary's `identity_of`; `Resonate` alone with one zone) and `org.resonate.Player1`'s `Zone` (`s`)
 always names it (`Host::zone`, the first zone's default name where the host has none); the poll diffs
-both and announces a rename. The client finds a zone by number (`numbered`: the plain name and an
+both and announces a rename. `Device` (`s`, never announced, read when asked) names the device the
+zone plays to: the binary's `Host::device` is the description of the sink its output sounds on, else
+of the sink chosen, else of the default, and empty where none is known (`Running::device` answers
+`None` for empty; `Call::Device` on a pipe or socket). The client finds a zone by number (`numbered`: the plain name and an
 `instance` name are zone 1, a name ending `.zone<N>` is zone *N*) or by the name `Zone` reads,
 case folded (`Running::zoned`, `ZoneAsked`); `Standing::zone` is what `resonate players` prints
 (`a_second_zone_is_a_player_of_its_own_named_for_its_number_and_found_by_number_or_name`). The

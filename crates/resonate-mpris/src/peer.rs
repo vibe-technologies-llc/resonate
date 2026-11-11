@@ -73,6 +73,8 @@ pub(crate) trait Peer: Send + Sync {
 
     fn zone(&self) -> Result<String>;
 
+    fn device(&self) -> Result<String>;
+
     fn waiting(&self) -> Result<usize>;
 }
 
@@ -286,6 +288,10 @@ impl Peer for PipePeer {
 
     fn zone(&self) -> Result<String> {
         self.ask(&Request::Zone)?.text(Call::Zone)
+    }
+
+    fn device(&self) -> Result<String> {
+        self.ask(&Request::Device)?.text(Call::Device)
     }
 
     fn waiting(&self) -> Result<usize> {
