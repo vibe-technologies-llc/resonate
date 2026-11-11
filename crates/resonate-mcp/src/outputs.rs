@@ -200,6 +200,23 @@ fn asleep() -> Value {
     )
 }
 
+fn zone_properties() -> Vec<(&'static str, Value)> {
+    vec![("zone", whole()), ("name", text()), ("player", text())]
+}
+
+fn zone_named() -> Value {
+    object(zone_properties(), &["player"])
+}
+
+fn zone() -> Value {
+    let mut properties = zone_properties();
+    properties.push(("device", text()));
+    properties.push(("status", text()));
+    properties.push(("track", row()));
+    properties.push(("rows", whole()));
+    object(properties, &["player", "rows"])
+}
+
 fn counts() -> Value {
     json!({ "type": "object", "additionalProperties": whole() })
 }
@@ -402,6 +419,11 @@ impl Tool {
             Self::SleepTimer => object(
                 vec![("player", text()), ("sleep_timer", asleep())],
                 &["player"],
+            ),
+            Self::Zones => object(vec![("zones", list(zone()))], &["zones"]),
+            Self::MovePlayback => object(
+                vec![("from", zone_named()), ("to", zone_named())],
+                &["from", "to"],
             ),
             Self::StartScan => object(
                 vec![

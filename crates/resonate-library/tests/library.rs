@@ -37,16 +37,16 @@ use resonate_library::{
     Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love,
     Loved, LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium,
     Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing,
-    Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions,
-    PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS,
-    Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal,
-    Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal,
-    Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions,
-    ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar,
-    SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
-    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault, Version, Waits, Window,
-    Wording, Written,
+    Played, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle,
+    PollOptions, PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned,
+    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
+    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery,
+    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField,
+    SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
+    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault,
+    Version, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -10385,6 +10385,68 @@ fn a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_trac
     library.choose_version(song, &Version::Served(served))?;
     assert!(library.forget_the_version_chosen(song)?);
     assert!(!library.forget_the_version_chosen(song)?);
+    Ok(())
+}
+
+#[test]
+fn a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_the_song()
+-> Result<()> {
+    let tree = Tree::new();
+    let opus = tree.write(
+        "echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+    );
+    let flac = tree.write(
+        "elsewhere/echoes.wav",
+        &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
+    );
+    let time = tree.write(
+        "time.wav",
+        &Wav::new().text(TITLE, "Time").text(ARTIST, "Ada").build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let song = library.track_at(&opus, None)?.expect("the song is held").id;
+    let copy = library.track_at(&flac, None)?.expect("the copy is held").id;
+    let other = library
+        .track_at(&time, None)?
+        .expect("the other is held")
+        .id;
+    let served = MediaLocation::from_uri("tidal:track/7").expect("a served song");
+    let song_at = MediaLocation::local(&opus);
+    let other_at = MediaLocation::local(&time);
+
+    assert!(library.chosen_among(&[song, other])?.is_empty());
+
+    library.choose_version(song, &Version::Held(copy))?;
+    library.choose_version(other, &Version::Served(served.clone()))?;
+    let chosen = library.chosen_among(&[song, other, song])?;
+
+    assert_eq!(
+        chosen.in_place_of(song, &song_at, None),
+        Some(&Played::Held {
+            track: copy,
+            cut: Cut::whole(MediaLocation::local(&flac)),
+        })
+    );
+    assert_eq!(
+        chosen.in_place_of(other, &other_at, None),
+        Some(&Played::Served(served))
+    );
+    assert_eq!(
+        chosen.in_place_of(
+            song,
+            &MediaLocation::local("/elsewhere/unscanned.wav"),
+            None
+        ),
+        None
+    );
+    assert_eq!(
+        chosen.in_place_of(copy, &MediaLocation::local(&flac), None),
+        None
+    );
+    assert!(library.chosen_among(&[copy])?.is_empty());
     Ok(())
 }
 

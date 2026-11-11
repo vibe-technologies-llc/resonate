@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, Volume};
+use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, Volume, ZoneId};
 use resonate_engine::{Asleep, Placement, Until};
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, AlbumQuery, ArtistLink, ArtistMatch, ArtistPressings,
@@ -24,7 +24,7 @@ use resonate_library::{
     StreamAsked,
 };
 use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
-use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking};
+use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking, ZoneAsked};
 use serde_json::{Value, json};
 
 const RATE: u32 = 44_100;
@@ -143,9 +143,14 @@ enum Call {
     Remove(TrackId),
     Activate(PlaylistId),
     SetSleep(Option<Until>),
+    HandOver(ZoneId),
 }
 
 struct Standing {
+    player: String,
+    zone: ZoneId,
+    zone_name: String,
+    device: Option<String>,
     rows: Vec<Described>,
     playing: Option<usize>,
     status: Option<PlaybackStatus>,
@@ -163,6 +168,10 @@ struct Standing {
 impl Default for Standing {
     fn default() -> Self {
         Self {
+            player: PLAYER.to_owned(),
+            zone: ZoneId::FIRST,
+            zone_name: "Living room".to_owned(),
+            device: None,
             rows: Vec::new(),
             playing: None,
             status: Some(PlaybackStatus::Stopped),
@@ -182,6 +191,7 @@ impl Default for Standing {
 #[derive(Clone, Default)]
 struct Fake {
     running: Option<Rc<RefCell<Standing>>>,
+    others: Vec<Rc<RefCell<Standing>>>,
 }
 
 impl Fake {
@@ -190,17 +200,31 @@ impl Fake {
         (
             Self {
                 running: Some(Rc::clone(&shared)),
+                others: Vec::new(),
             },
             shared,
         )
     }
+
+    fn beside(mut self, standing: Standing) -> (Self, Rc<RefCell<Standing>>) {
+        let shared = Rc::new(RefCell::new(standing));
+        self.others.push(Rc::clone(&shared));
+        (self, shared)
+    }
+
+    fn every_zone(&self) -> impl DoubleEndedIterator<Item = &Rc<RefCell<Standing>>> {
+        self.running.iter().chain(&self.others)
+    }
 }
 
-struct Handle(Rc<RefCell<Standing>>);
+struct Handle {
+    standing: Rc<RefCell<Standing>>,
+    zones: Fake,
+}
 
 impl Handle {
     fn called(&self, call: Call) -> resonate_mpris::Result<()> {
-        self.0.borrow_mut().calls.push(call);
+        self.standing.borrow_mut().calls.push(call);
         Ok(())
     }
 }
@@ -208,17 +232,54 @@ impl Handle {
 impl Reach for Fake {
     fn player(&self) -> resonate_mcp::Result<Box<dyn Controlling>> {
         let running = self.running.clone().ok_or(Error::NothingRunning)?;
-        Ok(Box::new(Handle(running)))
+        Ok(Box::new(Handle {
+            standing: running,
+            zones: self.clone(),
+        }))
+    }
+
+    fn zones(&self) -> resonate_mcp::Result<Vec<Box<dyn Controlling>>> {
+        Ok(self
+            .every_zone()
+            .rev()
+            .map(|standing| {
+                Box::new(Handle {
+                    standing: Rc::clone(standing),
+                    zones: self.clone(),
+                }) as Box<dyn Controlling>
+            })
+            .collect())
+    }
+
+    fn zoned(&self, asked: &ZoneAsked) -> resonate_mcp::Result<Box<dyn Controlling>> {
+        let found = self
+            .every_zone()
+            .find(|standing| {
+                let standing = standing.borrow();
+                match asked {
+                    ZoneAsked::Numbered(zone) => standing.zone == *zone,
+                    ZoneAsked::Named(name) => {
+                        standing.zone_name.to_lowercase() == name.to_lowercase()
+                    }
+                }
+            })
+            .ok_or_else(|| Error::NoSuchZone {
+                zone: asked.clone(),
+            })?;
+        Ok(Box::new(Handle {
+            standing: Rc::clone(found),
+            zones: self.clone(),
+        }))
     }
 }
 
 impl Handle {
     fn stands(&self, status: PlaybackStatus) {
-        self.0.borrow_mut().status = Some(status);
+        self.standing.borrow_mut().status = Some(status);
     }
 
     fn moves_by(&self, by: isize) {
-        let mut standing = self.0.borrow_mut();
+        let mut standing = self.standing.borrow_mut();
         let len = standing.rows.len();
         standing.playing = standing
             .playing
@@ -230,11 +291,11 @@ impl Handle {
 
 impl Controlling for Handle {
     fn name(&self) -> String {
-        PLAYER.to_owned()
+        self.standing.borrow().player.clone()
     }
 
     fn playback(&self) -> resonate_mpris::Result<Option<PlaybackStatus>> {
-        Ok(self.0.borrow().status)
+        Ok(self.standing.borrow().status)
     }
 
     fn play(&self) -> resonate_mpris::Result<()> {
@@ -248,7 +309,7 @@ impl Controlling for Handle {
     }
 
     fn play_pause(&self) -> resonate_mpris::Result<()> {
-        let playing = self.0.borrow().status == Some(PlaybackStatus::Playing);
+        let playing = self.standing.borrow().status == Some(PlaybackStatus::Playing);
         self.stands(if playing {
             PlaybackStatus::Paused
         } else {
@@ -274,7 +335,7 @@ impl Controlling for Handle {
 
     fn seek(&self, by: Seeking) -> resonate_mpris::Result<()> {
         {
-            let mut standing = self.0.borrow_mut();
+            let mut standing = self.standing.borrow_mut();
             standing.position = match by {
                 Seeking::Forward(span) => standing.position + span,
                 Seeking::Backward(span) => standing.position.saturating_sub(span),
@@ -284,33 +345,39 @@ impl Controlling for Handle {
     }
 
     fn volume(&self) -> resonate_mpris::Result<Volume> {
-        Ok(self.0.borrow().volume)
+        Ok(self.standing.borrow().volume)
     }
 
     fn shuffle(&self) -> resonate_mpris::Result<bool> {
-        Ok(self.0.borrow().shuffle)
+        Ok(self.standing.borrow().shuffle)
     }
 
     fn set_volume(&self, volume: Volume) -> resonate_mpris::Result<()> {
-        self.0.borrow_mut().volume = volume;
+        self.standing.borrow_mut().volume = volume;
         self.called(Call::SetVolume(volume))
     }
 
     fn metadata(&self) -> resonate_mpris::Result<Option<Described>> {
-        let standing = self.0.borrow();
+        let standing = self.standing.borrow();
         Ok(standing.playing.map(|row| standing.rows[row].clone()))
     }
 
     fn position(&self) -> resonate_mpris::Result<Duration> {
-        Ok(self.0.borrow().position)
+        Ok(self.standing.borrow().position)
     }
 
     fn queued(&self) -> resonate_mpris::Result<Vec<TrackId>> {
-        Ok(self.0.borrow().rows.iter().map(|row| row.track).collect())
+        Ok(self
+            .standing
+            .borrow()
+            .rows
+            .iter()
+            .map(|row| row.track)
+            .collect())
     }
 
     fn play_order(&self) -> resonate_mpris::Result<Vec<TrackId>> {
-        let standing = self.0.borrow();
+        let standing = self.standing.borrow();
         Ok(standing
             .play_order
             .clone()
@@ -318,7 +385,7 @@ impl Controlling for Handle {
     }
 
     fn described(&self, rows: &[TrackId]) -> resonate_mpris::Result<Vec<Described>> {
-        let mut standing = self.0.borrow_mut();
+        let mut standing = self.standing.borrow_mut();
         standing.described.push(rows.len());
         Ok(rows
             .iter()
@@ -327,10 +394,10 @@ impl Controlling for Handle {
     }
 
     fn queue(&self, rows: &[Row], queueing: Queueing) -> resonate_mpris::Result<usize> {
-        let fails_after = self.0.borrow().queueing_fails_after;
+        let fails_after = self.standing.borrow().queueing_fails_after;
         let landing = fails_after.map_or(rows.len(), |after| after.min(rows.len()));
         {
-            let mut standing = self.0.borrow_mut();
+            let mut standing = self.standing.borrow_mut();
             let first = standing.rows.len() as u64 + 1_000;
             let minted: Vec<Described> = (first..)
                 .zip(&rows[..landing])
@@ -346,12 +413,15 @@ impl Controlling for Handle {
     }
 
     fn remove_track(&self, track: TrackId) -> resonate_mpris::Result<()> {
-        self.0.borrow_mut().rows.retain(|row| row.track != track);
+        self.standing
+            .borrow_mut()
+            .rows
+            .retain(|row| row.track != track);
         self.called(Call::Remove(track))
     }
 
     fn playlists(&self) -> resonate_mpris::Result<Vec<PlaylistInfo>> {
-        Ok(self.0.borrow().playlists.clone())
+        Ok(self.standing.borrow().playlists.clone())
     }
 
     fn activate_playlist(&self, playlist: PlaylistId) -> resonate_mpris::Result<()> {
@@ -359,11 +429,11 @@ impl Controlling for Handle {
     }
 
     fn sleep(&self) -> resonate_mpris::Result<Option<Asleep>> {
-        Ok(self.0.borrow().asleep)
+        Ok(self.standing.borrow().asleep)
     }
 
     fn set_sleep(&self, until: Option<Until>) -> resonate_mpris::Result<()> {
-        self.0.borrow_mut().asleep = until.map(|until| Asleep {
+        self.standing.borrow_mut().asleep = until.map(|until| Asleep {
             until,
             left: match until {
                 Until::After(left) => Some(left),
@@ -371,6 +441,35 @@ impl Controlling for Handle {
             },
         });
         self.called(Call::SetSleep(until))
+    }
+
+    fn zone_number(&self) -> Option<ZoneId> {
+        Some(self.standing.borrow().zone)
+    }
+
+    fn zone(&self) -> resonate_mpris::Result<String> {
+        Ok(self.standing.borrow().zone_name.clone())
+    }
+
+    fn device(&self) -> resonate_mpris::Result<Option<String>> {
+        Ok(self.standing.borrow().device.clone())
+    }
+
+    fn hand_over(&self, to: ZoneId) -> resonate_mpris::Result<()> {
+        let taking = self
+            .zones
+            .every_zone()
+            .find(|standing| standing.borrow().zone == to)
+            .cloned()
+            .ok_or(resonate_mpris::Error::ThreadStopped)?;
+        {
+            let mut leaving = self.standing.borrow_mut();
+            let mut arriving = taking.borrow_mut();
+            arriving.rows = std::mem::take(&mut leaving.rows);
+            arriving.playing = leaving.playing.take();
+            arriving.status = leaving.status.replace(PlaybackStatus::Stopped);
+        }
+        self.called(Call::HandOver(to))
     }
 }
 
@@ -3045,4 +3144,196 @@ fn a_profile_is_followed_only_with_a_reference_and_a_private_one_says_so() {
     assert!(private.contains("private"), "{private}");
     assert_eq!(unread, -32_602);
     assert_eq!(stopped["stopped"], false);
+}
+
+fn refused_call(server: &Server, tool: &str, arguments: Value) -> i64 {
+    error_code(
+        server,
+        &request(
+            "tools/call",
+            json!({ "name": tool, "arguments": arguments }),
+        ),
+    )
+}
+
+fn study() -> Standing {
+    Standing {
+        player: format!("{PLAYER}.zone2"),
+        zone: ZoneId::new(2).expect("a second zone"),
+        zone_name: "Study".to_owned(),
+        ..Standing::default()
+    }
+}
+
+#[test]
+fn every_zone_is_listed_with_its_device_and_what_it_plays_and_a_tool_reaches_one_by_number_or_name()
+{
+    let (players, living) = Fake::with(Standing {
+        rows: vec![row(1, "Echoes")],
+        playing: Some(0),
+        status: Some(PlaybackStatus::Playing),
+        device: Some("Speakers".to_owned()),
+        ..Standing::default()
+    });
+    let (players, second) = players.beside(study());
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+
+    let listed = called(&server, "list_zones", json!({}));
+    let played = called(
+        &server,
+        "control_playback",
+        json!({ "action": "play", "zone": "study" }),
+    );
+    let louder = called(&server, "set_volume", json!({ "percent": 40, "zone": 2 }));
+    let queue = called(&server, "show_queue", json!({ "zone": "Living room" }));
+    let elsewhere = failed(&server, "now_playing", json!({ "zone": 3 }));
+
+    assert_eq!(listed["zones"][0]["zone"], 1);
+    assert_eq!(listed["zones"][0]["name"], "Living room");
+    assert_eq!(listed["zones"][0]["player"], PLAYER);
+    assert_eq!(listed["zones"][0]["device"], "Speakers");
+    assert_eq!(listed["zones"][0]["status"], "Playing");
+    assert_eq!(listed["zones"][0]["track"]["title"], "Echoes");
+    assert_eq!(listed["zones"][0]["rows"], 1);
+    assert_eq!(listed["zones"][1]["zone"], 2);
+    assert_eq!(listed["zones"][1]["name"], "Study");
+    assert!(listed["zones"][1].get("device").is_none());
+    assert!(listed["zones"][1].get("track").is_none());
+    assert_eq!(played["player"], format!("{PLAYER}.zone2"));
+    assert_eq!(louder["player"], format!("{PLAYER}.zone2"));
+    assert_eq!(queue["player"], PLAYER);
+    assert_eq!(queue["rows"], 1);
+    assert!(
+        elsewhere.contains("no zone numbered or named 3"),
+        "{elsewhere}"
+    );
+    assert_eq!(
+        second.borrow().calls,
+        [
+            Call::Play,
+            Call::SetVolume(Volume::new(0.4).expect("a volume"))
+        ]
+    );
+    assert!(living.borrow().calls.is_empty());
+
+    assert_eq!(
+        refused_call(&server, "now_playing", json!({ "zone": 0 })),
+        -32_602
+    );
+    assert_eq!(
+        refused_call(&server, "show_queue", json!({ "zone": "  " })),
+        -32_602
+    );
+    assert_eq!(
+        refused_call(&server, "seek", json!({ "seconds": 5, "zone": true })),
+        -32_602
+    );
+}
+
+#[test]
+fn playback_moves_from_one_zone_onto_another_and_never_onto_itself() {
+    let (players, living) = Fake::with(Standing {
+        rows: vec![row(1, "Echoes")],
+        playing: Some(0),
+        status: Some(PlaybackStatus::Playing),
+        ..Standing::default()
+    });
+    let (players, second) = players.beside(study());
+    let server = server(
+        Library::open_in_memory().expect("an in-memory catalog"),
+        players,
+    );
+
+    let moved = called(&server, "move_playback", json!({ "to": "Study" }));
+    let onto_itself = failed(
+        &server,
+        "move_playback",
+        json!({ "zone": 2, "to": "study" }),
+    );
+    let nowhere = failed(&server, "move_playback", json!({ "to": 7 }));
+    let landed = called(&server, "now_playing", json!({ "zone": 2 }));
+
+    assert_eq!(moved["from"]["zone"], 1);
+    assert_eq!(moved["to"]["zone"], 2);
+    assert_eq!(moved["to"]["name"], "Study");
+    assert_eq!(
+        living.borrow().calls,
+        [Call::HandOver(ZoneId::new(2).expect("a second zone"))]
+    );
+    assert_eq!(landed["track"]["title"], "Echoes");
+    assert_eq!(second.borrow().status, Some(PlaybackStatus::Playing));
+    assert!(
+        onto_itself.contains("zone 2 is the zone playback would move from"),
+        "{onto_itself}"
+    );
+    assert!(nowhere.contains("no zone numbered or named 7"), "{nowhere}");
+
+    assert_eq!(refused_call(&server, "move_playback", json!({})), -32_602);
+    assert_eq!(
+        refused_call(&server, "move_playback", json!({ "to": 0 })),
+        -32_602
+    );
+}
+
+#[test]
+fn a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_a_playlist() {
+    let tree = Tree::new();
+    let song = tree.wav("a.wav", "Night Signal", "Hours", "1");
+    let copy = tree.wav("b.wav", "Night Signal", "Hours (Deluxe)", "1");
+    let other = tree.wav("c.wav", "Elsewhere", "Days", "1");
+    let library = scanned(&tree);
+    let held = |path: &PathBuf| {
+        library
+            .track_at(path, None)
+            .expect("the catalog to be read")
+            .expect("the file to be held")
+            .id
+    };
+    let (song_id, copy_id, other_id) = (held(&song), held(&copy), held(&other));
+    let served = MediaLocation::from_uri("tidal:track/7").expect("a served song");
+    library
+        .choose_version(song_id, &resonate_library::Version::Held(copy_id))
+        .expect("a version chosen");
+    library
+        .choose_version(other_id, &resonate_library::Version::Served(served.clone()))
+        .expect("a version chosen");
+    library
+        .create_playlist("Late Night")
+        .expect("a playlist to be made");
+    let (players, standing) = Fake::with(Standing::default());
+    let server = server(library, players);
+
+    called(
+        &server,
+        "add_to_queue",
+        json!({ "track_ids": [song_id.get(), other_id.get()] }),
+    );
+    called(
+        &server,
+        "add_to_playlist",
+        json!({ "playlist": "Late Night", "track_ids": [song_id.get()] }),
+    );
+    let listed = called(
+        &server,
+        "playlist_tracks",
+        json!({ "playlist": "Late Night" }),
+    );
+
+    assert_eq!(
+        standing.borrow().calls,
+        [Call::Queue(
+            vec![
+                (MediaLocation::local(copy), None::<FrameSpan>),
+                (served, None),
+            ],
+            Queueing {
+                at: Placement::Queued,
+                play: false
+            }
+        )]
+    );
+    assert_eq!(listed["tracks"][0]["track_id"], song_id.get());
 }

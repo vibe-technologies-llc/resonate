@@ -73,6 +73,23 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   `resonate_mpris::Session` for the whole run and opens a new one only after a bus error, so a
   subscribed now-playing costs no connection a tick. `Controlling` is the seam over
   `Running`; tests use a fake, no bus.
+- **A zone is a player of its own, and every player tool takes `zone`.** `list_zones` (`Reach::zones`,
+  `Running::listed_in`) answers each zone's number, name, bus `player`, `device`
+  (`Controlling::device`, left out by a player too old to have the property), `status`, `track` and
+  `rows`, ordered by number; a zone that stops answering mid-listing is passed over. `now_playing`,
+  `control_playback`, `seek`, `set_volume`, `show_queue`, `add_to_queue`, `remove_from_queue`,
+  `play_playlist` and `set_sleep_timer` take an optional `zone`, a number or a name as `queue --zone`
+  reads it (`ZoneAsked`, a name case folded), reached through `Reach::zoned`; none is the player
+  `Reach::player` finds. A zone `0` is `Refusal::OutOfRange`, a blank name `Refusal::Unreadable`
+  (parsed before the bus is touched); a zone no player answers to is `Error::NoSuchZone`, a tool
+  failure, since zones come and go. `move_playback` (`zone` to move from, defaulting to the running
+  player, and `to`) is `Controlling::hand_over`, as `queue --move-to` does: moving onto the zone
+  it leaves is `Error::MovedToItself`; it answers `from` and `to` (number, name, player) once the
+  handover has begun, not where it landed, and is `destructiveHint`, since the other zone's queue is
+  replaced (`every_zone_is_listed_with_its_device_and_what_it_plays_and_a_tool_reaches_one_by_number_or_name`,
+  `playback_moves_from_one_zone_onto_another_and_never_onto_itself`).
+- **A song is queued as the version chosen for it** (`library.md`): `add_to_queue` reads its rows
+  through `catalog::rows_played`, while `add_to_playlist` and `create_playlist` keep the song itself.
 - **`track_id` is the catalog's, `queue_id` the queue's.** `queue_id` is text: the queue mints ids
   down from `u64::MAX`, which clients reading JSON numbers as doubles would round to another row.
 - **Id lists are held to `MOST_ROWS`** (1000): every id array's schema has `maxItems`; more is
@@ -128,7 +145,7 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
-  `play_playlist`, `refresh_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
+  `play_playlist`, `move_playback`, `refresh_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
   `start_poll`, `import_playlist_link`, `refresh_playlist`, `follow_profile`.
 - **A session undoes only its own edits.** `undo_edit` is `Library::undo` (`Library::redo` with
   `redo`) over this process's stack; a playlist since changed by anything else (a window that took

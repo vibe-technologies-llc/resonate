@@ -75,6 +75,7 @@ mod trashing;
 #[cfg(feature = "online")]
 mod updates;
 mod vault;
+mod versions;
 mod vocabulary;
 mod wanting;
 mod wrapped;
@@ -2118,7 +2119,7 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         return Ok(());
     }
 
-    let items = playlists::queue_items(&entries);
+    let items = versions::played_as_chosen(Some(&library), playlists::queue_items(&entries));
     let whole = matching.is_none();
     play_queue(
         cli,
@@ -2376,9 +2377,12 @@ fn play(
     let asleep = spec.map(sleep::Sleep::read).transpose()?;
     let library = catalog(cli, config);
 
-    let items = mpris::claimed_by(
+    let items = versions::played_as_chosen(
         library.as_deref(),
-        queue_items_served(arguments, &Served::of(config, settings_path(cli).ok())),
+        mpris::claimed_by(
+            library.as_deref(),
+            queue_items_served(arguments, &Served::of(config, settings_path(cli).ok())),
+        ),
     );
     if items.is_empty() {
         return Err(if arguments.is_empty() {
@@ -2464,11 +2468,14 @@ fn playlist_rows(
         .playlist_named(name)?
         .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(name)))?;
 
-    Ok(library
-        .playlist_entries(found.id, None)?
-        .into_iter()
-        .map(|entry| (entry.cut.location, entry.cut.span))
-        .collect())
+    let entries = library.playlist_entries(found.id, None)?;
+
+    Ok(
+        versions::played_as_chosen(Some(&library), playlists::queue_items(&entries))
+            .into_iter()
+            .map(|item| (item.location, item.span))
+            .collect(),
+    )
 }
 
 fn players() -> Result<()> {
@@ -3593,7 +3600,10 @@ fn queue(
 ) -> Result<()> {
     if !arguments.is_empty() {
         player.send(Command::Load {
-            items: mpris::claimed_by(kept, queue_items_served(arguments, served)),
+            items: versions::played_as_chosen(
+                kept,
+                mpris::claimed_by(kept, queue_items_served(arguments, served)),
+            ),
             start_at: 0,
             autoplay: true,
         })?;

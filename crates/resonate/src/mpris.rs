@@ -164,6 +164,23 @@ impl Host for Desktop {
             .map_or_else(|| ZoneName::first_given_to(ZoneId::FIRST), |zone| zone.name)
     }
 
+    fn device(&self) -> Option<String> {
+        let sinks = self.player.sinks();
+        let chosen = self.player.output_settings().sink.clone();
+        let sounding = self.player.state().output.map(|output| output.sink);
+        let found = match (sounding, &chosen) {
+            (Some(id), _) => sinks.iter().find(|sink| sink.id == id),
+            (None, Some(name)) => sinks.iter().find(|sink| sink.is_named(name)),
+            (None, None) => sinks.iter().find(|sink| sink.is_default),
+        };
+
+        match found {
+            Some(sink) if !sink.description.is_empty() => Some(sink.description.clone()),
+            Some(sink) => Some(sink.name.as_str().to_owned()),
+            None => chosen.map(|name| name.as_str().to_owned()),
+        }
+    }
+
     fn desktop_entry(&self) -> Option<String> {
         Some(entry_named(env::var(SANDBOXED_AS).ok().as_deref()))
     }

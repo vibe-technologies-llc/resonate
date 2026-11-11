@@ -6,6 +6,8 @@ use resonate_engine::{Command, Player, QueueItem, Unclaimed, stamp_of};
 use resonate_library::{Direction, Library, Playing, PlaylistEntry};
 use resonate_mpris::{Opened, PlaylistInfo, PlaylistOrder, Playlists};
 
+use crate::versions::played_as_chosen;
+
 pub(crate) struct Collection {
     library: Arc<Library>,
     player: Arc<Player>,
@@ -113,7 +115,7 @@ impl Playlists for Collection {
             }
         };
 
-        let items = queue_items(&entries);
+        let items = played_as_chosen(Some(&self.library), queue_items(&entries));
         if items.is_empty() {
             return Opened::Refused;
         }

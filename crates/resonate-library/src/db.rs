@@ -31,19 +31,19 @@ use crate::{
     ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, Aged, Album, AlbumFound,
     AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
     ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals,
-    Asked, Billed, Cancelling, Certainty, ChosenVersion, Clause, Codec, Column, Compacted, Compare,
-    Condition, Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions,
-    Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, Habits, HeldMedium,
-    HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions, Imported,
-    Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan,
-    Link, Listen, ListeningService, LovesTold, LyricText, LyricsAhead, Mbid, Measured, Missing,
-    MissingTrack, MostListened, Move, MusicFilters, NamedPlaylist, OrganiseHandle, OrganiseOptions,
-    PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle, PollOptions,
-    PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording, RecordingMatch,
-    RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released, Result,
-    RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search,
-    SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study, Submitted,
-    Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
+    Asked, Billed, Cancelling, Certainty, Chosen, ChosenVersion, Clause, Codec, Column, Compacted,
+    Compare, Condition, Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle,
+    EnrichOptions, Error, Exported, Favoured, Fingerprinters, Found, Fruitless, Genre, Habits,
+    HeldMedium, HeldReleaseTrack, HistoryKept, Holdings, ImageFormat, ImportHandle, ImportOptions,
+    Imported, Isrc, Kept, KeptCorrection, KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning,
+    LifeSpan, Link, Listen, ListeningService, LovesTold, LyricText, LyricsAhead, Mbid, Measured,
+    Missing, MissingTrack, MostListened, Move, MusicFilters, NamedPlaylist, OrganiseHandle,
+    OrganiseOptions, PassKind, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollHandle,
+    PollOptions, PortraitWanted, Pruned, REFRESH_AFTER, REFUSED_AGAIN_AFTER, Recording,
+    RecordingMatch, RecordingRelease, Reference, Release, ReleaseDetail, ReleaseGroup, Released,
+    Result, RetagHandle, RetagOptions, RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler,
+    Search, SearchResults, Shape, Shared, SortOrder, Spellings, Statistics, StoreOp, Study,
+    Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
     Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Version, Waits, Want, Window,
     Word, alternatives, answers, chosen,
     copies::{self, Copies, NumberedCopy},
@@ -1834,6 +1834,31 @@ impl Library {
     pub fn versions_chosen_among(&self, tracks: &[TrackId]) -> Result<Vec<ChosenVersion>> {
         self.inner
             .read(|connection| chosen::among(connection, tracks, IDS_READ_AT_ONCE))
+    }
+
+    pub fn chosen_among(&self, tracks: &[TrackId]) -> Result<Chosen> {
+        let asked: Vec<TrackId> = tracks
+            .iter()
+            .copied()
+            .collect::<AHashSet<_>>()
+            .into_iter()
+            .collect();
+        let versions = self.versions_chosen_among(&asked)?;
+        if versions.is_empty() {
+            return Ok(Chosen::default());
+        }
+
+        let wanted: Vec<TrackId> = versions
+            .iter()
+            .flat_map(|chosen| match chosen.version {
+                Version::Held(copy) => [Some(chosen.track), Some(copy)],
+                Version::Served(_) => [Some(chosen.track), None],
+            })
+            .flatten()
+            .collect();
+        let held = self.tracks_with_ids(&wanted)?;
+
+        Ok(Chosen::of(versions, &held))
     }
 
     pub fn version_chosen_for(&self, track: TrackId) -> Result<Option<Version>> {

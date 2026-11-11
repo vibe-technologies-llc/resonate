@@ -540,6 +540,11 @@ impl OwnInterface {
         self.shared.host.zone().as_str().to_owned()
     }
 
+    #[zbus(property(emits_changed_signal = "false"))]
+    pub(crate) fn device(&self) -> String {
+        self.shared.host.device().unwrap_or_default()
+    }
+
     #[zbus(property)]
     pub(crate) fn playing_next(&self) -> u32 {
         waiting_to_play(

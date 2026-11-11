@@ -167,6 +167,7 @@ impl Answering {
             Request::HandOver(zone) => done(self.own.hand_over(zone)),
             Request::Zone => Reply::Text(self.own.zone()),
             Request::Waiting => Reply::Count(self.own.playing_next()),
+            Request::Device => Reply::Text(self.own.device()),
         }
     }
 
