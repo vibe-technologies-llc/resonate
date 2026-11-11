@@ -131,10 +131,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `already_copied`, or a failed `files_moved` leaving the source and taking the copy; the `/dev/shm`
   volume of `tests/library.rs` could hold all three, beside an unlink refused in
   `linked_over_nothing`
-- [M · 0.8.1] The WASAPI stream loop has never run: `stream.rs` (`serve`, `handled`, the drain
-  through `Cycled::has_played_out`) is `cfg(windows)` and holds no test, where Core Audio's loop is
-  generic over a `Hardware` trait with ten host tests (`serving.rs`); the two WASAPI defects in
-  BUGS.md sit in it, and the same trait would hold them on every host
 - [S · 0.8.1] The engine's workers are untested at their edges: `streaming.rs`, `surveying.rs` and
   `lending.rs` hold no test, `Streaming::stop` drains the answers without joining, so an open
   landing after it leaves its `SinkStream` in the channel to be dropped unclosed, and a survey

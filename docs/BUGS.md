@@ -4,22 +4,12 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] The sync server's `--total-bytes` holds for appends alone: `Store::compact` weighs
-  only the space's own `--space-bytes` (`store.rs`), and a compaction needs one record past the
-  snapshot, so a script that claims spaces and compacts each to a snapshot near 64 MiB fills
-  `--spaces` times `--space-bytes` (some 640 GiB at the defaults), not 16 GiB; the growth a
-  compaction brings wants weighing against `totals_in` as `append` does
 - [S · 0.8.1] A shared playlist's editor or a party guest can make every follower or host inflate
   64 MiB a record: `seal::opened` caps every sealed blob at `LARGEST_OPENED` whatever it carries,
   though an honest bundle is at most `LARGEST_BUNDLE` and `BUNDLE_OPS_AT_MOST` ops, and
   `shared/service.rs` clones the whole list (up to 40 000 entries) for each record it opens; the
   party host opens every guest's `RoomHeard` under the same cap. `opened` wants a ceiling per
   caller, the ops of a record capped, and a change flag from `apply` in place of the clone
-- [S · 0.8.1] The hifi gateway can be held shut by a stranger with no key: the accept loop waits
-  for one of its 64 seats before spawning (`gateway.rs`), and the handshake and the head each get
-  `REQUEST_WITHIN` (10 s) before the key is read, so 64 silent connections, renewed, answer no key
-  holder; a seat wants taking with `try_acquire` inside the task, one deadline over handshake and
-  head, and a count per address before the key check
 - [S · 0.8.1] A host on the network can wedge renderer discovery: `http::exchange`'s 3 s is a
   timeout per read, so an answer dripping a byte every 2.9 s holds a round until the 1 MiB cap,
   though `upnp.md` says an exchange gives up after 3 s; `ssdp::search` keeps every location an
@@ -42,15 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (4 KiB), and the server drops a host's `RoomSay` past 512 KiB a second, so a guest repeating
   `Hello` under up to 32 ids starves the room of its `Now` frames; `People` wants telling again only
   where a name changed, at most every few seconds, and a name cutting short where it is read
-- [S · 0.8.1] `Share` passes by the daily limit on personal spaces: it spends
-  `--shared-spaces-per-address-per-day` (50), and the space it makes then answers `Hello` like any
-  other (`serve.rs`, `store.rs`), so the 5 a day `--spaces-per-address-per-day` promises is 55; a
-  space made by `Share` wants marking so `Hello` refuses it, or the two budgets one
-- [M · 0.8.1] A sync server session may hold some 160 MiB read ahead: `FRAMES_READ_AHEAD` (4, and
-  one in flight) counts frames of up to `LARGEST_FRAME` (32 MiB), so the 64 connections one address
-  may hold can pin some 10 GiB while their writes stall, the frames-a-minute limit counting frames
-  and not bytes; devices never send a record over 256 KiB, so the read-ahead wants a budget in
-  bytes
 
 ## Sync and together
 - [S · 0.8.1] A party host on a phone dismisses or plays next by a row's place in a list that
@@ -72,17 +53,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   past a cap
 
 ## Playback and output
-- [S · 0.8.1] A WASAPI `Close` returns before the stream thread lets go of its `IAudioClient`:
-  the control closure only sends the order (`resonate-wasapi`'s `stream.rs`), where Core Audio's
-  waits until the hardware is let go (`serving.rs`,
-  `closing_returns_only_once_the_hardware_is_let_go`); the engine closes the retiring output and
-  opens the next in one pass (`finish_fading`, `promote`) and an exclusive endpoint holds one client
-  (`windows.md`), so a rate, word or layout change on `wasapi-exclusive:` can meet
-  `AUDCLNT_E_DEVICE_IN_USE` and fail the song. A `disposed` signal waited on within `OPEN_WITHIN`
-- [S · 0.8.1] A WASAPI stream whose order channel goes while it streams renders on forever: the
-  streaming branch reads `try_recv` with `while let Ok`, passing `Disconnected` over, where the
-  paused branch stops and returns (`stream.rs`), and `SinkStream` has no `Drop` that closes; a
-  stream dropped unclosed would keep an exclusive device from every other program until exit
 
 ## Catalog
 - [M · 0.8.1] Forgetting a folder deletes its vaulted rows and their listens: `remove_root` deletes
