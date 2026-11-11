@@ -44,6 +44,8 @@ pub(crate) const WIDE: f32 = 1_400.0;
 pub(crate) const TALL: f32 = 1_600.0;
 const FRAME: Duration = Duration::from_millis(16);
 const PATIENCE: Duration = Duration::from_secs(10);
+const HINT_SHOWN_BY: Duration = Duration::from_secs(2);
+const VOLUME_SETTLED_BY: Duration = Duration::from_secs(1);
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 
@@ -231,6 +233,28 @@ fn nobody_listening() -> Listens {
 pub(crate) struct Driven {
     pub(crate) root: Entity<RootView>,
     pub(crate) cx: VisualTestContext,
+    worn_by: Wearers,
+}
+
+struct Wearers {
+    _alongside: Option<parking_lot::RecursiveRwLockReadGuard<'static, ()>>,
+    _alone: Option<parking_lot::RecursiveRwLockWriteGuard<'static, ()>>,
+}
+
+impl Wearers {
+    fn alongside() -> Self {
+        Self {
+            _alongside: Some(theme::WEARING.read()),
+            _alone: None,
+        }
+    }
+
+    fn alone() -> Self {
+        Self {
+            _alongside: None,
+            _alone: Some(theme::WEARING.write()),
+        }
+    }
 }
 
 impl Drop for Driven {
@@ -411,6 +435,7 @@ impl Driven {
             ..Online::default()
         };
         let fingerprinters = recognising.unwrap_or_else(|| Arc::new(Fingerprinters::none()));
+        let worn_by = Wearers::alongside();
         theme::wear(Appearance::default());
         let (attention, _) = unbounded();
         let unseen = Arc::new(Unseen);
@@ -502,7 +527,16 @@ impl Driven {
         cx.update(|window, _| window.activate_window());
         cx.simulate_resize(size(px(WIDE), px(TALL)));
         cx.run_until_parked();
-        Self { root, cx }
+        Self { root, cx, worn_by }
+    }
+
+    pub(crate) fn wearing_alone(&mut self) {
+        self.worn_by = Wearers {
+            _alongside: None,
+            _alone: None,
+        };
+        self.worn_by = Wearers::alone();
+        theme::wear(Appearance::default());
     }
 
     pub(crate) fn settle(&mut self) {
@@ -1165,6 +1199,270 @@ mod tests {
             ]
         );
         assert!(driven.read(|root, _| root.zones.len() == 1 && !root.switcher.several()));
+    }
+
+    struct Recorded(Arc<parking_lot::Mutex<Vec<crate::settings::SettingChange>>>);
+
+    impl crate::settings::Settings for Recorded {
+        fn apply(&self, changes: &[crate::settings::SettingChange]) -> crate::Result<()> {
+            self.0.lock().extend_from_slice(changes);
+            Ok(())
+        }
+    }
+
+    fn recording_what_is_stored(
+        driven: &mut Driven,
+    ) -> Arc<parking_lot::Mutex<Vec<crate::settings::SettingChange>>> {
+        let recorded = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let writer =
+            crate::settings::SettingsWriter::over(Arc::new(Recorded(Arc::clone(&recorded))));
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.settings_written = writer;
+        });
+        recorded
+    }
+
+    fn volumes_stored(
+        recorded: &parking_lot::Mutex<Vec<crate::settings::SettingChange>>,
+    ) -> Vec<resonate_core::Volume> {
+        recorded
+            .lock()
+            .iter()
+            .filter_map(|change| match change {
+                crate::settings::SettingChange::Store(crate::settings::Setting::Volume(volume)) => {
+                    Some(*volume)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn with_a_second_zone(driven: &mut Driven) -> ZoneId {
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
+        driven.until(|root, _| root.zones.len() == 2);
+        driven.read(|root, _| root.switcher.selected())
+    }
+
+    fn volume_set(driven: &mut Driven, position: f32) {
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.set_volume(position, cx)));
+    }
+
+    fn zone_shown(driven: &mut Driven, zone: ZoneId) {
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.show_zone(zone, cx)));
+        driven.settle();
+    }
+
+    fn stored_through_the_writer(
+        driven: &mut Driven,
+        recorded: &parking_lot::Mutex<Vec<crate::settings::SettingChange>>,
+    ) {
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.store(&crate::settings::Setting::BitPerfect(true), cx);
+        });
+        let deadline = Instant::now() + PATIENCE;
+        while !recorded.lock().iter().any(|change| {
+            matches!(
+                change,
+                crate::settings::SettingChange::Store(crate::settings::Setting::BitPerfect(true))
+            )
+        }) {
+            assert!(
+                Instant::now() < deadline,
+                "the settings never reached the writer"
+            );
+            driven.settle();
+            thread::sleep(FRAME);
+        }
+    }
+
+    #[gpui::test]
+    fn a_volume_changed_in_one_zone_is_kept_when_another_zone_is_shown_before_it_settles(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+        let second = with_a_second_zone(&mut driven);
+        zone_shown(&mut driven, ZoneId::FIRST);
+
+        volume_set(&mut driven, 0.25);
+        zone_shown(&mut driven, second);
+        stored_through_the_writer(&mut driven, &recorded);
+
+        assert_eq!(
+            volumes_stored(&recorded),
+            vec![resonate_core::Volume::new(0.25).expect("a volume")]
+        );
+    }
+
+    #[gpui::test]
+    fn a_volume_changed_and_left_alone_is_kept_once_it_settles(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+
+        volume_set(&mut driven, 0.25);
+        driven.cx.executor().advance_clock(VOLUME_SETTLED_BY);
+        driven.settle();
+        stored_through_the_writer(&mut driven, &recorded);
+
+        assert_eq!(
+            volumes_stored(&recorded),
+            vec![resonate_core::Volume::new(0.25).expect("a volume")]
+        );
+    }
+
+    #[gpui::test]
+    fn a_volume_changed_in_a_second_zone_is_never_kept_as_the_first_zones(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+        let second = with_a_second_zone(&mut driven);
+        assert_eq!(second, ZoneId::new(2).expect("a second zone"));
+
+        volume_set(&mut driven, 0.75);
+        zone_shown(&mut driven, ZoneId::FIRST);
+        driven.cx.executor().advance_clock(VOLUME_SETTLED_BY);
+        driven.settle();
+        stored_through_the_writer(&mut driven, &recorded);
+
+        assert_eq!(volumes_stored(&recorded), Vec::new());
+    }
+
+    #[gpui::test]
+    fn a_volume_changed_just_before_the_window_leaves_is_kept(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+
+        volume_set(&mut driven, 0.5);
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.keep_the_volume_as_the_window_leaves();
+            root.settings_written = crate::settings::SettingsWriter::over(Arc::new(Ephemeral));
+        });
+
+        assert_eq!(
+            volumes_stored(&recorded),
+            vec![resonate_core::Volume::new(0.5).expect("a volume")]
+        );
+    }
+
+    #[gpui::test]
+    fn a_queue_selection_is_let_go_of_when_another_zone_is_shown(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let second = with_a_second_zone(&mut driven);
+        zone_shown(&mut driven, ZoneId::FIRST);
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.reach = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
+            root.landed_by_a_jump = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
+        });
+
+        zone_shown(&mut driven, second);
+
+        assert_eq!(driven.read(|root, _| root.reach.clone()), None);
+        assert_eq!(driven.read(|root, _| root.landed_by_a_jump.clone()), None);
+    }
+
+    #[gpui::test]
+    fn a_pointer_at_rest_on_a_control_raises_its_hint(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let at = driven.centre_of("listen");
+
+        driven.hover(at);
+        driven.cx.executor().advance_clock(HINT_SHOWN_BY);
+        driven.settle();
+
+        assert!(
+            driven
+                .cx
+                .debug_bounds(crate::views::hint::HINT_PLATE)
+                .is_some(),
+            "the pointer at rest on a control raised no hint"
+        );
+    }
+
+    #[gpui::test]
+    fn a_hint_does_not_stand_over_the_sheet_its_own_control_opened(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let at = driven.centre_of("listen");
+
+        driven.hover(at);
+        driven.cx.simulate_click(at, Modifiers::none());
+        driven.settle();
+        driven.cx.executor().advance_clock(HINT_SHOWN_BY);
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.listening_open));
+        assert!(
+            driven
+                .cx
+                .debug_bounds(crate::views::hint::HINT_PLATE)
+                .is_none(),
+            "a hint stands over the sheet its control opened"
+        );
+    }
+
+    #[gpui::test]
+    fn an_artist_cut_by_an_ellipsis_in_an_album_cell_leaves_no_gap_before_the_year(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged(
+            "one.wav",
+            1,
+            &[
+                (b"INAM", "Homogenic"),
+                (b"IART", "Björk Ásgeirsdóttir Guðmundsdóttir Sigurðardóttir"),
+                (b"IPRD", "Homogenic"),
+                (b"ICRD", "1997"),
+            ],
+        );
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .albums(&resonate_library::AlbumQuery::default())
+            .expect("the scanned albums")[0]
+            .id;
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-albums");
+        driven.until(|root, cx| !root.library.read(cx).albums().is_empty());
+
+        let link = driven.bounds_of(named("album-artist", album.get()));
+        let artist = driven.read(|root, cx| {
+            root.library.read(cx).albums()[0]
+                .artist
+                .clone()
+                .expect("an album with an artist")
+        });
+        let drawn = driven.read(|_, cx| {
+            crate::views::kit::cut_to_fit(
+                gpui::SharedString::from(artist.clone()),
+                link.size.width,
+                crate::theme::ui(gpui::FontWeight::NORMAL),
+                px(crate::theme::text_xs()),
+                cx,
+            )
+        });
+        let drawn_width = driven.read(|_, cx| {
+            crate::views::kit::width_of(
+                drawn.drawn(),
+                &crate::theme::ui(gpui::FontWeight::NORMAL),
+                px(crate::theme::text_xs()),
+                cx,
+            )
+        });
+
+        assert!(
+            link.size.width - drawn_width < px(2.0),
+            "the artist's link stands {:?} wide for text {:?} wide",
+            link.size.width,
+            drawn_width
+        );
     }
 
     #[gpui::test]
@@ -5888,6 +6186,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+        driven.wearing_alone();
 
         let (kept, worn) = driven.root.update(&mut driven.cx, |root, cx| {
             theme::hear_the_desktop(DesktopLook {

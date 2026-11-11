@@ -293,6 +293,18 @@ impl Cut {
     pub(crate) fn of(whole: SharedString, drawn: SharedString) -> Self {
         Self { whole, drawn }
     }
+
+    pub(crate) fn kept_bytes(&self) -> usize {
+        if self.drawn == self.whole {
+            self.whole.len()
+        } else {
+            self.drawn.len().saturating_sub(ELLIPSIS.len())
+        }
+    }
+
+    pub(crate) const fn drawn(&self) -> &SharedString {
+        &self.drawn
+    }
 }
 
 impl IntoElement for Cut {

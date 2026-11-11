@@ -356,7 +356,7 @@ is never named.
   its own `stop_propagation` move listener to the app element and one element's listeners run in
   reverse order. gpui reports motion only inside the window, so a drag past the edge freezes at the
   last inside value; `on_mouse_up_out` still hears the release.
-  - Volume applies on every move (`VOLUME_SETTLE` debounces `config.toml` writes); holding shift on the press
+  - Volume applies on every move (`VOLUME_SETTLE` debounces `config.toml` writes, kept as the zone shown at the change: `volume_unkept`, flushed by `show_zone` and as the window leaves, so a switch neither files it under the other zone nor loses it); holding shift on the press
     or the drag snaps it to a `VOLUME_STEP` (5 %, `snapped_by`), the seek rail ignoring the key. A seek only previews
     and commits one `Command::Seek` on release, and only if the press's track still plays
     (`a_seek_rail_released_after_the_track_changed_seeks_nothing`); `PlayerModel::seek` holds the
@@ -392,8 +392,8 @@ is never named.
   background executor and shows the incoming zone at once; landed, a toast says *Playing in … now*
   (`moved_to`); refused or unheard, the window goes back to the zone it came from and
   `zones::refusal` names why (`HandoverUnheard`, `NothingToHandOver`, `DeviceHeld`). Switching never
-  touches playback (`show_zone` moves `listen_in` to the shown zone and clears the volume aim, mute
-  memory, seek grab, queue names and take-out offer, which belong to one queue). Adding and removing
+  touches playback (`show_zone` keeps a volume change waiting, moves `listen_in` to the shown zone and clears the volume aim, mute
+  memory, seek grab, queue selection (`reach`, `landed_by_a_jump`), queue names and take-out offer, which belong to one queue). Adding and removing
   run on the background executor (a player opens its own PipeWire client). Renaming swaps the control
   for a `Field` (`zone_name`, in `text_fields`): `enter` names it, escape or a press outside leaves it.
   `RootView::send` goes through `Zones::send`, and a refusal is a toast naming the zone in the way
@@ -862,7 +862,12 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `secondary-` chords, which gpui's `simulate_keystrokes` resolves for the machine they run on.
 - **A control names itself through one seam, and the seam lets go.** `hint::Names` is the only place a
   tooltip is attached (a test walks the crate's sources): gpui's plain `tooltip`, never
-  `hoverable_tooltip` (neither press nor scroll takes that one down). `hint::asking` is one atomic
+  `hoverable_tooltip` (neither press nor scroll takes that one down). A hint gpui had already scheduled
+  from a move survives the frame that drops its builder, so `Hint::render` draws nothing while
+  `asked()` says no and a hint cannot come up over a sheet its own control opened
+  (`a_hint_does_not_stand_over_the_sheet_its_own_control_opened`); every sheet in
+  `something_stands_over_the_pane` silences hints. `hint::asking` is one per-thread flag (the
+  window draws on one thread, and a test's flag is its own)
   written once a frame by `RootView::render` (`hints_are_wanted`); where it says no, no builder is
   attached, which gpui reads as an instruction to drop a live tooltip. No while a slider is grabbed, an
   equaliser band held, the picker (`adding`), a magnified cover, a record or a deletion prompt is up, a
@@ -927,7 +932,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     library*), each selected where reached. A link is `pressed_to`'s `Role::Link` labelled by the
     words it draws: its label is `impl IntoElement + Spelt`, and `listing::matched` returns a
     `Matched` that is both the drawn element and its spelling, so a lit search match still names
-    the link whole; the bar's and inspector's links draw what `cut_to_fit` left, an ellipsis
+    the link whole; an album cell's artist beside a year is cut by `cut_to_fit` to the cell's width less the dot and the year (`artist_room_beside`, `listing::matched_within` clamping a lit run to what stayed), so the link is as wide as its text and the dot stands against it (`an_artist_cut_by_an_ellipsis_in_an_album_cell_leaves_no_gap_before_the_year`); the bar's and inspector's links draw what `cut_to_fit` left, an ellipsis
     included, and are named whole: it returns a `kit::Cut` (the drawn text, the whole spelt), the
     same pair as `Matched`. A lyric line is a list item of the *Lyrics* list (`lyric-sheet`),
     *n of m*, selected while in play; a line held open far from the pane keeps its node (empty box,
@@ -1341,6 +1346,9 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `track-<id>`, `queued-<id>`, `menu-entry-<n>`, `picker-<id>`, `equaliser-curve`). `Driven::settle`
   runs the executor until it parks and advances the test clock a frame; `Driven::until` waits on the
   real engine and scan threads; `Driven::play` opens rows via `Command::Resume`, the first paused.
+  **A `Driven` holds `theme::WEARING` shared for its life** (`Wearers`), and a theme test or a
+  `Driven::wearing_alone` test holds it exclusively, since `theme::WORN` is one for the process and a
+  test wearing another palette or a text scale moves every row another test measures.
   **A `Driven` dropped closes its window, lets what was pending run and drops the globals**, so
   the engine it started ends with its test: gpui leaks a test's `App`, each kept an engine's ten
   threads and a `Drawer`'s two, and a Mac refuses a process its two thousandth thread (`macos.md`).

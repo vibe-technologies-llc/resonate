@@ -1,5 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
+    future,
     hash::{Hash as _, Hasher as _},
     mem,
     path::PathBuf,
@@ -308,6 +309,25 @@ impl Section {
 }
 
 impl Pane {
+    pub const ALL: [Self; 16] = [
+        Self::Albums,
+        Self::Artists,
+        Self::Tracks,
+        Self::Statistics,
+        Self::Party,
+        Self::Queue,
+        Self::Playlists,
+        Self::Favourites,
+        Self::Suggestions,
+        Self::Missing,
+        Self::Server,
+        Self::Lyrics,
+        Self::Inspector,
+        Self::Visualiser,
+        Self::Analysis,
+        Self::Settings,
+    ];
+
     pub const BROWSE: [Self; 14] = [
         Self::Albums,
         Self::Artists,
@@ -648,10 +668,10 @@ pub struct RootView {
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
     left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
-    reach: Option<Reach>,
+    pub(crate) reach: Option<Reach>,
     arranged_as: Arrangement,
     waiting_for_the_results: bool,
-    landed_by_a_jump: Option<Reach>,
+    pub(crate) landed_by_a_jump: Option<Reach>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
     pub(crate) queue_height: Rc<Cell<Pixels>>,
     pub(crate) creeping: Option<Creeping>,
@@ -672,7 +692,8 @@ pub struct RootView {
     following: Following,
     pub(crate) magnified: Option<Magnified>,
     pointer_inside: bool,
-    volume_settled: Task<()>,
+    pub(crate) volume_settled: Task<()>,
+    volume_unkept: Option<(ZoneId, Volume)>,
     pub(crate) band_retuning: Task<()>,
     pub(crate) band_untold: Option<bool>,
     pub(crate) volume_aimed: Option<f32>,
@@ -1374,6 +1395,7 @@ impl RootView {
             magnified: None,
             pointer_inside: true,
             volume_settled: Task::ready(()),
+            volume_unkept: None,
             band_retuning: Task::ready(()),
             band_untold: None,
             volume_aimed: None,
@@ -1405,6 +1427,13 @@ impl RootView {
             this.window_bounds_changed(window, cx);
         })
         .detach();
+        cx.on_app_quit(|this, cx| {
+            this.keep_the_volume(cx);
+            future::ready(())
+        })
+        .detach();
+        cx.on_release(|this, _| this.keep_the_volume_as_the_window_leaves())
+            .detach();
         view.look_for_a_newer_release(cx);
         view
     }
@@ -1563,7 +1592,11 @@ impl RootView {
     }
 
     pub(crate) fn store(&mut self, setting: &Setting, cx: &mut Context<Self>) {
-        if setting.key().is_the_zones_own() && !self.switcher.selected().is_first() {
+        self.store_for(self.switcher.selected(), setting, cx);
+    }
+
+    fn store_for(&mut self, zone: ZoneId, setting: &Setting, cx: &mut Context<Self>) {
+        if setting.key().is_the_zones_own() && !zone.is_first() {
             return;
         }
         self.settings_written
@@ -3739,14 +3772,7 @@ impl RootView {
         self.pointer_inside
             && self.grabbed.is_none()
             && self.held_band.is_none()
-            && self.adding.is_none()
-            && self.magnified.is_none()
-            && self.record.is_none()
-            && self.deleting.is_none()
-            && self.matching.is_none()
-            && self.party_offered.is_none()
-            && self.ordering.is_none()
-            && self.menu.is_none()
+            && !self.something_stands_over_the_pane()
             && !cx.has_active_drag()
     }
 
@@ -4804,15 +4830,32 @@ impl RootView {
         self.muted_from = None;
         self.send(Command::SetVolume(volume), cx);
         self.volume_aimed = Some(volume.get());
+        self.volume_unkept = Some((self.switcher.selected(), volume));
 
         self.volume_settled = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(VOLUME_SETTLE).await;
-            let stored = this.update(cx, |this, cx| {
-                this.volume_aimed = None;
-                this.store(&Setting::Volume(volume), cx);
-            });
+            let stored = this.update(cx, |this, cx| this.keep_the_volume(cx));
             let _ = stored;
         });
+    }
+
+    pub(crate) fn keep_the_volume(&mut self, cx: &mut Context<Self>) {
+        self.volume_aimed = None;
+        if let Some(volume) = self.volume_to_keep() {
+            self.store_for(ZoneId::FIRST, &Setting::Volume(volume), cx);
+        }
+    }
+
+    fn volume_to_keep(&mut self) -> Option<Volume> {
+        let (zone, volume) = self.volume_unkept.take()?;
+        zone.is_first().then_some(volume)
+    }
+
+    pub(crate) fn keep_the_volume_as_the_window_leaves(&mut self) {
+        if let Some(volume) = self.volume_to_keep() {
+            self.settings_written
+                .change(SettingChange::Store(Setting::Volume(volume)));
+        }
     }
 
     fn header(&self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -6826,6 +6869,21 @@ mod tests {
             stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB, NO_SERVICE),
             Pane::Missing
         );
+    }
+
+    #[test]
+    fn every_pane_is_listed_once_and_read_back_from_the_name_it_is_stored_under() {
+        for pane in Pane::ALL {
+            assert_eq!(Pane::parse(pane.as_str()), Some(pane));
+            assert_eq!(Pane::ALL.iter().filter(|other| **other == pane).count(), 1);
+        }
+        for pane in Pane::BROWSE
+            .into_iter()
+            .chain([Pane::Queue, Pane::Settings])
+        {
+            assert!(Pane::ALL.contains(&pane));
+        }
+        assert_eq!(Pane::ALL.len(), Pane::BROWSE.len() + 2);
     }
 
     #[test]

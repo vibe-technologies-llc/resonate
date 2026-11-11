@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, Context, Entity, MouseButton, Pixels, Point, Role, SharedString, Subscription,
-    Window, div, prelude::*, px, rgb,
+    Task, Window, div, prelude::*, px, rgb,
 };
 use resonate_core::{KeptZone, Volume, ZoneId, ZoneName};
 use resonate_engine::{Command, Error, Keeping, Listening, NodeName, PlaybackState, Zone, Zones};
@@ -296,6 +296,8 @@ impl RootView {
         else {
             return;
         };
+        self.keep_the_volume(cx);
+        self.volume_settled = Task::ready(());
         self.switcher.select(id);
         if player.entity_id() == self.player.entity_id() {
             return;
@@ -310,6 +312,8 @@ impl RootView {
         self.volume_aimed = None;
         self.muted_from = None;
         self.grabbed = None;
+        self.reach = None;
+        self.landed_by_a_jump = None;
         self.seek_pointed = None;
         self.queue_names = QueueNames::default();
         self.took_out = TakenBack::default();

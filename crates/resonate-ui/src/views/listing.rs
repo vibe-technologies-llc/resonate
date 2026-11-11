@@ -411,6 +411,20 @@ pub(crate) fn matched(text: SharedString, lit: Lit) -> Matched {
     }
 }
 
+pub(crate) fn matched_within(cut: kit::Cut, lit: Lit) -> Matched {
+    let kept = cut.kept_bytes();
+    let lit = lit
+        .into_iter()
+        .filter_map(|run| {
+            let end = run.end.min(kept);
+            (run.start < end).then_some(run.start..end)
+        })
+        .collect();
+    let mut shown = matched(cut.drawn().clone(), lit);
+    shown.text = cut.spelt();
+    shown
+}
+
 pub(crate) fn artist_cell(artist: impl IntoElement) -> Div {
     artist_room()
         .flex()
