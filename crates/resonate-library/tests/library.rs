@@ -929,6 +929,7 @@ fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_non
             .expect("a counted play");
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
+    library.settle_listens_after(Duration::ZERO);
     let synced = library.listens_to_sync(0, 10)?;
     let mark = synced.last().expect("the listens to sync").id;
     assert!(library.credit_listen_elsewhere(

@@ -707,6 +707,7 @@ pub(crate) struct Inner {
     trash_home: Mutex<Option<PathBuf>>,
     trashes: Mutex<Option<Arc<dyn Trashes>>>,
     music_filters: Mutex<MusicFilters>,
+    listens_settle_after: Mutex<Duration>,
     foresight: Foresight,
 }
 
@@ -1611,6 +1612,7 @@ impl Library {
                 trash_home: Mutex::new(None),
                 trashes: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),
+                listens_settle_after: Mutex::new(synced::LISTEN_SETTLES_AFTER),
                 foresight: Foresight::default(),
             }),
         })
@@ -2398,6 +2400,11 @@ impl Library {
             .inner
             .read(|connection| deleted::files_of(connection, tracks))?;
 
+        if why == Why::Deleted {
+            self.inner
+                .write(|transaction| deleted::note_before_removing(transaction, &files))?;
+        }
+
         let data_home = self.inner.trash_home.lock().clone();
         let through = self.inner.trashes.lock().clone();
         let through = through.as_deref();
@@ -2423,7 +2430,7 @@ impl Library {
 
         let forgotten = self
             .inner
-            .write(|transaction| deleted::forget_files(transaction, &gone, why))?;
+            .write(|transaction| deleted::forget_files(transaction, &gone))?;
         done.tracks = forgotten.tracks;
         if let Some(vault) = self.vault().cloned() {
             for object in self
@@ -2728,7 +2735,12 @@ impl Library {
     }
 
     pub fn listens_to_sync(&self, after: u64, most: usize) -> Result<Vec<SyncedListen>> {
-        synced::listens_after(&self.inner, after, most)
+        let settles_after = *self.inner.listens_settle_after.lock();
+        synced::listens_after(&self.inner, after, most, settles_after)
+    }
+
+    pub fn settle_listens_after(&self, settles_after: Duration) {
+        *self.inner.listens_settle_after.lock() = settles_after;
     }
 
     pub fn credit_listen_elsewhere(

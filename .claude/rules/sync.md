@@ -563,8 +563,7 @@ will not open is left out of the holdings.
   per-device mark in the catalog, `songs_deleted` (recording key and when, never synced, so no
   cross-device tombstone for songs): the keys (`Recording::key` and `named_key`) of the row deleted
   and every key `songs_received` noted against its file, the spellings a sender's ledger names it by
-  (`synced::note_deleted`, `deleting.rs`'s `deletion_noted`), written in the delete's own
-  transaction before the row and its `songs_received` go. **Folding a numbered or identical copy
+  (`synced::note_deleted`, `deleting.rs`'s `deletion_noted`), **written before the first file goes** on the desktop (`deleted::note_before_removing`, its own transaction ahead of the trashing; `a_song_is_marked_deleted_before_its_file_goes_so_a_follow_meanwhile_does_not_fetch_it_back`), since a row whose file is gone reads as not held and a follow inside a large deletion would otherwise fetch the songs back, and in the delete's own transaction before the row and its `songs_received` go on the phones. A file the trash kept leaves its mark beside a row that stands, which the next `lacked` forgives as it forgives any held song's. **A fetch weighs the mark again once claimed** (`fetch_one`: `deleted_here` beside `held_already`, for a follow, never for an asked `Command::Fetch`), so a follow that listed a song before it was marked does not land it (`a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back`). **Folding a numbered or identical copy
   into its twin marks nothing** (`deleted::Why::Folded`, `fold_into`: the song is still held), nor
   does a phone's row whose document opens again by the time it is forgotten, which is a landing a
   pass made at the freed name before the delete reached the catalog (`android.md`), and

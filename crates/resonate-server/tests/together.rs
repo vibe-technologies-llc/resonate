@@ -5,7 +5,7 @@ use std::{
     process,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -17,7 +17,7 @@ use resonate_sync::{
     DeviceId, Incoming, Outgoing, SpaceId, Token, connect,
     party::{
         Going, Mine, Party, PartyFinder, PartyNow, PartyReach, PartySeat, PartySettings, PartySong,
-        SeatHeard, Standing,
+        PartyWantingASong, SeatHeard, Standing,
     },
     to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
@@ -26,6 +26,7 @@ use rustls::RootCertStore;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    task::{JoinHandle, JoinSet},
     time::timeout,
 };
 
@@ -776,6 +777,201 @@ async fn nobody_is_at_a_party_nobody_began() {
 
     until("the guest to be told there is no such party", || {
         guest.shown().reach == PartyReach::NoSuchParty
+    })
+    .await;
+}
+
+struct Doorman {
+    address: SocketAddr,
+    server: SocketAddr,
+    closing: Arc<AtomicU32>,
+    serving: Option<JoinHandle<()>>,
+}
+
+impl Doorman {
+    async fn before(server: SocketAddr, clean_closes: u32) -> Self {
+        let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+            .await
+            .expect("listening");
+        let address = listener.local_addr().expect("an address");
+        let closing = Arc::new(AtomicU32::new(clean_closes));
+        let serving = tokio::spawn(Self::serve(listener, server, Arc::clone(&closing)));
+
+        Self {
+            address,
+            server,
+            closing,
+            serving: Some(serving),
+        }
+    }
+
+    async fn serve(listener: TcpListener, server: SocketAddr, closing: Arc<AtomicU32>) {
+        let mut links = JoinSet::new();
+        while let Ok((client, _)) = listener.accept().await {
+            let closes_cleanly = closing
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+                    left.checked_sub(1)
+                })
+                .is_ok();
+            if closes_cleanly {
+                links.spawn(async move {
+                    if let Ok(mut socket) = tokio_tungstenite::accept_async(client).await {
+                        let _ = socket.close(None).await;
+                    }
+                });
+            } else {
+                links.spawn(async move {
+                    let mut client = client;
+                    if let Ok(mut upstream) = TcpStream::connect(server).await {
+                        let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+                    }
+                });
+            }
+        }
+    }
+
+    async fn go_away(&mut self) {
+        if let Some(serving) = self.serving.take() {
+            serving.abort();
+            let _ = serving.await;
+        }
+    }
+
+    async fn come_back(&mut self) {
+        let listener = TcpListener::bind(self.address)
+            .await
+            .expect("listening again");
+        self.serving = Some(tokio::spawn(Self::serve(
+            listener,
+            self.server,
+            Arc::clone(&self.closing),
+        )));
+    }
+}
+
+async fn a_party_in_the_room(server: SocketAddr) -> Party {
+    let host = Party::host(party_settings(server, "Host")).expect("the host starts");
+    until("the host to reach the server", || {
+        host.shown().reach == PartyReach::Here
+    })
+    .await;
+
+    host
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_back() {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let mut door = Doorman::before(server, 0).await;
+    let guest = Party::join(party_settings(door.address, "Guest"), &host.shown().code)
+        .expect("the guest starts");
+    until("the guest to reach the party", || {
+        guest.shown().reach == PartyReach::Here
+    })
+    .await;
+
+    door.go_away().await;
+    until("the guest to find itself cut off", || {
+        guest.shown().reach == PartyReach::Reconnecting
+    })
+    .await;
+    guest.ask_for(a_song(9));
+    door.come_back().await;
+
+    until("the request to reach the host", || {
+        host.shown().asked_for.len() == 1
+    })
+    .await;
+    assert_eq!(host.shown().asked_for[0].song, a_song(9));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hosts_turn_out_made_while_it_reconnects_reaches_the_room_once_it_is_back() {
+    let server = hosted(Limits::default()).await;
+    let mut door = Doorman::before(server, 0).await;
+    let host = Party::host(party_settings(door.address, "Host")).expect("the host starts");
+    until("the host to reach the server", || {
+        host.shown().reach == PartyReach::Here
+    })
+    .await;
+    let guest =
+        Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+    until("the host to see the guest", || {
+        host.shown().people.len() == 2
+    })
+    .await;
+
+    door.go_away().await;
+    until("the host to find itself cut off", || {
+        host.shown().reach == PartyReach::Reconnecting
+    })
+    .await;
+    host.turn_out(guest.shown().me);
+    door.come_back().await;
+
+    until("the guest to be turned out", || {
+        guest.shown().reach == PartyReach::Ended
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone() {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let guest =
+        Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+    until("the guest to reach the party", || {
+        guest.shown().reach == PartyReach::Here
+    })
+    .await;
+
+    guest.ask_for(a_song(8));
+    guest.ask_for(a_song(9));
+    until("both requests to reach the host", || {
+        host.shown().asked_for.len() == 2
+    })
+    .await;
+    let second: PartyWantingASong = host.shown().asked_for[1].clone();
+    let first: PartyWantingASong = host.shown().asked_for[0].clone();
+
+    host.take_a_request(first.clone());
+    host.take_a_request(first);
+    until("the first request to go", || {
+        host.shown().asked_for.len() == 1
+    })
+    .await;
+
+    assert_eq!(host.shown().asked_for, [second]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_clean_close_before_the_welcome_is_a_connection_lost_and_not_a_server_too_old() {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let door = Doorman::before(server, 1).await;
+
+    let guest = Party::join(party_settings(door.address, "Guest"), &host.shown().code)
+        .expect("the guest starts");
+
+    until("the guest to reach the party past the close", || {
+        guest.shown().reach == PartyReach::Here
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_that_closes_every_connection_before_the_welcome_reads_as_too_old() {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let door = Doorman::before(server, u32::MAX).await;
+
+    let guest = Party::join(party_settings(door.address, "Guest"), &host.shown().code)
+        .expect("the guest starts");
+
+    until("the guest to read the server as too old", || {
+        guest.shown().reach == PartyReach::ServerTooOld
     })
     .await;
 }

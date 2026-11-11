@@ -23,7 +23,7 @@ use crate::{
     filed::{self, Beside, Unfiled},
     organise::{Named, Naming},
     playlist::{self, Row},
-    store, undo, vaulted, volumes, words,
+    sourced, store, undo, vaulted, volumes, words,
 };
 
 pub(crate) const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, ''), coalesce(a.title, ''), t.mbid, t.duration, t.sample_rate";
@@ -31,7 +31,7 @@ pub(crate) const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, 
 pub(crate) const RECORDING_JOINS: &str = "LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = t.artist_id";
 
-const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
+pub(crate) const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
 
 const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 
@@ -680,6 +680,7 @@ fn made(transaction: &Transaction<'_>, name: &str) -> Result<PlaylistId> {
             params![id.get().cast_signed()],
         )
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    sourced::forget_the_source_of_a_discarded_holder(transaction, id)?;
     Ok(id)
 }
 
@@ -1174,10 +1175,15 @@ pub(crate) fn favour(inner: &Inner, recording: &Recording, favoured: bool) -> Re
     Ok(changed.is_some())
 }
 
-pub(crate) fn listens_after(inner: &Inner, mark: u64, most: usize) -> Result<Vec<SyncedListen>> {
+pub(crate) fn listens_after(
+    inner: &Inner,
+    mark: u64,
+    most: usize,
+    settles_after: Duration,
+) -> Result<Vec<SyncedListen>> {
     let settled_before = store::to_nanos(
         SystemTime::now()
-            .checked_sub(LISTEN_SETTLES_AFTER)
+            .checked_sub(settles_after)
             .unwrap_or(SystemTime::UNIX_EPOCH),
     );
     inner.read(|connection| {
@@ -1208,7 +1214,7 @@ pub(crate) fn listens_after(inner: &Inner, mark: u64, most: usize) -> Result<Vec
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         let mut listens = Vec::with_capacity(rows.len());
         for (id, began, heard, at, recording) in rows {
-            if heard == 0 && at > settled_before {
+            if at.max(began.saturating_add(heard)) > settled_before {
                 break;
             }
             if let Some(recording) = recording {

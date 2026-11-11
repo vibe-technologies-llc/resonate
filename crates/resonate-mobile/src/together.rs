@@ -557,14 +557,16 @@ impl MobilePlayer {
             at: Placement::Next,
             play: false,
         });
-        party.take_a_request(at);
+        party.take_a_request(asked);
 
         placed.is_ok()
     }
 
     pub fn party_pass_over(&self, request: u32) {
-        if let Some(room) = self.together.party.lock().as_ref() {
-            room.going.party().take_a_request(request as usize);
+        if let Some(room) = self.together.party.lock().as_ref()
+            && let Some(asked) = room.going.shown().asked_for.get(request as usize).cloned()
+        {
+            room.going.party().take_a_request(asked);
         }
     }
 }

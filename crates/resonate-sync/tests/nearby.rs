@@ -1078,6 +1078,48 @@ fn a_song_deleted_from_the_app_is_not_followed_and_sync_now_clears_the_mark() {
 }
 
 #[test]
+fn a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back() {
+    let folder = scratch("deleted-meanwhile");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+    phone_shelf.inside.lock().deleted_after_the_first_look = vec!["A".into()];
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+    eventually("the phone meeting the desk", || {
+        phone
+            .shown()
+            .devices
+            .iter()
+            .any(|seen| seen.name == "Desk" && seen.nearby && seen.online)
+    });
+    eventually("the song to be looked at", || {
+        phone_shelf
+            .inside
+            .lock()
+            .deleted_after_the_first_look
+            .is_empty()
+    });
+    thread::sleep(Duration::from_secs(1));
+
+    assert!(!holds_title(&phone_shelf, "A"));
+    assert!(phone.shown().transfers.is_empty());
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
     let folder = scratch("refused-kept");
     let key = SyncKey::minted().expect("a key");

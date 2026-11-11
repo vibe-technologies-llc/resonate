@@ -2998,7 +2998,9 @@ async fn fetch_one(
         running.passed_over(device, recording, asked);
         return;
     }
-    let held = if held_already(running, &recording).await {
+    let held = if held_already(running, &recording).await
+        || (!asked && deleted_here(running, &recording).await)
+    {
         running.unlisted_waiting(&recording, device);
         true
     } else {
@@ -3009,6 +3011,17 @@ async fn fetch_one(
     if !held && !again.is_empty() {
         let _ = running.events.send(Event::Unclaimed(again));
     }
+}
+
+async fn deleted_here(running: &Arc<Running>, recording: &Recording) -> bool {
+    let catalog = Arc::clone(&running.catalog);
+    let asked = recording.clone();
+    blocking(move || catalog.deleted_here(&asked).map_err(Error::Catalog))
+        .await
+        .unwrap_or_else(|error| {
+            tracing::debug!(%error, "whether a song was deleted here could not be read");
+            false
+        })
 }
 
 async fn held_already(running: &Arc<Running>, recording: &Recording) -> bool {
