@@ -79,7 +79,9 @@ rest on this discipline alone):
   The buffer handling, the clock's arithmetic and the fill are on the host as well, so their tests
   run there.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
-  state from atomics, each rendered level's start from a preallocated SPSC queue (a gapless turn
+  state from atomics (one `Fading` of open, silencing or quiet, which the callback moves to quiet
+  only by a compare-and-swap from silencing, so a play landing mid-pull is never left marked quiet:
+  `a_play_landing_while_a_pull_fades_out_leaves_the_ring_sounding`), each rendered level's start from a preallocated SPSC queue (a gapless turn
   between rows steps to a heard level held in a fixed array of `TURNS_HELD` atomics, one slot a
   turn by its `Turned` count, so up to `TURNS_WAITING_AT_MOST` turns wait at once each at its own
   level; every slot and the current level are movable by `hear_across` while turns wait, and a
