@@ -19,7 +19,11 @@ use wasapi::{AudioClient, AudioClock, AudioRenderClient, Handle, ShareMode, Wasa
 use crate::{
     clock::{ClockReading, CounterNow},
     fill::fill_buffer,
+    priority::Priority,
+    serving::{Cycled, Hardware, Woken},
 };
+
+const EVENT_WAIT_MS: u32 = 100;
 
 pub(crate) struct Playing {
     pub(crate) client: AudioClient,
@@ -37,22 +41,20 @@ pub(crate) struct Playing {
     pub(crate) counter: Option<PerformanceCounter>,
     pub(crate) written: u64,
     pub(crate) real: u64,
+    pub(crate) priority: Priority,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Cycled {
-    pub(crate) heard: usize,
-    pub(crate) played: u64,
-}
+impl Hardware for Playing {
+    type Fault = WasapiError;
 
-impl Cycled {
-    pub(crate) const fn has_played_out(self, real: u64) -> bool {
-        self.heard == 0 && self.played >= real
+    fn wait_for_room(&mut self) -> Woken {
+        match self.event.wait_for_event(EVENT_WAIT_MS) {
+            Ok(()) => Woken::Asked,
+            Err(_) => Woken::TimedOut,
+        }
     }
-}
 
-impl Playing {
-    pub(crate) fn cycle(&mut self) -> Result<Cycled, WasapiError> {
+    fn cycle(&mut self) -> Result<Cycled, WasapiError> {
         let available = self.client.get_available_space_in_frames()?;
         let reading = self.read_the_clock();
         let counter = self.read_the_counter();
@@ -75,7 +77,7 @@ impl Playing {
         let played = self.written.saturating_sub(ahead);
         let wanted = usize::try_from(available).unwrap_or_default();
         if wanted == 0 {
-            return Ok(Cycled { heard: 0, played });
+            return Ok(self.cycled(0, played));
         }
 
         let device = reading
@@ -91,7 +93,7 @@ impl Playing {
         );
         let bytes = filled.frames.saturating_mul(self.frame_bytes.get());
         let Some(window) = self.scratch.get(..bytes) else {
-            return Ok(Cycled { heard: 0, played });
+            return Ok(self.cycled(0, played));
         };
         self.render.write_to_device(window, None)?;
 
@@ -99,10 +101,39 @@ impl Playing {
             self.real = self.written.saturating_add(filled.heard as u64);
         }
         self.written = self.written.saturating_add(filled.frames as u64);
-        Ok(Cycled {
-            heard: filled.heard,
+        Ok(self.cycled(filled.heard, played))
+    }
+
+    fn start(&mut self) -> Result<(), WasapiError> {
+        self.client.start_stream()
+    }
+
+    fn pause(&mut self) -> Result<(), WasapiError> {
+        self.client.stop_stream()?;
+        self.client.reset_stream()?;
+        self.written = 0;
+        self.real = 0;
+        Ok(())
+    }
+
+    fn stop(&mut self) {
+        if let Err(error) = self.client.stop_stream() {
+            tracing::debug!(%error, "a WASAPI stream would not stop as it was let go");
+        }
+    }
+
+    fn prioritise(&mut self, realtime: bool) {
+        self.priority.set(realtime);
+    }
+}
+
+impl Playing {
+    const fn cycled(&self, heard: usize, played: u64) -> Cycled {
+        Cycled {
+            heard,
             played,
-        })
+            heard_until: self.real,
+        }
     }
 
     const fn padding(&self, available: u32) -> u32 {
