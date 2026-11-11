@@ -152,6 +152,7 @@ pub(crate) mod joined {
     #[derive(Default)]
     pub(crate) struct Joining {
         pub(crate) joined: Mutex<Vec<(String, ZoneId)>>,
+        pub(crate) accepted: Mutex<Vec<String>>,
         pub(crate) refuses: bool,
     }
 
@@ -187,8 +188,9 @@ pub(crate) mod joined {
             false
         }
 
-        fn accept(&self, _: &str) -> bool {
-            false
+        fn accept(&self, invitation: &str) -> bool {
+            self.accepted.lock().push(invitation.to_owned());
+            !self.refuses
         }
 
         fn join_party(&self, invitation: &str, zone: ZoneId) -> bool {

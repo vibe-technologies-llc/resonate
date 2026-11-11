@@ -261,6 +261,7 @@ pub struct RemoteZoneState {
     pub volume_permille: u16,
     pub queue_length: u32,
     pub first_row: u32,
+    pub queue_revision: Option<u64>,
     pub rows: Vec<RemoteSong>,
 }
 
@@ -340,6 +341,7 @@ fn zone_state(mirror: &Mirror, zone: &RemoteZone, now: Instant) -> RemoteZoneSta
         volume_permille: zone.volume.get(),
         queue_length: counted(zone.queue_length),
         first_row: counted(zone.first_row),
+        queue_revision: zone.queue_revision,
         rows: zone.rows.iter().map(song_of).collect(),
     }
 }
@@ -389,6 +391,7 @@ impl MobilePlayer {
         device: String,
         zone: u32,
         control: RemoteControl,
+        queue_revision: Option<u64>,
     ) -> Result<RemoteAnswer> {
         let asked = {
             let running = self.syncing.running.lock();
@@ -399,7 +402,7 @@ impl MobilePlayer {
             };
             running
                 .sync
-                .ask_to_control(device.id, zone, command_of(control))
+                .ask_to_control(device.id, zone, command_of(control), queue_revision)
         };
         Ok(answer_of(asked.answer()))
     }
@@ -752,6 +755,7 @@ mod tests {
         assert_eq!(shown.zones[0].position_millis, 12_000);
         assert_eq!(shown.zones[0].playing_row, Some(3));
         assert_eq!(shown.zones[0].first_row, 2);
+        assert_eq!(shown.zones[0].queue_revision, Some(4));
         assert_eq!(shown.zones[0].rows[0].title, "Echoes");
         assert_eq!(
             command_of(RemoteControl::Move { from: 4, to: 1 }),

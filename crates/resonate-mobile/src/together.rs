@@ -380,6 +380,14 @@ impl MobilePlayer {
         self.a_shared_list_at(at).ok_or(Error::UnknownPlaylist)
     }
 
+    pub fn invitation_naming_another_server(&self, text: String) -> Option<String> {
+        let invitation = invitation_in(&text).filter(|one| one.to == Invited::Playlist)?;
+
+        invitation
+            .naming_a_server_other_than(&self.own_server())
+            .map(str::to_owned)
+    }
+
     pub fn accept_invitation(&self, text: String) -> Result<Option<InvitationKind>> {
         let Some(invitation) = invitation_in(&text) else {
             return Ok(None);
@@ -543,6 +551,9 @@ impl MobilePlayer {
         else {
             return false;
         };
+        let Some(_claim) = party.claim_a_request(&asked) else {
+            return true;
+        };
         let Some(row) = finder.found(&asked.song) else {
             return false;
         };
@@ -593,13 +604,17 @@ impl MobilePlayer {
         Ok((shared, list))
     }
 
+    fn own_server(&self) -> String {
+        self.syncing
+            .server()
+            .or_else(|| self.syncing.chosen_server.lock().clone())
+            .unwrap_or_else(|| HOSTED_SERVER.to_owned())
+    }
+
     fn party_settings(&self, server: Option<String>) -> Result<PartySettings> {
         self.require_online()?;
 
-        let server = server
-            .or_else(|| self.syncing.server())
-            .or_else(|| self.syncing.chosen_server.lock().clone())
-            .unwrap_or_else(|| HOSTED_SERVER.to_owned());
+        let server = server.unwrap_or_else(|| self.own_server());
 
         Ok(PartySettings {
             server,
@@ -667,6 +682,25 @@ mod tests {
             Some(InvitationKind::Party)
         );
         assert_eq!(invitation_kind("love song".to_owned()), None);
+    }
+
+    #[test]
+    fn a_shared_list_naming_a_server_other_than_the_phones_own_is_told_with_that_server() {
+        let phone = crate::playlists::tests::player();
+        let stranger = "resonate://shared/E-ABCDE?server=wss%3A%2F%2Fstranger.example%2F";
+        let ask = |text: &str| phone.invitation_naming_another_server(text.to_owned());
+
+        assert_eq!(ask("resonate://shared/E-ABCDE"), None);
+        assert_eq!(ask("https://resonate.tecnio.dev/s/#E-ABCDE"), None);
+        assert_eq!(ask(stranger), Some("wss://stranger.example/".to_owned()));
+        assert_eq!(
+            ask("resonate://party/ABCDE?server=wss%3A%2F%2Fstranger.example%2F"),
+            None
+        );
+
+        phone.together_server("wss://stranger.example".to_owned());
+
+        assert_eq!(ask(stranger), None);
     }
 
     #[test]

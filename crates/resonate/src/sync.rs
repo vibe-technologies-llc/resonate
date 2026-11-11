@@ -1126,9 +1126,13 @@ fn controlled(
         }
         return Ok(());
     };
-    let target = zone_asked(&mirror, &device.name, zone)?.zone;
+    let asked_of = zone_asked(&mirror, &device.name, zone)?;
+    let (target, drawn) = (asked_of.zone, asked_of.queue_revision);
     let asked_at = Instant::now();
-    match sync.control(device.id, target, command) {
+    match sync
+        .ask_to_control(device.id, target, command, drawn)
+        .answer()
+    {
         Controlling::Done => {}
         answer => {
             return Err(Error::NotControlled {
@@ -1460,9 +1464,15 @@ impl resonate_ui::Syncing for Service {
         self.with((), |running| resonate_ui::Syncing::unwatch(running, device));
     }
 
-    fn press(&self, device: &str, zone: u32, key: resonate_ui::RemoteKey) -> bool {
+    fn press(
+        &self,
+        device: &str,
+        zone: u32,
+        key: resonate_ui::RemoteKey,
+        drawn: Option<u64>,
+    ) -> bool {
         self.with(false, |running| {
-            resonate_ui::Syncing::press(running, device, zone, key)
+            resonate_ui::Syncing::press(running, device, zone, key, drawn)
         })
     }
 }
@@ -1492,6 +1502,7 @@ fn zone_shown(mirror: &Mirror, zone: &RemoteZone) -> resonate_ui::RemoteZoneShow
         playing: zone.playing,
         queue_length: zone.queue_length,
         first_row: zone.first_row,
+        queue_revision: zone.queue_revision,
         rows: zone
             .rows
             .iter()
@@ -1546,11 +1557,20 @@ impl resonate_ui::Syncing for Running {
         }
     }
 
-    fn press(&self, device: &str, zone: u32, key: resonate_ui::RemoteKey) -> bool {
+    fn press(
+        &self,
+        device: &str,
+        zone: u32,
+        key: resonate_ui::RemoteKey,
+        drawn: Option<u64>,
+    ) -> bool {
         let (Some(id), Some(zone)) = (self.other_device(device), ZoneId::new(zone)) else {
             return false;
         };
-        self.sync.control(id, zone, command_of(key)) == Controlling::Done
+        self.sync
+            .ask_to_control(id, zone, command_of(key), drawn)
+            .answer()
+            == Controlling::Done
     }
 
     fn force(&self) {

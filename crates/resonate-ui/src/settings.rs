@@ -802,6 +802,13 @@ pub enum Followed {
     Tidal(TidalSignIn),
     Spotify(SpotifySignIn),
     PartyOffered(String),
+    ListOffered(ListOffered),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListOffered {
+    pub link: String,
+    pub server: String,
 }
 
 struct Withheld;
@@ -1372,6 +1379,7 @@ pub struct RemoteZoneShown {
     pub playing: Option<usize>,
     pub queue_length: usize,
     pub first_row: usize,
+    pub queue_revision: Option<u64>,
     pub rows: Vec<RemoteRowShown>,
 }
 
@@ -1446,7 +1454,7 @@ pub trait Syncing: Send + Sync {
 
     fn unwatch(&self, _device: &str) {}
 
-    fn press(&self, _device: &str, _zone: u32, _key: RemoteKey) -> bool {
+    fn press(&self, _device: &str, _zone: u32, _key: RemoteKey, _drawn: Option<u64>) -> bool {
         false
     }
 }

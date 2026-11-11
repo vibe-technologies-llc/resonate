@@ -5,7 +5,7 @@ use std::{
     process,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -18,7 +18,7 @@ use resonate_sync::{
     LocalPlaylistId, Refused, Server as Reached,
     shared::{LocalShared, Shared, SharedCatalog, SharedSettings, SharedShown, SharedStanding},
 };
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
 
@@ -302,6 +302,118 @@ impl Hosted {
 
         Person { shelf, shared }
     }
+}
+
+struct Doorman {
+    address: SocketAddr,
+    _runtime: tokio::runtime::Runtime,
+}
+
+impl Doorman {
+    fn closing_then_passing_to(server: SocketAddr, clean_closes: u32) -> Self {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let listener = runtime
+            .block_on(TcpListener::bind(SocketAddr::from((
+                Ipv4Addr::LOCALHOST,
+                0,
+            ))))
+            .expect("listening");
+        let address = listener.local_addr().expect("an address");
+        let closing = Arc::new(AtomicU32::new(clean_closes));
+        runtime.spawn(async move {
+            while let Ok((client, _)) = listener.accept().await {
+                let closes_cleanly = closing
+                    .try_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+                        left.checked_sub(1)
+                    })
+                    .is_ok();
+                if closes_cleanly {
+                    tokio::spawn(async move {
+                        if let Ok(mut socket) = tokio_tungstenite::accept_async(client).await {
+                            let _ = socket.close(None).await;
+                        }
+                    });
+                } else {
+                    tokio::spawn(async move {
+                        let mut client = client;
+                        if let Ok(mut upstream) = TcpStream::connect(server).await {
+                            let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+                        }
+                    });
+                }
+            }
+        });
+
+        Self {
+            address,
+            _runtime: runtime,
+        }
+    }
+}
+
+impl Hosted {
+    fn person_through(&self, name: &str, door: &Doorman) -> Person {
+        let shelf = Arc::new(Shelf::default());
+        let shared = Shared::start(
+            SharedSettings {
+                server: Reached::At(format!("ws://{}/", door.address)),
+                trusted: None,
+                store: self.folder.join(format!("{name}.sqlite")),
+                name: name.to_owned(),
+            },
+            Arc::clone(&shelf) as Arc<dyn SharedCatalog>,
+        )
+        .expect("started");
+
+        Person { shelf, shared }
+    }
+}
+
+fn standing_after_forcing(person: &Person, until: impl Fn(SharedStanding) -> bool) -> bool {
+    let deadline = Instant::now() + SETTLES_WITHIN;
+    let mut ever_too_old = false;
+    while Instant::now() < deadline {
+        person.shared.force();
+        let standing = shown_on(person).first().map(|shown| shown.standing);
+        ever_too_old |= standing == Some(SharedStanding::ServerTooOld);
+        if standing.is_some_and(&until) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    ever_too_old
+}
+
+#[test]
+fn one_clean_close_is_a_server_lost_and_not_a_server_too_old() {
+    let hosted = hosted("closes");
+    let door = Doorman::closing_then_passing_to(hosted.address, 2);
+    let ada = hosted.person_through("Ada", &door);
+    let list = ada.shelf.made("Mix", &["One"]);
+    ada.shared.share(list).expect("shared");
+
+    let ever_too_old = standing_after_forcing(&ada, |standing| standing == SharedStanding::Reached);
+
+    assert!(!ever_too_old);
+    assert_eq!(shown_on(&ada)[0].standing, SharedStanding::Reached);
+}
+
+#[test]
+fn a_server_that_closes_every_connection_reads_as_too_old() {
+    let hosted = hosted("closes-always");
+    let door = Doorman::closing_then_passing_to(hosted.address, u32::MAX);
+    let ada = hosted.person_through("Ada", &door);
+    let list = ada.shelf.made("Mix", &["One"]);
+    ada.shared.share(list).expect("shared");
+
+    let ever_too_old =
+        standing_after_forcing(&ada, |standing| standing == SharedStanding::ServerTooOld);
+
+    assert!(ever_too_old);
 }
 
 fn eventually(what: &str, person: &Person, done: impl Fn() -> bool) {

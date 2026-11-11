@@ -15,10 +15,10 @@ use resonate_library::{Library, PlaylistName, SyncedPlaylist};
 #[cfg(feature = "ui")]
 use resonate_sync::party::{PartyReach, SittingOut, Standing};
 use resonate_sync::{
-    HeldShare, LocalPlaylistId, Refused,
+    HOSTED_SERVER, HeldShare, LocalPlaylistId, Refused,
     shared::{
-        Invited, LocalShared, MemberId, Shared, SharedCatalog, SharedSettings, SharedShown,
-        SharedStanding, invitation_in,
+        Invitation, Invited, LocalShared, MemberId, Shared, SharedCatalog, SharedSettings,
+        SharedShown, SharedStanding, invitation_in,
     },
 };
 
@@ -42,6 +42,8 @@ const SETTLED_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 
 static RUNNING: Mutex<Option<Arc<Shared>>> = Mutex::new(None);
 
+static HOME_SERVER: Mutex<Option<String>> = Mutex::new(None);
+
 pub(crate) struct Together {
     shared: Arc<Shared>,
     _alone: File,
@@ -50,6 +52,7 @@ pub(crate) struct Together {
 impl Drop for Together {
     fn drop(&mut self) {
         *RUNNING.lock() = None;
+        *HOME_SERVER.lock() = None;
     }
 }
 
@@ -187,6 +190,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
     });
     let shared = Arc::new(Shared::start(settings, catalog).map_err(Error::Sync)?);
     *RUNNING.lock() = Some(Arc::clone(&shared));
+    *HOME_SERVER.lock() = server_of(config).address();
 
     Ok(Some(Together {
         shared,
@@ -449,6 +453,13 @@ pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
         };
     }
 
+    if arrival == Arrival::FromOutside && another_server_named(&invitation).is_some() {
+        #[cfg(feature = "ui")]
+        return crate::party_room::offer(text);
+        #[cfg(not(feature = "ui"))]
+        return false;
+    }
+
     thread::spawn(move || {
         let deadline = Instant::now() + SETTLES_WITHIN;
         loop {
@@ -467,6 +478,12 @@ pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
     });
 
     true
+}
+
+fn another_server_named(invitation: &Invitation) -> Option<&str> {
+    let home = HOME_SERVER.lock().clone();
+
+    invitation.naming_a_server_other_than(home.as_deref().unwrap_or(HOSTED_SERVER))
 }
 
 fn settled(shared: &Shared) {
@@ -671,6 +688,41 @@ mod tests {
         let kept = invitations_taken_out(&arguments);
 
         assert_eq!(kept.len(), 2, "a party's link is no song either");
+    }
+
+    fn naming(server: Option<&str>) -> Invitation {
+        Invitation {
+            to: Invited::Playlist,
+            code: "E-ABCDE".to_owned(),
+            server: server.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_link_names_another_server_only_where_it_is_not_the_one_this_device_uses() {
+        *HOME_SERVER.lock() = None;
+        let stranger = naming(Some("wss://stranger.example/"));
+
+        assert_eq!(another_server_named(&naming(None)), None);
+        assert_eq!(
+            another_server_named(&naming(Some(HOSTED_SERVER))),
+            None,
+            "a page of the hosted server names it"
+        );
+        assert_eq!(
+            another_server_named(&stranger),
+            Some("wss://stranger.example/")
+        );
+
+        *HOME_SERVER.lock() = Some("wss://stranger.example".to_owned());
+
+        assert_eq!(another_server_named(&stranger), None);
+        assert_eq!(
+            another_server_named(&naming(Some(HOSTED_SERVER))),
+            Some(HOSTED_SERVER)
+        );
+
+        *HOME_SERVER.lock() = None;
     }
 
     #[test]

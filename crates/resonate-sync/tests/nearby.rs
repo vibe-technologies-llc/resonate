@@ -1306,6 +1306,32 @@ fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue
         [RemoteCommand::Play, RemoteCommand::Jump(1)]
     );
 
+    let edited_since = MIRRORED_REVISION + 1;
+    stage.zone.lock().queue_revision = Some(edited_since);
+    eventually("the edited queue's revision mirrored on the phone", || {
+        phone.watched(desk.device()).mirror().is_some_and(|mirror| {
+            mirror.zones.first().and_then(|zone| zone.queue_revision) == Some(edited_since)
+        })
+    });
+    let removed_as_drawn_before_the_mirror_landed = phone
+        .ask_to_control(
+            desk.device(),
+            ZoneId::FIRST,
+            RemoteCommand::Remove(1),
+            Some(MIRRORED_REVISION),
+        )
+        .answer();
+
+    assert_eq!(
+        removed_as_drawn_before_the_mirror_landed,
+        Controlling::NoSuchRow
+    );
+    assert_eq!(stage.seen.lock().last(), Some(&Some(MIRRORED_REVISION)));
+    assert_eq!(
+        *stage.told.lock(),
+        [RemoteCommand::Play, RemoteCommand::Jump(1)]
+    );
+
     drop(phone);
     drop(desk);
     let _ = fs::remove_dir_all(&folder);

@@ -966,6 +966,37 @@ async fn a_hosts_turn_out_made_while_it_reconnects_reaches_the_room_once_it_is_b
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_again_once_dropped()
+{
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let guest =
+        Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+    until("the guest to reach the party", || {
+        guest.shown().reach == PartyReach::Here
+    })
+    .await;
+    guest.ask_for(a_song(8));
+    until("the request to reach the host", || {
+        host.shown().asked_for.len() == 1
+    })
+    .await;
+    let request = host.shown().asked_for[0].clone();
+
+    let first = host.claim_a_request(&request);
+    let second = host.claim_a_request(&request);
+
+    assert!(first.is_some());
+    assert!(second.is_none());
+    drop(first);
+    let again = host.claim_a_request(&request);
+    assert!(again.is_some());
+
+    host.take_a_request(request);
+    assert!(host.shown().asked_for.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone() {
     let server = hosted(Limits::default()).await;
     let host = a_party_in_the_room(server).await;

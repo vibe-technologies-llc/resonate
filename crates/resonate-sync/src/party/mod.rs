@@ -16,5 +16,7 @@ pub use self::{
     key::{PARTY_LINK, PartyKey, PartyKeys},
     said::{PartyNow, PartySaid, PartySong},
     seat::{Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard},
-    service::{Party, PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong},
+    service::{
+        Party, PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim,
+    },
 };

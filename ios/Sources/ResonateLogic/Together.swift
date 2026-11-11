@@ -43,6 +43,11 @@ public enum TogetherWords {
     public static var pressAgain: String { said("together.press-again") }
     public static var joinThisPartyAsks: String { said("together.join-party.ask") }
     public static var joinThisPartySays: String { said("together.join-party.says") }
+    public static var joinAListOnAnotherServerAsks: String { said("together.join-list.ask") }
+
+    public static func joinAListOnAnotherServerSays(_ server: String) -> String {
+        said("together.join-list.says", server)
+    }
 
     public static func person(_ person: TogetherPerson) -> String {
         let name = person.isMe ? said("together.person.you") : person.name.isEmpty ? said("together.person.someone") : person.name

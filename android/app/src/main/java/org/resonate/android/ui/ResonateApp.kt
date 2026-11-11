@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -246,6 +247,7 @@ fun ResonateApp(resonate: Resonate) {
                 SheetHost()
                 PairingOffer()
                 PartyOffer()
+                ListOfferDialog()
                 InvitationArrivals()
             }
         }
@@ -288,6 +290,21 @@ private fun PartyOffer() {
         icon = Icons.Rounded.Headphones,
         onConfirm = { together.arrive(offered) },
         onDismiss = { together.partyOffered.value = null },
+    )
+}
+
+@Composable
+private fun ListOfferDialog() {
+    val together = LocalResonate.current.features.together
+    val offer by together.listOffered.collectAsStateWithLifecycle()
+    val offered = offer ?: return
+    ConfirmDialog(
+        title = stringResource(R.string.together_join_list_asks),
+        text = stringResource(R.string.together_join_list_says, offered.server),
+        confirm = stringResource(R.string.shell_join),
+        icon = Icons.Rounded.Share,
+        onConfirm = { together.arrive(offered.link) },
+        onDismiss = { together.listOffered.value = null },
     )
 }
 

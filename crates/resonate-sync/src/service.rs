@@ -809,7 +809,9 @@ impl Sync {
     }
 
     pub fn control(&self, device: DeviceId, zone: ZoneId, command: RemoteCommand) -> Controlling {
-        self.ask_to_control(device, zone, command).answer()
+        let drawn = self.queue_revision_mirrored(device, zone);
+
+        self.ask_to_control(device, zone, command, drawn).answer()
     }
 
     pub fn ask_to_control(
@@ -817,12 +819,10 @@ impl Sync {
         device: DeviceId,
         zone: ZoneId,
         command: RemoteCommand,
+        drawn: Option<u64>,
     ) -> AskedToControl {
         let (answer, answered) = std_mpsc::channel();
-        let queue_seen = command
-            .names_a_row()
-            .then(|| self.queue_revision_mirrored(device, zone))
-            .flatten();
+        let queue_seen = command.names_a_row().then_some(drawn).flatten();
         let asked = Command::Control {
             device,
             zone,

@@ -25,6 +25,20 @@ pub struct Invitation {
     pub server: Option<String>,
 }
 
+impl Invitation {
+    pub fn naming_a_server_other_than(&self, own: &str) -> Option<&str> {
+        let named = self.server.as_deref()?;
+
+        (!same_server(named, own)).then_some(named)
+    }
+}
+
+fn same_server(one: &str, other: &str) -> bool {
+    let bare = |server: &str| server.trim().trim_end_matches('/').to_ascii_lowercase();
+
+    bare(one) == bare(other)
+}
+
 pub fn invitation_in(text: &str) -> Option<Invitation> {
     let text = text.trim();
 
@@ -180,6 +194,25 @@ mod tests {
     #[test]
     fn a_server_no_browser_can_reach_has_no_web_link() {
         assert_eq!(web_link_to(Invited::Party, CODE, "music.example:443"), None);
+    }
+
+    #[test]
+    fn a_link_names_another_server_only_where_it_is_not_the_one_given() {
+        let named = |server: Option<&str>| Invitation {
+            to: Invited::Playlist,
+            code: CODE.to_owned(),
+            server: server.map(str::to_owned),
+        };
+
+        assert_eq!(named(None).naming_a_server_other_than(OWN_SERVER), None);
+        assert_eq!(
+            named(Some(OWN_SERVER)).naming_a_server_other_than("WSS://music.example:8443"),
+            None
+        );
+        assert_eq!(
+            named(Some("wss://stranger.example/")).naming_a_server_other_than(OWN_SERVER),
+            Some("wss://stranger.example/")
+        );
     }
 
     #[test]

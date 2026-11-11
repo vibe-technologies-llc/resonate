@@ -150,7 +150,7 @@ object DrivenWords {
 }
 
 @Composable
-fun DrivenDevice(resonate: Resonate, device: String, press: (UInt, RemoteControl) -> Unit) {
+fun DrivenDevice(resonate: Resonate, device: String, press: (UInt, RemoteControl, ULong?) -> Unit) {
     val shown by
         produceState<RemoteDevice?>(null, device) {
             try {
@@ -173,7 +173,7 @@ fun DrivenDevice(resonate: Resonate, device: String, press: (UInt, RemoteControl
             now.standing == RemoteStanding.REFUSED ->
                 Note(stringResource(R.string.driven_refused_device))
             now.zones.isEmpty() -> Note(stringResource(R.string.driven_asking))
-            else -> now.zones.forEach { zone -> DrivenZone(zone) { control -> press(zone.zone, control) } }
+            else -> now.zones.forEach { zone -> DrivenZone(zone) { control -> press(zone.zone, control, zone.queueRevision) } }
         }
     }
 }

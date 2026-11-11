@@ -672,7 +672,7 @@ impl RootView {
             transport = transport.child(self.in_the_ring_at(
                 control.clone(),
                 kit::icon_button(SharedString::from(control), icon, saying),
-                move |this, _, cx| this.press_on_the_device(&device, at, key, cx),
+                move |this, _, cx| this.press_on_the_device(&device, at, key, None, cx),
                 cx,
             ));
         }
@@ -757,11 +757,11 @@ impl RootView {
                 )
                 .on_action(cx.listener(move |this, _: &RailOn, _, cx| {
                     let to = stepped_on(position, length);
-                    this.press_on_the_device(&forward, at, RemoteKey::Seek(to), cx);
+                    this.press_on_the_device(&forward, at, RemoteKey::Seek(to), None, cx);
                 }))
                 .on_action(cx.listener(move |this, _: &RailBack, _, cx| {
                     let to = position.saturating_sub(DRIVEN_SEEK_STEP);
-                    this.press_on_the_device(&back, at, RemoteKey::Seek(to), cx);
+                    this.press_on_the_device(&back, at, RemoteKey::Seek(to), None, cx);
                 }))
                 .when_some(reading, |control, reading| {
                     let entity = cx.entity().downgrade();
@@ -776,21 +776,33 @@ impl RootView {
                             entity
                                 .update(cx, |this, cx| {
                                     let to = length.mul_f32(share.clamp(0.0, 1.0));
-                                    this.press_on_the_device(&set, at, RemoteKey::Seek(to), cx);
+                                    this.press_on_the_device(
+                                        &set,
+                                        at,
+                                        RemoteKey::Seek(to),
+                                        None,
+                                        cx,
+                                    );
                                 })
                                 .ok();
                         })
                         .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
                             on.update(cx, |this, cx| {
                                 let to = stepped_on(position, length);
-                                this.press_on_the_device(&toward, at, RemoteKey::Seek(to), cx);
+                                this.press_on_the_device(
+                                    &toward,
+                                    at,
+                                    RemoteKey::Seek(to),
+                                    None,
+                                    cx,
+                                );
                             })
                             .ok();
                         })
                         .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
                             off.update(cx, |this, cx| {
                                 let to = position.saturating_sub(DRIVEN_SEEK_STEP);
-                                this.press_on_the_device(&away, at, RemoteKey::Seek(to), cx);
+                                this.press_on_the_device(&away, at, RemoteKey::Seek(to), None, cx);
                             })
                             .ok();
                         })
@@ -809,7 +821,7 @@ impl RootView {
                         window.prevent_default();
                         if let Some(fraction) = rail.fraction_at(event.position) {
                             let to = length.mul_f32(fraction);
-                            this.press_on_the_device(&pressed, at, RemoteKey::Seek(to), cx);
+                            this.press_on_the_device(&pressed, at, RemoteKey::Seek(to), None, cx);
                         }
                     }),
                 )
@@ -872,6 +884,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let at = zone.zone;
+        let drawn = zone.queue_revision;
         let playing = zone.playing == Some(row);
         let saying = if song.artist.is_empty() {
             song.title.clone()
@@ -918,7 +931,9 @@ impl RootView {
             .child(self.in_the_ring_at(
                 jump,
                 pressed,
-                move |this, _, cx| this.press_on_the_device(&device, at, RemoteKey::Jump(row), cx),
+                move |this, _, cx| {
+                    this.press_on_the_device(&device, at, RemoteKey::Jump(row), drawn, cx);
+                },
                 cx,
             ));
         let moves = [
@@ -952,7 +967,7 @@ impl RootView {
             line = line.child(self.in_the_ring_at(
                 control.clone(),
                 kit::icon_button(SharedString::from(control), icon, hint),
-                move |this, _, cx| this.press_on_the_device(&device, at, key, cx),
+                move |this, _, cx| this.press_on_the_device(&device, at, key, drawn, cx),
                 cx,
             ));
         }
@@ -964,6 +979,7 @@ impl RootView {
         id: &str,
         zone: u32,
         key: RemoteKey,
+        drawn: Option<u64>,
         cx: &mut Context<Self>,
     ) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
@@ -976,7 +992,7 @@ impl RootView {
         let device = id.to_owned();
         let pressing = cx
             .background_executor()
-            .spawn(async move { syncing.press(&device, zone, key) });
+            .spawn(async move { syncing.press(&device, zone, key, drawn) });
         cx.spawn(async move |this, cx| {
             if !pressing.await {
                 let _ = this.update(cx, |this, cx| {
@@ -1521,11 +1537,14 @@ mod tests {
     use super::*;
     use crate::{Continuing, HandedOff, Syncing, driven::Driven};
 
+    type Pressed = (String, u32, RemoteKey, Option<u64>);
+
     const ROWS: usize = 3;
+    const DRAWN_REVISION: u64 = 12;
 
     #[derive(Default)]
     struct Stage {
-        pressed: Mutex<Vec<(String, u32, RemoteKey)>>,
+        pressed: Mutex<Vec<Pressed>>,
         unwatched: Mutex<Vec<String>>,
         second: AtomicBool,
         away: AtomicBool,
@@ -1553,6 +1572,7 @@ mod tests {
             playing: Some(1),
             queue_length: ROWS,
             first_row: 0,
+            queue_revision: Some(DRAWN_REVISION),
             rows: vec![row("Echoes"), row("Time"), row("Money")],
         }
     }
@@ -1625,8 +1645,10 @@ mod tests {
             self.unwatched.lock().push(device.to_owned());
         }
 
-        fn press(&self, device: &str, zone: u32, key: RemoteKey) -> bool {
-            self.pressed.lock().push((device.to_owned(), zone, key));
+        fn press(&self, device: &str, zone: u32, key: RemoteKey, drawn: Option<u64>) -> bool {
+            self.pressed
+                .lock()
+                .push((device.to_owned(), zone, key, drawn));
             if key == RemoteKey::Toggle {
                 self.paused.fetch_xor(true, Ordering::Relaxed);
             }
@@ -1687,9 +1709,9 @@ mod tests {
         assert_eq!(
             *stage.pressed.lock(),
             vec![
-                ("desk".to_owned(), 1, RemoteKey::Previous),
-                ("phone".to_owned(), 7, RemoteKey::Toggle),
-                ("phone".to_owned(), 7, RemoteKey::Next),
+                ("desk".to_owned(), 1, RemoteKey::Previous, None),
+                ("phone".to_owned(), 7, RemoteKey::Toggle, None),
+                ("phone".to_owned(), 7, RemoteKey::Next, None),
             ]
         );
         assert!(driven.read(|root, cx| root.player.read(cx).state().current.is_none()));
@@ -1729,7 +1751,7 @@ mod tests {
         assert!(
             pressed
                 .iter()
-                .all(|(device, zone, _)| device == "desk" && *zone == 1)
+                .all(|(device, zone, _, _)| device == "desk" && *zone == 1)
         );
         let RemoteKey::Seek(sought) = pressed[0].2 else {
             panic!("a seek, not {:?}", pressed[0].2);
@@ -1739,6 +1761,12 @@ mod tests {
         assert_eq!(pressed[2].2, RemoteKey::Move { from: 2, to: 1 });
         assert_eq!(pressed[3].2, RemoteKey::Move { from: 0, to: 1 });
         assert_eq!(pressed[4].2, RemoteKey::Remove(1));
+        assert_eq!(pressed[0].3, None);
+        assert!(
+            pressed[1..]
+                .iter()
+                .all(|(_, _, _, drawn)| *drawn == Some(DRAWN_REVISION))
+        );
     }
 
     #[test]

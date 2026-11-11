@@ -485,8 +485,8 @@ is never named.
 - **A sheet and a pop-up are each one surface from the kit.** A sheet's card is `kit::sheet`
   (`surface`, `border`, `rounded_xl`, the long shadow) over `kit::over_a_scrim`, headed by
   `kit::sheet_heading` (an 18 px mark in its colour beside a level-2 title at `text_lg`) and ending
-  in `kit::sheet_actions` (right-aligned, the safe gesture first): the Listen, delete and party-offer
-  sheets. A panel that floats at a press (a menu, the Sort pop-up) is `kit::floating` (`raised`,
+  in `kit::sheet_actions` (right-aligned, the safe gesture first): the Listen, delete, party-offer and
+  list-offer sheets. A panel that floats at a press (a menu, the Sort pop-up) is `kit::floating` (`raised`,
   `soft_edge`, the short shadow, presses stopped). `kit::rule` is the soft hairline between a
   surface's parts. `kit::ledger(across, cells)` is figures that belong together on one surface: a
   `kit::section` cut into lines of `across` equal cells by hairlines (a short last line keeps its
@@ -1022,7 +1022,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   - **Static text and landmarks.** `Spoken::headed(level, label)` (a heading), `read_plainly` (text a
     reader can land on) and `dialog` (`Role::Dialog`) join the builders, no-ops while nobody listens.
   - **A sheet is a dialog with its own focus** (`views/sheets.rs`): the delete sheet, Listen sheet,
-    playlist picker, magnifier, record card and the party offer (*Join this listening party?*, landing on *Cancel*, `party.md`) name a `Sheet`; opening one remembers the opener and
+    playlist picker, magnifier, record card and the party offer (*Join this listening party?*, landing on *Cancel*, `party.md`) and the list offer (*Join a playlist on another server?*, the same, `shared-playlists.md`) name a `Sheet`; opening one remembers the opener and
     lands focus on the safe control (Cancel for a deletion, no key confirms), Tab steps inside it
     (`step_the_focus`), and closing returns focus to the opener.
   - **A click has a name and a tab stop.** `views/audit.rs` scans `views/` for `.on_click(` sites that

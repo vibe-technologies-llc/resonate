@@ -92,6 +92,8 @@
     <string name="together_link_not_opened">That link could not be opened</string>
     <string name="together_join_party_asks">Join this listening party?</string>
     <string name="together_join_party_says">A link asks this phone to stop what it plays and follow someone\'s party instead. Join only if you were invited.</string>
+    <string name="together_join_list_asks">Join a playlist on another server?</string>
+    <string name="together_join_list_says">A link asks this phone to join a shared playlist kept on %1$s, a server other than the one you use, and to reach it every few minutes from then on. Join only if you trust whoever sent it.</string>
     <string name="together_nothing_to_paste">The clipboard holds no Resonate link</string>
     <string name="together_not_found_to_play_next">That song could not be found here</string>
     <string name="together_people">People</string>

@@ -1569,6 +1569,8 @@
 "together.gate.shared.sync-off" = "Sync must be on to share playlists";
 "together.join-party.ask" = "Join this listening party?";
 "together.join-party.says" = "A link asks this iPhone to stop what it plays and follow someone's party instead. Join only if you were invited.";
+"together.join-list.ask" = "Join a playlist on another server?";
+"together.join-list.says" = "A link asks this iPhone to join a shared playlist kept on %@, a server other than the one you use, and to reach it every few minutes from then on. Join only if you trust whoever sent it.";
 "together.leave" = "Leave";
 "together.link.copied" = "Copied";
 "together.link.hide-qr-code" = "Hide QR";

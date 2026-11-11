@@ -134,9 +134,10 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
 
     val drivenBy = resonate
 
-    fun press(device: String, zone: UInt, control: RemoteControl) =
+    fun press(device: String, zone: UInt, control: RemoteControl, queueRevision: ULong?) =
         resonate.attempt(viewModelScope) { native ->
-            val answer = withContext(Dispatchers.IO) { native.syncControl(device, zone, control) }
+            val answer =
+                withContext(Dispatchers.IO) { native.syncControl(device, zone, control, queueRevision) }
             DrivenWords.refusal(resonate.library.words, answer)?.let { resonate.library.notice(it) }
         }
 
@@ -303,8 +304,8 @@ fun SyncScreen() {
                 }
                 if (driving == found.id && mayDrive(found)) {
                     item(key = "driven-${found.id}") {
-                        DrivenDevice(model.drivenBy, found.id) { zone, control ->
-                            model.press(found.id, zone, control)
+                        DrivenDevice(model.drivenBy, found.id) { zone, control, queueRevision ->
+                            model.press(found.id, zone, control, queueRevision)
                         }
                     }
                 }
