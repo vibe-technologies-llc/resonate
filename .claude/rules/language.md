@@ -116,7 +116,9 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   `every_word_the_equaliser_names_for_a_listener_is_said_through_its_catalog`, `resonate-vault`'s
   `every_reason_the_vault_gives_a_listener_is_said_through_its_catalog`, `resonate-upnp`'s
   `every_word_a_renderer_is_shown_by_is_said_through_its_catalog`, `resonate-cast`'s
-  `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-listen`'s
+  `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-coreaudio`'s
+  `every_word_a_device_is_shown_by_is_said_through_its_catalog` (`survey.rs`, a Mac's output names),
+  `resonate-listen`'s
   `every_word_a_recording_is_named_by_is_said_through_its_catalog` (the PipeWire stream names),
   `resonate-online`'s `every_word_a_spotify_sign_in_shows_a_listener_is_said_through_its_catalog`,
   `resonate-ytmusic`'s `every_word_a_youtube_music_account_names_is_said_through_its_catalog`,

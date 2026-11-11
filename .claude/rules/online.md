@@ -445,7 +445,11 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   and `approved(cancelled)`, which signs `auth.getSession` with the token every `ASKED_EVERY` (3 s),
   error 14 (not yet authorised) meaning keep waiting, until a session, a cancel or
   `A_SIGN_IN_LAPSES_AFTER` (Spotify's ten minutes; `Ok(None)` for both). No callback address is
-  involved, so the browser need not be on the same machine. The session key alone is stored
+  involved, so the browser need not be on the same machine (`resonate lastfm` prints the address,
+  tries to open it and waits, so it works over SSH). The token lasts sixty minutes on Last.fm's side and
+  Resonate stops waiting well before. `auth.getMobileSession` (a password in Resonate) is gone, and
+  **the application stays the listener's own**: no key or secret ships with Resonate, a built-in one
+  having been declined. The session key alone is stored
   (`lastfm-session`); `--forget` clears it. The window asks it through `Scrobblers::lastfm_approval`
   (a `LastfmSignIn` of key and secret in, a `LastfmApproval` out), which the binary's `ByToken`
   answers with `lastfm_approval`. These types, `lastfm::Application`,

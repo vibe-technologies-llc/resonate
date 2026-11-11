@@ -826,6 +826,31 @@ false` outranks it; `providers::registry` registers it last, after Monochrome, a
 it there too. Everything needing the account or the player's JS goes through `yt-dlp`, a program of
 the listener's, by `Tool`; searching does not. It works with no cookies at the free tier.
 
+- **Why a program of the listener's and not a Rust client.** YouTube's player changes often, a
+  sidecar is mended by updating `yt-dlp` rather than by releasing Resonate, and Premium formats were
+  never proven through a Rust client (RustyPipe). `ffmpeg` is not needed, since nothing is
+  re-encoded.
+- **What it is for, and what it never does.** It exists for songs on no other service Resonate
+  reaches, so it works for a song MusicBrainz has never named; the listener connects once and
+  the rest runs from their playlists and from search. It never writes to the account (no liking, no
+  playlist edit), keeps no playlist in step on a timer (a keep is one press), takes audio alone,
+  touches nothing until `youtube-music` is turned on, and never fills a want a better source could
+  answer (the strict last resort, *What a provider is handed*): a library quietly filling with 160 kbps
+  files because cookies lapsed is the failure it is built against, which is why a lapse stops the
+  poll. Saving files this way breaks YouTube's terms even on a paid account, and the settings group
+  says so in one sentence beside the switch (`terms_note`).
+- **What was measured** (`yt-dlp` 2026.10.26, 2026-11-06). Premium audio is reachable with the
+  `web_music` client: an album song listed `774` (Opus 261k) and `141` (AAC 258k), and a music video on
+  the same account only `251` (134k) and `140`, so a kept video lands at the lower tier by nature and
+  the check song is an album song. `deno` solves the player's JavaScript challenge unasked. **`yt-dlp`'s
+  own Songs search names an id and a title alone**, no length, artist or album, so the named-alike
+  rule could never pass on it, which is why the search is InnerTube's: one request answers id, title,
+  artist, album, length and the explicit badge, signed out. A private playlist's flat listing names
+  `id`, `title`, `duration` and `channel` (the artist: `<name> - Topic` on an album song, the plain
+  name on an upload) and no album. A real `774` download was a `.mka` whose DocType is `webm`, with a
+  `SeekHead`, `Info`, `Tracks`, `Cues` ahead of the clusters and no `Tags` or `Void`, so an element
+  added ahead of the clusters moves every cue position (`library.md` holds how the tag writer copes).
+
 - **`Tool` runs every call with `--ignore-config`**, so a listener's own `yt-dlp.conf` cannot add a
   re-encode or a remux, and each song call with `--no-playlist`, naming the song
   `https://music.youtube.com/watch?v=<id>`, the address on which `yt-dlp` adds its `web_music` client.
@@ -948,6 +973,10 @@ dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-co
   (`a_sign_in_closed_or_failed_leaves_the_setting_as_it_was`,
   `signing_out_deletes_only_what_the_window_kept`). `yt-dlp` keeps refreshing the jar through
   `--cookies`, which is wanted.
+- **The browser and `cookies.txt` ways stay beside the window** because Google may tighten its check
+  of an embedded engine at any time; the window needs no listener's browser profile (it keeps its own,
+  never theirs) and holds nothing that a sign-out does not wipe. No engine is bound directly and no
+  further `unsafe_code` exception is made for it (`dependencies.md`).
 - **Checked by hand on Linux** (2026-11-09, Hyprland, WebKitGTK 2.54): Google let the sign-in
   through, and `yt-dlp` read the jar the window wrote: the account's *Liked Music* and the Premium
   formats 774 and 141 of `CHECKED_WITH`. WebView2 is cross-checked only; the sign-in there waits on

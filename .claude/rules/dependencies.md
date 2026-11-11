@@ -138,7 +138,7 @@ here, add it there.
 - `resonate-upnp`: core and `resonate-audio` alone, with `httparse`, `roxmltree`, `flacenc` (the live
   FLAC stream, pure Rust, the vault's own encoder), `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or rustls (a
-  renderer is plain HTTP on the local network, `upnp.md`). The engine is its dev-dependency alone.
+  renderer is plain HTTP on the local network, `upnp.md`). The engine and the codec are its dev-dependencies alone.
 - `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone, reached by the binary and `resonate-mobile` alone,
   with `rustls` (`ring`, `tls12`: a receiver's TLS), `mdns-sd`, `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or `serde_json`
@@ -187,7 +187,7 @@ here, add it there.
   daemon* version; `packaging/PKGBUILD` says so.
 - **`ahash`**: `std`, `runtime-rng` (`Default` for `AHashMap::new()`).
 - **`tracing-subscriber`**: `env-filter`, and default `tracing-log` kept: gpui logs via `log`. `resonate-mobile` takes it for the `fmt` writer of its phone log (`mobile.md`'s *Logging*).
-- **`unicode-normalization`** (`std`): core's `folded_letters` and library's `playlist::folded`.
+- **`unicode-normalization`** (`std`): core's `folded_letters`, library's `playlist::folded` and the phones' boundary (`playlists.rs`, `sync.rs`).
 - **`rustix`**: no `unsafe` in OS calls: `termios`, `getpgrp` (binary), `fs` xattrs
   (`resonate-codec`), `getuid` (`resonate-discord`), `time`'s `clock_gettime(Monotonic)`
   (`resonate-pipewire`'s callback and Oboe's, Android alone, to read how far a device timestamp
@@ -201,7 +201,7 @@ here, add it there.
   is. `jxl-oxide` reads it back and reconstructs the JPEG, so no second JXL decoder joins.
 - **`image`**: exactly the five formats `CoverArt` names (`bmp`, `gif`, `jpeg`, `png`, `webp`).
   `resonate-codec`, `-vault`, `-ui`; `-library` dev-only; `-analysis` never.
-- **`proptest`**: dev-dependency of `resonate-core`, `-library`, `-ui` alone; `std` only (defaults
+- **`proptest`**: dev-dependency of `resonate-core`, `-library`, `-sync`, `-ui` alone; `std` only (defaults
   fork a child process per case).
 - **`notify`**: library's; defaults dropped, Linux inotify needs no feature. On macOS the crate
   compiles its FSEvents watcher whatever the features say and takes that watcher's objc2 crates only
@@ -213,9 +213,11 @@ here, add it there.
 - **`ureq`**: `rustls`, `gzip`, not `json`; the one HTTP client, blocking. `json` is off because
   `Client::json` reads through a bounded reader (`TooLarge` past the limit) then
   `serde_json::from_slice`, so nothing uncapped is parsed. `gzip` only reads, so `flate2`
-  (`rust_backend`) is `resonate-online`'s for AcoustID's packed request body.
+  (`rust_backend`) is `resonate-online`'s for AcoustID's packed request body and `resonate-sync`'s
+  for a sealed record's deflate (`seal.rs`).
 - **`serde`** (`std`, `derive`), **`serde_json`** (`std`): `resonate-online`, `-mcp`, `-discord` and
-  the Subsonic, Jellyfin, TIDAL, Monochrome providers alone; `serde` alone in `resonate-lyrics`. Every struct
+  the Subsonic, Jellyfin, TIDAL, Monochrome and YouTube Music providers alone (`serde_json` also a
+  dev-dependency of `resonate-cast`); `serde` alone in `resonate-lyrics`. Every struct
   deriving `Deserialize` is private (online: a `...Doc` mapped by hand; mcp: an argument struct made
   a domain value before a tool runs; discord: a frame doc; mcp's unit enums `Action`, `Pass` are the
   only public derives), so a renamed field breaks one mapping in one crate. The layering job refuses
@@ -239,20 +241,22 @@ here, add it there.
 - **`smallvec`** (`union`, `const_generics`): collections built repeatedly and nearly always small;
   queue, playlist and catalog reads stay `Vec`.
 - **`rustls-native-certs`**, **`webpki-root-certs`**, **`rustls`**: `resonate-fetch`'s, for a server
-  behind a private CA (`providers.md`). The first reads the system store; the second is the Mozilla
+  behind a private CA (`providers.md`), and `resonate-sync`'s for the QUIC connection's roots
+  (`quic.rs`). The first reads the system store; the second is the Mozilla
   roots as DER (`RootCerts::Specific` is the only way to add the built-in set beside the system's).
   `rustls` (`std` alone) downcasts a refused certificate out of ureq's `io::Error`, so matches
   ureq's version. Not ureq's `platform-verifier`, which fails where the system store is empty.
 - **`resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome`** take `ureq`, `serde`, `serde_json` themselves
   and `resonate-fetch` for shared plumbing, not `resonate-online`; the binary takes them only under
   `online`. `resonate-fetch` is core, the seam, `ureq` and the three certificate crates alone;
-  `resonate-online` takes it for `retry_after`, `sha2` (pure Rust, no default features) and `base64`
-  for a Spotify sign-in's PKCE challenge. `uuid`: Jellyfin's generated device id. `md-5`: Subsonic's token (and Last.fm signing in
+  `resonate-online` takes it for `retry_after`, `sha2` (pure Rust, no default features, also
+  `resonate-musicbrainz`'s) and `base64` for a Spotify sign-in's PKCE challenge. `uuid`: Jellyfin's
+  generated device id and `resonate-online`'s. `md-5`: Subsonic's token (and Last.fm signing in
   online). TIDAL: `base64` (`alloc`), `roxmltree` (`std`; DASH MPD), at 0.21 against gpui's 0.20:
   a second copy of a small crate, not a held-back pin.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.
 - **`hdf5-reader`** (no default features, so no `rayon` and no `lz4`): `resonate-codec`'s SOFA reader alone (`eq.md`). Pure Rust, read only; its `memmap2` and `libc` are not used for a set (`from_vec`). **`hdf5-writer`**: dev-dependency of `resonate-codec`, `-engine` and `-mobile`, building the tests' sets. Both are versions of one family (`hdf5-core`), moved together.
-- **`rustfft`**: `resonate-dsp`'s, `-analysis`', library dev; at symphonia's `opt-simd` version.
+- **`rustfft`**: `resonate-dsp`'s, `-analysis`', `-codec`'s (`sofa.rs`), library dev; at symphonia's `opt-simd` version.
   **`realfft`**: `resonate-dsp`'s convolver, over the same `rustfft`, with the same SIMD features.
   **`rusty-chromaprint`**: `resonate-analysis`'s, pure Rust, since AcoustID wants that exact print.
   **`rayon`**: `resonate-analysis`'s, pure Rust, no default features: the crews a pass fans out over (`analysis.md`), since a stage may wait on its own parallel search without holding a thread idle, and the forbidden `unsafe_code` rules out a scoped pool of our own.
@@ -264,9 +268,12 @@ here, add it there.
   **`tokio-tungstenite`** (`handshake` only, pure Rust) and **`futures-util`** (`std`, `sink`) carry
   the same frames over a WebSocket for a server behind a proxy with no UDP (`server.md`); TLS for
   it is `tokio-rustls` on `ring`, and neither pulls serde into `resonate-sync`.
+  `resonate-server` takes `tokio-tungstenite` as a dev-dependency alone, for the test that speaks
+  WebSocket itself.
 - **`ring`** (direct): sealing (ChaCha20-Poly1305), HKDF, SHA-256, randomness and the peer
   signature check in `resonate-sync`; the crate rustls already links. **`rcgen`** (`ring`): the
-  space's peer certificate, and the server tests' self-signed one. **`rustls-pki-types`** (`std`):
+  space's peer certificate (a dev-dependency of `resonate-server` and `resonate-cast`, for the tests'
+  self-signed ones). **`rustls-pki-types`** (`std`):
   PEM reading (`sync-server-certificate`, the server's chain and key). `rustls` takes `ring` there
   for the provider QUIC needs. The wire is hand-encoded, so no serde.
 - **`mdns-sd`** (`async`): pure Rust, its own daemon thread. `resonate-sync`'s Bonjour awaits its
@@ -277,8 +284,9 @@ here, add it there.
   Linux, Flatpak, iOS). The phones add `tzdb-bundle-always`, and Android `tzdb-concatenated`, as
   target dependencies (`library.md`'s *A day is the listener's*); the desktop bundles nothing, since
   its system database is always there and updated with the system.
-- **`toml_edit`**, not `toml` (`display`, `parse`): the settings pane rewrites the listener's
-  `config.toml`, and a value model loses comments, key order and spacing.
+- **`toml_edit`**, not `toml` (`display`, `parse`): the binary's settings pane rewrites the listener's
+  `config.toml`, and `resonate-server` reads its gateway's, since a value model loses comments, key
+  order and spacing.
 
 - **`uniffi`** 0.32.2: the mobile boundary's scaffolding (Kotlin and Swift), with `cli` only in
   `resonate-bindgen`.
