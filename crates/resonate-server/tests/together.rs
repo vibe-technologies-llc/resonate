@@ -427,6 +427,54 @@ async fn a_viewer_reads_a_shared_space_and_can_write_nothing_to_it() {
 }
 
 #[tokio::test]
+async fn a_view_link_cannot_claim_a_shared_list_before_its_owner_does() {
+    let server = hosted(Limits::default()).await;
+    let edit = resonate_sync::shared::Access::minted().expect("a key");
+    let owner = edit.keys().expect("derived");
+    let viewing = edit
+        .viewing()
+        .and_then(|view| view.keys())
+        .expect("derived");
+    let claimed_with = |token: Token, who: u8| ToServer::Share {
+        version: PROTOCOL_VERSION,
+        space: viewing.space,
+        token,
+        viewer: viewing.read_token.digest(),
+        device: device(who),
+        after: 0,
+    };
+
+    let mut with_the_read_token = Link::to(server).await;
+    with_the_read_token
+        .say(claimed_with(viewing.read_token.clone(), 40))
+        .await;
+    let mut with_a_token_of_its_own = Link::to(server).await;
+    with_a_token_of_its_own
+        .say(claimed_with(token(77), 41))
+        .await;
+    let mut the_owner = Link::to(server).await;
+    the_owner
+        .say(claimed_with(
+            owner.write_token.expect("an editor writes"),
+            1,
+        ))
+        .await;
+
+    assert_eq!(
+        with_the_read_token.heard().await,
+        Some(FromServer::Refused(Refusal::Token))
+    );
+    assert_eq!(
+        with_a_token_of_its_own.heard().await,
+        Some(FromServer::Refused(Refusal::Token))
+    );
+    assert!(matches!(
+        the_owner.heard().await,
+        Some(FromServer::Welcome { .. })
+    ));
+}
+
+#[tokio::test]
 async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyone() {
     let server = hosted(Limits::default()).await;
 
@@ -771,7 +819,8 @@ async fn a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_hos
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_is_at_a_party_nobody_began() {
     let server = hosted(Limits::default()).await;
-    let key = resonate_sync::party::PartyKey::minted().expect("a key is minted");
+    let key = resonate_sync::party::PartyKey::hosted_by(&resonate_sync::Token([7; 32]))
+        .expect("a key is minted");
     let guest = Party::join(party_settings(server, ""), &key.code()).expect("the guest starts");
 
     until("the guest to be told there is no such party", || {

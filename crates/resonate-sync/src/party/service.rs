@@ -101,8 +101,8 @@ pub struct Party {
 
 impl Party {
     pub fn host(settings: PartySettings) -> Result<Self> {
-        let key = PartyKey::minted()?;
         let proves_the_host = Token(random_bytes()?);
+        let key = PartyKey::hosted_by(&proves_the_host)?;
 
         Self::begin(settings, key, Some(proves_the_host))
     }

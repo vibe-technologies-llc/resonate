@@ -2,15 +2,19 @@ use std::fmt;
 
 use ring::{
     aead::{CHACHA20_POLY1305, LessSafeKey, UnboundKey},
-    hkdf::{HKDF_SHA256, Salt},
+    hkdf::{HKDF_SHA256, Prk, Salt},
 };
 
 use crate::{
     CodeRefused, Error, Result, SpaceId, SyncKey, Token,
-    key::{SYNC_KEY_BYTES, expand},
+    key::{
+        COMMITMENT_BYTES, COMMITTED_KEY_BYTES, SYNC_KEY_BYTES, TOKEN_BYTES, expand, random_bytes,
+        read_spelled, spelled,
+    },
 };
 
 const DERIVATION_SALT: &[u8] = b"resonate-shared/1";
+const COMMITTED_SALT: &[u8] = b"resonate-shared/2";
 const VIEW_INFO: &[u8] = b"view";
 const WRITE_INFO: &[u8] = b"write";
 const SPACE_INFO: &[u8] = b"space";
@@ -25,8 +29,23 @@ pub const SHARED_LINK: &str = "resonate://shared/";
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Access {
-    Edit(SyncKey),
-    View(SyncKey),
+    Edit(EditKey),
+    View(ViewKey),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum EditKey {
+    FirstToClaim(SyncKey),
+    Committed([u8; COMMITTED_KEY_BYTES]),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum ViewKey {
+    FirstToClaim(SyncKey),
+    Committed {
+        secret: SyncKey,
+        commitment: [u8; COMMITMENT_BYTES],
+    },
 }
 
 pub struct SharedKeys {
@@ -38,7 +57,7 @@ pub struct SharedKeys {
 
 impl Access {
     pub fn minted() -> Result<Self> {
-        SyncKey::minted().map(Self::Edit)
+        random_bytes().map(|bytes| Self::Edit(EditKey::Committed(bytes)))
     }
 
     pub const fn may_edit(&self) -> bool {
@@ -47,8 +66,12 @@ impl Access {
 
     pub fn code(&self) -> String {
         match self {
-            Self::Edit(key) => format!("{EDIT_MARK}{}", key.code()),
-            Self::View(key) => format!("{VIEW_MARK}{}", key.code()),
+            Self::Edit(EditKey::FirstToClaim(key)) => format!("{EDIT_MARK}{}", key.code()),
+            Self::Edit(EditKey::Committed(key)) => format!("{EDIT_MARK}{}", spelled(key)),
+            Self::View(ViewKey::FirstToClaim(key)) => format!("{VIEW_MARK}{}", key.code()),
+            Self::View(ViewKey::Committed { secret, commitment }) => {
+                format!("{VIEW_MARK}{}", spelled(&joined(secret, commitment)))
+            }
         }
     }
 
@@ -59,10 +82,20 @@ impl Access {
     pub fn from_code(code: &str) -> Result<Self> {
         let code = code.trim();
         if let Some(edit) = strip_mark(code, EDIT_MARK) {
-            return SyncKey::from_code(edit).map(Self::Edit);
+            return match SyncKey::from_code(edit) {
+                Err(Error::Code(CodeRefused::Length { .. })) => {
+                    read_spelled(edit).map(|key| Self::Edit(EditKey::Committed(key)))
+                }
+                read => read.map(|key| Self::Edit(EditKey::FirstToClaim(key))),
+            };
         }
         if let Some(view) = strip_mark(code, VIEW_MARK) {
-            return SyncKey::from_code(view).map(Self::View);
+            return match SyncKey::from_code(view) {
+                Err(Error::Code(CodeRefused::Length { .. })) => {
+                    read_spelled(view).map(|key| Self::View(split(&key)))
+                }
+                read => read.map(|key| Self::View(ViewKey::FirstToClaim(key))),
+            };
         }
 
         Err(Error::Code(CodeRefused::Length { found: code.len() }))
@@ -70,12 +103,28 @@ impl Access {
 
     pub fn viewing(&self) -> Result<Self> {
         match self {
-            Self::Edit(edit) => {
-                let prk = Salt::new(HKDF_SHA256, DERIVATION_SALT).extract(edit.bytes());
+            Self::Edit(EditKey::FirstToClaim(edit)) => {
                 let mut view = [0; SYNC_KEY_BYTES];
-                expand(&prk, VIEW_INFO, &mut view)?;
+                expand(
+                    &extracted(DERIVATION_SALT, edit.bytes()),
+                    VIEW_INFO,
+                    &mut view,
+                )?;
 
-                Ok(Self::View(SyncKey::from_bytes(view)))
+                Ok(Self::View(ViewKey::FirstToClaim(SyncKey::from_bytes(view))))
+            }
+            Self::Edit(EditKey::Committed(edit)) => {
+                let prk = extracted(COMMITTED_SALT, edit);
+                let mut secret = [0; SYNC_KEY_BYTES];
+                expand(&prk, VIEW_INFO, &mut secret)?;
+                let commitment = SpaceId::committed_to(&written_with(&prk)?.digest())
+                    .commitment()
+                    .ok_or(Error::KeyDerivation)?;
+
+                Ok(Self::View(ViewKey::Committed {
+                    secret: SyncKey::from_bytes(secret),
+                    commitment,
+                }))
             }
             Self::View(view) => Ok(Self::View(view.clone())),
         }
@@ -83,34 +132,72 @@ impl Access {
 
     pub fn keys(&self) -> Result<SharedKeys> {
         let write_token = match self {
-            Self::Edit(edit) => {
-                let prk = Salt::new(HKDF_SHA256, DERIVATION_SALT).extract(edit.bytes());
-                let mut token = [0; 32];
-                expand(&prk, WRITE_INFO, &mut token)?;
-
-                Some(Token(token))
+            Self::Edit(EditKey::FirstToClaim(edit)) => {
+                Some(written_with(&extracted(DERIVATION_SALT, edit.bytes()))?)
+            }
+            Self::Edit(EditKey::Committed(edit)) => {
+                Some(written_with(&extracted(COMMITTED_SALT, edit))?)
             }
             Self::View(_) => None,
         };
         let Self::View(view) = self.viewing()? else {
             return Err(Error::KeyDerivation);
         };
-        let prk = Salt::new(HKDF_SHA256, DERIVATION_SALT).extract(view.bytes());
-        let mut space = [0; 16];
-        let mut read_token = [0; 32];
+        let (prk, space) = match &view {
+            ViewKey::FirstToClaim(view) => {
+                let prk = extracted(DERIVATION_SALT, view.bytes());
+                let mut space = [0; 16];
+                expand(&prk, SPACE_INFO, &mut space)?;
+                (prk, SpaceId(space))
+            }
+            ViewKey::Committed { secret, commitment } => (
+                extracted(COMMITTED_SALT, secret.bytes()),
+                SpaceId::of_commitment(*commitment),
+            ),
+        };
+        let mut read_token = [0; TOKEN_BYTES];
         let mut seal = [0; SEAL_KEY_BYTES];
-        expand(&prk, SPACE_INFO, &mut space)?;
         expand(&prk, READ_INFO, &mut read_token)?;
         expand(&prk, SEAL_INFO, &mut seal)?;
         let unbound =
             UnboundKey::new(&CHACHA20_POLY1305, &seal).map_err(|_| Error::KeyDerivation)?;
 
         Ok(SharedKeys {
-            space: SpaceId(space),
+            space,
             read_token: Token(read_token),
             write_token,
             sealer: LessSafeKey::new(unbound),
         })
+    }
+}
+
+fn extracted(salt: &[u8], key: &[u8]) -> Prk {
+    Salt::new(HKDF_SHA256, salt).extract(key)
+}
+
+fn written_with(prk: &Prk) -> Result<Token> {
+    let mut token = [0; TOKEN_BYTES];
+    expand(prk, WRITE_INFO, &mut token)?;
+
+    Ok(Token(token))
+}
+
+fn joined(secret: &SyncKey, commitment: &[u8; COMMITMENT_BYTES]) -> [u8; COMMITTED_KEY_BYTES] {
+    let mut bytes = [0; COMMITTED_KEY_BYTES];
+    bytes[..SYNC_KEY_BYTES].copy_from_slice(secret.bytes());
+    bytes[SYNC_KEY_BYTES..].copy_from_slice(commitment);
+    bytes
+}
+
+fn split(bytes: &[u8; COMMITTED_KEY_BYTES]) -> ViewKey {
+    let mut secret = [0; SYNC_KEY_BYTES];
+    let mut commitment = [0; COMMITMENT_BYTES];
+    secret.copy_from_slice(&bytes[..SYNC_KEY_BYTES]);
+    commitment.copy_from_slice(&bytes[SYNC_KEY_BYTES..]);
+
+    ViewKey::Committed {
+        secret: SyncKey::from_bytes(secret),
+        commitment,
     }
 }
 
@@ -175,10 +262,63 @@ mod tests {
     fn a_shared_space_is_not_the_space_a_pairing_code_of_the_same_bytes_would_name() {
         let edit = SyncKey::minted().expect("a key");
         let paired = edit.derived().expect("derived");
-        let shared = Access::Edit(edit).keys().expect("derived");
+        let shared = Access::Edit(EditKey::FirstToClaim(edit))
+            .keys()
+            .expect("derived");
 
         assert_ne!(paired.space, shared.space);
         assert_ne!(Some(paired.token), shared.write_token);
+    }
+
+    #[test]
+    fn a_new_list_names_a_space_only_its_write_token_may_make_and_its_links_say_so() {
+        let edit = Access::minted().expect("a key");
+        let view = edit.viewing().expect("a view key");
+
+        let edit_keys = edit.keys().expect("derived");
+        let view_keys = view.keys().expect("derived");
+        let write = edit_keys.write_token.expect("an editor writes");
+
+        assert!(edit_keys.space.commitment().is_some());
+        assert_eq!(edit_keys.space, view_keys.space);
+        assert!(view_keys.space.may_be_made_by(&write.digest()));
+        assert!(
+            !view_keys
+                .space
+                .may_be_made_by(&view_keys.read_token.digest())
+        );
+        assert!(
+            !view_keys
+                .space
+                .may_be_made_by(&Token([0; TOKEN_BYTES]).digest())
+        );
+        assert_eq!(Access::from_code(&view.code()).ok(), Some(view.clone()));
+        assert_eq!(Access::from_code(&edit.code()).ok(), Some(edit.clone()));
+    }
+
+    #[test]
+    fn a_link_handed_out_before_spaces_committed_reads_the_same_space_and_keys_as_it_did() {
+        let edit = Access::from_code("E-MPJTB-9D5MP-JTB9D-5MPJT-B9D5M-PJTB9-D53QJ").expect("read");
+        let view = edit.viewing().expect("a view key");
+
+        let edit_keys = edit.keys().expect("derived");
+        let view_keys = Access::from_code(&view.code())
+            .expect("read")
+            .keys()
+            .expect("derived");
+
+        assert_eq!(view.code().len(), 2 + 35 + 6);
+        assert_eq!(edit_keys.space, view_keys.space);
+        assert_eq!(
+            edit_keys.space.to_string(),
+            "c6406a36d5968b54d44cf2a2aa50d819"
+        );
+        assert!(edit_keys.space.commitment().is_none());
+        assert!(
+            edit_keys
+                .space
+                .may_be_made_by(&Token([0; TOKEN_BYTES]).digest())
+        );
     }
 
     #[test]

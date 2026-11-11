@@ -25,6 +25,13 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   `a_store_of_the_first_release_is_carried_forward_with_its_records`).
 - **The first token claims a space; any other is refused** (`Claim::Refused` → `Refusal::Token`).
   The digest is compared as stored: a digest of a 32-byte random token leaks nothing by timing.
+  **A space whose id is marked as committed is made only by the token it commits to**
+  (`SpaceId::may_be_made_by`, checked in `Store::claim` before a space is made): a shared list minted
+  now names `SpaceId::committed_to` its write token's digest (`shared-playlists.md`), so a view link
+  that knows the space cannot claim it first. An unmarked id is claimed first come as before; a
+  random one bears the four marker bytes once in 2^32, and only a space not yet made is checked
+  (`a_space_committed_to_a_write_token_is_made_by_that_token_alone_and_held_by_it_after`,
+  `a_view_link_cannot_claim_a_shared_list_before_its_owner_does`).
 - **A compaction replaces what it covers and only moves forward**: `through` must be past the
   snapshot held and within the head (`Compacted::Stale` otherwise); records at or below it and the
   old snapshot go in one transaction.
@@ -95,7 +102,9 @@ holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
 
 A room lives in memory only: nothing is stored, and a restart ends every party. **The first frame
 `Room` either makes one or joins one**: a host token makes the room and only that token is the host
-from then on, and a guest finds `NoSuchRoom` until it exists. A guest naming the host's `DeviceId` (which every guest is told in `RoomWelcome`) is refused `Token`, so the host's seat is never replaced by anyone without the host token. **A guest's place is bound to a secret of its own** the same way: `Room` carries an optional `seat` token after `member` (absent from a build that predates it, so its frame is byte for byte the old one), the room keeps the digest of the first seat a `member` joined with for its whole life (at most `SEATS_BOUND_AT_MOST`, 1024, past which a new place is `Busy`), and any later join under that id with another seat, or with none, is refused `Token`; the same seat again is the guest coming back and replaces its stale session. A guest from a build without seats joins as before and its id stays takeable (`no_guest_can_take_another_guests_place_by_joining_under_its_id`, `a_guest_from_a_build_without_secrets_still_joins_and_comes_back`). A server that predates the field refuses the longer frame as malformed, which the client reads as `ServerTooOld`. **The server enforces the star, so
+from then on, and a guest finds `NoSuchRoom` until it exists. A room id marked as committed is made
+only by the host token it commits to, else `Token`, so a guest cannot make a room whose host left past
+its grace (`party.md`). A guest naming the host's `DeviceId` (which every guest is told in `RoomWelcome`) is refused `Token`, so the host's seat is never replaced by anyone without the host token. **A guest's place is bound to a secret of its own** the same way: `Room` carries an optional `seat` token after `member` (absent from a build that predates it, so its frame is byte for byte the old one), the room keeps the digest of the first seat a `member` joined with for its whole life (at most `SEATS_BOUND_AT_MOST`, 1024, past which a new place is `Busy`), and any later join under that id with another seat, or with none, is refused `Token`; the same seat again is the guest coming back and replaces its stale session. A guest from a build without seats joins as before and its id stays takeable (`no_guest_can_take_another_guests_place_by_joining_under_its_id`, `a_guest_from_a_build_without_secrets_still_joins_and_comes_back`). A server that predates the field refuses the longer frame as malformed, which the client reads as `ServerTooOld`. **The server enforces the star, so
 nobody can forge the host**: `RoomSay` from the host reaches everyone (or the one member it names),
 from a guest it reaches the host alone, whatever it names. `RoomKick` and a host's `Close` are the
 host's; a guest asking changes nothing. **A host gone is waited for** (`Limits::host_back_within`,
