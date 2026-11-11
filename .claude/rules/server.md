@@ -34,14 +34,25 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   `a_view_link_cannot_claim_a_shared_list_before_its_owner_does`).
 - **A compaction replaces what it covers and only moves forward**: `through` must be past the
   snapshot held and within the head (`Compacted::Stale` otherwise); records at or below it and the
-  old snapshot go in one transaction.
+  old snapshot go in one transaction. **A compaction that grows the space is weighed against
+  `--total-bytes` as an append is** (the snapshot's bytes less the bytes the space held, against
+  `totals_in`), so claiming spaces and compacting each to a snapshot near `--space-bytes` cannot
+  pass the total; one that shrinks a space is never refused by a full total
+  (`a_compaction_that_grows_a_space_is_weighed_against_the_total_cap_as_an_append_is`).
 - **A space untouched for `--idle-days` (365) is swept** (checked hourly, or every thirtieth of the
   limit if shorter). **A space never written to is swept after a day** (`Store::sweep_unused`:
   `head` and `snapshot_through` both 0), so claims made by a script and abandoned do not pile up.
 
 ## Sessions
 
-- **A session reads at most `FRAMES_READ_AHEAD` (4) frames ahead of handling them**: `read_frames` hands them over a bounded channel, so while the session waits on a write to a client that reads nothing, its reader stops and QUIC's flow control holds the client back, rather than the server holding whatever it sends.
+- **A session's read-ahead is a budget in bytes, not a count of frames** (`reading.rs`): the reader
+  waits for room in a `READ_AHEAD_BYTES_AT_MOST` (1 MiB) budget before it reads a frame, then
+  weighs the frame (`A_FRAME_WEIGHS_AT_LEAST` 64 bytes, at most the whole budget) and hands it over
+  with the permit, which is held until the session has handled the frame. A frame past the budget
+  (an `Append` may be up to `LARGEST_FRAME`) takes all of it, so nothing more is read while it is
+  handled; a session waiting on a write to a client that reads nothing holds one frame plus one
+  being read, not a count of 32 MiB frames, and QUIC's flow control holds the client back
+  (`a_frame_larger_than_the_budget_takes_all_of_it_and_nothing_is_read_until_it_is_handled`).
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
   then the stream ends. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
   `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`
@@ -84,7 +95,10 @@ holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
 - **`Share` is `Hello` for a shared space**: it carries the digest of a viewer token as well, kept
   once (`Store::allow_viewers`), and a new space it makes spends
   `--shared-spaces-per-address-per-day` (50), not the 5 a personal space does, so a reset behind one
-  NAT cannot fail halfway through its work.
+  NAT cannot fail halfway through its work. **A space with a viewer is a shared space and a `Hello`
+  to it is refused `Token`** (`Store::is_shared`, no stored mark of its own), so the 50 a day cannot
+  be spent on spaces used as personal ones past the 5
+  (`a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets_stay_apart`).
 - **`View` is one read and no seat**: the viewer token opens `Welcome`, the snapshot and records and
   a `Closed` if there is one, then the connection ends. It joins no hub, so followers do not count
   against `--devices`, and appending or compacting is not a thing it can ask. It touches the space,
@@ -159,8 +173,18 @@ hex) and prints it with the digest to list: the file never holds a secret.
 - **The secret stops at the gateway**: a forwarded request goes upstream as HTTP/1.0 with the target
   and a `Host`, no `Authorization`, no client header; the answer's status, `Content-Type`, digit-only
   `Retry-After` and body (at most 1 MiB, so no chunking to read) go back. An upstream that is down,
-  silent for 30 s or unreadable is 502. At most 64 connections are served at once, each one request
-  (`Connection: close`).
+  silent for 30 s or unreadable is 502. Each connection is one request (`Connection: close`).
+- **A seat is taken only by a request that holds a listed key.** At most 64 requests are served at
+  once (`Crowd::seats`), taken with `try_acquire` after the key check, so a stranger can never hold
+  one and a key holder finding them all taken is answered `503` with `Retry-After`. Before the key
+  is read a connection is a stranger, held in a pool of its own (`Crowd::strangers`, 256, taken
+  with `try_acquire` before a task is spawned, so the accept loop never waits and a connection past
+  it is dropped unread), counted per address (`Crowd::strangers_per_address`, 16, an IPv6 `/64` as
+  one, through `Guard`), and given one `REQUEST_WITHIN` (10 s) over the TLS handshake and the head
+  together. A loopback peer is not counted per address, since behind the tunnel every peer is
+  `cloudflared` and strangers cannot be told apart there; the pool alone bounds it
+  (`strangers_who_say_nothing_hold_no_seat_a_listed_key_is_served_from`,
+  `one_address_waits_on_the_gateway_for_no_more_than_its_share_and_gets_it_back_on_leaving`).
 - **The server downloads, the client is only sent the file.** `/file/` runs `HifiApi::track` against
   the upstream (manifest, DASH segments and remux are `resonate-tidal`'s, `providers.md`), then sends
   the FLAC with `Content-Length` where known, else chunked, 64 KiB at a time over a channel of four

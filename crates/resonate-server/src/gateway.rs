@@ -1,6 +1,6 @@
 use std::{
     io::{self, Read, Seek, SeekFrom},
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -19,7 +19,7 @@ use tokio::{
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
-    Cache, Error, Fill, Hit, Keys, Result, Searches,
+    Admitted as Counted, Allowance, Cache, Error, Fill, Guard, Hit, Keys, Result, Searches,
     ranges::{Span, Unsatisfiable, Wanted, windowed},
 };
 
@@ -28,6 +28,8 @@ const HEAD_BYTES_AT_MOST: usize = 8 * 1024;
 const HEADERS_AT_MOST: usize = 32;
 const ANSWER_BYTES_AT_MOST: usize = 1024 * 1024;
 const CONNECTIONS_AT_MOST: usize = 64;
+const STRANGERS_AT_MOST: usize = 256;
+const STRANGERS_PER_ADDRESS_AT_MOST: usize = 16;
 const REQUEST_WITHIN: Duration = Duration::from_secs(10);
 const UPSTREAM_WITHIN: Duration = Duration::from_secs(30);
 const ACCEPT_RETRY_AFTER: Duration = Duration::from_millis(100);
@@ -70,10 +72,33 @@ enum Unreached {
     TooLarge,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Crowd {
+    pub seats: usize,
+    pub strangers: usize,
+    pub strangers_per_address: usize,
+}
+
+impl Default for Crowd {
+    fn default() -> Self {
+        Self {
+            seats: CONNECTIONS_AT_MOST,
+            strangers: STRANGERS_AT_MOST,
+            strangers_per_address: STRANGERS_PER_ADDRESS_AT_MOST,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Keeping {
     pub tracks: Option<Cache>,
     pub searches_for: Duration,
+    pub crowd: Crowd,
+}
+
+struct Unproven {
+    _slot: OwnedSemaphorePermit,
+    _counted: Option<Arc<Counted>>,
 }
 
 struct Source {
@@ -96,6 +121,8 @@ pub struct Gateway {
     upstream: SocketAddr,
     hifi: Arc<HifiApi>,
     seats: Arc<Semaphore>,
+    strangers: Arc<Semaphore>,
+    addresses: Arc<Guard>,
     downloads: Arc<Semaphore>,
     tracks: Option<Cache>,
     searches: Searches,
@@ -139,7 +166,14 @@ impl Gateway {
             keys,
             upstream,
             hifi: Arc::new(hifi),
-            seats: Arc::new(Semaphore::new(CONNECTIONS_AT_MOST)),
+            seats: Arc::new(Semaphore::new(keeping.crowd.seats)),
+            strangers: Arc::new(Semaphore::new(keeping.crowd.strangers)),
+            addresses: Guard::new(Allowance {
+                connections: usize::MAX,
+                connections_per_address: keeping.crowd.strangers_per_address,
+                attempts_per_minute: u32::MAX,
+                ..Allowance::default()
+            }),
             downloads: Arc::new(Semaphore::new(DOWNLOADS_AT_ONCE)),
             tracks: keeping.tracks,
             searches: Searches::new(keeping.searches_for, SEARCH_BYTES_AT_MOST),
@@ -152,20 +186,13 @@ impl Gateway {
                 sleep(ACCEPT_RETRY_AFTER).await;
                 continue;
             };
-            let Ok(seat) = Arc::clone(&self.seats).acquire_owned().await else {
-                return;
+            let Some(unproven) = self.unproven(peer.ip()) else {
+                continue;
             };
             let gateway = Arc::clone(&self);
             let acceptor = acceptor.clone();
             tokio::spawn(async move {
-                let _seat = seat;
-                let served = async {
-                    let tls = timeout(REQUEST_WITHIN, acceptor.accept(stream))
-                        .await
-                        .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
-                    gateway.answer(tls).await
-                }
-                .await;
+                let served = gateway.served(stream, acceptor, unproven).await;
                 if let Err(error) = served {
                     tracing::debug!(%peer, %error, "a hifi request ended");
                 }
@@ -173,37 +200,76 @@ impl Gateway {
         }
     }
 
+    fn unproven(&self, peer: IpAddr) -> Option<Unproven> {
+        let slot = Arc::clone(&self.strangers).try_acquire_owned().ok()?;
+        let counted = if peer.is_loopback() {
+            None
+        } else {
+            Some(self.addresses.admit(peer)?)
+        };
+
+        Some(Unproven {
+            _slot: slot,
+            _counted: counted,
+        })
+    }
+
+    async fn served(
+        &self,
+        stream: TcpStream,
+        acceptor: TlsAcceptor,
+        unproven: Unproven,
+    ) -> io::Result<()> {
+        let arrived = timeout(REQUEST_WITHIN, async {
+            let mut tls = acceptor.accept(stream).await?;
+            let head = read_head(&mut tls).await?;
+            Ok::<_, io::Error>((tls, head))
+        })
+        .await
+        .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
+        let (mut tls, head) = arrived;
+        let Some(head) = head else {
+            return reply(&mut tls, 400, &[], b"").await;
+        };
+
+        self.answer(tls, head, unproven).await
+    }
+
     async fn answer<S: AsyncRead + AsyncWrite + Unpin>(
         &self,
         mut stream: S,
+        head: Head,
+        unproven: Unproven,
     ) -> std::io::Result<()> {
-        let head = match timeout(REQUEST_WITHIN, read_head(&mut stream)).await {
-            Ok(Ok(Some(head))) => head,
-            Ok(Ok(None)) | Err(_) => return reply(&mut stream, 400, &[], b"").await,
-            Ok(Err(error)) => return Err(error),
-        };
-        match self.admitted(&head) {
+        let admitted = match self.admitted(&head) {
+            Ok(admitted) => admitted,
             Err(Refused::Unwelcome) => {
-                reply(
+                return reply(
                     &mut stream,
                     401,
                     &[("WWW-Authenticate", "Bearer".to_owned())],
                     b"",
                 )
-                .await
+                .await;
             }
             Err(Refused::Method) => {
-                reply(
+                return reply(
                     &mut stream,
                     405,
                     &[("Allow", "GET, DELETE".to_owned())],
                     b"",
                 )
-                .await
+                .await;
             }
-            Err(Refused::Route) => reply(&mut stream, 404, &[], b"").await,
-            Ok(Admitted::File { id, wanted }) => self.filed(&mut stream, id, wanted).await,
-            Ok(Admitted::Forward(verb, target)) => match self.relayed(verb, &target).await {
+            Err(Refused::Route) => return reply(&mut stream, 404, &[], b"").await,
+        };
+        drop(unproven);
+        let Ok(_seat) = Arc::clone(&self.seats).try_acquire_owned() else {
+            return busy(&mut stream).await;
+        };
+        match admitted {
+            Admitted::File { id, wanted } => self.filed(&mut stream, id, wanted).await,
+            Admitted::Forward(verb, target) => match self.relayed(verb, &target).await {
                 Ok(answer) => {
                     let mut headers = Vec::new();
                     if let Some(kind) = answer.content_type {
@@ -724,4 +790,72 @@ async fn written<S: AsyncWrite + Unpin>(stream: &mut S, bytes: &[u8]) -> io::Res
     timeout(CHUNK_WRITTEN_WITHIN, stream.write_all(bytes))
         .await
         .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ONE_ADDRESS: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 1));
+    const ANOTHER: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 2));
+
+    fn crowded(strangers: usize, per_address: usize) -> Arc<Gateway> {
+        let keeping = Keeping {
+            crowd: Crowd {
+                seats: 1,
+                strangers,
+                strangers_per_address: per_address,
+            },
+            ..Keeping::default()
+        };
+
+        Gateway::keeping(
+            Keys::new(Vec::new()),
+            SocketAddr::from(([127, 0, 0, 1], 9)),
+            keeping,
+        )
+    }
+
+    #[test]
+    fn one_address_waits_on_the_gateway_for_no_more_than_its_share_and_gets_it_back_on_leaving() {
+        let gateway = crowded(8, 2);
+
+        let first = gateway.unproven(ONE_ADDRESS);
+        let second = gateway.unproven(ONE_ADDRESS);
+        let over = gateway.unproven(ONE_ADDRESS);
+        let elsewhere = gateway.unproven(ANOTHER);
+        drop(first);
+        let after = gateway.unproven(ONE_ADDRESS);
+
+        assert!(second.is_some());
+        assert!(over.is_none());
+        assert!(elsewhere.is_some());
+        assert!(after.is_some());
+    }
+
+    #[test]
+    fn a_proxy_on_the_host_is_counted_by_the_total_alone() {
+        let gateway = crowded(3, 1);
+
+        let held: Vec<_> = (0..3)
+            .map(|_| gateway.unproven(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)))
+            .collect();
+        let over = gateway.unproven(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+
+        assert!(held.iter().all(Option::is_some));
+        assert!(over.is_none());
+    }
+
+    #[test]
+    fn an_address_refused_does_not_keep_a_place_in_the_total() {
+        let gateway = crowded(2, 1);
+
+        let first = gateway.unproven(ONE_ADDRESS);
+        let refused = gateway.unproven(ONE_ADDRESS);
+        let other = gateway.unproven(ANOTHER);
+
+        assert!(first.is_some());
+        assert!(refused.is_none());
+        assert!(other.is_some());
+    }
 }

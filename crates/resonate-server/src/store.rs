@@ -231,6 +231,18 @@ impl Store {
         Ok(())
     }
 
+    pub fn is_shared(&self, space: SpaceId) -> Result<bool> {
+        self.connection
+            .query_row(
+                "SELECT viewer IS NOT NULL FROM spaces WHERE id = ?1",
+                params![space.0.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(Option::unwrap_or_default)
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
     pub fn may_view(&mut self, space: SpaceId, viewer: &[u8; 32], now: i64) -> Result<bool> {
         let touched = self
             .connection
@@ -486,11 +498,11 @@ impl Store {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        let (head, snapshot_through, closed): (i64, i64, bool) = transaction
+        let (head, snapshot_through, held, closed): (i64, i64, i64, bool) = transaction
             .query_row(
-                "SELECT head, snapshot_through, closed IS NOT NULL FROM spaces WHERE id = ?1",
+                "SELECT head, snapshot_through, bytes, closed IS NOT NULL FROM spaces WHERE id = ?1",
                 params![space.0.as_slice()],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         if closed {
@@ -533,6 +545,11 @@ impl Store {
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         if bytes.cast_unsigned() > space_bytes {
+            return Ok(Compacted::Full);
+        }
+        let growth = bytes.saturating_sub(held).max(0).cast_unsigned();
+        let (_, stored) = totals_in(&transaction)?;
+        if stored.saturating_add(growth) > self.capacity.bytes {
             return Ok(Compacted::Full);
         }
         transaction
@@ -901,6 +918,61 @@ mod tests {
                 .expect("refused"),
             Appended::Full
         );
+    }
+
+    #[test]
+    fn a_compaction_that_grows_a_space_is_weighed_against_the_total_cap_as_an_append_is() {
+        let mut store = Store::in_memory().expect("a store").limited(Capacity {
+            spaces: u64::MAX,
+            bytes: 30,
+        });
+        store.claim(SPACE, &[3; 32], 1, || true).expect("made");
+        store
+            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20)
+            .expect("appended");
+
+        let refused = store
+            .compact(SPACE, 1, &[vec![9; 25]], 1 << 20)
+            .expect("refused");
+        let kept = store.head(SPACE).expect("head");
+        let fits = store
+            .compact(SPACE, 1, &[vec![9; 15]], 1 << 20)
+            .expect("compacted");
+
+        assert_eq!(refused, Compacted::Full);
+        assert_eq!(kept, (2, 0));
+        assert_eq!(fits, Compacted::Through(1));
+    }
+
+    #[test]
+    fn a_compaction_that_shrinks_a_space_is_never_refused_by_a_total_already_full() {
+        let mut store = Store::in_memory().expect("a store").limited(Capacity {
+            spaces: u64::MAX,
+            bytes: 20,
+        });
+        store.claim(SPACE, &[3; 32], 1, || true).expect("made");
+        store
+            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20)
+            .expect("appended");
+
+        let shrunk = store
+            .compact(SPACE, 2, &[vec![9; 5]], 1 << 20)
+            .expect("compacted");
+
+        assert_eq!(shrunk, Compacted::Through(2));
+    }
+
+    #[test]
+    fn a_space_is_shared_once_a_viewer_is_allowed_and_not_before() {
+        let mut store = claimed();
+
+        let before = store.is_shared(SPACE).expect("read");
+        store.allow_viewers(SPACE, &[6; 32]).expect("allowed");
+        let after = store.is_shared(SPACE).expect("read");
+
+        assert!(!before);
+        assert!(after);
+        assert!(!store.is_shared(SpaceId([8; 16])).expect("read"));
     }
 
     #[test]

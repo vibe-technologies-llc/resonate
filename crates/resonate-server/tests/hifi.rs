@@ -2,7 +2,7 @@ use std::{env, fs, net::SocketAddr, path::PathBuf, process, sync::Arc, time::Dur
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
-use resonate_server::{Cache, Digest, Gateway, Keeping, Keys, gateway_tls};
+use resonate_server::{Cache, Crowd, Digest, Gateway, Keeping, Keys, gateway_tls};
 use resonate_tidal::{HifiApi, MediaHosts};
 use rustls::{ClientConfig, RootCertStore, crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
@@ -454,6 +454,7 @@ fn cached(scratch: &Scratch) -> Keeping {
     Keeping {
         tracks: Some(Cache::open(&scratch.0, 1024).expect("a cache")),
         searches_for: Duration::ZERO,
+        ..Keeping::default()
     }
 }
 
@@ -571,6 +572,7 @@ async fn a_track_over_the_limit_is_sent_and_never_kept() {
     let keeping = Keeping {
         tracks: Some(Cache::open(&scratch.0, 20).expect("a cache")),
         searches_for: Duration::ZERO,
+        ..Keeping::default()
     };
     let (gateway, asked) = hifi_with_a_track_kept(keeping).await;
 
@@ -601,6 +603,7 @@ fn searched(minutes: u64) -> Keeping {
     Keeping {
         tracks: None,
         searches_for: Duration::from_secs(minutes * 60),
+        ..Keeping::default()
     }
 }
 
@@ -648,4 +651,78 @@ async fn a_search_the_hifi_api_failed_is_not_remembered_and_a_request_in_the_que
     gateway.bearing("GET", "/playback/requests/f1b5-c0de").await;
 
     assert_eq!(asked.lock().len(), 4);
+}
+
+fn crowded(seats: usize, strangers: usize) -> Keeping {
+    Keeping {
+        crowd: Crowd {
+            seats,
+            strangers,
+            strangers_per_address: strangers,
+        },
+        ..Keeping::default()
+    }
+}
+
+async fn silent_strangers(gateway: &Gatewayed, count: usize) -> Vec<TcpStream> {
+    let mut held = Vec::new();
+    for _ in 0..count {
+        held.push(
+            TcpStream::connect(gateway.address)
+                .await
+                .expect("connected"),
+        );
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    held
+}
+
+#[tokio::test]
+async fn strangers_who_say_nothing_hold_no_seat_a_listed_key_is_served_from() {
+    let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+    let gateway = kept_through(upstream, asked, None, crowded(1, 8)).await;
+
+    let silent = silent_strangers(&gateway, 4).await;
+    let turned_away = gateway.send("GET", "/search/?i=X", None).await;
+    let served = gateway.bearing("GET", "/search/?i=X").await;
+
+    assert_eq!(turned_away.status, 401);
+    assert_eq!(served.status, 200);
+    drop(silent);
+}
+
+#[tokio::test]
+async fn a_request_with_a_listed_key_finding_every_seat_taken_is_told_to_come_back() {
+    let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+    let gateway = kept_through(upstream, asked, None, crowded(0, 8)).await;
+
+    let turned_back = gateway.bearing("GET", "/search/?i=X").await;
+    let stranger = gateway.send("GET", "/search/?i=X", None).await;
+
+    assert_eq!(turned_back.status, 503);
+    assert_eq!(header_of(&turned_back, "retry-after").as_deref(), Some("5"));
+    assert_eq!(stranger.status, 401);
+}
+
+#[tokio::test]
+async fn strangers_past_the_number_the_gateway_waits_on_are_dropped_unread_and_make_room_on_leaving()
+ {
+    let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+    let gateway = kept_through(upstream, asked, None, crowded(4, 2)).await;
+
+    let silent = silent_strangers(&gateway, 2).await;
+    let mut over = TcpStream::connect(gateway.address)
+        .await
+        .expect("connected");
+    let mut heard = [0; 1];
+    let dropped = tokio::time::timeout(Duration::from_secs(5), over.read(&mut heard))
+        .await
+        .expect("the gateway closed it");
+    drop(silent);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let served = gateway.bearing("GET", "/search/?i=X").await;
+
+    assert!(matches!(dropped, Ok(0) | Err(_)));
+    assert_eq!(served.status, 200);
 }
