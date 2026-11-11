@@ -3,6 +3,72 @@
 Cost: work done more often, in more memory or on a thread it should not be on. Format and ordering
 are in [ROADMAP.md](ROADMAP.md).
 
+## The window
+- [S · 0.8.1] The stream digest is published again every second of decoded audio: `publish_digest`
+  makes a new `Arc<StreamDigest>` whenever the bitrate profile gains a point (`engine.rs`), each
+  `ProfileBuilder::finish` clones the series twice and sorts one copy (`stream.rs`, up to
+  `MAX_WINDOWS` points), and the new pointer is `Moved::More` to the window (`app.rs`), which
+  notifies `RootView` and redraws the header, sidebar, pane and transport (`zones.rs`, `part.rs`)
+  once a second whatever is shown, against `ui.md`'s clock-only redraw; a ten-hour book sorts 36 000
+  points a second on the engine thread
+- [L · 0.8.1] A browse list's next page clones every row held to append 2 000 more (`models.rs`
+  `grew`, on the UI thread) and is read with `LIMIT … OFFSET` (`db.rs`) though `alternative_of` and
+  `hidden` are in no ordering index, so wheeling to the end of a 500 000-track list clones some sixty
+  million rows and walks the table quadratically; rows held in chunks and paging by the order's
+  last key (every order ends on the id) want both crates
+- [S · 0.8.1] The queue pane's length reads every queued row again whenever the library model's
+  revision moves (`queue.rs` `QueueLength`), which every read landing moves (a page, a search, a
+  favourite, every 2 s of a scan); it wants the queue's revision and the catalog's stamps, as
+  `names_in_the_queue` keys on, or one `sum` query
+- [S · 0.8.1] Every playlists read asks each playlist's pictures one at a time (`models.rs`
+  `pictures_of`, `playlist.rs` `playlist_pictures`), a saved query's through a `GROUP BY` over every
+  track it matches (`db.rs` `pictured_by`) and a capped one's deduped with `Vec::contains`; nothing
+  keeps them, though `measured_saved` beside them is kept under `rows_stamp`
+- [S · 0.8.1] Every listing read measures the whole catalog (`models.rs` `browsed`, `db.rs`
+  `measured`): a count and two sums over every `tracks` row with no index covering the filter, on
+  every counted play and every 2 s of a scan; `KeptMeasurements` under `rows_stamp`, or a covering
+  index
+- [S · 0.8.1] Every `Everything` read aggregates the whole listening history about seven times,
+  `quarters_heard` twice over the same window (`statistics.rs` `listening_by_day_in` and
+  `habits_in`), whether or not Statistics is shown (`models.rs` `standing`)
+- [S · 0.8.1] The now-playing bar deep-clones the playing `Track` and its `Album` on every transport
+  render (`transport.rs`), and after each read lands an album not on the first page is read from
+  SQLite on the UI thread (`models.rs` `album_anywhere`)
+
+## Startup and idle
+- [S · 0.8.1] The window waits up to `SINK_TIMEOUT` (2 s) on the first sink survey before it opens
+  where a sink is chosen (`main.rs` `launch`, `confirm_sink`, `sinks_once_surveyed`), only to log a
+  warning, though `audio.md` says the window opens without waiting on the graph
+- [S · 0.8.1] The window looks at the library's roots four times a second for its whole life
+  (`ROOTS_LOOKED_AT_EVERY`, `models.rs` `watch_the_roots`): a catalog read and a `stat` of every root
+  each tick, paused or minimised, reaching the server where a root is on NFS
+- [S · 0.8.1] Every `Library::open` reads and folds every artist (`store::reconcile_artists`) to
+  find nothing to do, where its sibling passes wait on a marker table (`refold_the_index`,
+  `compose_the_album_keys`, `word_the_titles`); the marker wants making by the steps that change
+  the fold
+- [M · 0.8.1] (investigate) While a root is uncovered the recursive watch is built again over every
+  root each five minutes, beside the old one (`models.rs` `following`, `watch.rs`); that is likely
+  where `max_user_watches` ran out, so it may fail every time and walk the tree each try
+
+## Android
+- [M · 0.8.1] While enrichment writes, a walk of the library's pages rebuilds the whole search index
+  for nearly every 500-row page: every `documents` write moves `Catalog::revision`, which throws the
+  index away (`search.rs`), enrichment writes about once a second, `PagedSteadily` (and iOS's
+  `Library.swift`) walk again up to three times on a moved revision, and `ArtworkEnrichment`
+  refreshes every 2 s; an index pinned for a walk, or a revision only the index's own columns move
+- [M · 0.8.1] Android reads the whole queue again every 3 s while the catalog moves (`QueueReads`),
+  under `access` (`LibraryRepository.kt`), so pause, seek and skip wait behind it, at a catalog
+  lookup a row (`lib.rs` `queue`), and rebuilds every `MediaItemData` on the main thread and the
+  session's timeline (`RustMediaPlayer.kt`); a *Shuffle all* of 30 000 songs pays all of it each
+  time, where iOS reads a window
+- [S · 0.8.1] Android polls the native player every 250 ms whenever the engine is held, paused in
+  the background included (`LibraryRepository.kt`, `LibraryFeatures.tick`), some twenty native calls
+  a second; only iOS registers `watch_player`, and it slows its poll to 1 s at rest and 2 s in the
+  background (`Polling.swift`)
+- [S · 0.8.1] (investigate) A song played in place over Wi-Fi takes no `WifiLock` on Android, so
+  power saving with the screen off may starve a hi-res FLAC stream (`TESTING.md` names this for a
+  renderer alone)
+
 ## Performance and scale
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed

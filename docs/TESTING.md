@@ -95,6 +95,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
+- [S · 0.8.1] `A_ZONE_KEEPS_ITS_OWN_QUEUE` (`schema.rs`), the one migration step that drops tables
+  holding the listener's data (`resume`, `resume_rows` and `resume_order` copied into zone-keyed
+  ones), is run only over an empty `V1`: no test lays a queue in the older shape and reads it back
+  as the first zone's
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
@@ -129,7 +133,26 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (`deleting_the_rows_chosen_apart_asks_once_for_all_of_them`,
   `dragging_a_playlist_row_chosen_apart_gathers_every_chosen_row_where_it_drops`) fail about one
   run in eight of the whole `resonate-ui` suite and pass alone, so something they read is shared
-  with a test running beside them
+  with a test running beside them. The likely share is the theme: `theme::WORN` is one for the
+  process, the theme tests guard it with a `WEARING` lock of their own while every `Driven` wears
+  the default without it (`driven.rs`) and one wears a 1.5 text scale, so a theme test wearing
+  Larger between a test reading a row's place and clicking it moves every row (`theme.rs`); a lock
+  for the whole crate held by `Driven` for its life would settle it
+- [S · 0.8.1] No fuzz target reaches the parsers facing the network: SSDP (`ssdp.rs`), a
+  renderer's description and chunked bodies (`description.rs`, `http.rs`), Cast's protobuf and JSON
+  (`frame.rs`, `json.rs`), and the server's page, gateway head and `Range` readers (`pages.rs`,
+  `gateway.rs`, `ranges.rs`); `fuzz/Cargo.toml` reaches none of `resonate-upnp`, `resonate-cast` or
+  `resonate-server`
+- [S · 0.8.1] The no-comment rule is checked in `.ftl` alone (`resonate-words-build`); nothing
+  refuses a comment in `.rs`, `.kt`, `.swift` or the workflows, and `rust-formatter --check` cannot
+  run in CI, so the strictest rule of style rests on review. A walk beside `prose_in`, which already
+  knows a string literal from code, would hold it
+- [M · 0.8.1] `resonate-win32`'s unsafe calls (`endpoint.rs`, `console.rs`, `security.rs`,
+  `streams.rs`, `gaming.rs`, some 43 sites) have four tests, where `resonate-apple` runs its
+  sequencing against a fake `Toolbox` on every host; the Win32 crate has no such seam
+- [S · 0.8.1] (investigate) `resonate-musicbrainz`'s export reader (`mirror/import.rs`, `wire.rs`)
+  has no unit test; how much of an escaped field, a `NULL` and a cut line `tests/mirror.rs` and the
+  fuzz target reach is unmeasured
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
@@ -171,6 +194,59 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `color-scheme` and `SettingChanged`, GNOME's `text-scaling-factor` and KDE's `font` point size
   (taken against an ordinary ten) have not been read from a live portal, and the light palettes have
   been held by the contrast tests but not looked at in a window
+
+## Dependencies
+- [S · 0.8.1] `resonate-server` declares `futures-util` and `tokio-tungstenite` and uses neither
+  (its WebSocket framing is `resonate-sync`'s), which `dependencies.md` calls a defect
+- [S · 0.8.1] `resvg` 0.49 (`text`, `system-fonts`) is taken for the Wrapped card alone
+  (`wrapped_card.rs`) beside gpui's 0.46, building a second SVG and font stack (`usvg`, `fontdb`
+  0.24, `harfrust` 0.12, `skrifa`) and loading a second system font database at run time;
+  `dependencies.md` takes gpui's version of a crate elsewhere and gives this one no reason
+- [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
+  0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
+  `hdf5-reader` never calls the `LruCache::pop` the advisory names
+- [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
+  (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
+  5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
+  `zvariant` and `zbus_names` unmaintained since they were merged into zbus 6; `rustybuzz` and
+  `ttf-parser` under gpui's `usvg`; and the build-time `paste` (lofty), `proc-macro-error` (glib)
+  and `basic-toml` (uniffi's askama)
+
+## Docs and agents
+- [S · 0.8.1] `README.md` is wrong in four places: it says no release is published (the tags reach
+  v0.8.0); it builds with `cargo build --release --workspace`, which turns on `resonate-signin`'s
+  `window` feature and links WebKitGTK into the player (`dependencies.md`); it lists the binary's
+  default features without `sync`; and it says media keys, notifications, capture, Discord and the
+  window's remote control are not on Windows, which `windows.md` describes as shipped
+- [S · 0.8.1] `dependencies.md`'s lists of who takes a crate are stale: `proptest` is
+  `resonate-sync`'s too, `serde` and `serde_json` `resonate-ytmusic`'s, `rustfft`
+  `resonate-codec`'s (`sofa.rs`), `sha2` `resonate-musicbrainz`'s, `uuid` `resonate-online`'s and
+  `toml_edit` `resonate-server`'s
+- [S · 0.8.1] `language.md` leaves out `resonate-coreaudio`'s prose check; CLAUDE.md's *CI runs
+  exactly this list* is not so (the benches, nextest and the profiling build are not in `ci.yml`);
+  `AGENTS.md`'s checks leave out the bus tests under `dbus-run-session`, `android/check-release.py`
+  and the iOS Python checks
+- [S · 0.8.1] `docs/superpowers/` keeps four plans and two specs of work since landed (the YouTube
+  Music provider and its sign-in window, Jellyfin Quick Connect, Last.fm's browser approval), each
+  opening on a directive to an agent and citing a `.superpowers/` file that does not exist, against
+  `AGENTS.md`'s *no plan files*; what they hold beyond the rules wants moving into `providers.md` and
+  `online.md`, and the folder goes
+- [S · 0.8.1] `.claude/settings.json` allows `cargo build`, `test`, `clippy` and `tree` but none of
+  the other routine checks CLAUDE.md lists (`dbus-run-session -- cargo test`, `cargo nextest run`,
+  `cargo xwin check`, `cargo bench`, `python3 -m unittest discover -s ios`, `ios/check-build.py`,
+  `ios/test-logic.py`, `android/check-release.py`), so each asks first
+
+## Later: Structure
+- [L] `LibraryModel` holds 174 fields and 357 methods in a 9 423-line `models.rs`, and `RootView`
+  215 fields with a 671-line `new` making 39 subscriptions (`root.rs`), the two files changed most
+  since August, and every pane's feature passes through both: panes as entities owning their fields
+  and subscriptions, once the `driven.rs` harness pins what they do
+- [L] The phones' enrichment pass copies the desktop's orchestration: `resonate-mobile`'s
+  `enrichment.rs` (4 100 lines: `Sought`, `Pictures`, `Pass`, the lyric reader, and constants such as
+  `PICTURES_WAITING_AT_MOST` and `PERFORMERS_WEIGHED_AT_MOST`) beside `resonate-library`'s
+  `enrich.rs`; the strict rules are shared, the queueing, backoff and stopping are not, so a fix to
+  one is made twice. One pass over a small catalog trait both catalogs fill
+
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its
   workflow job (`fedora-server-rpm`) fires on a release or a manual dispatch alone
