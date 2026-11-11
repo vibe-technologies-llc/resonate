@@ -158,7 +158,7 @@ symphonia = {
 symphonia-codec-wavpack = { version = "0.1.1", default-features = false }
 ape-decoder = { version = "0.3.2", default-features = false }
 
-opus-rs = { version = "0.1.41", default-features = false, features = ["std", "heap"] }
+opus-rs = { version = "0.1.42", default-features = false, features = ["std", "heap"] }
 
 lofty = { version = "0.25.5", default-features = false, features = ["id3v2_compression_support"] }
 
@@ -197,7 +197,7 @@ tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
 futures-util = { version = "0.3.34", default-features = false, features = ["std", "sink"] }
 httparse = { version = "1.10.1", default-features = false, features = ["std"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
-webpki-root-certs = { version = "1.0.11", default-features = false }
+webpki-root-certs = { version = "1.0.12", default-features = false }
 uuid = { version = "1.29.2", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
 socket2 = { version = "0.6.5", default-features = false }
@@ -210,7 +210,7 @@ quinn = {
 tokio = { version = "1.54.1", default-features = false }
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 ring = { version = "0.17.14", default-features = false }
-rustls-pki-types = { version = "1.15.1", default-features = false }
+rustls-pki-types = { version = "1.16.0", default-features = false }
 flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
 hdf5-reader = { version = "0.12.1", default-features = false }
 hdf5-writer = "0.12.1"
