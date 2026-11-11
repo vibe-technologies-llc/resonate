@@ -597,6 +597,13 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("cannot keep {path} to its owner", path = path.display())]
+    Private {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
     #[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
     #[error("{op:?} failed on the application's icon at {path}", path = path.display())]
     Icon {

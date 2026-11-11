@@ -896,3 +896,207 @@ pub fn mbid_of(raw: [u8; MBID_BYTES]) -> Mbid {
     }
     Mbid::new(&dashed).unwrap_or_else(|_| unreachable!("thirty-two hex digits dashed as an mbid"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SOME_MBID: &str = "a74b1b7f-71a5-4011-9441-d0b5e4122711";
+
+    fn mbid() -> Mbid {
+        Mbid::new(SOME_MBID).expect("an mbid")
+    }
+
+    fn written(with: impl FnOnce(&mut Writer)) -> Vec<u8> {
+        let mut writer = Writer::new();
+        with(&mut writer);
+        writer.finish()
+    }
+
+    #[test]
+    fn numbers_read_back_as_written_at_every_width() {
+        for number in [
+            0,
+            1,
+            127,
+            128,
+            16_383,
+            16_384,
+            u64::from(u32::MAX),
+            u64::MAX,
+        ] {
+            let bytes = written(|writer| writer.number(number));
+
+            let mut reader = Reader::new(&bytes);
+
+            assert_eq!(reader.number().expect("a number"), number);
+            reader.done().expect("nothing left");
+        }
+    }
+
+    #[test]
+    fn signed_numbers_read_back_as_written_either_side_of_zero() {
+        for number in [0, 1, -1, 63, -64, i64::from(i32::MIN), i64::MAX, i64::MIN] {
+            let bytes = written(|writer| writer.signed(number));
+
+            assert_eq!(Reader::new(&bytes).signed().expect("a number"), number);
+        }
+    }
+
+    #[test]
+    fn a_number_wider_than_sixty_four_bits_is_malformed() {
+        let eleven_bytes = [0xff_u8; 11];
+        let tenth_byte_too_big = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02];
+
+        assert!(matches!(
+            Reader::new(&eleven_bytes).number(),
+            Err(Error::Malformed(Malformed::Number))
+        ));
+        assert!(matches!(
+            Reader::new(&tenth_byte_too_big).number(),
+            Err(Error::Malformed(Malformed::Number))
+        ));
+    }
+
+    #[test]
+    fn a_number_cut_off_mid_way_is_short() {
+        assert!(matches!(
+            Reader::new(&[0x80]).number(),
+            Err(Error::Malformed(Malformed::Short))
+        ));
+    }
+
+    #[test]
+    fn text_with_multibyte_letters_and_an_empty_text_read_back() {
+        let bytes = written(|writer| {
+            writer.text("Caf\u{e9} \u{1F3B5}");
+            writer.text("");
+            writer.maybe_text(None);
+            writer.maybe_text(Some("x"));
+        });
+
+        let mut reader = Reader::new(&bytes);
+
+        assert_eq!(reader.text().expect("text"), "Caf\u{e9} \u{1F3B5}");
+        assert_eq!(reader.text().expect("text"), "");
+        assert_eq!(reader.maybe_text().expect("nothing"), None);
+        assert_eq!(reader.maybe_text().expect("text").as_deref(), Some("x"));
+        reader.done().expect("nothing left");
+    }
+
+    #[test]
+    fn a_text_longer_than_the_most_is_cut_on_a_letter_and_still_reads_back() {
+        let long = "\u{e9}".repeat(LONGEST_TEXT);
+        let bytes = written(|writer| writer.text(&long));
+
+        let read = Reader::new(&bytes).text().expect("a cut text");
+
+        assert!(read.len() <= LONGEST_TEXT);
+        assert!(long.starts_with(&read));
+    }
+
+    #[test]
+    fn text_that_is_not_utf8_a_length_past_the_input_and_a_length_past_the_most_are_malformed() {
+        let not_text = [1, 0xff];
+        let past_the_input = [5, b'a'];
+        let past_the_most = written(|writer| writer.number(LONGEST_TEXT as u64 + 1));
+
+        assert!(matches!(
+            Reader::new(&not_text).text(),
+            Err(Error::Malformed(Malformed::Text))
+        ));
+        assert!(matches!(
+            Reader::new(&past_the_input).text(),
+            Err(Error::Malformed(Malformed::Overlong { length: 5 }))
+        ));
+        assert!(matches!(
+            Reader::new(&past_the_most).text(),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+    }
+
+    #[test]
+    fn a_flag_that_is_neither_zero_nor_one_is_a_bad_tag() {
+        assert!(matches!(
+            Reader::new(&[2]).flag(),
+            Err(Error::Malformed(Malformed::Tag { tag: 2 }))
+        ));
+        assert!(matches!(
+            Reader::new(&[7]).maybe_text(),
+            Err(Error::Malformed(Malformed::Tag { tag: 7 }))
+        ));
+    }
+
+    #[test]
+    fn a_count_larger_than_the_bytes_left_is_refused_before_anything_is_allocated() {
+        let bytes = written(|writer| writer.number(u64::MAX / 2));
+
+        assert!(matches!(
+            Reader::new(&bytes).texts(),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+    }
+
+    #[test]
+    fn an_mbid_reads_back_and_one_cut_short_is_short() {
+        let bytes = written(|writer| writer.mbid(&mbid()));
+
+        assert_eq!(bytes.len(), MBID_BYTES);
+        assert_eq!(Reader::new(&bytes).mbid().expect("an mbid"), mbid());
+        assert!(matches!(
+            Reader::new(&bytes[..MBID_BYTES - 1]).mbid(),
+            Err(Error::Malformed(Malformed::Short))
+        ));
+    }
+
+    #[test]
+    fn a_credit_with_and_without_an_mbid_reads_back() {
+        let credit = vec![
+            Credit {
+                name: "Pink Floyd".to_owned(),
+                joined_by: " & ".to_owned(),
+                mbid: Some(mbid()),
+            },
+            Credit {
+                name: "Syd".to_owned(),
+                joined_by: String::new(),
+                mbid: None,
+            },
+        ];
+        let bytes = written(|writer| writer.credit(&credit));
+
+        let mut reader = Reader::new(&bytes);
+
+        assert_eq!(reader.credit().expect("a credit"), credit);
+        reader.done().expect("nothing left");
+    }
+
+    #[test]
+    fn bytes_left_after_a_value_are_trailing() {
+        let mut bytes = written(|writer| writer.text("a"));
+        bytes.push(0);
+
+        let mut reader = Reader::new(&bytes);
+        reader.text().expect("text");
+
+        assert!(!reader.is_done());
+        assert!(matches!(
+            reader.done(),
+            Err(Error::Malformed(Malformed::Trailing))
+        ));
+    }
+
+    #[test]
+    fn every_prefix_of_a_value_is_refused_and_never_panics() {
+        let credit = vec![Credit {
+            name: "Pink Floyd".to_owned(),
+            joined_by: " & ".to_owned(),
+            mbid: Some(mbid()),
+        }];
+        let bytes = written(|writer| writer.credit(&credit));
+
+        for cut in 0..bytes.len() {
+            assert!(Reader::new(&bytes[..cut]).credit().is_err(), "{cut}");
+        }
+    }
+}

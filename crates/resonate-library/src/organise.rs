@@ -22,7 +22,7 @@ use resonate_codec::{
     DEEPEST_FOLDER_A_SHEET_NAMES, carries_what_the_file_did, the_folder_a_cue_names,
 };
 use resonate_core::{
-    AlbumId, MediaLocation, TrackId, file_facts, names_a_picture, os_bytes,
+    AlbumId, MediaLocation, TrackId, file_facts, names_a_picture, naming,
     writer::{self, Held, Writer},
 };
 use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
@@ -872,11 +872,14 @@ fn still_to_walk_back(noted: Vec<Move>, walked_back: &[Move]) -> Vec<Move> {
     if walked_back.len() == noted.len() {
         return walked_back.to_vec();
     }
-    let put_back: Vec<Move> = walked_back.iter().map(Move::reversed).collect();
+    let put_back: AHashSet<(&Path, &Path)> = walked_back
+        .iter()
+        .map(|walked| (walked.to.as_path(), walked.from.as_path()))
+        .collect();
 
     noted
         .into_iter()
-        .filter(|planned| !put_back.contains(planned))
+        .filter(|planned| !put_back.contains(&(planned.from.as_path(), planned.to.as_path())))
         .collect()
 }
 
@@ -2433,16 +2436,8 @@ fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
 }
 
 fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
-    let name = landing
-        .file_name()
-        .map(os_bytes::bytes_of)
-        .unwrap_or_default();
-    let kept = name
-        .get(..name.len().min(COMPONENT_BYTES - STAGED.len()))
-        .unwrap_or_default();
-    let mut staging = kept.to_vec();
-    staging.extend_from_slice(STAGED.as_bytes());
-    let staged = landing.with_file_name(os_bytes::os_string_from(staging));
+    let name = landing.file_name().unwrap_or_default();
+    let staged = landing.with_file_name(naming::named_within("", name, STAGED));
     library.staging(&staged)?;
     Ok(staged)
 }
@@ -3828,6 +3823,24 @@ mod tests {
     }
 
     #[test]
+    fn a_staging_name_beside_a_longest_name_of_multibyte_letters_is_cut_on_a_letter() {
+        let folder = a_folder_of_its_own();
+        let longest = format!("a{}.flac", "é".repeat(124));
+        assert_eq!(longest.len(), COMPONENT_BYTES - 1);
+        let landing = folder.join(&longest);
+        let library = Library::open_in_memory().expect("an in-memory library");
+
+        let staged = noted_staging(&library, &landing).expect("a staging name");
+
+        let name = staged.file_name().expect("a name");
+        assert!(name.len() <= COMPONENT_BYTES);
+        let text = name.to_str().expect("a name made of whole letters");
+        assert!(text.ends_with(STAGED));
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
     fn a_component_is_never_hidden_and_one_that_is_only_dots_or_only_spaces_resolves_to_nothing() {
         let layout = read("{album}/{title}");
         let mut named = comfortably_numb();
@@ -4390,6 +4403,37 @@ mod tests {
         );
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    fn unit(from: &str, to: &str, sidecars: &[(&str, &str)]) -> Move {
+        Move {
+            from: PathBuf::from(from),
+            to: PathBuf::from(to),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: sidecars
+                .iter()
+                .map(|(from, to)| Sidecar {
+                    from: PathBuf::from(from),
+                    to: PathBuf::from(to),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_unit_put_back_without_a_sidecar_that_had_gone_leaves_the_note() {
+        let first = unit(
+            "/a/one.flac",
+            "/b/one.flac",
+            &[("/a/one.lrc", "/b/one.lrc")],
+        );
+        let second = unit("/a/two.flac", "/b/two.flac", &[]);
+        let trimmed = unit("/b/one.flac", "/a/one.flac", &[]);
+
+        let left = still_to_walk_back(vec![first, second.clone()], &[trimmed]);
+
+        assert_eq!(left, vec![second]);
     }
 
     fn ordered(waits: &[Vec<usize>]) -> (Vec<usize>, Vec<Step>) {

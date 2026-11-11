@@ -401,7 +401,9 @@ fn started(
         return Ok(None);
     };
     let key = key_of(config, settings)?;
-    let folder = config::data_dir()?;
+    let folder = config::private_data_dir()?;
+    let ledger = folder.join(LEDGER);
+    config::private_store(&ledger)?;
     let settings = Settings {
         server: server_of(config),
         trusted: config.sync_server_certificate.clone(),
@@ -414,7 +416,7 @@ fn started(
             DEVICE_NAME,
         ),
         follow,
-        ledger: folder.join(LEDGER),
+        ledger,
         staging: folder.join(STAGING),
         transfers_allowed: true,
         relay_only: false,
@@ -459,11 +461,7 @@ pub(crate) fn code_reader() -> Option<fn(&str) -> bool> {
 
 #[cfg(feature = "sync")]
 fn alone() -> Result<Option<File>> {
-    let folder = config::data_dir()?;
-    fs::create_dir_all(&folder).map_err(|source| Error::CreateDir {
-        path: folder.clone(),
-        source,
-    })?;
+    let folder = config::private_data_dir()?;
     let path = folder.join(SYNCING_ALONE);
     let file = File::options()
         .create(true)

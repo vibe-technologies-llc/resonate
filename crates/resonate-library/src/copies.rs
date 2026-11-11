@@ -87,6 +87,7 @@ pub(crate) fn handed_over(transaction: &Transaction<'_>, copy: &NumberedCopy) ->
          WHERE id = ?1",
         params![kept, taken],
     )?;
+    changed("UPDATE tracks SET plays = 0 WHERE id = ?1", params![taken])?;
     changed(
         "UPDATE listens SET track_id = ?1 WHERE track_id = ?2",
         params![kept, taken],

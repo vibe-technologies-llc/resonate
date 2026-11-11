@@ -1217,6 +1217,46 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
     Ok(())
 }
 
+struct RefusedByTheDesktop;
+
+impl Trashes for RefusedByTheDesktop {
+    fn trash(&self, _: &Path) -> Removal {
+        Removal::Kept
+    }
+}
+
+#[test]
+fn a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice() -> Result<()> {
+    let tree = Tree::new();
+    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let copy = tree.root.join("Echoes (1).wav");
+    fs::copy(&original, &copy).expect("a copy");
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(RefusedByTheDesktop)));
+    scan(&library, &tree.root)?;
+    library.track_played(
+        &MediaLocation::local(&original),
+        None,
+        Duration::from_secs(2),
+    )?;
+    library.track_played(&MediaLocation::local(&copy), None, Duration::from_secs(2))?;
+    library.track_played(&MediaLocation::local(&copy), None, Duration::from_secs(2))?;
+
+    let first = library.numbered_copies()?;
+    let first_deleted = library.fold_copies(&first.numbered)?;
+    let second = library.numbered_copies()?;
+    library.fold_copies(&second.numbered)?;
+
+    assert_eq!(first.numbered.len(), 1);
+    assert_eq!(first_deleted.kept, 1);
+    assert_eq!(second.numbered.len(), 1);
+    let kept = library.track_at(&original, None)?.expect("the song stays");
+    assert_eq!(kept.plays, 3);
+    let left = library.track_at(&copy, None)?.expect("the copy stays");
+    assert_eq!(left.plays, 0);
+    Ok(())
+}
+
 struct TakenByTheDesktop;
 
 impl Trashes for TakenByTheDesktop {
