@@ -113,14 +113,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `MACOS_NOTARY_ISSUER` are set
 
 ## Playback and output
-- [M · 0.9.0] A version chosen for a song is played as such in the window alone: `RootView::send`
-  swaps it in (`better.rs`'s `with_the_versions_chosen`), and `resonate play`, `resonate playlist`,
-  MCP's queue tools and the phones never read `versions_chosen`, so *plays this version from now
-  on* holds only where it was said; moving `Chosen::in_place_of` into `resonate-library` would let
-  each caller take it
-- [M · 0.9.0] MCP reaches one player: no tool lists the zones, names one or moves playback
-  (`controlling.rs`'s `Reach`, no zone in `resonate-mcp`), though `queue --zone` and `--move-to`
-  do it from the terminal and each zone is its own MPRIS player
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
