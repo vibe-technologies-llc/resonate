@@ -188,7 +188,8 @@ impl Output {
         arms.heard_rendered.forget();
     }
 
-    pub(super) fn hear_the_other_arm(&mut self) -> Splicing {
+    pub(super) fn hear_the_other_arm(&mut self, graph_is_pulling: bool) -> Splicing {
+        self.switch_waits_for_room = false;
         let renders_in_place = matches!(self.plan.packing, Packing::Samples)
             && self.draining.is_none()
             && !self.ended
@@ -215,10 +216,19 @@ impl Output {
         };
         let rendered = &arms.other.rendered;
         let entered = rendered.entered();
-        if from < rendered.oldest()
-            || from >= entered
-            || entered - from > self.producer.room_to_splice() as u64
-        {
+        if from < rendered.oldest() || from >= entered {
+            return Splicing::Unspliceable;
+        }
+        let laid_again = entered - from;
+        let room = self.producer.room_to_splice() as u64;
+        if laid_again > room {
+            let drained = (laid_again - room).div_ceil(2);
+            let held_past_the_point = self.producer.written().saturating_sub(at);
+            if graph_is_pulling && held_past_the_point >= drained.saturating_add(over.get()) {
+                self.switch_owed = true;
+                self.switch_waits_for_room = true;
+                return Splicing::Owed;
+            }
             return Splicing::Unspliceable;
         }
 

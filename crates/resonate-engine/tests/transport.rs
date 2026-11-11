@@ -11837,6 +11837,7 @@ fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> 
 const AUDITIONED_RING: Duration = Duration::from_millis(500);
 const AUDITIONS_PULLED_TIMES_REAL_TIME: u32 = 8;
 const AUDITIONED_SECONDS: usize = 6;
+const THE_RING_FILLS_WHILE_NOTHING_PULLS: Duration = Duration::from_millis(150);
 const A_PERIOD_HOLDS_ITS_PEAK_WITHIN: f64 = 0.03;
 const A_STEP_MAY_PASS_THE_SINE_BY: f64 = 1.05;
 const DITHER_STEPS_AT_MOST: f64 = 48.0;
@@ -11927,6 +11928,7 @@ fn switched_back_and_forth(
 
     let mut switches = Vec::new();
     for heard in [Arm::B, Arm::A, Arm::B] {
+        thread::sleep(THE_RING_FILLS_WHILE_NOTHING_PULLS);
         switches.push(graph.lock().played.len() / stride);
         answered(player, audition_of(contest, heard, Lowered::NOTHING))?;
         pull_for(player, graph, stride, rate / 2, "the other arm to be heard");
