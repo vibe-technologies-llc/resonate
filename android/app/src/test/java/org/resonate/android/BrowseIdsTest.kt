@@ -3,6 +3,7 @@ package org.resonate.android
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.resonate.android.nativecore.QueueSong
 
 class BrowseIdsTest {
     @Test
@@ -46,5 +47,21 @@ class BrowseIdsTest {
         assertEquals(listOf(4uL, 7uL, 9uL) to 0, BrowseIds.playable(ids, 0))
         assertEquals(listOf(4uL, 7uL, 9uL) to 2, BrowseIds.playable(ids, 9))
         assertEquals(emptyList<ULong>() to 0, BrowseIds.playable(listOf("albums"), 0))
+    }
+
+    @Test
+    fun aMixedListKeepsItsServedRowsBesideTheLibrarysAndTheStartFollowsTheSongItNamed() {
+        val ids = listOf("subsonic:track/so-1", "4@root", "albums", "jellyfin:track/j-2", "7")
+
+        assertEquals(
+            listOf(
+                QueueSong.Served("subsonic:track/so-1"),
+                QueueSong.Library(4uL),
+                QueueSong.Served("jellyfin:track/j-2"),
+                QueueSong.Library(7uL),
+            ) to 2,
+            BrowseIds.playable(ids, 3, BrowseIds::queueSongOf),
+        )
+        assertNull(BrowseIds.queueSongOf("ftp:track/x"))
     }
 }

@@ -54,7 +54,7 @@ class FolderOrganising(
 
     suspend fun plan(folder: Uri, layout: String): OrganisePlan =
         withContext(Dispatchers.IO) {
-            library.native().planOrganise(MusicDocuments.rootDocument(folder), layout)
+            library.holding { it.planOrganise(MusicDocuments.rootDocument(folder), layout) }
         }
 
     fun organise(folder: Uri, songs: List<FiledSong>) = file(folder, songs, undoing = false)
@@ -80,7 +80,7 @@ class FolderOrganising(
                     }
                 undo.value =
                     if (undoing || filed.back.isEmpty()) null else OrganiseUndo(folder, filed.back)
-                reread(library.native())
+                library.holding { reread(it) }
                 library.notice(
                     OrganiseSentences.told(library.words, filed.moved.size, filed.failed, undoing)
                 )

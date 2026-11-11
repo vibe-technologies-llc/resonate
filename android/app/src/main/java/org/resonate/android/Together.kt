@@ -137,8 +137,7 @@ class Together(
     }
 
     suspend fun readParty() {
-        val native = library.native()
-        mutableParty.value = withContext(Dispatchers.IO) { native.partyShown() }
+        mutableParty.value = withContext(Dispatchers.IO) { library.holding { it.partyShown() } }
     }
 
     fun turnOut(person: ByteArray) = work { native ->
@@ -197,7 +196,7 @@ class Together(
     private fun work(action: suspend (MobilePlayer) -> Unit) {
         scope.launch {
             try {
-                action(library.native())
+                library.holding { action(it) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

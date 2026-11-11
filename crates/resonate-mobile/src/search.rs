@@ -29,6 +29,10 @@ const STORED_PAGE: i64 = 2_000;
 
 const AN_ORDER_STANDS_FOR: Duration = Duration::from_secs(30);
 
+const A_WALK_PINS_ITS_INDEX_FOR: Duration = Duration::from_secs(10);
+
+const WALKS_PINNED_AT_MOST: usize = 2;
+
 const COMPLETIONS_AT_MOST: usize = 6;
 
 const LETTERS_A_PIECE_INSIDE_A_WORD_NEEDS: usize = 3;
@@ -213,7 +217,18 @@ pub(crate) struct Searching {
     sung: Mutex<Option<Arc<Sung>>>,
     studied: Mutex<Option<Arc<Studied>>>,
     ordered: Mutex<Option<Ordered>>,
+    walked: Mutex<Vec<Pinned>>,
     pub(crate) offering: Mutex<Option<KeptOffer>>,
+}
+
+struct Pinned {
+    index: Arc<Index>,
+    asked: Instant,
+}
+
+pub(crate) struct Walked {
+    pub(crate) tracks: Vec<Track>,
+    pub(crate) revision: u64,
 }
 
 type Admitted = (Arc<Index>, Arc<Vec<usize>>);
@@ -345,6 +360,70 @@ impl Searching {
             .collect())
     }
 
+    pub(crate) fn walked(
+        &self,
+        catalog: &Catalog,
+        filter: &TrackFilter,
+        offset: u32,
+        limit: u32,
+        pinned: Option<u64>,
+    ) -> Result<Walked> {
+        let index = self.pinned_for_a_walk(catalog, pinned)?;
+        let revision = index.revision;
+        let Some((index, found)) = self.admitted_by(catalog, filter, || Ok(index))? else {
+            return Ok(Walked {
+                tracks: Vec::new(),
+                revision,
+            });
+        };
+
+        Ok(Walked {
+            tracks: found
+                .iter()
+                .skip(offset as usize)
+                .take(limit.min(LISTED_AT_MOST) as usize)
+                .map(|at| index.rows[*at].track.clone())
+                .collect(),
+            revision,
+        })
+    }
+
+    fn pinned_for_a_walk(&self, catalog: &Catalog, pinned: Option<u64>) -> Result<Arc<Index>> {
+        let now = Instant::now();
+        let held = {
+            let mut walked = self.walked.lock();
+            walked.retain(|pin| now.duration_since(pin.asked) < A_WALK_PINS_ITS_INDEX_FOR);
+            pinned.and_then(|revision| {
+                walked
+                    .iter()
+                    .find(|pin| pin.index.revision == revision)
+                    .map(|pin| Arc::clone(&pin.index))
+            })
+        };
+        let index = match held {
+            Some(index) => index,
+            None => self.index(catalog)?,
+        };
+
+        let mut walked = self.walked.lock();
+        match walked
+            .iter_mut()
+            .find(|pin| Arc::ptr_eq(&pin.index, &index))
+        {
+            Some(pin) => pin.asked = now,
+            None => walked.push(Pinned {
+                index: Arc::clone(&index),
+                asked: now,
+            }),
+        }
+        if walked.len() > WALKS_PINNED_AT_MOST {
+            walked.sort_by_key(|pin| std::cmp::Reverse(pin.asked));
+            walked.truncate(WALKS_PINNED_AT_MOST);
+        }
+
+        Ok(index)
+    }
+
     pub(crate) fn pictured_by(&self, catalog: &Catalog, filter: &TrackFilter) -> Result<Vec<u64>> {
         let Some((index, found)) = self.admitted_in_order(catalog, filter)? else {
             return Ok(Vec::new());
@@ -450,6 +529,15 @@ impl Searching {
         catalog: &Catalog,
         filter: &TrackFilter,
     ) -> Result<Option<Admitted>> {
+        self.admitted_by(catalog, filter, || self.index(catalog))
+    }
+
+    fn admitted_by(
+        &self,
+        catalog: &Catalog,
+        filter: &TrackFilter,
+        index: impl FnOnce() -> Result<Arc<Index>>,
+    ) -> Result<Option<Admitted>> {
         let asking = (!filter.text.trim().is_empty())
             .then(|| self.asking(catalog, &Search::read(&filter.text)))
             .transpose()?;
@@ -457,7 +545,7 @@ impl Searching {
             return Ok(None);
         }
 
-        let index = self.index(catalog)?;
+        let index = index()?;
         let sung = match &asking {
             Some(asking) => self.sung_for(catalog, asking)?,
             None => None,
@@ -3285,6 +3373,76 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&kept, &rebuilt));
         assert_eq!(everything.len(), 10);
+    }
+
+    #[test]
+    fn a_walk_of_pages_reads_every_page_from_the_index_it_began_on_while_the_catalog_moves() {
+        let catalog = library();
+        let searching = Searching::default();
+        let filter = TrackFilter::default();
+
+        let first = searching
+            .walked(&catalog, &filter, 0, 3, None)
+            .expect("a first page");
+        song(
+            &catalog,
+            Tagged {
+                title: "Added Later",
+                artist: "Someone",
+                album: "Elsewhere",
+                ..UNTAGGED
+            },
+        );
+        let pinned = searching
+            .walked(&catalog, &filter, 3, 100, Some(first.revision))
+            .expect("a later page of the same walk");
+        let afresh = searching
+            .walked(&catalog, &filter, 0, 100, None)
+            .expect("a walk begun after the change");
+        let pinned_again = searching
+            .walked(&catalog, &filter, 0, 100, Some(first.revision))
+            .expect("the first walk read again");
+
+        assert_ne!(first.revision, catalog.revision());
+        assert_eq!(pinned.revision, first.revision);
+        assert_eq!(first.tracks.len() + pinned.tracks.len(), 9);
+        assert!(
+            pinned
+                .tracks
+                .iter()
+                .all(|track| track.title != "Added Later")
+        );
+        assert_eq!(afresh.revision, catalog.revision());
+        assert_eq!(afresh.tracks.len(), 10);
+        assert_eq!(pinned_again.revision, first.revision);
+        assert_eq!(pinned_again.tracks.len(), 9);
+    }
+
+    #[test]
+    fn a_walk_whose_index_is_no_longer_pinned_is_answered_from_the_catalog_as_it_stands() {
+        let catalog = library();
+        let searching = Searching::default();
+        let filter = TrackFilter::default();
+
+        let first = searching
+            .walked(&catalog, &filter, 0, 3, None)
+            .expect("a first page");
+        searching.walked.lock().clear();
+        song(
+            &catalog,
+            Tagged {
+                title: "Added Later",
+                artist: "Someone",
+                album: "Elsewhere",
+                ..UNTAGGED
+            },
+        );
+        let lost = searching
+            .walked(&catalog, &filter, 3, 100, Some(first.revision))
+            .expect("a page whose pin is gone");
+
+        assert_ne!(lost.revision, first.revision);
+        assert_eq!(lost.tracks.len(), 7);
     }
 
     #[test]

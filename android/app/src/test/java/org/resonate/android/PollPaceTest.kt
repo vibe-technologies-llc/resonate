@@ -2,6 +2,7 @@ package org.resonate.android
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -42,5 +43,38 @@ class PollPaceTest {
         engines.closing("first")
         assertTrue(engines.run("second") { ran += it })
         assertEquals(listOf("first", "second", "second"), ran)
+    }
+
+    @Test
+    fun anEngineHeldAsItClosesIsReleasedOnlyOnceItsLastHolderLetsGo() {
+        val released = mutableListOf<String>()
+        val engines = OpenEngine<String> { released += it }
+        engines.opened("first")
+
+        val read =
+            engines.holding("first") { held ->
+                engines.closed(held)
+                assertTrue(released.isEmpty())
+                assertFalse(engines.run(held) {})
+                assertThrows(EngineClosed::class.java) { engines.holding(held) {} }
+                assertTrue(released.isEmpty())
+                "read"
+            }
+
+        assertEquals("read", read)
+        assertEquals(listOf("first"), released)
+    }
+
+    @Test
+    fun anEngineNobodyHoldsIsReleasedAsItClosesAndNeverAgain() {
+        val released = mutableListOf<String>()
+        val engines = OpenEngine<String> { released += it }
+        engines.opened("first")
+        engines.run("first") {}
+
+        engines.closed("first")
+        assertThrows(EngineClosed::class.java) { engines.holding("first") {} }
+
+        assertEquals(listOf("first"), released)
     }
 }

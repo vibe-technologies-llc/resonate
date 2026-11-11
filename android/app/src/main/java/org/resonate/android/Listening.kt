@@ -173,7 +173,7 @@ class Listening(
         return try {
             val answer =
                 withContext(Dispatchers.IO) {
-                    library.native().recogniseHeard(clip.samples.toList(), clip.rate.toUInt(), auddToken())
+                    library.holding { it.recogniseHeard(clip.samples.toList(), clip.rate.toUInt(), auddToken()) }
                 }
             Outcome.Answered(answer)
         } catch (cancelled: CancellationException) {

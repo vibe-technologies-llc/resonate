@@ -172,8 +172,7 @@ class ArtworkEnrichment(
 
     private fun work(action: suspend (MobilePlayer) -> Unit): Job = scope.launch {
         try {
-            val native = library.native()
-            access.withLock { action(native) }
+            library.holding { native -> access.withLock { action(native) } }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

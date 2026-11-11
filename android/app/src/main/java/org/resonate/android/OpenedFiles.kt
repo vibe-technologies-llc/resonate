@@ -90,9 +90,8 @@ class OpenedFiles(private val context: Context, private val library: LibraryRepo
 
     suspend fun track(opened: Uri): Track =
         withContext(Dispatchers.IO) {
-            val native = library.native()
             val kept = inGrantedTree(opened) ?: copied(opened)
-            native.indexDocument(kept.first, kept.second)
+            library.holding { it.indexDocument(kept.first, kept.second) }
         }
 
     private fun inGrantedTree(opened: Uri): Pair<String, String>? {

@@ -164,7 +164,15 @@ read `ROWS_READ_PER_HOLD` (256) to a hold, so a whole-library queue lets a snaps
 in between (`rows_read_across_several_holds_keep_the_order_asked`).
 The long holds themselves are short: the search index is read in pages of 2 000 rows with the lock
 taken per page (stamped with the revision read before the first, so a write between pages makes the
-next ask rebuild), and a playlist file or a link's matches take the lock per song over the
+next ask rebuild). **A walk of the library's pages is read from the index it began on**:
+`filtered_page(filter, offset, limit, pinned)` answers a `TrackPage` (the songs and the revision of
+the index they came from); a walk asks its first page with no pin and every later one with the
+revision the first answered, and `Searching::walked` keeps up to `WALKS_PINNED_AT_MOST` (2) indexes a
+walk asked within `A_WALK_PINS_ITS_INDEX_FOR` (10 s), so enrichment writing once a second rebuilds
+the index once a walk, not once a page; a page whose pin was let go answers the current revision and
+the walk starts again (`a_walk_of_pages_reads_every_page_from_the_index_it_began_on_while_the_catalog_moves`,
+`a_walk_whose_index_is_no_longer_pinned_is_answered_from_the_catalog_as_it_stands`). Android's
+`pagedPinned` and iOS's `Paging.pinned` are those walks. A playlist file or a link's matches take the lock per song over the
 `folded(name)`, `folded(title)` and `recording` indexes
 (`a_playlist_import_looks_each_song_up_by_index_not_by_scanning_the_catalog`).
 
@@ -681,6 +689,23 @@ watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
 `the_song_handed_to_another_zone_plays_there_and_leaves_the_zone_it_came_from`,
 `a_route_serving_another_zone_announces_its_own_sink`).
 
+**A queue comes back as it was arranged, as the desktop's `Resumption` does** (`arranged.rs`): the
+catalog's step 33 (`QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT`) gave `queue`,
+`zone_queue` and `served_rows` a `loaded` (the row's place in the list order, the engine's
+`QueueRows::in_load_order`) and `resume` and `zone_resume` a `shuffle`, `next_first` and `next_last`
+(the rows played next, as play positions). `save_zone` keeps the rows in play order with each one's
+`loaded`, the shuffle and `Queued::next` as one `Arranged`, and saves them again where the queue's
+revision or the shuffle moved (`SavedPlace::arranged_as`); `resume_saved_in` reads it back
+(`resume_rows_of`; a row read before the step lists in play order unshuffled through
+`coalesce(loaded, position)`) and sends `Arranged::resumption`: the rows in list order, each
+row's place in it as `order`, the shuffle and the rows played next. A row passed over on either
+side (`Arranged::retained`) moves the place and the rows played next down with it, and a kept gap
+(a forgotten song's row) is read as the rows that are left (`KeptPlace::next_among`)
+(`a_shuffled_queue_comes_back_shuffled_with_its_list_order_and_the_rows_played_next`,
+`a_catalog_of_before_queues_kept_their_order_resumes_them_in_play_order_unshuffled`,
+`rows_played_next_follow_the_rows_left_when_a_kept_row_is_gone`). The phones change nothing: the
+snapshot's `shuffle`, `next_first` and `next_count` already follow the engine.
+
 **Each zone's volume is kept beside its device**, as the desktop's: the catalog's step 19
 (`ZONES_KEEP_THEIR_VOLUME`) gave `zones` a `volume` (0 to 1, full by default). `save` keeps a zone's
 volume (`keep_volume_of`) when the engine's has moved more than `VOLUME_KEPT_WITHIN` from the one
@@ -825,6 +850,16 @@ reach the service the uri's scheme names. Each needs online (`OnlineOff`), the s
 `load`, `play_next` and `add_to_queue` put catalog ids, with ids minted beside the queue's own
 (`every_service_set_is_offered_and_each_is_searched_and_played_from_its_own_uris`,
 `a_service_declined_as_hosted_is_not_served_and_a_service_no_longer_given_goes`).
+
+**The queue is read whole or as a window.** `queue()` answers every row; `queue_window(heard_at_most,
+ahead_at_most)` answers a `QueueWindow` (`first`, `total` and the rows from `first`), the rows
+around the one playing (`Shown::around`), so a front end keeping a long queue in view reads a few
+hundred rows rather than every row's catalog lookup
+(`the_queue_is_read_as_a_window_around_the_row_playing`). **A list of library and served songs loads
+as one queue**: `load_songs(songs, start_at, autoplay)` takes `QueueSong::Library { id }` and
+`QueueSong::Served { uri }` in the order given, the served rows' ids minted beside the library's, as
+`load` and `load_served` each do for their own kind
+(`library_and_served_songs_are_loaded_together_in_the_order_asked`).
 
 **A row whose catalog row is gone stays in the queue, and a saved row that does not read is passed
 over.** `queue()` reads through `tracks_held_at`, so a row whose document was deleted is listed as a

@@ -1506,8 +1506,9 @@ final class Library {
     }
 
     nonisolated private static func steadily(_ native: MobilePlayer, _ filter: TrackFilter) throws -> [Track] {
-        try Paging.steadily(revision: { native.catalogRevision() }, key: \.id) {
-            try everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) }
+        try Paging.pinned(pageRows: Int(Library.page), key: \.id) { offset, pinned in
+            let read = try native.filteredPage(filter: filter, offset: offset, limit: Library.page, pinned: pinned)
+            return (read.tracks, read.revision)
         }
     }
 

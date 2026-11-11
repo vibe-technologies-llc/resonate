@@ -180,14 +180,14 @@ private class TrustedControllers(
             try {
                 val (saved, place) =
                     withTimeout(RESUMPTION_WAITS_AT_MOST_MS) {
-                        library.native()
-                        library.queue.first { it.isNotEmpty() } to
+                        library.ready()
+                        library.queueRead.first { it.tracks.isNotEmpty() } to
                             library.snapshot.filterNotNull().first()
                     }
                 resumed.set(
                     MediaSession.MediaItemsWithStartPosition(
-                        saved.map { it.mediaItem() },
-                        place.queueIndex.toInt().coerceIn(saved.indices),
+                        saved.tracks.map { it.mediaItem() },
+                        (place.queueIndex.toInt() - saved.first).coerceIn(saved.tracks.indices),
                         place.positionMs.toLong(),
                     )
                 )

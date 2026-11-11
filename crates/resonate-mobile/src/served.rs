@@ -6,14 +6,21 @@ use std::{
 
 use parking_lot::{Mutex, RwLock};
 use resonate_codec::{FormatHint, Media, MediaProvider, MediaStream, Sources};
-use resonate_core::{MediaLocation, Resumable, Resumption, SourceId};
+use resonate_core::{MediaLocation, Resumable, Resumption, SourceId, TrackId};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Unclaimed};
 use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song, Streamed};
 
 use crate::{
     Error, MobilePlayer, Result, Track,
+    documents::location,
     downloads::{DownloadAccount, MusicProvider, failure_of},
 };
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum QueueSong {
+    Library { id: u64 },
+    Served { uri: String },
+}
 
 pub(crate) const PLAYED_IN_PLACE: [&str; 6] = [
     "subsonic",
@@ -470,6 +477,44 @@ impl MobilePlayer {
         })
     }
 
+    pub fn load_songs(&self, songs: Vec<QueueSong>, start_at: u32, autoplay: bool) -> Result<()> {
+        let ids: Vec<u64> = songs
+            .iter()
+            .filter_map(|song| match song {
+                QueueSong::Library { id } => Some(*id),
+                QueueSong::Served { .. } => None,
+            })
+            .collect();
+        let held = self
+            .catalog
+            .tracks_by_id(&ids)?
+            .into_iter()
+            .map(|track| {
+                Ok(QueueItem::whole(
+                    TrackId::new(track.id)?,
+                    location(&track.uri)?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut minting = Unclaimed::beside(&held);
+        let mut held = held.into_iter();
+        let items = songs
+            .into_iter()
+            .filter_map(|song| match song {
+                QueueSong::Library { .. } => held.next().map(Ok),
+                QueueSong::Served { uri } => Some(self.served_item(&uri, &mut minting)),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if !autoplay {
+            return self.command_landed(Command::Resume(paused(items, start_at as usize)));
+        }
+        self.command(Command::Load {
+            items,
+            start_at: start_at as usize,
+            autoplay,
+        })
+    }
+
     pub fn play_served_next(&self, uris: Vec<String>) -> Result<()> {
         self.queue_served(uris, |_| Placement::Next)
     }
@@ -483,15 +528,17 @@ impl MobilePlayer {
     fn served_items(&self, uris: Vec<String>, beside: &QueueRows) -> Result<Vec<QueueItem>> {
         let mut minting = Unclaimed::beside(beside.iter().map(Arc::as_ref));
         uris.into_iter()
-            .map(|uri| {
-                let service = self.served.serving(&uri)?;
-                let Named::Song(_) = service.named(&uri)? else {
-                    return Err(Error::InvalidUri);
-                };
-                let location = MediaLocation::from_uri(&uri).ok_or(Error::InvalidUri)?;
-                Ok(QueueItem::whole(minting.mint(), location))
-            })
+            .map(|uri| self.served_item(&uri, &mut minting))
             .collect()
+    }
+
+    fn served_item(&self, uri: &str, minting: &mut Unclaimed) -> Result<QueueItem> {
+        let service = self.served.serving(uri)?;
+        let Named::Song(_) = service.named(uri)? else {
+            return Err(Error::InvalidUri);
+        };
+        let location = MediaLocation::from_uri(uri).ok_or(Error::InvalidUri)?;
+        Ok(QueueItem::whole(minting.mint(), location))
     }
 
     fn queue_served(&self, uris: Vec<String>, placed: impl Fn(usize) -> Placement) -> Result<()> {
@@ -955,6 +1002,53 @@ mod tests {
     }
 
     #[test]
+    fn library_and_served_songs_are_loaded_together_in_the_order_asked() {
+        let harness = online();
+        harness.player.serve_from(vec![account()]);
+        let songs = harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs");
+
+        harness
+            .player
+            .load_songs(
+                vec![
+                    QueueSong::Served {
+                        uri: songs[0].uri.clone(),
+                    },
+                    QueueSong::Library {
+                        id: harness.song('a').id,
+                    },
+                    QueueSong::Served {
+                        uri: songs[1].uri.clone(),
+                    },
+                    QueueSong::Library {
+                        id: harness.song('b').id,
+                    },
+                ],
+                1,
+                false,
+            )
+            .expect("a mixed load");
+        let queue = harness.player.queue().expect("the queue");
+        let snapshot = harness.player.snapshot().expect("a snapshot");
+        let rows: std::collections::BTreeSet<Option<u64>> =
+            queue.iter().map(|track| track.queue_id).collect();
+
+        assert_eq!(
+            queue
+                .iter()
+                .map(|track| track.title.as_str())
+                .collect::<Vec<_>>(),
+            ["One of These Days", "a.wav", "A Pillow of Winds", "b.wav"]
+        );
+        assert_eq!(rows.len(), 4);
+        assert!(rows.iter().all(Option::is_some));
+        assert_eq!(snapshot.queue_index, 1);
+    }
+
+    #[test]
     fn served_songs_are_queued_named_and_opened_by_the_players_sources() {
         let harness = online();
         harness.player.serve_from(vec![account()]);
@@ -1042,11 +1136,13 @@ mod tests {
                 .0
                 .is_empty()
         });
-        let (kept, row, _) = harness
+        let (arranged, _) = harness
             .player
             .catalog
             .resume_rows_of(ZoneId::FIRST)
             .expect("the kept queue");
+        let row = arranged.row;
+        let kept: Vec<KeptRow> = arranged.rows.into_iter().map(|laid| laid.row).collect();
         harness.player.serve_from(Vec::new());
         harness.player.serve_from(vec![account()]);
         harness

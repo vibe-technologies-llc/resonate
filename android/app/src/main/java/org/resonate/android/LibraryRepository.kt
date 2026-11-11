@@ -64,6 +64,12 @@ class ResonateApplication : Application() {
     }
 }
 
+data class QueueRead(val first: Int, val total: Int, val tracks: List<Track>) {
+    companion object {
+        val EMPTY = QueueRead(0, 0, emptyList())
+    }
+}
+
 data class Place(
     val track: ULong?,
     val positionMs: Long,
@@ -90,10 +96,10 @@ class LibraryRepository(private val context: Context) {
                     fail(words.string(R.string.notice_player_failed))
                 }
         )
-    @Volatile private var engine = CompletableDeferred<MobilePlayer>()
+    @Volatile @PublishedApi internal var engine = CompletableDeferred<MobilePlayer>()
     private val actions = Channel<(MobilePlayer) -> Unit>(Channel.UNLIMITED)
     private val access = Mutex()
-    private val openEngine = OpenEngine<MobilePlayer>()
+    @PublishedApi internal val openEngine = OpenEngine<MobilePlayer> { it.close() }
     private val pollWakes = Channel<Unit>(Channel.CONFLATED)
     @Volatile private var busyUntil = 0L
     private val scanAccess = Mutex()
@@ -103,6 +109,9 @@ class LibraryRepository(private val context: Context) {
     val unread = mutableUnread.asStateFlow()
     private val mutableTracks = MutableStateFlow<List<Track>>(emptyList())
     private val mutableQueue = MutableStateFlow<List<Track>>(emptyList())
+    private val mutableQueueRead = MutableStateFlow(QueueRead.EMPTY)
+    private val queueAsks = Channel<QueueAsk>(Channel.CONFLATED)
+    @Volatile private var queueShown = QueueShown()
     private val mutableSnapshot = MutableStateFlow<Snapshot?>(null)
     private val mutablePlace = MutableStateFlow<Place?>(null)
     val place = mutablePlace.asStateFlow()
@@ -116,6 +125,7 @@ class LibraryRepository(private val context: Context) {
     val favourites: SharedFlow<Favourited> = mutableFavourites.asSharedFlow()
     val tracks = mutableTracks.asStateFlow()
     val queue = mutableQueue.asStateFlow()
+    val queueRead = mutableQueueRead.asStateFlow()
     val snapshot = mutableSnapshot.asStateFlow()
     val status = mutableStatus.asStateFlow()
     val scanning = mutableScanning.asStateFlow()
@@ -150,7 +160,12 @@ class LibraryRepository(private val context: Context) {
     val openedFiles = OpenedFiles(context, this)
     val browse = LibraryBrowse(context, this)
 
-    internal suspend fun native() = engine.await()
+    internal suspend fun ready() {
+        engine.await()
+    }
+
+    internal suspend inline fun <T> holding(action: (MobilePlayer) -> T): T =
+        openEngine.holding(engine.await(), action)
 
     @Volatile private var indexed: Pair<List<Track>, Map<ULong, Track>>? = null
 
@@ -168,8 +183,7 @@ class LibraryRepository(private val context: Context) {
     internal suspend fun refresh() =
         withContext(Dispatchers.IO) {
             try {
-                val native = engine.await()
-                mutableAllTracks.value = pagedTracks(native, defaultTrackFilter()) { true }
+                mutableAllTracks.value = pagedTracks(defaultTrackFilter()) { true }
                 reload()
                 mutableUnread.value = false
             } catch (cancelled: CancellationException) {
@@ -192,13 +206,12 @@ class LibraryRepository(private val context: Context) {
         }
     }
 
-    private suspend fun pagedTracks(
-        native: MobilePlayer,
-        query: TrackFilter,
-        stillWanted: () -> Boolean,
-    ): List<Track> =
-        pagedSteadily(PAGE_ROWS, native::catalogRevision, Track::id, stillWanted) { offset, limit ->
-            access.withLock { native.filteredTracks(query, offset, limit) }
+    private suspend fun pagedTracks(query: TrackFilter, stillWanted: () -> Boolean): List<Track> =
+        holding { native ->
+            pagedPinned(PAGE_ROWS, Track::id, stillWanted) { offset, limit, pinned ->
+                access.withLock { native.filteredPage(query, offset, limit, pinned) }
+                    .let { it.tracks to it.revision }
+            }
         }
 
     @Volatile private var failureText: String? = null
@@ -317,10 +330,12 @@ class LibraryRepository(private val context: Context) {
                     report(failure)
                 }
                 val lyricClock = launch { features.followLyrics(native, mutablePlace) }
+                val queueReader = launch { readQueues(native) }
                 try {
                     poll(native)
                 } finally {
                     lyricClock.cancel()
+                    queueReader.cancel()
                 }
             } catch (cancelled: CancellationException) {
                 ready.cancel(cancelled)
@@ -336,8 +351,8 @@ class LibraryRepository(private val context: Context) {
                 fail(words.string(R.string.notice_library_unloaded))
             } finally {
                 withContext(NonCancellable) {
-                    access.withLock {
-                        opened?.let { native ->
+                    opened?.let { native ->
+                        access.withLock {
                             openEngine.closing(native)
                             try {
                                 native.partyLeave()
@@ -345,11 +360,11 @@ class LibraryRepository(private val context: Context) {
                             } catch (failure: Exception) {
                                 report(failure)
                             }
-                            native.close()
                         }
+                        openEngine.closed(native)
                     }
                     mutableSnapshot.value = null
-                    mutableQueue.value = emptyList()
+                    publishQueue(QueueRead.EMPTY)
                 }
                 ended(currentCoroutineContext()[Job])
             }
@@ -357,7 +372,6 @@ class LibraryRepository(private val context: Context) {
     }
 
     private suspend fun poll(native: MobilePlayer) {
-        val queueReads = QueueReads()
         var savedAt = SystemClock.elapsedRealtime()
         var failing: String? = null
         var waiting: String? = null
@@ -365,45 +379,51 @@ class LibraryRepository(private val context: Context) {
             var wait = PollPace.BUSY_MS
             try {
                 access.withLock {
-                    val state = native.snapshot()
-                    features.tick(native, state)
-                    mutableSnapshot.value = state
-                    mutablePlace.value =
-                        Place(
-                            track = state.current?.id,
-                            positionMs = state.positionMs.toLong(),
-                            durationMs = state.durationMs.toLong(),
-                            moving = state.transport == Transport.PLAYING,
-                            readAt = SystemClock.elapsedRealtime(),
-                        )
-                    wait =
-                        PollPace.intervalMs(
-                            foreground = features.inForeground,
-                            moving =
-                                state.transport == Transport.PLAYING ||
-                                    state.transport == Transport.LOADING,
-                            working =
-                                features.analysisBusy.value ||
-                                    features.downloading.value ||
-                                    mutableScanning.value,
-                            asked = SystemClock.elapsedRealtime() < busyUntil,
-                        )
-                    state.failure?.let(::fail)
-                    if (state.waiting != waiting) {
-                        if (waiting != null && mutableStatus.value == waiting) {
-                            mutableStatus.value = null
+                    openEngine.holding(native) {
+                        val state = native.snapshot()
+                        features.tick(native, state)
+                        mutableSnapshot.value = state
+                        mutablePlace.value =
+                            Place(
+                                track = state.current?.id,
+                                positionMs = state.positionMs.toLong(),
+                                durationMs = state.durationMs.toLong(),
+                                moving = state.transport == Transport.PLAYING,
+                                readAt = SystemClock.elapsedRealtime(),
+                            )
+                        wait =
+                            PollPace.intervalMs(
+                                foreground = features.inForeground,
+                                moving =
+                                    state.transport == Transport.PLAYING ||
+                                        state.transport == Transport.LOADING,
+                                working =
+                                    features.analysisBusy.value ||
+                                        features.downloading.value ||
+                                        mutableScanning.value,
+                                asked = SystemClock.elapsedRealtime() < busyUntil,
+                            )
+                        state.failure?.let(::fail)
+                        if (state.waiting != waiting) {
+                            if (waiting != null && mutableStatus.value == waiting) {
+                                mutableStatus.value = null
+                            }
+                            waiting = state.waiting
+                            state.waiting?.let { mutableStatus.value = it }
                         }
-                        waiting = state.waiting
-                        state.waiting?.let { mutableStatus.value = it }
-                    }
-                    val now = SystemClock.elapsedRealtime()
-                    if (queueReads.due(state.zone, state.queueRevision, state.catalogRevision, now)) {
-                        mutableQueue.value = native.queue()
-                        queueReads.noted(state.zone, state.queueRevision, state.catalogRevision, now)
-                    }
-                    if (now - savedAt >= SAVE_EVERY_MS) {
-                        savedAt = now
-                        native.save()
+                        queueAsks.trySend(
+                            QueueAsk(
+                                state.zone,
+                                state.queueRevision,
+                                state.catalogRevision,
+                                state.queueIndex,
+                            )
+                        )
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - savedAt >= SAVE_EVERY_MS) {
+                            savedAt = now
+                            native.save()
+                        }
                     }
                 }
                 failing = null
@@ -416,6 +436,44 @@ class LibraryRepository(private val context: Context) {
             withTimeoutOrNull(wait) { pollWakes.receive() }
         }
     }
+
+    private suspend fun readQueues(native: MobilePlayer) {
+        val reads = QueueReads()
+        var failing: String? = null
+        for (asked in queueAsks) {
+            val shown = queueShown
+            val now = SystemClock.elapsedRealtime()
+            if (!reads.due(asked, shown, now)) continue
+            try {
+                val window =
+                    openEngine.holding(native) {
+                        it.queueWindow(shown.heard.toUInt(), shown.ahead.toUInt())
+                    }
+                reads.noted(asked, shown, now)
+                publishQueue(QueueRead(window.first.toInt(), window.total.toInt(), window.tracks))
+                failing = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (failure.message != failing) report(failure)
+                failing = failure.message
+            }
+        }
+    }
+
+    private fun publishQueue(read: QueueRead) {
+        mutableQueueRead.value = read
+        mutableQueue.value = read.tracks
+    }
+
+    fun widenQueue(earlier: Boolean) {
+        queueShown = queueShown.widened(earlier)
+        snapshot.value?.let {
+            queueAsks.trySend(QueueAsk(it.zone, it.queueRevision, it.catalogRevision, it.queueIndex))
+        }
+    }
+
+    suspend fun wholeQueue(): List<Track> = holding { withContext(Dispatchers.IO) { it.queue() } }
 
     fun wakePoll() {
         pollWakes.trySend(Unit)
@@ -456,7 +514,7 @@ class LibraryRepository(private val context: Context) {
                 updated(mutableTracks.value).filter {
                     filter.value?.favourites != true || it.favourite
                 }
-            mutableQueue.value = updated(mutableQueue.value)
+            mutableQueueRead.value.let { read -> publishQueue(read.copy(tracks = updated(read.tracks))) }
             mutableSnapshot.value?.let { state ->
                 mutableSnapshot.value =
                     state.copy(
@@ -560,8 +618,7 @@ class LibraryRepository(private val context: Context) {
             return
         }
         val query = (currentFilter ?: defaultTrackFilter()).copy(text = search)
-        val native = engine.await()
-        val found = pagedTracks(native, query) { request == queryRequest.get() }
+        val found = pagedTracks(query) { request == queryRequest.get() }
         if (request == queryRequest.get()) mutableTracks.value = found
     }
 
@@ -591,119 +648,120 @@ class LibraryRepository(private val context: Context) {
         var indexed = 0
         var failed = 0
         try {
-            val native = engine.await()
-            if (tree == MusicDocuments.downloads) {
-                for ((uri, name, size, modified) in MusicDocuments.downloadedAudio(context)) {
-                    currentCoroutineContext().ensureActive()
-                    if (
-                        name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT) !in
-                            extensions
-                    )
-                        continue
-                    try {
-                        native.scanDocument(
-                            uri.toString(),
-                            name,
-                            size.coerceAtLeast(0L).toULong(),
-                            modified,
-                        )
-                        indexed++
-                    } catch (failure: Exception) {
-                        Log.w("Resonate", "Downloaded audio could not be indexed", failure)
-                        failed++
-                    }
-                    mutableStatus.value = scanSummary(indexed, failed)
-                }
-            } else {
-                val root = DocumentsContract.getTreeDocumentId(tree)
-                val pending = ArrayDeque<Pair<String, Int>>()
-                pending.add(root to 0)
-                while (pending.isNotEmpty()) {
-                    val (parent, depth) = pending.removeFirst()
-                    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
-                    val columns =
-                        arrayOf(
-                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                            DocumentsContract.Document.COLUMN_MIME_TYPE,
-                            DocumentsContract.Document.COLUMN_SIZE,
-                            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-                        )
-                    val audio = ArrayList<ScannedAudio>()
-                    val sidecars = HashMap<String, Uri>()
-                    val covers = HashMap<String, Uri>()
-                    context.contentResolver.query(children, columns, null, null, null)?.use { cursor
-                        ->
-                        while (cursor.moveToNext()) {
-                            currentCoroutineContext().ensureActive()
-                            val id = cursor.getString(0)
-                            val name = cursor.getString(1) ?: continue
-                            val mime = cursor.getString(2)
-                            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                            val lower = name.lowercase(java.util.Locale.ROOT)
-                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                                if (depth < MusicDocuments.TREE_DEPTH_AT_MOST)
-                                    pending.add(id to depth + 1)
-                            } else if (lower.substringAfterLast('.', "") in extensions)
-                                audio.add(
-                                    ScannedAudio(
-                                        uri,
-                                        name,
-                                        if (cursor.isNull(3)) 0L else cursor.getLong(3),
-                                        if (cursor.isNull(4)) 0L else cursor.getLong(4),
-                                    )
-                                )
-                            else if (lower.endsWith(".lrc"))
-                                sidecars[lower.removeSuffix(".lrc")] = uri
-                            else if (lower in FOLDER_COVER_NAMES) covers[lower] = uri
-                        }
-                    }
-                    val cover =
-                        if (audio.isEmpty()) null
-                        else
-                            FOLDER_COVER_NAMES.firstNotNullOfOrNull { covers[it] }
-                                ?.let { readDocumentWithin(it, FOLDER_COVER_AT_MOST) }
-                    val covered = ArrayList<ULong>()
-                    for ((uri, name, size, modified) in audio) {
+            holding { native ->
+                if (tree == MusicDocuments.downloads) {
+                    for ((uri, name, size, modified) in MusicDocuments.downloadedAudio(context)) {
                         currentCoroutineContext().ensureActive()
+                        if (
+                            name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT) !in
+                                extensions
+                        )
+                            continue
                         try {
-                            val track =
-                                native.scanDocument(
-                                    uri.toString(),
-                                    name,
-                                    size.coerceAtLeast(0L).toULong(),
-                                    modified,
-                                )
+                            native.scanDocument(
+                                uri.toString(),
+                                name,
+                                size.coerceAtLeast(0L).toULong(),
+                                modified,
+                            )
                             indexed++
-                            covered.add(track.id)
-                            try {
-                                sidecars[
-                                        name
-                                            .substringBeforeLast('.')
-                                            .lowercase(java.util.Locale.ROOT)]
-                                    ?.let { sidecar ->
-                                        readDocumentWithin(sidecar, 1024 * 1024)?.let {
-                                            native.keepSidecarLyrics(track.id, it)
-                                        }
-                                    }
-                            } catch (failure: Exception) {
-                                Log.w(
-                                    "Resonate",
-                                    "Companion artwork or lyrics could not be read",
-                                    failure,
-                                )
-                            }
                         } catch (failure: Exception) {
-                            Log.w("Resonate", "Audio document could not be indexed", failure)
+                            Log.w("Resonate", "Downloaded audio could not be indexed", failure)
                             failed++
                         }
                         mutableStatus.value = scanSummary(indexed, failed)
                     }
-                    if (cover != null && covered.isNotEmpty()) {
-                        try {
-                            native.keepFolderCover(covered, cover)
-                        } catch (failure: Exception) {
-                            Log.w("Resonate", "Folder artwork could not be kept", failure)
+                } else {
+                    val root = DocumentsContract.getTreeDocumentId(tree)
+                    val pending = ArrayDeque<Pair<String, Int>>()
+                    pending.add(root to 0)
+                    while (pending.isNotEmpty()) {
+                        val (parent, depth) = pending.removeFirst()
+                        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parent)
+                        val columns =
+                            arrayOf(
+                                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                                DocumentsContract.Document.COLUMN_SIZE,
+                                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                            )
+                        val audio = ArrayList<ScannedAudio>()
+                        val sidecars = HashMap<String, Uri>()
+                        val covers = HashMap<String, Uri>()
+                        context.contentResolver.query(children, columns, null, null, null)?.use { cursor
+                            ->
+                            while (cursor.moveToNext()) {
+                                currentCoroutineContext().ensureActive()
+                                val id = cursor.getString(0)
+                                val name = cursor.getString(1) ?: continue
+                                val mime = cursor.getString(2)
+                                val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                                val lower = name.lowercase(java.util.Locale.ROOT)
+                                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                                    if (depth < MusicDocuments.TREE_DEPTH_AT_MOST)
+                                        pending.add(id to depth + 1)
+                                } else if (lower.substringAfterLast('.', "") in extensions)
+                                    audio.add(
+                                        ScannedAudio(
+                                            uri,
+                                            name,
+                                            if (cursor.isNull(3)) 0L else cursor.getLong(3),
+                                            if (cursor.isNull(4)) 0L else cursor.getLong(4),
+                                        )
+                                    )
+                                else if (lower.endsWith(".lrc"))
+                                    sidecars[lower.removeSuffix(".lrc")] = uri
+                                else if (lower in FOLDER_COVER_NAMES) covers[lower] = uri
+                            }
+                        }
+                        val cover =
+                            if (audio.isEmpty()) null
+                            else
+                                FOLDER_COVER_NAMES.firstNotNullOfOrNull { covers[it] }
+                                    ?.let { readDocumentWithin(it, FOLDER_COVER_AT_MOST) }
+                        val covered = ArrayList<ULong>()
+                        for ((uri, name, size, modified) in audio) {
+                            currentCoroutineContext().ensureActive()
+                            try {
+                                val track =
+                                    native.scanDocument(
+                                        uri.toString(),
+                                        name,
+                                        size.coerceAtLeast(0L).toULong(),
+                                        modified,
+                                    )
+                                indexed++
+                                covered.add(track.id)
+                                try {
+                                    sidecars[
+                                            name
+                                                .substringBeforeLast('.')
+                                                .lowercase(java.util.Locale.ROOT)]
+                                        ?.let { sidecar ->
+                                            readDocumentWithin(sidecar, 1024 * 1024)?.let {
+                                                native.keepSidecarLyrics(track.id, it)
+                                            }
+                                        }
+                                } catch (failure: Exception) {
+                                    Log.w(
+                                        "Resonate",
+                                        "Companion artwork or lyrics could not be read",
+                                        failure,
+                                    )
+                                }
+                            } catch (failure: Exception) {
+                                Log.w("Resonate", "Audio document could not be indexed", failure)
+                                failed++
+                            }
+                            mutableStatus.value = scanSummary(indexed, failed)
+                        }
+                        if (cover != null && covered.isNotEmpty()) {
+                            try {
+                                native.keepFolderCover(covered, cover)
+                            } catch (failure: Exception) {
+                                Log.w("Resonate", "Folder artwork could not be kept", failure)
+                            }
                         }
                     }
                 }

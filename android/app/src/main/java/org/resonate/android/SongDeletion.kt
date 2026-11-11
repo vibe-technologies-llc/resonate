@@ -44,7 +44,7 @@ class SongDeletion(
         withContext(Dispatchers.IO) {
             val removed = removeFiles(tracks)
             if (removed.gone.isNotEmpty())
-                library.native().forgetDeletedSongs(removed.gone.map { it.id })
+                library.holding { it.forgetDeletedSongs(removed.gone.map { it.id }) }
             Deleted(
                 removed.gone.size,
                 removed.kept,
@@ -55,17 +55,18 @@ class SongDeletion(
 
     suspend fun foldCopies(sets: List<IdenticalSongs>): Deleted =
         withContext(Dispatchers.IO) {
-            val native = library.native()
-            var folded = 0
-            var kept = 0
-            for (set in sets) {
-                val removed = removeFiles(set.copies)
-                kept += removed.kept
-                if (removed.gone.isEmpty()) continue
-                val told = native.foldIdenticalSongs(set.kept.id, removed.gone.map { it.id })
-                folded += told.forgotten.toInt()
+            library.holding { native ->
+                var folded = 0
+                var kept = 0
+                for (set in sets) {
+                    val removed = removeFiles(set.copies)
+                    kept += removed.kept
+                    if (removed.gone.isEmpty()) continue
+                    val told = native.foldIdenticalSongs(set.kept.id, removed.gone.map { it.id })
+                    folded += told.forgotten.toInt()
+                }
+                Deleted(0, kept, folded)
             }
-            Deleted(0, kept, folded)
         }
 
     private suspend fun removeFiles(tracks: List<Track>): FilesRemoved {

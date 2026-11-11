@@ -115,12 +115,13 @@ class Served(
         return slots.withPermit {
             withContext(Dispatchers.IO) {
                 try {
-                    val native = library.native()
-                    bind(native)
-                    val bytes = native.servedCover(uri, cover, edge.toUInt())
-                    val picture = decoded(bytes, edge)
-                    if (picture == null) noteMissing(key) else pictures.put(key, picture)
-                    picture
+                    library.holding { native ->
+                        bind(native)
+                        val bytes = native.servedCover(uri, cover, edge.toUInt())
+                        val picture = decoded(bytes, edge)
+                        if (picture == null) noteMissing(key) else pictures.put(key, picture)
+                        picture
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {

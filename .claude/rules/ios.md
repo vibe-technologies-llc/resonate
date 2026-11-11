@@ -1190,7 +1190,7 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   held hidden for the whole search drew an empty slot in the glass pill iOS 26 groups trailing
   items into (beside Listen's ear) and a pill of its own on the Songs page.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
-  page published at once where nothing is shown yet and the rest after, the whole read again from the start where `catalog_revision` moved during it (`Paging.steadily`, at most three walks, each song kept once by id, `PagingTests`); albums and artists through
+  page published at once where nothing is shown yet and the rest after, every later page read from the index the first came from (`Paging.pinned` over `filtered_page`, its revision as the pin, so enrichment writing meanwhile neither rebuilds the index per page nor walks again; only a page whose pin was let go starts over, at most three walks, each song kept once by id, `PagingTests`); albums and artists through
   `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. The ordered
   match of a filter is kept for the pages that follow it (`Ordered`: one filter, one index, 30 s),
   so paging 100 000 songs filters and sorts once; the index is built outside the catalog's lock

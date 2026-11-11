@@ -197,8 +197,7 @@ class TagEditing(
 
     suspend fun read(ids: List<ULong>): List<SongTags> =
         withContext(Dispatchers.IO) {
-            val native = library.native()
-            ids.map { native.songTags(it) }
+            library.holding { native -> ids.map { native.songTags(it) } }
         }
 
     fun edit(tracks: List<Track>, change: SongTags, consent: suspend (List<Uri>) -> Boolean) {
@@ -221,24 +220,25 @@ class TagEditing(
     ) {
         scope.launch {
             try {
-                val native = library.native()
-                val uris = named(native)
-                val allowed = allowedToWrite(uris, consent)
-                val refused = uris.size - allowed.size
-                val told =
-                    if (allowed.isEmpty()) TagsWritten(0u, 0u, 0u, null) else write(native, allowed)
-                mutableUndoable.value = native.tagsToUndo().isNotEmpty()
-                if (told.written > 0u) library.refresh()
-                val notice =
-                    TagSentences.told(
-                        library.words,
-                        told.written.toInt(),
-                        told.failed.toInt() + refused,
-                        told.failure ?: TagSentences.notAllowed(library.words, refused),
-                        undoing,
-                    )
-                if (notice.failure) library.report(IllegalStateException(notice.text))
-                else library.notice(notice.text)
+                library.holding { native ->
+                    val uris = named(native)
+                    val allowed = allowedToWrite(uris, consent)
+                    val refused = uris.size - allowed.size
+                    val told =
+                        if (allowed.isEmpty()) TagsWritten(0u, 0u, 0u, null) else write(native, allowed)
+                    mutableUndoable.value = native.tagsToUndo().isNotEmpty()
+                    if (told.written > 0u) library.refresh()
+                    val notice =
+                        TagSentences.told(
+                            library.words,
+                            told.written.toInt(),
+                            told.failed.toInt() + refused,
+                            told.failure ?: TagSentences.notAllowed(library.words, refused),
+                            undoing,
+                        )
+                    if (notice.failure) library.report(IllegalStateException(notice.text))
+                    else library.notice(notice.text)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
