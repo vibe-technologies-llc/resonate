@@ -1602,6 +1602,17 @@ cached tree still reports the preceding value. `UiAutomation.clearCache` is API 
 cache is cleared by setting the automation's own `serviceInfo` again, which clears it first; left
 alone on API 33, the settings list's cached node stopped reporting a row once the tree moved under
 a swipe and `UiSmokeTest` scrolled past *Online features* for good. All write tests use copies.
+The API 33 emulator image reports an output latency that climbs to about six seconds (Oboe's
+`calculateLatencyMillis` against a deep sink), so the heard position trails the decode by that much,
+the visualiser's tap (which reaches back the ring, half a second and 32 768 frames) draws silence,
+and a song shorter than the latency is never heard to its end. `LibraryFeaturesTest` therefore
+plays a 20 s song, counts a play past ten seconds, asserts only that the visualiser answers a full
+frame, and waits 40 s; `PlaybackLifecycleTest` waits 30 s. Two `RustMediaPlayer`s in one process steal audio
+focus from each other (each takes it when the engine starts sounding, the other hears a loss and
+pauses), so a test that builds its own adapter stops the service first
+(`PlaybackLifecycleTest.stopTheService`). `android/print-failures.py` prints every failing
+instrumented test with its trace from `androidTest-results`; CI runs it after each emulator step so
+a failure reads in the log without the uploaded report.
 
 ## Together
 

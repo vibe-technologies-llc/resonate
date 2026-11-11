@@ -49,9 +49,7 @@ class PlaybackLifecycleTest {
 
     @After
     fun leaveNothingRunning() {
-        releaseController()
-        context.stopService(Intent(context, PlaybackService::class.java))
-        eventually { library.retained == 0 }
+        stopTheService()
         uris.forEach { context.contentResolver.delete(it, null, null) }
     }
 
@@ -110,6 +108,7 @@ class PlaybackLifecycleTest {
 
     @Test
     fun theOutputBecomingNoisyPausesAndNothingResumesIt() {
+        stopTheService()
         library.retain()
         val adapter = onMainResult { RustMediaPlayer(context, library) }
         try {
@@ -158,9 +157,7 @@ class PlaybackLifecycleTest {
         library.request { it.save() }
         assertTrue(library.retained > 0)
 
-        releaseController()
-        context.stopService(Intent(context, PlaybackService::class.java))
-        eventually { library.retained == 0 }
+        stopTheService()
 
         eventually { library.snapshot.value == null }
 
@@ -214,6 +211,12 @@ class PlaybackLifecycleTest {
                 )
                 .buildAsync()
         controller = pending.get(15, TimeUnit.SECONDS)
+    }
+
+    private fun stopTheService() {
+        releaseController()
+        context.stopService(Intent(context, PlaybackService::class.java))
+        eventually { library.retained == 0 }
     }
 
     private fun releaseController() {
@@ -270,7 +273,7 @@ class PlaybackLifecycleTest {
 
     private companion object {
         const val TONE_SECONDS = 60
-        const val SETTLED_WITHIN_NS = 15_000_000_000L
+        const val SETTLED_WITHIN_NS = 30_000_000_000L
         const val SETTLED_QUIET_MS = 1_500L
         const val OPENED_WITHIN_MS = 15_000L
     }

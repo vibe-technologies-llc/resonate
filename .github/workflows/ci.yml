@@ -420,6 +420,9 @@ jobs:
           target: google_apis
           disable-animations: true
           script: android/gradlew -p android :app:connectedDebugAndroidTest
+      - name: Print the failing Android tests on API 33
+        if: always()
+        run: python3 android/print-failures.py
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -435,6 +438,9 @@ jobs:
           target: google_apis
           disable-animations: true
           script: android/gradlew -p android :app:connectedDebugAndroidTest
+      - name: Print the failing Android tests on API 36
+        if: always()
+        run: python3 android/print-failures.py
       - uses: actions/upload-artifact@v7
         if: always()
         with:
