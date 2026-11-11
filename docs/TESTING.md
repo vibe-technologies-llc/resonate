@@ -129,15 +129,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
   Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game
   Mode value, the line-input flags) is still owed
-- [S · 0.8.1] `switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step`
-  (`resonate-engine`) fails some runs under the whole suite's load, before and after the equaliser
-  splice moved
-- [S · 0.8.1] The equaliser splice published after its re-render has no test that fails on the
-  old order: the race wants a timing seam in `splicing.rs` a test can hold
-- [S · 0.8.1] The PipeWire hosted-daemon test (`tests/formats.rs`) never asks for a placed layout:
-  its `HOSTED` table is `const` and `ChannelLayout::placed` is not
-- [S · 0.8.1] Unit tests reading theme colours or measures outside `Driven` take no part in
-  `theme::WEARING`, so a theme test wearing another palette could race them
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

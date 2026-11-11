@@ -21,9 +21,6 @@ are in [ROADMAP.md](ROADMAP.md).
   five minutes, each try walking the whole tree (`watch.rs`); back off on that error
 - [S · 0.8.1] The window still looks at its roots every second while minimised or hidden
   (`models.rs` `watch_the_roots`, a catalog read and a `stat` of each every 5 s)
-- [S · 0.8.1] The renderers' stream server polls its waiting request heads every 10 ms and its
-  listener every 100 ms while idle (`resonate-upnp` `serve.rs`); a loop woken by readiness (`poll`)
-  would not wake at all
 
 ## Android
 - [M · 0.8.1] While enrichment writes, a walk of the library's pages rebuilds the whole search index

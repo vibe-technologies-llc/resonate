@@ -33,13 +33,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `take_a_request` takes the request named, but nothing marks it taken until the search lands
 
 ## Playback and output
-- [S · 0.8.1] A row failing before its frames have passed the chain's latency still fades the
-  leaving song's tail out: the gapless handover's failure waits for the graph only where the
-  boundary is wholly written (`engine.rs`), so a song failing in its first milliseconds takes the
-  old path
-- [S · 0.8.1] A seek in a fetched song asks each range with `Ranged::opened_from` (`Seeking`), which
-  carries no validator or total to weigh, so a file replaced between two seeks is joined old to new
-  with no `If-Range` and no `Changed` guard; carry the first answer's validator and total into it
 
 ## Catalog
 - [S · 0.8.1] Lengthening a file in place still cannot see a reader root runs: `held_open_elsewhere`
