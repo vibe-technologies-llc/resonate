@@ -218,6 +218,12 @@ fn fetched_whole(
     }
 }
 
+fn whole_size(total: Option<u64>, length: Option<u64>, held: u64) -> u64 {
+    total
+        .or_else(|| length.map(|to_come| to_come + held))
+        .unwrap_or(0)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Copied {
     Whole,
@@ -258,7 +264,7 @@ fn copied(
         file.try_clone()
             .map_err(Error::archive(partial, ArchiveOp::Stage))?,
     );
-    building.of(source.length().unwrap_or(0));
+    building.of(whole_size(source.total(), source.length(), from));
     let mut buffer = vec![0_u8; COPIED_AT_ONCE];
     let mut written = from;
     loop {
@@ -412,5 +418,69 @@ mod tests {
         let _ = fs::remove_dir_all(&into);
         assert_eq!(held, ARCHIVE);
         assert_eq!(held_again, ARCHIVE);
+    }
+
+    fn served_from_half_way(listener: &std::net::TcpListener) {
+        let (mut stream, _) = listener.accept().expect("a fetch");
+        let mut asked = Vec::new();
+        let mut byte = [0_u8; 1];
+        while !asked.ends_with(b"\r\n\r\n") {
+            if stream.read(&mut byte).expect("the request") == 0 {
+                break;
+            }
+            asked.push(byte[0]);
+        }
+        let from = ARCHIVE.len() / 2;
+        let rest = &ARCHIVE[from..];
+        let total = ARCHIVE.len();
+        let mut answer = format!(
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{total}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            total - 1,
+            rest.len()
+        )
+        .into_bytes();
+        answer.extend_from_slice(rest);
+        stream.write_all(&answer).expect("the answer");
+    }
+
+    #[test]
+    fn the_whole_size_is_the_total_else_the_length_to_come_and_what_was_held() {
+        assert_eq!(whole_size(Some(100), Some(40), 60), 100);
+        assert_eq!(whole_size(None, Some(40), 60), 100);
+        assert_eq!(whole_size(None, None, 60), 0);
+    }
+
+    #[test]
+    fn a_resumed_download_reads_up_to_the_size_of_the_whole_and_no_further() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let url = format!(
+            "http://{}/{CORE_ARCHIVE}",
+            listener.local_addr().expect("bound")
+        );
+        let serving = std::thread::spawn(move || served_from_half_way(&listener));
+        let into = a_folder("resumed-size");
+        let partial = named(&into.join(CORE_ARCHIVE), PARTIAL);
+        let building = Building::default();
+        let held = ARCHIVE.len() / 2;
+
+        fs::write(&partial, &ARCHIVE[..held]).expect("half a part");
+        let reached = copied(
+            &agent(),
+            &url,
+            &partial,
+            held as u64,
+            &Gate::open(),
+            &building,
+        )
+        .expect("the rest is fetched");
+        let (read, of) = building.bytes();
+        let kept = fs::read(&partial).expect("the part");
+
+        serving.join().expect("served");
+        let _ = fs::remove_dir_all(&into);
+        assert_eq!(reached, Copied::Whole);
+        assert_eq!(kept, ARCHIVE);
+        assert_eq!(of, ARCHIVE.len() as u64);
+        assert_eq!(read, of);
     }
 }

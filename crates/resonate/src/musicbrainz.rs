@@ -11,6 +11,8 @@ use std::{
 #[cfg(feature = "ui")]
 use parking_lot::Mutex;
 use parking_lot::RwLock;
+#[cfg(feature = "ui")]
+use resonate_core::Gate;
 use resonate_library::{RecordingAsked, Reference, Wording};
 #[cfg(feature = "sync")]
 use resonate_musicbrainz::Consultation;
@@ -75,6 +77,22 @@ fn held_mirror() -> Option<Arc<Mirror>> {
     }
 }
 
+fn current(config: &Config) -> Config {
+    config::load(config.read_from.as_deref()).unwrap_or_else(|_| config.clone())
+}
+
+#[cfg(feature = "ui")]
+fn wanted(config: &Config) -> bool {
+    let current = current(config);
+    current.mirrors_musicbrainz() && current.online_enabled()
+}
+
+fn landed(config: &Config, mirrored: &Mirrored, held: impl FnOnce() -> Option<Arc<Mirror>>) {
+    if current(config).mirrors_musicbrainz() {
+        mirrored.hold(held());
+    }
+}
+
 pub fn mirrored(config: &Config) -> Arc<Mirrored> {
     Arc::clone(MIRRORED.get_or_init(|| {
         let mirrored = Mirrored::default();
@@ -94,7 +112,15 @@ pub fn follow(config: &Config, on: bool) {
         }
         keep_fresh(config);
     } else {
+        stop_building();
         mirrored.hold(None);
+    }
+}
+
+#[cfg(feature = "ui")]
+pub fn stop_building() {
+    if let Some(building) = BUILDING.lock().as_ref() {
+        building.cancel();
     }
 }
 
@@ -148,14 +174,14 @@ fn given(from: &Path) -> Archives {
 }
 
 pub fn build(config: &Config, from: Option<&Path>, building: &Building) -> Result<PathBuf> {
+    if from.is_none() && !current(config).online_enabled() {
+        return Err(Error::OnlineOff);
+    }
     let folder = folder()?;
     let held = held_for_building(&folder).map_err(failed)?;
     let archives = match from {
         Some(from) => given(from),
         None => {
-            if !config.online_enabled() {
-                return Err(Error::OnlineOff);
-            }
             let agent = download::agent();
             let latest = download::latest(&agent).map_err(failed)?;
             let gate = metered::for_downloads(config);
@@ -169,9 +195,7 @@ pub fn build(config: &Config, from: Option<&Path>, building: &Building) -> Resul
     if from.is_none() {
         download::forget_downloads(&folder);
     }
-    if config.mirrors_musicbrainz() {
-        mirrored.hold(held_mirror());
-    }
+    landed(config, &mirrored, held_mirror);
     Ok(path)
 }
 
@@ -192,6 +216,9 @@ pub fn build_in_the_background(config: &Config) -> bool {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "the copy of MusicBrainz is built")
                 }
+                Err(error) if was_cancelled(&error) => {
+                    tracing::info!("building the copy of MusicBrainz was stopped");
+                }
                 Err(error) => {
                     tracing::warn!(%error, "the copy of MusicBrainz could not be built");
                     *FAILED.lock() = Some(said_of(&error));
@@ -208,6 +235,14 @@ pub fn build_in_the_background(config: &Config) -> bool {
 }
 
 #[cfg(feature = "ui")]
+fn was_cancelled(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Musicbrainz(inner) if matches!(**inner, resonate_musicbrainz::Error::Cancelled)
+    )
+}
+
+#[cfg(feature = "ui")]
 fn said_of(error: &Error) -> String {
     let mut said = error.to_string();
     let mut cause = std::error::Error::source(error);
@@ -220,17 +255,29 @@ fn said_of(error: &Error) -> String {
 }
 
 #[cfg(feature = "ui")]
+fn due_for_a_look(
+    config: &Config,
+    lookups: &Gate,
+    held: Option<&resonate_musicbrainz::Made>,
+    at: u64,
+) -> bool {
+    config.mirrors_musicbrainz()
+        && config.online_enabled()
+        && !lookups.is_shut()
+        && held.is_none_or(|made| {
+            download::is_a_dump_name(&made.dump)
+                && at.saturating_sub(made.built) >= LOOKED_AT_AGAIN_AFTER.as_secs()
+        })
+}
+
+#[cfg(feature = "ui")]
 pub fn keep_fresh(config: &Config) {
-    if !config.mirrors_musicbrainz() || !config.online_enabled() || BUILDING.lock().is_some() {
+    if BUILDING.lock().is_some() {
         return;
     }
-    let held = mirrored(config).held();
-    let built = held.as_ref().map(|mirror| mirror.made().clone());
-    let due = built.as_ref().is_none_or(|made| {
-        download::is_a_dump_name(&made.dump)
-            && now().saturating_sub(made.built) >= LOOKED_AT_AGAIN_AFTER.as_secs()
-    });
-    if !due {
+    let built = mirrored(config).held().map(|mirror| mirror.made().clone());
+    let lookups = metered::for_lookups(config);
+    if !due_for_a_look(config, &lookups, built.as_ref(), now()) {
         return;
     }
     let config = config.clone();
@@ -238,6 +285,9 @@ pub fn keep_fresh(config: &Config) {
         .name("resonate-musicbrainz-look".to_owned())
         .spawn(move || {
             if let Some(made) = built {
+                if lookups.is_shut() || !wanted(&config) {
+                    return;
+                }
                 match download::latest(&download::agent()) {
                     Ok(latest) if latest == made.dump => return,
                     Ok(_) => {}
@@ -247,7 +297,9 @@ pub fn keep_fresh(config: &Config) {
                     }
                 }
             }
-            build_in_the_background(&config);
+            if wanted(&config) {
+                build_in_the_background(&config);
+            }
         });
     if let Err(error) = spawned {
         tracing::debug!(%error, "the copy of MusicBrainz could not be looked at");
@@ -431,11 +483,7 @@ impl resonate_ui::Mirroring for Mirroring {
     }
 
     fn build(&self) {
-        let config = Config {
-            musicbrainz_mirror: Some(true),
-            ..self.config.clone()
-        };
-        build_in_the_background(&config);
+        build_in_the_background(&self.config);
     }
 
     fn remove(&self) {
@@ -561,4 +609,163 @@ fn device_named(hex: &str) -> Option<resonate_sync::DeviceId> {
         *byte = u8::from_str_radix(hex.get(at * 2..at * 2 + 2)?, 16).ok()?;
     }
     Some(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        process,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    #[cfg(feature = "ui")]
+    use resonate_core::{Meter, Metering};
+
+    use super::*;
+
+    static SERIAL: AtomicU64 = AtomicU64::new(0);
+
+    fn settings_file(text: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "resonate-musicbrainz-settings-{}-{}.toml",
+            process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(&path, text).expect("a settings file");
+        path
+    }
+
+    fn started_with(online: bool, mirror: bool, file: &Path) -> Config {
+        Config {
+            online: Some(online),
+            musicbrainz_mirror: Some(mirror),
+            read_from: Some(file.to_path_buf()),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn a_download_is_refused_when_the_settings_now_say_online_is_off_whatever_they_said_at_start() {
+        let file = settings_file("online = false\n");
+        let config = started_with(true, true, &file);
+
+        let refused = build(&config, None, &Building::default());
+        let _ = fs::remove_file(&file);
+
+        assert!(matches!(refused, Err(Error::OnlineOff)));
+        assert!(config.online_enabled());
+    }
+
+    #[test]
+    fn the_settings_as_they_stand_are_read_not_the_copy_made_at_start() {
+        let file = settings_file("online = true\nmusicbrainz-mirror = false\n");
+        let config = started_with(false, true, &file);
+
+        let live = current(&config);
+        let _ = fs::remove_file(&file);
+
+        assert!(live.online_enabled());
+        assert!(!live.mirrors_musicbrainz());
+    }
+
+    #[test]
+    fn settings_that_will_not_read_leave_the_start_as_it_was() {
+        let missing = std::env::temp_dir().join("resonate-musicbrainz-no-such-settings.toml");
+        let config = started_with(true, true, &missing);
+
+        let live = current(&config);
+
+        assert!(live.online_enabled());
+        assert!(live.mirrors_musicbrainz());
+    }
+
+    #[test]
+    fn a_build_landing_after_the_mirror_was_switched_off_is_not_held() {
+        let off = settings_file("musicbrainz-mirror = false\n");
+        let on = settings_file("musicbrainz-mirror = true\n");
+        let mirrored = Mirrored::default();
+        let looked_at = AtomicU64::new(0);
+        let held = || {
+            looked_at.fetch_add(1, Ordering::Relaxed);
+            None
+        };
+
+        landed(&started_with(true, true, &off), &mirrored, held);
+        let after_off = looked_at.load(Ordering::Relaxed);
+        landed(&started_with(true, false, &on), &mirrored, held);
+        let after_on = looked_at.load(Ordering::Relaxed);
+        let _ = fs::remove_file(&off);
+        let _ = fs::remove_file(&on);
+
+        assert_eq!(after_off, 0);
+        assert_eq!(after_on, 1);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn switching_online_or_the_mirror_off_cancels_the_build_running() {
+        let running = Arc::new(Building::default());
+        *BUILDING.lock() = Some(Arc::clone(&running));
+
+        let before = running.is_cancelled();
+        stop_building();
+        let after = running.is_cancelled();
+
+        let following = Arc::new(Building::default());
+        *BUILDING.lock() = Some(Arc::clone(&following));
+        follow(&Config::default(), false);
+        let followed = following.is_cancelled();
+
+        let kept_on = Arc::new(Building::default());
+        *BUILDING.lock() = Some(Arc::clone(&kept_on));
+        let untouched = !kept_on.is_cancelled();
+        *BUILDING.lock() = None;
+
+        assert!(!before);
+        assert!(after);
+        assert!(followed);
+        assert!(untouched);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_look_at_the_newest_export_waits_for_the_lookup_gate_the_setting_and_the_age_of_the_copy() {
+        let metering = Metering::new();
+        let gate = Gate::new(metering.clone(), true);
+        let wanting = Config {
+            online: Some(true),
+            musicbrainz_mirror: Some(true),
+            ..Config::default()
+        };
+        let silent = Config {
+            online: Some(false),
+            ..wanting.clone()
+        };
+        let not_mirroring = Config {
+            musicbrainz_mirror: Some(false),
+            ..wanting.clone()
+        };
+        let built = 1_000_000;
+        let old = resonate_musicbrainz::Made {
+            dump: "20260101-000000".to_owned(),
+            built,
+        };
+        let later = built + LOOKED_AT_AGAIN_AFTER.as_secs();
+
+        let open = due_for_a_look(&wanting, &gate, None, later);
+        let old_is_due = due_for_a_look(&wanting, &gate, Some(&old), later);
+        let fresh_is_not = !due_for_a_look(&wanting, &gate, Some(&old), later - 1);
+        let offline_is_not = !due_for_a_look(&silent, &gate, None, later);
+        let not_mirroring_is_not = !due_for_a_look(&not_mirroring, &gate, None, later);
+        metering.report(Meter::Metered);
+        let metered_is_not = !due_for_a_look(&wanting, &gate, None, later)
+            && !due_for_a_look(&wanting, &gate, Some(&old), later);
+
+        assert!(open);
+        assert!(old_is_due);
+        assert!(fresh_is_not);
+        assert!(offline_is_not);
+        assert!(not_mirroring_is_not);
+        assert!(metered_is_not);
+    }
 }

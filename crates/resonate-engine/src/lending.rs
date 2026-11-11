@@ -234,3 +234,181 @@ impl Decoding {
         status.map(Block::from).map_err(Lost::Decode)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use resonate_core::{MediaLocation, SampleFormat};
+
+    use super::*;
+
+    const FRAMES: usize = 4_096;
+    const RATE: u32 = 44_100;
+
+    fn wave() -> Vec<u8> {
+        let data = vec![0_u8; FRAMES * 4];
+        let mut fmt = Vec::new();
+        fmt.extend_from_slice(&1_u16.to_le_bytes());
+        fmt.extend_from_slice(&2_u16.to_le_bytes());
+        fmt.extend_from_slice(&RATE.to_le_bytes());
+        fmt.extend_from_slice(&(RATE * 4).to_le_bytes());
+        fmt.extend_from_slice(&4_u16.to_le_bytes());
+        fmt.extend_from_slice(&16_u16.to_le_bytes());
+
+        let mut body = b"WAVE".to_vec();
+        for (id, payload) in [(b"fmt ", fmt.as_slice()), (b"data", data.as_slice())] {
+            body.extend_from_slice(id);
+            body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            body.extend_from_slice(payload);
+        }
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        file.extend_from_slice(&body);
+        file
+    }
+
+    fn decoding() -> (Decoding, AudioBuffer) {
+        let location = MediaLocation::local("lending.wav");
+        let (decoder, info) =
+            Decoder::open_reader(Cursor::new(wave()), &location).expect("a decoder");
+        (Decoding::new(decoder), AudioBuffer::empty(info.spec))
+    }
+
+    fn landed(decoding: &mut Decoding) {
+        let awaited = decoding.awaited().expect("a lent decoder").clone();
+        let mut select = crossbeam_channel::Select::new();
+        select.recv(&awaited);
+        select.ready();
+        decoding.take_what_came_back();
+    }
+
+    #[test]
+    fn a_decoder_that_may_stall_is_lent_awaited_and_taken_home_with_its_block() {
+        let (mut decoding, mut out) = decoding();
+
+        let lent = decoding.next_block(&mut out, true).expect("lent");
+        let held_back = decoding.home().is_none();
+        landed(&mut decoding);
+        let awaited_after = decoding.awaited().is_none();
+        let back = decoding.next_block(&mut out, true).expect("taken back");
+
+        assert_eq!(lent, Block::Awaited);
+        assert!(held_back);
+        assert!(awaited_after);
+        assert_eq!(back, Block::Decoded);
+        assert!(out.frames() > 0);
+        assert!(decoding.home().is_some());
+        assert_eq!(decoding.position(), Frames(out.frames() as u64));
+    }
+
+    #[test]
+    fn a_decoder_that_may_not_stall_decodes_in_line_and_never_starts_a_worker() {
+        let (mut decoding, mut out) = decoding();
+
+        let block = decoding.next_block(&mut out, false).expect("decoded");
+
+        assert_eq!(block, Block::Decoded);
+        assert!(out.frames() > 0);
+        assert!(decoding.worker.is_none());
+        assert!(decoding.home().is_some());
+    }
+
+    #[test]
+    fn a_block_asked_for_while_the_decoder_is_lent_is_awaited_and_not_lent_twice() {
+        let (mut decoding, mut out) = decoding();
+        let (lending, lent) = crossbeam_channel::bounded::<Lent>(1);
+        let (returning, returns) = crossbeam_channel::bounded::<Returned>(1);
+        decoding.worker = Some(Worker { lending, returns });
+
+        let first = decoding.next_block(&mut out, true).expect("lent");
+        let second = decoding.next_block(&mut out, true).expect("awaited");
+        let Lent {
+            mut decoder,
+            mut block,
+        } = lent.try_recv().expect("one lending");
+        let nothing_more = lent.try_recv().is_err();
+        let status = decoder.next_block(&mut block);
+        returning
+            .send(Returned {
+                decoder,
+                block,
+                status,
+            })
+            .expect("the worker returns it");
+        let back = decoding.next_block(&mut out, true).expect("taken back");
+
+        assert_eq!(first, Block::Awaited);
+        assert_eq!(second, Block::Awaited);
+        assert!(nothing_more);
+        assert_eq!(back, Block::Decoded);
+        assert!(out.frames() > 0);
+        assert!(decoding.home().is_some());
+    }
+
+    #[test]
+    fn a_decoder_whose_worker_is_gone_while_it_was_lent_is_lost_for_good() {
+        let (mut decoding, mut out) = decoding();
+
+        decoding.next_block(&mut out, true).expect("lent");
+        decoding.worker = None;
+        let lost = decoding.next_block(&mut out, true);
+        let again = decoding.next_block(&mut out, false);
+
+        assert!(matches!(lost, Err(Lost::WorkerStopped)));
+        assert!(matches!(again, Err(Lost::WorkerStopped)));
+        assert!(decoding.home().is_none());
+        assert!(decoding.awaited().is_none());
+    }
+
+    #[test]
+    fn a_worker_that_refuses_the_lending_leaves_the_decoder_decoding_in_line() {
+        let (mut decoding, mut out) = decoding();
+        let (lending, refused) = crossbeam_channel::bounded::<Lent>(1);
+        let (_returning, returns) = crossbeam_channel::bounded::<Returned>(1);
+        drop(refused);
+        decoding.worker = Some(Worker { lending, returns });
+
+        let block = decoding
+            .next_block(&mut out, true)
+            .expect("decoded in line");
+
+        assert_eq!(block, Block::Decoded);
+        assert!(out.frames() > 0);
+        assert!(decoding.worker.is_none());
+        assert!(decoding.home().is_some());
+    }
+
+    #[test]
+    fn a_format_asked_for_while_the_decoder_is_lent_is_applied_when_it_lands() {
+        let (mut decoding, mut out) = decoding();
+
+        decoding.next_block(&mut out, true).expect("lent");
+        decoding.deliver(Delivery::samples(SampleFormat::S32));
+        landed(&mut decoding);
+        let back = decoding.next_block(&mut out, true).expect("taken back");
+
+        assert_eq!(back, Block::Decoded);
+        assert_eq!(out.spec().format, SampleFormat::S32);
+        assert!(decoding.owed.is_none());
+    }
+
+    #[test]
+    fn the_track_runs_out_as_ended_through_the_worker_too() {
+        let (mut decoding, mut out) = decoding();
+        let mut blocks = 0;
+
+        let ended = loop {
+            match decoding.next_block(&mut out, true).expect("a block") {
+                Block::Awaited => {
+                    landed(&mut decoding);
+                }
+                Block::Decoded => blocks += 1,
+                other => break other,
+            }
+        };
+
+        assert_eq!(ended, Block::Ended);
+        assert!(blocks > 0);
+    }
+}

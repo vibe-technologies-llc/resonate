@@ -70,16 +70,27 @@ impl Crew {
     }
 
     fn rest(self, began: Instant, stopped: &(dyn Fn() -> bool + Sync)) {
+        self.rested_by(began, stopped, thread::sleep);
+    }
+
+    fn rested_by(
+        self,
+        began: Instant,
+        stopped: &(dyn Fn() -> bool + Sync),
+        mut sleep: impl FnMut(Duration),
+    ) {
         if self != Self::Background {
             return;
         }
         let rest = began.elapsed() * BACKGROUND_REST_PER_BUSY;
-        let began = Instant::now();
-        while let Some(left) = rest.checked_sub(began.elapsed()) {
+        let mut rested = Duration::ZERO;
+        while let Some(left) = rest.checked_sub(rested).filter(|left| !left.is_zero()) {
             if stopped() {
                 break;
             }
-            thread::sleep(left.min(STOPPED_LOOKED_FOR_EVERY));
+            let step = left.min(STOPPED_LOOKED_FOR_EVERY);
+            sleep(step);
+            rested += step;
         }
     }
 
@@ -330,15 +341,52 @@ mod tests {
         assert_eq!(Crew::Background.threads(), 1);
         let began = Instant::now();
         let busy = began - Duration::from_millis(10);
-        Crew::Background.rest(busy, &|| false);
-        assert!(began.elapsed() >= Duration::from_millis(30));
+        let mut steps = Vec::new();
+
+        Crew::Background.rested_by(busy, &|| false, |step| steps.push(step));
+
+        assert!(steps.iter().sum::<Duration>() >= Duration::from_millis(30));
+        assert!(steps.iter().all(|step| *step <= STOPPED_LOOKED_FOR_EVERY));
+        assert!(steps.len() >= 2);
     }
 
     #[test]
     fn cancellation_skips_background_rest() {
         let began = Instant::now();
-        Crew::Background.rest(began - Duration::from_secs(60), &|| true);
-        assert!(began.elapsed() < Duration::from_secs(1));
+        let mut slept = 0;
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let stopped = || {
+            asked.fetch_add(1, Ordering::Relaxed);
+            true
+        };
+
+        Crew::Background.rested_by(began - Duration::from_secs(60), &stopped, |_| slept += 1);
+
+        assert_eq!(slept, 0);
+        assert_eq!(asked.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_rest_is_slept_in_steps_and_stopping_between_them_ends_it() {
+        let began = Instant::now();
+        let stops_after_two = std::sync::atomic::AtomicUsize::new(0);
+        let stopped = || stops_after_two.fetch_add(1, Ordering::Relaxed) >= 2;
+        let mut slept = 0;
+
+        Crew::Background.rested_by(began - Duration::from_secs(60), &stopped, |_| slept += 1);
+
+        assert_eq!(slept, 2);
+    }
+
+    #[test]
+    fn the_machines_own_crew_never_rests() {
+        let began = Instant::now();
+        let mut slept = 0;
+
+        Crew::AsTheMachineAllows
+            .rested_by(began - Duration::from_secs(60), &|| false, |_| slept += 1);
+
+        assert_eq!(slept, 0);
     }
 
     #[test]

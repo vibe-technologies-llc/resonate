@@ -1244,6 +1244,7 @@ impl Engine {
             surveyed: self
                 .surveying
                 .as_ref()
+                .filter(|surveying| surveying.is_running())
                 .map(|surveying| surveying.answers().clone()),
             events: self.listening().map(|stream| stream.events().clone()),
             opened: self.opening.as_ref().map(|opening| opening.landed.clone()),
@@ -3343,7 +3344,7 @@ impl Engine {
             return;
         }
 
-        match self.surveying.as_mut() {
+        match self.surveying.as_mut().filter(|survey| survey.is_running()) {
             Some(surveying) => {
                 if surveying.ask() {
                     self.stale_sinks = false;
@@ -3556,8 +3557,12 @@ impl Engine {
             .ok_or(Error::Sink(resonate_audio::Error::NoSink))
     }
 
+    fn the_survey_runs(&self) -> bool {
+        self.surveying.as_ref().is_some_and(Surveying::is_running)
+    }
+
     fn the_survey_answers_for_the_list(&self) -> bool {
-        self.surveying.is_some() && self.changes.is_some()
+        self.the_survey_runs() && self.changes.is_some()
     }
 
     fn the_survey_will_answer_for_a_list_known_wrong(&self) -> bool {
@@ -4386,7 +4391,7 @@ impl Engine {
             self.graph_still_away = None;
             return;
         };
-        if self.surveying.is_none() {
+        if !self.the_survey_runs() {
             self.wait_for_the_graph_in_line(since, at);
             return;
         }

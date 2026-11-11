@@ -909,18 +909,24 @@ mod tests {
     fn a_provider_left_behind_is_not_waited_on_again_in_the_same_poll() {
         let providers = Providers::none().and(silent());
         let mut away = Away::default();
+        let turned_to = std::sync::atomic::AtomicUsize::new(0);
+        let counting = |_: &SourceId| {
+            turned_to.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        };
         let hurried = Asking {
-            within: Duration::from_millis(100),
+            within: Duration::ZERO,
+            turning_to: &counting,
             ..patient()
         };
 
         let first = providers.first(&Identity::named("Echoes"), &hurried, &mut away);
-        let started = Instant::now();
+        let turned_after_first = turned_to.load(std::sync::atomic::Ordering::Relaxed);
         let second = providers.first(&Identity::named("Time"), &hurried, &mut away);
 
         assert_eq!(first.late, 1);
+        assert_eq!(turned_after_first, 1);
         assert_eq!((second.late, second.passed_over), (0, 1));
-        assert!(started.elapsed() < Duration::from_millis(100));
+        assert_eq!(turned_to.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 
     #[test]
