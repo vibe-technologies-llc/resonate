@@ -20,7 +20,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -34,10 +33,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.OutputFormat
 import org.resonate.android.nativecore.PlaybackPreferences
+import org.resonate.android.nativecore.PlayerWatch
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Transport
 import org.resonate.android.nativecore.Track
@@ -92,6 +93,9 @@ class LibraryRepository(private val context: Context) {
     @Volatile private var engine = CompletableDeferred<MobilePlayer>()
     private val actions = Channel<(MobilePlayer) -> Unit>(Channel.UNLIMITED)
     private val access = Mutex()
+    private val openEngine = OpenEngine<MobilePlayer>()
+    private val pollWakes = Channel<Unit>(Channel.CONFLATED)
+    @Volatile private var busyUntil = 0L
     private val scanAccess = Mutex()
     private val mutableAllTracks = MutableStateFlow<List<Track>>(emptyList())
     val allTracks = mutableAllTracks.asStateFlow()
@@ -235,7 +239,7 @@ class LibraryRepository(private val context: Context) {
             for (action in actions) {
                 try {
                     val native = engine.await()
-                    access.withLock { action(native) }
+                    access.withLock { openEngine.run(native, action) }
                 } catch (cancelled: CancellationException) {
                     currentCoroutineContext().ensureActive()
                 } catch (failure: Exception) {
@@ -298,6 +302,12 @@ class LibraryRepository(private val context: Context) {
                 native.configurePlayback(preferences)
                 mutablePreferences.value = preferences
                 features.initialize(native)
+                native.watchPlayer(
+                    object : PlayerWatch {
+                        override fun moved() = wakePoll()
+                    }
+                )
+                openEngine.opened(native)
                 ready.complete(native)
                 try {
                     refresh()
@@ -328,6 +338,7 @@ class LibraryRepository(private val context: Context) {
                 withContext(NonCancellable) {
                     access.withLock {
                         opened?.let { native ->
+                            openEngine.closing(native)
                             try {
                                 native.partyLeave()
                                 native.shutdown()
@@ -347,10 +358,11 @@ class LibraryRepository(private val context: Context) {
 
     private suspend fun poll(native: MobilePlayer) {
         val queueReads = QueueReads()
-        var saves = 0
+        var savedAt = SystemClock.elapsedRealtime()
         var failing: String? = null
         var waiting: String? = null
         while (currentCoroutineContext().isActive) {
+            var wait = PollPace.BUSY_MS
             try {
                 access.withLock {
                     val state = native.snapshot()
@@ -363,6 +375,18 @@ class LibraryRepository(private val context: Context) {
                             durationMs = state.durationMs.toLong(),
                             moving = state.transport == Transport.PLAYING,
                             readAt = SystemClock.elapsedRealtime(),
+                        )
+                    wait =
+                        PollPace.intervalMs(
+                            foreground = features.inForeground,
+                            moving =
+                                state.transport == Transport.PLAYING ||
+                                    state.transport == Transport.LOADING,
+                            working =
+                                features.analysisBusy.value ||
+                                    features.downloading.value ||
+                                    mutableScanning.value,
+                            asked = SystemClock.elapsedRealtime() < busyUntil,
                         )
                     state.failure?.let(::fail)
                     if (state.waiting != waiting) {
@@ -377,8 +401,8 @@ class LibraryRepository(private val context: Context) {
                         mutableQueue.value = native.queue()
                         queueReads.noted(state.zone, state.queueRevision, state.catalogRevision, now)
                     }
-                    if (++saves >= SAVE_EVERY_TICKS) {
-                        saves = 0
+                    if (now - savedAt >= SAVE_EVERY_MS) {
+                        savedAt = now
                         native.save()
                     }
                 }
@@ -389,8 +413,12 @@ class LibraryRepository(private val context: Context) {
                 if (failure.message != failing) report(failure)
                 failing = failure.message
             }
-            delay(POLL_EVERY_MS)
+            withTimeoutOrNull(wait) { pollWakes.receive() }
         }
+    }
+
+    fun wakePoll() {
+        pollWakes.trySend(Unit)
     }
 
     @Synchronized
@@ -399,7 +427,9 @@ class LibraryRepository(private val context: Context) {
     }
 
     fun request(action: (MobilePlayer) -> Unit) {
+        busyUntil = SystemClock.elapsedRealtime() + PollPace.BUSY_AFTER_ASKING_MS
         actions.trySend(action)
+        wakePoll()
     }
 
     fun pauseForRecording() {
@@ -738,8 +768,7 @@ class LibraryRepository(private val context: Context) {
     }
 
     companion object {
-        private const val POLL_EVERY_MS = 250L
-        private const val SAVE_EVERY_TICKS = 20
+        private const val SAVE_EVERY_MS = 5_000L
         private const val PAGE_ROWS = 500u
         private const val FOLDER_COVER_AT_MOST = 8 * 1024 * 1024
         private val FOLDER_COVER_NAMES =

@@ -540,7 +540,11 @@ mod tests {
                 format!("{FOLDER}e.wav")
             );
             let began = std::time::Instant::now();
-            while harness.player.queue().is_err() {
+            while harness
+                .player
+                .queue()
+                .map_or(true, |queue| queue.iter().any(|track| track.id == 0))
+            {
                 assert!(
                     began.elapsed() < crate::harness::SETTLED_WITHIN,
                     "the queue never named the moved song"

@@ -432,6 +432,7 @@ impl Backend for AndroidAudio {
     }
 
     fn shutdown(self: Box<Self>) -> Result<()> {
+        self.routing.mix_freely();
         Ok(())
     }
 }

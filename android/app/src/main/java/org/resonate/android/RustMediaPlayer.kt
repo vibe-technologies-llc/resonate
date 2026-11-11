@@ -36,6 +36,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     SimpleBasePlayer(Looper.getMainLooper()) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audio = context.getSystemService(AudioManager::class.java)
+    private val wifi = StreamingWifi(context)
     @Volatile private var snapshot: Snapshot? = null
     private var snapshotAt = 0L
     private var tracks = emptyList<Track>()
@@ -102,6 +103,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
 
                 snapshot = value
                 snapshotAt = now
+                wifi.follow(value)
                 if (stoppedItself) audio.abandonAudioFocusRequest(focus)
                 if (began && audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
                     library.request { it.pause() }
@@ -246,6 +248,14 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
+        val held = library.queue.value
+        if (mediaItems.isNotEmpty() && namesTheQueueHeld(mediaItems.map { it.mediaId }, held)) {
+            library.request {
+                it.jumpToAt(startIndex.coerceIn(held.indices).toUInt(), startPositionMs.coerceAtLeast(0).toULong())
+            }
+            return Futures.immediateVoidFuture()
+        }
+
         val served = mediaItems.mapNotNull { servedMediaId(it.mediaId) }
         if (served.isNotEmpty() && served.size == mediaItems.size) {
             library.request {
@@ -307,8 +317,8 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         val position = positionMs.coerceAtLeast(0).toULong()
 
         library.request {
-            if (moves) it.jumpTo(mediaItemIndex.coerceAtLeast(0).toUInt())
-            it.seek(position)
+            if (moves) it.jumpToAt(mediaItemIndex.coerceAtLeast(0).toUInt(), position)
+            else it.seek(position)
         }
         return Futures.immediateVoidFuture()
     }
@@ -339,6 +349,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
 
     override fun handleRelease(): ListenableFuture<*> {
         scope.cancel()
+        wifi.release()
         ResonateWidgets.stopped(context)
         context.unregisterReceiver(noisy)
         audio.abandonAudioFocusRequest(focus)
@@ -381,9 +392,14 @@ internal fun positionJumped(before: Snapshot?, after: Snapshot?, elapsedMs: Long
 private fun Snapshot?.playsOrLoads() =
     this?.transport == Transport.PLAYING || this?.transport == Transport.LOADING
 
+internal fun Track.mediaId(): String = if (served) uri else id.toString()
+
+internal fun namesTheQueueHeld(mediaIds: List<String>, held: List<Track>): Boolean =
+    held.isNotEmpty() && mediaIds == held.map(Track::mediaId)
+
 fun Track.mediaItem(artwork: ByteArray? = null): MediaItem =
     MediaItem.Builder()
-        .setMediaId(if (served) uri else id.toString())
+        .setMediaId(mediaId())
         .setUri(uri)
         .setMediaMetadata(
             MediaMetadata.Builder()

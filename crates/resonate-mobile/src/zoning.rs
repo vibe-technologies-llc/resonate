@@ -4,6 +4,8 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
+    thread,
+    time::{Duration, Instant},
 };
 
 use parking_lot::Mutex;
@@ -24,6 +26,8 @@ use crate::{
 
 const SYSTEM_DEFAULT_DEVICE: i32 = 0;
 const VOLUME_KEPT_WITHIN: f32 = 0.001;
+const LAST_HOLDER_WAITED_FOR_AT_MOST: Duration = Duration::from_secs(3);
+const LAST_HOLDER_LOOKED_AGAIN_AFTER: Duration = Duration::from_millis(5);
 const OUTPUTS_ARE_HELD_PER_DEVICE: bool = cfg!(not(target_os = "ios"));
 
 pub(crate) type Engines = dyn Fn(ZoneId, EngineConfig, &Arc<output::Routing>) -> resonate_engine::Result<Player>
@@ -712,11 +716,30 @@ pub(crate) fn shut_down(zones: Arc<Zones>) -> Result<()> {
 
     players
         .into_iter()
-        .map(|player| match Arc::try_unwrap(player) {
-            Ok(player) => player.shutdown().map_err(Error::from),
-            Err(_) => Ok(()),
-        })
+        .map(
+            |player| match sole_holder(player, LAST_HOLDER_WAITED_FOR_AT_MOST) {
+                Ok(player) => player.shutdown().map_err(Error::from),
+                Err(_) => Ok(()),
+            },
+        )
         .fold(Ok(()), Result::and)
+}
+
+fn sole_holder(
+    mut player: Arc<Player>,
+    waiting: Duration,
+) -> std::result::Result<Player, Arc<Player>> {
+    let gave_up_at = Instant::now() + waiting;
+    loop {
+        match Arc::try_unwrap(player) {
+            Ok(player) => return Ok(player),
+            Err(held) if Instant::now() >= gave_up_at => return Err(held),
+            Err(held) => {
+                player = held;
+                thread::sleep(LAST_HOLDER_LOOKED_AGAIN_AFTER);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -725,6 +748,27 @@ mod tests {
 
     use super::*;
     use crate::harness::{Harness, LOOKED_AGAIN_AFTER, SETTLED_WITHIN, name_of};
+
+    #[test]
+    fn a_player_another_thread_holds_a_moment_is_shut_down_once_it_lets_go() {
+        let harness = Harness::new();
+        let zones = harness.player.playing.take().expect("open zones");
+        let player = zones.listed().remove(0).player;
+        drop(zones);
+        let holder = Arc::clone(&player);
+
+        let refused = sole_holder(player, Duration::from_millis(20))
+            .err()
+            .expect("still held");
+        let letting_go = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            drop(holder);
+        });
+        let sole = sole_holder(refused, SETTLED_WITHIN);
+
+        letting_go.join().expect("the holder finished");
+        assert!(sole.is_ok());
+    }
 
     fn names_queued(harness: &Harness) -> String {
         harness

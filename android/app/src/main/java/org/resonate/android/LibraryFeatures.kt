@@ -841,8 +841,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
+    internal val inForeground: Boolean
+        get() = foreground
+
     fun foreground(visible: Boolean) {
         foreground = visible
+        library.wakePoll()
         enrichment.foreground(visible)
         downloads.wantsChanged()
         if (visible) forgetMissing(afterScan = false)

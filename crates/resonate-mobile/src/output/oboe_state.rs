@@ -138,9 +138,16 @@ impl Routing {
     }
 
     pub(crate) fn closed(&self, which: u64) {
-        let mut opened = self.opened.lock();
-        if opened.is_some_and(|(held, _)| held == which) {
-            *opened = None;
+        let was_current = {
+            let mut opened = self.opened.lock();
+            let current = opened.is_some_and(|(held, _)| held == which);
+            if current {
+                *opened = None;
+            }
+            current
+        };
+        if was_current {
+            self.mix_freely();
         }
     }
 
@@ -439,5 +446,28 @@ mod tests {
 
         routing.closed(second);
         assert_eq!(routing.stream(), None);
+    }
+
+    #[test]
+    fn the_stream_that_held_the_mixer_bit_perfect_gives_it_back_as_it_closes_and_a_late_close_does_not()
+     {
+        let routing = Routing::new();
+        let mixer = Arc::new(Mixer::default());
+        routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
+        let bit_perfect = OutputStream {
+            format: cd(),
+            path: OutputPath::BitPerfect,
+        };
+
+        assert!(routing.prefer_bit_perfect(USB, CD));
+        let first = routing.opened(bit_perfect);
+        let second = routing.opened(bit_perfect);
+        routing.closed(first);
+
+        assert!(mixer.freed.lock().is_empty());
+
+        routing.closed(second);
+
+        assert_eq!(*mixer.freed.lock(), vec![USB]);
     }
 }

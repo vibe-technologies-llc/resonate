@@ -133,6 +133,19 @@ pub struct Track {
     pub queue_id: Option<u64>,
 }
 
+impl Track {
+    fn gone(location: &MediaLocation) -> Self {
+        let uri = location.to_uri();
+        let name = uri.rsplit('/').next().unwrap_or(&uri).to_owned();
+        Self {
+            uri,
+            title: name.clone(),
+            name,
+            ..Self::default()
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Transport {
     Stopped,
@@ -396,16 +409,15 @@ impl MobilePlayer {
             .filter(|item| !served::Served::names(&item.location))
             .map(|item| document_uri(&item.location))
             .collect::<Result<Vec<_>>>()?;
-        let mut held = self.catalog.tracks_at(&uris)?.into_iter();
+        let mut held = self.catalog.tracks_held_at(&uris)?.into_iter();
         let mut tracks = Vec::with_capacity(rows.len());
         for item in rows.iter() {
             let mut track = if served::Served::names(&item.location) {
                 self.served.track_of(item)
             } else {
-                let Some(track) = held.next() else {
-                    break;
-                };
-                track
+                held.next()
+                    .flatten()
+                    .unwrap_or_else(|| Track::gone(&item.location))
             };
             track.queue_id = Some(item.id.get());
             tracks.push(track);
@@ -503,6 +515,26 @@ impl MobilePlayer {
         let player = self.playing.player()?;
         let (state, queue) = (player.state(), player.queued());
         if let Some(rate) = self.rate_to_seek_in(&state, &queue.rows) {
+            self.command(Command::Seek(Frames::from_duration(
+                Duration::from_millis(position_ms),
+                rate,
+            )))?;
+        }
+        Ok(())
+    }
+
+    pub fn jump_to_at(&self, index: u32, position_ms: u64) -> Result<()> {
+        let player = self.playing.player()?;
+        let queue = player.queued();
+        let rate = queue
+            .rows
+            .get(index as usize)
+            .and_then(|item| self.queue_track(&queue.rows, item.id))
+            .and_then(|track| SampleRate::new(track.rate).ok());
+        self.command(Command::JumpTo(index as usize))?;
+        if position_ms > 0
+            && let Some(rate) = rate
+        {
             self.command(Command::Seek(Frames::from_duration(
                 Duration::from_millis(position_ms),
                 rate,
@@ -696,6 +728,7 @@ impl MobilePlayer {
             .collect();
         let mut tracks = self.catalog.tracks_by_id(&ids)?.into_iter();
         let mut playing_rate = None;
+        let mut passed_before_the_place = 0;
         let mut rows = Vec::with_capacity(kept.len());
         for (row, held) in kept.into_iter().enumerate() {
             let (resumable, its_rate) = match held {
@@ -703,9 +736,15 @@ impl MobilePlayer {
                     let Some(track) = tracks.next() else {
                         continue;
                     };
+                    let Ok(location) = location(&track.uri) else {
+                        if row < at as usize {
+                            passed_before_the_place += 1;
+                        }
+                        continue;
+                    };
                     (
                         Resumable {
-                            location: location(&track.uri)?,
+                            location,
                             span: None,
                             held: Some(TrackId::new(track.id)?),
                         },
@@ -713,8 +752,12 @@ impl MobilePlayer {
                     )
                 }
                 catalog::KeptRow::Served(served) => {
-                    let location =
-                        MediaLocation::from_uri(&served.song.uri).ok_or(Error::InvalidUri)?;
+                    let Some(location) = MediaLocation::from_uri(&served.song.uri) else {
+                        if row < at as usize {
+                            passed_before_the_place += 1;
+                        }
+                        continue;
+                    };
                     let its_rate = served.rate.and_then(|rate| SampleRate::new(rate).ok());
                     self.served.kept(std::slice::from_ref(&served.song));
                     (
@@ -737,7 +780,7 @@ impl MobilePlayer {
             zone,
             Command::Resume(Resumption {
                 rows,
-                row: at as usize,
+                row: (at as usize).saturating_sub(passed_before_the_place),
                 at: Frames::from_duration(
                     Duration::from_millis(at_ms),
                     playing_rate.unwrap_or(SampleRate::HZ_48000),
@@ -812,5 +855,103 @@ mod tests {
             }
         );
         assert_eq!(OutputFigures::of(None), OutputFigures::default());
+    }
+
+    fn row_gone_from_the_catalog(harness: &crate::harness::Harness, name: char) {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "DELETE FROM documents WHERE id = ?1",
+                [harness.song(name).id as i64],
+            )
+            .expect("a catalog row gone");
+    }
+
+    #[test]
+    fn a_queue_row_whose_catalog_row_is_gone_stays_listed_beside_the_rows_that_are_held() {
+        let harness = crate::harness::Harness::new();
+        harness.resumed("abc", 1, 0);
+        let rows = harness.queue_ids();
+
+        row_gone_from_the_catalog(&harness, 'b');
+        let queue = harness.player.queue().expect("a queue past a gone row");
+
+        assert_eq!(queue.len(), 3);
+        assert_eq!(
+            queue.iter().map(|track| track.queue_id).collect::<Vec<_>>(),
+            rows.iter().copied().map(Some).collect::<Vec<_>>()
+        );
+        assert_eq!(crate::harness::name_of(&queue[0]), 'a');
+        assert_eq!(queue[1].name, "b.wav");
+        assert_eq!(crate::harness::name_of(&queue[2]), 'c');
+    }
+
+    #[test]
+    fn a_saved_row_whose_uri_does_not_read_is_passed_over_and_the_place_follows_the_song() {
+        let harness = crate::harness::Harness::new();
+        let ids = harness.ids("abcd");
+        harness
+            .player
+            .catalog
+            .save_queue(&ids, 2, 0)
+            .expect("a saved queue");
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET uri = 'resonate-displaced:1', missing = 1 WHERE id = ?1",
+                [ids[0] as i64],
+            )
+            .expect("a displaced row");
+
+        harness
+            .player
+            .resume_saved_in(ZoneId::FIRST)
+            .expect("a resumption past a row that does not read");
+        let resumed = harness.settled(|snapshot| snapshot.current.is_some());
+
+        assert_eq!(harness.queued(), "bcd");
+        assert_eq!(
+            resumed.current.map(|current| current.id),
+            Some(harness.song('c').id)
+        );
+        assert_eq!(resumed.queue_index, 1);
+    }
+
+    #[test]
+    fn a_jump_with_a_place_seeks_at_the_rate_of_the_row_it_lands_on() {
+        let harness = crate::harness::Harness::new();
+        harness.resumed("abc", 0, 0);
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET rate = 22050 WHERE id = ?1",
+                [harness.song('c').id as i64],
+            )
+            .expect("a rate");
+
+        harness.player.jump_to_at(2, 500).expect("a jump");
+        let landed = harness.settled(|snapshot| {
+            snapshot.position_ms > 0
+                && snapshot
+                    .current
+                    .as_ref()
+                    .is_some_and(|current| current.id == harness.song('c').id)
+        });
+
+        assert_eq!(landed.queue_index, 2);
+        assert!(
+            (200..300).contains(&landed.position_ms),
+            "landed at {}",
+            landed.position_ms
+        );
     }
 }

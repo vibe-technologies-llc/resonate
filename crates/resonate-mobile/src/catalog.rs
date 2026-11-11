@@ -762,6 +762,14 @@ impl Catalog {
         )
     }
 
+    pub(crate) fn tracks_held_at(&self, uris: &[String]) -> Result<Vec<Option<Track>>> {
+        self.each_in_may_hold(
+            uris,
+            "SELECT * FROM documents WHERE uri = ?1",
+            |query, uri| query.query_row([uri], read),
+        )
+    }
+
     pub(crate) fn ids_held_at(&self, uris: &[String]) -> Result<Vec<Option<u64>>> {
         self.each_in_may_hold(
             uris,
