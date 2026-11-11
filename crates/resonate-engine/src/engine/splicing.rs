@@ -65,6 +65,19 @@ fn splice_from_here(
         })
 }
 
+fn splice_after_rendering<Made>(
+    producer: &RingProducer,
+    recall: &Recall,
+    ahead: Frames,
+    over: Frames,
+    render: impl FnOnce(&Blend) -> Made,
+) -> Option<(Blend, Made)> {
+    let first = splice_from_here(producer, recall, ahead, over, 0)?;
+    let rendered = render(&first);
+    let blend = splice_from_here(producer, recall, ahead, over, first.at)?;
+    Some((blend, rendered))
+}
+
 impl Output {
     pub(super) fn recall_written(&mut self, buffer: &AudioBuffer, from: usize, frames: usize) {
         let channels = self.plan.stream.channel_count().get() as usize;
@@ -108,13 +121,6 @@ impl Output {
         let rate = self.plan.stream.rate;
         let over = Frames::from_duration(SPLICE_BLENDED_OVER, rate);
         let ahead = Frames::from_duration(SPLICED_AHEAD_AT_LEAST, rate);
-        let Some(first) = splice_from_here(&self.producer, &self.recall, ahead, over, 0) else {
-            return Ok(Splicing::Unspliceable);
-        };
-        let from = first.from;
-        let rolled_in = Frames::from_duration(ROLLED_IN_BEFORE_A_SPLICE, rate).get();
-        let rolled = from.saturating_sub(rolled_in).max(self.recall.oldest());
-
         let edge = self.chain.back();
         let source = track.source();
         let mut back = wanted
@@ -126,8 +132,15 @@ impl Output {
                 source: error,
             })?;
 
-        let rendered = self.rendered_again(&mut back, rolled, from);
-        let Some(blend) = splice_from_here(&self.producer, &self.recall, ahead, over, first.at)
+        let rolled_in = Frames::from_duration(ROLLED_IN_BEFORE_A_SPLICE, rate).get();
+        let Some((blend, rendered)) =
+            splice_after_rendering(&self.producer, &self.recall, ahead, over, |first| {
+                let rolled = first
+                    .from
+                    .saturating_sub(rolled_in)
+                    .max(self.recall.oldest());
+                self.rendered_again(&mut back, rolled, first.from)
+            })
         else {
             return Ok(Splicing::Unspliceable);
         };
@@ -153,7 +166,7 @@ impl Output {
         Ok(Splicing::Spliced(status))
     }
 
-    fn rendered_again(&mut self, back: &mut Chain, rolled: u64, kept_from: u64) -> Rendered {
+    fn rendered_again(&self, back: &mut Chain, rolled: u64, kept_from: u64) -> Rendered {
         let channels = self.plan.stream.channel_count().get() as usize;
         let edge = back.back();
         let block = edge.frames_in.max(1);
@@ -290,16 +303,17 @@ mod tests {
         producer.write(&AudioBuffer::silence(spec, RING_FRAMES));
         recall.enter(&vec![0.0; RING_FRAMES * 2]);
         consumer.fill(&mut pulled);
-        let first = splice_from_here(&producer, &recall, ahead, over, 0)
-            .expect("a ring this deep has a point to splice at");
-        for _ in 0..PULLED_WHILE_THE_BACK_RENDERS {
-            consumer.fill(&mut pulled);
-        }
-        let taken = splice_from_here(&producer, &recall, ahead, over, first.at)
-            .expect("the ring still has a point to splice at");
+        let mut first_at = None;
+        let (taken, ()) = splice_after_rendering(&producer, &recall, ahead, over, |first| {
+            first_at = Some(first.at);
+            for _ in 0..PULLED_WHILE_THE_BACK_RENDERS {
+                consumer.fill(&mut pulled);
+            }
+        })
+        .expect("the ring still has a point to splice at");
 
         assert!(
-            first.at < producer.read(),
+            first_at.is_some_and(|first| first < producer.read()),
             "the graph did not pull past the first point"
         );
         assert!(

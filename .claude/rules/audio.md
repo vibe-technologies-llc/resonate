@@ -483,7 +483,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   from the wanted plan (`OutputPlan::build_the_back`, sized by the old `Back`), runs it over the
   recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle
   (`rendered_again`, into a buffer of its own), and only then **takes the point again**, no sooner
-  than the first (`splice_from_here`), since building a long room response and rendering a deep
+  than the first (`splice_from_here`; `splice_after_rendering` is the one place the two points are
+  taken, the render a closure it calls between them, which is the seam a test holds to pull the
+  graph meanwhile), since building a long room response and rendering a deep
   recall can take longer than the lead and the graph would pass a point taken before them on the
   old curve (`a_point_taken_again_once_the_back_has_rendered_lies_ahead_of_what_the_graph_pulled_meanwhile`).
   It blends the first `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the
