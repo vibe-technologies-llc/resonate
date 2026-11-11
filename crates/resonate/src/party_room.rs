@@ -230,8 +230,10 @@ pub(crate) fn turn_out(member: [u8; 16]) {
 }
 
 pub(crate) fn dismiss_a_request(at: usize) {
-    if let Some(room) = ROOM.lock().as_ref() {
-        room.going.party().take_a_request(at);
+    if let Some(room) = ROOM.lock().as_ref()
+        && let Some(request) = room.going.shown().asked_for.get(at).cloned()
+    {
+        room.going.party().take_a_request(request);
     }
 }
 
@@ -262,7 +264,7 @@ pub(crate) fn play_a_request_next(at: usize) -> bool {
         at: Placement::Next,
         play: false,
     });
-    party.take_a_request(at);
+    party.take_a_request(wanted);
 
     placed.is_ok()
 }

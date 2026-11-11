@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
@@ -36,6 +37,10 @@ const LAST_RETRY: Duration = Duration::from_secs(15);
 const HOST_NAME_FOR_NO_NAME: &str = "";
 
 const WANTS_KEPT_AT_MOST: usize = 32;
+
+const SAID_WHILE_AWAY_AT_MOST: usize = 16;
+
+const CLOSES_BEFORE_WELCOME_FOR_TOO_OLD: u32 = 3;
 
 pub struct PartySettings {
     pub server: String,
@@ -83,11 +88,12 @@ pub struct PartyShown {
     pub round_trip: Option<Duration>,
 }
 
+#[derive(Clone)]
 enum Asked {
     Now(PartyNow),
     Ask(PartySong),
     Kick(DeviceId),
-    TakeAsk(usize),
+    TakeAsk(PartyWantingASong),
     Named(String),
     Leave,
 }
@@ -148,6 +154,8 @@ impl Party {
             members: Vec::new(),
             host_id: None,
             told: None,
+            waiting: VecDeque::new(),
+            closes_before_welcome: 0,
         };
         let thread = thread::Builder::new()
             .name("resonate-party".to_owned())
@@ -188,8 +196,8 @@ impl Party {
         let _ = self.asked.send(Asked::Ask(song));
     }
 
-    pub fn take_a_request(&self, at: usize) {
-        let _ = self.asked.send(Asked::TakeAsk(at));
+    pub fn take_a_request(&self, request: PartyWantingASong) {
+        let _ = self.asked.send(Asked::TakeAsk(request));
     }
 
     pub fn turn_out(&self, member: DeviceId) {
@@ -230,6 +238,8 @@ struct Running {
     members: Vec<DeviceId>,
     host_id: Option<DeviceId>,
     told: Option<PartyNow>,
+    waiting: VecDeque<Asked>,
+    closes_before_welcome: u32,
 }
 
 enum Ended {
@@ -252,11 +262,6 @@ impl Running {
                     return;
                 }
                 Ok(Ended::Lost) => {}
-                Err(Error::ServerTooOld) => {
-                    self.shown.write().reach = PartyReach::ServerTooOld;
-                    self.wait_until_left(&mut hearing).await;
-                    return;
-                }
                 Err(error) => tracing::debug!(%error, "a party lost its server"),
             }
 
@@ -293,8 +298,35 @@ impl Running {
         match asked {
             Asked::Now(now) => self.told = Some(now),
             Asked::Named(name) => self.name = name,
-            Asked::Ask(_) | Asked::Kick(_) | Asked::TakeAsk(_) | Asked::Leave => {}
+            Asked::TakeAsk(request) => self.take_ask(&request),
+            Asked::Ask(_) | Asked::Kick(_) => self.keep_for_the_welcome(asked),
+            Asked::Leave => {}
         }
+    }
+
+    fn keep_for_the_welcome(&mut self, asked: Asked) {
+        if self.waiting.len() == SAID_WHILE_AWAY_AT_MOST {
+            self.waiting.pop_front();
+        }
+        self.waiting.push_back(asked);
+    }
+
+    fn take_ask(&self, request: &PartyWantingASong) {
+        let mut shown = self.shown.write();
+        if let Some(at) = shown.asked_for.iter().position(|asked| asked == request) {
+            shown.asked_for.remove(at);
+        }
+    }
+
+    async fn send_what_waited(&mut self, send: &mut Outgoing) -> Result<()> {
+        while let Some(asked) = self.waiting.pop_front() {
+            if let Err(error) = self.asked(asked.clone(), send).await {
+                self.waiting.push_front(asked);
+                return Err(error);
+            }
+        }
+
+        Ok(())
     }
 
     async fn reached(&mut self) -> Result<(Outgoing, Incoming)> {
@@ -397,6 +429,7 @@ impl Running {
                     self.members.insert(0, self.me);
                 }
                 self.host_id = Some(host);
+                self.closes_before_welcome = 0;
             }
             Some(FromServer::Refused(Refusal::NoSuchRoom)) => {
                 return Ok(Ended::Over(PartyReach::NoSuchParty));
@@ -406,7 +439,16 @@ impl Running {
             }
             Some(FromServer::Refused(_)) => return Ok(Ended::Lost),
             Some(_) => return Ok(Ended::Lost),
-            None => return Err(Error::ServerTooOld),
+            None => {
+                self.closes_before_welcome += 1;
+                return Ok(
+                    if self.closes_before_welcome >= CLOSES_BEFORE_WELCOME_FOR_TOO_OLD {
+                        Ended::Over(PartyReach::ServerTooOld)
+                    } else {
+                        Ended::Lost
+                    },
+                );
+            }
         }
 
         self.set_own_name();
@@ -424,6 +466,7 @@ impl Running {
             };
             self.say(&mut send, Some(host), &hello).await?;
         }
+        self.send_what_waited(&mut send).await?;
 
         let mut pings = interval(PINGS_EVERY);
         let (frames_in, mut frames) = mpsc::unbounded_channel();
@@ -464,10 +507,16 @@ impl Running {
                     let Some(asked) = asked else {
                         break Ended::Left;
                     };
+                    let again = matches!(asked, Asked::Ask(_) | Asked::Kick(_)).then(|| asked.clone());
                     match self.asked(asked, &mut send).await {
                         Ok(None) => {}
                         Ok(Some(ended)) => break ended,
-                        Err(_) => break Ended::Lost,
+                        Err(_) => {
+                            if let Some(again) = again {
+                                self.keep_for_the_welcome(again);
+                            }
+                            break Ended::Lost;
+                        }
                     }
                 }
             }
@@ -493,12 +542,7 @@ impl Running {
                     self.say(send, Some(host), &PartySaid::Ask(song)).await?;
                 }
             }
-            Asked::TakeAsk(at) => {
-                let mut shown = self.shown.write();
-                if at < shown.asked_for.len() {
-                    shown.asked_for.remove(at);
-                }
-            }
+            Asked::TakeAsk(request) => self.take_ask(&request),
             Asked::Kick(member) => {
                 if self.host.is_some() {
                     send.send(&ToServer::RoomKick { member }.encoded()).await?;

@@ -109,8 +109,7 @@ forges the host, who proves itself with a random token that is not in the link. 
 sealed under its key**, and a typed name, empty by default, travels only in them: `Hello` to the host, who
 tells everyone through `People`. `Now` (the song and next rows, playing, position and the server moment it
 was true at) is told on any change, on a jump past `HOST_MOVED_PAST`, and every 2 s; a late guest is told
-it as it arrives. A reconnecting seat tries from 1 s to 15 s and the room waits 30 s for its host. An old
-server's silence reads as `ServerTooOld`.
+it as it arrives. A reconnecting seat tries from 1 s to 15 s and the room waits 30 s for its host. **A request, a host's turn-out and a dismissal made while a seat reconnects are not lost**: a guest's `Ask` and a host's `Kick` wait in a queue of `SAID_WHILE_AWAY_AT_MOST` (16, the oldest dropped) and are sent right after the next `RoomWelcome` (also one whose send failed), and a dismissal is applied to the shown requests at once, naming the request (`PartyWantingASong`: its sender and row), never an index, so a *Play next* whose search took seconds removes the request it found and no other (`a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_back`, `a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone`). An old server answers the opening frame by closing, so **`ServerTooOld` is read only after `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` (3) clean closes in a row before any welcome**; one close, as a tunnel or a draining server may send, is a connection lost and tried again (`one_clean_close_before_the_welcome_is_a_connection_lost_and_not_a_server_too_old`, `a_server_that_closes_every_connection_before_the_welcome_reads_as_too_old`).
 
 ## The lock
 
