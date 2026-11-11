@@ -597,6 +597,7 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[cfg(unix)]
     #[error("cannot keep {path} to its owner", path = path.display())]
     Private {
         path: PathBuf,
