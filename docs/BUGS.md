@@ -10,18 +10,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `shared/service.rs` clones the whole list (up to 40 000 entries) for each record it opens; the
   party host opens every guest's `RoomHeard` under the same cap. `opened` wants a ceiling per
   caller, the ops of a record capped, and a change flag from `apply` in place of the clone
-- [S · 0.8.1] A host on the network can wedge renderer discovery: `http::exchange`'s 3 s is a
-  timeout per read, so an answer dripping a byte every 2.9 s holds a round until the 1 MiB cap,
-  though `upnp.md` says an exchange gives up after 3 s; `ssdp::search` keeps every location an
-  answer names on its sender's address, uncapped and deduplicated by a linear `contains`, and
-  `network.rs` describes them one after another under the round lock; Cast admits every resolved
-  record with no cap either (`casting.rs`). One deadline an exchange, and caps on the locations
-  kept a sender and on the renderers and receivers admitted
-- [S · 0.8.1] The Discord socket is checked by path and then connected by path: `socket.rs`'s
-  `open` asks `ours` (`fs::metadata`, which follows a link) before `UnixStream::connect`, and
-  `/tmp` is searched, so another local user's `/tmp/discord-ipc-N` link swapped between the two
-  reads what plays (`discord.md`'s *Only the listener's own socket*); the peer's uid wants reading
-  after the connect (`SO_PEERCRED`)
 - [S · 0.8.1] A sync server can make every device dial any address: the observed address a
   `Punched` frame carries joins the candidates before the sealed ones are opened and stays where
   they do not open (`service.rs`'s answer to a punch), and `punched_back` keeps an entry for every
