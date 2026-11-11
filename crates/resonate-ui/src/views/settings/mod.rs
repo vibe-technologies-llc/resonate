@@ -7,6 +7,7 @@ mod desktop;
 mod equaliser;
 mod filters;
 mod find;
+mod identical;
 mod jellyfin;
 mod lastfm;
 mod library;
@@ -571,6 +572,7 @@ impl RootView {
             Group::Rescanning => self.rescanning_group(cx),
             Group::LookingUp => self.looking_up_group(cx),
             Group::Retagging => self.retagging_group(cx),
+            Group::Identical => self.identical_group(cx),
             Group::Organising => self.organising_group(cx),
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
@@ -1276,6 +1278,7 @@ pub(crate) enum Armed {
     WalkTheTagsBack,
     WriteTheTags,
     KeepTheTracks,
+    FoldTheCopies,
     DiscardTheCurve,
     TellTheEarlierPlays,
     AgeTheHistory(HistoryKept),

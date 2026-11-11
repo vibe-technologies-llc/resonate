@@ -203,6 +203,19 @@ deleted-songs = { $count ->
     [one] Deleted { $count } song
    *[other] Deleted { $count } songs
 }
+find-the-identical-songs = find the identical songs
+fold-the-identical-songs = fold the identical songs
+folded-identical-songs = { $count ->
+    [one] Folded { $count } identical song into the song it copies
+   *[other] Folded { $count } identical songs into the songs they copy
+}
+folded-identical-songs-some-kept = { $files ->
+    [one] Folded { $files } identical song
+   *[other] Folded { $files } identical songs
+} — { $kept ->
+    [one] { $kept } file couldn't be removed
+   *[other] { $kept } files couldn't be removed
+}
 the-inbox-filled = { $count ->
     [one] The inbox filled { $count } want
    *[other] The inbox filled { $count } wants

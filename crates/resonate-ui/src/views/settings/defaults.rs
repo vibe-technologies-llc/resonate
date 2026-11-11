@@ -289,6 +289,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         | Group::Rescanning
         | Group::LookingUp
         | Group::Retagging
+        | Group::Identical
         | Group::Vault
         | Group::Build
         | Group::Places

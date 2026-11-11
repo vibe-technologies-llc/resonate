@@ -1534,7 +1534,9 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   play, favourite, listens, playlist entries, queue rows and `songs_received` row to the song in
   one transaction (`copies::handed_over`, which zeroes the copy's `plays` once they are the song's, so a copy the trash refuses and the next run finds again adds nothing twice, `a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice`), then `delete_tracks` trashes the copies as any deletion.
   `resonate dedupe` previews, `--apply` folds
-  (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`).
+  (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`). The window's
+  *Identical songs* page (`ui.md`) calls the same two functions, so the terminal and the window
+  fold the same copies.
 
 ## Organising
 

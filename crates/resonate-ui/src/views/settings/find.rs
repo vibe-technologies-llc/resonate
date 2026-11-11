@@ -115,18 +115,20 @@ pub(crate) enum Page {
     RoomCorrection,
     ListeningTest,
     Enrichment,
+    Identical,
     Devices,
 }
 
 impl Page {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::HeadphoneCorrection,
         Self::OwnMeasurement,
         Self::RoomMeasurement,
         Self::RoomCorrection,
         Self::ListeningTest,
         Self::Enrichment,
+        Self::Identical,
         Self::Devices,
     ];
 
@@ -137,7 +139,7 @@ impl Page {
             | Self::RoomMeasurement
             | Self::RoomCorrection
             | Self::ListeningTest => Category::Equaliser,
-            Self::Enrichment => Category::Library,
+            Self::Enrichment | Self::Identical => Category::Library,
             Self::Devices => Category::Sync,
         }
     }
@@ -150,6 +152,7 @@ impl Page {
             Self::RoomCorrection => words::settings_find::room_correction(),
             Self::ListeningTest => words::settings_find::listening_test(),
             Self::Enrichment => words::settings_find::rescan_refresh_and_retag(),
+            Self::Identical => words::settings_identical::identical_songs(),
             Self::Devices => words::settings_find::your_devices(),
         }
     }
@@ -166,6 +169,7 @@ impl Page {
             Self::RoomCorrection => words::settings_find::an_impulse_response_or_speakers_placed(),
             Self::ListeningTest => words::settings_find::hear_whether_a_setting_can_be(),
             Self::Enrichment => words::settings_find::read_the_files_again_ask_what(),
+            Self::Identical => words::settings_identical::page_about(),
             Self::Devices => words::settings_find::who_shares_the_code_and_driving(),
         }
     }
@@ -178,6 +182,7 @@ impl Page {
             Self::ListeningTest => Icon::Check,
             Self::RoomCorrection => Icon::Volume,
             Self::Enrichment => Icon::Redo,
+            Self::Identical => Icon::Fold,
             Self::Devices => Icon::Phone,
         }
     }
@@ -189,7 +194,9 @@ impl Page {
             | Self::RoomMeasurement
             | Self::RoomCorrection
             | Self::ListeningTest => words::settings_find::corrections_and_tests(),
-            Self::Enrichment => words::settings_find::keeping_the_catalog_current(),
+            Self::Enrichment | Self::Identical => {
+                words::settings_find::keeping_the_catalog_current()
+            }
             Self::Devices => words::settings_find::your_other_devices(),
         }
     }
@@ -202,6 +209,7 @@ impl Page {
             Self::RoomCorrection => "room-correction",
             Self::ListeningTest => "listening-test",
             Self::Enrichment => "enrichment",
+            Self::Identical => "identical",
             Self::Devices => "devices",
         }
     }
@@ -258,6 +266,7 @@ pub(crate) enum Group {
     Rescanning,
     LookingUp,
     Retagging,
+    Identical,
     Organising,
     Vault,
     Inbox,
@@ -308,7 +317,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 80] = [
+    pub(crate) const ALL: [Self; 81] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -342,6 +351,7 @@ impl Group {
         Self::Rescanning,
         Self::LookingUp,
         Self::Retagging,
+        Self::Identical,
         Self::Organising,
         Self::Vault,
         Self::Inbox,
@@ -725,6 +735,14 @@ impl Group {
                 title: words::settings_find::the_tags_in_the_files(),
                 hint: words::settings_find::retagging_hint(),
                 also_called: words::settings_find::write_back_retag_tags_metadata_ids(),
+                keys: &[],
+            },
+            Self::Identical => Described {
+                category: Category::Library,
+                page: Some(Page::Identical),
+                title: words::settings_identical::identical_songs(),
+                hint: words::settings_identical::hint(),
+                also_called: words::settings_identical::also_called(),
                 keys: &[],
             },
             Self::Organising => Described {
@@ -1533,7 +1551,7 @@ mod tests {
             Category::Library.drawn(),
             vec![
                 Drawn::Group(Group::Folders),
-                Drawn::Pages(vec![Page::Enrichment]),
+                Drawn::Pages(vec![Page::Enrichment, Page::Identical]),
                 Drawn::Group(Group::Organising),
                 Drawn::Group(Group::Vault),
                 Drawn::Group(Group::Inbox),

@@ -125,9 +125,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   are fixed, and the callback is typed by them
 
 ## The window
-- [M · 0.9.0] The window has no page for identical songs: `resonate dedupe` and the phones'
-  *Identical songs* fold them, and the window calls neither (the copies a device fetch leaves are
-  folded from the terminal alone)
+- [M · 0.9.0] The window's *Identical songs* page and `resonate dedupe` find only a file numbered
+  after a song it copies (`Song (1).flac`); the phones fold any files holding the same bytes, and
+  the desktop catalog has no such search
 - [M · 0.9.0] The window's Vault group imports and chooses a folder alone: checking the vault, and
   pruning, releasing and compacting it (`vault --verify`, `--prune`, `--release`, `--compact`) are
   the terminal's

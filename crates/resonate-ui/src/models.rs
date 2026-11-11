@@ -27,10 +27,10 @@ use resonate_core::{
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail,
-    ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, Codec, CoverArt, Covering,
-    Cut, Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
-    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
-    GroupRelease, Habits, HeldReleaseTrack, HiddenTracks, HistoryKept, ImportOptions,
+    ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, Codec, Copies, CoverArt,
+    Covering, Cut, Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions,
+    EnrichProgress, EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found,
+    FromTheLink, GroupRelease, Habits, HeldReleaseTrack, HiddenTracks, HistoryKept, ImportOptions,
     ImportProgress, ImportStats, ImportSummary, Imported, Isrc, Issued, KeepStopped, KeepSummary,
     Kept, KeptList, KeptSong, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured,
     Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress,
@@ -677,11 +677,25 @@ enum Work {
     Importing(Pass, Arc<ImportProgress>),
     Polling(Arc<PollProgress>),
     Forgetting,
+    Identical(Pass),
 }
 
 impl Work {
     const fn is_busy(&self) -> bool {
         !matches!(self, Self::Nothing)
+    }
+
+    const fn identical(&self) -> Option<Pass> {
+        match self {
+            Self::Identical(pass) => Some(*pass),
+            Self::Nothing
+            | Self::Scanning(_)
+            | Self::Organising(..)
+            | Self::Tagging(..)
+            | Self::Importing(..)
+            | Self::Polling(_)
+            | Self::Forgetting => None,
+        }
     }
 
     const fn scanning(&self) -> Option<&Arc<ScanProgress>> {
@@ -692,7 +706,8 @@ impl Work {
             | Self::Tagging(..)
             | Self::Importing(..)
             | Self::Polling(_)
-            | Self::Forgetting => None,
+            | Self::Forgetting
+            | Self::Identical(_) => None,
         }
     }
 
@@ -704,7 +719,8 @@ impl Work {
             | Self::Tagging(..)
             | Self::Importing(..)
             | Self::Polling(_)
-            | Self::Forgetting => None,
+            | Self::Forgetting
+            | Self::Identical(_) => None,
         }
     }
 
@@ -716,7 +732,8 @@ impl Work {
             | Self::Organising(..)
             | Self::Importing(..)
             | Self::Polling(_)
-            | Self::Forgetting => None,
+            | Self::Forgetting
+            | Self::Identical(_) => None,
         }
     }
 
@@ -728,7 +745,8 @@ impl Work {
             | Self::Organising(..)
             | Self::Tagging(..)
             | Self::Importing(..)
-            | Self::Forgetting => None,
+            | Self::Forgetting
+            | Self::Identical(_) => None,
         }
     }
 
@@ -740,7 +758,8 @@ impl Work {
             | Self::Organising(..)
             | Self::Tagging(..)
             | Self::Polling(_)
-            | Self::Forgetting => None,
+            | Self::Forgetting
+            | Self::Identical(_) => None,
         }
     }
 }
@@ -870,6 +889,8 @@ pub struct LibraryModel {
     previewed_import: Planned,
     tagged: Option<(Pass, RetagSummary)>,
     previewed_tags: Planned,
+    identical: Option<Arc<Copies>>,
+    previewed_identical: Planned,
     sourcing: Sourcing,
     enriching: Option<Arc<EnrichProgress>>,
     lookup_asked: Option<LookupAsked>,
@@ -1151,6 +1172,8 @@ impl LibraryModel {
             previewed_import: Planned::Not,
             tagged: None,
             previewed_tags: Planned::Not,
+            identical: None,
+            previewed_identical: Planned::Not,
             sourcing,
             enriching: None,
             lookup_asked: None,
@@ -4260,6 +4283,10 @@ impl LibraryModel {
             self.imported = None;
             self.previewed_import = Planned::Outdated;
         }
+        if self.previewed_identical.outdated_at(now) {
+            self.identical = None;
+            self.previewed_identical = Planned::Outdated;
+        }
     }
 
     pub const fn is_tagging(&self) -> bool {
@@ -4285,6 +4312,22 @@ impl LibraryModel {
 
     pub fn tagged(&self) -> Option<(Pass, &RetagSummary)> {
         self.tagged.as_ref().map(|(pass, summary)| (*pass, summary))
+    }
+
+    pub fn identical_songs(&self) -> Option<Arc<Copies>> {
+        self.identical.clone()
+    }
+
+    pub const fn previewed_identical(&self) -> Planned {
+        self.previewed_identical
+    }
+
+    pub const fn is_finding_identical(&self) -> bool {
+        matches!(self.work.identical(), Some(Pass::Preview))
+    }
+
+    pub const fn is_folding_identical(&self) -> bool {
+        matches!(self.work.identical(), Some(Pass::Apply))
     }
 
     pub const fn previewed_tags(&self) -> Planned {
@@ -6754,6 +6797,88 @@ impl LibraryModel {
         });
     }
 
+    pub fn find_identical_songs(&mut self, cx: &mut Context<Self>) {
+        if self.work.is_busy() {
+            toast::tell(
+                Notice::Trouble(words::models::already_walking().to_owned()),
+                cx,
+            );
+            return;
+        }
+        let read_at = self.library.plans_stamp();
+        let library = Arc::clone(&self.library);
+        self.work = Work::Identical(Pass::Preview);
+        self.identical = None;
+        self.previewed_identical = Planned::Not;
+        cx.notify();
+
+        self._scan = cx.spawn(async move |this, cx| {
+            let found = cx
+                .background_executor()
+                .spawn(async move { library.numbered_copies() })
+                .await;
+
+            let outcome = this.update(cx, |this, cx| {
+                this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
+                match found {
+                    Ok(copies) => {
+                        this.identical = Some(Arc::new(copies));
+                        this.previewed_identical = Planned::after(Pass::Preview, false, read_at);
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "the identical songs could not be found");
+                        toast::tell(
+                            toast::could_not(words::models::find_the_identical_songs(), &error),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+            let _ = outcome;
+        });
+    }
+
+    pub fn fold_identical_songs(&mut self, cx: &mut Context<Self>) {
+        if self.work.is_busy() {
+            toast::tell(
+                Notice::Trouble(words::models::already_walking().to_owned()),
+                cx,
+            );
+            return;
+        }
+        let Some(copies) = self
+            .identical
+            .clone()
+            .filter(|_| self.previewed_identical.is_shown())
+        else {
+            return;
+        };
+        let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._edit, Task::ready(()));
+        self.work = Work::Identical(Pass::Apply);
+        self.identical = None;
+        self.previewed_identical = Planned::Not;
+        cx.notify();
+
+        self._scan = cx.spawn(async move |this, cx| {
+            before.await;
+            let folded = cx
+                .background_executor()
+                .spawn(async move { library.fold_copies(&copies.numbered) })
+                .await;
+
+            let outcome = this.update(cx, |this, cx| {
+                this.work = Work::Nothing;
+                this.take_up_what_waited(cx);
+                toast::tell(folding_told(folded), cx);
+                this.reload(cx);
+            });
+            let _ = outcome;
+        });
+    }
+
     pub fn forget_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         if self.work.is_busy() {
             let waiting = RootWaiting::ToForget(root);
@@ -6965,6 +7090,19 @@ fn deletion_told(deleted: resonate_library::Result<Deleted>, title: &str, asked:
                 },
                 &error,
             )
+        }
+    }
+}
+
+fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice {
+    match folded {
+        Ok(deleted) if deleted.kept > 0 => Notice::Trouble(
+            words::models::folded_identical_songs_some_kept(deleted.files, deleted.kept),
+        ),
+        Ok(deleted) => Notice::Done(words::models::folded_identical_songs(deleted.files)),
+        Err(error) => {
+            tracing::error!(%error, "identical songs could not be folded");
+            toast::could_not(words::models::fold_the_identical_songs(), &error)
         }
     }
 }

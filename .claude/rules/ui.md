@@ -2580,6 +2580,21 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   plays, favourite; *Look for missing covers* is `Library::ask_again_for_covers` + a lookup with studies and lyrics off (`LibraryModel::only_the_covers`), so the button never starts the study pool's decoding; *Refresh
   all* is `enrich(true)`. The files part greys with `is_busy`, the lookups with `is_busy`,
   `is_enriching` and `!can_enrich`.
+- **Identical songs are a Library page beside the catalog's upkeep, folded by the same two calls as
+  `resonate dedupe`.** `Page::Identical` (`Group::Identical`, `settings/identical.rs`) is gathered
+  under *Keeping the catalog current* with `Page::Enrichment`. *Find* is `LibraryModel::find_identical_songs`
+  = `Library::numbered_copies` off the window's thread (`Work::Identical(Pass::Preview)`); the
+  result is a preview like *Organising*'s: `Planned` with the `CatalogStamp` it read, taken down
+  by `take_down_what_moved` once a row is added or taken, greyed *Fold* until it stands. Each song
+  held twice is one row (`grouped`: the song kept, its copies by file name, `N copies:`),
+  the first twelve then *and N more*, and a note counts what would fold and what differs and
+  stays. *Fold* is armed by `Armed::FoldTheCopies` and takes two presses, then
+  `fold_identical_songs` = `Library::fold_copies` on the preview's own copies after the edit chain
+  (`Work::Identical(Pass::Apply)`), a toast tells the files trashed and any the trash refused, and
+  the catalog reloads
+  (`identical_songs_are_found_listed_and_folded_only_once_found_and_pressed_twice`). Only a
+  numbered file that holds a song's bytes is offered: the phones' byte-identical *Identical
+  songs* (`mobile.md`) has no desktop counterpart.
 - **Library roots are edited through the desktop's file picker, or typed.** `App::prompt_for_paths`
   (`directories: true`) is the XDG portal; a machine without one says so and points at
   `RootView::typed_root` (*Or type a folder, then press enter*). `root_typed` reads a leading `~` as
