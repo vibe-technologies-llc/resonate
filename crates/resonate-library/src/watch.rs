@@ -6,7 +6,7 @@ use std::{
 };
 
 use notify::{
-    Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _,
+    ErrorKind, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _,
     event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
 };
 use parking_lot::Mutex;
@@ -14,6 +14,12 @@ use parking_lot::Mutex;
 use crate::scan;
 
 const DEFERRED_AT_MOST: Duration = Duration::from_secs(5 * 60);
+
+const OUT_OF_WATCHES_TRIED_AGAIN_AT_MOST: Duration = Duration::from_secs(4 * 60 * 60);
+
+fn wants_more_watches(error: &notify::Error) -> bool {
+    matches!(error.kind, ErrorKind::MaxFilesWatch)
+}
 
 #[derive(Default)]
 struct Moved {
@@ -48,6 +54,7 @@ pub struct RootsWatch {
     moved: Arc<Mutex<Moved>>,
     watcher: RecommendedWatcher,
     uncovered: Vec<PathBuf>,
+    out_of_watches: bool,
 }
 
 impl RootsWatch {
@@ -69,8 +76,10 @@ impl RootsWatch {
         };
 
         let mut uncovered = Vec::new();
+        let mut out_of_watches = false;
         for root in roots {
             if let Err(error) = watcher.watch(root, RecursiveMode::Recursive) {
+                out_of_watches |= wants_more_watches(&error);
                 uncovered.push(root.clone());
                 tracing::warn!(
                     %error,
@@ -84,11 +93,16 @@ impl RootsWatch {
             moved,
             watcher,
             uncovered,
+            out_of_watches,
         })
     }
 
     pub fn leaves_a_root_uncovered(&self) -> bool {
         !self.uncovered.is_empty()
+    }
+
+    pub fn ran_out_of_watches(&self) -> bool {
+        self.out_of_watches
     }
 
     pub fn replacing(previous: Self, roots: &[PathBuf]) -> Option<Self> {
@@ -106,8 +120,10 @@ impl RootsWatch {
     }
 
     pub fn cover_again(&mut self) {
+        self.out_of_watches = false;
         for root in std::mem::take(&mut self.uncovered) {
             if let Err(error) = self.watcher.watch(&root, RecursiveMode::Recursive) {
+                self.out_of_watches |= wants_more_watches(&error);
                 tracing::debug!(
                     %error,
                     root = %root.display(),
@@ -115,6 +131,16 @@ impl RootsWatch {
                 );
                 self.uncovered.push(root);
             }
+        }
+    }
+
+    pub fn tried_again_after(&self, last_wait: Duration, at_first: Duration) -> Duration {
+        match self.out_of_watches {
+            true => last_wait
+                .max(at_first)
+                .saturating_mul(2)
+                .min(OUT_OF_WATCHES_TRIED_AGAIN_AT_MOST),
+            false => at_first,
         }
     }
 
@@ -354,6 +380,25 @@ mod tests {
         assert!(watch.leaves_a_root_uncovered());
     }
 
+    #[test]
+    fn a_root_missing_is_tried_again_at_the_same_pace_and_one_out_of_watches_ever_more_slowly() {
+        let scratch = Scratch::new("tried-again");
+        let at_first = Duration::from_secs(5 * 60);
+        let mut watch = RootsWatch::over(&[scratch.path.join("not-there")]).expect("a watch");
+
+        assert!(!watch.ran_out_of_watches());
+        assert_eq!(watch.tried_again_after(at_first, at_first), at_first);
+
+        watch.out_of_watches = true;
+        let mut waited = Vec::new();
+        let mut wait = Duration::ZERO;
+        for _ in 0..8 {
+            wait = watch.tried_again_after(wait, at_first);
+            waited.push(wait.as_secs() / 60);
+        }
+        assert_eq!(waited, [10, 20, 40, 80, 160, 240, 240, 240]);
+    }
+
     const CAPPED_AT: &str = "RESONATE_INOTIFY_CAPPED";
     const WATCHES_LEFT: usize = 8;
     const FOLDERS_PAST_THE_CAP: usize = 3 * WATCHES_LEFT;
@@ -407,13 +452,16 @@ mod tests {
             fs::create_dir_all(crowded.path.join(format!("disc {folder}"))).expect("a folder");
         }
 
-        let watch = RootsWatch::over(&[covered.path.clone(), crowded.path.clone()])
+        let mut watch = RootsWatch::over(&[covered.path.clone(), crowded.path.clone()])
             .expect("a watch with watches left to lay");
         assert!(
             watch.leaves_a_root_uncovered(),
             "a root of {FOLDERS_PAST_THE_CAP} folders fit under a cap of {WATCHES_LEFT} watches"
         );
         assert_eq!(watch.uncovered, std::slice::from_ref(&crowded.path));
+        assert!(watch.ran_out_of_watches());
+        watch.cover_again();
+        assert!(watch.ran_out_of_watches(), "the cap still stands");
 
         fs::write(covered.path.join("album/echoes.flac"), b"fLaC").expect("a file");
         assert_eq!(

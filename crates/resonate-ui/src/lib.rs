@@ -18,6 +18,7 @@ mod equaliser;
 mod error;
 mod fonts;
 mod format;
+mod held;
 mod icons;
 mod launcher;
 mod listening;

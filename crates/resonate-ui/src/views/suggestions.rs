@@ -12,6 +12,7 @@ use resonate_library::{
 
 use crate::{
     Drawn, Pane, format,
+    held::Rows,
     icons::Icon,
     theme,
     views::{
@@ -272,7 +273,7 @@ impl RootView {
             .unwrap_or_default();
         let searched = suggestion.query.text.clone().unwrap_or_default();
         let shown = tracks.len();
-        let rows = Arc::clone(tracks);
+        let rows = Rows::from(Arc::clone(tracks));
 
         let actions = kit::action_row()
             .flex_nowrap()

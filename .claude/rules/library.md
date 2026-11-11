@@ -225,6 +225,21 @@ rows read via `Player::media` like any unscanned row.
   playlists): tied rows keep one place, paging neither repeats nor drops one. The id runs as the
   index's rowid tail runs (`track_ids_rising!`, `track_ids_falling!`), so the tie costs no sort.
   (`every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie`)
+- **A page of tracks is read from the last row's key, not counted to.** `Library::tracks_from(query,
+  at)` answers the rows from `at` (itself first) in the query's order: `keyed::terms` reads the
+  `order_by` text term by term (commas inside brackets kept), `key_read` reads those terms off the
+  row `at`, and `keyed::seeks` lays one seek a term from the row outwards: tied on every earlier
+  term and past this one (`>`/`<`; a `NULL` key `IS NOT NULL` rising and nothing falling; a falling
+  term's `NULL`s, which SQLite sorts last, a seek of their own), each ordered by its untied terms
+  alone and limited to what is still wanted, all inside one read transaction. Each seek is an index
+  range, so paging to the end of 500 000 tracks takes under a second where `LIMIT … OFFSET` took 40 to
+  55 (`cargo bench -p resonate-library --bench paging`; `RESONATE_BENCH_OFFSET=1` times the offset
+  read beside it). A row gone answers nothing. A ranked search and an order no index holds
+  (`PlaysThisMonth`) page by `query.offset`, which a caller sets to where `at` stood
+  (`paging_by_the_last_key_reads_every_row_once_in_the_order_read_whole`,
+  `every_seek_past_a_key_is_read_off_the_orders_index_either_way_round`, where a seek of `IS NULL`
+  on a `NOT NULL` column is passed over: SQLite answers it before reading). No index was added for
+  it: the order indexes serve every seek.
 - **Albums and artists panes have orders too, deliberately unindexed.** `AlbumOrder` and
   `ArtistOrder` read those tables, which hold thousands of rows against `tracks`' hundreds of
   thousands, so a temp B-tree beats an index. **An artist files under the name its files sort it
@@ -2051,10 +2066,19 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `MEASUREMENTS_KEPT_FOR`, since `added:`/`played:` windows slide with the clock, at most
   `MEASUREMENTS_KEPT_AT_MOST` answers, so listing every smart playlist or re-reading a page is not a
   whole-catalog count apiece (`a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves`,
-  `a_listing_measured_twice_is_counted_once_until_a_row_of_the_catalog_moves`). A counted play and a
-  scan batch still move the rows stamp. **A playlist's pictures are kept the same way**
-  (`playlist::pictures`: a `KeptPictures` per playlist and `at_most` under the rows stamp, the
-  playlists' revision and the music filters, `a_playlists_pictures_are_read_once_until_the_catalog_or_the_playlists_move`). A query refuses with
+  `a_listing_measured_twice_is_counted_once_until_a_row_of_the_catalog_moves`). **The rows stamp
+  moves for a row a listing could read, the heard counter for listening**: `track_rows_moved_triggers`
+  lays temp triggers on `tracks` at open, over every column `pragma_table_xinfo` names (so a column a
+  migration adds is watched unasked) but `NEVER_LISTED` (`seen`, `asked`, `asks`, `refusals`: a scan
+  seeing a row again, a lookup's pacing) and `LISTENING` (`plays`, `played`, `favourite`), which step
+  `Inner::heard` instead; the other `NAMED_TABLES` move it on any write. An answer that reads
+  listening (`db::reads_listening`: any text, which may say `plays:`, or a listening order cut by a
+  limit or offset) keys on the heard counter as well: a measurement in its key, a playlist's pictures
+  in its `Pictured`, the suggestions always
+  (`a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening`). **A playlist's pictures
+  are kept the same way** (`playlist::pictures`: a `KeptPictures` per playlist and `at_most` under the
+  rows stamp, the playlists' revision and the music filters,
+  `a_playlists_pictures_are_read_once_until_the_catalog_or_the_playlists_move`). A query refuses with
   `Error::NotAList`: `add`, `remove_rows`, `move_rows`, `prune`, `sort_playlist`, `remove_matching`,
   `fold_doubles`, `copy_playlist` into it, keeping in order; rename, play, export, drop work.
   `Library::revise_query` rewrites text, sort, cap, reading in place, renaming in the same step

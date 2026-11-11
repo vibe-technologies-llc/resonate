@@ -17,6 +17,7 @@ mod hinted;
 mod history;
 mod import;
 mod keeps;
+mod keyed;
 mod learning;
 #[cfg(test)]
 mod left_alone;

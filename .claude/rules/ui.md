@@ -1085,8 +1085,10 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   (`two_edits_asked_for_at_once_both_land`); `track_passed` and the two `listened` writes on `_settled`
   chain alike.
 - **A read of the library says how much it wants.** `LibraryModel::read` takes a `Wanted`.
-  `Everything`: browse panes, what stands whatever is typed (statistics, most listened, days,
-  suggestions, roots: `Standing`), shelves (playlists, wants, missing: `Shelves`). `TheSearch`: browse
+  `Everything`: browse panes, what stands whatever is typed (statistics, suggestions, roots:
+  `Standing`; most listened, days and habits, `Heard`, only while the Statistics pane is shown,
+  `Asked::heard`, which `RootView::set_pane` and the window's opening tell `statistics_shown`; a
+  read without it leaves `heard_owed`, and showing the pane then reads `Everything` once), shelves (playlists, wants, missing: `Shelves`). `TheSearch`: browse
   panes and shelves, leaving the standing and the wants (`reads_the_wants`). `ThePage`: the four lists
   `reach` bounds (albums, artists, tracks, scoped tracks: `Paged`) alone, for `reach_further`.
   `ThePlaylists`: shelves alone, wants included. Every gesture behind `LibraryModel::edit` writes only
@@ -1538,7 +1540,10 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     (`a_folder_that_never_goes_quiet_is_handed_out_once_it_has_been_deferred_long_enough`). An
     overflowed inotify queue notes every root. A catalog inside a root cannot trigger the scan writing
     it; a vault inside one does, and the scan steps past it.
-  - `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY` (1 s) at what the watch heard, and reads
+  - `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY` (1 s) at what the watch heard, only every
+    `ROOTS_LOOKED_AT_EVERY_UNSEEN` (60 s) while the window is not seen (gpui's `WindowVisibility`:
+    minimised, suspended or covered, told to `LibraryModel::window_seen` by `RootView`; a look is
+    owed at once when it is seen again, `roots_looked_at_now`), and reads
     `Library::roots` and stats each (`Watching::following`) only every `ROOTS_READ_EVERY` (5 s)
     (`the_roots_are_read_once_in_a_while_and_not_at_every_look`), rebuilding the watch wherever
     they moved, over roots present as directories (`RootsWatch::replacing` drops the old watch first,
@@ -1551,7 +1556,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   - A watch that cannot be made is a warning; one that cannot cover a root
     (`RootsWatch::leaves_a_root_uncovered`) is laid again on the same watcher every
     `UNCOVERED_ROOTS_TRIED_AGAIN_AFTER` (5 minutes, `RootsWatch::cover_again`,
-    `a_root_that_appears_after_the_watch_was_laid_is_covered_on_the_same_watch`); proved past the limit by
+    `a_root_that_appears_after_the_watch_was_laid_is_covered_on_the_same_watch`); a root refused for
+    want of inotify watches (`ENOSPC`, notify's `MaxFilesWatch`, `RootsWatch::ran_out_of_watches`)
+    is tried twice as late each time up to `OUT_OF_WATCHES_TRIED_AGAIN_AT_MOST` (4 hours,
+    `RootsWatch::tried_again_after`, kept in `Watching::uncovered_wait`), since every try walks the
+    tree (`a_root_missing_is_tried_again_at_the_same_pace_and_one_out_of_watches_ever_more_slowly`); proved past the limit by
     `a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears`
     (reruns its binary under `unshare --user` with `max_inotify_watches` at eight).
   - **Closed-window changes are caught up on open; a missing root is watched once it appears.** The
@@ -1565,9 +1574,15 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   scrollbar, `End`, `ctrl-a` and the page keys reach the last row; an unread row draws blank. The
   processors call `reach_further`: once a list has drawn within `LOOK_AHEAD` (200) of what it holds
   *and* holds all it asked, `reach` grows to cover what was drawn (`reach_covering`). **A page read
-  reads only what lies past the rows held** (`grown`, `Wanted::ThePage`, `Asked::held`): `grew` adds the
-  read only where its first row is the row held last (`Grew::Renewed`); otherwise `Grew::Moved` and the
-  lists are read whole once (`page_moved`), so an offset read never duplicates or skips a row.
+  reads only what lies past the rows held** (`grown`, `Wanted::ThePage`, `Asked::held`): a track list
+  is read from its last row held by key (`Reached`, `Library::tracks_from`, `library.md`), albums and
+  artists by offset; `grew` adds the read only where its first row is the row held last
+  (`Grew::Renewed`); otherwise `Grew::Moved` and the lists are read whole once (`page_moved`), so a
+  page never duplicates or skips a row. **Rows held are chunks, appended without a copy**:
+  `held::Rows` is an `Arc` of `Arc<[T]>` chunks with their starts (`get` a binary search, `iter`
+  across them, `identity` the stamp `laid_out` hashes), `appended` adding the page as one more chunk
+  (`rows_appended_share_what_was_held_and_read_as_one_run`); `whole` makes one run only where a
+  press plays or queues it.
   `LOOK_AHEAD < PAGE` is a `const` assertion; `set_query` and `select` reset to one page. A row pressed
   past what is held plays through `play_the_listing_from`'s whole read
   (`a_page_read_past_what_is_held_is_added_to_it_only_where_it_carries_on_from_the_last_row`).
@@ -2726,13 +2741,17 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
 - **A pane hands its rows out by reference count, not cloned per frame.** An opened playlist's rows are
   an `Arc<[PlaylistEntry]>` shared by model, pane, heading, list closures and every visible row; the
   reach is read off it once a frame as a `Reaching` (span + the cuts it holds); `Held` carries an
-  `Arc<[Cut]>`. `LibraryModel` holds albums, artists, tracks as `Arc<[_]>`. A whole list is walked only
+  `Arc<[Cut]>`. `LibraryModel` holds albums, artists, tracks and the scoped tracks as `held::Rows`. A whole list is walked only
   where a press asks (*Duplicate*, the index row's +, *Save as a playlist*, the tracks heading's *Add to
   playlist*, *Play next*, *Add to queue*, *Play*), inside the listener.
 - **The playing row is indexed, not searched for, and resolved once per pane.**
   `RootView::queued_row` indexes the published queue by `PlayerState::queue_position` and weighs the id
   found against `state.current`. One `Playing` carries all the playback bar draws (title, artist,
-  album, codec, a `Cover` of album id and picture-source file).
+  album, codec, a `Cover` of album id and picture-source file). It is kept in `Resolved` under a
+  `Resolving` key holding the catalog's `revision`; where only the revision moved, the row is weighed
+  by `LibraryModel::scanned_playing_stamp` (a hash of what the bar shows, read borrowed) and the held
+  `Playing` stands where the stamp is the one it was resolved under, so a page read or a reload copies
+  no title (`the_playing_row_is_stamped_alike_across_a_revision_that_left_it_and_apart_once_favoured`).
 - **A playlist edit re-reads the playlists and nothing else; so do a scan and a counted play.**
   `LibraryModel::reload_playlists` takes the `ThePlaylists` read; `reload` re-reads the opened playlist
   beside the listing (a scan runs it every `POLLS_PER_RELOAD` (20) polls and at the end; a counted play

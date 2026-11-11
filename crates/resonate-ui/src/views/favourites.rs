@@ -6,6 +6,7 @@ use resonate_library::{Album, Artist, Track};
 
 use crate::{
     Favourited, LibraryModel,
+    held::Rows,
     icons::Icon,
     theme,
     views::{
@@ -159,7 +160,7 @@ impl RootView {
         playing: Option<TrackId>,
         cx: &mut Context<Self>,
     ) -> Div {
-        let rows = Arc::clone(tracks);
+        let rows = Rows::from(Arc::clone(tracks));
         let held = rows.len();
 
         div()

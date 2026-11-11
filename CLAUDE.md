@@ -242,7 +242,8 @@ Invariants the layering protects (the rules files have the rest):
 - `RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages [<words>]`: every DSP stage
   against `benches/ceilings.tsv`; a stage added to the bench is added to the file.
   `cargo bench -p resonate-library --bench spelling` times search on a synthetic 500 000-track
-  catalog. `cargo bench -p resonate-analysis --bench bound` times *Fit the preamp*'s bound and
+  catalog; `--bench paging` pages a SQLite catalog of as many to the end by key
+  (`RESONATE_BENCH_OFFSET=1` times `LIMIT … OFFSET` beside it). `cargo bench -p resonate-analysis --bench bound` times *Fit the preamp*'s bound and
   fold (`RESONATE_BENCH_BOUNDS=<file>` keeps the bounds to compare bit for bit;
   `RESONATE_BENCH_SONGS=<folder>` weighs the bound over each song's decode instead, `eq.md`).
   `cargo bench -p resonate-analysis --bench study` times a whole pass (`analysis.md`).

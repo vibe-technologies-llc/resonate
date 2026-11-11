@@ -832,12 +832,12 @@ pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<Alb
         return Ok(kept);
     }
 
-    let albums = pictures_read(inner, id, at_most)?;
-    inner.keep_pictures(at, id, at_most, &albums);
+    let (albums, reads_listening) = pictures_read(inner, id, at_most)?;
+    inner.keep_pictures(at, id, at_most, &albums, reads_listening);
     Ok(albums)
 }
 
-fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
+fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<(Vec<AlbumId>, bool)> {
     let Some(query) = inner.read(|connection| asked_in(connection, id))? else {
         let sql = format!(
             "SELECT tracks.album_id, (SELECT {} FROM albums a WHERE a.id = tracks.album_id)
@@ -867,12 +867,13 @@ fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<Al
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(|source| Error::store(StoreOp::Query, source))
         })?;
-        return db::distinct_pictures(inner, weighed, at_most);
+        return Ok((db::distinct_pictures(inner, weighed, at_most)?, false));
     };
 
     let asked = TrackQuery::from(&query);
+    let reads_listening = db::reads_listening(&asked);
     if asked.limit.is_none() {
-        return db::pictured_by(inner, &asked, at_most);
+        return Ok((db::pictured_by(inner, &asked, at_most)?, reads_listening));
     }
     let mut albums = Vec::new();
     let mut seen = AHashSet::new();
@@ -885,7 +886,10 @@ fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<Al
         }
     }
     let weighed = db::pictures_of_albums(inner, &albums)?;
-    db::distinct_pictures(inner, weighed, at_most)
+    Ok((
+        db::distinct_pictures(inner, weighed, at_most)?,
+        reads_listening,
+    ))
 }
 
 pub fn cuts(inner: &Inner, id: PlaylistId) -> Result<Vec<Cut>> {
