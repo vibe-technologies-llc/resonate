@@ -183,7 +183,7 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
         }
         if (party.hosting && party.requests.isNotEmpty()) {
             SectionHeader(stringResource(R.string.party_asked_for))
-            party.requests.forEachIndexed { at, request ->
+            party.requests.forEach { request ->
                 SettingRow(
                     title = request.title,
                     icon = Icons.Rounded.MusicNote,
@@ -191,10 +191,10 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                     modifier = Modifier.testTag("party-request"),
                 )
                 ButtonRow {
-                    TextButton(onClick = { together.passOver(at) }) {
+                    TextButton(onClick = { together.passOver(request.id) }) {
                         Text(stringResource(R.string.party_pass))
                     }
-                    OutlinedButton(onClick = { together.playNext(at) }) {
+                    OutlinedButton(onClick = { together.playNext(request.id) }) {
                         Text(stringResource(R.string.party_play_next))
                     }
                 }

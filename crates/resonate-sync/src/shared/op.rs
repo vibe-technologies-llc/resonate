@@ -6,7 +6,7 @@ use crate::{
     Result, Stamp,
     error::{Error, Malformed},
     shared::place::Place,
-    wire::{Reader, Writer, reserved},
+    wire::{LONGEST_TEXT, Reader, Writer, reserved},
 };
 
 pub const ENTRY_BYTES: usize = 16;
@@ -15,6 +15,12 @@ pub const PUBLIC_BYTES: usize = 32;
 pub const ROWS_AT_MOST: usize = 10_000;
 pub const ENTRIES_KEPT_AT_MOST: usize = 4 * ROWS_AT_MOST;
 pub const PEOPLE_KEPT_AT_MOST: usize = 1024;
+
+pub const BUNDLE_OPS_AT_MOST: usize = 256;
+pub const KEPT_OPS_AT_MOST: usize = ENTRIES_KEPT_AT_MOST + PEOPLE_KEPT_AT_MOST + 1;
+const LONGEST_PLACE: usize = 4096;
+const HONEST_OP_AT_MOST: usize = 5 * LONGEST_TEXT + LONGEST_PLACE + 256;
+pub const LARGEST_BUNDLE_OPENED: usize = BUNDLE_OPS_AT_MOST * HONEST_OP_AT_MOST;
 
 const LARGEST_OP: usize = 256 * 1024;
 const OP_AT_LEAST: usize = 1;
@@ -77,8 +83,19 @@ pub fn encoded_ops(ops: &[SharedOp]) -> Vec<u8> {
 }
 
 pub fn decoded_ops(bytes: &[u8]) -> Result<Vec<SharedOp>> {
+    decoded_at_most(bytes, BUNDLE_OPS_AT_MOST)
+}
+
+pub fn decoded_kept_ops(bytes: &[u8]) -> Result<Vec<SharedOp>> {
+    decoded_at_most(bytes, KEPT_OPS_AT_MOST)
+}
+
+fn decoded_at_most(bytes: &[u8], most: usize) -> Result<Vec<SharedOp>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count_of(OP_AT_LEAST)?;
+    if count > most {
+        return Err(Error::Malformed(Malformed::Overlong { length: count }));
+    }
     let mut ops = reserved(count);
     for _ in 0..count {
         if let Some(op) = decoded_op(reader.bytes(LARGEST_OP)?)? {
@@ -153,8 +170,6 @@ fn encoded_op(op: &SharedOp) -> Vec<u8> {
 }
 
 fn decoded_op(bytes: &[u8]) -> Result<Option<SharedOp>> {
-    const LONGEST_PLACE: usize = 4096;
-
     let mut reader = Reader::new(bytes);
     let op = match reader.byte()? {
         ADDED => SharedOp::Added {
@@ -247,7 +262,29 @@ pub struct SharedList {
 }
 
 impl SharedList {
-    pub fn apply(&mut self, op: &SharedOp) {
+    pub fn apply(&mut self, op: &SharedOp) -> bool {
+        match op {
+            SharedOp::Added { entry, .. }
+            | SharedOp::Moved { entry, .. }
+            | SharedOp::Removed { entry, .. } => {
+                let before = self.rows.get(entry).cloned();
+                self.applied(op);
+                self.rows.get(entry) != before.as_ref()
+            }
+            SharedOp::Renamed { .. } => {
+                let before = self.name.clone();
+                self.applied(op);
+                self.name != before
+            }
+            SharedOp::Member { member, .. } | SharedOp::Left { member, .. } => {
+                let before = self.people.get(member).cloned();
+                self.applied(op);
+                self.people.get(member) != before.as_ref()
+            }
+        }
+    }
+
+    fn applied(&mut self, op: &SharedOp) {
         match op {
             SharedOp::Added {
                 entry,
@@ -874,5 +911,52 @@ mod tests {
         let history = a_busy_history();
 
         assert_eq!(decoded_ops(&encoded_ops(&history)).expect("read"), history);
+    }
+
+    #[test]
+    fn a_record_of_more_ops_than_a_bundle_holds_is_refused_but_a_kept_list_is_not() {
+        let ops: Vec<SharedOp> = (0..=BUNDLE_OPS_AT_MOST)
+            .map(|at| SharedOp::Removed {
+                entry: entry(u8::try_from(at % 200).expect("a byte")),
+                stamp: stamp(1, 1),
+            })
+            .collect();
+        let encoded = encoded_ops(&ops);
+        let honest = encoded_ops(&ops[..BUNDLE_OPS_AT_MOST]);
+
+        assert!(matches!(
+            decoded_ops(&encoded),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+        assert_eq!(
+            decoded_ops(&honest).expect("a bundle").len(),
+            BUNDLE_OPS_AT_MOST
+        );
+        assert_eq!(decoded_kept_ops(&encoded).expect("a list").len(), ops.len());
+    }
+
+    #[test]
+    fn applying_an_op_says_whether_the_list_changed() {
+        let mut list = SharedList::default();
+        let first = added(1, "One", &[10], 5);
+        let rename = SharedOp::Renamed {
+            name: "Mix".to_owned(),
+            stamp: stamp(6, 1),
+        };
+        let older_rename = SharedOp::Renamed {
+            name: "Old".to_owned(),
+            stamp: stamp(2, 1),
+        };
+
+        assert!(list.apply(&first));
+        assert!(!list.apply(&first));
+        assert!(list.apply(&rename));
+        assert!(!list.apply(&rename));
+        assert!(!list.apply(&older_rename));
+        assert!(list.apply(&SharedOp::Removed {
+            entry: entry(1),
+            stamp: stamp(7, 1),
+        }));
+        assert!(!list.apply(&first));
     }
 }

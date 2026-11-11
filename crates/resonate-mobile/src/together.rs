@@ -8,7 +8,7 @@ use resonate_sync::{
     DeviceId, HOSTED_SERVER, LocalPlaylistId,
     party::{
         Going, Mine, Party, PartyFinder, PartyReach, PartySeat, PartySettings, PartySong,
-        SeatHeard, SittingOut, Standing,
+        PartyWantingASong, RequestId, SeatHeard, SittingOut, Standing,
     },
     shared::{Invited, MemberId, SharedShown, SharedStanding, invitation_in},
 };
@@ -85,6 +85,7 @@ pub enum PartyFollowing {
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct PartyRequest {
+    pub id: Vec<u8>,
     pub title: String,
     pub artist: String,
 }
@@ -356,6 +357,13 @@ fn shared_of(list: SharedShown) -> SharedPlaylist {
     }
 }
 
+fn request_named(asked_for: &[PartyWantingASong], request: RequestId) -> Option<PartyWantingASong> {
+    asked_for
+        .iter()
+        .find(|asked| asked.id() == request)
+        .cloned()
+}
+
 fn member_from(bytes: &[u8]) -> Option<[u8; 16]> {
     bytes.try_into().ok()
 }
@@ -509,6 +517,7 @@ impl MobilePlayer {
                 Standing::InStep => PartyFollowing::InStep,
             },
             song: shown.now.and_then(|now| now.song).map(|song| PartyRequest {
+                id: song.row.to_be_bytes().to_vec(),
                 title: song.recording.title,
                 artist: song.recording.artist,
             }),
@@ -516,6 +525,7 @@ impl MobilePlayer {
                 .asked_for
                 .into_iter()
                 .map(|asked| PartyRequest {
+                    id: asked.id().to_bytes().to_vec(),
                     title: asked.song.recording.title,
                     artist: asked.song.recording.artist,
                 })
@@ -535,11 +545,13 @@ impl MobilePlayer {
         }
     }
 
-    pub fn party_play_next(&self, request: u32) -> bool {
-        let at = request as usize;
+    pub fn party_play_next(&self, request: Vec<u8>) -> bool {
+        let Some(request) = RequestId::from_bytes(&request) else {
+            return false;
+        };
         let Some((party, player, finder, asked)) =
             self.together.party.lock().as_ref().and_then(|room| {
-                let asked = room.going.shown().asked_for.get(at).cloned()?;
+                let asked = request_named(&room.going.shown().asked_for, request)?;
 
                 Some((
                     Arc::clone(room.going.party()),
@@ -573,9 +585,12 @@ impl MobilePlayer {
         placed.is_ok()
     }
 
-    pub fn party_pass_over(&self, request: u32) {
+    pub fn party_pass_over(&self, request: Vec<u8>) {
+        let Some(request) = RequestId::from_bytes(&request) else {
+            return;
+        };
         if let Some(room) = self.together.party.lock().as_ref()
-            && let Some(asked) = room.going.shown().asked_for.get(request as usize).cloned()
+            && let Some(asked) = request_named(&room.going.shown().asked_for, request)
         {
             room.going.party().take_a_request(asked);
         }
@@ -743,5 +758,47 @@ mod tests {
     fn a_member_is_read_only_from_the_length_a_member_is() {
         assert_eq!(member_from(&[1; 16]), Some([1; 16]));
         assert_eq!(member_from(&[1; 15]), None);
+    }
+
+    fn asked_by(guest: u8, row: u64, title: &str) -> PartyWantingASong {
+        PartyWantingASong {
+            from: DeviceId([guest; 16]),
+            song: PartySong {
+                row,
+                recording: Recording {
+                    mbid: None,
+                    title: title.to_owned(),
+                    artist: "Artist".to_owned(),
+                    album: "Album".to_owned(),
+                    length: None,
+                },
+                isrc: None,
+            },
+        }
+    }
+
+    #[test]
+    fn a_request_is_found_by_its_name_whatever_place_the_list_has_moved_it_to() {
+        let first = asked_by(1, 1, "Echoes");
+        let second = asked_by(2, 1, "Meddle");
+        let mut list = vec![first.clone(), second.clone()];
+        let named_first = first.id();
+        let named_second = second.id();
+
+        assert_eq!(request_named(&list, named_second), Some(second.clone()));
+
+        list.remove(0);
+
+        assert_eq!(request_named(&list, named_second), Some(second));
+        assert_eq!(request_named(&list, named_first), None);
+    }
+
+    #[test]
+    fn a_request_named_by_bytes_that_are_not_a_name_is_neither_played_nor_passed_over() {
+        let phone = crate::playlists::tests::player();
+
+        assert!(!phone.party_play_next(vec![1, 2, 3]));
+        phone.party_pass_over(vec![1, 2, 3]);
+        assert!(phone.party_shown().is_none());
     }
 }

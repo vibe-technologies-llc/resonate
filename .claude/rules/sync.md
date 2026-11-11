@@ -42,9 +42,13 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   space id, the token's digest, random `DeviceId`s, sealed blobs and addresses: no name, no code,
   no title. A new code is a new space; the old one ages out on the server.
 - **A record is sealed after deflating**: `seal::sealed` deflates (flate2, pure Rust), seals under a
-  random 96-bit nonce with the space id as associated data, and prefixes the nonce. `opened` caps
-  the inflated size at `LARGEST_OPENED` (64 MiB). A blob that does not open is logged and passed
-  over, its seq still counted.
+  random 96-bit nonce with the space id as associated data, and prefixes the nonce. `opened` takes
+  a ceiling from its caller and refuses a blob that inflates past it (`Error::TooLarge`): `LARGEST_OPENED`
+  (64 MiB) for the ledger's bundles, `LARGEST_BUNDLE_OPENED` for a shared playlist's record (at most
+  `BUNDLE_OPS_AT_MOST` ops, each the longest an honest op is), `LARGEST_SEATS_OPENED` for a closed
+  list's seats, `LARGEST_SAID_OPENED` for a party's words, `LARGEST_CANDIDATES_OPENED` for a punch's
+  candidates and `LARGEST_DATAGRAM` for a beacon, so a peer or an editor cannot make a device inflate
+  more than an honest sender could. A blob that does not open is logged and passed over, its seq still counted.
 
 ## The wire
 
@@ -799,7 +803,12 @@ through the relay as QUIC), so the server never carries a command or a mirror an
 - **The server introduces, the devices connect.** `Punch` carries the asker's LAN candidates sealed;
   the server hands the asked device the asker's observed address and those candidates; the asked
   device dials them and punches back with its own; both dial every candidate at once and the first
-  connection wins. A loopback candidate is offered only where the server itself is on loopback. A
+  connection wins. **A `Punched` frame is acted on only where its sealed candidates open under the
+  space's key** (`punched_candidates`): the address the server observed joins the candidates only then.
+  A device the ledger lists (`Ledger::knows_device`) is answered through `punched_back`; one not yet
+  listed, as a new one is before its note arrives, is answered through a table of its own capped at
+  `STRANGERS_ANSWERED_AT_MOST` (16); both tables are pruned past `PUNCH_ANSWERED_AT_MOST_EVERY`, so a
+  server can neither make a device dial an address nor grow them (`may_answer`). A loopback candidate is offered only where the server itself is on loopback. A
   punch is answered only where no live connection to that device stands and none was answered
   within `PUNCH_ANSWERED_AT_MOST_EVERY` (10 s), so two devices never punch each other in a loop. A
   punched connection is watched for closing as a met one is, so a dead one leaves `peers`.
@@ -819,7 +828,10 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   sends from a dual stack socket (`a_dual_stack_endpoint_is_dialled_over_ipv6_and_over_ipv4_alike`).
 - **A device a direct dial cannot reach is reached through the server's relay, as QUIC.** The peer
   protocol is untouched: `Reflector` (the endpoint's socket wrapper) owns a `Relay` that gives each
-  device a synthetic IPv4 address in `240.82.0.0/16` (reserved, never routed) and, in `try_send`,
+  device a synthetic IPv4 address in `240.82.0.0/16` (reserved, never routed; only a device the
+  ledger lists or the server reports online is admitted (`Relay::admit`, set by `publish_devices`),
+  at most `ADDRESSES_AT_MOST` (256) are held, the least recently used evicted, and a held address
+  is never given to a second device) and, in `try_send`,
   turns a datagram to such an address into `ToServer::Relay` instead of a UDP send; a
   `FromServer::Relayed` is queued by `read_frames` and handed to quinn by `poll_recv` as received
   from that address. So the handshake, mutual TLS against the space's key, fetch, resume and the

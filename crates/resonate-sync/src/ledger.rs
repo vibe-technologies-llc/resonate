@@ -3417,6 +3417,16 @@ impl Ledger {
         self.devices_where("gone = 0")
     }
 
+    pub fn knows_device(&self, device: DeviceId) -> Result<bool> {
+        self.connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM devices WHERE device = ?1 AND gone = 0)",
+                params![device.0.as_slice()],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
     pub fn handoffs(&self) -> Result<Vec<Handoff>> {
         self.handoffs_where("device NOT IN (SELECT device FROM devices WHERE gone = 1)")
     }

@@ -3,7 +3,7 @@ use resonate_core::Recording;
 use crate::{
     DeviceId, Result,
     error::{Error, Malformed},
-    wire::{Reader, Writer},
+    wire::{LONGEST_TEXT, Reader, Writer},
 };
 
 const SAID_HELLO: u8 = 0;
@@ -17,6 +17,17 @@ const SAID_ASK: u8 = 3;
 pub const SONGS_AHEAD_TOLD_AT_MOST: usize = 8;
 
 const PEOPLE_TOLD_AT_MOST: usize = 64;
+
+pub const LONGEST_NAME: usize = 64;
+
+pub const LARGEST_SAID_OPENED: usize = 512 * 1024;
+
+const _: () = assert!(PEOPLE_TOLD_AT_MOST * (LONGEST_TEXT + 32) <= LARGEST_SAID_OPENED);
+
+fn cut_to_a_name(mut text: String) -> String {
+    text.truncate(text.floor_char_boundary(LONGEST_NAME));
+    text
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartySong {
@@ -125,14 +136,14 @@ impl PartySaid {
         let mut reader = Reader::new(bytes);
         let said = match reader.byte()? {
             SAID_HELLO => Self::Hello {
-                name: reader.text()?,
+                name: cut_to_a_name(reader.text()?),
             },
             SAID_PEOPLE => {
                 let count = reader.length(PEOPLE_TOLD_AT_MOST)?;
                 let mut people = crate::wire::reserved(count);
                 for _ in 0..count {
                     let member = reader.device()?;
-                    people.push((member, reader.text()?));
+                    people.push((member, cut_to_a_name(reader.text()?)));
                 }
                 Self::People(people)
             }
@@ -231,5 +242,23 @@ mod tests {
         now.playing = false;
 
         assert_eq!(now.position_at(9_000), 100);
+    }
+
+    #[test]
+    fn a_name_is_cut_short_where_it_is_read_on_a_letter() {
+        let long = "é".repeat(LONGEST_NAME);
+        let hello = PartySaid::Hello { name: long.clone() }.encoded();
+        let people = PartySaid::People(vec![(DeviceId([1; 16]), long)]).encoded();
+
+        let PartySaid::Hello { name } = PartySaid::decoded(&hello).unwrap() else {
+            panic!("a hello");
+        };
+        let PartySaid::People(people) = PartySaid::decoded(&people).unwrap() else {
+            panic!("people");
+        };
+
+        assert_eq!(name.len(), LONGEST_NAME);
+        assert_eq!(people[0].1.len(), LONGEST_NAME);
+        assert!(name.chars().all(|letter| letter == 'é'));
     }
 }

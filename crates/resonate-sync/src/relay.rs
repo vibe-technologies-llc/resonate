@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     io::IoSliceMut,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     task::{Context, Waker},
@@ -17,11 +17,16 @@ use crate::{
 pub const RELAYED_PORT: u16 = 443;
 const RELAYED_NETWORK: [u8; 2] = [240, 82];
 const ARRIVED_AT_MOST: usize = 256;
+const ADDRESSES_AT_MOST: usize = 256;
 
 #[derive(Default)]
 struct State {
+    admitted: BTreeSet<DeviceId>,
     addresses: BTreeMap<DeviceId, SocketAddr>,
     devices: BTreeMap<SocketAddr, DeviceId>,
+    used: BTreeMap<DeviceId, u64>,
+    uses: u64,
+    next_number: u16,
     out: Option<Sender<Vec<u8>>>,
     arrived: VecDeque<(DeviceId, Vec<u8>)>,
     waker: Option<Waker>,
@@ -50,25 +55,78 @@ fn synthetic(number: u16) -> SocketAddr {
 }
 
 impl State {
-    fn address_of(&mut self, device: DeviceId) -> SocketAddr {
-        if let Some(address) = self.addresses.get(&device) {
-            return *address;
+    fn address_of(&mut self, device: DeviceId) -> Option<SocketAddr> {
+        if !self.admitted.contains(&device) {
+            return None;
         }
-        let number = u16::try_from(self.addresses.len() + 1).unwrap_or(u16::MAX);
-        let address = synthetic(number);
+        self.uses += 1;
+        self.used.insert(device, self.uses);
+        if let Some(address) = self.addresses.get(&device) {
+            return Some(*address);
+        }
+        if self.addresses.len() >= ADDRESSES_AT_MOST {
+            self.evict_least_recently_used();
+        }
+        let address = synthetic(self.free_number());
         self.addresses.insert(device, address);
         self.devices.insert(address, device);
-        address
+        Some(address)
+    }
+
+    fn free_number(&mut self) -> u16 {
+        loop {
+            self.next_number = self.next_number.checked_add(1).unwrap_or(1);
+            if !self.devices.contains_key(&synthetic(self.next_number)) {
+                return self.next_number;
+            }
+        }
+    }
+
+    fn evict_least_recently_used(&mut self) {
+        let oldest = self
+            .used
+            .iter()
+            .min_by_key(|(_, used)| **used)
+            .map(|(device, _)| *device);
+        if let Some(device) = oldest {
+            self.forgotten(device);
+        }
+    }
+
+    fn forgotten(&mut self, device: DeviceId) {
+        self.used.remove(&device);
+        if let Some(address) = self.addresses.remove(&device) {
+            self.devices.remove(&address);
+        }
     }
 }
 
 impl Relay {
-    pub fn address_of(&self, device: DeviceId) -> SocketAddr {
+    pub fn admit(&self, devices: impl IntoIterator<Item = DeviceId>) {
+        let mut state = self.state.lock();
+        state.admitted = devices.into_iter().collect();
+        let dropped: Vec<DeviceId> = state
+            .addresses
+            .keys()
+            .filter(|device| !state.admitted.contains(device))
+            .copied()
+            .collect();
+        for device in dropped {
+            state.forgotten(device);
+        }
+    }
+
+    pub fn address_of(&self, device: DeviceId) -> Option<SocketAddr> {
         self.state.lock().address_of(device)
     }
 
     pub fn device_at(&self, address: SocketAddr) -> Option<DeviceId> {
-        self.state.lock().devices.get(&canonical(address)).copied()
+        let mut state = self.state.lock();
+        let device = state.devices.get(&canonical(address)).copied()?;
+        state.uses += 1;
+        let uses = state.uses;
+        state.used.insert(device, uses);
+        Some(device)
     }
 
     pub fn attach(&self, out: Sender<Vec<u8>>) {
@@ -112,7 +170,9 @@ impl Relay {
             if state.arrived.len() >= ARRIVED_AT_MOST {
                 return;
             }
-            state.address_of(from);
+            if state.address_of(from).is_none() {
+                return;
+            }
             state.arrived.push_back((from, datagram));
             state.waker.take()
         };
@@ -182,12 +242,13 @@ mod tests {
     #[test]
     fn each_device_has_one_address_of_its_own_that_reads_back_as_the_device() {
         let relay = Relay::default();
+        relay.admit([ONE, TWO]);
 
-        let one = relay.address_of(ONE);
-        let two = relay.address_of(TWO);
+        let one = relay.address_of(ONE).expect("admitted");
+        let two = relay.address_of(TWO).expect("admitted");
 
         assert_ne!(one, two);
-        assert_eq!(relay.address_of(ONE), one);
+        assert_eq!(relay.address_of(ONE), Some(one));
         assert_eq!(relay.device_at(one), Some(ONE));
         assert_eq!(relay.device_at(two), Some(TWO));
         assert!(one.ip().is_ipv4());
@@ -196,7 +257,8 @@ mod tests {
     #[test]
     fn an_address_is_read_back_whether_it_is_plain_or_wrapped_in_six() {
         let relay = Relay::default();
-        let one = relay.address_of(ONE);
+        relay.admit([ONE]);
+        let one = relay.address_of(ONE).expect("admitted");
         let IpAddr::V4(plain) = one.ip() else {
             panic!("a plain address");
         };
@@ -212,9 +274,10 @@ mod tests {
     #[test]
     fn a_datagram_is_carried_as_a_frame_to_the_server_while_a_link_is_attached_and_dropped_after() {
         let relay = Relay::default();
+        relay.admit([TWO]);
         let (out, mut carried) = tokio::sync::mpsc::channel(4);
         let transmit = Transmit {
-            destination: relay.address_of(TWO),
+            destination: relay.address_of(TWO).expect("admitted"),
             ecn: None,
             contents: &[1, 2, 3, 4, 5, 6],
             segment_size: Some(4),
@@ -249,10 +312,11 @@ mod tests {
     #[test]
     fn a_full_queue_drops_what_does_not_fit_instead_of_waiting() {
         let relay = Relay::default();
+        relay.admit([ONE]);
         let (out, mut carried) = tokio::sync::mpsc::channel(1);
         relay.attach(out);
         let transmit = Transmit {
-            destination: relay.address_of(ONE),
+            destination: relay.address_of(ONE).expect("admitted"),
             ecn: None,
             contents: &[9; 10],
             segment_size: Some(5),
@@ -300,6 +364,8 @@ mod tests {
         let identity = PeerIdentity::of(&derived).expect("an identity");
         let (desk, desk_reflector) = endpoint_over(&identity);
         let (phone, phone_reflector) = endpoint_over(&identity);
+        desk_reflector.relay().admit([TWO]);
+        phone_reflector.relay().admit([ONE]);
         desk_reflector
             .relay()
             .attach(pumped(ONE, Arc::clone(&phone_reflector)));
@@ -322,7 +388,7 @@ mod tests {
         let connection = dialled(
             &desk,
             &identity.dialling().expect("dialling"),
-            &[desk_reflector.relay().address_of(TWO)],
+            &[desk_reflector.relay().address_of(TWO).expect("admitted")],
             TWO,
         )
         .await
@@ -383,5 +449,70 @@ mod tests {
 
         assert!(over_six.is_ok());
         assert!(over_four.is_ok());
+    }
+
+    fn device(number: u32) -> DeviceId {
+        let mut id = [0; 16];
+        id[..4].copy_from_slice(&number.to_be_bytes());
+        DeviceId(id)
+    }
+
+    #[test]
+    fn a_device_nobody_admitted_has_no_address_and_its_datagrams_are_dropped() {
+        let relay = Relay::default();
+        relay.admit([ONE]);
+
+        relay.arrived(TWO, vec![1, 2, 3]);
+
+        assert_eq!(relay.address_of(TWO), None);
+        assert!(relay.state.lock().arrived.is_empty());
+        assert!(relay.state.lock().addresses.len() <= 1);
+    }
+
+    #[test]
+    fn a_device_no_longer_admitted_loses_its_address() {
+        let relay = Relay::default();
+        relay.admit([ONE, TWO]);
+        let two = relay.address_of(TWO).expect("admitted");
+
+        relay.admit([ONE]);
+
+        assert_eq!(relay.device_at(two), None);
+        assert_eq!(relay.address_of(TWO), None);
+    }
+
+    #[test]
+    fn past_the_cap_the_least_recently_used_goes_and_no_two_devices_share_an_address() {
+        let relay = Relay::default();
+        let crowd: Vec<DeviceId> = (0..ADDRESSES_AT_MOST + 300)
+            .map(|number| device(u32::try_from(number).expect("a number") + 10))
+            .collect();
+        relay.admit(crowd.iter().copied());
+
+        for one in &crowd[..ADDRESSES_AT_MOST] {
+            relay.address_of(*one);
+        }
+        relay.address_of(crowd[0]);
+        relay.address_of(crowd[ADDRESSES_AT_MOST]);
+
+        {
+            let state = relay.state.lock();
+            assert!(state.addresses.contains_key(&crowd[0]));
+            assert!(!state.addresses.contains_key(&crowd[1]));
+        }
+
+        for one in &crowd[ADDRESSES_AT_MOST + 1..] {
+            relay.address_of(*one);
+        }
+
+        let state = relay.state.lock();
+        let mut numbers: Vec<SocketAddr> = state.addresses.values().copied().collect();
+        numbers.sort();
+        numbers.dedup();
+
+        assert_eq!(state.addresses.len(), ADDRESSES_AT_MOST);
+        assert_eq!(state.devices.len(), ADDRESSES_AT_MOST);
+        assert_eq!(numbers.len(), ADDRESSES_AT_MOST);
+        assert!(state.addresses.contains_key(crowd.last().expect("a last")));
     }
 }

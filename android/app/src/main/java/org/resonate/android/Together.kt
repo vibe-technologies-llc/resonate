@@ -153,14 +153,14 @@ class Together(
         mutableParty.value = native.partyShown()
     }
 
-    fun playNext(request: Int) = work { native ->
-        if (!native.partyPlayNext(request.toUInt()))
+    fun playNext(request: ByteArray) = work { native ->
+        if (!native.partyPlayNext(request))
             library.notice(R.string.together_not_found_to_play_next)
         mutableParty.value = native.partyShown()
     }
 
-    fun passOver(request: Int) = work { native ->
-        native.partyPassOver(request.toUInt())
+    fun passOver(request: ByteArray) = work { native ->
+        native.partyPassOver(request)
         mutableParty.value = native.partyShown()
     }
 

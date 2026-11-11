@@ -80,6 +80,8 @@ compaction needs no second format; an op of a later build is passed over. **A li
 server cannot fill a catalog playlist with millions and every device cuts the same rows whatever
 order the ops arrived in; the diff, the catalog write and a look all read `rows()`, so none sees a
 row the others do not (`a_list_shows_only_so_many_rows_the_same_ones_whatever_order_they_arrived_in`).
+**A record read off the wire holds at most `BUNDLE_OPS_AT_MOST` (256) ops and inflates to at most `LARGEST_BUNDLE_OPENED`** (`decoded_ops`; the kept list and the owed ops read under `decoded_kept_ops`, which allows a whole list), and `SharedList::apply` answers whether the list changed, so the service never clones the list to compare.
+
 **A list keeps at most `ENTRIES_KEPT_AT_MOST` (4 × `ROWS_AT_MOST`) entries in memory**, a removed one's tombstone counted: an op naming an entry past the smallest that many entry ids seen so far is dropped, and one that pushes the largest out evicts it for good. Since the set of the smallest ids only ever shrinks its largest, the entries kept are the smallest ids among every entry any op named, whatever order the ops came in, so every device folds to the same rows and a snapshot carries the same ones; a hostile writer within the server's space limit costs a follower no more than that map (`a_list_keeps_only_so_many_entries_the_same_ones_whatever_order_the_ops_arrived_in`). Removals do not free a slot, since freeing one would need the evicted rows back. **The people map is bounded the same way** (`PEOPLE_KEPT_AT_MOST`, 1024, `Member` and `Left` ops alike): the smallest member ids seen are kept whatever order the ops came in (`a_list_keeps_only_so_many_people_the_same_ones_whatever_order_the_ops_arrived_in`).
 
 ## The seam

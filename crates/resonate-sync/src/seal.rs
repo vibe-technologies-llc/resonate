@@ -34,7 +34,12 @@ pub fn sealed(sealer: &LessSafeKey, space: SpaceId, plain: &[u8]) -> Result<Vec<
     Ok(blob)
 }
 
-pub fn opened(sealer: &LessSafeKey, space: SpaceId, blob: &[u8]) -> Result<Vec<u8>> {
+pub fn opened(
+    sealer: &LessSafeKey,
+    space: SpaceId,
+    blob: &[u8],
+    ceiling: usize,
+) -> Result<Vec<u8>> {
     let Some((nonce, sealed)) = blob.split_at_checked(NONCE_LEN) else {
         return Err(Error::Unsealed);
     };
@@ -44,8 +49,8 @@ pub fn opened(sealer: &LessSafeKey, space: SpaceId, blob: &[u8]) -> Result<Vec<u
         .open_in_place(nonce, Aad::from(space.0), &mut in_out)
         .map_err(|_| Error::Unsealed)?;
 
-    let mut plain = Vec::with_capacity(packed.len() * 3);
-    let bound = u64::try_from(LARGEST_OPENED + 1).unwrap_or(u64::MAX);
+    let mut plain = Vec::with_capacity((packed.len() * 3).min(ceiling));
+    let bound = u64::try_from(ceiling.saturating_add(1)).unwrap_or(u64::MAX);
     DeflateDecoder::new(&packed[..])
         .take(bound)
         .read_to_end(&mut plain)
@@ -53,7 +58,7 @@ pub fn opened(sealer: &LessSafeKey, space: SpaceId, blob: &[u8]) -> Result<Vec<u
             op: DeflateOp::Unpack,
             source,
         })?;
-    if plain.len() > LARGEST_OPENED {
+    if plain.len() > ceiling {
         return Err(Error::TooLarge {
             length: plain.len(),
         });
@@ -81,15 +86,15 @@ mod tests {
 
         assert!(blob.len() < plain.len());
         assert_eq!(
-            opened(&there.sealer, there.space, &blob).expect("opened"),
+            opened(&there.sealer, there.space, &blob, LARGEST_OPENED).expect("opened"),
             plain
         );
         assert!(matches!(
-            opened(&stranger.sealer, here.space, &blob),
+            opened(&stranger.sealer, here.space, &blob, LARGEST_OPENED),
             Err(Error::Unsealed)
         ));
         assert!(matches!(
-            opened(&here.sealer, stranger.space, &blob),
+            opened(&here.sealer, stranger.space, &blob, LARGEST_OPENED),
             Err(Error::Unsealed)
         ));
     }
@@ -105,12 +110,34 @@ mod tests {
         blob[last] ^= 1;
 
         assert!(matches!(
-            opened(&derived.sealer, derived.space, &blob),
+            opened(&derived.sealer, derived.space, &blob, LARGEST_OPENED),
             Err(Error::Unsealed)
         ));
         assert!(matches!(
-            opened(&derived.sealer, derived.space, &blob[..4]),
+            opened(&derived.sealer, derived.space, &blob[..4], LARGEST_OPENED),
             Err(Error::Unsealed)
+        ));
+    }
+
+    #[test]
+    fn a_blob_inflating_past_the_ceiling_of_its_caller_is_refused_whatever_the_global_cap() {
+        let derived = SyncKey::minted()
+            .expect("randomness")
+            .derived()
+            .expect("derived");
+        let plain = vec![0_u8; 1024 * 1024];
+        let blob = sealed(&derived.sealer, derived.space, &plain).expect("sealed");
+
+        assert!(blob.len() < 4096);
+        assert_eq!(
+            opened(&derived.sealer, derived.space, &blob, plain.len())
+                .expect("at the ceiling")
+                .len(),
+            plain.len()
+        );
+        assert!(matches!(
+            opened(&derived.sealer, derived.space, &blob, plain.len() - 1),
+            Err(Error::TooLarge { .. })
         ));
     }
 }

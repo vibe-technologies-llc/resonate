@@ -5,8 +5,8 @@ use resonate_audio::Moment;
 use resonate_core::{Frames, QueueStamp, Resumable, Resumption, Span};
 
 use crate::{
-    Command, HeardAt, HeardClock, Placement, PlaybackState, Player, QueueItem, RepeatMode, Result,
-    Unclaimed, resumption_of,
+    Command, Error, HeardAt, HeardClock, Placement, PlaybackState, Player, PlayerState, QueueItem,
+    Queued, RepeatMode, Result, Unclaimed, resumption_of,
 };
 
 pub const TOO_NEAR_THE_END_TO_CHANGE_WHAT_FOLLOWS: Duration = Duration::from_secs(2);
@@ -185,7 +185,27 @@ impl Seat {
     }
 
     pub fn keep_ahead(&self, ahead: &[Resumable]) -> Result<bool> {
+        let Some((queued, state)) = self.settled_view() else {
+            return Ok(false);
+        };
+
+        self.keep_ahead_seen(&queued, &state, ahead)
+    }
+
+    pub fn settled_view(&self) -> Option<(Queued, PlayerState)> {
+        let before = self.player.state();
+        let queued = self.player.queued();
         let state = self.player.state();
+
+        (before.queue_position == state.queue_position).then_some((queued, state))
+    }
+
+    pub fn keep_ahead_seen(
+        &self,
+        queued: &Queued,
+        state: &PlayerState,
+        ahead: &[Resumable],
+    ) -> Result<bool> {
         let Some(playing) = state.queue_position else {
             return Ok(false);
         };
@@ -202,7 +222,6 @@ impl Seat {
             }
         }
 
-        let queued = self.player.queued();
         let standing: Vec<QueueStamp> = queued
             .rows
             .iter()
@@ -216,20 +235,28 @@ impl Seat {
             .count();
         let first_unlike = playing + 1 + alike;
 
+        let mut revision = queued.revision;
+        let mut rows = queued.rows.clone();
         if standing.len() > alike {
-            self.player
-                .request(Command::Remove(Span::between(
-                    first_unlike,
-                    queued.rows.len() - 1,
-                )))?
-                .wait()?;
+            let removal = Command::Remove(Span::between(first_unlike, queued.rows.len() - 1));
+            if !self.edited_if_still(revision, removal)? {
+                return Ok(false);
+            }
+            let Some((after, now)) = self.settled_view() else {
+                return Ok(false);
+            };
+            if now.queue_position != Some(playing) || after.rows.len() != first_unlike {
+                return Ok(false);
+            }
+            revision = after.revision;
+            rows = after.rows;
         }
 
         let rest = ahead.get(alike..).unwrap_or_default();
         if rest.is_empty() {
             return Ok(true);
         }
-        let mut minting = Unclaimed::beside(queued.rows.iter().map(AsRef::as_ref));
+        let mut minting = Unclaimed::beside(rows.iter().map(AsRef::as_ref));
         let items = rest
             .iter()
             .map(|row| QueueItem {
@@ -238,15 +265,25 @@ impl Seat {
                 span: row.span,
             })
             .collect();
-        self.player
-            .request(Command::Insert {
-                items,
-                at: Placement::At(first_unlike),
-                play: false,
-            })?
-            .wait()?;
+        let insertion = Command::Insert {
+            items,
+            at: Placement::At(first_unlike),
+            play: false,
+        };
 
-        Ok(true)
+        self.edited_if_still(revision, insertion)
+    }
+
+    fn edited_if_still(&self, revision: u64, command: Command) -> Result<bool> {
+        let answered = self
+            .player
+            .request_if_the_queue_is_still(revision, command)?
+            .wait();
+        match answered {
+            Ok(()) => Ok(true),
+            Err(Error::QueueChanged { .. }) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     pub fn nudge(&self, position: Duration, at: Moment) -> Result<()> {

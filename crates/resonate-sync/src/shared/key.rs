@@ -219,7 +219,7 @@ impl fmt::Debug for Access {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seal::{opened, sealed};
+    use crate::seal::{LARGEST_OPENED, opened, sealed};
 
     #[test]
     fn a_view_key_comes_from_an_edit_key_and_never_the_reverse_and_both_read_one_space() {
@@ -237,7 +237,7 @@ mod tests {
 
         let told = sealed(&edit_keys.sealer, edit_keys.space, b"a record").expect("sealed");
         assert_eq!(
-            opened(&view_keys.sealer, view_keys.space, &told).expect("opened"),
+            opened(&view_keys.sealer, view_keys.space, &told, LARGEST_OPENED).expect("opened"),
             b"a record"
         );
     }

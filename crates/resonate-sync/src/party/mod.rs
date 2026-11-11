@@ -18,5 +18,6 @@ pub use self::{
     seat::{Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard},
     service::{
         Party, PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim,
+        RequestId,
     },
 };

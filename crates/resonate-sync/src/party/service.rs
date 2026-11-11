@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
@@ -19,7 +20,7 @@ use crate::{
     party::{
         clock::ServerClock,
         key::{PartyKey, PartyKeys},
-        said::{PartyNow, PartySaid, PartySong},
+        said::{LARGEST_SAID_OPENED, PartyNow, PartySaid, PartySong},
     },
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
@@ -39,6 +40,8 @@ const HOST_NAME_FOR_NO_NAME: &str = "";
 const WANTS_KEPT_AT_MOST: usize = 32;
 
 const SAID_WHILE_AWAY_AT_MOST: usize = 16;
+
+const PEOPLE_TOLD_AT_MOST_EVERY: Duration = Duration::from_secs(3);
 
 const CLOSES_BEFORE_WELCOME_FOR_TOO_OLD: u32 = 3;
 
@@ -72,6 +75,53 @@ pub struct PartyPerson {
 pub struct PartyWantingASong {
     pub from: DeviceId,
     pub song: PartySong,
+}
+
+const REQUEST_ID_BYTES: usize = 32;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequestId {
+    from: DeviceId,
+    row: u64,
+    digest: u64,
+}
+
+impl RequestId {
+    pub fn to_bytes(self) -> [u8; REQUEST_ID_BYTES] {
+        let mut bytes = [0; REQUEST_ID_BYTES];
+        bytes[..16].copy_from_slice(&self.from.0);
+        bytes[16..24].copy_from_slice(&self.row.to_be_bytes());
+        bytes[24..].copy_from_slice(&self.digest.to_be_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let bytes: &[u8; REQUEST_ID_BYTES] = bytes.try_into().ok()?;
+        let (from, rest) = bytes.split_first_chunk::<16>()?;
+        let (row, digest) = rest.split_first_chunk::<8>()?;
+        Some(Self {
+            from: DeviceId(*from),
+            row: u64::from_be_bytes(*row),
+            digest: u64::from_be_bytes(digest.try_into().ok()?),
+        })
+    }
+}
+
+impl PartyWantingASong {
+    pub fn id(&self) -> RequestId {
+        let mut hasher = DefaultHasher::new();
+        let recording = &self.song.recording;
+        recording.title.hash(&mut hasher);
+        recording.artist.hash(&mut hasher);
+        recording.album.hash(&mut hasher);
+        self.song.isrc.hash(&mut hasher);
+
+        RequestId {
+            from: self.from,
+            row: self.song.row,
+            digest: hasher.finish(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +229,7 @@ impl Party {
             told: None,
             waiting: VecDeque::new(),
             closes_before_welcome: 0,
+            people_told: PeopleTold::default(),
         };
         let thread = thread::Builder::new()
             .name("resonate-party".to_owned())
@@ -279,6 +330,33 @@ struct Running {
     told: Option<PartyNow>,
     waiting: VecDeque<Asked>,
     closes_before_welcome: u32,
+    people_told: PeopleTold,
+}
+
+#[derive(Default)]
+struct PeopleTold {
+    last: Option<(Instant, Vec<(DeviceId, String)>)>,
+    owed: bool,
+}
+
+impl PeopleTold {
+    fn due_to_tell(&mut self, names: &[(DeviceId, String)], now: Instant) -> bool {
+        match &self.last {
+            Some((_, told)) if told == names => {
+                self.owed = false;
+                return false;
+            }
+            Some((at, _)) if now.saturating_duration_since(*at) < PEOPLE_TOLD_AT_MOST_EVERY => {
+                self.owed = true;
+                return false;
+            }
+            _ => {}
+        }
+
+        self.last = Some((now, names.to_vec()));
+        self.owed = false;
+        true
+    }
 }
 
 enum Ended {
@@ -428,8 +506,8 @@ impl Running {
         self.shown.write().people = people;
     }
 
-    async fn tell_everyone_who_is_here(&self, send: &mut Outgoing) -> Result<()> {
-        if self.host.is_none() {
+    async fn tell_everyone_who_is_here(&mut self, send: &mut Outgoing) -> Result<()> {
+        if self.host.is_none() || !self.people_told.due_to_tell(&self.names, Instant::now()) {
             return Ok(());
         }
 
@@ -488,6 +566,7 @@ impl Running {
             }
         }
 
+        self.people_told = PeopleTold::default();
         self.set_own_name();
         self.shown.write().reach = PartyReach::Here;
         self.publish_people();
@@ -525,6 +604,11 @@ impl Running {
                 _ = pings.tick() => {
                     let nonce = (self.now_nanos)();
                     if send.send(&ToServer::RoomPing { nonce }.encoded()).await.is_err() {
+                        break Ended::Lost;
+                    }
+                    if self.people_told.owed
+                        && self.tell_everyone_who_is_here(&mut send).await.is_err()
+                    {
                         break Ended::Lost;
                     }
                 }
@@ -633,7 +717,7 @@ impl Running {
             }
             FromServer::RoomEnded => return Ok(Some(Ended::Over(PartyReach::Ended))),
             FromServer::RoomHeard { from, sealed } => {
-                let plain = opened(&self.keys.sealer, self.room(), &sealed)?;
+                let plain = opened(&self.keys.sealer, self.room(), &sealed, LARGEST_SAID_OPENED)?;
                 self.said_to_me(from, PartySaid::decoded(&plain)?, send)
                     .await?;
             }
@@ -676,5 +760,90 @@ impl Running {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named(of: u8, name: &str) -> (DeviceId, String) {
+        (DeviceId([of; 16]), name.to_owned())
+    }
+
+    fn asked(from: u8, row: u64, title: &str) -> PartyWantingASong {
+        PartyWantingASong {
+            from: DeviceId([from; 16]),
+            song: PartySong {
+                row,
+                recording: resonate_core::Recording {
+                    mbid: None,
+                    title: title.to_owned(),
+                    artist: "Artist".to_owned(),
+                    album: "Album".to_owned(),
+                    length: None,
+                },
+                isrc: None,
+            },
+        }
+    }
+
+    #[test]
+    fn a_request_is_named_by_who_asked_what_and_the_name_reads_back_from_its_bytes() {
+        let first = asked(1, 4, "Echoes");
+        let same_row_other_song = asked(1, 4, "Meddle");
+        let other_guest = asked(2, 4, "Echoes");
+        let other_row = asked(1, 5, "Echoes");
+
+        assert_eq!(first.id(), asked(1, 4, "Echoes").id());
+        assert_ne!(first.id(), same_row_other_song.id());
+        assert_ne!(first.id(), other_guest.id());
+        assert_ne!(first.id(), other_row.id());
+        assert_eq!(
+            RequestId::from_bytes(&first.id().to_bytes()),
+            Some(first.id())
+        );
+        assert_eq!(RequestId::from_bytes(&[0; 31]), None);
+    }
+
+    #[test]
+    fn people_are_told_again_only_where_a_name_changed_and_at_most_every_few_seconds() {
+        let start = Instant::now();
+        let ada = vec![named(1, "Ada")];
+        let ada_and_bo = vec![named(1, "Ada"), named(2, "Bo")];
+        let ada_and_cy = vec![named(1, "Ada"), named(2, "Cy")];
+        let mut told = PeopleTold::default();
+
+        assert!(told.due_to_tell(&ada, start));
+        assert!(!told.due_to_tell(&ada, start + Duration::from_millis(10)));
+        assert!(!told.owed);
+
+        assert!(!told.due_to_tell(&ada_and_bo, start + Duration::from_secs(1)));
+        assert!(told.owed);
+        assert!(!told.due_to_tell(&ada_and_cy, start + Duration::from_secs(2)));
+        assert!(told.owed);
+
+        assert!(told.due_to_tell(
+            &ada_and_cy,
+            start + PEOPLE_TOLD_AT_MOST_EVERY + Duration::from_millis(1)
+        ));
+        assert!(!told.owed);
+        assert!(!told.due_to_tell(&ada_and_cy, start + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn a_guest_repeating_hello_under_the_same_name_is_never_told_to_the_room_twice() {
+        let start = Instant::now();
+        let names = vec![named(1, "Ada"), named(2, "Bo")];
+        let mut told = PeopleTold::default();
+        let mut sent = 0;
+
+        for second in 0..60 {
+            if told.due_to_tell(&names, start + Duration::from_secs(second)) {
+                sent += 1;
+            }
+        }
+
+        assert_eq!(sent, 1);
     }
 }
