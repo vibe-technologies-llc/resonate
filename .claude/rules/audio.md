@@ -18,8 +18,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `declared_bits` asks each container (ALAC magic cookie, WAV `wValidBitsPerSample`, FLAC
   `STREAMINFO`, Matroska `BitDepth`). Padding lies about the master.
 - **Layout named only where the container places every channel as that layout does.**
-  `positioned_layout` weighs symphonia's speaker mask against named layouts, else
-  `ChannelLayout::Discrete` (a same-count guess lets a downmix drop a 6.0's fourth channel as LFE).
+  `positioned_layout` turns symphonia's speaker mask into core's `Places` and asks
+  `ChannelLayout::placed`: a set a named layout holds is that layout (a side pair standing for the
+  rear pair of a named layout with no sides, so a 5.1 on its sides is 5.1); any other set of three
+  or more of the nine positions is `ChannelLayout::Placed`, its channels laid out in WAVE order as
+  they arrive (3.0, 2.1, 3.1, 4.0 with a centre, 4.1, 6.0, hexagonal, 7.0 and the rest, so a
+  downmix routes each by where it sits, never by index); a mask naming a position outside the nine
+  (a front-centre pair, the tops) is `ChannelLayout::Discrete` (a same-count guess lets a downmix
+  drop a 6.0's fourth channel as LFE).
 - **Tags are read under the writer's naming, not only the container spec's.** `tags::Naming` decides
   from the key set (one `VORBIS_COMMENT_ONLY` name = Vorbis comments; ffmpeg's Matroska `ALBUM`,
   `DATE` otherwise reached the `TagSet` through nothing). What a reader never exposes is taken off
@@ -1167,8 +1173,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   format. `Remix` runs first, so resampler and dither cost the sink's channels. Matrix from
   `ChannelPosition`: a channel the target has is copied at unity; lacking: folded into nearest
   neighbours at -3 dB (`MINUS_3_DB`); LFE dropped, not folded; an unfed target channel is silent.
-  Routing is by position, never index, except where positions are unknown (`ChannelLayout::Discrete`
-  either side): channel *i* to output *i* mod the output count at the one gain
+  Routing is by position, never index (a `Placed` layout as much as a named one), except where
+  positions are unknown (`ChannelLayout::Discrete` either side): channel *i* to output *i* mod the output count at the one gain
   `1 / ceil(inputs / outputs)` (`in_turn`). Each row sums to at most one gain: no downmix clips a
   full-scale source.
   **No decoded stream carries downmix coefficients a reader could take**, so the matrix never
@@ -1434,7 +1440,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); the ring still fills at the padded stride and `Silence::write` still lays DoP
   markers as four-byte words (the marker is byte 2, so a DoP carrier survives).
 - **The settled layout is read from the format's positions, never its count** (`format::placed`):
-  the `position` array is matched against `spa_position` of each named layout, else `Discrete`; a
+  the `position` array, read in WAVE order through `Places::in_order`, is the layout
+  `ChannelLayout::placed` names where its `spa_position` echoes it exactly, else `Discrete`; a
   format naming no positions keeps the layout asked for where the count agrees, else `from_count`.
   So a 5.0 or 6.1 stream reads back as itself and is not rebuilt
   (`every_layout_asked_for_reads_back_as_itself_once_the_graph_settles_on_it`,
@@ -1442,10 +1449,11 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   differs plays silence until the rebuild (`realtime.md`). A hosted daemon proves the settled format
   only for the layout and word asked for (`frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked`);
   it has no session manager to settle on another.
-- **A sink's advertised layouts are read the same way** (`format::advertised_layout` over
-  `named_by`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
+- **A sink's advertised layouts are read the same way** (`format::advertised_layout`, over
+  `ChannelLayout::placed`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
   array whatever their order, and gives each offered count whose array is that long and names a
-  channel the layout holding the same set of places (`holds_the_places_of`), else `Discrete`; no
+  channel the layout holding the same set of places (`Places::of`, a placed layout where no name
+  holds it), else `Discrete` (a position outside the nine, a place named twice); no
   array, an all-zero one or one of another length falls back to `from_count`. The set, not the
   order, decides, since the stream names its own positions and the graph routes by name: ALSA's
   5.1 (`FL FR RL RR FC LFE`) is 5.1. A side pair stands for a rear pair the device lacks, as

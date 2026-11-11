@@ -1894,7 +1894,7 @@ fn stream_state(state: &pipewire::stream::StreamState) -> StreamState {
 mod tests {
     use std::num::NonZeroU16;
 
-    use resonate_core::{ChannelCount, ChannelLayout, SampleFormat};
+    use resonate_core::{ChannelCount, ChannelLayout, ChannelPosition, Places, SampleFormat};
 
     use super::*;
     use crate::{
@@ -2018,12 +2018,41 @@ mod tests {
         info.set_position(position);
         let six_oh = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
 
+        let mut info = AudioInfoRaw::new();
+        info.set_format(spa_format(SampleFormat::F32, WireWord::Padded));
+        info.set_rate(SampleRate::HZ_48000.hz());
+        info.set_channels(6);
+        let mut position = [0; MAX_CHANNELS];
+        for (slot, channel) in position.iter_mut().zip(sys::SPA_AUDIO_CHANNEL_AUX0..) {
+            *slot = channel;
+        }
+        info.set_position(position);
+        let auxiliary = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
+
         assert_eq!(
             read_back(&six_oh, asked(ChannelLayout::Surround51, SampleFormat::F32))
                 .spec
                 .channels,
-            ChannelLayout::Discrete(channels(6)),
+            ChannelLayout::placed(Places::of([
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+                ChannelPosition::RearCenter,
+                ChannelPosition::SideLeft,
+                ChannelPosition::SideRight,
+            ]))
+            .expect("six places"),
             "a 6.0 answer was read as the 5.1 its count suggests"
+        );
+        assert_eq!(
+            read_back(
+                &auxiliary,
+                asked(ChannelLayout::Surround51, SampleFormat::F32)
+            )
+            .spec
+            .channels,
+            ChannelLayout::Discrete(channels(6)),
+            "auxiliary channels were read as the 5.1 their count suggests"
         );
     }
 

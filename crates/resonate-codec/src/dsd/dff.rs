@@ -342,7 +342,7 @@ fn missing(location: &MediaLocation, chunk: DsdChunk) -> Error {
 mod tests {
     use std::io::Cursor;
 
-    use resonate_core::{ChannelCount, ChannelLayout};
+    use resonate_core::{ChannelCount, ChannelLayout, ChannelPosition, Places};
 
     use super::*;
     use crate::{dsd::described, source::Reading};
@@ -431,7 +431,20 @@ mod tests {
             placed(&[b"MLFT", b"MRGT", b"LS  ", b"RS  "]),
             (ChannelLayout::Quad, true)
         );
-        assert_eq!(placed(&[b"MLFT", b"MRGT", b"C   ", b"LFE "]), (four, true));
+        assert_eq!(
+            placed(&[b"MLFT", b"MRGT", b"C   ", b"LFE "]),
+            (
+                ChannelLayout::placed(Places::of([
+                    ChannelPosition::FrontLeft,
+                    ChannelPosition::FrontRight,
+                    ChannelPosition::FrontCenter,
+                    ChannelPosition::Lfe,
+                ]))
+                .expect("four places"),
+                true
+            ),
+            "a 3.1 master was mixed down by index"
+        );
         assert_eq!(placed(&[b"MLFT", b"MRGT", b"RS  ", b"LS  "]), (four, false));
         assert_eq!(placed(&[b"MLFT", b"MRGT", b"C   ", b"XTRA"]), (four, false));
     }

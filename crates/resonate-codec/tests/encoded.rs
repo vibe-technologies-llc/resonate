@@ -18,8 +18,8 @@ use resonate_codec::{
     probe_stream,
 };
 use resonate_core::{
-    AudioBuffer, ChannelCount, ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat,
-    SampleRate, SourceId, StreamSpec,
+    AudioBuffer, ChannelCount, ChannelLayout, ChannelPosition, FrameSpan, Frames, MediaLocation,
+    Places, SampleFormat, SampleRate, SourceId, StreamSpec,
 };
 
 const RATE: u32 = 44_100;
@@ -3087,18 +3087,30 @@ fn a_dsf_offers_the_cover_its_id3_tag_carries_however_large_the_tag() {
 fn a_dsf_places_its_channels_by_the_type_it_declares_rather_than_their_count() {
     const CHANNEL_TYPE_AT: usize = 48;
 
+    let placed = |positions: &[ChannelPosition]| {
+        ChannelLayout::placed(Places::of(positions.iter().copied())).expect("places")
+    };
     let cases: [(u16, u32, ChannelLayout); 7] = [
         (2, 2, ChannelLayout::Stereo),
         (
             3,
             3,
-            ChannelLayout::Discrete(ChannelCount::new(3).expect("three")),
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+            ]),
         ),
         (4, 4, ChannelLayout::Quad),
         (
             4,
             5,
-            ChannelLayout::Discrete(ChannelCount::new(4).expect("four")),
+            placed(&[
+                ChannelPosition::FrontLeft,
+                ChannelPosition::FrontRight,
+                ChannelPosition::FrontCenter,
+                ChannelPosition::Lfe,
+            ]),
         ),
         (5, 6, ChannelLayout::Surround50),
         (6, 7, ChannelLayout::Surround51),
