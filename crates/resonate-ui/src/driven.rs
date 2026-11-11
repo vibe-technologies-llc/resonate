@@ -4404,13 +4404,19 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
-        let chosen = driven.read(|root, cx| {
-            root.library
-                .read(cx)
-                .choose_version(ids[1], &resonate_library::Version::Held(ids[4]))
+        let song = ids[1];
+        let model = driven.read(|root, _| root.library.clone());
+        driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| {
+                library.choose_version(
+                    song,
+                    resonate_library::Version::Held(ids[4]),
+                    String::new(),
+                    cx,
+                );
+            });
         });
-
-        assert!(chosen);
+        driven.until(|root, cx| root.library.read(cx).has_a_version_chosen(song));
 
         driven.click(named("entry", 1));
         driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
@@ -4432,6 +4438,23 @@ mod tests {
         assert_eq!(driven.queue(), [ids[1]]);
 
         driven.click(named("entry", 1));
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
+
+        assert_eq!(driven.queue(), ids);
+    }
+
+    #[gpui::test]
+    fn rows_held_in_several_chunks_are_queued_in_order_as_they_stand(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+        let mut tracks = driven.read(|root, cx| root.library.read(cx).held_tracks(&ids));
+        tracks.sort_by_key(|track| ids.iter().position(|id| *id == track.id));
+        let later = tracks.split_off(2);
+        let rows = crate::held::Rows::from(tracks).appended(later);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.play_rows(&rows, 3, cx);
+        });
         driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
 
         assert_eq!(driven.queue(), ids);

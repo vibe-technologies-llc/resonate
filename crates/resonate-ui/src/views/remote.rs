@@ -4,7 +4,7 @@ use gpui::{
     Canvas, Context, Div, FontWeight, MouseButton, MouseDownEvent, Pixels, Role, SharedString,
     Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
-use resonate_core::Recording;
+use resonate_core::{Recording, elapsed};
 use resonate_library::{Library, Track};
 
 use crate::{
@@ -23,7 +23,6 @@ use crate::{
 
 const READ_EVERY: Duration = Duration::from_secs(1);
 const FLOATS_CLEAR_OF_THE_TOP_BY: Pixels = px(16.0);
-const MINUTE: u64 = 60;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct RemoteSong {
@@ -449,8 +448,14 @@ impl RootView {
             ));
         }
         let place = song.zone.length.map_or_else(
-            || clock(song.zone.position),
-            |length| format!("{} / {}", clock(song.zone.position), clock(length)),
+            || elapsed::clock(song.zone.position),
+            |length| {
+                format!(
+                    "{} / {}",
+                    elapsed::clock(song.zone.position),
+                    elapsed::clock(length)
+                )
+            },
         );
         div()
             .id(SharedString::from(id))
@@ -507,10 +512,6 @@ fn remote_line(text: &str, colour: u32) -> Div {
         .truncate()
         .ends_in_an_ellipsis()
         .child(SharedString::from(text.to_owned()))
-}
-
-fn clock(at: Duration) -> String {
-    format!("{}:{:02}", at.as_secs() / MINUTE, at.as_secs() % MINUTE)
 }
 
 #[cfg(test)]

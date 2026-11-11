@@ -5,7 +5,7 @@ use gpui::{
     SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use qrcode::{Color, EcLevel, QrCode};
-use resonate_core::{RemoteTrust, SyncedSongs, remote_trust_asked, remote_trust_told};
+use resonate_core::{RemoteTrust, SyncedSongs, elapsed, remote_trust_asked, remote_trust_told};
 
 use crate::{
     Notice, RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, ResonateApp, Setting,
@@ -615,8 +615,14 @@ impl RootView {
 
     fn driven_zone(&mut self, id: &str, zone: &RemoteZoneShown, cx: &mut Context<Self>) -> Div {
         let place = zone.length.map_or_else(
-            || clock_of(zone.position),
-            |length| format!("{} / {}", clock_of(zone.position), clock_of(length)),
+            || elapsed::clock(zone.position),
+            |length| {
+                format!(
+                    "{} / {}",
+                    elapsed::clock(zone.position),
+                    elapsed::clock(length)
+                )
+            },
         );
         let song = zone
             .song
@@ -742,8 +748,11 @@ impl RootView {
         );
         let reading = spoken::listening().then(|| Reading {
             share: filled,
-            said: words::settings_sync::position_of_length(clock_of(length), clock_of(position))
-                .into(),
+            said: words::settings_sync::position_of_length(
+                elapsed::clock(length),
+                elapsed::clock(position),
+            )
+            .into(),
         });
 
         Some(
@@ -923,7 +932,10 @@ impl RootView {
                     .ends_in_an_ellipsis()
                     .child(saying),
             )
-            .children(song.length.map(|length| kit::figure(clock_of(length))));
+            .children(
+                song.length
+                    .map(|length| kit::figure(elapsed::clock(length))),
+            );
         let mut line = div()
             .flex()
             .items_center()
@@ -1510,16 +1522,6 @@ fn rows_shown(zone: &RemoteZoneShown, most: usize) -> Vec<(usize, &RemoteRowShow
         .filter(|(row, _)| *row >= from)
         .take(most)
         .collect()
-}
-
-fn clock_of(length: Duration) -> String {
-    let seconds = length.as_secs();
-    let (hours, minutes, seconds) = (seconds / 3_600, seconds / 60 % 60, seconds % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}")
-    } else {
-        format!("{minutes}:{seconds:02}")
-    }
 }
 
 #[cfg(test)]

@@ -222,7 +222,7 @@ what follows describes Unix, where `signals.rs` and termios are used.
 - **Tables are plain text:** `Table::push` passes every cell through `table::on_one_line`; `info`
   cuts a raw tag value at `WIDEST_TAG_VALUE`. Lengths read through one clock (`info::clock`, rounded
   to the millisecond so a minute rolls over, not `1:60.000`); a *listening* total through
-  `stats::heard_for`.
+  `stats::heard_for`. Every other clock (`played`, the readout, `sync`'s zones) is `resonate_core::elapsed::clock`, and `ago` is `elapsed::since`, so the terminal says years where the window does.
 - **Logs go to stderr** whatever the subcommand (stdout holds tables, links, `mcp`'s protocol).
   `RESONATE_LOG` goes through `EnvFilter::try_new`; unparsable warns and falls back to
   `DEFAULT_LOG`.

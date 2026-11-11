@@ -1,6 +1,8 @@
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use resonate_core::{AppliedGain, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{
+    AppliedGain, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec, elapsed,
+};
 use resonate_engine::OutputMode;
 use smallvec::SmallVec;
 
@@ -10,25 +12,16 @@ const PARTS_HELD_INLINE: usize = 6;
 
 pub type Parts<T> = SmallVec<[T; PARTS_HELD_INLINE]>;
 
+pub use resonate_core::elapsed::{age, since};
+
 pub fn clock(frames: Frames, rate: SampleRate) -> String {
-    whole_seconds(frames.to_duration(rate).as_secs())
+    elapsed::clock(frames.to_duration(rate))
 }
 
 pub fn left(position: Frames, duration: Frames, rate: SampleRate) -> String {
     let length = duration.to_duration(rate).as_secs();
-    let elapsed = position.to_duration(rate).as_secs();
-    whole_seconds(length.saturating_sub(elapsed))
-}
-
-fn whole_seconds(seconds: u64) -> String {
-    let minutes = seconds / 60;
-    let hours = minutes / 60;
-
-    if hours > 0 {
-        format!("{hours}:{:02}:{:02}", minutes % 60, seconds % 60)
-    } else {
-        format!("{minutes}:{:02}", seconds % 60)
-    }
+    let played = position.to_duration(rate).as_secs();
+    elapsed::clock(Duration::from_secs(length.saturating_sub(played)))
 }
 
 pub fn depth(format: SampleFormat) -> &'static str {
@@ -51,13 +44,7 @@ pub fn quality(spec: StreamSpec) -> String {
 }
 
 pub fn spanned(played: Duration) -> String {
-    let seconds = played.as_secs();
-    let minutes = seconds / 60;
-
-    match minutes / 60 {
-        0 => format!("{minutes}:{:02}", seconds % 60),
-        hours => format!("{hours}:{:02}:{:02}", minutes % 60, seconds % 60),
-    }
+    elapsed::clock(played)
 }
 
 pub fn counting_down(left: Duration) -> String {
@@ -69,49 +56,6 @@ pub fn counting_down(left: Duration) -> String {
 const A_MINUTE: u64 = 60;
 const AN_HOUR: u64 = 60 * A_MINUTE;
 const MINUTES_AN_HOUR: u64 = AN_HOUR / A_MINUTE;
-const A_DAY: u64 = 24 * AN_HOUR;
-const A_WEEK: u64 = 7 * A_DAY;
-const A_MONTH: u64 = 30 * A_DAY;
-const A_YEAR: u64 = 365 * A_DAY;
-
-struct Span {
-    seconds: u64,
-    ago: fn(u64) -> String,
-    briefly: fn(u64) -> String,
-}
-
-const SPANS: [Span; 6] = [
-    Span {
-        seconds: A_YEAR,
-        ago: words::format::years_ago,
-        briefly: words::format::years_briefly,
-    },
-    Span {
-        seconds: A_MONTH,
-        ago: words::format::months_ago,
-        briefly: words::format::months_briefly,
-    },
-    Span {
-        seconds: A_WEEK,
-        ago: words::format::weeks_ago,
-        briefly: words::format::weeks_briefly,
-    },
-    Span {
-        seconds: A_DAY,
-        ago: words::format::days_ago,
-        briefly: words::format::days_briefly,
-    },
-    Span {
-        seconds: AN_HOUR,
-        ago: words::format::hours_ago,
-        briefly: words::format::hours_briefly,
-    },
-    Span {
-        seconds: A_MINUTE,
-        ago: words::format::minutes_ago,
-        briefly: words::format::minutes_briefly,
-    },
-];
 
 pub fn heard_for(span: Duration) -> String {
     let seconds = span.as_secs();
@@ -122,34 +66,6 @@ pub fn heard_for(span: Duration) -> String {
         0 => words::format::heard_minutes(minutes),
         hours => words::format::heard_hours(hours, minutes % MINUTES_AN_HOUR),
     }
-}
-
-fn seconds_since(when: SystemTime, now: SystemTime) -> u64 {
-    now.duration_since(when).unwrap_or_default().as_secs()
-}
-
-pub fn since(when: SystemTime, now: SystemTime) -> String {
-    let ago = seconds_since(when, now);
-
-    for span in SPANS {
-        if ago >= span.seconds {
-            return (span.ago)(ago / span.seconds);
-        }
-    }
-
-    words::format::just_now().to_owned()
-}
-
-pub fn age(when: SystemTime, now: SystemTime) -> String {
-    let ago = seconds_since(when, now);
-
-    for span in SPANS {
-        if ago >= span.seconds {
-            return (span.briefly)(ago / span.seconds);
-        }
-    }
-
-    words::format::now().to_owned()
 }
 
 pub fn applied(gain: AppliedGain) -> String {
@@ -219,53 +135,6 @@ fn rounded(db: f32) -> f32 {
 mod tests {
     use super::*;
 
-    fn ago(seconds: u64) -> String {
-        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(A_YEAR * 40);
-        since(now - Duration::from_secs(seconds), now)
-    }
-
-    #[test]
-    fn a_reading_is_taken_in_the_largest_span_that_fits_it() {
-        assert_eq!(ago(0), "just now");
-        assert_eq!(ago(59), "just now");
-        assert_eq!(ago(A_MINUTE), "1 minute ago");
-        assert_eq!(ago(A_MINUTE * 5), "5 minutes ago");
-        assert_eq!(ago(AN_HOUR * 3), "3 hours ago");
-        assert_eq!(ago(A_DAY), "1 day ago");
-        assert_eq!(ago(A_DAY * 6), "6 days ago");
-        assert_eq!(ago(A_WEEK * 2), "2 weeks ago");
-        assert_eq!(ago(A_MONTH * 5), "5 months ago");
-        assert_eq!(ago(A_YEAR * 3), "3 years ago");
-    }
-
-    fn briefly(seconds: u64) -> String {
-        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(A_YEAR * 40);
-        age(now - Duration::from_secs(seconds), now)
-    }
-
-    #[test]
-    fn a_reading_short_enough_for_a_row_names_the_same_span() {
-        assert_eq!(briefly(0), "now");
-        assert_eq!(briefly(59), "now");
-        assert_eq!(briefly(A_MINUTE * 5), "5m");
-        assert_eq!(briefly(AN_HOUR * 3), "3h");
-        assert_eq!(briefly(A_DAY * 6), "6d");
-        assert_eq!(briefly(A_WEEK * 2), "2w");
-        assert_eq!(briefly(A_MONTH * 5), "5mo");
-        assert_eq!(briefly(A_YEAR * 3), "3y");
-    }
-
-    #[test]
-    fn every_span_is_named_both_ways_and_no_two_read_alike() {
-        let mut brief: Vec<String> = SPANS.iter().map(|span| (span.briefly)(1)).collect();
-        brief.sort_unstable();
-        let held = brief.len();
-        brief.dedup();
-
-        assert_eq!(brief.len(), held, "two spans answer to one short name");
-        assert!(SPANS.iter().all(|span| (span.ago)(1) != (span.ago)(2)));
-    }
-
     #[test]
     fn a_long_listening_time_is_drawn_in_hours_rather_than_minutes() {
         let many_hours = Duration::from_secs(413 * AN_HOUR + 27 * A_MINUTE + 9);
@@ -322,12 +191,5 @@ mod tests {
         }
         assert_eq!(left(Frames(44_100 * 209 + 40_000), length, rate), "0:01");
         assert_eq!(left(length, length, rate), "0:00");
-    }
-
-    #[test]
-    fn a_reading_from_the_future_is_taken_as_now() {
-        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(A_YEAR * 40);
-        assert_eq!(since(now + Duration::from_secs(A_DAY), now), "just now");
-        assert_eq!(age(now + Duration::from_secs(A_DAY), now), "now");
     }
 }

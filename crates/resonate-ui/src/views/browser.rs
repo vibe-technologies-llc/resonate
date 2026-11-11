@@ -172,7 +172,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         match plays {
-            Plays::TheseRows => self.play(&played.whole(), index, cx),
+            Plays::TheseRows => self.play_rows(played, index, cx),
             Plays::AsTheListingIsDrawn { .. } => {
                 let Some((drawn, start)) = self.library.read(cx).played_from_held(index) else {
                     return;
@@ -2819,6 +2819,7 @@ impl RootView {
     }
 
     pub(crate) fn open_album_not_held(&mut self, group: Mbid, cx: &mut Context<Self>) {
+        let pressed = self.press_a_lookup();
         let landed = self
             .library
             .update(cx, |library, cx| library.land_album_not_held(group, cx));
@@ -2826,7 +2827,11 @@ impl RootView {
             let Some(album) = landed.await else {
                 return;
             };
-            let _ = this.update(cx, |this, cx| this.opened(Selection::Album(album), cx));
+            let _ = this.update(cx, |this, cx| {
+                if !this.window_has_moved_on_from(pressed) {
+                    this.opened(Selection::Album(album), cx);
+                }
+            });
         })
         .detach();
     }
@@ -3680,6 +3685,7 @@ impl RootView {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        let pressed = self.press_a_lookup();
         let Some(asking) = self.library.update(cx, |library, cx| {
             library.releases_it_could_sit_on(track, cx)
         }) else {
@@ -3687,24 +3693,29 @@ impl RootView {
         };
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
-            let _ = this.update(cx, |this, cx| match asked {
-                Ok(recordings)
-                    if recordings
-                        .iter()
-                        .any(|recording| !recording.releases.is_empty()) =>
-                {
-                    this.open_a_menu(releases_to_place_on(at, track, recordings), cx);
+            let _ = this.update(cx, |this, cx| {
+                if this.window_has_moved_on_from(pressed) {
+                    return;
                 }
-                Ok(_) => this.report(
-                    Notice::Trouble(words::browser::nothing_places_it().to_owned()),
-                    cx,
-                ),
-                Err(error) => {
-                    tracing::warn!(%error, "the releases a track is on could not be read");
-                    this.report(
-                        toast::could_not(words::browser::find_the_releases_it_is_on(), &error),
+                match asked {
+                    Ok(recordings)
+                        if recordings
+                            .iter()
+                            .any(|recording| !recording.releases.is_empty()) =>
+                    {
+                        this.open_a_menu(releases_to_place_on(at, track, recordings), cx);
+                    }
+                    Ok(_) => this.report(
+                        Notice::Trouble(words::browser::nothing_places_it().to_owned()),
                         cx,
-                    );
+                    ),
+                    Err(error) => {
+                        tracing::warn!(%error, "the releases a track is on could not be read");
+                        this.report(
+                            toast::could_not(words::browser::find_the_releases_it_is_on(), &error),
+                            cx,
+                        );
+                    }
                 }
             });
         })
@@ -4515,7 +4526,7 @@ mod tests {
             atomic::{AtomicBool, Ordering},
         };
 
-        use gpui::{ClipboardItem, TestAppContext};
+        use gpui::{ClipboardItem, Point, TestAppContext};
         use parking_lot::Mutex;
         use resonate_core::{Isrc, SourceId};
         use resonate_library::{
@@ -4533,9 +4544,11 @@ mod tests {
             Beyond, Supplying,
             downloads::Fetching,
             driven::{Driven, Folder, Reaching},
+            icons::Icon,
             models::Selection,
             toast,
             views::{
+                menu::Menu,
                 reorder::{Listed, Shift},
                 root::{Deleting, Pane},
                 search::{SearchShows, TopEntry, TopRun},
@@ -5143,6 +5156,85 @@ mod tests {
                 library.wants().expect("the wants read").is_empty(),
                 "pressing the artist wanted the song"
             );
+        }
+
+        fn a_reach_for_an_album_not_held(cx: &mut TestAppContext) -> Driven {
+            let folder = Folder::new();
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, library, &folder, reaching);
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| !root.library.read(cx).albums_found().is_empty());
+            driven
+        }
+
+        #[gpui::test]
+        fn an_album_not_held_opens_its_page_when_the_lookup_lands(cx: &mut TestAppContext) {
+            let mut driven = a_reach_for_an_album_not_held(cx);
+
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.open_album_not_held(mbid(HEROES_TONIGHT_GROUP), cx);
+            });
+            driven
+                .until(|root, cx| matches!(root.library.read(cx).selection(), Selection::Album(_)));
+
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Tracks);
+        }
+
+        #[gpui::test]
+        fn an_album_not_held_does_not_open_over_a_pane_the_window_moved_to_while_it_was_asked(
+            cx: &mut TestAppContext,
+        ) {
+            let mut driven = a_reach_for_an_album_not_held(cx);
+
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.open_album_not_held(mbid(HEROES_TONIGHT_GROUP), cx);
+                root.set_pane(Pane::Queue, cx);
+            });
+            driven.settle();
+
+            assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
+            assert!(!matches!(
+                driven.read(|root, cx| root.library.read(cx).selection()),
+                Selection::Album(_)
+            ));
+        }
+
+        #[gpui::test]
+        fn a_lookup_pressed_goes_stale_when_a_pane_a_menu_or_another_lookup_moves_the_window_on(
+            cx: &mut TestAppContext,
+        ) {
+            let mut driven = a_reach_for_an_album_not_held(cx);
+
+            let stale = driven.root.update(&mut driven.cx, |root, cx| {
+                let pressed = root.press_a_lookup();
+                assert!(!root.window_has_moved_on_from(pressed));
+
+                root.set_pane(Pane::Queue, cx);
+                let after_the_pane = root.window_has_moved_on_from(pressed);
+
+                let pressed = root.press_a_lookup();
+                root.open_a_menu(
+                    Menu::at(Point::default()).does(Icon::Play, "Play", |_, _, _| {}),
+                    cx,
+                );
+                let after_a_menu = root.window_has_moved_on_from(pressed);
+
+                let first = root.press_a_lookup();
+                let second = root.press_a_lookup();
+                (
+                    after_the_pane,
+                    after_a_menu,
+                    root.window_has_moved_on_from(first),
+                    root.window_has_moved_on_from(second),
+                )
+            });
+
+            assert_eq!(stale, (true, true, true, false));
         }
 
         #[gpui::test]

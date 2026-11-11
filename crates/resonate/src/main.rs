@@ -122,7 +122,7 @@ use resonate_codec::{
 use resonate_core::Resumption;
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Speakers,
-    StreamSpec, Volume, ZoneId, names_audio,
+    StreamSpec, Volume, ZoneId, elapsed, names_audio,
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, HardwareVolume, Impulse, Keep,
@@ -2015,34 +2015,13 @@ fn ordered_by(order: RowOrder) -> &'static str {
 }
 
 fn played(duration: Option<Duration>) -> String {
-    let Some(duration) = duration else {
-        return String::new();
-    };
-    let seconds = duration.as_secs();
-    let minutes = seconds / 60;
-
-    match minutes / 60 {
-        0 => format!("{minutes}:{:02}", seconds % 60),
-        hours => format!("{hours}:{:02}:{:02}", minutes % 60, seconds % 60),
-    }
+    duration.map_or_else(String::new, elapsed::clock)
 }
 
 fn ago(played: Option<SystemTime>) -> String {
-    let Some(played) = played else {
-        return String::new();
-    };
-    let Ok(since) = played.elapsed() else {
-        return words::main::just_now().to_owned();
-    };
-
-    let minutes = since.as_secs() / 60;
-    let hours = minutes / 60;
-    match (hours / 24, hours, minutes) {
-        (0, 0, 0) => words::main::just_now().to_owned(),
-        (0, 0, minutes) => words::main::minutes_ago(minutes),
-        (0, hours, _) => words::main::hours_ago(hours),
-        (days, _, _) => words::main::days_ago(days),
-    }
+    played.map_or_else(String::new, |played| {
+        elapsed::since(played, SystemTime::now())
+    })
 }
 
 fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
@@ -3941,6 +3920,16 @@ mod tests {
 
     use super::*;
     use crate::{cli::RepeatArg, fixtures::silent_wave};
+
+    #[test]
+    fn the_terminal_tells_a_time_as_the_window_does_in_years_and_with_hours_on_a_long_clock() {
+        let long_ago = SystemTime::now() - Duration::from_secs(400 * 24 * 3_600);
+
+        assert_eq!(ago(Some(long_ago)), "1 year ago");
+        assert_eq!(ago(None), "");
+        assert_eq!(played(Some(Duration::from_secs(4_503))), "1:15:03");
+        assert_eq!(played(None), "");
+    }
 
     #[test]
     fn a_pass_is_told_by_section_with_what_it_counted_and_nothing_it_did_not() {

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use resonate_core::elapsed;
 use resonate_engine::{Envelope, Ramp, Reach, Spectrum};
 
 pub(crate) const WAVEFORM_COLUMNS: usize = 720;
@@ -15,8 +16,6 @@ const TIME_STEPS_SECONDS: [u64; 13] = [
 ];
 const TIME_MARKS_AT_MOST: u64 = 8;
 const HZ_A_KILOHERTZ: u32 = 1_000;
-const SECONDS_A_MINUTE: u64 = 60;
-const SECONDS_AN_HOUR: u64 = 3_600;
 const CHANNEL_BITS: u32 = 8;
 const CHANNEL_MASK: u32 = 0xff;
 
@@ -84,29 +83,13 @@ pub(crate) fn time_marks(length: Duration) -> Vec<Mark> {
         .take_while(|at| *at < seconds)
         .map(|at| Mark {
             share: at as f32 / length.as_secs_f32(),
-            label: clock_label(at),
+            label: elapsed::clock(Duration::from_secs(at)),
         })
         .collect()
 }
 
 fn longest_time_step() -> u64 {
     TIME_STEPS_SECONDS[TIME_STEPS_SECONDS.len() - 1]
-}
-
-fn clock_label(seconds: u64) -> String {
-    if seconds >= SECONDS_AN_HOUR {
-        return format!(
-            "{}:{:02}:{:02}",
-            seconds / SECONDS_AN_HOUR,
-            seconds % SECONDS_AN_HOUR / SECONDS_A_MINUTE,
-            seconds % SECONDS_A_MINUTE
-        );
-    }
-    format!(
-        "{}:{:02}",
-        seconds / SECONDS_A_MINUTE,
-        seconds % SECONDS_A_MINUTE
-    )
 }
 
 pub(crate) const fn rgb_of(colour: u32) -> [u8; 3] {
@@ -125,6 +108,8 @@ pub(crate) fn ramp_through(stops: &[u32]) -> Ramp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SECONDS_AN_HOUR: u64 = 3_600;
 
     #[test]
     fn a_colour_splits_into_its_three_channels() {
@@ -177,7 +162,6 @@ mod tests {
         }
         let marks = time_marks(Duration::from_secs(5 * SECONDS_AN_HOUR));
         assert_eq!(marks[0].label, "1:00:00");
-        assert_eq!(clock_label(3_599), "59:59");
-        assert_eq!(clock_label(3_725), "1:02:05");
+        assert_eq!(marks[1].label, "2:00:00");
     }
 }

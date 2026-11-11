@@ -1831,6 +1831,11 @@ impl Library {
         self.inner.read(chosen::every)
     }
 
+    pub fn versions_chosen_among(&self, tracks: &[TrackId]) -> Result<Vec<ChosenVersion>> {
+        self.inner
+            .read(|connection| chosen::among(connection, tracks, IDS_READ_AT_ONCE))
+    }
+
     pub fn version_chosen_for(&self, track: TrackId) -> Result<Option<Version>> {
         self.inner.read(|connection| chosen::of(connection, track))
     }
