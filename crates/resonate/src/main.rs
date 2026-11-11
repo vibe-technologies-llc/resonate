@@ -721,6 +721,24 @@ fn confirm_sink(player: &Player, wanted: Option<&NodeName>) {
     );
 }
 
+#[cfg(feature = "ui")]
+fn confirm_sink_once_the_window_is_open(player: &Arc<Player>, wanted: Option<NodeName>) {
+    let Some(wanted) = wanted else {
+        return;
+    };
+    let player = Arc::downgrade(player);
+    let spawned = thread::Builder::new()
+        .name("resonate-sink-survey".to_owned())
+        .spawn(move || {
+            if let Some(player) = player.upgrade() {
+                confirm_sink(&player, Some(&wanted));
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::debug!(%error, "the chosen sink was not looked for in the graph");
+    }
+}
+
 fn broken_down(failed: Failures) -> String {
     let named: Vec<String> = Failure::ALL
         .into_iter()
@@ -3141,7 +3159,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
         None => player,
     });
-    confirm_sink(&player, wanted_sink(&cli, &config).as_ref());
+    confirm_sink_once_the_window_is_open(&player, wanted_sink(&cli, &config));
     let keeps = resuming(&config, Some(&library));
     #[cfg(feature = "sync")]
     let files = together::invitations_taken_out(&cli.files);

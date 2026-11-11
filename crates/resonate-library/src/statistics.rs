@@ -229,14 +229,24 @@ fn listening_by_day_in(
 ) -> Result<Vec<Day>> {
     let since = from_when(window);
     let quarters = inner.read(|connection| quarters_heard(connection, since))?;
-    let counted = into_days(&quarters, calendar);
 
-    Ok(filled(
+    Ok(days_from(&quarters, window, calendar, now))
+}
+
+fn days_from(
+    quarters: &[Counted],
+    window: Window,
+    calendar: &Calendar,
+    now: SystemTime,
+) -> Vec<Day> {
+    let counted = into_days(quarters, calendar);
+
+    filled(
         &counted,
         first_day(window, &counted, calendar),
         calendar.day_of(now),
         calendar,
-    ))
+    )
 }
 
 pub(crate) fn habits(inner: &Inner, window: Window) -> Result<Habits> {
@@ -248,18 +258,45 @@ fn habits_in(inner: &Inner, window: Window, calendar: &Calendar) -> Result<Habit
 
     inner.read(|connection| {
         let quarters = quarters_heard(connection, since)?;
+        habits_from(connection, &quarters, since, calendar)
+    })
+}
 
-        Ok(Habits {
-            rhythm: Rhythm::across(
-                quarters.iter().map(|quarter| QuarterHeard {
-                    at: store::from_nanos(quarter.period.saturating_mul(NANOS_PER_QUARTER_HOUR)),
-                    listened: how_long(quarter.listened),
-                }),
-                calendar,
-            ),
-            genres: wrapped::genres(connection, since, UNTIL_THE_END)?,
-            formats: wrapped::formats(connection, since, UNTIL_THE_END)?,
-        })
+pub(crate) fn days_and_habits(inner: &Inner, window: Window) -> Result<(Vec<Day>, Habits)> {
+    days_and_habits_in(inner, window, &Calendar::local(), SystemTime::now())
+}
+
+fn days_and_habits_in(
+    inner: &Inner,
+    window: Window,
+    calendar: &Calendar,
+    now: SystemTime,
+) -> Result<(Vec<Day>, Habits)> {
+    let since = from_when(window);
+
+    inner.read(|connection| {
+        let quarters = quarters_heard(connection, since)?;
+        let habits = habits_from(connection, &quarters, since, calendar)?;
+        Ok((days_from(&quarters, window, calendar, now), habits))
+    })
+}
+
+fn habits_from(
+    connection: &Connection,
+    quarters: &[Counted],
+    since: i64,
+    calendar: &Calendar,
+) -> Result<Habits> {
+    Ok(Habits {
+        rhythm: Rhythm::across(
+            quarters.iter().map(|quarter| QuarterHeard {
+                at: store::from_nanos(quarter.period.saturating_mul(NANOS_PER_QUARTER_HOUR)),
+                listened: how_long(quarter.listened),
+            }),
+            calendar,
+        ),
+        genres: wrapped::genres(connection, since, UNTIL_THE_END)?,
+        formats: wrapped::formats(connection, since, UNTIL_THE_END)?,
     })
 }
 
@@ -683,6 +720,30 @@ mod tests {
         assert_eq!(most.albums[0].album, Some(album));
         assert_eq!(most.artists[0].by, None);
         assert!(!most.artists[0].has_portrait);
+    }
+
+    #[test]
+    fn the_days_and_the_habits_read_together_are_the_ones_read_apart() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        counted_at(&library, "Lately", &[(TWO_DAYS, A_MINUTE)]);
+        counted_at(&library, "Once", &[(A_FORTNIGHT, A_MINUTE * 3)]);
+        let (calendar, now) = (Calendar::utc(), SystemTime::now());
+
+        for window in [Window::Week, Window::Everything] {
+            let (days, habits) = days_and_habits_in(library.inner(), window, &calendar, now)
+                .expect("the catalog answers both at once");
+
+            assert_eq!(
+                days,
+                listening_by_day_in(library.inner(), window, &calendar, now)
+                    .expect("the catalog answers for the days")
+            );
+            assert_eq!(
+                habits,
+                habits_in(library.inner(), window, &calendar)
+                    .expect("the catalog answers for the habits")
+            );
+        }
     }
 
     #[test]

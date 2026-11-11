@@ -1524,17 +1524,20 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     (`a_folder_that_never_goes_quiet_is_handed_out_once_it_has_been_deferred_long_enough`). An
     overflowed inotify queue notes every root. A catalog inside a root cannot trigger the scan writing
     it; a vault inside one does, and the scan steps past it.
-  - `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY` (250 ms), rebuilding the watch wherever
-    `Library::roots` moved, over roots present as directories (`RootsWatch::taking_over` carries what
-    the old watch heard and had not handed out; a watch that cannot be laid leaves the old one
-    standing). What is gone goes to `Library::forget_the_gone` (takes the `Walk` guard, deletes rows
+  - `watch_the_roots` looks every `ROOTS_LOOKED_AT_EVERY` (1 s) at what the watch heard, and reads
+    `Library::roots` and stats each (`Watching::following`) only every `ROOTS_READ_EVERY` (5 s)
+    (`the_roots_are_read_once_in_a_while_and_not_at_every_look`), rebuilding the watch wherever
+    they moved, over roots present as directories (`RootsWatch::replacing` drops the old watch first,
+    so two never hold inotify watches at once, and carries what it heard and had not handed out; one
+    that cannot be laid is tried again at the next read). What is gone goes to `Library::forget_the_gone` (takes the `Walk` guard, deletes rows
     whose file is missing, sparing a vaulted and a delivered row as the scan's prune does, and rows on
     an absent volume); a forget refused by `Error::AlreadyWalking` or failed is kept and retried. A
     settled root with the work slot free runs the incremental scan, `Prompted::OnItsOwn`. A non-UTF-8
     path is passed over, not failing its batch.
   - A watch that cannot be made is a warning; one that cannot cover a root
-    (`RootsWatch::leaves_a_root_uncovered`) is laid again every `UNCOVERED_ROOTS_TRIED_AGAIN_AFTER`
-    (5 minutes); proved past the limit by
+    (`RootsWatch::leaves_a_root_uncovered`) is laid again on the same watcher every
+    `UNCOVERED_ROOTS_TRIED_AGAIN_AFTER` (5 minutes, `RootsWatch::cover_again`,
+    `a_root_that_appears_after_the_watch_was_laid_is_covered_on_the_same_watch`); proved past the limit by
     `a_root_past_the_inotify_limit_is_said_uncovered_and_the_root_watched_before_it_still_hears`
     (reruns its binary under `unshare --user` with `max_inotify_watches` at eight).
   - **Closed-window changes are caught up on open; a missing root is watched once it appears.** The
@@ -2554,8 +2557,11 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `inspector::fields` is a property list: a muted label and its value at the same `text_sm`, a
   `soft_edge` rule between rows, labels in sentence case. Follows the *playing* file only. The live profile restarts
   on every rebind (`StreamDigest::profiled_from`: a `ProfileBuilder`'s windows are unresumable
-  mid-span); the digest is rebuilt once per closed window, and the decoder runs ahead of the sink, so
-  the graph leads what is heard. A line, not bars: `plot::stroke` over a `plot::wash` from the accent to
+  mid-span); the engine publishes a new digest only after the profile has grown by a sixteenth
+  (a step of one to thirty windows, `digest_is_due`), and the decoder runs ahead of the sink, so
+  the graph leads what is heard. **A digest that only grew** (`StreamDigest::only_grew_from`: same
+  track, file, info, gain and profile start) is `Moved::Clock` in `PlayerModel::refresh`, so the
+  header, sidebar and pane are not redrawn for it, only the bar and an inspector or analysis pane. A line, not bars: `plot::stroke` over a `plot::wash` from the accent to
   nothing. Condensed at the digest's rate, not the frame rate: `PlayerModel::condensed` holds the reduced
   series and drops it when the poll swaps the digest for a different `Arc` (`StreamProfile::series`
   runs to `MAX_WINDOWS`, a whole day; reducing to `GRAPH_COLUMNS` sixty times a second is a walk and

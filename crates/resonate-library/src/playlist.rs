@@ -827,6 +827,17 @@ pub fn entries_within(
 }
 
 pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
+    let at = inner.pictures_at();
+    if let Some(kept) = inner.pictures_kept(at, id, at_most) {
+        return Ok(kept);
+    }
+
+    let albums = pictures_read(inner, id, at_most)?;
+    inner.keep_pictures(at, id, at_most, &albums);
+    Ok(albums)
+}
+
+fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
     let Some(query) = inner.read(|connection| asked_in(connection, id))? else {
         let sql = format!(
             "SELECT tracks.album_id, (SELECT {} FROM albums a WHERE a.id = tracks.album_id)
@@ -864,11 +875,12 @@ pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<Alb
         return db::pictured_by(inner, &asked, at_most);
     }
     let mut albums = Vec::new();
+    let mut seen = AHashSet::new();
     for album in db::tracks(inner, &asked, None)?
         .into_iter()
         .filter_map(|track| track.album_id)
     {
-        if !albums.contains(&album) {
+        if seen.insert(album) {
             albums.push(album);
         }
     }
