@@ -489,6 +489,11 @@ rows read via `Player::media` like any unscanned row.
   the end-of-scan pass and every other removal (`remove_root`, `forget_delivered`, `delete_tracks`:
   each runs `store::sweep_orphans` then `alternatives::settle_if_owed`) crown the next.
   `remove_root` matches a root whose folder has gone by its lexical spelling (`sheet::settled`).
+  **Forgetting a folder leaves its vaulted rows and keeps its listens** (`deleted::forget_a_root`):
+  a row holding a `vault_key` is left rootless (`root_id` NULL, standing as a delivery's row does,
+  `vault.md`), and the listens of every row it forgets are copied into `unheld_listens` first, so
+  Statistics, Wrapped and unsent scrobbles keep them and a folder added again is credited back
+  (`forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows_it_forgets`).
 - **A version chosen for a song is kept by the song's row.** `versions_chosen` (`chosen.rs`): `track`
   primary, either `held` (another row) or `served` (a `MediaLocation::to_uri` of a song a service
   plays in place), never both, and when chosen; both ids `ON DELETE CASCADE`, so a song or a held
@@ -1332,7 +1337,11 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   (`ogg::renumbered`: only the pages of the rewritten stream's serial, shifted from its first, up to its end-of-stream page, so an interleaved stream and a chained Ogg's later links keep their own numbers), so the audio moves once and `staged_into` finds a head that already holds
   (`a_copy_of_a_head_that_outgrew_its_room_is_made_with_the_grown_head_and_the_audio_whole`);
   `moved` (chunked, backwards where the head grew) remains for a head that outgrows the staged
-  copy after all. Where the head has no layout (a file `Head` does not recognise) lofty writes as
+  copy after all, `laid_head` then renumbering the moved audio where it stands. **Renumbering reads a
+  page at a time** between a reader and a sink, so a multi-gigabyte Opus or Vorbis file is never held
+  whole (`a_head_that_changes_its_page_count_lands_its_audio_renumbered_as_a_whole_tail_was` and
+  `renumbering_a_page_at_a_time_writes_what_renumbering_the_whole_tail_did` hold both against the
+  whole-tail renumbering they replaced). Where the head has no layout (a file `Head` does not recognise) lofty writes as
   before.
   **What the rename would lose is kept.** A symlinked track is written where the link points. The
   staged copy gets the file's owner, mode and extended attributes (`carries_what_the_file_did`:
@@ -1579,7 +1588,9 @@ guard and re-keys a sleeve-keyed album after moves land.
   (vanished source `SourceGone`, destination now taken `Collided`), rename with sidecars, record in
   `done`. **Every rename refuses an existing name**: `unreplacing::renamed_over_nothing` is
   `renameat2(RENAME_NOREPLACE)`, falling back to `hard_link` then unlink, then a checked `rename`
-  (also used by a delivery's filing and the drop-in). **A destination that is another hard link of
+  (also used by a delivery's filing and the drop-in); an unlink refused takes the new link back before
+  its error is answered, so a move refused is never left under two names
+  (`a_link_whose_source_cannot_be_unlinked_is_taken_back_and_the_source_left`). **A destination that is another hard link of
   the same file is no rename** (`another_link_of`): it lands as `Landing::Linked`, the source's name
   taken away once the catalog committed. Sidecars are weighed apart: gone since: dropped;
   destination now taken: stays; the track moves without. `Library::files_moved`, one transaction,
@@ -1630,7 +1641,12 @@ guard and re-keys a sleeve-keyed album after moves land.
   after `Library::files_moved` committed. A run killed after the rename, before the commit, leaves
   the whole copy beside its source; `already_copied` reads it next run (another device, same size,
   same mtime, same bytes in `COMPARED_AT_ONCE` pieces once the cheap readings agree) and it lands as
-  `Landing::Copied`; hence no `Refusal::AcrossDevices`.
+  `Landing::Copied`; hence no `Refusal::AcrossDevices`. `tests/library.rs` holds all three onto a
+  `/dev/shm` folder linked into the root (skipped where it shares the root's volume):
+  `a_file_organised_onto_another_volume_lands_whole_before_the_catalog_follows_and_its_source_goes_after`,
+  `a_copy_a_killed_run_landed_on_another_volume_is_taken_as_copied_and_one_that_differs_is_not`,
+  `a_catalog_that_will_not_follow_a_copy_onto_another_volume_keeps_the_source_and_takes_the_copy`
+  (a trigger refusing the path rewrite).
 - **A staging file is noted before it is written, so a killed run's is swept by the next.** It sits
   beside a destination the next run may never plan again. `noted_staging` (its name cut on a letter through `naming::named_within`, `a_staging_name_beside_a_longest_name_of_multibyte_letters_is_cut_on_a_letter`) writes its path and this
   process's pid into `staged_writes`, committed before a byte is written; `staged_left` removes the
@@ -1670,8 +1686,11 @@ guard and re-keys a sleeve-keyed album after moves land.
   sheet's encoding, checks exactly one `FILE` line names that file and splices the one byte run
   following a `FILE` command (one encoding unit at a time: a UTF-16 sheet is walked in pairs;
   `REM`/`TITLE` lines are left alone), so BOM, line endings and every other byte survive;
-  `staged_over` gives the staged file the sheet's mode, owner and extended attributes
-  (`codec::carries_what_the_file_did`), renames it over the sheet and syncs the folder. A file two `FILE` lines name leaves the sheet
+  `staged_over` holds its noted stage under `Held::taken_over` from creation to rename (a stage a
+  living writer holds refuses the rewrite and is left to it:
+  `a_sheet_rewritten_beside_a_moved_file_stands_back_from_a_stage_a_living_writer_holds`), gives it
+  the sheet's mode, owner and extended attributes (`codec::carries_what_the_file_did`), renames it
+  over the sheet and syncs the folder. A file two `FILE` lines name leaves the sheet
   alone. A name the sheet's legacy code page cannot hold carries the sheet into UTF-8 with a
   byte-order mark (`carried_into_unicode`).
 - **A sheet cutting a file travels with it whatever it is called; one naming several files takes
@@ -2265,9 +2284,15 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   is the seam (`Library::import_playlist` / `export_playlist`): reads bytes, settles encoding,
   decides from the *text* which format, hands `m3u.rs`, `pls.rs` or `xspf.rs` the job;
   `sheet::parse` reads a sheet with no file. Shared there: the relative-or-absolute path rule,
-  percent escaping both ways, and the staged rename over the target (hidden sibling
-  `.<name>.<pid>-<n>.new`, `create_new`, carrying the replaced file's mode, owner and extended
-  attributes, `sync_all`ed, the folder synced after the rename, removed on any failure). Writing picks the
+  percent escaping both ways, and the staged rename over the target. **An export lands where a
+  linked sheet points** (`sheet::landing_of` canonicalises the target, so a symlinked `.m3u` stays a
+  link: `a_playlist_exported_over_a_linked_sheet_rewrites_what_the_link_names_and_keeps_the_link`);
+  rows are still written relative to the path as given. The stage is a hidden sibling of the landing
+  (`.<name>.<pid>-<n>` and `organise::STAGED`), noted in `staged_writes` before a byte is written
+  and held under `Held::made` until renamed, so a kill's stage is swept by the next
+  `sweep_what_a_dead_writer_staged`; it carries the replaced file's mode, owner and extended
+  attributes, is `sync_all`ed, the folder synced after the rename, and `staged_left` removes it on
+  any failure. Writing picks the
   format by the target's extension (M3U where it declares nothing); reading picks by content.
   - **Track facts are never believed**: a row is a path, so `#EXTINF:`, `TitleN`/`LengthN`,
     `<title>`/`<creator>`/`<duration>` are written, never read. XSPF text is unescaped in one pass

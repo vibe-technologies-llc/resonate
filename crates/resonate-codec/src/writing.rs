@@ -1240,19 +1240,40 @@ impl Saving<'_> {
 
 fn laid_head(file: &mut File, standing: u64, rebuilt: &Rebuilt) -> io::Result<()> {
     let lands = rebuilt.head.len() as u64;
-    if let Some(first) = rebuilt.renumbered_from {
-        let mut tail = Vec::new();
-        file.seek(SeekFrom::Start(standing))?;
-        file.read_to_end(&mut tail)?;
-        ogg::renumbered(&mut tail, first);
-        file.write_all_at(&rebuilt.head, 0)?;
-        file.write_all_at(&tail, lands)?;
-        return file.set_len(lands + tail.len() as u64);
-    }
     if lands != standing {
         moved(file, standing, lands)?;
     }
+    if let Some(first) = rebuilt.renumbered_from {
+        renumbered_where_it_stands(file, lands, first)?;
+    }
     file.write_all_at(&rebuilt.head, 0)
+}
+
+fn renumbered_where_it_stands(
+    file: &File,
+    at: u64,
+    renumbering: ogg::Renumbering,
+) -> io::Result<()> {
+    let mut reading = ReadAt { file, at };
+    let mut writing = at;
+    ogg::renumbered(&mut reading, renumbering, |page| {
+        file.write_all_at(page, writing)?;
+        writing += page.len() as u64;
+        Ok(())
+    })
+}
+
+struct ReadAt<'a> {
+    file: &'a File,
+    at: u64,
+}
+
+impl Read for ReadAt<'_> {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        let read = self.file.read_at(into, self.at)?;
+        self.at += read as u64;
+        Ok(read)
+    }
 }
 
 fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
@@ -1368,14 +1389,10 @@ fn copied_with_head(
     rebuilt: &Rebuilt,
 ) -> io::Result<()> {
     from.seek(SeekFrom::Start(head.length))?;
-    if let Some(first) = rebuilt.renumbered_from {
-        let mut tail = Vec::new();
-        from.read_to_end(&mut tail)?;
-        ogg::renumbered(&mut tail, first);
-        into.write_all(&rebuilt.head)?;
-        return into.write_all(&tail);
-    }
     into.write_all(&rebuilt.head)?;
+    if let Some(first) = rebuilt.renumbered_from {
+        ogg::renumbered(from, first, |page| into.write_all(page))?;
+    }
     io::copy(from, into).map(drop)
 }
 
@@ -2846,16 +2863,23 @@ mod tests {
     const OPUS_PAGES: u32 = 24;
 
     fn opus() -> Vec<u8> {
+        opus_vendored("test")
+    }
+
+    fn opus_head_vendored(vendor: &str) -> Vec<u8> {
         let mut identification = b"OpusHead".to_vec();
         identification.extend_from_slice(&[1, 2, 0x38, 0x01]);
         identification.extend_from_slice(&48_000_u32.to_le_bytes());
         identification.extend_from_slice(&[0, 0, 0]);
         let mut comments = b"OpusTags".to_vec();
-        comments.extend_from_slice(&4_u32.to_le_bytes());
-        comments.extend_from_slice(b"test");
+        comments.extend_from_slice(&(vendor.len() as u32).to_le_bytes());
+        comments.extend_from_slice(vendor.as_bytes());
         comments.extend_from_slice(&0_u32.to_le_bytes());
+        ogg::paginated(OPUS_SERIAL, &[&identification, &comments])
+    }
 
-        let mut file = ogg::paginated(OPUS_SERIAL, &[&identification, &comments]);
+    fn opus_vendored(vendor: &str) -> Vec<u8> {
+        let mut file = opus_head_vendored(vendor);
         for page in 0..OPUS_PAGES {
             let mut packet = vec![page as u8; OPUS_PACKET_BYTES];
             packet[0] = 0xFC;
@@ -2958,6 +2982,72 @@ mod tests {
         assert!(ogg::pages_are_whole(&landed));
         assert_eq!(audio_of(&landed), audio_of(&standing));
         assert_eq!(titled(&tags, &location).as_deref(), Some(title.as_str()));
+    }
+
+    #[test]
+    fn a_head_that_changes_its_page_count_lands_its_audio_renumbered_as_a_whole_tail_was() {
+        let pages_of = |head: &[u8]| {
+            ogg::headers(ogg::Codec::Opus, &mut Cursor::new(head))
+                .expect("an Opus head")
+                .pages
+        };
+        let short = "test".to_owned();
+        let long = "Echoes ".repeat(3_000);
+        let longer = "Echoes ".repeat(6_000);
+
+        for (standing_vendor, landing_vendor) in [
+            (&short, &long),
+            (&long, &short),
+            (&long, &longer),
+            (&longer, &long),
+        ] {
+            let folder = Folder::new();
+            let standing_head = opus_head_vendored(standing_vendor);
+            let landing_head = opus_head_vendored(landing_vendor);
+            let mut audio = audio_of(&opus());
+            ogg::renumbered_whole(
+                &mut audio,
+                ogg::Renumbering {
+                    serial: OPUS_SERIAL,
+                    from: pages_of(&standing_head),
+                },
+            );
+            let standing = [standing_head.as_slice(), &audio].concat();
+            let rebuilt = Rebuilt {
+                head: landing_head.clone(),
+                renumbered_from: Some(ogg::Renumbering {
+                    serial: OPUS_SERIAL,
+                    from: pages_of(&landing_head),
+                }),
+            };
+            let mut tail = audio.clone();
+            ogg::renumbered_whole(&mut tail, rebuilt.renumbered_from.expect("a renumbering"));
+            let expected = [landing_head.as_slice(), &tail].concat();
+            let head = Head::of(FileType::Opus, &mut Cursor::new(&standing)).expect("a head");
+
+            let laid = folder.root.join("laid.opus");
+            fs::write(&laid, &standing).expect("a writable folder");
+            let mut file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&laid)
+                .expect("the file opens");
+            laid_head(&mut file, head.length, &rebuilt).expect("the head is laid");
+            drop(file);
+
+            let source = folder.root.join("source.opus");
+            fs::write(&source, &standing).expect("a writable folder");
+            let copied = folder.root.join("copied.opus");
+            let into = File::create_new(&copied).expect("a copy");
+            let mut from = File::open(&source).expect("the source opens");
+            copied_with_head(&mut from, &mut &into, head, &rebuilt).expect("the copy lands");
+            drop(into);
+
+            assert_ne!(pages_of(&standing_head), pages_of(&landing_head));
+            assert!(ogg::pages_are_whole(&expected));
+            assert_eq!(fs::read(&laid).expect("the laid file"), expected);
+            assert_eq!(fs::read(&copied).expect("the copy"), expected);
+        }
     }
 
     #[test]

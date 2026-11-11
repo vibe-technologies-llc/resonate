@@ -2506,15 +2506,7 @@ impl Library {
                 return Ok(false);
             };
 
-            transaction
-                .execute("DELETE FROM tracks WHERE root_id = ?1", params![id])
-                .map_err(|source| Error::store(StoreOp::Delete, source))?;
-            transaction
-                .execute("DELETE FROM roots WHERE id = ?1", params![id])
-                .map_err(|source| Error::store(StoreOp::Delete, source))?;
-            store::sweep_orphans(transaction)?;
-            alternatives::settle_if_owed(transaction)?;
-
+            deleted::forget_a_root(transaction, id)?;
             Ok(true)
         })
     }
@@ -2810,7 +2802,7 @@ impl Library {
     }
 
     pub fn export_playlist(&self, id: PlaylistId, path: &Path) -> Result<Exported> {
-        playlist::export(&self.inner, id, path)
+        playlist::export(self, id, path)
     }
 
     pub fn undo(&self) -> Result<Option<Undoable>> {

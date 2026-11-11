@@ -321,7 +321,9 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in 
   key, one indexed read.
 - **A vaulted row outlives its file; a changed file forgets its object.** Prune and root tidy keep a
   vaulted row whose file is gone (only copy); one the walk missed while its file is there was
-  superseded and goes. The upsert clears `vault_key`/`vault_path` where size, mtime or span moved.
+  superseded and goes. Forgetting its folder (`remove_root`) keeps every vaulted row, left rootless
+  like a delivery's, so a later `--prune` never takes an object the vault held as the only copy;
+  `forget_delivered` or a deletion lets it go. The upsert clears `vault_key`/`vault_path` where size, mtime or span moved.
 - **`Library::prune_the_vault` (`--prune`)**, under the `Walk` guard, removes audio objects no row
   names plus their `vault_objects` rows, every picture under `covers/` no album's `cover_key` holds,
   then staging. **An object's row goes only with its file**: one `Vault::forget` refuses keeps its

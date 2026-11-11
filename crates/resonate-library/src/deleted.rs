@@ -21,6 +21,16 @@ const LISTENS_KEPT_AS_UNHELD: &str = "INSERT INTO unheld_listens
        FROM listens l JOIN tracks t ON t.id = l.track_id
       WHERE t.path = ?1";
 
+const LISTENS_OF_A_ROOTS_UNVAULTED_ROWS_KEPT_AS_UNHELD: &str = "INSERT INTO unheld_listens
+            (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
+     SELECT t.path, t.span_start, l.at, l.began, l.heard, l.id, l.elsewhere, l.origin_device,
+            l.origin_id
+       FROM listens l JOIN tracks t ON t.id = l.track_id
+      WHERE t.root_id = ?1 AND t.vault_key IS NULL";
+
+const VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS: &str =
+    "UPDATE tracks SET root_id = NULL WHERE root_id = ?1 AND vault_key IS NOT NULL";
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Deleted {
     pub tracks: u64,
@@ -179,6 +189,23 @@ pub(crate) fn note_before_removing(tx: &Transaction<'_>, files: &BTreeSet<PathBu
         synced::note_deleted(tx, &store::path_text(path))?;
     }
 
+    Ok(())
+}
+
+pub(crate) fn forget_a_root(tx: &Transaction<'_>, root: i64) -> Result<()> {
+    tx.execute(
+        LISTENS_OF_A_ROOTS_UNVAULTED_ROWS_KEPT_AS_UNHELD,
+        params![root],
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    tx.execute(VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS, params![root])
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    tx.execute("DELETE FROM tracks WHERE root_id = ?1", params![root])
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.execute("DELETE FROM roots WHERE id = ?1", params![root])
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    store::sweep_orphans(tx)?;
+    alternatives::settle_if_owed(tx)?;
     Ok(())
 }
 

@@ -408,6 +408,43 @@ fn an_export_that_fails_leaves_nothing_staged_beside_its_target() -> Result<()> 
 }
 
 #[test]
+#[cfg(unix)]
+fn a_playlist_exported_over_a_linked_sheet_rewrites_what_the_link_names_and_keeps_the_link()
+-> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    let id = library.start_playlist("Evening", &[whole("/music/a.wav")])?;
+    let folder = tree.path().join("sheets");
+    let kept = tree.write("kept/evening.m3u", b"#EXTM3U\n");
+    let link = folder.join("evening.m3u");
+    fs::create_dir_all(&folder).expect("a folder for the link");
+    std::os::unix::fs::symlink(&kept, &link).expect("a linked sheet");
+
+    library.export_playlist(id, &link)?;
+
+    let left: BTreeSet<PathBuf> = fs::read_dir(&folder)
+        .expect("the sheets folder reads")
+        .chain(fs::read_dir(kept.parent().expect("a folder")).expect("the kept folder reads"))
+        .map(|entry| entry.expect("an entry reads").path())
+        .collect();
+
+    assert!(
+        fs::symlink_metadata(&link)
+            .expect("the link stands")
+            .file_type()
+            .is_symlink(),
+        "the link was replaced by a file"
+    );
+    assert!(
+        fs::read_to_string(&kept)
+            .expect("the linked sheet")
+            .contains("/music/a.wav")
+    );
+    assert_eq!(left, BTreeSet::from([link, kept]));
+    Ok(())
+}
+
+#[test]
 fn two_catalogs_duplicating_one_playlist_at_once_each_find_a_free_name() -> Result<()> {
     let tree = Tree::new();
     let database = tree.path().join("library.db");
