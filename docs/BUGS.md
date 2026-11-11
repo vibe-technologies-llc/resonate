@@ -4,12 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] A shared list's `people` map is unbounded in memory: `Member` ops are kept whatever
-  their number, so a hostile writer within the server's space limit costs every follower the whole
-  map, as the rows did before `ENTRIES_KEPT_AT_MOST`; the same smallest-ids bound would hold it
-- [S · 0.8.1] A guest from a build older than the party seat can still be taken over: the room binds
-  a member's id to the seat it first joined with, and a member that never sends one is bound to
-  nothing
 
 ## Sync and together
 
