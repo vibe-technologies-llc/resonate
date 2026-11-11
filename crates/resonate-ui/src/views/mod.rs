@@ -10,7 +10,7 @@ mod favourites;
 pub(crate) mod field;
 pub(crate) mod focus;
 mod gives_way;
-mod hint;
+pub(crate) mod hint;
 mod inspector;
 pub(crate) mod kit;
 mod listen;

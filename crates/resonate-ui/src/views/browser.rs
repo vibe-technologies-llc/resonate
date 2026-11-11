@@ -51,6 +51,10 @@ use crate::{
 };
 
 const COVERS_AHEAD: usize = 48;
+
+const CAPTION_DOT: &str = "·";
+const CAPTION_DOT_PADDING: f32 = 4.0;
+const CAPTION_ROOM_SPARE: f32 = 1.0;
 const PRESSINGS_SHOWN: usize = 12;
 
 const ARTIST_FOUND_CELL_WIDENING: f32 = 1.8;
@@ -59,6 +63,21 @@ const RELEASES_OFFERED: usize = 10;
 const UNHELD_COVER: f32 = 0.45;
 
 const RECORD_LABEL: f32 = 112.0;
+
+fn caption_font() -> gpui::Font {
+    theme::ui(FontWeight::NORMAL)
+}
+
+fn artist_room_beside(side: f32, beside: &str, cx: &App) -> Pixels {
+    let font = caption_font();
+    let size = px(theme::text_xs());
+    let taken = kit::width_of(CAPTION_DOT, &font, size, cx)
+        + px(2.0 * CAPTION_DOT_PADDING)
+        + kit::width_of(beside, &font, size, cx)
+        + px(CAPTION_ROOM_SPARE);
+
+    px(side) - taken
+}
 
 pub(crate) const ROW_CONTROLS: usize = 4;
 
@@ -431,25 +450,41 @@ impl RootView {
             (_, false, None) => Some(SharedString::from(counted)),
         };
         let parted = artist.is_some() && beside.is_some();
+        let artist_room = beside
+            .as_ref()
+            .map(|beside| artist_room_beside(side, beside, cx));
         let under = div()
             .flex()
             .min_w(px(0.0))
             .text_size(px(theme::text_xs()))
             .text_color(rgb(theme::muted()))
             .when_some(artist, |line, artist| {
+                let named = match artist_room {
+                    Some(room) => listing::matched_within(
+                        kit::cut_to_fit(artist, room, caption_font(), px(theme::text_xs()), cx),
+                        lit_artist,
+                    ),
+                    None => listing::matched(artist, lit_artist),
+                };
                 line.child(
                     self.opens(
                         ("album-artist", id.get() as usize),
-                        listing::matched(artist, lit_artist),
+                        named,
                         words::browser::open_artist_hint(),
                         owner.map(Selection::Artist),
                         cx,
                     )
+                    .debug_selector(move || format!("album-artist-{}", id.get()))
                     .ends_in_an_ellipsis(),
                 )
             })
             .when(parted, |line| {
-                line.child(div().flex_none().px_1().child("·"))
+                line.child(
+                    div()
+                        .flex_none()
+                        .px(px(CAPTION_DOT_PADDING))
+                        .child(CAPTION_DOT),
+                )
             })
             .when_some(beside, |line, beside| {
                 line.child(div().flex_none().whitespace_nowrap().child(beside))

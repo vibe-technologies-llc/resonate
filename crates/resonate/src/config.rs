@@ -1990,6 +1990,7 @@ fn tab(text: &str) -> Option<&'static str> {
         "favourites" => Some("favourites"),
         "suggestions" => Some("suggestions"),
         "missing" => Some("missing"),
+        "server" => Some("server"),
         "lyrics" => Some("lyrics"),
         "inspector" => Some("inspector"),
         "visualiser" => Some("visualiser"),
@@ -2251,33 +2252,9 @@ mod tests {
     }
 
     #[test]
-    fn the_man_page_names_every_tab_and_settings_category_the_file_remembers() {
-        let tabs = entry_of(ConfigKey::LastTab.as_str());
+    fn the_man_page_names_every_settings_category_the_file_remembers() {
         let categories = entry_of(ConfigKey::LastSettingsCategory.as_str());
 
-        for tab_named in [
-            "albums",
-            "artists",
-            "tracks",
-            "statistics",
-            "queue",
-            "playlists",
-            "party",
-            "favourites",
-            "suggestions",
-            "missing",
-            "lyrics",
-            "inspector",
-            "visualiser",
-            "analysis",
-            "settings",
-        ] {
-            assert!(tab(tab_named).is_some());
-            assert!(
-                tabs.contains(tab_named),
-                "{tab_named} is not in the man page"
-            );
-        }
         for category in SETTINGS_CATEGORIES
             .into_iter()
             .chain(SETTINGS_CATEGORIES_SPELT_BEFORE)
@@ -2287,6 +2264,23 @@ mod tests {
                 categories.contains(category),
                 "{category} is not in the man page"
             );
+        }
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn every_tab_the_window_remembers_is_read_back_and_named_by_the_man_page() {
+        let tabs = entry_of(ConfigKey::LastTab.as_str());
+
+        for pane in resonate_ui::Pane::ALL {
+            let tab_named = pane.as_str();
+            assert_eq!(tab(tab_named), Some(tab_named));
+            assert!(
+                tabs.contains(tab_named),
+                "{tab_named} is not in the man page"
+            );
+            let text = format!("last-tab = \"{tab_named}\"\n");
+            assert_eq!(read(&text).unwrap().last_tab.as_deref(), Some(tab_named));
         }
     }
 

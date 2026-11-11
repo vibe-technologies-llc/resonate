@@ -315,7 +315,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `every_setting_the_file_reads_is_documented_in_its_man_page_and_nothing_else_is`; the entries for
   enum-valued keys must name every spelling the setting takes
   (`the_man_page_gives_every_spelling_a_setting_takes`,
-  `the_man_page_names_every_tab_and_settings_category_the_file_remembers`). Defaults and wording are
+  `every_tab_the_window_remembers_is_read_back_and_named_by_the_man_page`, which walks
+  `resonate_ui::Pane::ALL`, and `the_man_page_names_every_settings_category_the_file_remembers`). Defaults and wording are
   written by hand, so a changed default is changed there too.
 
 **Keys whose rule is not obvious**

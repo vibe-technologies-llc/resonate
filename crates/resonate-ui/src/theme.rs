@@ -686,6 +686,9 @@ impl Worn {
 static WORN: LazyLock<RwLock<Worn>> =
     LazyLock::new(|| RwLock::new(Worn::of(Appearance::DEFAULT, DesktopLook::default())));
 
+#[cfg(test)]
+pub(crate) static WEARING: parking_lot::RecursiveRwLock<()> = parking_lot::RecursiveRwLock::new(());
+
 pub fn wear(chosen: Appearance) {
     let mut worn = WORN.write();
     *worn = Worn::of(chosen, worn.look);
@@ -1358,8 +1361,6 @@ mod tests {
     const SEVEN_TO_ONE: f32 = 7.0;
     const FOUR_AND_A_HALF: f32 = 4.5;
 
-    static WEARING: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
-
     fn mixed(over: u32, alpha: u8, under: u32) -> u32 {
         let share = f32::from(alpha) / 255.0;
         let channel = |shift: u32| {
@@ -1616,7 +1617,7 @@ mod tests {
 
     #[test]
     fn what_is_worn_is_what_was_asked_for() {
-        let _worn = WEARING.lock();
+        let _worn = WEARING.write();
 
         for appearance in every_appearance() {
             wear(appearance);
@@ -1634,7 +1635,7 @@ mod tests {
 
     #[test]
     fn a_larger_text_size_draws_every_measure_larger() {
-        let _worn = WEARING.lock();
+        let _worn = WEARING.write();
 
         let read = |size: TextSize| {
             wear(Appearance {
@@ -1992,7 +1993,7 @@ mod tests {
 
     #[test]
     fn a_shadow_is_softer_on_a_light_ground_than_on_a_dark_one() {
-        let _worn = WEARING.lock();
+        let _worn = WEARING.write();
 
         wear(Appearance::DEFAULT);
         let on_dark = shadow(0.5).a;
@@ -2010,7 +2011,7 @@ mod tests {
 
     #[test]
     fn the_desktop_light_wears_the_counterpart_and_its_scale_the_nearest_size() {
-        let _worn = WEARING.lock();
+        let _worn = WEARING.write();
 
         wear(Appearance::DEFAULT);
         hear_the_desktop(DesktopLook {
@@ -2030,7 +2031,7 @@ mod tests {
 
     #[test]
     fn the_desktop_is_not_heard_where_the_listener_wears_a_palette_and_size_of_their_own() {
-        let _worn = WEARING.lock();
+        let _worn = WEARING.write();
 
         wear(Appearance {
             theme: Theme::Nord,
@@ -2055,7 +2056,7 @@ mod tests {
 
     #[test]
     fn a_focus_ring_over_a_fill_is_whichever_ink_stands_off_it() {
-        let _worn = WEARING.lock();
+        let _worn = WEARING.write();
 
         for appearance in every_appearance() {
             wear(appearance);

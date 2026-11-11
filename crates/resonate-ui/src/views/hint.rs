@@ -1,7 +1,6 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use ahash::AHashMap;
@@ -18,15 +17,16 @@ use crate::{
 
 const HINT_GROUP: &str = "hint";
 
+pub(crate) const HINT_PLATE: &str = "hint-plate";
+
 const NAMED_AT_MOST: usize = 256;
 
 const CAPTION_FROM_THE_EDGE: f32 = 12.0;
 
 pub(crate) type Wording = Rc<dyn Fn() -> SharedString>;
 
-static ASKED: AtomicBool = AtomicBool::new(true);
-
 thread_local! {
+    static ASKED: Cell<bool> = const { Cell::new(true) };
     static NAMED: RefCell<AHashMap<ElementId, Wording>> = RefCell::default();
 }
 
@@ -47,11 +47,11 @@ pub(crate) fn wording_of(id: &ElementId) -> Option<Wording> {
 }
 
 pub(crate) fn asking(can: bool) {
-    ASKED.store(can, Ordering::Relaxed);
+    ASKED.set(can);
 }
 
 pub(crate) fn asked() -> bool {
-    ASKED.load(Ordering::Relaxed)
+    ASKED.get()
 }
 
 pub(crate) trait Names: StatefulInteractiveElement {
@@ -100,12 +100,17 @@ fn plate(text: SharedString) -> Div {
         .text_size(px(theme::text_sm()))
         .line_height(px(theme::text_sm() * 1.45))
         .text_color(rgb(theme::text()))
+        .debug_selector(|| HINT_PLATE.to_owned())
         .child(text)
 }
 
 impl Render for Hint {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        if !asked() {
+            return div().into_any_element();
+        }
         motion::faded_in(plate(self.text.clone()), "hint", motion::HINT_ARRIVES_OVER)
+            .into_any_element()
     }
 }
 
