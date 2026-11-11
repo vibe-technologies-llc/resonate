@@ -603,25 +603,25 @@ mod tests {
 
     #[test]
     fn the_second_provider_registered_is_turned_to_one_pace_in_and_not_two() {
-        const APART: u64 = 300;
+        const APART: Duration = Duration::from_millis(500);
 
         let providers = Providers::none()
-            .and(Slow::registered("slow", Duration::from_secs(2), nothing))
+            .and(Slow::registered("slow", APART * 4, nothing))
             .and(Fixed::registered("shop", found));
-        let started = Instant::now();
 
-        let answer = providers.first(
-            &Identity::named("Echoes"),
-            &racing(APART, 100),
-            &mut Away::default(),
-        );
+        let (answer, heard) = when_turned_to(&providers, &racing(500, 100));
+        let turned_at = |name: &str| {
+            heard
+                .iter()
+                .find(|(source, _)| source == name)
+                .map(|(_, at)| *at)
+                .expect("the provider was turned to")
+        };
+        let waited = turned_at("shop").duration_since(turned_at("slow"));
 
         assert_eq!(delivered_by(&answer), Some("shop"));
-        assert!(
-            started.elapsed() < Duration::from_millis(APART * 2),
-            "{:?}",
-            started.elapsed()
-        );
+        assert!(waited >= APART, "{waited:?}");
+        assert!(waited < APART * 2, "{waited:?}");
     }
 
     struct Offers {

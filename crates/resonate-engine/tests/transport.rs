@@ -46,7 +46,8 @@ const PADDED_RINGS_PULLED_TIMES_REAL_TIME: u32 = 1;
 const SHORTEST_PAUSE_BETWEEN_PULLS: Duration = Duration::from_millis(1);
 const SECOND_ROW: Frames = Frames(RATE as u64 * 15 / 75);
 const A_SHORT_DOZE: Duration = Duration::from_millis(150);
-const A_DOZE_A_STALLED_ENGINE_STILL_FADES: Duration = Duration::from_millis(400);
+const A_DOZE_A_STALLED_ENGINE_STILL_FADES: Duration = Duration::from_secs(2);
+const LONGER_THAN_A_DOZE_PULLED_FAST_SECONDS: usize = 30;
 const A_DEVICE_PULLS_AT_REAL_TIME: u32 = 1;
 const A_LONG_DOZE: Duration = Duration::from_secs(30);
 const RING_DEPTH: Duration = Duration::from_millis(200);
@@ -999,10 +1000,22 @@ fn play_paced_until(
     graph: &Arc<Mutex<Graph>>,
     block: usize,
     times_real_time: u32,
+    done: impl FnMut(&Player, &Graph) -> bool,
+    what: &str,
+) {
+    play_paced_within(player, graph, block, times_real_time, PATIENCE, done, what);
+}
+
+fn play_paced_within(
+    player: &Player,
+    graph: &Arc<Mutex<Graph>>,
+    block: usize,
+    times_real_time: u32,
+    patience: Duration,
     mut done: impl FnMut(&Player, &Graph) -> bool,
     what: &str,
 ) {
-    let deadline = Instant::now() + PATIENCE;
+    let deadline = Instant::now() + patience;
     while Instant::now() < deadline {
         let (settled, pause) = {
             let mut held = graph.lock();
@@ -7609,6 +7622,7 @@ FILE "Meddle.wav" WAVE
 "#;
 
 const MINUTE_OF_FRAMES: usize = RATE as usize * 60;
+const PROFILED_SECONDS: usize = 64;
 
 #[test]
 fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each_only_adds_to_the_last()
@@ -7623,10 +7637,12 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
     })?;
 
     let mut digests = Vec::new();
-    play_until(
+    play_paced_within(
         &player,
         &graph,
         BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        PULL_TIMES_REAL_TIME_AT_MOST,
+        Duration::from_secs(PROFILED_SECONDS as u64) + PATIENCE,
         |player, _| {
             if let Some(digest) = player.digest()
                 && digests
@@ -7639,7 +7655,7 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
                 digest
                     .profile
                     .as_ref()
-                    .is_some_and(|profile| profile.series.len() >= 64)
+                    .is_some_and(|profile| profile.series.len() >= PROFILED_SECONDS)
             })
         },
         "sixty-four seconds of the stream to be profiled",
@@ -10090,7 +10106,8 @@ fn a_stop_fades_the_level_out_before_the_stream_closes() -> Result<()> {
 
 #[test]
 fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
-    let (player, graph, _tree) = a_steady_level_playing(16_000)?;
+    let (player, graph, _tree) =
+        a_steady_level_playing_for(16_000, LONGER_THAN_A_DOZE_PULLED_FAST_SECONDS)?;
 
     player
         .request(Command::SleepUntil(Some(Until::After(

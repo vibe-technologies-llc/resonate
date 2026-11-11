@@ -1546,9 +1546,15 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   runner's coarse sleep, the timer's pause cut in on a level barely faded, and the transport read
   `Paused` before the pause's own fade was pulled
   (`a_sleep_timer_fades_the_music_out_before_it_pauses` pulls `BLOCK_FRAMES` and waits for
-  `!graph.active`). It dozes for `A_DOZE_A_STALLED_ENGINE_STILL_FADES` (400 ms), since a fade that
-  begins with under about 20 ms left is the pause's own, too steep for the test, and a Mac runner
-  has stalled the engine for longer than the 150 ms the other timer tests doze. A stop's and a
+  `!graph.active`). It dozes for `A_DOZE_A_STALLED_ENGINE_STILL_FADES` (2 s, over a steady level
+  `LONGER_THAN_A_DOZE_PULLED_FAST_SECONDS` long, so eight times real time never plays it out),
+  since a fade that begins with under about 20 ms left is the pause's own, too steep for the test
+  (a step of 37 at 16 000 is `FADED_OVER`'s 441 frames), and a Mac runner has kept the engine from
+  beginning the fade for the whole of 150 ms and then of 400 ms. **A test that needs a stretch of
+  stream heard waits for it at real time beside `PATIENCE`** (`play_paced_within`): a Mac runner
+  has pulled the test graph at real time, not eight times it, so
+  `a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each_only_adds_to_the_last`
+  is given `PROFILED_SECONDS` more. A stop's and a
   handover's fade out are pulled in whole blocks for the same reason: at 64 frames a pull, a Mac's
   overshot sleeps had `QUIET_WITHIN_AT_LEAST` (40 ms) close the stream partway down the fade. The
   handover's blocks come at real time, as the wait for the other zone would see eight times real
