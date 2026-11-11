@@ -776,10 +776,13 @@ impl PlayerModel {
 
         let digest = self.player.digest();
         if !is_same_digest(digest.as_ref(), self.digest.as_ref()) {
+            let grown = only_the_profile_grew(self.digest.as_deref(), digest.as_deref());
             self.digest = digest;
             self.graphed = None;
-            self.carried_lines = None;
-            moved = Some(Moved::More);
+            if !grown {
+                self.carried_lines = None;
+            }
+            moved = moved.max(Some(if grown { Moved::Clock } else { Moved::More }));
         }
 
         let queued = self.player.queued();
@@ -837,6 +840,13 @@ fn written_lines(lyrics: &str) -> usize {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .count()
+}
+
+fn only_the_profile_grew(before: Option<&StreamDigest>, after: Option<&StreamDigest>) -> bool {
+    match (before, after) {
+        (Some(before), Some(after)) => after.only_grew_from(before),
+        _ => false,
+    }
 }
 
 fn is_same_digest(left: Option<&Arc<StreamDigest>>, right: Option<&Arc<StreamDigest>>) -> bool {

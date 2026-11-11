@@ -280,6 +280,25 @@ pub struct StreamDigest {
     pub profile: Option<StreamProfile>,
 }
 
+impl StreamDigest {
+    pub fn only_grew_from(&self, earlier: &Self) -> bool {
+        let same_layout = match (&self.layout, &earlier.layout) {
+            (Some(now), Some(then)) => Arc::ptr_eq(now, then),
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+
+        self.track == earlier.track
+            && self.location == earlier.location
+            && self.span == earlier.span
+            && Arc::ptr_eq(&self.info, &earlier.info)
+            && same_layout
+            && self.replay_gain_mode == earlier.replay_gain_mode
+            && self.replay_gain == earlier.replay_gain
+            && self.profiled_from == earlier.profiled_from
+    }
+}
+
 #[derive(Debug)]
 pub enum Event {
     TrackStarted(TrackId),

@@ -630,7 +630,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   line before it takes a command, so a window opens without waiting on the graph while the first
   `Load` still binds from a surveyed list (commands wait in the channel). A reader taking the list
   once waits on `Published::first_survey` through `Player::sinks_once_surveyed` (the binary's
-  `confirm_sink`); the window polls the list and needs no wait.
+  `confirm_sink`; the window runs it on a thread of its own, `confirm_sink_once_the_window_is_open`, so it opens without the wait); the window polls the list and needs no wait.
 - **A bind reads the published sink list; only an announcement refreshes it.** `select_sink` runs on
   every track change, non-in-place seek, settings change and renegotiation; enumerating there would
   put a `SINK_TIMEOUT` before each against a daemon that stopped answering. A list with no announced
@@ -977,7 +977,7 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
 - **One `Published` bundle, not a growing argument list:** `PlayerState`, `OutputSettings`,
   `StreamDigest`, queue, sink list, the visualiser's `Tapped`, each behind its own lock so a 60 Hz
   poll clones a pointer. The queue is a `Queued` (rows in play order as a `QueueRows` sharing the
-  queue's own vectors, each row's load-order place, revision) under one lock; queue and digest are written before the `PlayerState` advertising them.
+  queue's own vectors, each row's load-order place, revision) under one lock; queue and digest are written before the `PlayerState` advertising them. **A growing profile republishes the digest sparingly**: `publish_digest` writes a new `Arc<StreamDigest>` at once for a new track, rebind or gain, and while only the profile grows after a sixteenth more windows (one to thirty, `digest_is_due`), so a ten-hour book sorts its series hundreds of times, not every second (`a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each_only_adds_to_the_last`).
   `PlayerState::seeks` = token `Engine::seek` steps where the seek landed and nowhere else
   (`resonate-mpris` emits `Seeked` from it). `PlayerState::sleeping` carries what is left, so a front
   end keeps no clock. `OutputSettings` is the engine's whole configured output (a new `Arc` only when

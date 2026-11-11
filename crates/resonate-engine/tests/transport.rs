@@ -7342,6 +7342,65 @@ FILE "Meddle.wav" WAVE
     INDEX 01 00:00:15
 "#;
 
+const MINUTE_OF_FRAMES: usize = RATE as usize * 60;
+
+#[test]
+fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each_only_adds_to_the_last()
+-> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("long.wav", &steady(1_000, MINUTE_OF_FRAMES * 3));
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut digests = Vec::new();
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| {
+            if let Some(digest) = player.digest()
+                && digests
+                    .last()
+                    .is_none_or(|last| !Arc::ptr_eq(last, &digest))
+            {
+                digests.push(digest);
+            }
+            digests.last().is_some_and(|digest| {
+                digest
+                    .profile
+                    .as_ref()
+                    .is_some_and(|profile| profile.series.len() >= 64)
+            })
+        },
+        "sixty-four seconds of the stream to be profiled",
+    );
+
+    let points = |digest: &Arc<resonate_engine::StreamDigest>| {
+        digest
+            .profile
+            .as_ref()
+            .map_or(0, |profile| profile.series.len())
+    };
+    let gained = points(digests.last().expect("a digest")) - points(&digests[0]);
+    assert!(
+        digests.len() < gained,
+        "{} digests for {gained} points",
+        digests.len()
+    );
+    for pair in digests.windows(2) {
+        assert!(pair[1].only_grew_from(&pair[0]));
+    }
+
+    let mut elsewhere = (**digests.last().expect("a digest")).clone();
+    elsewhere.profiled_from = Frames(RATE as u64);
+    assert!(!elsewhere.only_grew_from(&digests[0]));
+    Ok(())
+}
+
 #[test]
 fn a_row_a_sheet_cut_it_out_of_plays_at_the_gain_that_sheet_declares_for_it() -> Result<()> {
     let tree = Tree::new();
