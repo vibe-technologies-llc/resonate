@@ -95,10 +95,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S · 0.8.1] `A_ZONE_KEEPS_ITS_OWN_QUEUE` (`schema.rs`), the one migration step that drops tables
-  holding the listener's data (`resume`, `resume_rows` and `resume_order` copied into zone-keyed
-  ones), is run only over an empty `V1`: no test lays a queue in the older shape and reads it back
-  as the first zone's
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
@@ -150,9 +146,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M · 0.8.1] `resonate-win32`'s unsafe calls (`endpoint.rs`, `console.rs`, `security.rs`,
   `streams.rs`, `gaming.rs`, some 43 sites) have four tests, where `resonate-apple` runs its
   sequencing against a fake `Toolbox` on every host; the Win32 crate has no such seam
-- [S · 0.8.1] (investigate) `resonate-musicbrainz`'s export reader (`mirror/import.rs`, `wire.rs`)
-  has no unit test; how much of an escaped field, a `NULL` and a cut line `tests/mirror.rs` and the
-  fuzz target reach is unmeasured
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

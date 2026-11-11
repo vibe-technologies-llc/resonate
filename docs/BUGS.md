@@ -4,11 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] `shared.sqlite` and `sync.sqlite` are readable by other local accounts: the data
-  folder is made by a plain `create_dir_all` (`together.rs`, `sync.rs`, `config.rs`) and SQLite
-  makes the files and their `-wal` and `-shm` 0644, though they hold shared-playlist edit codes and
-  the member's x25519 private key (`shared/store.rs`, `ledger.rs`), and `config.toml` is narrowed to
-  0600 for less. Make the folder 0700 and the files 0600, narrowing those already made
 - [S · 0.8.1] Android's `ArtworkProvider` is exported with no permission (`AndroidManifest.xml`), so
   any installed app can step through `content://<pkg>.art/track/<n>` and read every cover in the
   library, past the media session's trusted-controller check; grant each URI to the controllers it
@@ -133,23 +128,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   a quantum reaching the buffer's capacity is filled three quarters, every cycle
 
 ## Catalog
-- [S · 0.8.1] Lengthening a file in place may shift its bytes under a reader it cannot see:
-  `held_open_elsewhere` (`insert.rs`) reads a `/proc/<pid>/fd` it cannot open as that process not
-  holding the file, so MPD or a media server under another account, every host process seen from
-  inside Flatpak and a reader holding only an `mmap` have `FALLOC_FL_INSERT_RANGE` move the audio
-  under them, where `library.md` promises no reader sees it; an unreadable folder should count as
-  held, or the kernel be asked for a write lease
-- [S · 0.8.1] `dedupe` adds a copy's plays to the kept row on every run the copy survives:
-  `handed_over` (`copies.rs`) sums `plays` without zeroing the copy's, and a copy the trash refuses
-  (`Removal::Kept`) keeps its row, so each run finds the pair again and the count grows
-- [S · 0.8.1] Organise cuts its staging name across devices by bytes (`organise.rs`
-  `noted_staging`), not through `naming::named_within` as `rust-style.md` asks, so a long name of
-  multibyte letters makes a staging name that is not UTF-8, which exFAT and APFS refuse, failing the
-  move
-- [S · 0.8.1] A partial walk-back keeps a unit it did put back in the note where one of its
-  sidecars had gone: `still_to_walk_back` compares whole `Move`s, sidecars included, against the
-  trimmed one it landed (`organise.rs`), so *Put the last run back* stays offered and refuses that
-  unit every time
+- [S · 0.8.1] Lengthening a file in place still cannot see a reader root runs: `held_open_elsewhere`
+  (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding the file except for a process
+  whose `status` names root, since every root process would otherwise end the in-place path; a write
+  lease (`F_SETLEASE`) would see it, and wants a safe wrapper the codec may call
 
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
