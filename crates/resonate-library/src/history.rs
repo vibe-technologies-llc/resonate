@@ -4,9 +4,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use resonate_core::ListenId;
 use rusqlite::{Transaction, params};
 
-use crate::{Error, Result, StoreOp, db::Inner, store};
+use crate::{Error, Listen, Result, StoreOp, db::Inner, store};
 
 const SECONDS_PER_DAY: u64 = 86_400;
 
@@ -23,19 +24,37 @@ const FORGET_THE_UNHELD: &str = "DELETE FROM unheld_listens WHERE at < ?1";
 
 const FORGET_THE_PLAYLIST_PLAYS: &str = "DELETE FROM playlist_plays WHERE at < ?1";
 
-const CREDIT_THE_UNHELD: &str = "DELETE FROM unheld_listens
+const NOTE_THE_UNHELD_CREDITED_ELSEWHERE: &str = "INSERT INTO unheld_credited (unheld, listen)
+     SELECT u.id, l.id
+       FROM unheld_listens u
+       JOIN listens l ON l.origin_device = u.origin_device AND l.origin_id = u.origin_id
+      WHERE u.origin_device IS NOT NULL";
+
+const FORGET_THE_UNHELD_CREDITED_ELSEWHERE: &str = "DELETE FROM unheld_listens
       WHERE origin_device IS NOT NULL
         AND EXISTS (SELECT 1 FROM listens l
                      WHERE l.origin_device = unheld_listens.origin_device
-                       AND l.origin_id = unheld_listens.origin_id);
-     INSERT INTO listens (id, track_id, at, began, heard, elsewhere, origin_device, origin_id)
+                       AND l.origin_id = unheld_listens.origin_id)";
+
+const THE_UNHELD_NOW_HELD: &str = "SELECT u.id
+       FROM unheld_listens u
+       JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start
+      ORDER BY u.at, u.id";
+
+const CREDIT_AN_UNHELD: &str = "INSERT INTO listens
+            (id, track_id, at, began, heard, elsewhere, origin_device, origin_id)
      SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM listens l WHERE l.id = u.listen_id)
                  THEN u.listen_id END,
             t.id, u.at, u.began, u.heard, u.elsewhere, u.origin_device, u.origin_id
        FROM unheld_listens u
        JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start
-      ORDER BY u.at;
-     UPDATE tracks
+      WHERE u.id = ?1
+     RETURNING id";
+
+const NOTE_AN_UNHELD_CREDITED: &str =
+    "INSERT INTO unheld_credited (unheld, listen) VALUES (?1, ?2)";
+
+const COUNT_THE_CREDITED_AND_LET_THEM_GO: &str = "UPDATE tracks
         SET plays = plays + (SELECT count(*) FROM unheld_listens u
                               WHERE u.path = tracks.path AND u.span_start = tracks.span_start),
             played = max(coalesce(played, 0),
@@ -46,6 +65,13 @@ const CREDIT_THE_UNHELD: &str = "DELETE FROM unheld_listens
      DELETE FROM unheld_listens
       WHERE EXISTS (SELECT 1 FROM tracks t
                      WHERE t.path = unheld_listens.path AND t.span_start = unheld_listens.span_start);";
+
+const SPEND_A_HELD_LISTEN: &str = "UPDATE listens SET heard = ?1 WHERE id = ?2";
+
+const SPEND_AN_UNHELD_LISTEN: &str = "UPDATE unheld_listens SET heard = ?1 WHERE id = ?2";
+
+const SPEND_WHAT_AN_UNHELD_LISTEN_BECAME: &str = "UPDATE listens SET heard = ?1
+      WHERE id = (SELECT listen FROM unheld_credited WHERE unheld = ?2)";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum HistoryKept {
@@ -140,9 +166,53 @@ fn forgotten_before(transaction: &Transaction<'_>, before: i64) -> Result<Aged> 
 }
 
 pub(crate) fn credit_the_unheld(transaction: &Transaction<'_>) -> Result<()> {
+    for elsewhere in [
+        NOTE_THE_UNHELD_CREDITED_ELSEWHERE,
+        FORGET_THE_UNHELD_CREDITED_ELSEWHERE,
+    ] {
+        transaction
+            .execute(elsewhere, [])
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
+
+    let now_held = transaction
+        .prepare(THE_UNHELD_NOW_HELD)
+        .and_then(|mut query| {
+            query
+                .query_map([], |row| row.get::<_, i64>(0))
+                .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    for unheld in now_held {
+        let listen = transaction
+            .query_row(CREDIT_AN_UNHELD, params![unheld], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        transaction
+            .execute(NOTE_AN_UNHELD_CREDITED, params![unheld, listen])
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    }
+
     transaction
-        .execute_batch(CREDIT_THE_UNHELD)
+        .execute_batch(COUNT_THE_CREDITED_AND_LET_THEM_GO)
         .map_err(|source| Error::store(StoreOp::Update, source))
+}
+
+pub(crate) fn spent(transaction: &Transaction<'_>, listen: Listen, heard: i64) -> Result<()> {
+    let spend = |statement: &str, id: ListenId| {
+        transaction
+            .execute(statement, params![heard, id.get() as i64])
+            .map_err(|source| Error::store(StoreOp::Update, source))
+    };
+
+    match listen {
+        Listen::Held(id) => spend(SPEND_A_HELD_LISTEN, id).map(drop),
+        Listen::Unheld(id) => match spend(SPEND_AN_UNHELD_LISTEN, id)? {
+            0 => spend(SPEND_WHAT_AN_UNHELD_LISTEN_BECAME, id).map(drop),
+            _ => Ok(()),
+        },
+    }
 }
 
 #[cfg(test)]

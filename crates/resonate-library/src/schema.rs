@@ -55,7 +55,36 @@ const MIGRATIONS: &[&str] = &[
     A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST,
     A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
     THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE,
+    AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID,
 ];
+
+const AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID: &str = "
+CREATE TABLE unheld_listens_numbered (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    path          TEXT NOT NULL,
+    span_start    INTEGER NOT NULL,
+    at            INTEGER NOT NULL,
+    began         INTEGER,
+    heard         INTEGER NOT NULL DEFAULT 0,
+    listen_id     INTEGER,
+    elsewhere     INTEGER NOT NULL DEFAULT 0,
+    origin_device BLOB,
+    origin_id     INTEGER
+) STRICT;
+INSERT INTO unheld_listens_numbered
+       (id, path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
+SELECT rowid, path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id
+  FROM unheld_listens;
+DROP TABLE unheld_listens;
+ALTER TABLE unheld_listens_numbered RENAME TO unheld_listens;
+CREATE INDEX unheld_listens_by_path ON unheld_listens(path, span_start);
+CREATE INDEX unheld_listens_by_time ON unheld_listens(at);
+CREATE TABLE unheld_credited (
+    unheld INTEGER PRIMARY KEY,
+    listen INTEGER NOT NULL REFERENCES listens(id) ON DELETE CASCADE
+) STRICT;
+CREATE INDEX unheld_credited_by_listen ON unheld_credited(listen);
+";
 
 const THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE: &str = "
 CREATE TABLE artists_fold_wanted (
@@ -1582,6 +1611,98 @@ mod tests {
             )
             .expect("the schema reads back");
         assert!(owed, "the fold was not owed after the step");
+    }
+
+    #[test]
+    fn unheld_listens_kept_before_their_ids_were_numbered_keep_them_and_never_hand_one_out_again() {
+        type KeptUnheld = (i64, String, i64, i64, Option<i64>, bool, Option<Vec<u8>>);
+
+        let connection = opened();
+        connection.execute_batch(V1).expect("the baseline");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID)
+            .expect("the numbering migration");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO unheld_listens
+                        (rowid, path, span_start, at, began, heard, listen_id, elsewhere,
+                         origin_device, origin_id)
+                 VALUES (3, '/music/a.flac', 0, 10, 9, 500, NULL, 0, NULL, NULL),
+                        (7, '/music/b.flac', 44100, 20, 19, 700, 12, 1, x'0102', 4);",
+            )
+            .expect("unheld listens of the older shape");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the numbering migration");
+
+        let kept: Vec<KeptUnheld> = connection
+            .prepare(
+                "SELECT id, path, span_start, heard, listen_id, elsewhere, origin_device
+                   FROM unheld_listens ORDER BY id",
+            )
+            .and_then(|mut query| {
+                query
+                    .query_map([], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                        ))
+                    })
+                    .and_then(Iterator::collect)
+            })
+            .expect("the unheld listens read back");
+        connection
+            .execute("DELETE FROM unheld_listens WHERE id = 7", [])
+            .expect("the latest unheld listen is credited");
+        let next: i64 = connection
+            .query_row(
+                "INSERT INTO unheld_listens (path, span_start, at)
+                 VALUES ('/music/c.flac', 0, 30) RETURNING id",
+                [],
+                |row| row.get(0),
+            )
+            .expect("a later unheld listen");
+        let noted = connection
+            .execute(
+                "INSERT INTO unheld_credited (unheld, listen) VALUES (3, 1)",
+                [],
+            )
+            .is_err();
+
+        assert_eq!(
+            kept,
+            vec![
+                (3, "/music/a.flac".to_owned(), 0, 500, None, false, None),
+                (
+                    7,
+                    "/music/b.flac".to_owned(),
+                    44_100,
+                    700,
+                    Some(12),
+                    true,
+                    Some(vec![1, 2])
+                ),
+            ]
+        );
+        assert_eq!(next, 8, "the id of a listen gone was handed out again");
+        assert!(noted, "a note named a listen the catalog does not hold");
+        assert_eq!(
+            stamped(&connection).expect("the stamp reads back"),
+            Some(SCHEMA_FINGERPRINT)
+        );
     }
 
     #[test]

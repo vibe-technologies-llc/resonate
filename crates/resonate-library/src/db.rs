@@ -1961,17 +1961,9 @@ impl Library {
 
     pub fn listened(&self, listen: Listen, heard: Duration) -> Result<()> {
         let nanos = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
-        let (spending, id) = match listen {
-            Listen::Held(id) => ("UPDATE listens SET heard = ?1 WHERE id = ?2", id),
-            Listen::Unheld(id) => ("UPDATE unheld_listens SET heard = ?1 WHERE rowid = ?2", id),
-        };
 
-        self.inner.write(|transaction| {
-            transaction
-                .execute(spending, params![nanos, id.get() as i64])
-                .map(drop)
-                .map_err(|source| Error::store(StoreOp::Update, source))
-        })
+        self.inner
+            .write(|transaction| history::spent(transaction, listen, nanos))
     }
 
     pub fn track_played(
@@ -2002,7 +1994,7 @@ impl Library {
                     .query_row(
                         "INSERT INTO unheld_listens (path, span_start, at, began)
                          VALUES (?1, ?2, ?3, ?4)
-                         RETURNING rowid",
+                         RETURNING id",
                         params![text, start, now, began],
                         |row| row.get::<_, i64>(0),
                     )
@@ -2053,7 +2045,7 @@ impl Library {
                 .query_row(
                     "INSERT INTO unheld_listens (path, span_start, at, began)
                      VALUES (?1, 0, ?2, ?3)
-                     RETURNING rowid",
+                     RETURNING id",
                     params![location.to_uri(), store::to_nanos(moment), began],
                     |row| row.get::<_, i64>(0),
                 )
