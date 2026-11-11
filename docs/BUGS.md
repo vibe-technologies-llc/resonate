@@ -28,32 +28,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   nothing
 
 ## Sync and together
-- [S · 0.8.1] A listen is offered to the other devices once its `heard` leaves zero, not once it has
-  settled: `listens_after` (`synced.rs`) holds back only a listen at `heard == 0` past
-  `settled_before`, while `Counting::Hears` raises `heard` every `TOLD_EVERY` (30 s) as the song
-  plays, and the ledger and the remote `credit` are `INSERT OR IGNORE`, so a pass caught mid-song
-  sends the time heard so far for good and every other device's statistics and Wrapped count short
-- [S · 0.8.1] A playlist sync makes inherits a deleted playlist's link: `synced::made` clears
-  `playlist_plays` for the id SQLite hands out again but not `playlist_sources`, which
-  `playlist::created` clears (`forget_the_source_of_a_discarded_holder`) and a removal keeps for
-  undo, so a synced playlist landing on a deleted linked one's id shows linked and its next refresh
-  rewrites it with the link's songs and spreads that to every device
-- [S · 0.8.1] A guest's request, a host's dismissal and a turn-out made while a party reconnects are
-  thrown away (`party/service.rs` `remember` keeps nothing of `Ask`, `Kick` or `TakeAsk`), and the
-  guest's song has already left its own queue (`seat.rs`), so it is lost twice with nothing said;
-  keep them in a short queue and send them after `RoomWelcome`
-- [S · 0.8.1] *Play next* on a party request removes it by index after a search that may take
-  seconds (`party_room.rs` `play_a_request_next`, the phones' `together.rs`), so two pressed in
-  quick succession queue one request and take another out unplayed; `TakeAsk` wants the request's
-  sender and row
-- [M · 0.8.1] The desktop's deletion is open to the race 90936028 closed on the phones:
-  `remove_tracks` trashes every file and only then writes `forget_files` and its `songs_deleted`
-  marks (`db.rs`), `holds` reads a row whose file is gone as not held (`synced.rs`), and
-  `fetch_claimed` checks `holds` but never `deleted_here` before landing (`resonate-sync`
-  `service.rs`), so a follow inside a large deletion fetches the songs back to the freed names, the
-  forgetting leaves those files without a row, and the next scan brings them back. Write the marks
-  before trashing, or keep a path whose file stands again as the phones do, and weigh
-  `deleted_here` before a landing
+- [S · 0.8.1] A shared playlist reads one clean close as `ServerTooOld`, as a party did:
+  `shared/service.rs` ends on `Ok(Ok(None))` in the heads read and on a `None` in the close path,
+  where a tunnel or a draining server sends a WebSocket `Close`; take several in a row before any
+  answer, as `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` does
+- [S · 0.8.1] Two presses of *Play next* on one party request while its search runs queue it twice:
+  `take_a_request` takes the request named, but nothing marks it taken until the search lands
 - [L · 0.8.1] A device driven from another removes, moves or jumps by bare row index
   (`resonate-driven` `command_for`, sent with a plain `send`), so an edit made on the driven device
   meanwhile has a remote *Remove* take another song; the wire carries no queue revision for
@@ -69,9 +49,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `kept.rs`), so once the 30-day sweep at open removes the newest answer the next one takes its
   number, under a mark a peer has already passed, and never reaches that peer; a counter that never
   goes back wants a migration step
-- [S · 0.8.1] (investigate) One clean close before the welcome ends a party for good as
-  `ServerTooOld`: `party/service.rs` reads a first `None` so and stops retrying, and `web.rs` reads
-  any WebSocket `Close` as `None`, which a tunnel or a server draining its connections may send
 
 ## Playback and output
 - [S · 0.8.1] A seek in a fetched song asks each range with `Ranged::opened_from` (`Seeking`), which
