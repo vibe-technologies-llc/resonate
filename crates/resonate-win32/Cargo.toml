@@ -10,8 +10,13 @@ doctest = false
 [features]
 console = []
 
-[target.'cfg(windows)'.dependencies]
+[dependencies]
 thiserror.workspace = true
+
+[dev-dependencies]
+parking_lot.workspace = true
+
+[target.'cfg(windows)'.dependencies]
 windows = {
     version = "0.62.2",
     default-features = false,
