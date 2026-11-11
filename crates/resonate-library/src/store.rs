@@ -277,11 +277,18 @@ pub fn land_covers(tx: &Transaction<'_>, cache: &mut Cache, read: ReadCovers) ->
 }
 
 pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
-    let unsettled = artists_folding_together(connection)?;
-    if unsettled.is_empty() {
+    let wanted: bool = queried(
+        connection,
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'artists_fold_wanted')",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if !wanted {
         return Ok(0);
     }
 
+    let unsettled = artists_folding_together(connection)?;
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
@@ -304,9 +311,13 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
             reindex_the_tracks_of(&tx, keeps.id)?;
         }
     }
+    tx.execute_batch("DROP TABLE artists_fold_wanted")
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
     tx.commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
-    tracing::info!(merged, "artists were keyed by the fold of their names");
+    if merged > 0 {
+        tracing::info!(merged, "artists were keyed by the fold of their names");
+    }
 
     Ok(merged)
 }
@@ -3163,6 +3174,42 @@ mod tests {
             reconcile_artists(&mut connection).expect("a settled catalog reconciles"),
             0
         );
+    }
+
+    #[test]
+    fn the_artists_are_read_for_folding_only_while_a_step_has_left_the_fold_owed() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO artists (id, key, name) VALUES
+                     (1, 'marcin przybylowicz', 'Marcin Przybylowicz'),
+                     (2, 'marcin przybyłowicz', 'Marcin Przybyłowicz');
+                 DROP TABLE artists_fold_wanted;",
+            )
+            .expect("a catalog keyed the old way, its fold not owed");
+        let marked = |connection: &Connection| {
+            connection
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'artists_fold_wanted')",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("the schema reads back")
+        };
+
+        assert_eq!(reconcile_artists(&mut connection).expect("nothing owed"), 0);
+        assert_eq!(artists_in(&connection).len(), 2);
+
+        connection
+            .execute_batch("CREATE TABLE artists_fold_wanted (since INTEGER) STRICT;")
+            .expect("a step owes the fold");
+        assert_eq!(
+            reconcile_artists(&mut connection).expect("the artists reconcile"),
+            1
+        );
+        assert_eq!(artists_in(&connection).len(), 1);
+        assert!(!marked(&connection), "the owed fold was not marked done");
     }
 
     #[test]

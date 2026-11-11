@@ -46,7 +46,7 @@ enum Heard {
 
 pub struct RootsWatch {
     moved: Arc<Mutex<Moved>>,
-    _watcher: RecommendedWatcher,
+    watcher: RecommendedWatcher,
     uncovered: Vec<PathBuf>,
 }
 
@@ -82,7 +82,7 @@ impl RootsWatch {
 
         Some(Self {
             moved,
-            _watcher: watcher,
+            watcher,
             uncovered,
         })
     }
@@ -91,16 +91,31 @@ impl RootsWatch {
         !self.uncovered.is_empty()
     }
 
-    pub fn taking_over(self, previous: Self) -> Self {
+    pub fn replacing(previous: Self, roots: &[PathBuf]) -> Option<Self> {
         let Self {
             moved: left,
-            _watcher: stopped,
+            watcher: stopped,
             ..
         } = previous;
         drop(stopped);
         let left = std::mem::take(&mut *left.lock());
-        self.moved.lock().carry(left);
-        self
+
+        let laid = Self::over(roots)?;
+        laid.moved.lock().carry(left);
+        Some(laid)
+    }
+
+    pub fn cover_again(&mut self) {
+        for root in std::mem::take(&mut self.uncovered) {
+            if let Err(error) = self.watcher.watch(&root, RecursiveMode::Recursive) {
+                tracing::debug!(
+                    %error,
+                    root = %root.display(),
+                    "a library folder is still not covered by the watch"
+                );
+                self.uncovered.push(root);
+            }
+        }
     }
 
     pub fn settled(&self, quiet: Duration) -> Vec<PathBuf> {
@@ -580,15 +595,36 @@ mod tests {
         fs::write(scratch.path.join("album/time.flac"), b"fLaC").expect("a file");
         thread::sleep(QUIET / 2);
 
-        let second = RootsWatch::over(std::slice::from_ref(&scratch.path))
-            .expect("a watch")
-            .taking_over(first);
+        let second =
+            RootsWatch::replacing(first, std::slice::from_ref(&scratch.path)).expect("a watch");
 
         assert_eq!(
             settled_within(&second, HEARD_WITHIN),
             vec![scratch.path.clone()]
         );
         assert_eq!(taken_away_within(&second, HEARD_WITHIN), vec![taken]);
+    }
+
+    #[test]
+    fn a_root_that_appears_after_the_watch_was_laid_is_covered_on_the_same_watch() {
+        let scratch = Scratch::new("covered-late");
+        let elsewhere = Scratch::new("covered-late-elsewhere");
+        let late = elsewhere.path.join("late");
+        let mut watch = RootsWatch::over(&[scratch.path.clone(), late.clone()]).expect("a watch");
+        assert!(watch.leaves_a_root_uncovered());
+
+        watch.cover_again();
+        assert!(
+            watch.leaves_a_root_uncovered(),
+            "a folder not there was covered"
+        );
+
+        fs::create_dir_all(&late).expect("the folder appears");
+        watch.cover_again();
+        assert!(!watch.leaves_a_root_uncovered());
+
+        fs::write(late.join("echoes.flac"), b"fLaC").expect("a file");
+        assert_eq!(settled_within(&watch, HEARD_WITHIN), vec![late]);
     }
 
     #[test]

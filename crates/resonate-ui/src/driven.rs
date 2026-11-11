@@ -2678,6 +2678,38 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_playing_row_is_read_as_the_title_and_the_album_of_its_scanned_track(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the tracks read")
+            .remove(0);
+        let item = resonate_engine::QueueItem {
+            id: track.id,
+            location: track.location.clone(),
+            span: track.span,
+        };
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
+        for _ in 0..2 {
+            let scanned = driven.root.update(&mut driven.cx, |root, cx| {
+                root.library
+                    .update(cx, |model, _| model.scanned_playing(&item))
+            });
+            let scanned = scanned.expect("the scanned track is read");
+
+            assert_eq!(scanned.id, track.id);
+            assert_eq!(scanned.title, "Echos");
+            assert_eq!(scanned.album.as_deref(), Some("Meddle"));
+        }
+    }
+
+    #[gpui::test]
     fn the_statistics_pane_reads_when_things_were_heard_and_keeps_the_one_run_the_keys_walk(
         cx: &mut TestAppContext,
     ) {

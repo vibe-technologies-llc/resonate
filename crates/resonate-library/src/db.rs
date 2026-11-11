@@ -696,6 +696,7 @@ pub(crate) struct Inner {
     suggested: Mutex<Option<KeptSuggestions>>,
     filed: Mutex<Option<KeptFiling>>,
     measured: Mutex<Option<KeptMeasurements>>,
+    pictured: Mutex<Option<KeptPictures>>,
     playing: Mutex<Option<Playing>>,
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
@@ -745,7 +746,7 @@ struct KeptMeasurements {
     stamp: CatalogStamp,
     filters: MusicFilters,
     kept_at: Instant,
-    by_query: AHashMap<SavedQuery, Measured>,
+    by_query: AHashMap<String, Measured>,
 }
 
 impl KeptMeasurements {
@@ -756,7 +757,29 @@ impl KeptMeasurements {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct PicturesAt {
+    rows: CatalogStamp,
+    playlists: u64,
+    filters: MusicFilters,
+}
+
+impl PicturesAt {
+    fn holds(self, now: Self) -> bool {
+        self.rows.still_holds_at(now.rows)
+            && self.playlists == now.playlists
+            && self.filters == now.filters
+    }
+}
+
+struct KeptPictures {
+    at: PicturesAt,
+    by_playlist: AHashMap<(PlaylistId, usize), Vec<AlbumId>>,
+}
+
 const MEASUREMENTS_KEPT_FOR: Duration = Duration::from_secs(60);
+
+const MEASUREMENTS_KEPT_AT_MOST: usize = 64;
 
 struct KeptFiling {
     stamp: CatalogStamp,
@@ -1088,34 +1111,91 @@ impl Inner {
     }
 
     pub(crate) fn measured_saved(&self, saved: &SavedQuery) -> Result<Measured> {
-        let stamp = self.rows_stamp();
-        let filters = *self.music_filters.lock();
-        if let Some(kept) = self
-            .measured
+        measured(self, &TrackQuery::from(saved))
+    }
+
+    fn measurement_kept(
+        &self,
+        stamp: CatalogStamp,
+        filters: MusicFilters,
+        key: &str,
+    ) -> Option<Measured> {
+        self.measured
             .lock()
             .as_ref()
             .filter(|kept| kept.holds(stamp, filters))
-            .and_then(|kept| kept.by_query.get(saved))
-        {
-            return Ok(*kept);
-        }
+            .and_then(|kept| kept.by_query.get(key))
+            .copied()
+    }
 
-        let measured = measured(self, &TrackQuery::from(saved))?;
+    fn keep_measurement(
+        &self,
+        stamp: CatalogStamp,
+        filters: MusicFilters,
+        key: String,
+        measured: Measured,
+    ) {
         let mut kept = self.measured.lock();
         match kept.as_mut().filter(|kept| kept.holds(stamp, filters)) {
             Some(kept) => {
-                kept.by_query.insert(saved.clone(), measured);
+                if kept.by_query.len() >= MEASUREMENTS_KEPT_AT_MOST {
+                    kept.by_query.clear();
+                }
+                kept.by_query.insert(key, measured);
             }
             None => {
                 *kept = Some(KeptMeasurements {
                     stamp,
                     filters,
                     kept_at: Instant::now(),
-                    by_query: AHashMap::from_iter([(saved.clone(), measured)]),
+                    by_query: AHashMap::from_iter([(key, measured)]),
                 });
             }
         }
-        Ok(measured)
+    }
+
+    pub(crate) fn pictures_at(&self) -> PicturesAt {
+        PicturesAt {
+            rows: self.rows_stamp(),
+            playlists: self.playlists_revision(),
+            filters: *self.music_filters.lock(),
+        }
+    }
+
+    pub(crate) fn pictures_kept(
+        &self,
+        at: PicturesAt,
+        playlist: PlaylistId,
+        at_most: usize,
+    ) -> Option<Vec<AlbumId>> {
+        self.pictured
+            .lock()
+            .as_ref()
+            .filter(|kept| kept.at.holds(at))
+            .and_then(|kept| kept.by_playlist.get(&(playlist, at_most)))
+            .cloned()
+    }
+
+    pub(crate) fn keep_pictures(
+        &self,
+        at: PicturesAt,
+        playlist: PlaylistId,
+        at_most: usize,
+        albums: &[AlbumId],
+    ) {
+        let mut kept = self.pictured.lock();
+        match kept.as_mut().filter(|kept| kept.at.holds(at)) {
+            Some(kept) => {
+                kept.by_playlist
+                    .insert((playlist, at_most), albums.to_vec());
+            }
+            None => {
+                *kept = Some(KeptPictures {
+                    at,
+                    by_playlist: AHashMap::from_iter([((playlist, at_most), albums.to_vec())]),
+                });
+            }
+        }
     }
 
     fn plans_stamp(&self) -> CatalogStamp {
@@ -1157,7 +1237,13 @@ impl Inner {
     }
 }
 
-const NAMED_TABLES: [&str; 4] = ["tracks", "albums", "artists", "artist_genres"];
+const NAMED_TABLES: [&str; 5] = [
+    "tracks",
+    "albums",
+    "artists",
+    "artist_genres",
+    "track_credits",
+];
 const NAMES_MOVED: &str = "names_moved";
 const PLANS_MOVED: &str = "plans_moved";
 
@@ -1424,6 +1510,7 @@ impl Library {
         *self.inner.suggested.lock() = None;
         *self.inner.filed.lock() = None;
         *self.inner.measured.lock() = None;
+        *self.inner.pictured.lock() = None;
     }
 
     pub fn deliver_into(&self, folder: Option<DeliveryFolder>) {
@@ -1601,6 +1688,7 @@ impl Library {
                 suggested: Mutex::new(None),
                 filed: Mutex::new(None),
                 measured: Mutex::new(None),
+                pictured: Mutex::new(None),
                 playing: Mutex::new(None),
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
@@ -2032,6 +2120,10 @@ impl Library {
 
     pub fn habits(&self, window: Window) -> Result<Habits> {
         statistics::habits(&self.inner, window)
+    }
+
+    pub fn days_and_habits(&self, window: Window) -> Result<(Vec<Day>, Habits)> {
+        statistics::days_and_habits(&self.inner, window)
     }
 
     pub fn years_heard(&self, calendar: &Calendar) -> Result<Vec<i64>> {
@@ -2953,6 +3045,10 @@ impl Library {
 
     pub fn names_stamp(&self) -> CatalogStamp {
         self.inner.names_stamp()
+    }
+
+    pub fn rows_stamp(&self) -> CatalogStamp {
+        self.inner.rows_stamp()
     }
 
     pub fn names_moved_since(&self, then: CatalogStamp) -> NamesMoved {
@@ -6355,7 +6451,9 @@ pub(crate) fn measured_narrowed(
     query: &TrackQuery,
     narrowing: Option<&str>,
 ) -> Result<Measured> {
-    let Some(scoped) = scoped(query, narrowing, *inner.music_filters.lock()) else {
+    let stamp = inner.rows_stamp();
+    let filters = *inner.music_filters.lock();
+    let Some(scoped) = scoped(query, narrowing, filters) else {
         return Ok(Measured::default());
     };
     let whole = query.limit.is_none() && query.offset == 0;
@@ -6382,8 +6480,13 @@ pub(crate) fn measured_narrowed(
             paged(scoped.binds, query),
         ),
     };
+    let keepable = narrowing.is_none();
+    let key = format!("{sql}\u{0}{binds:?}");
+    if keepable && let Some(kept) = inner.measurement_kept(stamp, filters, &key) {
+        return Ok(kept);
+    }
 
-    inner.read(|connection| {
+    let measured = inner.read(|connection| {
         connection
             .query_row(&sql, params_from_iter(binds), |row| {
                 Ok(Measured {
@@ -6393,7 +6496,11 @@ pub(crate) fn measured_narrowed(
                 })
             })
             .map_err(|source| Error::store(StoreOp::Query, source))
-    })
+    })?;
+    if keepable {
+        inner.keep_measurement(stamp, filters, key, measured);
+    }
+    Ok(measured)
 }
 
 const COVERED_ALBUM: &str = "(tracks.album_id IN (SELECT id FROM albums
@@ -8709,6 +8816,78 @@ mod tests {
             library.inner.measured.lock().is_none(),
             "a change of the music filters kept the counts made under the old ones"
         );
+    }
+
+    #[test]
+    fn a_listing_measured_twice_is_counted_once_until_a_row_of_the_catalog_moves() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        titled(&library, "First");
+        let query = TrackQuery::default();
+
+        assert_eq!(library.measured(&query)?.rows, 1);
+        let first = library
+            .inner
+            .measured
+            .lock()
+            .as_ref()
+            .map(|kept| kept.kept_at);
+        assert_eq!(library.measured(&query)?.rows, 1);
+        assert_eq!(
+            library
+                .inner
+                .measured
+                .lock()
+                .as_ref()
+                .map(|kept| kept.kept_at),
+            first,
+            "the second measure counted the catalog again"
+        );
+
+        titled(&library, "Second");
+        assert_eq!(
+            library.measured(&query)?.rows,
+            2,
+            "a track written under a kept count was not counted"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_playlists_pictures_are_read_once_until_the_catalog_or_the_playlists_move() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        let playlist = library.create_playlist("Mine")?;
+
+        assert!(library.playlist_pictures(playlist, 4)?.is_empty());
+        assert!(
+            library
+                .inner
+                .pictures_kept(library.inner.pictures_at(), playlist, 4)
+                .is_some(),
+            "the pictures read were not kept"
+        );
+
+        library.inner.playlists_changed();
+        assert!(
+            library
+                .inner
+                .pictures_kept(library.inner.pictures_at(), playlist, 4)
+                .is_none(),
+            "a change of the playlists kept the pictures read before it"
+        );
+
+        assert!(library.playlist_pictures(playlist, 4)?.is_empty());
+        titled(&library, "First");
+        assert!(
+            library
+                .inner
+                .pictures_kept(library.inner.pictures_at(), playlist, 4)
+                .is_none(),
+            "a write to the tracks kept the pictures read before it"
+        );
+
+        library.filter_music(MusicFilters::default());
+        assert!(library.inner.pictured.lock().is_none());
+        Ok(())
     }
 
     struct Scratch {

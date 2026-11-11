@@ -1060,15 +1060,12 @@ impl RootView {
             .filter(|digest| digest.track == current.id)
             .map(|digest| &digest.info);
         let codec = tags.map(|info| Codec::from_id(info.codec));
-        let scanned = row
-            .as_ref()
-            .and_then(|item| self.library.update(cx, |library, _| library.track_of(item)));
+        let scanned = row.as_ref().and_then(|item| {
+            self.library
+                .update(cx, |library, _| library.scanned_playing(item))
+        });
 
         if let Some(track) = scanned {
-            let album = track.album_id.and_then(|album| {
-                self.library
-                    .update(cx, |library, _| library.album_title(album))
-            });
             let heard = Some(Heard {
                 plays: track.plays,
                 played: track.played,
@@ -1076,7 +1073,7 @@ impl RootView {
             });
             return Playing {
                 track: Some(track.id),
-                favourite: self.library.read(cx).favours_track(&track),
+                favourite: track.favourite,
                 title: SharedString::from(track.title),
                 artist: SharedString::from(
                     track
@@ -1084,7 +1081,7 @@ impl RootView {
                         .unwrap_or_else(|| words::transport::unknown_artist().to_owned()),
                 ),
                 artist_id: track.artist_id,
-                album: album.map(SharedString::from),
+                album: track.album.map(SharedString::from),
                 codec: codec.or(Some(track.codec)),
                 cover: Cover {
                     album: track.album_id,

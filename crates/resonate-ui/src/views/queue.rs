@@ -866,7 +866,7 @@ impl RootView {
     fn queue_length(&mut self, cx: &mut Context<Self>) -> Option<(Duration, usize)> {
         let measured = QueueLength {
             queue: self.player.read(cx).queued().revision,
-            library: self.library.read(cx).revision(),
+            rows: self.library.read(cx).catalog().rows_stamp(),
             total: Duration::ZERO,
             unmeasured: 0,
         };
@@ -1382,9 +1382,27 @@ mod tests {
     use resonate_library::{Library, NamesMoved};
 
     use super::{
-        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueParts, QueueRows, Run, Standing,
-        TakenBack, named_again, puts_back, runs_of, takes_out_again, took_out,
+        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueLength, QueueParts, QueueRows,
+        Run, Standing, TakenBack, named_again, puts_back, runs_of, takes_out_again, took_out,
     };
+
+    fn length_at(queue: u64, library: &Library) -> QueueLength {
+        QueueLength {
+            queue,
+            rows: library.rows_stamp(),
+            total: std::time::Duration::ZERO,
+            unmeasured: 0,
+        }
+    }
+
+    #[test]
+    fn a_length_measured_holds_until_the_queue_or_the_catalog_rows_move() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let held = length_at(4, &library);
+
+        assert!(held.measures(length_at(4, &library)));
+        assert!(!held.measures(length_at(5, &library)));
+    }
 
     #[test]
     fn a_queue_edit_names_only_the_rows_it_brought() {
@@ -1780,13 +1798,13 @@ mod tests {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct QueueLength {
     queue: u64,
-    library: u64,
+    rows: CatalogStamp,
     total: Duration,
     unmeasured: usize,
 }
 
 impl QueueLength {
-    const fn measures(self, now: Self) -> bool {
-        self.queue == now.queue && self.library == now.library
+    fn measures(self, now: Self) -> bool {
+        self.queue == now.queue && self.rows.still_holds_at(now.rows)
     }
 }

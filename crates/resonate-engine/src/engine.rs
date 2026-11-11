@@ -4917,11 +4917,25 @@ impl Engine {
         };
 
         let points = track.profile.points();
-        if track.published == Some(points) {
+        if !digest_is_due(track.published, points) {
             return;
         }
         track.published = Some(points);
         *self.published.digest.write() = Some(Arc::new(track.digest(mode)));
+    }
+}
+
+const DIGEST_GROWTH_DIVISOR: usize = 16;
+
+const DIGEST_STEP_AT_MOST: usize = 30;
+
+fn digest_is_due(published: Option<usize>, points: usize) -> bool {
+    match published {
+        None => true,
+        Some(published) => {
+            let step = (published / DIGEST_GROWTH_DIVISOR).clamp(1, DIGEST_STEP_AT_MOST);
+            points >= published + step
+        }
     }
 }
 
@@ -4979,6 +4993,29 @@ mod tests {
             ChannelLayout::Stereo,
             SampleFormat::S32,
         )
+    }
+
+    #[test]
+    fn a_digest_is_published_at_once_when_none_was_and_after_growth_a_share_of_what_it_held() {
+        assert!(digest_is_due(None, 0));
+        assert!(digest_is_due(Some(0), 1));
+        assert!(!digest_is_due(Some(5), 5));
+        assert!(digest_is_due(Some(5), 6));
+
+        assert!(!digest_is_due(Some(160), 160));
+        assert!(!digest_is_due(Some(160), 169));
+        assert!(digest_is_due(Some(160), 170));
+        assert!(!digest_is_due(Some(3_200), 3_229));
+        assert!(digest_is_due(Some(3_200), 3_230));
+
+        let republished = (1..36_000_usize).fold((0, 0), |(published, count), points| {
+            if digest_is_due(Some(published), points) {
+                (points, count + 1)
+            } else {
+                (published, count)
+            }
+        });
+        assert!(republished.1 < 1_500, "{} publications", republished.1);
     }
 
     #[test]

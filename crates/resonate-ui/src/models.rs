@@ -25,8 +25,8 @@ use resonate_core::{
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
     Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail,
-    ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut,
-    Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
+    ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, Codec, CoverArt, Covering,
+    Cut, Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
     GroupRelease, Habits, HeldReleaseTrack, HiddenTracks, HistoryKept, ImportOptions,
     ImportProgress, ImportStats, ImportSummary, Imported, Isrc, Issued, KeepStopped, KeepSummary,
@@ -98,7 +98,8 @@ const ASKED_EVERY: Duration = Duration::from_secs(30 * 60);
 const RETRIES_ASKED_AT_LEAST: Duration = Duration::from_secs(30);
 const UNHEARD_RETRIES_DOUBLE_AT_MOST: u32 = 5;
 const WATCHED_EVERY: Duration = Duration::from_secs(2);
-const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
+const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
+const ROOTS_READ_EVERY: Duration = Duration::from_secs(5);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
 const UNCOVERED_ROOTS_TRIED_AGAIN_AFTER: Duration = Duration::from_secs(5 * 60);
 const INBOX_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
@@ -869,6 +870,7 @@ pub struct LibraryModel {
     named: Recent<TrackId, Named>,
     _naming_again: Task<()>,
     read_albums: Recent<AlbumId, Option<Album>>,
+    read_albums_at: Option<CatalogStamp>,
     counted: Option<Listen>,
     _load: Task<()>,
     in_flight: Option<Wanted>,
@@ -1146,6 +1148,7 @@ impl LibraryModel {
             named: Recent::new(NAMES_HELD),
             _naming_again: Task::ready(()),
             read_albums: Recent::new(ALBUMS_HELD),
+            read_albums_at: None,
             counted: None,
             _load: Task::ready(()),
             in_flight: None,
@@ -1391,7 +1394,11 @@ impl LibraryModel {
                 let (followed, settled, forgotten) = cx
                     .background_executor()
                     .spawn(async move {
-                        let mut followed = watching.following(&reading);
+                        let mut followed = if watching.is_due_to_read_the_roots() {
+                            watching.following(&reading)
+                        } else {
+                            watching
+                        };
                         let forgotten = followed.forget_what_went(&reading);
                         let mut settled = followed.came_back();
                         if !busy {
@@ -4589,22 +4596,49 @@ impl LibraryModel {
     }
 
     pub fn track_of(&mut self, item: &QueueItem) -> Option<Track> {
-        if let Some(held) = self.named.get(&item.id)
-            && held.names(item)
-        {
-            return held.track.clone();
+        self.named_track(item).cloned()
+    }
+
+    fn named_track(&mut self, item: &QueueItem) -> Option<&Track> {
+        let stands = self
+            .named
+            .get(&item.id)
+            .is_some_and(|held| held.names(item));
+        if !stands {
+            let found = self.scanned(item);
+            self.named.insert(
+                item.id,
+                Named {
+                    location: item.location.clone(),
+                    span: item.span,
+                    track: found,
+                },
+            );
         }
 
-        let found = self.scanned(item);
-        self.named.insert(
-            item.id,
-            Named {
-                location: item.location.clone(),
-                span: item.span,
-                track: found.clone(),
-            },
-        );
-        found
+        self.named.peek(&item.id)?.track.as_ref()
+    }
+
+    pub(crate) fn scanned_playing(&mut self, item: &QueueItem) -> Option<ScannedPlaying> {
+        let track = self.named_track(item)?;
+        let mut scanned = ScannedPlaying {
+            id: track.id,
+            title: track.title.clone(),
+            artist: track.artist.clone(),
+            artist_id: track.artist_id,
+            album_id: track.album_id,
+            album: None,
+            codec: track.codec,
+            plays: track.plays,
+            played: track.played,
+            added: track.added,
+            favourite: false,
+        };
+        let stored = track.favourite.is_some();
+
+        scanned.favourite = self.favours(Favoured::Track(scanned.id), stored);
+        scanned.album = scanned.album_id.and_then(|album| self.album_title(album));
+        Some(scanned)
     }
 
     fn scanned(&self, item: &QueueItem) -> Option<Track> {
@@ -4623,22 +4657,27 @@ impl LibraryModel {
     }
 
     pub fn album_title(&mut self, id: AlbumId) -> Option<String> {
-        self.album_anywhere(id).map(|album| album.title)
+        self.with_album(id, |album| album.title.clone())
     }
 
-    fn album_anywhere(&mut self, id: AlbumId) -> Option<Album> {
+    fn album_owner(&mut self, id: AlbumId) -> Option<ArtistId> {
+        self.with_album(id, |album| album.artist_id).flatten()
+    }
+
+    fn with_album<T>(&mut self, id: AlbumId, from: impl FnOnce(&Album) -> T) -> Option<T> {
         if let Some(listed) = self.album_of(id) {
-            return Some(listed.clone());
+            return Some(from(listed));
         }
         if let Some(held) = self.read_albums.get(&id) {
-            return held.clone();
+            return held.as_ref().map(from);
         }
         let read = self.library.album(id).unwrap_or_else(|error| {
             tracing::warn!(%error, album = %id, "an album the listing does not hold could not be read");
             None
         });
-        self.read_albums.insert(id, read.clone());
-        read
+        let answer = read.as_ref().map(from);
+        self.read_albums.insert(id, read);
+        answer
     }
 
     pub fn set_query(&mut self, query: String, cx: &mut Context<Self>) {
@@ -4661,7 +4700,7 @@ impl LibraryModel {
         match selection {
             Selection::Everything => {}
             Selection::Album(album) => {
-                let owner = self.album_anywhere(album).and_then(|held| held.artist_id);
+                let owner = self.album_owner(album);
                 self.ask_about(Some(album), owner);
             }
             Selection::Artist(artist) => {
@@ -4739,6 +4778,17 @@ impl LibraryModel {
         self.forget_what_the_catalog_may_have_changed();
         self.name_what_is_held_again(cx);
         self.read(Wanted::Everything, cx);
+    }
+
+    fn forget_albums_the_catalog_moved_under(&mut self) {
+        let now = self.library.rows_stamp();
+        if !self
+            .read_albums_at
+            .is_some_and(|held| held.still_holds_at(now))
+        {
+            self.read_albums = Recent::new(ALBUMS_HELD);
+        }
+        self.read_albums_at = Some(now);
     }
 
     fn forget_what_the_catalog_may_have_changed(&mut self) {
@@ -4929,7 +4979,7 @@ impl LibraryModel {
 
     fn take(&mut self, loaded: Loaded) -> Grew {
         self.revision = self.revision.wrapping_add(1);
-        self.read_albums = Recent::new(ALBUMS_HELD);
+        self.forget_albums_the_catalog_moved_under();
         if let Some(shelves) = loaded.shelves {
             self.take_the_shelves(shelves);
         }
@@ -6984,6 +7034,20 @@ fn albums_of(tracks: &[Track]) -> Vec<AlbumId> {
         .collect()
 }
 
+pub(crate) struct ScannedPlaying {
+    pub(crate) id: TrackId,
+    pub(crate) title: String,
+    pub(crate) artist: Option<String>,
+    pub(crate) artist_id: Option<ArtistId>,
+    pub(crate) album_id: Option<AlbumId>,
+    pub(crate) album: Option<String>,
+    pub(crate) codec: Codec,
+    pub(crate) plays: u32,
+    pub(crate) played: Option<SystemTime>,
+    pub(crate) added: SystemTime,
+    pub(crate) favourite: bool,
+}
+
 #[derive(Clone)]
 struct Named {
     location: MediaLocation,
@@ -7340,6 +7404,7 @@ fn read_in(imported: Imported) -> String {
 #[derive(Default)]
 struct Watching {
     watch: Option<RootsWatch>,
+    read_at: Option<Instant>,
     laid_at: Option<Instant>,
     tried: Option<Vec<PathBuf>>,
     there: Option<bool>,
@@ -7349,7 +7414,13 @@ struct Watching {
 }
 
 impl Watching {
+    fn is_due_to_read_the_roots(&self) -> bool {
+        self.read_at
+            .is_none_or(|at| at.elapsed() >= ROOTS_READ_EVERY)
+    }
+
     fn following(mut self, library: &Library) -> Self {
+        self.read_at = Some(Instant::now());
         let roots = match library.roots() {
             Ok(roots) => roots,
             Err(error) => {
@@ -7367,10 +7438,18 @@ impl Watching {
             && self
                 .laid_at
                 .is_some_and(|at| at.elapsed() >= UNCOVERED_ROOTS_TRIED_AGAIN_AFTER);
-        if self.tried.as_deref() == Some(present.as_slice()) && !to_cover_again {
+        if self.tried.as_deref() == Some(present.as_slice()) && self.watch.is_some() {
+            if to_cover_again && let Some(watch) = self.watch.as_mut() {
+                watch.cover_again();
+                self.laid_at = Some(Instant::now());
+            }
             return self;
         }
-        let Some(laid) = RootsWatch::over(&present) else {
+        let laid = match self.watch.take() {
+            Some(previous) => RootsWatch::replacing(previous, &present),
+            None => RootsWatch::over(&present),
+        };
+        let Some(laid) = laid else {
             return self;
         };
 
@@ -7379,10 +7458,7 @@ impl Watching {
             self.returned.extend(returned.cloned());
         }
         self.absent = absent;
-        self.watch = Some(match self.watch.take() {
-            Some(previous) => laid.taking_over(previous),
-            None => laid,
-        });
+        self.watch = Some(laid);
         self.tried = Some(present);
         self.laid_at = Some(Instant::now());
         self
@@ -7805,11 +7881,13 @@ fn paged(library: &Library, asked: &Asked) -> resonate_library::Result<Paged> {
 }
 
 fn standing(library: &Library, window: Window) -> resonate_library::Result<Standing> {
+    let (by_day, habits) = library.days_and_habits(window)?;
+
     Ok(Standing {
         statistics: library.statistics(window)?,
         most_listened: library.most_listened(window, MOST_LISTENED)?,
-        by_day: library.listening_by_day(window)?,
-        habits: library.habits(window)?,
+        by_day,
+        habits,
         suggestions: library.suggestions()?,
         roots: library.roots()?,
         hidden: library.hidden_tracks(HIDDEN_LISTED_AT_MOST)?,
@@ -8147,7 +8225,7 @@ mod tests {
     use super::{
         Arranging, Beyond, Change, Favourited, Followed, KeepPass, LibraryModel, ListedRow,
         MissingRow, Notice, POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching, Shared, Wanted,
-        albums_kept_before_the_rest, arranged, beyond_the_listing, delivery_folder,
+        Watching, albums_kept_before_the_rest, arranged, beyond_the_listing, delivery_folder,
         elsewhere_standing, headed_by_disc, held_at, held_in, kept, kept_before_the_rest,
         landed_since, missing_track_rows, on_the_clipboard, renewed, retried_after, sharing_told,
         stopped_told, unheld_release_rows,
@@ -8440,6 +8518,16 @@ mod tests {
         off.until_the_pass_ends();
 
         assert_eq!(off.queued(), 0);
+    }
+
+    #[test]
+    fn the_roots_are_read_once_in_a_while_and_not_at_every_look() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let watching = Watching::default();
+        assert!(watching.is_due_to_read_the_roots());
+
+        let watching = watching.following(&library);
+        assert!(!watching.is_due_to_read_the_roots());
     }
 
     #[test]

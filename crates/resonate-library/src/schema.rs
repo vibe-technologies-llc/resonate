@@ -54,7 +54,14 @@ const MIGRATIONS: &[&str] = &[
     HIDDEN_TRACKS_ARE_LISTED_OFF_AN_INDEX,
     A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST,
     A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
+    THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE,
 ];
+
+const THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE: &str = "
+CREATE TABLE artists_fold_wanted (
+    since INTEGER
+) STRICT;
+";
 
 const A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT: &str = "
 CREATE TABLE versions_chosen (
@@ -1540,6 +1547,41 @@ mod tests {
             )
             .expect("the carried song");
         assert_eq!(kept, ("A song".to_owned(), None, true));
+    }
+
+    #[test]
+    fn an_existing_catalog_has_its_artists_folded_once_more_on_its_next_open() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        connection.execute_batch(V1).expect("the baseline");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE)
+            .expect("the fold migration");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "DROP TABLE IF EXISTS artists_fold_wanted;
+                 INSERT INTO artists (id, key, name) VALUES (1, 'adam skórupa', 'Adam Skórupa');",
+            )
+            .expect("an existing artist");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the fold migration");
+
+        let owed: bool = connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'artists_fold_wanted')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the schema reads back");
+        assert!(owed, "the fold was not owed after the step");
     }
 
     #[test]
