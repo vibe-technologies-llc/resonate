@@ -55,10 +55,15 @@ dev-dependency, for the end-to-end test.
 
 - **SSDP `M-SEARCH` for `urn:schemas-upnp-org:device:MediaRenderer:1`**, sent twice to
   `239.255.255.250:1900` with two hops and `MX` the wait in whole seconds (1 to 5); every `200`
-  answer whose `ST` names a MediaRenderer gives its `LOCATION` (`ssdp::search`, deduplicated), taken
+  answer whose `ST` names a MediaRenderer gives its `LOCATION` (`ssdp::search`, deduplicated in a set by `Heard`, which keeps at most `LOCATIONS_PER_SENDER_AT_MOST` (4) a sender and `LOCATIONS_AT_MOST` (128) in all, so one host cannot fill the round), taken
   only where that names the IP the answer came from (`Located::is_at`), never a hostname or another
   machine, since the description it points at is fetched and its controls posted to. The
   address searched is `Searching::to`, so tests answer on loopback and nothing reaches the network.
+  **A round describes a bounded number of what it heard** (`room_to_describe`): at most
+  `DESCRIBED_FROM_A_SEARCH_AT_MOST` (32) devices a round, each one's failure counted, and none once
+  `RENDERERS_AT_MOST` (64) are held; the rest are passed over with a debug line. The renderers the
+  listener gave by address are theirs and outside both bounds. Describing is serial under the round
+  lock, so the bounds are what a host answering the search can cost it.
 - **The description is read as the device wrote it**: `URLBase` where present, else the description's
   own address, joins every `controlURL` (absolute, rooted or relative to the description's folder:
   `Located::join`); a `URLBase` or a `controlURL` naming another host than the description's
@@ -163,7 +168,9 @@ A renderer speaks plain HTTP/1.1 on the local network, so no TLS and no `ureq`: 
 `refuse_headless` line keeps `ureq` out of a build without `online`, and renderers are wanted there
 too. `http::exchange` sends `Connection: close` and `User-Agent: resonate/<version>` (nothing else
 identifies the listener), reads a declared, chunked or close-delimited body, and gives up after
-`ANSWERED_WITHIN` (3 s). SOAP (`soap::call`) posts an envelope to the control address with
+`ANSWERED_WITHIN` (3 s) **for the whole exchange**: one deadline set when it begins, each connect, write and read given only what is left (`exchange_before`), so an answer dripping a byte at a time cannot hold a round
+(`an_answer_dripping_a_byte_at_a_time_is_given_up_on_at_the_deadline_not_per_read`). SOAP
+(`soap::call`) posts an envelope to the control address with
 `SOAPAction: "<service type>#<action>"`, every argument escaped; a `500` is
 `Error::Fault { action, code }` from the body's `errorCode`.
 

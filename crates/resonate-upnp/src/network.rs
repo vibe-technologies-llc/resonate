@@ -30,6 +30,10 @@ const RENDERER_IDS_FROM: u32 = 0xF000_0000;
 
 const SEARCHES_MISSED_BEFORE_GONE: u8 = 2;
 
+const RENDERERS_AT_MOST: usize = 64;
+
+const DESCRIBED_FROM_A_SEARCH_AT_MOST: usize = 32;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Searching {
     pub to: SocketAddr,
@@ -401,6 +405,7 @@ impl Shared {
 
         let mut seen: Vec<(SinkId, bool)> = Vec::new();
         let mut reached = Vec::new();
+        let mut described_from_the_search = 0;
         let vouched = self.vouched.lock().clone();
         let by_address = addresses.iter().filter(|at| !heard.contains(at));
         for location in heard.iter().chain(by_address) {
@@ -408,6 +413,14 @@ impl Shared {
             if let Some(id) = self.known.lock().holding_at(location) {
                 seen.push((id, sighted));
                 continue;
+            }
+            if sighted {
+                let held = self.known.lock().held.len();
+                if !room_to_describe(held + reached.len(), described_from_the_search) {
+                    tracing::debug!(%location, "a device answering the search was not described: the round has described enough");
+                    continue;
+                }
+                described_from_the_search += 1;
             }
             match Renderer::reached(location.clone(), &vouched) {
                 Ok(renderer) => reached.push((renderer, sighted)),
@@ -592,6 +605,10 @@ impl Known {
     }
 }
 
+fn room_to_describe(renderers: usize, described_from_the_search: usize) -> bool {
+    renderers < RENDERERS_AT_MOST && described_from_the_search < DESCRIBED_FROM_A_SEARCH_AT_MOST
+}
+
 fn spawn_failed(source: io::Error) -> Error {
     Error::Serve {
         op: ServeOp::Listen,
@@ -635,5 +652,21 @@ fn turn_when_told(turned: &Receiver<Turn>) {
         if let Err(error) = turned {
             tracing::warn!(%error, renderer = %renderer.udn(), "a renderer's volume could not be turned");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_round_describes_a_bounded_number_of_devices_and_admits_a_bounded_number_of_renderers() {
+        assert!(room_to_describe(0, 0));
+        assert!(room_to_describe(
+            RENDERERS_AT_MOST - 1,
+            DESCRIBED_FROM_A_SEARCH_AT_MOST - 1
+        ));
+        assert!(!room_to_describe(RENDERERS_AT_MOST, 0));
+        assert!(!room_to_describe(0, DESCRIBED_FROM_A_SEARCH_AT_MOST));
     }
 }

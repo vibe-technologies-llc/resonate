@@ -30,6 +30,8 @@ const RECEIVER_IDS_FROM: u32 = 0xE000_0000;
 
 const RECEIVER_IDS_UNDER: u32 = 0xF000_0000;
 
+const RECEIVERS_AT_MOST: usize = 64;
+
 const BROWSE_WAKES_EVERY: Duration = Duration::from_millis(250);
 
 const ADDRESSES_TRIED_AGAIN_EVERY: Duration = Duration::from_secs(60);
@@ -90,6 +92,18 @@ struct Known {
 struct Located {
     given: BTreeSet<Given>,
     resolved: BTreeMap<Given, SocketAddr>,
+}
+
+impl Known {
+    fn has_room_for(&self, id: &CastId) -> bool {
+        self.held.len() < RECEIVERS_AT_MOST || self.held.values().any(|held| held.id() == id)
+    }
+
+    fn remember(&mut self, fullname: String, id: CastId) {
+        if self.named.len() < RECEIVERS_AT_MOST || self.named.contains_key(&fullname) {
+            self.named.insert(fullname, id);
+        }
+    }
 }
 
 impl Located {
@@ -543,6 +557,10 @@ impl Shared {
     }
 
     fn reach(&self, found: Found, fullname: Option<String>) {
+        if !self.known.lock().has_room_for(&found.id) {
+            tracing::debug!(receiver = %found.id, at = %found.at, "a Cast receiver answering the browse was passed over: enough are held");
+            return;
+        }
         let held_here = self
             .known
             .lock()
@@ -573,7 +591,7 @@ impl Shared {
 
     fn remember(&self, fullname: Option<String>, id: &CastId) {
         if let Some(fullname) = fullname {
-            self.known.lock().named.insert(fullname, id.clone());
+            self.known.lock().remember(fullname, id.clone());
         }
     }
 
@@ -581,7 +599,7 @@ impl Shared {
         let changed = {
             let mut known = self.known.lock();
             if let Some(fullname) = fullname {
-                known.named.insert(fullname, found.id.clone());
+                known.remember(fullname, found.id.clone());
             }
             let renamed = known
                 .held
@@ -599,7 +617,7 @@ impl Shared {
         let change = {
             let mut known = self.known.lock();
             if let Some(fullname) = fullname {
-                known.named.insert(fullname, device.id().clone());
+                known.remember(fullname, device.id().clone());
             }
             let same = known
                 .held
@@ -790,6 +808,36 @@ mod tests {
         let mut sinks = casting.sinks();
         assert_eq!(sinks.len(), 1);
         sinks.remove(0)
+    }
+
+    #[test]
+    fn receivers_resolved_past_the_cap_are_passed_over_without_being_reached() {
+        let casting = Casting::resting(browsing()).expect("rests");
+        for number in 0..RECEIVERS_AT_MOST {
+            let at = SocketAddr::from(([192, 168, 2, 1], 9000 + number as u16));
+            let found = Found {
+                id: CastId::new(format!("{number:032x}")),
+                name: format!("Speaker {number}"),
+                at,
+            };
+            casting.shared.admit(
+                Device::held_unreached(found),
+                Some(format!("n{number}")),
+                false,
+            );
+        }
+
+        casting.shared.reach(
+            Found {
+                id: CastId::new("f".repeat(32)),
+                name: "One too many".to_owned(),
+                at: SocketAddr::from(([192, 168, 3, 1], 8009)),
+            },
+            Some("Too-many._googlecast._tcp.local.".to_owned()),
+        );
+
+        assert_eq!(casting.sinks().len(), RECEIVERS_AT_MOST);
+        assert_eq!(casting.shared.known.lock().named.len(), RECEIVERS_AT_MOST);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, UdpSocket},
     time::{Duration, Instant},
@@ -24,6 +25,34 @@ const LONGEST_WAIT_ASKED_SECONDS: u64 = 5;
 
 const ANSWER_BYTES_AT_MOST: usize = 8 << 10;
 
+pub(crate) const LOCATIONS_PER_SENDER_AT_MOST: usize = 4;
+
+pub(crate) const LOCATIONS_AT_MOST: usize = 128;
+
+#[derive(Default)]
+pub(crate) struct Heard {
+    locations: BTreeSet<Located>,
+    per_sender: BTreeMap<IpAddr, usize>,
+}
+
+impl Heard {
+    pub(crate) fn take(&mut self, location: Located, sender: IpAddr) -> bool {
+        if self.locations.len() >= LOCATIONS_AT_MOST || self.locations.contains(&location) {
+            return false;
+        }
+        let from_sender = self.per_sender.entry(sender).or_default();
+        if *from_sender >= LOCATIONS_PER_SENDER_AT_MOST {
+            return false;
+        }
+        *from_sender += 1;
+        self.locations.insert(location)
+    }
+
+    pub(crate) fn into_locations(self) -> Vec<Located> {
+        self.locations.into_iter().collect()
+    }
+}
+
 pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
     let failed = |op| move |source| Error::Search { op, source };
 
@@ -41,7 +70,7 @@ pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
     }
 
     let until = Instant::now() + within;
-    let mut found = Vec::new();
+    let mut found = Heard::default();
     let mut buffer = vec![0; ANSWER_BYTES_AT_MOST];
     loop {
         let left = until.saturating_duration_since(Instant::now());
@@ -56,9 +85,8 @@ pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
                 if let Some(location) = buffer
                     .get(..read)
                     .and_then(|answer| location_answered(answer, sender.ip()))
-                    && !found.contains(&location)
                 {
-                    found.push(location);
+                    found.take(location, sender.ip());
                 }
             }
             Err(error)
@@ -73,7 +101,7 @@ pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
             Err(error) => return Err(failed(SearchOp::Receive)(error)),
         }
     }
-    Ok(found)
+    Ok(found.into_locations())
 }
 
 fn answered_on(to: SocketAddr) -> SocketAddr {
@@ -151,6 +179,32 @@ mod tests {
 
         assert_eq!(location_answered(renderer, sender), None);
         assert_eq!(location_answered(named, sender), None);
+    }
+
+    #[test]
+    fn a_sender_naming_many_locations_is_kept_to_a_few_and_the_whole_to_a_cap() {
+        let at = |host: u8, port: u16| {
+            Located::parse(&format!("http://10.0.{host}.9:{port}/d.xml")).expect("a location")
+        };
+        let sender = |host: u8| -> IpAddr { format!("10.0.{host}.9").parse().expect("an ip") };
+
+        let mut heard = Heard::default();
+        let from_one: Vec<bool> = (0..50)
+            .map(|port| heard.take(at(0, 1000 + port), sender(0)))
+            .collect();
+        let again = heard.take(at(0, 1000), sender(0));
+
+        assert_eq!(
+            from_one.iter().filter(|taken| **taken).count(),
+            LOCATIONS_PER_SENDER_AT_MOST
+        );
+        assert!(!again);
+
+        for host in 1..=255 {
+            heard.take(at(host, 80), sender(host));
+        }
+
+        assert_eq!(heard.into_locations().len(), LOCATIONS_AT_MOST);
     }
 
     #[test]

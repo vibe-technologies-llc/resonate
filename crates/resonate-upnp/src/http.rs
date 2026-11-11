@@ -1,7 +1,7 @@
 use std::{
     io::{self, Read, Write},
     net::TcpStream,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{Asked, Error, Located, Result};
@@ -39,15 +39,17 @@ pub(crate) enum Length {
 }
 
 pub(crate) fn exchange(asking: &Asking<'_>, asked: Asked) -> Result<Answer> {
+    exchange_before(asking, asked, Instant::now() + ANSWERED_WITHIN)
+}
+
+fn exchange_before(asking: &Asking<'_>, asked: Asked, deadline: Instant) -> Result<Answer> {
     let reached = |source: io::Error| Error::Network { asked, source };
 
     let address = asking.to.reached_at().map_err(reached)?;
-    let mut stream = TcpStream::connect_timeout(&address, ANSWERED_WITHIN).map_err(reached)?;
-    stream
-        .set_read_timeout(Some(ANSWERED_WITHIN))
+    let mut stream = TcpStream::connect_timeout(&address, time_left(deadline).map_err(reached)?)
         .map_err(reached)?;
     stream
-        .set_write_timeout(Some(ANSWERED_WITHIN))
+        .set_write_timeout(Some(time_left(deadline).map_err(reached)?))
         .map_err(reached)?;
 
     stream.write_all(&request(asking)).map_err(reached)?;
@@ -60,7 +62,7 @@ pub(crate) fn exchange(asking: &Asking<'_>, asked: Asked) -> Result<Answer> {
         if held.len() > HEAD_BYTES_AT_MOST {
             return Err(Error::NotHttp { asked });
         }
-        if read_more(&mut stream, &mut held).map_err(reached)? == 0 {
+        if read_before(&mut stream, &mut held, deadline).map_err(reached)? == 0 {
             return Err(Error::NotHttp { asked });
         }
     };
@@ -89,7 +91,7 @@ pub(crate) fn exchange(asking: &Asking<'_>, asked: Asked) -> Result<Answer> {
             Length::Chunked => body.ends_with(LAST_CHUNK),
             Length::UntilClosed => false,
         };
-        if whole || read_more(&mut stream, &mut body).map_err(reached)? == 0 {
+        if whole || read_before(&mut stream, &mut body, deadline).map_err(reached)? == 0 {
             break;
         }
     }
@@ -104,6 +106,23 @@ pub(crate) fn exchange(asking: &Asking<'_>, asked: Asked) -> Result<Answer> {
     };
 
     Ok(Answer { status, body })
+}
+
+fn time_left(deadline: Instant) -> io::Result<Duration> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        Err(io::ErrorKind::TimedOut.into())
+    } else {
+        Ok(left)
+    }
+}
+
+fn read_before(stream: &mut TcpStream, held: &mut Vec<u8>, deadline: Instant) -> io::Result<usize> {
+    stream.set_read_timeout(Some(time_left(deadline)?))?;
+    read_more(stream, held).map_err(|error| match error.kind() {
+        io::ErrorKind::WouldBlock => io::ErrorKind::TimedOut.into(),
+        _ => error,
+    })
 }
 
 fn request(asking: &Asking<'_>) -> Vec<u8> {
@@ -176,6 +195,8 @@ pub(crate) fn unchunked(mut chunked: &[u8]) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use std::{net::TcpListener, thread};
+
     use super::*;
 
     #[test]
@@ -184,5 +205,45 @@ mod tests {
 
         assert_eq!(unchunked(chunked).as_deref(), Some(&b"hello, world"[..]));
         assert_eq!(unchunked(b"5\r\nhel"), None);
+    }
+
+    #[test]
+    fn an_answer_dripping_a_byte_at_a_time_is_given_up_on_at_the_deadline_not_per_read() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bound");
+        let port = listener.local_addr().expect("an address").port();
+        let dripping = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accepted");
+            let mut asked = [0; 1024];
+            let _ = stream.read(&mut asked);
+            let head = b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
+            for byte in head.iter().chain(&[b'x'; 1000]) {
+                thread::sleep(Duration::from_millis(60));
+                if stream.write_all(&[*byte]).is_err() {
+                    return;
+                }
+            }
+        });
+        let at = Located::parse(&format!("http://127.0.0.1:{port}/d.xml")).expect("a location");
+        let asking = Asking {
+            method: "GET",
+            to: &at,
+            headers: &[],
+            body: &[],
+        };
+
+        let started = Instant::now();
+        let answer = exchange_before(
+            &asking,
+            Asked::Description,
+            started + Duration::from_millis(400),
+        );
+        let took = started.elapsed();
+        drop(dripping);
+
+        assert!(matches!(
+            answer,
+            Err(Error::Network { source, .. }) if source.kind() == io::ErrorKind::TimedOut
+        ));
+        assert!(took < Duration::from_millis(1500), "took {took:?}");
     }
 }

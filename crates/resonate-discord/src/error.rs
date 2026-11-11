@@ -9,6 +9,7 @@ const INVALID_CLIENT_ID: i64 = 4000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IpcOp {
     Connect,
+    Credentials,
     Configure,
     Write,
     Read,

@@ -49,7 +49,13 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
   or lost restarts it.
 - **Only the listener's own socket** (`/tmp` is shared; another user could bind `discord-ipc-0`
   and learn what plays): `Session::open` follows links, refuses with `NotOurs` unless the target
-  is a socket owned by `rustix::process::getuid`; `find_among` warns and goes on.
+  is a socket owned by `rustix::process::getuid`, and then, **after the connect and before a byte
+  is written**, reads the peer's uid from the connected stream (`SO_PEERCRED` through
+  `rustix::net::sockopt::socket_peercred`, `peer_of`) and refuses with `NotOurs` unless it is the
+  listener's. The path check is early and cheap but names a path that can be swapped for a link
+  between it and the connect; the peer's uid cannot be. Only Linux and Android can read it
+  (`rustix` has no peer credentials elsewhere and the crate forbids `unsafe`): on another Unix
+  `peer_of` answers `None` and the path check alone decides. `find_among` warns and goes on.
 - **`Activity::of` is the whole policy** (pure, tested without a socket).
   - `Shown::Application`: nothing about the track, no cover. `Track`: title over artist. `Album`:
     album as picture caption, or after the artist with no picture.

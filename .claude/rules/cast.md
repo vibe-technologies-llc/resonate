@@ -44,7 +44,7 @@ codec are dev-dependencies, for the end-to-end tests.
 - **mDNS browse of `_googlecast._tcp.local.`** (`CAST_SERVICE`) through `mdns-sd`, its own daemon
   thread and a `resonate-cast-browse` thread taking its events. A resolved record is a receiver
   where its TXT `id` is 1 to 64 letters, digits or dashes and its `ca` capabilities, where stated,
-  hold audio out (bit `0x04`); it is named by `fn`, else `md`, else the id, and reached at its IPv4
+  hold audio out (bit `0x04`); it is named by `fn`, else `md`, else the id, and admitted only while fewer than `RECEIVERS_AT_MOST` (64) are held (a receiver already held is still refreshed; `Known::named` is held to the same count), so a host announcing records without end cannot grow the list or have each one connected to, and reached at its IPv4
   address where it has one and the record's port (a group answers on a port of its own). A record
   removed (`ServiceRemoved`, or its TTL run out) removes the sink. A record seen again at the same
   address is not reached again.

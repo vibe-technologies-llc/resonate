@@ -163,6 +163,15 @@ impl Session {
             op: IpcOp::Connect,
             source,
         })?;
+        let peer = peer_of(&stream).map_err(|source| Error::Socket {
+            op: IpcOp::Credentials,
+            source,
+        })?;
+        if !peer_is_ours(peer, rustix::process::getuid().as_raw()) {
+            return Err(Error::NotOurs {
+                path: path.to_path_buf(),
+            });
+        }
         configured(
             stream
                 .set_read_timeout(Some(ANSWERS_WITHIN))
@@ -184,6 +193,21 @@ fn ours(path: &Path) -> Result<()> {
             path: path.to_path_buf(),
         })
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn peer_of(stream: &UnixStream) -> io::Result<Option<u32>> {
+    let credentials = rustix::net::sockopt::socket_peercred(stream)?;
+    Ok(Some(credentials.uid.as_raw()))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn peer_of(_stream: &UnixStream) -> io::Result<Option<u32>> {
+    Ok(None)
+}
+
+fn peer_is_ours(peer: Option<u32>, user: u32) -> bool {
+    peer.is_none_or(|peer| peer == user)
 }
 
 fn configured(result: io::Result<()>) -> Result<()> {
@@ -590,6 +614,32 @@ mod tests {
 
         assert!(held_by(&held, user));
         assert!(!held_by(&held, user.wrapping_add(1)));
+    }
+
+    #[test]
+    fn a_peer_of_another_user_is_refused_and_one_that_cannot_be_read_is_left_to_the_path_check() {
+        let user = rustix::process::getuid().as_raw();
+
+        assert!(peer_is_ours(Some(user), user));
+        assert!(!peer_is_ours(Some(user.wrapping_add(1)), user));
+        assert!(!peer_is_ours(Some(0), 1000));
+        assert!(peer_is_ours(None, user));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn the_peer_of_a_socket_served_here_is_read_as_this_user() {
+        let folder = Folder::new();
+        let path = folder.0.join("discord-ipc-0");
+        let listener = UnixListener::bind(&path).expect("bound");
+
+        let stream = UnixStream::connect(&path).expect("connected");
+        let _accepted = listener.accept().expect("accepted");
+
+        assert_eq!(
+            peer_of(&stream).expect("credentials"),
+            Some(rustix::process::getuid().as_raw())
+        );
     }
 
     #[test]
