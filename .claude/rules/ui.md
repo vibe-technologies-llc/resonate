@@ -552,8 +552,14 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   - **An enrichment is deliberately not a `Work`**: `LibraryModel::enriching` is a slot of its own,
     started with `for_the_pass` (`online.md`). A running lookup greys *Look up*, *Refresh all* and
     *Look for missing covers* via `held_back`; *Speed up once* (`LibraryModel::hurry_the_lookup`) hurries the running lookup, or starts a hurried one, and reads *Sped up* greyed until it ends (`analysis.md`); a scan can still start under one. `RootView::enrichment_status` sits
-    above the sidebar's *Settings* row while `LibraryModel::is_enriching` (a globe in `theme::faint()`
+    above the sidebar's *Settings* row while `LibraryModel::shows_the_lookup` (a globe in `theme::faint()`
     and *Enriching…*; a press opens the Library category's *Rescan, refresh and retag* page, `Page::Enrichment`); the toast `looked_up` tells what was found.
+    **A lookup the window begins on its own is quiet** (at start, after a scan or a poll, carrying
+    on an unfinished one: `Prompted::OnItsOwn`): the row and its announcement wait
+    `A_QUIET_LOOKUP_SHOWS_AFTER` (3 s), so a pass with little due never flashes, and it ends with
+    no toast unless the reference stopped it; what it found stays in *The last lookup*. One the
+    listener asked for (*Look up*, *Refresh all*, a track's lookup, missing covers) shows at once
+    and tells what it found (`a_lookup_begun_on_its_own_tells_nothing_unless_the_reference_stopped_it`).
     **The Library category's *What online knows* group shows the breakdown** (`library.md`): while a
     lookup runs *The lookup so far*, read from `EnrichProgress::snapshot` on the poll, and once it
     ends *The last lookup*, kept in `LibraryModel::looked_up` until the next begins (a section a

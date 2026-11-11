@@ -69,7 +69,7 @@ impl RootView {
                 }
             });
         }
-        if library.is_enriching() {
+        if library.shows_the_lookup() {
             return Some(SharedString::new_static(words::announcing::looking_up()));
         }
         if let Some(left) = library.keeps_left() {

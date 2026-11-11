@@ -87,6 +87,8 @@ const A_FAILED_COVER_IS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(60);
 const OWED_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30);
 
 const SCAN_POLL: Duration = Duration::from_millis(100);
+
+const A_QUIET_LOOKUP_SHOWS_AFTER: Duration = Duration::from_secs(3);
 const SEARCH_SETTLE: Duration = Duration::from_millis(150);
 const ASKED_ELSEWHERE_AFTER: Duration = Duration::from_millis(450);
 const POLLS_PER_RELOAD: u32 = 20;
@@ -609,6 +611,12 @@ enum Prompted {
     ByTheInbox,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LookupAsked {
+    prompted: Prompted,
+    began: Instant,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Reading {
     WhatChanged,
@@ -829,6 +837,7 @@ pub struct LibraryModel {
     previewed_tags: Planned,
     sourcing: Sourcing,
     enriching: Option<Arc<EnrichProgress>>,
+    lookup_asked: Option<LookupAsked>,
     enrich_owed: bool,
     looked_up: Option<EnrichSummary>,
     sought: Arc<Sought>,
@@ -1105,6 +1114,7 @@ impl LibraryModel {
             previewed_tags: Planned::Not,
             sourcing,
             enriching: None,
+            lookup_asked: None,
             enrich_owed: false,
             looked_up: None,
             sought: Arc::default(),
@@ -5221,7 +5231,7 @@ impl LibraryModel {
             return;
         }
         match self.library.ask_again_for_covers() {
-            Ok(_) => self.enrich_with(self.only_the_covers(), cx),
+            Ok(_) => self.enrich_with(self.only_the_covers(), Prompted::ByHand, cx),
             Err(error) => {
                 tracing::error!(%error, "the covers still missing could not be asked for again");
                 toast::tell(
@@ -5559,6 +5569,14 @@ impl LibraryModel {
         self.enriching.is_some()
     }
 
+    pub fn shows_the_lookup(&self) -> bool {
+        self.enriching.is_some()
+            && self.lookup_asked.is_some_and(|asked| match asked.prompted {
+                Prompted::ByHand | Prompted::ByTheInbox => true,
+                Prompted::OnItsOwn => asked.began.elapsed() >= A_QUIET_LOOKUP_SHOWS_AFTER,
+            })
+    }
+
     pub fn enrich_stats(&self) -> Option<EnrichStats> {
         match &self.enriching {
             Some(progress) => Some(progress.snapshot()),
@@ -5585,7 +5603,19 @@ impl LibraryModel {
             lyrics: self.lyrics,
             pace: Pace::Background,
         };
-        self.enrich_with(asked, cx);
+        self.enrich_with(asked, Prompted::ByHand, cx);
+    }
+
+    fn enrich_on_its_own(&mut self, refresh: bool, cx: &mut Context<Self>) {
+        let asked = EnrichOptions {
+            refresh,
+            at_most: None,
+            sought: Arc::clone(&self.sought),
+            studies: self.studies,
+            lyrics: self.lyrics,
+            pace: Pace::Background,
+        };
+        self.enrich_with(asked, Prompted::OnItsOwn, cx);
     }
 
     pub fn hurry_the_lookup(&mut self, cx: &mut Context<Self>) {
@@ -5603,7 +5633,7 @@ impl LibraryModel {
                     lyrics: self.lyrics,
                     pace: Pace::Hurried,
                 };
-                self.enrich_with(asked, cx);
+                self.enrich_with(asked, Prompted::ByHand, cx);
             }
         }
     }
@@ -5621,7 +5651,7 @@ impl LibraryModel {
         if self.enriching.is_some() {
             self.enrich_owed = true;
         } else {
-            self.enrich(false, cx);
+            self.enrich_on_its_own(false, cx);
         }
     }
 
@@ -5636,7 +5666,7 @@ impl LibraryModel {
         }
     }
 
-    fn enrich_with(&mut self, asked: EnrichOptions, cx: &mut Context<Self>) {
+    fn enrich_with(&mut self, asked: EnrichOptions, prompted: Prompted, cx: &mut Context<Self>) {
         if self.enriching.is_some() || !self.online {
             return;
         }
@@ -5661,6 +5691,10 @@ impl LibraryModel {
         };
 
         self.enriching = Some(Arc::clone(handle.progress()));
+        self.lookup_asked = Some(LookupAsked {
+            prompted,
+            began: Instant::now(),
+        });
         self.enrich_owed = false;
         self.looked_up = None;
         cx.notify();
@@ -5685,13 +5719,16 @@ impl LibraryModel {
 
             let finished = this.update(cx, |this, cx| {
                 this.enriching = None;
+                this.lookup_asked = None;
                 let owed = mem::take(&mut this.enrich_owed);
                 let mut finished = false;
                 match handle.join() {
                     Ok(summary) => {
                         finished = !summary.cancelled && summary.stopped_by.is_none();
                         this.looked_up = Some(summary);
-                        toast::tell(looked_up(&summary), cx);
+                        if let Some(notice) = looked_up(&summary, prompted) {
+                            toast::tell(notice, cx);
+                        }
                     }
                     Err(error) => {
                         tracing::error!(%error, "the lookup failed");
@@ -5731,7 +5768,7 @@ impl LibraryModel {
             refresh = left.refresh,
             "carrying on a lookup the last run left unfinished"
         );
-        self.enrich(left.refresh, cx);
+        self.enrich_on_its_own(left.refresh, cx);
     }
 
     pub fn stop_enrich(&mut self, cx: &mut Context<Self>) {
@@ -6836,8 +6873,11 @@ fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
     Some(Notice::Done(told))
 }
 
-fn looked_up(summary: &EnrichSummary) -> Notice {
+fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
+    if prompted == Prompted::OnItsOwn && summary.stopped_by.is_none() {
+        return None;
+    }
     let mut parts = vec![words::models::albums_and_artists_answered(
         stats.releases,
         stats.artists,
@@ -6853,10 +6893,10 @@ fn looked_up(summary: &EnrichSummary) -> Notice {
         said.push_str(words::models::stopped_early());
     }
 
-    match summary.stopped_by {
+    Some(match summary.stopped_by {
         Some(op) => Notice::Trouble(words::models::musicbrainz_unreached(said, op.asked_for())),
         None => Notice::Noted(said),
-    }
+    })
 }
 
 struct Sharing {
@@ -8736,14 +8776,16 @@ mod tests {
         };
 
         assert_eq!(
-            super::looked_up(&summary(0)),
-            super::Notice::Noted("2 albums and 1 artist answered".to_owned())
+            super::looked_up(&summary(0), super::Prompted::ByHand),
+            Some(super::Notice::Noted(
+                "2 albums and 1 artist answered".to_owned()
+            ))
         );
         assert_eq!(
-            super::looked_up(&summary(12)),
-            super::Notice::Noted(
+            super::looked_up(&summary(12), super::Prompted::ByHand),
+            Some(super::Notice::Noted(
                 "2 albums and 1 artist answered · lyrics for 12 tracks".to_owned()
-            )
+            ))
         );
     }
 
@@ -9419,5 +9461,32 @@ mod tests {
         );
         assert!(!Planned::Outdated.outdated_at(library.plans_stamp()));
         assert!(!Planned::Not.outdated_at(library.plans_stamp()));
+    }
+
+    #[test]
+    fn a_lookup_begun_on_its_own_tells_nothing_unless_the_reference_stopped_it() {
+        let answered = resonate_library::EnrichSummary {
+            stats: resonate_library::EnrichStats {
+                releases: 3,
+                artists: 3,
+                ..resonate_library::EnrichStats::default()
+            },
+            cancelled: false,
+            stopped_by: None,
+        };
+        let unreached = resonate_library::EnrichSummary {
+            stopped_by: Some(resonate_library::LookupOp::Release),
+            ..answered
+        };
+
+        assert!(super::looked_up(&answered, super::Prompted::OnItsOwn).is_none());
+        assert!(matches!(
+            super::looked_up(&answered, super::Prompted::ByHand),
+            Some(Notice::Noted(_))
+        ));
+        assert!(matches!(
+            super::looked_up(&unreached, super::Prompted::OnItsOwn),
+            Some(Notice::Trouble(_))
+        ));
     }
 }

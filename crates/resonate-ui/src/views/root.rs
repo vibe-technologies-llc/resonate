@@ -5042,7 +5042,7 @@ impl RootView {
         let plays = library.statistics().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
         let serving = self.server.read(cx).is_open();
-        let enriching = library.is_enriching();
+        let enriching = library.shows_the_lookup();
         let downloads = !library.downloads().is_empty() || library.keeps_left().is_some();
         let mut browse = div().flex().flex_col().gap_4();
         for section in Section::ALL {
