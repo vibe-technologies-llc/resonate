@@ -423,6 +423,7 @@ impl RootView {
         if !menu.offers_anything() {
             return;
         }
+        self.attention.moved();
         self.naming = None;
         self.adding = None;
         self.record = None;

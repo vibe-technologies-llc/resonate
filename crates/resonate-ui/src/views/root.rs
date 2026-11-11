@@ -48,11 +48,12 @@ use crate::{
         WidenBelow, Zoom, attend, seek_further, seek_step,
     },
     downloads::{self, Download, Fetching},
-    format,
+    format, held,
     icons::{self, Icon},
     listening::ListenModel,
     models::{Picture, Scale, Sorting},
     motion,
+    serial::Serial,
     serving::ServerModel,
     settings::{ListOffered, SettingsWriter},
     theme,
@@ -85,7 +86,7 @@ use crate::{
             SigningInToYoutubeMusic, SpotifyState, TidalAccount, YoutubeMusicField, spotify,
         },
         sharing,
-        sheets::{self, MAGNIFIER_PANEL},
+        sheets::{self, MAGNIFIER_PANEL, Sheet},
         slider::{Grab, Rail},
         sorting::Ordered,
         spoken::{self, Spelt, Spoken},
@@ -521,6 +522,8 @@ pub struct RootView {
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
     pub(crate) matching: Option<Matching>,
+    pub(crate) likely_asked: Serial,
+    pub(crate) attention: Serial,
     pub(crate) typed_words: Entity<Field>,
     pub(crate) typed_isrc: Entity<Field>,
     pub(crate) party_offered: Option<String>,
@@ -1224,6 +1227,8 @@ impl RootView {
             downloads_pressed_off: None,
             deleting: None,
             matching: None,
+            likely_asked: Serial::default(),
+            attention: Serial::default(),
             typed_words,
             typed_isrc,
             party_offered: None,
@@ -1643,8 +1648,23 @@ impl RootView {
     }
 
     pub(crate) fn play(&mut self, tracks: &[Track], start_at: usize, cx: &mut Context<Self>) {
-        let items: Vec<QueueItem> = tracks
+        self.play_runs(&[tracks], start_at, cx);
+    }
+
+    pub(crate) fn play_rows(
+        &mut self,
+        tracks: &held::Rows<Track>,
+        start_at: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let runs: Vec<&[Track]> = tracks.chunks().collect();
+        self.play_runs(&runs, start_at, cx);
+    }
+
+    fn play_runs(&mut self, runs: &[&[Track]], start_at: usize, cx: &mut Context<Self>) {
+        let items: Vec<QueueItem> = runs
             .iter()
+            .flat_map(|run| run.iter())
             .map(|track| QueueItem {
                 id: track.id,
                 location: track.location.clone(),
@@ -1655,10 +1675,13 @@ impl RootView {
             return;
         }
 
+        let started = runs.iter().flat_map(|run| run.iter()).nth(start_at);
         self.library.update(cx, |library, _| {
             library.set_playing_playlist(None);
-            library.remember(tracks);
-            if let Some(track) = tracks.get(start_at) {
+            for run in runs {
+                library.remember(run);
+            }
+            if let Some(track) = started {
                 library.ask_about(track.album_id, track.artist_id);
             }
         });
@@ -2436,6 +2459,7 @@ impl RootView {
             self.adding_songs_to = None;
         }
         pointed::forget();
+        self.attention.moved();
         self.record = None;
         self.stop_typing(cx);
         let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
@@ -3910,7 +3934,19 @@ impl RootView {
             })
     }
 
+    pub(crate) fn press_a_lookup(&mut self) -> Serial {
+        self.attention.moved()
+    }
+
+    pub(crate) fn window_has_moved_on_from(&self, pressed: Serial) -> bool {
+        self.attention != pressed
+            || self
+                .sheet_in_front()
+                .is_some_and(|sheet| sheet != Sheet::Menu)
+    }
+
     pub(crate) fn open_artist_found(&mut self, found: ArtistFound, cx: &mut Context<Self>) {
+        let pressed = self.press_a_lookup();
         let landed = self
             .library
             .update(cx, |library, cx| library.land_artist_found(found, cx));
@@ -3918,7 +3954,11 @@ impl RootView {
             let Some(artist) = landed.await else {
                 return;
             };
-            let _ = this.update(cx, |this, cx| this.opened(Selection::Artist(artist), cx));
+            let _ = this.update(cx, |this, cx| {
+                if !this.window_has_moved_on_from(pressed) {
+                    this.opened(Selection::Artist(artist), cx);
+                }
+            });
         })
         .detach();
     }
@@ -4667,6 +4707,7 @@ impl RootView {
             return;
         }
 
+        self.attention.moved();
         self.read_from_the_top(cx);
         self.library
             .update(cx, |library, cx| library.select(Selection::Everything, cx));
@@ -4732,6 +4773,7 @@ impl RootView {
         if was == query {
             return;
         }
+        self.attention.moved();
         if was.is_empty() {
             self.leave_the_scroll_for_the_search();
             self.open_the_search(cx);

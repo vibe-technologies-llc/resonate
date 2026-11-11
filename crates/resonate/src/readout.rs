@@ -1,16 +1,13 @@
 #[cfg(unix)]
 use std::io;
-use std::time::Duration;
 
-use resonate_core::TrackId;
+use resonate_core::{TrackId, elapsed};
 use resonate_engine::{Asleep, PlaybackState, Player, PlayerState, RepeatMode, TrackState, Until};
 use unicode_width::UnicodeWidthChar as _;
 
 use crate::words;
 
 const CLEAR_THE_LINE: &str = "\r\x1b[K";
-const SECONDS_A_MINUTE: u64 = 60;
-const MINUTES_AN_HOUR: u64 = 60;
 const WHOLE: f32 = 100.0;
 const CUT_SHORT: char = '…';
 const LEFT_FOR_THE_CARET: usize = 1;
@@ -182,37 +179,29 @@ fn where_in(current: Option<TrackState>) -> String {
     let Some(track) = current else {
         return "-:--".to_owned();
     };
-    let at = ticked(track.position.to_duration(track.source.rate));
+    let at = elapsed::clock(track.position.to_duration(track.source.rate));
     match track.duration {
-        Some(length) => format!("{at} / {}", ticked(length.to_duration(track.source.rate))),
+        Some(length) => format!(
+            "{at} / {}",
+            elapsed::clock(length.to_duration(track.source.rate))
+        ),
         None => at,
     }
 }
 
 fn sleeping(asleep: Asleep) -> String {
     match (asleep.until, asleep.left) {
-        (Until::After(_), Some(left)) => words::readout::sleep_in(ticked(left)),
-        (Until::After(after), None) => words::readout::sleep_in(ticked(after)),
+        (Until::After(_), Some(left)) => words::readout::sleep_in(elapsed::clock(left)),
+        (Until::After(after), None) => words::readout::sleep_in(elapsed::clock(after)),
         (Until::EndOfTrack, _) => words::readout::sleep_at_the_end_of_the_track().to_owned(),
         (Until::EndOfQueue, _) => words::readout::sleep_at_the_end_of_the_queue().to_owned(),
     }
 }
 
-fn ticked(span: Duration) -> String {
-    let seconds = span.as_secs();
-    let minutes = seconds / SECONDS_A_MINUTE;
-    match minutes / MINUTES_AN_HOUR {
-        0 => format!("{minutes}:{:02}", seconds % SECONDS_A_MINUTE),
-        hours => format!(
-            "{hours}:{:02}:{:02}",
-            minutes % MINUTES_AN_HOUR,
-            seconds % SECONDS_A_MINUTE
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use resonate_core::{
         ChannelLayout, Frames, SampleFormat, SampleRate, StreamSpec, TrackId, Volume,
     };

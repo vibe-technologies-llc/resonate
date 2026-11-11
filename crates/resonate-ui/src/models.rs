@@ -431,6 +431,9 @@ enum Change {
     GiveIsrc,
     LookUp,
     ReadTheRest,
+    ChooseVersion,
+    ForgetTheVersionChosen,
+    LookForMissingCovers,
     Undo,
     Redo,
 }
@@ -461,6 +464,9 @@ impl Change {
             Self::GiveIsrc => words::models::give_the_track_that_isrc(),
             Self::LookUp => words::models::look_the_track_up(),
             Self::ReadTheRest => words::models::read_the_rest_of_the_discography(),
+            Self::ChooseVersion => words::models::keep_that_version(),
+            Self::ForgetTheVersionChosen => words::models::forget_the_version_chosen(),
+            Self::LookForMissingCovers => words::models::look_for_the_missing_covers_again(),
             Self::Undo => words::models::put_that_back(),
             Self::Redo => words::models::do_that_again(),
         }
@@ -4523,20 +4529,43 @@ impl LibraryModel {
         })
     }
 
-    pub fn choose_version(&self, track: TrackId, version: &resonate_library::Version) -> bool {
-        self.library
-            .choose_version(track, version)
-            .inspect_err(|error| tracing::warn!(%error, "the version chosen could not be kept"))
-            .unwrap_or(false)
+    pub fn choose_version(
+        &mut self,
+        track: TrackId,
+        version: resonate_library::Version,
+        title: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.edited(
+            Wanted::ThePage,
+            Change::ChooseVersion,
+            move |library| {
+                library
+                    .choose_version(track, &version)
+                    .map(|chosen| chosen.then(|| words::better::chosen(title.as_str())))
+            },
+            cx,
+        );
     }
 
-    pub fn forget_the_version_chosen(&self, track: TrackId) -> bool {
-        self.library
-            .forget_the_version_chosen(track)
-            .inspect_err(
-                |error| tracing::warn!(%error, "the version chosen could not be forgotten"),
-            )
-            .unwrap_or(false)
+    pub fn forget_the_version_chosen(
+        &mut self,
+        track: TrackId,
+        title: String,
+        then: impl FnOnce(&mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.edited_then(
+            Wanted::ThePage,
+            Change::ForgetTheVersionChosen,
+            move |library| {
+                library.forget_the_version_chosen(track).map(|forgotten| {
+                    forgotten.then(|| words::better::own_copy_again(title.as_str()))
+                })
+            },
+            move |_, _, cx| cx.defer(then),
+            cx,
+        );
     }
 
     pub fn has_a_version_chosen(&self, track: TrackId) -> bool {
@@ -4554,18 +4583,19 @@ impl LibraryModel {
     ) -> crate::views::better::Chosen {
         use crate::views::better::{Chosen, Played};
 
-        let versions = match self.library.versions_chosen() {
+        let queued: Vec<TrackId> = items
+            .iter()
+            .map(|item| item.id)
+            .collect::<AHashSet<_>>()
+            .into_iter()
+            .collect();
+        let versions = match self.library.versions_chosen_among(&queued) {
             Ok(versions) => versions,
             Err(error) => {
                 tracing::warn!(%error, "the versions chosen could not be read");
                 return Chosen::default();
             }
         };
-        let queued: AHashSet<TrackId> = items.iter().map(|item| item.id).collect();
-        let versions: Vec<_> = versions
-            .into_iter()
-            .filter(|chosen| queued.contains(&chosen.track))
-            .collect();
         if versions.is_empty() {
             return Chosen::default();
         }
@@ -5362,17 +5392,17 @@ impl LibraryModel {
         if self.enriching.is_some() || !self.can_enrich() {
             return;
         }
-        match self.library.ask_again_for_covers() {
-            Ok(_) => self.enrich_with(self.only_the_covers(), Prompted::ByHand, cx),
-            Err(error) => {
-                tracing::error!(%error, "the covers still missing could not be asked for again");
-                toast::tell(
-                    toast::could_not(words::models::look_for_the_missing_covers_again(), &error),
-                    cx,
-                );
-                cx.notify();
-            }
-        }
+        self.edited_then(
+            Wanted::ThePage,
+            Change::LookForMissingCovers,
+            |library| library.ask_again_for_covers().map(|_| None),
+            |this, edited, cx| {
+                if edited == Edited::Landed {
+                    this.enrich_with(this.only_the_covers(), Prompted::ByHand, cx);
+                }
+            },
+            cx,
+        );
     }
 
     pub fn add_roots(&mut self, roots: Vec<PathBuf>, cx: &mut Context<Self>) {

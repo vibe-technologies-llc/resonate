@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 #[cfg(feature = "sync")]
 use resonate_core::{
     Answer, Frames, Mbid, PlaylistId, Recording, RemoteTrust, SampleRate, SharedLyricsfile,
-    SharedPrint, SyncedSongs, WholeFile, ZoneId,
+    SharedPrint, SyncedSongs, WholeFile, ZoneId, elapsed,
 };
 #[cfg(feature = "sync")]
 use resonate_engine::{QueueItem, Unclaimed};
@@ -1153,10 +1153,10 @@ fn said_zone(mirror: &Mirror, zone: &RemoteZone) {
     said!("{}\t{} {}", words::sync::zone(), zone.zone, zone.name);
     said!("{}\t{}", words::sync::state(), playback_word(zone.playback));
     if let Some(row) = zone.playing_row() {
-        let place = clock_of(mirror.position_of(zone, Instant::now()));
-        let length = zone
-            .length
-            .map_or_else(String::new, |length| format!(" / {}", clock_of(length)));
+        let place = elapsed::clock(mirror.position_of(zone, Instant::now()));
+        let length = zone.length.map_or_else(String::new, |length| {
+            format!(" / {}", elapsed::clock(length))
+        });
         said!(
             "{}\t{}\t{place}{length}",
             words::sync::playing(),
@@ -1200,17 +1200,6 @@ fn playback_word(playback: RemotePlayback) -> &'static str {
         RemotePlayback::Playing => words::sync::playing_now(),
         RemotePlayback::Paused => words::sync::paused(),
         RemotePlayback::Stopped => words::sync::stopped(),
-    }
-}
-
-#[cfg(feature = "sync")]
-fn clock_of(length: Duration) -> String {
-    let seconds = length.as_secs();
-    let (hours, minutes, seconds) = (seconds / 3_600, seconds / 60 % 60, seconds % 60);
-    if hours > 0 {
-        format!("{hours}:{minutes:02}:{seconds:02}")
-    } else {
-        format!("{minutes}:{seconds:02}")
     }
 }
 

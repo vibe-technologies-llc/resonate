@@ -399,6 +399,7 @@ impl RootView {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        let pressed = self.press_a_lookup();
         let held = match sought {
             Sought::Better => {
                 let copies = match track.alternatives {
@@ -454,6 +455,9 @@ impl RootView {
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
             let _ = this.update(cx, |this, cx| {
+                if this.window_has_moved_on_from(pressed) {
+                    return;
+                }
                 let found = held.len() + asked.served.len();
                 if !asked.refused.is_empty() {
                     let refused = asked.refused.join(NAMES_APART);
@@ -489,17 +493,26 @@ impl RootView {
         title: &str,
         cx: &mut Context<Self>,
     ) {
-        if self.library.read(cx).choose_version(track, &version) {
-            self.report(Notice::Done(words::better::chosen(title)), cx);
-        }
+        let title = title.to_owned();
+        self.library.update(cx, |library, cx| {
+            library.choose_version(track, version, title, cx);
+        });
     }
 
     pub(crate) fn play_your_own_copy(&mut self, track: Track, cx: &mut Context<Self>) {
         let title = titles::bare(&track.title).to_owned();
-        if self.library.read(cx).forget_the_version_chosen(track.id) {
-            self.report(Notice::Done(words::better::own_copy_again(&title)), cx);
-        }
-        self.play(&[track], 0, cx);
+        let id = track.id;
+        let root = cx.weak_entity();
+        self.library.update(cx, |library, cx| {
+            library.forget_the_version_chosen(
+                id,
+                title,
+                move |cx| {
+                    let _ = root.update(cx, |root, cx| root.play(&[track], 0, cx));
+                },
+                cx,
+            );
+        });
     }
 
     pub(crate) fn with_the_versions_chosen(

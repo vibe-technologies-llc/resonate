@@ -10361,6 +10361,13 @@ fn a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_trac
         }]
     );
 
+    assert_eq!(
+        library.versions_chosen_among(&[song])?,
+        library.versions_chosen()?
+    );
+    assert_eq!(library.versions_chosen_among(&[copy])?, []);
+    assert_eq!(library.versions_chosen_among(&[])?, []);
+
     assert!(library.choose_version(song, &Version::Held(song))?);
     assert_eq!(library.version_chosen_for(song)?, None);
 

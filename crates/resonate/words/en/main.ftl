@@ -1,4 +1,3 @@
-just-now = just now
 cover-art = cover art
 taken-away = (taken away)
 rating = rating
@@ -186,9 +185,6 @@ by-artist = artist
 by-title = title
 by-length = length
 by-file-name = file name
-minutes-ago = { $minutes }m ago
-hours-ago = { $hours }h ago
-days-ago = { $days }d ago
 renamed = { $name } is called { $into } now
 exported = wrote { $rows } rows of { $name } to { $path } as { $format }
 back-in-hand = { $name } is back in hand, and a row added to it lands at the end

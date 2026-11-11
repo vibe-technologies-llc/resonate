@@ -10,7 +10,9 @@ use resonate_library::{Recording, in_the_order_worth_offering};
 use crate::{
     Notice, format,
     icons::Icon,
-    motion, theme,
+    motion,
+    serial::Serial,
+    theme,
     views::{
         field::{Field, Submitted},
         kit,
@@ -37,7 +39,30 @@ pub(crate) enum Likely {
 pub(crate) struct Matching {
     pub(crate) track: TrackId,
     likely: Likely,
-    asked: u64,
+    asked: Option<Serial>,
+}
+
+impl Matching {
+    fn opened_on(track: TrackId) -> Self {
+        Self {
+            track,
+            likely: Likely::Unasked,
+            asked: None,
+        }
+    }
+
+    fn asking(&mut self, asked: Serial) {
+        self.asked = Some(asked);
+        self.likely = Likely::Asking;
+    }
+
+    fn answered(&mut self, track: TrackId, asked: Serial, likely: Likely) -> bool {
+        let current = self.track == track && self.asked == Some(asked);
+        if current {
+            self.likely = likely;
+        }
+        current
+    }
 }
 
 pub(crate) fn matching_fields(
@@ -97,11 +122,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.close_the_menu(cx);
-        self.matching = Some(Matching {
-            track,
-            likely: Likely::Unasked,
-            asked: 0,
-        });
+        self.matching = Some(Matching::opened_on(track));
         self.typed_isrc.update(cx, |typed, cx| typed.clear(cx));
         self.typed_words.update(cx, |typed, cx| {
             typed.open_with(title.to_string(), cx);
@@ -119,9 +140,11 @@ impl RootView {
     }
 
     fn look_for_likely_recordings(&mut self, cx: &mut Context<Self>) {
+        let asked = self.likely_asked.moved();
         let Some(matching) = self.matching.as_mut() else {
             return;
         };
+        matching.asking(asked);
         let track = matching.track;
         let words = self.typed_words.read(cx).text().trim().to_owned();
         let asking = self
@@ -129,37 +152,29 @@ impl RootView {
             .update(cx, |library, cx| library.recordings_like(track, words, cx));
         let Some(asking) = asking else {
             if let Some(matching) = self.matching.as_mut() {
-                matching.likely = Likely::Offline;
+                matching.answered(track, asked, Likely::Offline);
             }
             cx.notify();
             return;
         };
-        let Some(matching) = self.matching.as_mut() else {
-            return;
-        };
-        matching.asked += 1;
-        matching.likely = Likely::Asking;
-        let asked = matching.asked;
         cx.notify();
 
         cx.spawn(async move |this, cx| {
             let answer = asking.await;
             let _ = this.update(cx, |this, cx| {
-                let Some(matching) = this
-                    .matching
-                    .as_mut()
-                    .filter(|matching| matching.track == track && matching.asked == asked)
-                else {
+                let Some(matching) = this.matching.as_mut() else {
                     return;
                 };
-                matching.likely = match answer {
+                let likely = match answer {
                     Ok(found) => Likely::Found(found.into_iter().map(Arc::new).collect()),
                     Err(error) => {
                         tracing::warn!(%error, "MusicBrainz was not asked for recordings like the song");
                         Likely::Unreached
                     }
                 };
-                cx.notify();
+                if matching.answered(track, asked, likely) {
+                    cx.notify();
+                }
             });
         })
         .detach();
@@ -354,10 +369,14 @@ impl RootView {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::Mbid;
+    use resonate_core::{Mbid, TrackId};
     use resonate_library::{Credit, Issued, RecordingRelease};
 
     use super::*;
+
+    fn track_numbered(number: u64) -> TrackId {
+        TrackId::new(number).expect("a track number")
+    }
 
     #[test]
     fn a_likely_recording_says_its_title_credit_length_and_the_release_it_is_on() {
@@ -385,5 +404,40 @@ mod tests {
             likely_line(&recording),
             "Echoes · Pink Floyd · 23:31 · Meddle (1971)"
         );
+    }
+
+    #[test]
+    fn an_answer_asked_by_an_earlier_opening_of_the_sheet_is_not_taken_by_a_later_one() {
+        let mut asks = Serial::default();
+        let track = track_numbered(1);
+
+        let mut earlier = Matching::opened_on(track);
+        let first = asks.moved();
+        earlier.asking(first);
+
+        let mut later = Matching::opened_on(track);
+        let second = asks.moved();
+        later.asking(second);
+
+        assert!(!later.answered(track, first, Likely::Unreached));
+        assert!(matches!(later.likely, Likely::Asking));
+        assert!(later.answered(track, second, Likely::Offline));
+        assert!(matches!(later.likely, Likely::Offline));
+    }
+
+    #[test]
+    fn an_answer_asked_before_the_words_were_asked_again_is_not_taken() {
+        let mut asks = Serial::default();
+        let track = track_numbered(1);
+        let mut matching = Matching::opened_on(track);
+
+        let first = asks.moved();
+        matching.asking(first);
+        let second = asks.moved();
+        matching.asking(second);
+
+        assert!(!matching.answered(track, first, Likely::Unreached));
+        assert!(matching.answered(track, second, Likely::Unreached));
+        assert!(!matching.answered(track_numbered(2), second, Likely::Offline));
     }
 }

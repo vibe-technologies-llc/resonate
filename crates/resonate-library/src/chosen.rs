@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use resonate_core::{MediaLocation, TrackId};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params, params_from_iter};
 
 use crate::{Error, Result, StoreOp, store};
 
@@ -69,25 +69,53 @@ pub(crate) fn every(connection: &Connection) -> Result<Vec<ChosenVersion>> {
         .prepare_cached(EVERY_VERSION_CHOSEN)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        })
+        .query_map([], chosen_row)
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    Ok(rows
-        .into_iter()
-        .filter_map(|(track, copy, served)| {
-            Some(ChosenVersion {
-                track: track_id(track)?,
-                version: version_of(copy, served.as_deref())?,
-            })
-        })
-        .collect())
+    Ok(rows.into_iter().filter_map(chosen_version).collect())
+}
+
+pub(crate) fn among(
+    connection: &Connection,
+    tracks: &[TrackId],
+    at_once: usize,
+) -> Result<Vec<ChosenVersion>> {
+    let mut chosen = Vec::new();
+    for batch in tracks.chunks(at_once) {
+        let held = vec!["?"; batch.len()].join(",");
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT track, held, served FROM versions_chosen WHERE track IN ({held})"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let rows = statement
+            .query_map(
+                params_from_iter(batch.iter().map(|track| track.get() as i64)),
+                chosen_row,
+            )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        chosen.extend(rows.into_iter().filter_map(chosen_version));
+    }
+    Ok(chosen)
+}
+
+fn chosen_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Option<i64>, Option<String>)> {
+    Ok((
+        row.get::<_, i64>(0)?,
+        row.get::<_, Option<i64>>(1)?,
+        row.get::<_, Option<String>>(2)?,
+    ))
+}
+
+fn chosen_version(
+    (track, copy, served): (i64, Option<i64>, Option<String>),
+) -> Option<ChosenVersion> {
+    Some(ChosenVersion {
+        track: track_id(track)?,
+        version: version_of(copy, served.as_deref())?,
+    })
 }
 
 pub(crate) fn of(connection: &Connection, track: TrackId) -> Result<Option<Version>> {

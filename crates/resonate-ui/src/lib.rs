@@ -27,6 +27,7 @@ mod measure;
 mod models;
 mod motion;
 mod recent;
+mod serial;
 mod served;
 mod serving;
 mod settings;

@@ -500,7 +500,7 @@ rows read via `Player::media` like any unscanned row.
   copy forgotten, deleted or folded takes the choice with it, and an organise or a followed move,
   which keep the row's id, keep it. `Library::choose_version` refuses an unheld row
   (`Error::UnknownTrack`) and treats the row itself as forgetting; `forget_the_version_chosen`,
-  `versions_chosen`, `version_chosen_for` read and drop it. The window plays a row as its version
+  `versions_chosen`, `versions_chosen_among` (the choices of the tracks asked for alone, which the window reads for the rows it sends), `version_chosen_for` read and drop it. The window plays a row as its version
   (`ui.md`'s *Find another version*)
   (`a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_track`,
   `a_catalog_from_before_versions_were_chosen_keeps_its_tracks_and_gains_the_table`).

@@ -5,6 +5,7 @@ mod buffer;
 mod calendar;
 mod channel;
 mod date;
+pub mod elapsed;
 pub mod eq;
 mod error;
 pub mod file_facts;
