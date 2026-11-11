@@ -1645,7 +1645,7 @@ unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws n
 - **Held by** `ThemeContrastTest` (JVM: every accent in light, dark and pitch black, standard and high contrast;
   text pairs 4.5:1, non-text pairs 3:1, quiet lyric ink 3:1 on four grounds, body text 7:1 at high contrast) and
   the Library shelf tabs end in an ellipsis rather than a clip (the sweep reads a `maxLines` cut with no ellipsis as clipped, and the row scrolls above font scale 1.3), `A11ySweepTest` (instrumented: the Compose accessibility checks over the root tabs and settings, a
-  `fontScale = 2` pass for clipped text and a pass for unnamed clickables; the sweep needs an emulator). **Clipped is a line wider than its box or lines cut off with no ellipsis** (`isClipped`, `ClippedTextTest`): `didOverflowWidth` weighs the box against the paragraph's layout width, so it reads every label narrower than its container as overflowing.
+  `fontScale = 2` pass for clipped text, which waits for the activity's configuration to report the scale before it reads a screen (`settings put` returns before the change is delivered, and a screen read mid-change is read at two scales), and a pass for unnamed clickables; the sweep needs an emulator). **Clipped is a line wider than its box or lines cut off with no ellipsis** (`isClipped`, `ClippedTextTest`): `didOverflowWidth` weighs the box against the paragraph's layout width, so it reads every label narrower than its container as overflowing.
 
 Share lookup failures appear as a notice; coroutine cancellation still propagates.
 

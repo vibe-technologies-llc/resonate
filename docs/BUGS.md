@@ -4,10 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.8.1] The Library tab's labels clip at the largest font scale on Android 13: CI's API 33
-  emulator fails `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` (*tab-library clips text
-  without an ellipsis: Songs, Albums, Artists*) once the activity's font scale has reached 2.0,
-  where an API 37 emulator passes; the tab row wants to fit or ellipsise at that scale
 
 ## Security
 
