@@ -17,10 +17,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   nothing
 
 ## Sync and together
-- [S · 0.8.1] A held listen's handle goes stale once its song is deleted mid-play: `deleted.rs`
-  moves the song's listens into `unheld_listens` (keeping `listen_id`), but `Library::listened` with
-  `Listen::Held(id)` updates `listens` alone, so the time heard after the delete is lost; it wants
-  to fall back onto `unheld_listens.listen_id`
 - [S · 0.8.1] A command sent to a driven device carries the queue revision of the controller's
   latest mirror when it leaves, not the one the front end drew (`resonate-driven`), so a mirror
   landing between a draw and a press lets a stale *Remove* through; the revision wants passing from
@@ -35,10 +31,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [S · 0.8.1] Lengthening a file in place still cannot see a reader root runs: `held_open_elsewhere`
-  (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding the file except for a process
-  whose `status` names root, since every root process would otherwise end the in-place path; a write
-  lease (`F_SETLEASE`) would see it, and wants a safe wrapper the codec may call
+- [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
+  root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
+  the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
+  `F_WRLCK`, then `F_GETLEASE` after the insert to see whether a break released it) would see it, but
+  neither `rustix` nor `nix` wraps leases and the codec forbids `unsafe`, so it wants a small crate
+  under an exception of its own beside `resonate-win32` and `resonate-apple`, which is the
+  listener's to grant
 
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
