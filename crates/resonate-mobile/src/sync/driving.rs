@@ -739,6 +739,7 @@ mod tests {
                 artist: "Pink Floyd".into(),
                 length: None,
             }],
+            queue_revision: Some(4),
         };
         let watched = Watched::Mirrored(Mirror {
             zones: vec![zone],

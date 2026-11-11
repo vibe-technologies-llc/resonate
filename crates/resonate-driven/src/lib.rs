@@ -1,11 +1,16 @@
-use std::sync::{Arc, Weak};
+use std::{
+    sync::{Arc, Weak},
+    time::Duration,
+};
 
 use resonate_core::{Frames, Span, ZoneId, ZoneName};
-use resonate_engine::{Command, PlaybackState, Player, QueueItem, Zones};
+use resonate_engine::{Command, Error, PlaybackState, Player, QueueItem, Zones};
 use resonate_sync::{
     Controlled, Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand, RemotePlayback, RemoteRow,
     RemoteZone, Resumed, Uncontrolled, ZONES_MIRRORED_AT_MOST,
 };
+
+const AN_EDIT_BY_ROW_ANSWERED_WITHIN: Duration = Duration::from_secs(2);
 
 pub trait RowNames: Send + Sync + 'static {
     fn rows(&self, player: &Player, items: &[Arc<QueueItem>]) -> Vec<RemoteRow>;
@@ -109,7 +114,8 @@ impl Driven {
 
     fn zone_of(&self, zone: ZoneId, name: String, player: &Player) -> RemoteZone {
         let state = player.state();
-        let queue = player.queue();
+        let queued = player.queued();
+        let queue = queued.rows;
         let window = Resumed::window_around(state.queue_position.unwrap_or(0), queue.len());
         let first_row = window.start;
         let held: Vec<Arc<QueueItem>> = queue
@@ -136,7 +142,16 @@ impl Driven {
             queue_length: queue.len(),
             first_row,
             rows: self.names.rows(player, &held),
+            queue_revision: Some(queued.revision),
         }
+    }
+
+    fn player_of(&self, zone: ZoneId) -> Result<Arc<Player>, Uncontrolled> {
+        self.players()
+            .into_iter()
+            .find(|(id, _, _)| *id == zone)
+            .map(|(_, _, player)| player)
+            .ok_or(Uncontrolled::NoSuchZone)
     }
 }
 
@@ -189,12 +204,33 @@ impl Controlled for Driven {
     }
 
     fn control(&self, zone: ZoneId, command: RemoteCommand) -> Result<(), Uncontrolled> {
-        let (_, _, player) = self
-            .players()
-            .into_iter()
-            .find(|(id, _, _)| *id == zone)
-            .ok_or(Uncontrolled::NoSuchZone)?;
+        let player = self.player_of(zone)?;
         let command = command_for(&player, command)?;
         self.sent(zone, &player, command)
+    }
+
+    fn control_if_the_queue_is_still(
+        &self,
+        zone: ZoneId,
+        revision: u64,
+        command: RemoteCommand,
+    ) -> Result<(), Uncontrolled> {
+        if !command.names_a_row() {
+            return self.control(zone, command);
+        }
+        let player = self.player_of(zone)?;
+        let command = command_for(&player, command)?;
+        let answered = player
+            .request_if_the_queue_is_still(revision, command)
+            .and_then(|outcome| outcome.wait_for(AN_EDIT_BY_ROW_ANSWERED_WITHIN));
+        match answered {
+            Ok(()) | Err(Error::CommandPending { .. }) => Ok(()),
+            Err(Error::QueueChanged { .. }) => Err(Uncontrolled::QueueMoved),
+            Err(Error::NoSuchRow { .. }) => Err(Uncontrolled::NoSuchRow),
+            Err(error) => {
+                tracing::debug!(%error, %zone, "an edit from another device was not taken");
+                Err(Uncontrolled::Failed)
+            }
+        }
     }
 }

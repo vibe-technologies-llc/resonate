@@ -1125,9 +1125,13 @@ fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
     let _ = fs::remove_dir_all(&folder);
 }
 
+const MIRRORED_REVISION: u64 = 5;
+
 struct Stage {
     zone: Mutex<RemoteZone>,
     told: Mutex<Vec<RemoteCommand>>,
+    queue_now: Mutex<u64>,
+    seen: Mutex<Vec<Option<u64>>>,
 }
 
 impl Stage {
@@ -1155,8 +1159,11 @@ impl Stage {
                         length: None,
                     },
                 ],
+                queue_revision: Some(MIRRORED_REVISION),
             }),
             told: Mutex::new(Vec::new()),
+            queue_now: Mutex::new(MIRRORED_REVISION),
+            seen: Mutex::new(Vec::new()),
         }
     }
 }
@@ -1170,6 +1177,29 @@ impl Controlled for Stage {
         if zone != ZoneId::FIRST {
             return Err(Uncontrolled::NoSuchZone);
         }
+        self.seen.lock().push(None);
+        self.applied(command)
+    }
+
+    fn control_if_the_queue_is_still(
+        &self,
+        zone: ZoneId,
+        revision: u64,
+        command: RemoteCommand,
+    ) -> Result<(), Uncontrolled> {
+        if zone != ZoneId::FIRST {
+            return Err(Uncontrolled::NoSuchZone);
+        }
+        self.seen.lock().push(Some(revision));
+        if revision != *self.queue_now.lock() {
+            return Err(Uncontrolled::QueueMoved);
+        }
+        self.applied(command)
+    }
+}
+
+impl Stage {
+    fn applied(&self, command: RemoteCommand) -> Result<(), Uncontrolled> {
         self.told.lock().push(command);
         let mut held = self.zone.lock();
         match command {
@@ -1182,6 +1212,61 @@ impl Controlled for Stage {
         }
         Ok(())
     }
+}
+
+#[test]
+fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue_moved() {
+    let folder = scratch("revised");
+    let key = SyncKey::minted().expect("a key");
+    let stage = Arc::new(Stage::paused());
+
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+    desk.control_with(
+        Arc::clone(&stage) as Arc<dyn Controlled>,
+        RemoteTrust::Everything,
+    );
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&desk),
+    );
+    eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
+    phone.watch(desk.device());
+    eventually("the desk's queue revision mirrored on the phone", || {
+        phone.watched(desk.device()).mirror().is_some_and(|mirror| {
+            mirror.zones.first().and_then(|zone| zone.queue_revision) == Some(MIRRORED_REVISION)
+        })
+    });
+
+    let played = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Play);
+    let jumped = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Jump(1));
+    *stage.queue_now.lock() += 1;
+    let removed_after_an_edit_there =
+        phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Remove(1));
+
+    assert_eq!(played, Controlling::Done);
+    assert_eq!(jumped, Controlling::Done);
+    assert_eq!(removed_after_an_edit_there, Controlling::NoSuchRow);
+    assert_eq!(
+        *stage.seen.lock(),
+        [None, Some(MIRRORED_REVISION), Some(MIRRORED_REVISION)]
+    );
+    assert_eq!(
+        *stage.told.lock(),
+        [RemoteCommand::Play, RemoteCommand::Jump(1)]
+    );
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
 }
 
 #[test]

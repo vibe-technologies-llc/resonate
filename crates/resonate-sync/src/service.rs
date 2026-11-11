@@ -268,6 +268,7 @@ enum Command {
         device: DeviceId,
         zone: ZoneId,
         command: RemoteCommand,
+        queue_seen: Option<u64>,
         answer: std_mpsc::Sender<Controlling>,
     },
     Watch(DeviceId),
@@ -345,6 +346,7 @@ enum Work {
     Control {
         zone: ZoneId,
         command: RemoteCommand,
+        queue_seen: Option<u64>,
         answer: std_mpsc::Sender<Controlling>,
     },
     Watch,
@@ -817,14 +819,29 @@ impl Sync {
         command: RemoteCommand,
     ) -> AskedToControl {
         let (answer, answered) = std_mpsc::channel();
+        let queue_seen = command
+            .names_a_row()
+            .then(|| self.queue_revision_mirrored(device, zone))
+            .flatten();
         let asked = Command::Control {
             device,
             zone,
             command,
+            queue_seen,
             answer,
         };
         let _ = self.commands.send(asked);
         AskedToControl(answered)
+    }
+
+    fn queue_revision_mirrored(&self, device: DeviceId, zone: ZoneId) -> Option<u64> {
+        self.running
+            .mirrors
+            .read()
+            .get(&device)
+            .and_then(Watched::mirror)
+            .and_then(|mirror| mirror.zone(zone))
+            .and_then(|zone| zone.queue_revision)
     }
 
     pub fn watch(&self, device: DeviceId) {
@@ -1071,7 +1088,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     Ok(())
                 }
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
-                Some(Command::Control { device, zone, command, answer }) => syncing.want(device, Work::Control { zone, command, answer }).await,
+                Some(Command::Control { device, zone, command, queue_seen, answer }) => syncing.want(device, Work::Control { zone, command, queue_seen, answer }).await,
                 Some(Command::Consult { device, asked, answer }) => syncing.want(device, Work::Consult { asked, answer }).await,
                 Some(Command::KeptOwed) => {
                     syncing.ask_every_peer_for_kept();
@@ -2868,9 +2885,10 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
         Work::Control {
             zone,
             command,
+            queue_seen,
             answer,
         } => {
-            let _ = answer.send(control(connection, zone, command).await);
+            let _ = answer.send(control(connection, zone, command, queue_seen).await);
             return;
         }
         Work::Consult { asked, answer } => {

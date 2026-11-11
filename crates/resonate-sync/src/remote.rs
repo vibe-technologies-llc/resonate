@@ -64,6 +64,10 @@ impl RemoteCommand {
         matches!(self, Self::Move { .. } | Self::Remove(_))
     }
 
+    pub const fn names_a_row(self) -> bool {
+        matches!(self, Self::Move { .. } | Self::Remove(_) | Self::Jump(_))
+    }
+
     pub const fn trusted_by(self, trust: RemoteTrust) -> bool {
         trust.shows() && (trust.edits_the_queue() || !self.edits_the_queue())
     }
@@ -166,6 +170,7 @@ impl Controlling {
 pub enum Uncontrolled {
     NoSuchZone,
     NoSuchRow,
+    QueueMoved,
     Failed,
 }
 
@@ -173,7 +178,7 @@ impl From<Uncontrolled> for Controlling {
     fn from(uncontrolled: Uncontrolled) -> Self {
         match uncontrolled {
             Uncontrolled::NoSuchZone => Self::NoSuchZone,
-            Uncontrolled::NoSuchRow => Self::NoSuchRow,
+            Uncontrolled::NoSuchRow | Uncontrolled::QueueMoved => Self::NoSuchRow,
             Uncontrolled::Failed => Self::Failed,
         }
     }
@@ -227,6 +232,7 @@ pub struct RemoteZone {
     pub queue_length: usize,
     pub first_row: usize,
     pub rows: Vec<RemoteRow>,
+    pub queue_revision: Option<u64>,
 }
 
 impl RemoteZone {
@@ -239,7 +245,7 @@ impl RemoteZone {
         self.rows.get(row.checked_sub(self.first_row)?)
     }
 
-    pub(crate) fn write(&self, writer: &mut Writer) {
+    pub(crate) fn write(&self, writer: &mut Writer, revisions: Revisions) {
         writer.number(u64::from(self.zone.get()));
         writer.text(&self.name);
         writer.byte(self.playback.tag());
@@ -258,9 +264,18 @@ impl RemoteZone {
             writer.text(&row.artist);
             written_length(writer, row.length);
         }
+        if revisions == Revisions::Carried {
+            match self.queue_revision {
+                Some(revision) => {
+                    writer.flag(true);
+                    writer.number(revision);
+                }
+                None => writer.flag(false),
+            }
+        }
     }
 
-    pub(crate) fn read(reader: &mut Reader<'_>) -> Result<Self> {
+    pub(crate) fn read(reader: &mut Reader<'_>, revisions: Revisions) -> Result<Self> {
         let zone = ZoneId::new(reader.small()?).ok_or(Error::Malformed(Malformed::Number))?;
         let name = reader.text()?;
         let playback = RemotePlayback::tagged(reader.byte()?);
@@ -287,6 +302,10 @@ impl RemoteZone {
                 length: read_length(reader)?,
             });
         }
+        let queue_revision = match revisions {
+            Revisions::Carried if reader.flag()? => Some(reader.number()?),
+            Revisions::Carried | Revisions::Unsaid => None,
+        };
         Ok(Self {
             zone,
             name,
@@ -298,6 +317,7 @@ impl RemoteZone {
             queue_length,
             first_row,
             rows,
+            queue_revision,
         })
     }
 }
@@ -320,22 +340,28 @@ fn read_length(reader: &mut Reader<'_>) -> Result<Option<Duration>> {
     }
 }
 
-pub(crate) fn write_zones(writer: &mut Writer, zones: &[RemoteZone]) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Revisions {
+    Unsaid,
+    Carried,
+}
+
+pub(crate) fn write_zones(writer: &mut Writer, zones: &[RemoteZone], revisions: Revisions) {
     let zones = &zones[..zones.len().min(ZONES_MIRRORED_AT_MOST)];
     writer.length(zones.len());
     for zone in zones {
-        zone.write(writer);
+        zone.write(writer, revisions);
     }
 }
 
-pub(crate) fn read_zones(reader: &mut Reader<'_>) -> Result<Vec<RemoteZone>> {
+pub(crate) fn read_zones(reader: &mut Reader<'_>, revisions: Revisions) -> Result<Vec<RemoteZone>> {
     let count = reader.count_of(ZONE_AT_LEAST)?;
     if count > ZONES_MIRRORED_AT_MOST {
         return Err(Error::Malformed(Malformed::Overlong { length: count }));
     }
     let mut zones = crate::wire::reserved(count);
     for _ in 0..count {
-        zones.push(RemoteZone::read(reader)?);
+        zones.push(RemoteZone::read(reader, revisions)?);
     }
     Ok(zones)
 }
@@ -407,6 +433,13 @@ pub trait Controlled: Send + Sync + 'static {
         zone: ZoneId,
         command: RemoteCommand,
     ) -> std::result::Result<(), Uncontrolled>;
+
+    fn control_if_the_queue_is_still(
+        &self,
+        zone: ZoneId,
+        revision: u64,
+        command: RemoteCommand,
+    ) -> std::result::Result<(), Uncontrolled>;
 }
 
 #[cfg(test)]
@@ -438,6 +471,7 @@ mod tests {
                 },
                 RemoteRow::default(),
             ],
+            queue_revision: Some(41),
         }
     }
 
@@ -457,16 +491,53 @@ mod tests {
         ];
 
         for command in commands {
-            let asked = ToPeer::Control {
-                zone: ZoneId::new(2).expect("a zone"),
-                command,
-            };
-            assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+            for queue_seen in [None, Some(17)] {
+                let asked = ToPeer::Control {
+                    zone: ZoneId::new(2).expect("a zone"),
+                    command,
+                    queue_seen,
+                };
+                assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+            }
         }
+        for revisions in [Revisions::Unsaid, Revisions::Carried] {
+            let watch = ToPeer::Watch { revisions };
+            assert_eq!(ToPeer::decoded(&watch.encoded()).expect("decoded"), watch);
+        }
+    }
+
+    #[test]
+    fn what_an_older_device_reads_is_written_as_it_always_was_and_carries_no_revision() {
+        let plain = ToPeer::Control {
+            zone: ZoneId::new(2).expect("a zone"),
+            command: RemoteCommand::Remove(7),
+            queue_seen: None,
+        };
+        let guarded = ToPeer::Control {
+            zone: ZoneId::new(2).expect("a zone"),
+            command: RemoteCommand::Remove(7),
+            queue_seen: Some(17),
+        };
+        let unsaid = FromPeer::Zones {
+            zones: vec![zone(RemotePlayback::Playing, Duration::from_secs(42))],
+            revisions: Revisions::Unsaid,
+        };
+
+        assert_eq!(plain.encoded(), [8, 2, 8, 7]);
+        assert_eq!(guarded.encoded(), [13, 2, 8, 7, 17]);
         assert_eq!(
-            ToPeer::decoded(&ToPeer::Watch.encoded()).expect("decoded"),
-            ToPeer::Watch
+            ToPeer::Watch {
+                revisions: Revisions::Unsaid
+            }
+            .encoded(),
+            [9]
         );
+        assert_eq!(unsaid.encoded()[0], 14);
+        let FromPeer::Zones { zones, .. } = FromPeer::decoded(&unsaid.encoded()).expect("decoded")
+        else {
+            panic!("a mirror");
+        };
+        assert_eq!(zones[0].queue_revision, None);
     }
 
     #[test]
@@ -474,8 +545,12 @@ mod tests {
         let mirrored = FromPeer::Zones {
             zones: vec![
                 zone(RemotePlayback::Playing, Duration::from_secs(42)),
-                zone(RemotePlayback::Paused, Duration::ZERO),
+                RemoteZone {
+                    queue_revision: None,
+                    ..zone(RemotePlayback::Paused, Duration::ZERO)
+                },
             ],
+            revisions: Revisions::Carried,
         };
         let answers = [
             Controlling::Done,
@@ -516,11 +591,14 @@ mod tests {
     fn more_rows_than_a_mirror_carries_are_cut_by_the_writer() {
         let mut long = zone(RemotePlayback::Playing, Duration::ZERO);
         long.rows = vec![RemoteRow::default(); ROWS_MIRRORED_AT_MOST + 1];
-        let mirrored = FromPeer::Zones { zones: vec![long] };
+        let mirrored = FromPeer::Zones {
+            zones: vec![long],
+            revisions: Revisions::Carried,
+        };
 
         let decoded = FromPeer::decoded(&mirrored.encoded()).expect("decoded");
 
-        let FromPeer::Zones { zones } = decoded else {
+        let FromPeer::Zones { zones, .. } = decoded else {
             panic!("a mirror");
         };
         assert_eq!(zones[0].rows.len(), ROWS_MIRRORED_AT_MOST);
@@ -532,6 +610,8 @@ mod tests {
         assert!(RemoteCommand::Seek(Duration::ZERO).trusted_by(RemoteTrust::Transport));
         assert!(RemoteCommand::Jump(3).trusted_by(RemoteTrust::Transport));
         assert!(!RemoteCommand::Move { from: 0, to: 1 }.trusted_by(RemoteTrust::Transport));
+        assert!(RemoteCommand::Jump(3).names_a_row());
+        assert!(!RemoteCommand::Next.names_a_row());
         assert!(!RemoteCommand::Play.trusted_by(RemoteTrust::Nothing));
         assert!(RemoteTrust::Transport.shows());
         assert!(!RemoteTrust::Nothing.shows());

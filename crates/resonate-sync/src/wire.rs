@@ -20,7 +20,7 @@ use crate::{
     },
     consulted::KeptAnswer,
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
-    remote::{Controlling, RemoteCommand, RemoteZone, read_zones, write_zones},
+    remote::{Controlling, RemoteCommand, RemoteZone, Revisions, read_zones, write_zones},
     seal::SEALED_AT_LEAST,
 };
 
@@ -273,8 +273,11 @@ pub enum ToPeer {
     Control {
         zone: ZoneId,
         command: RemoteCommand,
+        queue_seen: Option<u64>,
     },
-    Watch,
+    Watch {
+        revisions: Revisions,
+    },
     Consult {
         asked: Vec<u8>,
     },
@@ -321,6 +324,7 @@ pub enum FromPeer {
     Controlled(Controlling),
     Zones {
         zones: Vec<RemoteZone>,
+        revisions: Revisions,
     },
     Consulted {
         answer: Vec<u8>,
@@ -1620,12 +1624,31 @@ impl ToPeer {
                     writer.whole_file(*file);
                 }
             }
-            Self::Control { zone, command } => {
+            Self::Control {
+                zone,
+                command,
+                queue_seen: None,
+            } => {
                 writer.byte(8);
                 writer.number(u64::from(zone.get()));
                 command.write(&mut writer);
             }
-            Self::Watch => writer.byte(9),
+            Self::Control {
+                zone,
+                command,
+                queue_seen: Some(revision),
+            } => {
+                writer.byte(13);
+                writer.number(u64::from(zone.get()));
+                command.write(&mut writer);
+                writer.number(*revision);
+            }
+            Self::Watch {
+                revisions: Revisions::Unsaid,
+            } => writer.byte(9),
+            Self::Watch {
+                revisions: Revisions::Carried,
+            } => writer.byte(12),
             Self::Consult { asked } => {
                 writer.byte(10);
                 writer.bytes(asked);
@@ -1695,8 +1718,11 @@ impl ToPeer {
             8 => Self::Control {
                 zone: ZoneId::new(reader.small()?).ok_or(Error::Malformed(Malformed::Number))?,
                 command: RemoteCommand::read(&mut reader)?,
+                queue_seen: None,
             },
-            9 => Self::Watch,
+            9 => Self::Watch {
+                revisions: Revisions::Unsaid,
+            },
             10 => Self::Consult {
                 asked: reader.bytes(LARGEST_CONSULTATION)?.to_vec(),
             },
@@ -1711,6 +1737,14 @@ impl ToPeer {
                 }
                 Self::Kept { asker, after, most }
             }
+            12 => Self::Watch {
+                revisions: Revisions::Carried,
+            },
+            13 => Self::Control {
+                zone: ZoneId::new(reader.small()?).ok_or(Error::Malformed(Malformed::Number))?,
+                command: RemoteCommand::read(&mut reader)?,
+                queue_seen: Some(reader.number()?),
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1772,9 +1806,12 @@ impl FromPeer {
                 writer.byte(13);
                 writer.byte(controlling.tag());
             }
-            Self::Zones { zones } => {
-                writer.byte(14);
-                write_zones(&mut writer, zones);
+            Self::Zones { zones, revisions } => {
+                writer.byte(match revisions {
+                    Revisions::Unsaid => 14,
+                    Revisions::Carried => 19,
+                });
+                write_zones(&mut writer, zones, *revisions);
             }
             Self::Consulted { answer } => {
                 writer.byte(15);
@@ -1841,7 +1878,8 @@ impl FromPeer {
             12 => Self::PrintsEnd,
             13 => Self::Controlled(Controlling::tagged(reader.byte()?)),
             14 => Self::Zones {
-                zones: read_zones(&mut reader)?,
+                zones: read_zones(&mut reader, Revisions::Unsaid)?,
+                revisions: Revisions::Unsaid,
             },
             15 => Self::Consulted {
                 answer: reader.bytes(LARGEST_CONSULTED)?.to_vec(),
@@ -1855,6 +1893,10 @@ impl FromPeer {
             }),
             18 => Self::KeptEnd {
                 mark: reader.number()?,
+            },
+            19 => Self::Zones {
+                zones: read_zones(&mut reader, Revisions::Carried)?,
+                revisions: Revisions::Carried,
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };

@@ -30,7 +30,7 @@ use crate::{
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER,
         MIRROR_LOOKED_AT_EVERY, MIRROR_TOLD_AGAIN_AFTER, Mirror, RemoteCommand, RemoteZone,
-        Watched, told_alike,
+        Revisions, Watched, told_alike,
     },
     wire::{
         FromPeer, KEPT_ASKED_AT_MOST, LARGEST_CONSULTED, LARGEST_KEPT_ANSWER, LARGEST_KEPT_KEY,
@@ -209,11 +209,15 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             }
             send_frame(&mut send, &FromPeer::PrintsEnd.encoded()).await?;
         }
-        ToPeer::Control { zone, command } => {
-            let answer = controlled_here(&asked.answering, zone, command).await;
+        ToPeer::Control {
+            zone,
+            command,
+            queue_seen,
+        } => {
+            let answer = controlled_here(&asked.answering, zone, command, queue_seen).await;
             send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
         }
-        ToPeer::Watch => send_mirror(&mut send, &asked.answering).await?,
+        ToPeer::Watch { revisions } => send_mirror(&mut send, &asked.answering, revisions).await?,
         ToPeer::Consult { asked: question } => {
             let answer = consulted_here(&asked.answering, question).await;
             send_frame(&mut send, &answer.encoded()).await?;
@@ -368,6 +372,7 @@ async fn controlled_here(
     answering: &Answering,
     zone: ZoneId,
     command: RemoteCommand,
+    queue_seen: Option<u64>,
 ) -> Controlling {
     let Some((controlled, trust)) = answering.controlled() else {
         return Controlling::Uncontrollable;
@@ -375,7 +380,13 @@ async fn controlled_here(
     if !command.trusted_by(trust) {
         return Controlling::Untrusted;
     }
-    match blocking(move || Ok(controlled.control(zone, command))).await {
+    let applied = blocking(move || {
+        Ok(match queue_seen {
+            Some(revision) => controlled.control_if_the_queue_is_still(zone, revision, command),
+            None => controlled.control(zone, command),
+        })
+    });
+    match applied.await {
         Ok(Ok(())) => Controlling::Done,
         Ok(Err(uncontrolled)) => uncontrolled.into(),
         Err(error) => {
@@ -385,7 +396,11 @@ async fn controlled_here(
     }
 }
 
-async fn send_mirror(send: &mut SendStream, answering: &Answering) -> Result<()> {
+async fn send_mirror(
+    send: &mut SendStream,
+    answering: &Answering,
+    revisions: Revisions,
+) -> Result<()> {
     let mut told: Option<(Vec<RemoteZone>, Instant)> = None;
     loop {
         let (controlled, trust) = match answering.controlled() {
@@ -410,6 +425,7 @@ async fn send_mirror(send: &mut SendStream, answering: &Answering) -> Result<()>
                 send,
                 &FromPeer::Zones {
                     zones: zones.clone(),
+                    revisions,
                 }
                 .encoded(),
             )
@@ -420,13 +436,23 @@ async fn send_mirror(send: &mut SendStream, answering: &Answering) -> Result<()>
     }
 }
 
-pub async fn control(connection: &Connection, zone: ZoneId, command: RemoteCommand) -> Controlling {
+pub async fn control(
+    connection: &Connection,
+    zone: ZoneId,
+    command: RemoteCommand,
+    queue_seen: Option<u64>,
+) -> Controlling {
     let asked = timeout(CONTROL_ANSWERED_WITHIN, async {
         let (mut send, mut recv) = connection
             .open_bi()
             .await
             .map_err(|source| Error::Connection(Box::new(source)))?;
-        send_frame(&mut send, &ToPeer::Control { zone, command }.encoded()).await?;
+        let asked = ToPeer::Control {
+            zone,
+            command,
+            queue_seen,
+        };
+        send_frame(&mut send, &asked.encoded()).await?;
         send.finish().map_err(|_| Error::StreamClosed)?;
         Ok::<_, Error>(match read_frame(&mut recv).await? {
             Some(answer) => match FromPeer::decoded(&answer)? {
@@ -447,17 +473,55 @@ pub async fn control(connection: &Connection, zone: ZoneId, command: RemoteComma
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Watching {
+    Heard,
+    NothingHeard,
+}
+
 pub async fn watch(
     connection: &Connection,
     device: DeviceId,
     mirrors: &RwLock<BTreeMap<DeviceId, Watched>>,
     still_watched: impl Fn() -> bool,
 ) -> Result<()> {
+    let mut watching = Watching::NothingHeard;
+    let revised = watched_as(
+        connection,
+        device,
+        mirrors,
+        &still_watched,
+        Revisions::Carried,
+        &mut watching,
+    )
+    .await;
+    if watching == Watching::Heard || !still_watched() || connection.close_reason().is_some() {
+        return revised;
+    }
+    watched_as(
+        connection,
+        device,
+        mirrors,
+        &still_watched,
+        Revisions::Unsaid,
+        &mut watching,
+    )
+    .await
+}
+
+async fn watched_as(
+    connection: &Connection,
+    device: DeviceId,
+    mirrors: &RwLock<BTreeMap<DeviceId, Watched>>,
+    still_watched: &impl Fn() -> bool,
+    revisions: Revisions,
+    watching: &mut Watching,
+) -> Result<()> {
     let (mut send, mut recv) = connection
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
-    send_frame(&mut send, &ToPeer::Watch.encoded()).await?;
+    send_frame(&mut send, &ToPeer::Watch { revisions }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
     let mut heard_at = Instant::now();
     while still_watched() && connection.close_reason().is_none() {
@@ -470,8 +534,9 @@ pub async fn watch(
             break;
         };
         heard_at = Instant::now();
+        *watching = Watching::Heard;
         match FromPeer::decoded(&frame)? {
-            FromPeer::Zones { zones } => {
+            FromPeer::Zones { zones, .. } => {
                 mirrors
                     .write()
                     .insert(device, Watched::Mirrored(Mirror { zones, heard_at }));
@@ -1115,6 +1180,93 @@ mod tests {
         assert_eq!(from_another, 0);
         assert!(!staged.exists());
         assert!(!noted.exists());
+    }
+
+    async fn met_by_an_older_build(mirrored: RemoteZone) -> (Endpoint, Endpoint, Connection) {
+        let derived = crate::SyncKey::minted()
+            .and_then(|key| key.derived())
+            .expect("a key");
+        let identity = crate::quic::PeerIdentity::of(&derived).expect("an identity");
+        let older = Endpoint::server(
+            identity.serving().expect("serving"),
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+        )
+        .expect("an older device listening");
+        let mut newer = Endpoint::client(SocketAddr::from(([127, 0, 0, 1], 0))).expect("a client");
+        newer.set_default_client_config(identity.dialling().expect("dialling"));
+        let address = older.local_addr().expect("an address");
+
+        let answering = older.clone();
+        tokio::spawn(async move {
+            let Some(incoming) = answering.accept().await else {
+                return;
+            };
+            let Ok(connection) = incoming.await else {
+                return;
+            };
+            while let Ok((mut send, mut recv)) = connection.accept_bi().await {
+                let Ok(Some(asked)) = read_frame(&mut recv).await else {
+                    continue;
+                };
+                let a_plain_watch = ToPeer::Watch {
+                    revisions: Revisions::Unsaid,
+                }
+                .encoded();
+                if asked != a_plain_watch {
+                    drop(send);
+                    continue;
+                }
+                let told = FromPeer::Zones {
+                    zones: vec![mirrored.clone()],
+                    revisions: Revisions::Unsaid,
+                };
+                let _ = send_frame(&mut send, &told.encoded()).await;
+                let _ = send.finish();
+            }
+        });
+        let connection = newer
+            .connect(address, PEER_NAME)
+            .expect("dialled")
+            .await
+            .expect("connected");
+
+        (older, newer, connection)
+    }
+
+    #[tokio::test]
+    async fn a_device_too_old_to_carry_queue_revisions_is_watched_as_it_always_was() {
+        let mirrored = RemoteZone {
+            zone: ZoneId::FIRST,
+            name: "Desk".into(),
+            playback: crate::RemotePlayback::Paused,
+            playing: None,
+            position: Duration::ZERO,
+            length: None,
+            volume: crate::Permille::WHOLE,
+            queue_length: 0,
+            first_row: 0,
+            rows: Vec::new(),
+            queue_revision: None,
+        };
+        let (_older, _newer, connection) = met_by_an_older_build(mirrored.clone()).await;
+        let mirrors = RwLock::new(BTreeMap::new());
+        let device = DeviceId([3; 16]);
+
+        timeout(
+            Duration::from_secs(10),
+            watch(&connection, device, &mirrors, || true),
+        )
+        .await
+        .expect("the watch ended with the older device's stream")
+        .expect("watched");
+
+        let held = mirrors.read().get(&device).cloned();
+        assert_eq!(
+            held.as_ref()
+                .and_then(Watched::mirror)
+                .map(|mirror| mirror.zones.clone()),
+            Some(vec![mirrored])
+        );
     }
 
     #[tokio::test]
