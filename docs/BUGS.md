@@ -54,15 +54,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## The window
 
 ## The phones
-- [S · 0.8.1] An Android read holding a `MobilePlayer` taken before `access` (`pagedTracks`, the
-  poll, a `LibraryFeatures` `work` block) may still run against a closed native object; only the
-  queued transport actions are guarded, by `OpenEngine` (`LibraryRepository.kt`)
-- [S · 0.8.1] A mixed queue another Android controller sets still loses its served rows:
-  `handleSetMediaItems` keeps the queue the engine holds when it names the same rows, but any other
-  mixed list goes through `BrowseIds.playable`, which drops each served row; it wants a boundary
-  call taking library and served rows together
-- [L · 0.8.1] The phones keep no shuffle, list order or rows played next: `save_zone` keeps the
-  rows, the row and the place, and `resume_saved_in` sends `..Resumption::default()`
-  (`resonate-mobile` `lib.rs`), so a queue shuffled when the app was ended comes back in its
-  shuffled order with shuffle off and the list order gone, where the desktop keeps all three; the
-  phones' `resume` and `zone_resume` want them through a migration step

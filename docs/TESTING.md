@@ -125,6 +125,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.8.1] `mobile.md` numbers the phones' catalog steps inconsistently: it calls
+  `A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD` the thirty-first step though it stands where the thirty-second
+  does, and counts `ZONES_KEEP_THEIR_OWN_QUEUES` and `DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC` one higher;
+  a test reading the step names off `MIGRATIONS` would hold the count
 - [S · 0.8.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
   the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
   Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game

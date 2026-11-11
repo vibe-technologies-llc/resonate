@@ -23,16 +23,9 @@ are in [ROADMAP.md](ROADMAP.md).
   (`models.rs` `watch_the_roots`, a catalog read and a `stat` of each every 5 s)
 
 ## Android
-- [M · 0.8.1] While enrichment writes, a walk of the library's pages rebuilds the whole search index
-  for nearly every 500-row page: every `documents` write moves `Catalog::revision`, which throws the
-  index away (`search.rs`), enrichment writes about once a second, `PagedSteadily` (and iOS's
-  `Library.swift`) walk again up to three times on a moved revision, and `ArtworkEnrichment`
-  refreshes every 2 s; an index pinned for a walk, or a revision only the index's own columns move
-- [M · 0.8.1] Android reads the whole queue again every 3 s while the catalog moves (`QueueReads`),
-  under `access` (`LibraryRepository.kt`), so pause, seek and skip wait behind it, at a catalog
-  lookup a row (`lib.rs` `queue`), and rebuilds every `MediaItemData` on the main thread and the
-  session's timeline (`RustMediaPlayer.kt`); a *Shuffle all* of 30 000 songs pays all of it each
-  time, where iOS reads a window
+- [S · 0.8.1] A saved search's page walk (`savedSearchPage` through `pagedFully` and
+  `pagedSteadily`) still rebuilds the search index on every moved revision; it wants a pinned walk
+  as `filtered_page` gives the library's pages
 
 ## Performance and scale
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
