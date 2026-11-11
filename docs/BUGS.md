@@ -17,6 +17,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   nothing
 
 ## Sync and together
+- [S · 0.8.1] A held listen's handle goes stale once its song is deleted mid-play: `deleted.rs`
+  moves the song's listens into `unheld_listens` (keeping `listen_id`), but `Library::listened` with
+  `Listen::Held(id)` updates `listens` alone, so the time heard after the delete is lost; it wants
+  to fall back onto `unheld_listens.listen_id`
 - [S · 0.8.1] A command sent to a driven device carries the queue revision of the controller's
   latest mirror when it leaves, not the one the front end drew (`resonate-driven`), so a mirror
   landing between a draw and a press lets a stale *Remove* through; the revision wants passing from
@@ -27,16 +31,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   answer, as `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` does
 - [S · 0.8.1] Two presses of *Play next* on one party request while its search runs queue it twice:
   `take_a_request` takes the request named, but nothing marks it taken until the search lands
-- [L · 0.8.1] An unheld listen's handle goes stale once a scan credits it: `unheld_listens` keeps a
-  plain rowid (`schema.rs`), `credit_the_unheld` (`history.rs`) moves the row into `listens`
-  mid-song and deletes it, and the window goes on calling `listened` with that rowid, so the
-  credited listen keeps the time heard at the scan, and a rowid handed out again has another
-  listen's `heard` overwritten; an `AUTOINCREMENT` id and a note of what each unheld row became want
-  a migration step
-- [L · 0.8.1] A kept MusicBrainz answer's `seq` is `max(seq) + 1` (`resonate-musicbrainz`
-  `kept.rs`), so once the 30-day sweep at open removes the newest answer the next one takes its
-  number, under a mark a peer has already passed, and never reaches that peer; a counter that never
-  goes back wants a migration step
 
 ## Playback and output
 - [S · 0.8.1] A row failing before its frames have passed the chain's latency still fades the
