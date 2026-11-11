@@ -135,6 +135,7 @@ impl Party {
         let running = Running {
             keys: key.keys()?,
             me,
+            seat: Token(random_bytes()?),
             host,
             name: settings.name,
             server: settings.server,
@@ -217,6 +218,7 @@ impl Drop for Party {
 struct Running {
     keys: PartyKeys,
     me: DeviceId,
+    seat: Token,
     host: Option<Token>,
     name: String,
     server: String,
@@ -384,6 +386,7 @@ impl Running {
                 token: self.keys.token.clone(),
                 host: self.host.clone(),
                 member: self.me,
+                seat: Some(self.seat.clone()),
             }
             .encoded(),
         )

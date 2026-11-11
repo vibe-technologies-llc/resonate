@@ -37,7 +37,7 @@ code{display:block;margin-top:1.2rem;word-break:break-all;color:var(--faint)}
 <noscript><p>@NEEDS_SCRIPT@</p></noscript>
 </main>
 <script>
-var code = location.hash.slice(1);
+var code = location.hash.slice(1).split(/[?&#]/)[0].replace(/[^A-Za-z0-9-]/g, "");
 var server = "wss://" + location.host + "/";
 document.getElementById("code").textContent = code;
 document.getElementById("open").href =
@@ -172,6 +172,18 @@ mod tests {
         assert!(page.contains("location.hash"));
         assert!(!page.contains("@KIND@"));
         assert!(!page.contains("@HEADING@"));
+    }
+
+    #[test]
+    fn a_page_hands_the_app_the_code_alone_and_never_a_query_of_the_fragment() {
+        let page = page_of(PARTY);
+
+        assert!(page.contains(r#"split(/[?&#]/)[0].replace(/[^A-Za-z0-9-]/g, "")"#));
+        assert_eq!(
+            page.matches("?server=").count(),
+            1,
+            "the page names the server it was served from, and nothing else does"
+        );
     }
 
     #[test]

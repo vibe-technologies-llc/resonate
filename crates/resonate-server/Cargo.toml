@@ -9,7 +9,6 @@ doctest = false
 
 [dependencies]
 clap.workspace = true
-futures-util.workspace = true
 httparse.workspace = true
 parking_lot.workspace = true
 quinn.workspace = true
@@ -28,7 +27,6 @@ tokio = {
     features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"]
 }
 tokio-rustls.workspace = true
-tokio-tungstenite.workspace = true
 toml_edit.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

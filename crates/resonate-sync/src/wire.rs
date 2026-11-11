@@ -71,6 +71,11 @@ pub const HEADS_ASKED_AT_MOST: usize = 256;
 
 pub const LARGEST_ROOM_FRAME: usize = 256 * 1024;
 
+const FRAME_ENVELOPE_AT_MOST: usize = 256;
+pub const FIRST_FRAME_AT_MOST: usize =
+    HEADS_ASKED_AT_MOST * (SPACE_BYTES + TOKEN_BYTES) + FRAME_ENVELOPE_AT_MOST;
+pub const ROOM_FRAME_AT_MOST: usize = LARGEST_ROOM_FRAME + FRAME_ENVELOPE_AT_MOST;
+
 const SPACE_ASKED_AT_LEAST: usize = SPACE_BYTES + TOKEN_BYTES;
 
 const SPACE_HEAD_AT_LEAST: usize = SPACE_BYTES + 2;
@@ -129,6 +134,7 @@ pub enum ToServer {
         token: Token,
         host: Option<Token>,
         member: DeviceId,
+        seat: Option<Token>,
     },
     RoomSay {
         to: Option<DeviceId>,
@@ -663,6 +669,10 @@ impl<'a> Reader<'a> {
         Self { rest: bytes }
     }
 
+    pub fn is_done(&self) -> bool {
+        self.rest.is_empty()
+    }
+
     pub fn done(&self) -> Result<()> {
         if self.rest.is_empty() {
             Ok(())
@@ -1184,6 +1194,7 @@ impl ToServer {
                 token,
                 host,
                 member,
+                seat,
             } => {
                 writer.byte(11);
                 writer.number(u64::from(*version));
@@ -1194,6 +1205,9 @@ impl ToServer {
                     writer.fixed(&host.0);
                 }
                 writer.device(*member);
+                if let Some(seat) = seat {
+                    writer.fixed(&seat.0);
+                }
             }
             Self::RoomSay { to, sealed } => {
                 writer.byte(12);
@@ -1286,6 +1300,11 @@ impl ToServer {
                     None
                 },
                 member: reader.device()?,
+                seat: if reader.is_done() {
+                    None
+                } else {
+                    Some(Token(reader.fixed::<TOKEN_BYTES>()?))
+                },
             },
             12 => Self::RoomSay {
                 to: if reader.flag()? {
@@ -2316,6 +2335,7 @@ mod tests {
                 token: Token([3; TOKEN_BYTES]),
                 host: Some(Token([5; TOKEN_BYTES])),
                 member: device,
+                seat: None,
             },
             ToServer::Room {
                 version: PROTOCOL_VERSION,
@@ -2323,6 +2343,15 @@ mod tests {
                 token: Token([3; TOKEN_BYTES]),
                 host: None,
                 member: device,
+                seat: Some(Token([7; TOKEN_BYTES])),
+            },
+            ToServer::Room {
+                version: PROTOCOL_VERSION,
+                room: space,
+                token: Token([3; TOKEN_BYTES]),
+                host: None,
+                member: device,
+                seat: None,
             },
             ToServer::RoomSay {
                 to: Some(device),
@@ -2384,6 +2413,55 @@ mod tests {
         }
 
         assert!(ToServer::decoded(&writer.finish()).is_err());
+    }
+
+    #[test]
+    fn a_room_frame_of_a_build_without_seats_reads_as_unseated_and_a_cut_seat_is_refused() {
+        let room = |seat| ToServer::Room {
+            version: PROTOCOL_VERSION,
+            room: SpaceId([1; SPACE_BYTES]),
+            token: Token([3; TOKEN_BYTES]),
+            host: None,
+            member: DeviceId([2; DEVICE_BYTES]),
+            seat,
+        };
+        let unseated = room(None);
+        let seated = room(Some(Token([7; TOKEN_BYTES])));
+
+        let old = unseated.encoded();
+        let new = seated.encoded();
+
+        assert_eq!(new.len(), old.len() + TOKEN_BYTES);
+        assert_eq!(new[..old.len()], old[..]);
+        assert_eq!(ToServer::decoded(&old).expect("decoded"), unseated);
+        assert_eq!(ToServer::decoded(&new).expect("decoded"), seated);
+        assert!(ToServer::decoded(&new[..new.len() - 1]).is_err());
+    }
+
+    #[test]
+    fn the_first_frame_ceiling_holds_the_largest_a_device_may_open_with() {
+        let heads = ToServer::Heads {
+            version: PROTOCOL_VERSION,
+            asked: vec![
+                SpaceAsked {
+                    space: SpaceId([1; SPACE_BYTES]),
+                    token: Token([2; TOKEN_BYTES]),
+                };
+                HEADS_ASKED_AT_MOST
+            ],
+        };
+        let share = ToServer::Share {
+            version: PROTOCOL_VERSION,
+            space: SpaceId([1; SPACE_BYTES]),
+            token: Token([2; TOKEN_BYTES]),
+            viewer: [3; TOKEN_BYTES],
+            device: DeviceId([4; DEVICE_BYTES]),
+            after: u64::MAX,
+        };
+
+        assert!(heads.encoded().len() <= FIRST_FRAME_AT_MOST);
+        assert!(share.encoded().len() <= FIRST_FRAME_AT_MOST);
+        const { assert!(FIRST_FRAME_AT_MOST < 16 * 1024) };
     }
 
     #[test]

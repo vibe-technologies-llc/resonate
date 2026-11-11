@@ -28,6 +28,13 @@ have**. No sound passes between people; a guest with neither sits that song out.
   refuses where online is off (`Error::OnlineOff`, `party_settings`).
   `resonate_providers::found_exactly` is the strict search both use.
 
+## The room's seats
+
+A guest mints one random seat token for the life of its `Party` and sends it with every `Room`
+frame, so the server binds the guest's `DeviceId` to it on the first join and refuses a second guest
+who names the same id (`server.md`). A reconnect sends the same token; a new `Party` is a new id and a
+new token, so a guest who leaves and comes back through the link is a new member.
+
 ## The clock
 
 Each seat pings the room once a second and sets `ServerClock` from the **quickest answer of the last

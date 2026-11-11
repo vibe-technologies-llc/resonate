@@ -263,6 +263,10 @@ pub async fn send_frame(stream: &mut SendStream, payload: &[u8]) -> Result<()> {
 }
 
 pub async fn read_frame(stream: &mut RecvStream) -> Result<Option<Vec<u8>>> {
+    read_frame_at_most(stream, LARGEST_FRAME).await
+}
+
+pub async fn read_frame_at_most(stream: &mut RecvStream, most: usize) -> Result<Option<Vec<u8>>> {
     let mut length = [0; FRAME_LENGTH_BYTES];
     match stream.read_exact(&mut length).await {
         Ok(()) => {}
@@ -278,7 +282,7 @@ pub async fn read_frame(stream: &mut RecvStream) -> Result<Option<Vec<u8>>> {
         }
     }
     let length = usize::try_from(u32::from_be_bytes(length)).unwrap_or(usize::MAX);
-    if length > LARGEST_FRAME {
+    if length > most.min(LARGEST_FRAME) {
         return Err(Error::Oversized { length });
     }
     let mut payload = vec![0; length];

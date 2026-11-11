@@ -24,20 +24,69 @@ pub enum Notice {
     Compacted(u64),
     Closed(Vec<u8>),
     Replaced,
+    FellBehind,
     Relayed {
         from: DeviceId,
         datagram: Vec<u8>,
     },
 }
 
+impl Notice {
+    const fn may_be_dropped(&self) -> bool {
+        matches!(self, Self::Punched { .. } | Self::Relayed { .. })
+    }
+}
+
 pub const RELAY_BACKLOG_BYTES_AT_MOST: usize = 256 * 1024;
+pub const NOTICE_BACKLOG_BYTES_AT_MOST: usize = 1024 * 1024;
+pub const A_NOTICE_WEIGHS_AT_LEAST: usize = A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST;
+
+pub fn notice_weight(notice: &Notice) -> usize {
+    match notice {
+        Notice::Replaced | Notice::FellBehind => 0,
+        Notice::Relayed { datagram, .. } => relayed_weight(datagram.len()),
+        Notice::Punched { sealed, .. } | Notice::Closed(sealed) => {
+            sealed.len().max(A_NOTICE_WEIGHS_AT_LEAST)
+        }
+        Notice::Appended | Notice::Arrived(_) | Notice::Left(_) | Notice::Compacted(_) => {
+            A_NOTICE_WEIGHS_AT_LEAST
+        }
+    }
+}
 
 struct Present {
     notices: UnboundedSender<Notice>,
     address: SocketAddr,
     session: u64,
     relaying: bool,
+    behind: bool,
     backlog: Arc<AtomicUsize>,
+}
+
+impl Present {
+    fn queue(&mut self, notice: Notice) -> bool {
+        let weight = notice_weight(&notice);
+        let droppable = notice.may_be_dropped();
+        let most = if droppable {
+            RELAY_BACKLOG_BYTES_AT_MOST
+        } else {
+            NOTICE_BACKLOG_BYTES_AT_MOST
+        };
+        if self.backlog.load(Ordering::Relaxed) + weight > most {
+            if !droppable && !self.behind {
+                self.behind = true;
+                let _ = self.notices.send(Notice::FellBehind);
+            }
+            return false;
+        }
+
+        self.backlog.fetch_add(weight, Ordering::Relaxed);
+        let sent = self.notices.send(notice).is_ok();
+        if !sent {
+            self.backlog.fetch_sub(weight, Ordering::Relaxed);
+        }
+        sent
+    }
 }
 
 #[derive(Default)]
@@ -80,6 +129,7 @@ impl Hub {
                 address,
                 session,
                 relaying: false,
+                behind: false,
                 backlog: Arc::clone(&backlog),
             },
         ) {
@@ -91,8 +141,8 @@ impl Hub {
             .filter(|other| *other != device)
             .collect::<Vec<_>>();
         for other in &others {
-            if let Some(present) = present.get(other) {
-                let _ = present.notices.send(Notice::Arrived(device));
+            if let Some(present) = present.get_mut(other) {
+                present.queue(Notice::Arrived(device));
             }
         }
         Some(Joined {
@@ -115,8 +165,8 @@ impl Hub {
             return;
         }
         present.remove(&device);
-        for other in present.values() {
-            let _ = other.notices.send(Notice::Left(device));
+        for other in present.values_mut() {
+            other.queue(Notice::Left(device));
         }
         if present.is_empty() {
             spaces.remove(&space);
@@ -124,29 +174,29 @@ impl Hub {
     }
 
     pub fn tell_all(&self, space: SpaceId, notice: &Notice) {
-        if let Some(present) = self.spaces.lock().get(&space) {
-            for device in present.values() {
-                let _ = device.notices.send(notice.clone());
+        if let Some(present) = self.spaces.lock().get_mut(&space) {
+            for device in present.values_mut() {
+                device.queue(notice.clone());
             }
         }
     }
 
     pub fn punch(&self, space: SpaceId, from: DeviceId, to: DeviceId, sealed: Vec<u8>) -> bool {
-        let spaces = self.spaces.lock();
-        let Some(present) = spaces.get(&space) else {
+        let mut spaces = self.spaces.lock();
+        let Some(present) = spaces.get_mut(&space) else {
             return false;
         };
-        let (Some(asking), Some(asked)) = (present.get(&from), present.get(&to)) else {
+        let Some(address) = present.get(&from).map(|asking| asking.address) else {
             return false;
         };
-        asked
-            .notices
-            .send(Notice::Punched {
-                device: from,
-                address: asking.address,
-                sealed,
-            })
-            .is_ok()
+        let Some(asked) = present.get_mut(&to) else {
+            return false;
+        };
+        asked.queue(Notice::Punched {
+            device: from,
+            address,
+            sealed,
+        })
     }
 }
 
@@ -164,24 +214,14 @@ impl Hub {
     }
 
     pub fn relay(&self, space: SpaceId, from: DeviceId, to: DeviceId, datagram: Vec<u8>) -> bool {
-        let spaces = self.spaces.lock();
-        let Some(asked) = spaces.get(&space).and_then(|present| present.get(&to)) else {
+        let mut spaces = self.spaces.lock();
+        let Some(asked) = spaces
+            .get_mut(&space)
+            .and_then(|present| present.get_mut(&to))
+        else {
             return false;
         };
-        let held = asked.backlog.load(Ordering::Relaxed);
-        let weight = relayed_weight(datagram.len());
-        if !asked.relaying || held + weight > RELAY_BACKLOG_BYTES_AT_MOST {
-            return false;
-        }
-        asked.backlog.fetch_add(weight, Ordering::Relaxed);
-        let sent = asked
-            .notices
-            .send(Notice::Relayed { from, datagram })
-            .is_ok();
-        if !sent {
-            asked.backlog.fetch_sub(weight, Ordering::Relaxed);
-        }
-        sent
+        asked.relaying && asked.queue(Notice::Relayed { from, datagram })
     }
 }
 
@@ -270,7 +310,11 @@ mod tests {
                 datagram: vec![1, 2]
             })
         );
-        assert_eq!(desk.backlog.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            desk.backlog.load(Ordering::Relaxed),
+            A_NOTICE_WEIGHS_AT_LEAST,
+            "only the arrival of the phone was queued for the desk"
+        );
         assert_eq!(
             phone.backlog.load(Ordering::Relaxed),
             A_RELAYED_DATAGRAM_WEIGHS_AT_LEAST
@@ -310,6 +354,73 @@ mod tests {
         assert!(whole);
         assert!(!over);
         assert!(after_reading);
+    }
+
+    #[test]
+    fn a_device_that_reads_nothing_is_queued_no_more_than_a_backlog_of_punches() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let mut phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+        let sealed = vec![0; 4096];
+
+        let taken = (0..1000)
+            .filter(|_| hub.punch(SPACE, DESK, PHONE, sealed.clone()))
+            .count();
+
+        assert_eq!(taken, RELAY_BACKLOG_BYTES_AT_MOST / sealed.len());
+        let mut queued = 0;
+        while let Ok(notice) = phone.notices.try_recv() {
+            queued += notice_weight(&notice);
+        }
+        assert!(queued <= RELAY_BACKLOG_BYTES_AT_MOST);
+    }
+
+    #[test]
+    fn a_punch_is_charged_to_the_backlog_until_it_is_read() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+
+        hub.punch(SPACE, DESK, PHONE, vec![7; 1000]);
+
+        assert_eq!(phone.backlog.load(Ordering::Relaxed), 1000);
+    }
+
+    #[test]
+    fn a_device_that_reads_nothing_is_told_it_fell_behind_rather_than_queued_everything() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let mut phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+        let closing = Notice::Closed(vec![0; 256 * 1024]);
+
+        for _ in 0..100 {
+            hub.tell_all(SPACE, &closing);
+        }
+
+        let mut queued = 0;
+        let mut behind = 0;
+        while let Ok(notice) = phone.notices.try_recv() {
+            queued += notice_weight(&notice);
+            behind += usize::from(notice == Notice::FellBehind);
+        }
+        assert!(queued <= NOTICE_BACKLOG_BYTES_AT_MOST);
+        assert_eq!(behind, 1, "told once, however much more came");
+    }
+
+    #[test]
+    fn a_device_that_reads_what_it_is_sent_is_never_told_it_fell_behind() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let mut phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+
+        for _ in 0..10_000 {
+            hub.tell_all(SPACE, &Notice::Appended);
+            let notice = phone.notices.try_recv().expect("a notice");
+            phone
+                .backlog
+                .fetch_sub(notice_weight(&notice), Ordering::Relaxed);
+            assert_eq!(notice, Notice::Appended);
+        }
     }
 
     #[test]

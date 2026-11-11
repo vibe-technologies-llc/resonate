@@ -10,8 +10,8 @@ use quinn::{Endpoint, Incoming, ServerConfig};
 use resonate_sync::{
     DeviceId, Duplex, Incoming as Reader, Outgoing as Writer, SpaceId, Token, accepted, transport,
     wire::{
-        FromServer, LARGEST_RECORD, PROTOCOL_VERSION, Record, Refusal, SERVER_ALPN, SpaceAsked,
-        ToServer,
+        FIRST_FRAME_AT_MOST, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION,
+        ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN, SpaceAsked, ToServer,
     },
 };
 use rustls::{crypto::ring::default_provider, version::TLS13};
@@ -29,11 +29,11 @@ use tokio::{
 use crate::{
     Error, PemOp, Result,
     guard::{Admitted, Allowance, Guard},
-    hub::{Hub, Joined, Notice, relayed_weight},
+    hub::{Hub, Joined, Notice, notice_weight, relayed_weight},
     pages,
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
-    store::{Appended, CaughtUp, Claim, Compacted, Store},
+    store::{Appended, CaughtUp, Claim, Closing, Compacted, Store},
 };
 
 const HELLO_WITHIN: Duration = Duration::from_secs(10);
@@ -70,6 +70,7 @@ struct Knock {
     token: Token,
     host: Option<Token>,
     member: DeviceId,
+    seat: Option<Token>,
 }
 
 struct Door {
@@ -317,7 +318,7 @@ impl Server {
         address: SocketAddr,
         admitted: Arc<Admitted>,
     ) -> Result<()> {
-        let hello = timeout(HELLO_WITHIN, recv.read()).await;
+        let hello = timeout(HELLO_WITHIN, recv.read_at_most(FIRST_FRAME_AT_MOST)).await;
         let Ok(Ok(Some(hello))) = hello else {
             return Ok(());
         };
@@ -385,6 +386,7 @@ impl Server {
                 token,
                 host,
                 member,
+                seat,
             } => {
                 if version != PROTOCOL_VERSION {
                     return refuse(&mut send, Refusal::Version).await;
@@ -394,6 +396,7 @@ impl Server {
                     token,
                     host,
                     member,
+                    seat,
                 };
                 self.room(send, recv, knock, &admitted).await
             }
@@ -535,14 +538,17 @@ impl Server {
             token,
             host,
             member,
+            seat,
         } = knock;
         let digest = token.digest();
         let host_digest = host.as_ref().map(Token::digest);
+        let seat_digest = seat.as_ref().map(Token::digest);
         let asked = rooms::Asked {
             room,
             token: &digest,
             host_token: host_digest.as_ref(),
             member,
+            seat: seat_digest.as_ref(),
         };
         let limits = RoomLimits {
             rooms: self.limits.rooms,
@@ -591,7 +597,7 @@ impl Server {
             .await?;
 
         let (frames_in, mut frames) = channel(FRAMES_READ_AHEAD);
-        let reading = tokio::spawn(read_frames(recv, frames_in));
+        let reading = tokio::spawn(read_frames(recv, frames_in, ROOM_FRAME_AT_MOST));
         let mut window = Instant::now();
         let mut counted = 0_u32;
         let mut allowance = Bucket::new(self.limits.room_bytes_per_second);
@@ -701,7 +707,7 @@ impl Server {
         }
 
         let (frames_in, mut frames) = channel(FRAMES_READ_AHEAD);
-        let reading = tokio::spawn(read_frames(recv, frames_in));
+        let reading = tokio::spawn(read_frames(recv, frames_in, LARGEST_FRAME));
         let mut window = Instant::now();
         let mut counted = 0_u32;
         let mut allowance = Bucket::new(self.limits.relay_bytes_per_second);
@@ -759,27 +765,32 @@ impl Server {
                     }
                 }
                 _ = keeping.tick(), if send.is_web() => send.keep_alive().await?,
-                notice = notices.recv() => match notice {
-                    None | Some(Notice::Replaced) => break Ok(()),
-                    Some(Notice::Appended) => self.send_records(&mut send, space, device, &mut sent_through).await?,
-                    Some(Notice::Arrived(other)) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
-                    Some(Notice::Left(other)) => send.send(&FromServer::Left { device: other }.encoded()).await?,
-                    Some(Notice::Relayed { from, datagram }) => {
-                        backlog.fetch_sub(relayed_weight(datagram.len()), Ordering::Relaxed);
-                        send.send(&FromServer::Relayed { from, datagram }.encoded()).await?;
+                notice = notices.recv() => {
+                    let Some(notice) = notice else {
+                        break Ok(());
+                    };
+                    backlog.fetch_sub(notice_weight(&notice), Ordering::Relaxed);
+                    match notice {
+                        Notice::Replaced | Notice::FellBehind => break Ok(()),
+                        Notice::Appended => self.send_records(&mut send, space, device, &mut sent_through).await?,
+                        Notice::Arrived(other) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
+                        Notice::Left(other) => send.send(&FromServer::Left { device: other }.encoded()).await?,
+                        Notice::Relayed { from, datagram } => {
+                            send.send(&FromServer::Relayed { from, datagram }.encoded()).await?;
+                        }
+                        Notice::Punched { device: from, address, sealed } => {
+                            let frame = FromServer::Punched { device: from, address, sealed };
+                            send.send(&frame.encoded()).await?;
+                        }
+                        Notice::Closed(sealed) => {
+                            send.send(&FromServer::Closed { sealed }.encoded()).await?;
+                        }
+                        Notice::Compacted(through) => {
+                            self.send_records(&mut send, space, device, &mut sent_through).await?;
+                            send.send(&FromServer::Compacted { through }.encoded()).await?;
+                        }
                     }
-                    Some(Notice::Punched { device: from, address, sealed }) => {
-                        let frame = FromServer::Punched { device: from, address, sealed };
-                        send.send(&frame.encoded()).await?;
-                    }
-                    Some(Notice::Closed(sealed)) => {
-                        send.send(&FromServer::Closed { sealed }.encoded()).await?;
-                    }
-                    Some(Notice::Compacted(through)) => {
-                        self.send_records(&mut send, space, device, &mut sent_through).await?;
-                        send.send(&FromServer::Compacted { through }.encoded()).await?;
-                    }
-                },
+                }
             }
         };
         reading.abort();
@@ -843,8 +854,13 @@ impl Server {
             return refuse(send, Refusal::TooLarge).await;
         }
         let store = Arc::clone(&self.store);
-        let kept = in_the_store(move || store.lock().close(space, &sealed)).await?;
-        self.hub.tell_all(space, &Notice::Closed(kept));
+        match in_the_store(move || store.lock().close(space, &sealed)).await? {
+            Closing::Now(kept) => self.hub.tell_all(space, &Notice::Closed(kept)),
+            Closing::Before(first) => {
+                send.send(&FromServer::Closed { sealed: first }.encoded())
+                    .await?
+            }
+        }
 
         Ok(())
     }
@@ -948,9 +964,9 @@ async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {
     Ok(())
 }
 
-async fn read_frames(mut recv: Reader, frames: Sender<Result<ToServer>>) {
+async fn read_frames(mut recv: Reader, frames: Sender<Result<ToServer>>, most: usize) {
     loop {
-        let frame = match recv.read().await {
+        let frame = match recv.read_at_most(most).await {
             Ok(Some(bytes)) => ToServer::decoded(&bytes).map_err(Error::from),
             Ok(None) => return,
             Err(error) => Err(Error::from(error)),

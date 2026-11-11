@@ -7404,7 +7404,6 @@ version = "0.8.0"
 dependencies = [
  "base64 0.23.1",
  "clap",
- "futures-util",
  "httparse",
  "parking_lot 0.13.0",
  "quinn",
@@ -7422,7 +7421,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
- "tokio-tungstenite",
  "toml_edit 0.25.19+spec-1.1.0",
  "tracing",
  "tracing-subscriber",

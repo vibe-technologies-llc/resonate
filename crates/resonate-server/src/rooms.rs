@@ -11,6 +11,7 @@ use resonate_sync::{DeviceId, SpaceId, wire::Refusal};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 pub const ROOM_BACKLOG_BYTES_AT_MOST: usize = 1024 * 1024;
+pub const SEATS_BOUND_AT_MOST: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RoomNotice {
@@ -33,6 +34,7 @@ struct Room {
     host: DeviceId,
     host_session: Option<u64>,
     members: BTreeMap<DeviceId, Member>,
+    seats: BTreeMap<DeviceId, [u8; 32]>,
 }
 
 #[derive(Default)]
@@ -59,6 +61,7 @@ pub struct Asked<'a> {
     pub token: &'a [u8; 32],
     pub host_token: Option<&'a [u8; 32]>,
     pub member: DeviceId,
+    pub seat: Option<&'a [u8; 32]>,
 }
 
 pub struct RoomLimits {
@@ -96,6 +99,7 @@ impl Rooms {
                     host: asked.member,
                     host_session: None,
                     members: BTreeMap::new(),
+                    seats: BTreeMap::new(),
                 })
             }
         };
@@ -109,8 +113,21 @@ impl Rooms {
             None if asked.member == room.host => return Err(Refusal::Token),
             None => false,
         };
+        if !hosting {
+            match (room.seats.get(&asked.member), asked.seat) {
+                (Some(bound), Some(given)) if bound == given => {}
+                (Some(_), _) => return Err(Refusal::Token),
+                (None, Some(_)) if room.seats.len() >= SEATS_BOUND_AT_MOST => {
+                    return Err(Refusal::Busy);
+                }
+                (None, _) => {}
+            }
+        }
         if !room.members.contains_key(&asked.member) && room.members.len() >= limits.members {
             return Err(Refusal::Busy);
+        }
+        if let (false, Some(seat)) = (hosting, asked.seat) {
+            room.seats.insert(asked.member, *seat);
         }
 
         let (notices, received) = unbounded_channel();
@@ -312,6 +329,7 @@ mod tests {
                     token: &TOKEN,
                     host_token: Some(&HOST_TOKEN),
                     member: HOST,
+                    seat: None,
                 },
                 &LIMITS,
                 || true,
@@ -320,12 +338,21 @@ mod tests {
     }
 
     fn guest(rooms: &Rooms, member: DeviceId) -> Result<JoinedRoom, Refusal> {
+        seated(rooms, member, None)
+    }
+
+    fn seated(
+        rooms: &Rooms,
+        member: DeviceId,
+        seat: Option<&[u8; 32]>,
+    ) -> Result<JoinedRoom, Refusal> {
         rooms.join(
             &Asked {
                 room: ROOM,
                 token: &TOKEN,
                 host_token: None,
                 member,
+                seat,
             },
             &LIMITS,
             || true,
@@ -345,6 +372,7 @@ mod tests {
                 token: &[9; 32],
                 host_token: None,
                 member: GUEST,
+                seat: None,
             },
             &LIMITS,
             || true,
@@ -367,6 +395,7 @@ mod tests {
                 token: &TOKEN,
                 host_token: Some(&TOKEN),
                 member: GUEST,
+                seat: None,
             },
             &LIMITS,
             || true,
@@ -391,6 +420,91 @@ mod tests {
             Leaving::TheHostLeft
         );
         assert!(matches!(guest(&rooms, HOST), Err(Refusal::Token)));
+    }
+
+    #[test]
+    fn no_guest_can_take_another_guests_place_by_joining_under_its_id() {
+        let rooms = Rooms::default();
+        let _hosting = host(&rooms);
+        let mut victim = seated(&rooms, GUEST, Some(&[10; 32])).expect("a guest joins");
+
+        let wrong = seated(&rooms, GUEST, Some(&[11; 32]));
+        let none = guest(&rooms, GUEST);
+
+        assert!(matches!(wrong, Err(Refusal::Token)));
+        assert!(matches!(none, Err(Refusal::Token)));
+        assert!(victim.notices.try_recv().is_err(), "the guest was replaced");
+    }
+
+    #[test]
+    fn a_guests_place_stays_its_own_after_it_leaves_and_it_takes_it_back_with_its_secret() {
+        let rooms = Rooms::default();
+        let _hosting = host(&rooms);
+        let first = seated(&rooms, GUEST, Some(&[10; 32])).expect("a guest joins");
+        rooms.leave(ROOM, GUEST, first.session);
+
+        let stranger = seated(&rooms, GUEST, Some(&[11; 32]));
+        let back = seated(&rooms, GUEST, Some(&[10; 32]));
+
+        assert!(matches!(stranger, Err(Refusal::Token)));
+        assert!(back.is_ok());
+    }
+
+    #[test]
+    fn a_guest_connecting_again_with_its_secret_replaces_its_stale_session() {
+        let rooms = Rooms::default();
+        let _hosting = host(&rooms);
+        let mut stale = seated(&rooms, GUEST, Some(&[10; 32])).expect("a guest joins");
+
+        let _again = seated(&rooms, GUEST, Some(&[10; 32])).expect("back");
+
+        assert_eq!(stale.notices.try_recv(), Ok(RoomNotice::Replaced));
+    }
+
+    #[test]
+    fn a_guest_from_a_build_without_secrets_still_joins_and_comes_back() {
+        let rooms = Rooms::default();
+        let _hosting = host(&rooms);
+
+        let first = guest(&rooms, GUEST).expect("a guest joins");
+        rooms.leave(ROOM, GUEST, first.session);
+
+        assert!(guest(&rooms, GUEST).is_ok());
+    }
+
+    #[test]
+    fn a_room_binds_only_so_many_places() {
+        let rooms = Rooms::default();
+        let _hosting = host(&rooms);
+        let big = RoomLimits {
+            rooms: 2,
+            members: 3,
+        };
+        let join = |index: u32| {
+            let mut member = [0; 16];
+            member[..4].copy_from_slice(&index.to_be_bytes());
+            let joined = rooms.join(
+                &Asked {
+                    room: ROOM,
+                    token: &TOKEN,
+                    host_token: None,
+                    member: DeviceId(member),
+                    seat: Some(&[12; 32]),
+                },
+                &big,
+                || true,
+            );
+            if let Ok(joined) = &joined {
+                rooms.leave(ROOM, DeviceId(member), joined.session);
+            }
+            joined.map(|_| ())
+        };
+
+        for index in 0..SEATS_BOUND_AT_MOST {
+            join(u32::try_from(index).expect("a small number")).expect("a place is bound");
+        }
+
+        assert!(matches!(join(u32::MAX), Err(Refusal::Busy)));
     }
 
     #[test]
@@ -477,6 +591,7 @@ mod tests {
                 token: &TOKEN,
                 host_token: Some(&HOST_TOKEN),
                 member: HOST,
+                seat: None,
             },
             &full,
             || true,

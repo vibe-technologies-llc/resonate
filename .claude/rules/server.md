@@ -36,7 +36,15 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 - **A session reads at most `FRAMES_READ_AHEAD` (4) frames ahead of handling them**: `read_frames` hands them over a bounded channel, so while the session waits on a write to a client that reads nothing, its reader stops and QUIC's flow control holds the client back, rather than the server holding whatever it sends.
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
-  then the stream ends.
+  then the stream ends. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
+  `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`
+  (`LARGEST_ROOM_FRAME` plus an envelope), through `Incoming::read_at_most`; a longer one ends the
+  session before its bytes are held. On QUIC the announced length is weighed before anything is
+  allocated; on a web socket the transport under tungstenite is a `Budgeted` stream that fails its
+  next read once the bytes allowed for this frame are spent, since tungstenite's own message limit is
+  fixed at `LARGEST_FRAME` for the life of the socket
+  (`a_first_frame_announced_past_the_ceiling_ends_the_connection_without_waiting_for_it`,
+  `a_budgeted_stream_stops_reading_once_its_budget_is_spent`).
 - **Catch-up is snapshot then records past the cursor**, in frames of at most 256 records or 4 MiB;
   a device's own records go back as seqs with no blob. Each frame is read through
   `Store::catch_up`, which under one lock answers the snapshot wherever what was sent lies behind the
@@ -48,6 +56,14 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 - **Presence is the connections themselves** (`hub.rs`): joining tells the others `Arrived`,
   leaving `Left`; a device connecting again replaces its old session; at most `--devices` (16) at
   once.
+- **Every notice queued for a session is charged to its `backlog`** (`hub::notice_weight`: the bytes
+  of a `Closed`, `Punched` or `Relayed`, at least `A_NOTICE_WEIGHS_AT_LEAST` for the rest) and
+  credited back as the session takes it off its channel. A `Punched` or `Relayed` that would take the
+  backlog past `RELAY_BACKLOG_BYTES_AT_MOST` is dropped; any other notice that would take it past
+  `NOTICE_BACKLOG_BYTES_AT_MOST` (1 MiB) is dropped and the session is queued one `FellBehind`, which
+  ends it, so the device reconnects and catches up from its cursor rather than the server holding
+  what it will not read (`a_device_that_reads_nothing_is_told_it_fell_behind_rather_than_queued_everything`).
+  A punch's `sealed` was already cut at `LONGEST_TEXT` by the decoder.
 - **A punch goes only to a device online in the same space**, carrying the asker's observed address
   and its sealed candidates. A device on a web socket has no observed UDP address: the server
   files it as `0.0.0.0:0`, the asked device skips an unspecified address, and the candidates (its
@@ -71,14 +87,15 @@ holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
   left out, so a client polls with one connection and opens a session only for what moved.
 - **`Close` is first come, kept apart from the log** (`spaces.closed`): compaction cannot reach it
   (a member being removed could otherwise compact the word that moves everyone away), a second one
-  is answered with the first, `Append` and `Compact` then answer `Closed`, and every session and view
-  is told it.
+  is answered to its sender alone with the first (`Store::close` answers `Closing::Now` or
+  `Closing::Before`, and only `Now` is told to every session, so the stored blob is sent once, not
+  once per repeated `Close`), `Append` and `Compact` then answer `Closed`, and every view is told it.
 
 ## Listening parties (`rooms.rs`, `party.md`)
 
 A room lives in memory only: nothing is stored, and a restart ends every party. **The first frame
 `Room` either makes one or joins one**: a host token makes the room and only that token is the host
-from then on, and a guest finds `NoSuchRoom` until it exists. A guest naming the host's `DeviceId` (which every guest is told in `RoomWelcome`) is refused `Token`, so the host's seat is never replaced by anyone without the host token. **The server enforces the star, so
+from then on, and a guest finds `NoSuchRoom` until it exists. A guest naming the host's `DeviceId` (which every guest is told in `RoomWelcome`) is refused `Token`, so the host's seat is never replaced by anyone without the host token. **A guest's place is bound to a secret of its own** the same way: `Room` carries an optional `seat` token after `member` (absent from a build that predates it, so its frame is byte for byte the old one), the room keeps the digest of the first seat a `member` joined with for its whole life (at most `SEATS_BOUND_AT_MOST`, 1024, past which a new place is `Busy`), and any later join under that id with another seat, or with none, is refused `Token`; the same seat again is the guest coming back and replaces its stale session. A guest from a build without seats joins as before and its id stays takeable (`no_guest_can_take_another_guests_place_by_joining_under_its_id`, `a_guest_from_a_build_without_secrets_still_joins_and_comes_back`). A server that predates the field refuses the longer frame as malformed, which the client reads as `ServerTooOld`. **The server enforces the star, so
 nobody can forge the host**: `RoomSay` from the host reaches everyone (or the one member it names),
 from a guest it reaches the host alone, whatever it names. `RoomKick` and a host's `Close` are the
 host's; a guest asking changes nothing. **A host gone is waited for** (`Limits::host_back_within`,
@@ -109,8 +126,10 @@ keeps a script from filling the store (`guard.rs`, `Store::limited`):
 - **QUIC proves the address first**: an `Incoming` whose address is not validated is sent a retry,
   so a spoofed source cannot spend an address's allowance or the server's connections.
 - **A web socket's address is the proxy's header where one is trusted** (below), else the peer's.
-  The address table holds at most 100 000 addresses and forgets a quiet one after a day; the
-  counters live in memory, so a restart forgets them.
+  The address table holds at most 100 000 addresses and forgets a quiet one after a day; when it
+  is full a new address evicts the least recently seen one holding no connection (a hundredth of the
+  table at a time, so the scan is amortised), and is turned away only if every address holds one;
+  the counters live in memory, so a restart forgets them.
 
 ## The hifi-api gateway (`keys.rs`, `gateway.rs`)
 
@@ -213,7 +232,10 @@ it off.
   asker closes or `A_PAGE_ASKER_LEAVES_WITHIN`, 2 s): the request was only peeked at, and a socket
   closed with bytes unread resets the connection, which a Mac or an iPhone reads as no page at all
   where Linux still hands over what arrived. `/.well-known/assetlinks.json` answers only where `[web] android_certificates` names
-  signing fingerprints, else 404, so no build claims links it cannot verify. Both sides of a socket
+  signing fingerprints, else 404, so no build claims links it cannot verify. The script on the page
+  takes the fragment up to its first `?`, `&` or `#` and keeps only letters, digits and hyphens, so a
+  link written as `/s/#CODE?server=elsewhere` hands the app the code and the server the page was
+  served from, never another (`a_page_hands_the_app_the_code_alone_and_never_a_query_of_the_fragment`). Both sides of a socket
   leave Nagle's algorithm (`set_nodelay`), since a party's clock is read over it
   (`a_page_is_answered_beside_the_socket_and_holds_nothing_of_the_invitation`).
 - At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.

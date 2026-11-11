@@ -11,6 +11,7 @@ const ATTEMPT_WINDOW: Duration = Duration::from_secs(60);
 const SPACE_WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
 const FORGET_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 const MOST_ADDRESSES_KEPT: usize = 100_000;
+const ADDRESSES_EVICTED_AT_ONCE_DIVISOR: usize = 100;
 const IPV6_PREFIX_BYTES: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +85,7 @@ struct Ledger {
 
 pub struct Guard {
     allowance: Allowance,
+    most_addresses: usize,
     ledger: Mutex<Ledger>,
 }
 
@@ -121,8 +123,13 @@ impl Account {
 
 impl Guard {
     pub fn new(allowance: Allowance) -> Arc<Self> {
+        Self::keeping(allowance, MOST_ADDRESSES_KEPT)
+    }
+
+    fn keeping(allowance: Allowance, most_addresses: usize) -> Arc<Self> {
         Arc::new(Self {
             allowance,
+            most_addresses,
             ledger: Mutex::new(Ledger::default()),
         })
     }
@@ -134,9 +141,10 @@ impl Guard {
         if ledger.open >= self.allowance.connections {
             return None;
         }
-        if ledger.accounts.len() >= MOST_ADDRESSES_KEPT && !ledger.accounts.contains_key(&source) {
+        if ledger.accounts.len() >= self.most_addresses && !ledger.accounts.contains_key(&source) {
             ledger.forget_quiet(now);
-            if ledger.accounts.len() >= MOST_ADDRESSES_KEPT {
+            ledger.evict_the_least_recently_seen(self.most_addresses);
+            if ledger.accounts.len() >= self.most_addresses {
                 return None;
             }
         }
@@ -177,6 +185,28 @@ impl Guard {
 }
 
 impl Ledger {
+    fn evict_the_least_recently_seen(&mut self, most: usize) {
+        if self.accounts.len() < most {
+            return;
+        }
+        let mut closed: Vec<(Instant, Source)> = self
+            .accounts
+            .iter()
+            .filter(|(_, account)| account.open == 0)
+            .map(|(source, account)| (account.seen, *source))
+            .collect();
+        let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR)
+            .max(1)
+            .min(closed.len());
+        if evicted == 0 {
+            return;
+        }
+        closed.select_nth_unstable_by_key(evicted - 1, |(seen, _)| *seen);
+        for (_, source) in &closed[..evicted] {
+            self.accounts.remove(source);
+        }
+    }
+
     fn forget_quiet(&mut self, now: Instant) {
         self.accounts.retain(|_, account| {
             account.open > 0 || now.duration_since(account.seen) < FORGET_AFTER
@@ -320,6 +350,40 @@ mod tests {
 
         assert!(held.iter().all(Option::is_some));
         assert!(guard.admit(within(3)).is_none());
+    }
+
+    #[test]
+    fn a_full_table_lets_go_of_the_address_seen_least_lately_that_holds_nothing_open() {
+        let guard = Guard::keeping(tight(), 3);
+
+        let oldest = guard.admit(address(1)).expect("admitted");
+        let held = guard.admit(address(2)).expect("admitted");
+        let newest = guard.admit(address(3)).expect("admitted");
+        drop(oldest);
+        drop(newest);
+
+        let arriving = guard.admit(address(4));
+
+        assert!(arriving.is_some());
+        let ledger = guard.ledger.lock();
+        assert_eq!(ledger.accounts.len(), 3);
+        assert!(!ledger.accounts.contains_key(&Source::of(address(1))));
+        assert!(ledger.accounts.contains_key(&Source::of(address(2))));
+        assert!(ledger.accounts.contains_key(&Source::of(address(3))));
+        drop(ledger);
+        drop(held);
+    }
+
+    #[test]
+    fn a_full_table_of_addresses_all_holding_a_connection_turns_a_new_one_away() {
+        let guard = Guard::keeping(tight(), 3);
+
+        let held = (1..=3)
+            .map(|last| guard.admit(address(last)))
+            .collect::<Vec<_>>();
+
+        assert!(held.iter().all(Option::is_some));
+        assert!(guard.admit(address(4)).is_none());
     }
 
     #[test]

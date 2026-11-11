@@ -77,6 +77,12 @@ pub enum Claim {
     Full,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Closing {
+    Now(Vec<u8>),
+    Before(Vec<u8>),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Appended {
     Through(u64),
@@ -263,14 +269,25 @@ impl Store {
         Ok(heads)
     }
 
-    pub fn close(&mut self, space: SpaceId, sealed: &[u8]) -> Result<Vec<u8>> {
+    pub fn close(&mut self, space: SpaceId, sealed: &[u8]) -> Result<Closing> {
+        let stored = self
+            .connection
+            .execute(
+                "UPDATE spaces SET closed = ?2 WHERE id = ?1 AND closed IS NULL",
+                params![space.0.as_slice(), sealed],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        if stored > 0 {
+            return Ok(Closing::Now(sealed.to_vec()));
+        }
         self.connection
             .query_row(
-                "UPDATE spaces SET closed = coalesce(closed, ?2) WHERE id = ?1 RETURNING closed",
-                params![space.0.as_slice(), sealed],
+                "SELECT closed FROM spaces WHERE id = ?1",
+                params![space.0.as_slice()],
                 |row| row.get(0),
             )
-            .map_err(|source| Error::store(StoreOp::Write, source))
+            .map(Closing::Before)
+            .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
     pub fn closed(&self, space: SpaceId) -> Result<Option<Vec<u8>>> {
@@ -598,6 +615,18 @@ mod tests {
             store.claim(SPACE, &[4; 32], 3, || true).expect("refused"),
             Claim::Refused
         );
+    }
+
+    #[test]
+    fn a_space_closed_twice_is_told_to_have_been_closed_by_the_first_word_alone() {
+        let mut store = claimed();
+
+        let first = store.close(SPACE, &[7; 32]).expect("closed");
+        let second = store.close(SPACE, &[8; 32]).expect("closed again");
+
+        assert_eq!(first, Closing::Now(vec![7; 32]));
+        assert_eq!(second, Closing::Before(vec![7; 32]));
+        assert_eq!(store.closed(SPACE).expect("read"), Some(vec![7; 32]));
     }
 
     #[test]

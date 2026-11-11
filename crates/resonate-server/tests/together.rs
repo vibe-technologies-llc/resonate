@@ -97,6 +97,15 @@ impl Link {
 }
 
 async fn in_the_room(server: SocketAddr, member: u8, host: Option<Token>) -> Link {
+    seated_in_the_room(server, member, host, None).await
+}
+
+async fn seated_in_the_room(
+    server: SocketAddr,
+    member: u8,
+    host: Option<Token>,
+    seat: Option<Token>,
+) -> Link {
     let mut link = Link::to(server).await;
     link.say(ToServer::Room {
         version: PROTOCOL_VERSION,
@@ -104,8 +113,28 @@ async fn in_the_room(server: SocketAddr, member: u8, host: Option<Token>) -> Lin
         token: token(5),
         host,
         member: device(member),
+        seat,
     })
     .await;
+
+    link
+}
+
+async fn share_opened_as(server: SocketAddr, who: u8) -> Link {
+    let mut link = Link::to(server).await;
+    link.say(ToServer::Share {
+        version: PROTOCOL_VERSION,
+        space: SPACE,
+        token: token(5),
+        viewer: token(6).digest(),
+        device: device(who),
+        after: 0,
+    })
+    .await;
+    assert!(matches!(
+        link.heard().await,
+        Some(FromServer::Welcome { .. })
+    ));
 
     link
 }
@@ -182,6 +211,66 @@ async fn a_host_is_heard_by_every_guest_a_guest_by_the_host_alone_and_the_clock_
         ),
         "a guest's word to a guest reached it, or the clock did not answer"
     );
+}
+
+#[tokio::test]
+async fn a_guest_cannot_take_another_guests_place_by_joining_under_its_id() {
+    let server = hosted(Limits::default()).await;
+
+    let mut host = in_the_room(server, 1, Some(token(9))).await;
+    assert!(host.heard().await.is_some());
+    let mut victim = seated_in_the_room(server, 2, None, Some(token(20))).await;
+    assert!(victim.heard().await.is_some());
+
+    let mut thief = seated_in_the_room(server, 2, None, Some(token(21))).await;
+    let mut unseated = in_the_room(server, 2, None).await;
+    assert_eq!(
+        thief.heard().await,
+        Some(FromServer::Refused(Refusal::Token))
+    );
+    assert_eq!(
+        unseated.heard().await,
+        Some(FromServer::Refused(Refusal::Token))
+    );
+
+    victim.say(ToServer::RoomPing { nonce: 3 }).await;
+    assert!(matches!(
+        victim.heard_past_presence().await,
+        Some(FromServer::RoomPong { nonce: 3, .. })
+    ));
+    victim
+        .say(ToServer::RoomSay {
+            to: None,
+            sealed: vec![5],
+        })
+        .await;
+    assert_eq!(
+        host.heard_past_presence().await,
+        Some(FromServer::RoomHeard {
+            from: device(2),
+            sealed: vec![5]
+        })
+    );
+
+    let mut back = seated_in_the_room(server, 2, None, Some(token(20))).await;
+    assert!(matches!(
+        back.heard().await,
+        Some(FromServer::RoomWelcome { .. })
+    ));
+}
+
+#[tokio::test]
+async fn a_guest_without_a_secret_of_its_own_still_joins_as_before() {
+    let server = hosted(Limits::default()).await;
+
+    let mut host = in_the_room(server, 1, Some(token(9))).await;
+    assert!(host.heard().await.is_some());
+    let mut old = in_the_room(server, 2, None).await;
+
+    assert!(matches!(
+        old.heard().await,
+        Some(FromServer::RoomWelcome { .. })
+    ));
 }
 
 #[tokio::test]
@@ -411,6 +500,39 @@ async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyon
             sealed: SEALED.to_vec()
         })
     );
+}
+
+#[tokio::test]
+async fn a_space_closed_again_tells_only_the_one_asking_not_every_device_once_more() {
+    let server = hosted(Limits::default()).await;
+
+    let mut first = share_opened_as(server, 1).await;
+    let mut second = share_opened_as(server, 2).await;
+    assert!(matches!(
+        first.heard().await,
+        Some(FromServer::Arrived { .. })
+    ));
+
+    first
+        .say(ToServer::Close {
+            sealed: SEALED.to_vec(),
+        })
+        .await;
+    let closed = FromServer::Closed {
+        sealed: SEALED.to_vec(),
+    };
+    assert_eq!(first.heard().await, Some(closed.clone()));
+    assert_eq!(second.heard().await, Some(closed.clone()));
+
+    second
+        .say(ToServer::Close {
+            sealed: vec![9; 32],
+        })
+        .await;
+    assert_eq!(second.heard().await, Some(closed));
+
+    let told_again = timeout(Duration::from_millis(500), first.incoming.read()).await;
+    assert!(told_again.is_err(), "the other device was told again");
 }
 
 #[tokio::test]

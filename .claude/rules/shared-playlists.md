@@ -36,7 +36,11 @@ writer wins) and a removal that is final; adding a song again is a new row, so t
 twice. A place read off the wire ends in a byte other than zero, as every place minted here does, or its record is refused (`Malformed::NotAPlace`), and `Place::between` stops at the high place's end, answering a place past the low one where the two leave no room, so no place a member sends can hold another's client in a loop. The name is last writer wins, and a `Member` carries a typed name and an x25519 public key. Every
 op is idempotent and commutative (`however_the_records_cross_every_device_ends_on_the_same_list`). Two
 people adding at one spot both keep their song, ordered by entry id. A snapshot is the state as ops, so
-compaction needs no second format; an op of a later build is passed over.
+compaction needs no second format; an op of a later build is passed over. **A list shows at most
+`ROWS_AT_MOST` (10 000) rows**, the first by place and entry id after the fold, so a stranger's
+server cannot fill a catalog playlist with millions and every device cuts the same rows whatever
+order the ops arrived in; the diff, the catalog write and a look all read `rows()`, so none sees a
+row the others do not (`a_list_shows_only_so_many_rows_the_same_ones_whatever_order_they_arrived_in`).
 
 ## The seam
 

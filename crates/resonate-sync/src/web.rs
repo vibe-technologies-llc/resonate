@@ -1,4 +1,14 @@
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    io,
+    net::IpAddr,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use futures_util::{
     SinkExt, StreamExt,
@@ -8,7 +18,7 @@ use quinn::{RecvStream, SendStream};
 use rustls::{ClientConfig, RootCertStore, crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::ServerName;
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpStream,
     time::timeout,
 };
@@ -25,13 +35,14 @@ use tokio_tungstenite::{
 
 use crate::{
     Error, Result, StreamOp, TlsOp,
-    quic::{read_frame, send_frame},
+    quic::{read_frame_at_most, send_frame},
     wire::LARGEST_FRAME,
 };
 
 pub const WEB_SERVER_PORT: u16 = 443;
 pub const WEB_SILENT_FOR: Duration = Duration::from_secs(90);
 const WEB_ALPN: &[u8] = b"http/1.1";
+const WEB_FRAMING_AT_MOST: usize = 64;
 
 pub trait Duplex: AsyncRead + AsyncWrite + Unpin + Send {}
 
@@ -47,7 +58,69 @@ pub enum Outgoing {
 
 pub enum Incoming {
     Quic(RecvStream),
-    Web(SplitStream<Socket>),
+    Web(SplitStream<Socket>, Budget),
+}
+
+#[derive(Clone, Default)]
+pub struct Budget(Option<Arc<AtomicUsize>>);
+
+impl Budget {
+    fn spendable() -> (Self, Arc<AtomicUsize>) {
+        let left = Arc::new(AtomicUsize::new(usize::MAX));
+        (Self(Some(Arc::clone(&left))), left)
+    }
+
+    fn allow(&self, bytes: usize) {
+        if let Some(left) = &self.0 {
+            left.store(bytes, Ordering::Relaxed);
+        }
+    }
+}
+
+struct Budgeted<S> {
+    inner: S,
+    left: Arc<AtomicUsize>,
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for Budgeted<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if self.left.load(Ordering::Relaxed) == 0 {
+            return Poll::Ready(Err(io::Error::from(io::ErrorKind::InvalidData)));
+        }
+        let before = buffer.filled().len();
+        let polled = Pin::new(&mut self.inner).poll_read(context, buffer);
+        if polled.is_ready() {
+            let read = buffer.filled().len() - before;
+            let _ = self
+                .left
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                    Some(left.saturating_sub(read))
+                });
+        }
+        polled
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for Budgeted<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(context, buffer)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(context)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(context)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,9 +167,9 @@ fn limits() -> WebSocketConfig {
         .max_frame_size(Some(LARGEST_FRAME))
 }
 
-fn halves(socket: Socket) -> (Outgoing, Incoming) {
+fn halves(socket: Socket, budget: Budget) -> (Outgoing, Incoming) {
     let (sink, stream) = socket.split();
-    (Outgoing::Web(sink), Incoming::Web(stream))
+    (Outgoing::Web(sink), Incoming::Web(stream, budget))
 }
 
 pub async fn connect(
@@ -123,7 +196,7 @@ pub async fn connect(
     let (socket, _) = client_async_with_config(address.target.as_str(), tunnel, Some(limits()))
         .await
         .map_err(Error::web)?;
-    Ok(halves(socket))
+    Ok(halves(socket, Budget::default()))
 }
 
 pub struct Accepted {
@@ -161,11 +234,15 @@ pub async fn accepted(
         header: forwarded_by,
         client: None,
     };
-    let tunnel: Tunnel = Box::new(stream);
+    let (budget, left) = Budget::spendable();
+    let tunnel: Tunnel = Box::new(Budgeted {
+        inner: stream,
+        left,
+    });
     let socket = accept_hdr_async_with_config(tunnel, &mut forwarding, Some(limits()))
         .await
         .map_err(Error::web)?;
-    let (outgoing, incoming) = halves(socket);
+    let (outgoing, incoming) = halves(socket, budget);
     Ok(Accepted {
         outgoing,
         incoming,
@@ -218,23 +295,103 @@ impl Outgoing {
 
 impl Incoming {
     pub async fn read(&mut self) -> Result<Option<Vec<u8>>> {
+        self.read_at_most(LARGEST_FRAME).await
+    }
+
+    pub async fn read_at_most(&mut self, most: usize) -> Result<Option<Vec<u8>>> {
         match self {
-            Self::Quic(stream) => read_frame(stream).await,
-            Self::Web(stream) => loop {
-                let heard = timeout(WEB_SILENT_FOR, stream.next())
-                    .await
-                    .map_err(|_| Error::ServerSilent)?;
-                match heard {
-                    None
-                    | Some(Ok(Message::Close(_)))
-                    | Some(Err(
-                        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed,
-                    )) => return Ok(None),
-                    Some(Ok(Message::Binary(payload))) => return Ok(Some(payload.to_vec())),
-                    Some(Ok(_)) => {}
-                    Some(Err(error)) => return Err(Error::web(error)),
+            Self::Quic(stream) => read_frame_at_most(stream, most).await,
+            Self::Web(stream, budget) => {
+                budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
+                loop {
+                    let heard = timeout(WEB_SILENT_FOR, stream.next())
+                        .await
+                        .map_err(|_| Error::ServerSilent)?;
+                    match heard {
+                        None
+                        | Some(Ok(Message::Close(_)))
+                        | Some(Err(
+                            tungstenite::Error::ConnectionClosed
+                            | tungstenite::Error::AlreadyClosed,
+                        )) => return Ok(None),
+                        Some(Ok(Message::Binary(payload))) if payload.len() > most => {
+                            return Err(Error::Oversized {
+                                length: payload.len(),
+                            });
+                        }
+                        Some(Ok(Message::Binary(payload))) => return Ok(Some(payload.to_vec())),
+                        Some(Ok(_)) => {}
+                        Some(Err(error)) => return Err(Error::web(error)),
+                    }
                 }
-            },
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt, duplex},
+        net::TcpListener,
+    };
+
+    use super::*;
+
+    const READ_AT_ONCE: usize = 16;
+
+    async fn sent_to_a_server_reading_at_most(
+        most: usize,
+        sent: usize,
+    ) -> (Result<Option<Vec<u8>>>, Outgoing) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("bound");
+        let port = listener.local_addr().expect("an address").port();
+        let serving = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accepted");
+            let mut accepted = accepted(stream, None).await.expect("upgraded");
+            let heard = accepted.incoming.read_at_most(most).await;
+            (heard, accepted.outgoing)
+        });
+
+        let address = web_address(&format!("ws://127.0.0.1:{port}/")).expect("an address");
+        let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+        let (mut outgoing, _incoming) = connect(&address, &tls).await.expect("connected");
+        let _ = outgoing.send(&vec![7; sent]).await;
+
+        let (heard, server_side) = serving.await.expect("the server task");
+        (heard, server_side)
+    }
+
+    #[tokio::test]
+    async fn a_budgeted_stream_stops_reading_once_its_budget_is_spent() {
+        let (mut near, mut far) = duplex(4096);
+        let (budget, left) = Budget::spendable();
+        let mut budgeted = Budgeted {
+            inner: &mut near,
+            left,
+        };
+        budget.allow(40);
+        far.write_all(&[1; 1000]).await.expect("written");
+
+        let mut taken = 0;
+        let mut buffer = [0; READ_AT_ONCE];
+        let refused = loop {
+            match budgeted.read(&mut buffer).await {
+                Ok(read) => taken += read,
+                Err(error) => break error,
+            }
+        };
+
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidData);
+        assert!((40..40 + READ_AT_ONCE).contains(&taken), "{taken}");
+    }
+
+    #[tokio::test]
+    async fn a_web_frame_past_what_the_server_reads_is_refused_and_one_within_it_is_heard() {
+        let (past, _) = sent_to_a_server_reading_at_most(1024, 512 * 1024).await;
+        let (within, _) = sent_to_a_server_reading_at_most(1024, 1024).await;
+
+        assert!(past.is_err());
+        assert_eq!(within.expect("heard"), Some(vec![7; 1024]));
     }
 }

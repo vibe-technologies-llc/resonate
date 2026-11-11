@@ -12,6 +12,7 @@ use crate::{
 pub const ENTRY_BYTES: usize = 16;
 pub const MEMBER_BYTES: usize = 16;
 pub const PUBLIC_BYTES: usize = 32;
+pub const ROWS_AT_MOST: usize = 10_000;
 
 const LARGEST_OP: usize = 256 * 1024;
 const OP_AT_LEAST: usize = 1;
@@ -340,6 +341,7 @@ impl SharedList {
                 .cmp(&other.place)
                 .then_with(|| one.entry.cmp(&other.entry))
         });
+        rows.truncate(ROWS_AT_MOST);
 
         rows
     }
@@ -451,6 +453,46 @@ mod tests {
             .into_iter()
             .map(|row| row.recording.title)
             .collect()
+    }
+
+    #[test]
+    fn a_list_shows_only_so_many_rows_the_same_ones_whatever_order_they_arrived_in() {
+        let hostile: Vec<SharedOp> = (0..ROWS_AT_MOST + 5)
+            .map(|at| SharedOp::Added {
+                entry: EntryId({
+                    let mut id = [0; ENTRY_BYTES];
+                    id[..8].copy_from_slice(&u64::try_from(at).expect("a number").to_be_bytes());
+                    id
+                }),
+                recording: song("Row"),
+                place: Place(vec![1, 0, 0, 1]),
+                by: None,
+                stamp: stamp(1, 1),
+            })
+            .collect();
+        let mut forwards = SharedList::default();
+        let mut backwards = SharedList::default();
+
+        for op in &hostile {
+            forwards.apply(op);
+        }
+        for op in hostile.iter().rev() {
+            backwards.apply(op);
+        }
+
+        assert_eq!(forwards.rows().len(), ROWS_AT_MOST);
+        assert_eq!(
+            forwards
+                .rows()
+                .into_iter()
+                .map(|row| row.entry)
+                .collect::<Vec<_>>(),
+            backwards
+                .rows()
+                .into_iter()
+                .map(|row| row.entry)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
