@@ -125,6 +125,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.8.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
+  the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
+  Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game
+  Mode value, the line-input flags) is still owed
 - [S · 0.8.1] `switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step`
   (`resonate-engine`) fails some runs under the whole suite's load, before and after the equaliser
   splice moved
@@ -134,9 +138,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   its `HOSTED` table is `const` and `ChannelLayout::placed` is not
 - [S · 0.8.1] Unit tests reading theme colours or measures outside `Driven` take no part in
   `theme::WEARING`, so a theme test wearing another palette could race them
-- [M · 0.8.1] `resonate-win32`'s unsafe calls (`endpoint.rs`, `console.rs`, `security.rs`,
-  `streams.rs`, `gaming.rs`, some 43 sites) have four tests, where `resonate-apple` runs its
-  sequencing against a fake `Toolbox` on every host; the Win32 crate has no such seam
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
