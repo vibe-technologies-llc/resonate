@@ -353,9 +353,10 @@ fn loaded(
             if read == 0 {
                 break;
             }
-            if line.last() == Some(&b'\n') {
-                line.pop();
+            if line.last() != Some(&b'\n') {
+                return Err(Error::CutRow { table: table.name });
             }
+            line.pop();
             let mut split = Vec::with_capacity(wanted);
             fields(&line, &mut split);
             if split.len() < wanted {
@@ -1875,5 +1876,96 @@ impl Writing<'_> {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    fn area() -> &'static Table {
+        table_named("mbdump/area").expect("the area table")
+    }
+
+    fn laid_out() -> Connection {
+        let staging = Connection::open_in_memory().expect("a staging store");
+        staging
+            .execute_batch(&format!("CREATE TABLE area ({});", area().laid))
+            .expect("the area table laid out");
+        staging
+    }
+
+    fn read(rows: &[u8], staging: &Connection) -> Result<()> {
+        loaded(
+            area(),
+            Cursor::new(rows.to_vec()),
+            Path::new("mbdump.tar.bz2"),
+            staging,
+            &Building::default(),
+            &AtomicU64::new(0),
+        )
+    }
+
+    fn areas(staging: &Connection) -> Vec<(i64, Option<String>)> {
+        staging
+            .prepare("SELECT id, name FROM area ORDER BY id")
+            .expect("a statement")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("the rows")
+            .collect::<std::result::Result<_, _>>()
+            .expect("every row")
+    }
+
+    #[test]
+    fn a_row_is_read_with_its_escapes_its_nulls_and_the_columns_it_does_not_keep_left_out() {
+        let staging = laid_out();
+        let rows = b"1\tgid\tCaf\\303\\251\\ttab\\nline\tx\n2\tgid\t\\N\tx\n3\tgid\t\tx\n";
+
+        read(rows, &staging).expect("whole rows");
+
+        assert_eq!(
+            areas(&staging),
+            [
+                (1, Some("Caf\u{e9}\ttab\nline".to_owned())),
+                (2, None),
+                (3, Some(String::new())),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_row_with_fewer_columns_than_the_table_keeps_is_refused_with_what_it_had() {
+        let staging = laid_out();
+
+        let refused = read(b"1\tgid\n", &staging);
+
+        assert!(matches!(
+            refused,
+            Err(Error::Columns {
+                table: "area",
+                found: 2,
+                wanted: 3
+            })
+        ));
+    }
+
+    #[test]
+    fn a_final_row_with_no_line_end_is_a_cut_row_and_is_not_kept() {
+        let staging = laid_out();
+
+        let refused = read(b"1\tgid\tOne\tx\n2\tgid\tTw", &staging);
+
+        assert!(matches!(refused, Err(Error::CutRow { table: "area" })));
+    }
+
+    #[test]
+    fn a_table_with_no_rows_loads_nothing() {
+        let staging = laid_out();
+
+        read(b"", &staging).expect("an empty table");
+
+        assert!(areas(&staging).is_empty());
     }
 }

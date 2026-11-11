@@ -1,7 +1,7 @@
 #[cfg(feature = "ui")]
 use std::ffi::OsString;
 use std::{
-    fs::{self, File},
+    fs::File,
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -158,11 +158,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
     if !config.syncs() {
         return Ok(None);
     }
-    let folder = config::data_dir()?;
-    fs::create_dir_all(&folder).map_err(|source| Error::CreateDir {
-        path: folder.clone(),
-        source,
-    })?;
+    let folder = config::private_data_dir()?;
     let alone = folder.join(SHARED_ALONE);
     let file = File::options()
         .create(true)
@@ -177,10 +173,13 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
         return Ok(None);
     }
 
+    let store = folder.join(SHARED_STORE);
+    config::private_store(&store)?;
+
     let settings = SharedSettings {
         server: server_of(config),
         trusted: config.sync_server_certificate.clone(),
-        store: folder.join(SHARED_STORE),
+        store,
         name: config.shared_name.clone().unwrap_or_default(),
     };
     let catalog = Arc::new(Listed {

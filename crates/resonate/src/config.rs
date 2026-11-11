@@ -55,6 +55,12 @@ const READ_BY_ITS_OWNER_ALONE: u32 = 0o600;
 #[cfg(unix)]
 const ITS_OWNERS_BITS: u32 = 0o700;
 
+#[cfg(unix)]
+const ENTERED_BY_ITS_OWNER_ALONE: u32 = 0o700;
+
+#[cfg(all(unix, feature = "sync"))]
+const STORE_SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
+
 static STAGED: AtomicU64 = AtomicU64::new(0);
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -123,12 +129,84 @@ pub fn icon_theme_dir() -> Result<PathBuf> {
 }
 
 pub fn library_path() -> Result<PathBuf> {
+    Ok(private_data_dir()?.join("library.db"))
+}
+
+pub fn private_data_dir() -> Result<PathBuf> {
     let dir = data_dir()?;
     fs::create_dir_all(&dir).map_err(|source| Error::CreateDir {
         path: dir.clone(),
         source,
     })?;
-    Ok(dir.join("library.db"))
+    entered_by_its_owner_alone(&dir)?;
+    Ok(dir)
+}
+
+#[cfg(unix)]
+fn entered_by_its_owner_alone(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let standing = fs::metadata(dir)
+        .map_err(|source| Error::Private {
+            path: dir.to_path_buf(),
+            source,
+        })?
+        .permissions()
+        .mode();
+    if standing & 0o777 == ENTERED_BY_ITS_OWNER_ALONE {
+        return Ok(());
+    }
+    fs::set_permissions(dir, fs::Permissions::from_mode(ENTERED_BY_ITS_OWNER_ALONE)).map_err(
+        |source| Error::Private {
+            path: dir.to_path_buf(),
+            source,
+        },
+    )
+}
+
+#[cfg(not(unix))]
+fn entered_by_its_owner_alone(_: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(all(unix, feature = "sync"))]
+pub fn private_store(store: &Path) -> Result<()> {
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+
+    let private = |path: &Path| {
+        fs::set_permissions(path, fs::Permissions::from_mode(READ_BY_ITS_OWNER_ALONE)).map_err(
+            |source| Error::Private {
+                path: path.to_path_buf(),
+                source,
+            },
+        )
+    };
+
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(READ_BY_ITS_OWNER_ALONE)
+        .open(store)
+        .map_err(|source| Error::Private {
+            path: store.to_path_buf(),
+            source,
+        })?;
+    private(store)?;
+    for suffix in STORE_SIDE_FILES {
+        let mut side = store.as_os_str().to_os_string();
+        side.push(suffix);
+        let side = PathBuf::from(side);
+        if side.exists() {
+            private(&side)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(all(not(unix), feature = "sync"))]
+pub fn private_store(_: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(feature = "ui")]
@@ -3599,6 +3677,60 @@ mod tests {
         store(&scratch.path, ConfigKey::AuddToken, "another").expect("a writable file");
 
         assert_eq!(mode(&scratch.path), 0o600);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_data_folder_is_entered_by_its_owner_alone_whatever_it_was_made_as() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let scratch = Scratch::new();
+        let folder = scratch.path.parent().expect("a folder").join("data");
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).expect("a mode");
+
+        entered_by_its_owner_alone(&folder).expect("a narrowed folder");
+
+        let mode = fs::metadata(&folder)
+            .expect("the folder")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
+    }
+
+    #[test]
+    #[cfg(all(unix, feature = "sync"))]
+    fn a_store_and_its_write_ahead_files_are_their_owners_alone_made_now_or_before() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let mode = |path: &Path| {
+            fs::metadata(path)
+                .expect("a store file")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        let scratch = Scratch::new();
+        let folder = scratch.path.parent().expect("a folder").join("stores");
+        fs::create_dir_all(&folder).expect("a writable temporary directory");
+        let fresh = folder.join("fresh.sqlite");
+        let old = folder.join("old.sqlite");
+        let old_wal = folder.join("old.sqlite-wal");
+        let old_shm = folder.join("old.sqlite-shm");
+        for existing in [&old, &old_wal, &old_shm] {
+            fs::write(existing, b"rows").expect("a store file");
+            fs::set_permissions(existing, fs::Permissions::from_mode(0o644)).expect("a mode");
+        }
+
+        private_store(&fresh).expect("a fresh store");
+        private_store(&old).expect("an old store");
+
+        assert_eq!(mode(&fresh), 0o600);
+        assert_eq!(mode(&old), 0o600);
+        assert_eq!(mode(&old_wal), 0o600);
+        assert_eq!(mode(&old_shm), 0o600);
+        assert_eq!(fs::read(&old).expect("the store"), b"rows");
     }
 
     #[test]

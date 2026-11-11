@@ -272,16 +272,22 @@ pub fn unescaped(field: &[u8]) -> Option<String> {
             }
             b'x' => {
                 let mut value = 0_u32;
+                let mut digits = 0;
                 for _ in 0..2 {
                     match bytes.peek().and_then(|digit| (*digit as char).to_digit(16)) {
                         Some(digit) => {
                             value = value * 16 + digit;
+                            digits += 1;
                             bytes.next();
                         }
                         None => break,
                     }
                 }
-                plain.push((value & 0xff) as u8);
+                if digits == 0 {
+                    plain.push(b'x');
+                } else {
+                    plain.push((value & 0xff) as u8);
+                }
             }
             other => plain.push(other),
         }
@@ -300,6 +306,36 @@ mod tests {
         assert_eq!(unescaped(b"a\\tb\\nc\\\\d").as_deref(), Some("a\tb\nc\\d"));
         assert_eq!(unescaped(b"\\101\\x42").as_deref(), Some("AB"));
         assert_eq!(unescaped(b"").as_deref(), Some(""));
+    }
+
+    #[test]
+    fn a_copy_field_keeps_what_only_looks_like_a_null_or_an_escape() {
+        assert_eq!(unescaped(br"\\N").as_deref(), Some(r"\N"));
+        assert_eq!(unescaped(br"\N ").as_deref(), Some("N "));
+        assert_eq!(unescaped(br"cut\\").as_deref(), Some(r"cut\"));
+        assert_eq!(unescaped(br"cut\").as_deref(), Some(r"cut\"));
+        assert_eq!(unescaped(br"\xzz").as_deref(), Some("xzz"));
+        assert_eq!(unescaped(br"\x4").as_deref(), Some("\u{4}"));
+        assert_eq!(unescaped(br"\1234").as_deref(), Some("S4"));
+        assert_eq!(unescaped(br"\.").as_deref(), Some("."));
+        assert_eq!(unescaped(br"caf\303\251").as_deref(), Some("caf\u{e9}"));
+        assert_eq!(
+            unescaped("caf\u{e9} \u{1F3B5}".as_bytes()).as_deref(),
+            Some("caf\u{e9} \u{1F3B5}")
+        );
+    }
+
+    #[test]
+    fn a_row_splits_on_tabs_alone_and_keeps_empty_fields() {
+        let mut into = Vec::new();
+
+        fields(b"1\t\t\\N\tname with spaces", &mut into);
+
+        assert_eq!(into, [&b"1"[..], b"", br"\N", b"name with spaces"]);
+
+        fields(b"", &mut into);
+
+        assert_eq!(into, [&b""[..]]);
     }
 
     #[test]

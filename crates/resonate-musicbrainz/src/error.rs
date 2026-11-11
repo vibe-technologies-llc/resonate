@@ -78,6 +78,9 @@ pub enum Error {
         wanted: usize,
     },
 
+    #[error("the dump's {table} table ends in a row cut short")]
+    CutRow { table: &'static str },
+
     #[error("the dump lacks its {table} table")]
     MissingTable { table: &'static str },
 

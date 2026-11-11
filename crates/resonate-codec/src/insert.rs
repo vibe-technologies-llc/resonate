@@ -19,6 +19,7 @@ mod fallocating {
         fs::{self, File},
         io,
         os::{fd::AsRawFd as _, unix::fs::MetadataExt as _},
+        path::Path,
         process,
     };
 
@@ -29,11 +30,30 @@ mod fallocating {
     const PROCESSES: &str = "/proc";
     const HANDLES: &str = "fd";
 
+    const STATUS: &str = "status";
+    const REAL_UID_FIELD: &str = "Uid:";
+    const ROOT_UID: &str = "0";
+
     pub(crate) fn held_open_elsewhere(file: &File) -> bool {
+        held_open_in(Path::new(PROCESSES), file)
+    }
+
+    fn run_by_root(process: &Path) -> bool {
+        let Ok(status) = fs::read_to_string(process.join(STATUS)) else {
+            return false;
+        };
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix(REAL_UID_FIELD))
+            .and_then(|uids| uids.split_whitespace().next())
+            == Some(ROOT_UID)
+    }
+
+    pub(super) fn held_open_in(processes: &Path, file: &File) -> bool {
         let Ok(ours) = file.metadata() else {
             return true;
         };
-        let Ok(processes) = fs::read_dir(PROCESSES) else {
+        let Ok(processes) = fs::read_dir(processes) else {
             return true;
         };
         let me = process::id().to_string();
@@ -48,7 +68,7 @@ mod fallocating {
                 return false;
             }
             let Ok(handles) = fs::read_dir(process.path().join(HANDLES)) else {
-                return false;
+                return !run_by_root(&process.path());
             };
             handles.flatten().any(|handle| {
                 let ours_alone = named == me && handle.file_name().to_str() == Some(&own_handle);
@@ -293,19 +313,102 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
     #[test]
-    fn a_track_another_handle_reads_is_held_open_elsewhere_and_one_alone_is_not() {
+    fn a_track_another_handle_reads_is_held_open_elsewhere() {
         let track = Scratch::holding("held", &counted(64));
         let writing = track.opened();
 
-        let alone = fallocating::held_open_elsewhere(&writing);
         let reader = File::open(&track.0).expect("a reader");
         let while_read = fallocating::held_open_elsewhere(&writing);
         drop(reader);
-        let after = fallocating::held_open_elsewhere(&writing);
 
-        assert!(!alone);
         assert!(while_read);
-        assert!(!after);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    mod processes {
+        use std::os::unix::fs::{PermissionsExt as _, symlink};
+
+        use super::*;
+
+        fn process(processes: &Path, pid: &str, uid: u32, readable: bool) -> PathBuf {
+            let folder = processes.join(pid);
+            fs::create_dir_all(folder.join("fd")).expect("a process folder");
+            fs::write(
+                folder.join("status"),
+                format!("Name:\tsomething\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n"),
+            )
+            .expect("a status");
+            if !readable {
+                fs::set_permissions(folder.join("fd"), fs::Permissions::from_mode(0o000))
+                    .expect("a closed folder");
+            }
+            folder
+        }
+
+        fn unprivileged() -> bool {
+            fs::read_dir("/proc/1/fd").is_err()
+        }
+
+        #[test]
+        fn a_process_whose_handles_cannot_be_read_holds_the_track_unless_root_runs_it() {
+            if !unprivileged() {
+                return;
+            }
+            let track = Scratch::holding("unreadable", &counted(64));
+            let writing = track.opened();
+            let processes = track.folder().join("proc");
+
+            process(&processes, "10", 0, false);
+            let only_root = fallocating::held_open_in(&processes, &writing);
+            process(&processes, "11", 1001, false);
+            let with_another_account = fallocating::held_open_in(&processes, &writing);
+
+            for pid in ["10", "11"] {
+                fs::set_permissions(
+                    processes.join(pid).join("fd"),
+                    fs::Permissions::from_mode(0o700),
+                )
+                .expect("reopened");
+            }
+
+            assert!(!only_root);
+            assert!(with_another_account);
+        }
+
+        #[test]
+        fn a_process_with_no_status_and_no_readable_handles_holds_the_track() {
+            if !unprivileged() {
+                return;
+            }
+            let track = Scratch::holding("no-status", &counted(64));
+            let writing = track.opened();
+            let processes = track.folder().join("proc");
+
+            let folder = process(&processes, "12", 0, false);
+            fs::remove_file(folder.join("status")).expect("no status");
+            let held = fallocating::held_open_in(&processes, &writing);
+            fs::set_permissions(folder.join("fd"), fs::Permissions::from_mode(0o700))
+                .expect("reopened");
+
+            assert!(held);
+        }
+
+        #[test]
+        fn a_readable_process_holds_the_track_only_through_a_handle_to_it() {
+            let track = Scratch::holding("readable", &counted(64));
+            let other = Scratch::holding("readable-other", &counted(64));
+            let writing = track.opened();
+            let processes = track.folder().join("proc");
+
+            let folder = process(&processes, "13", 1001, true);
+            symlink(&other.0, folder.join("fd").join("3")).expect("a handle");
+            let elsewhere = fallocating::held_open_in(&processes, &writing);
+            symlink(&track.0, folder.join("fd").join("4")).expect("a handle");
+            let here = fallocating::held_open_in(&processes, &writing);
+
+            assert!(!elsewhere);
+            assert!(here);
+        }
     }
 
     #[test]

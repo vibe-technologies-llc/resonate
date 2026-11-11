@@ -1276,7 +1276,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Held` fails `landed_in_place` tries `insert::lengthened` through a `Shifting` (`Fallocate`:
   ext4, XFS and F2FS by `fstatfs`, the block size from `fstatvfs`; a test double stands in
   elsewhere), only where nothing but the head changes and the head is no larger than
-  `MOST_BYTES_WRITTEN_IN_PLACE`, and only where no other handle holds the file open (`Shifting::read_elsewhere`: on Linux every readable `/proc/<pid>/fd` is looked at for the file's device and inode, this process's other handles included, so a decoder playing the track, ours or another player's, is never handed bytes shifted under it; such a track takes the copy, a new inode its readers never see, `a_track_another_handle_reads_is_held_open_elsewhere_and_one_alone_is_not`). `FALLOC_FL_INSERT_RANGE` opens whole blocks at offset zero, the
+  `MOST_BYTES_WRITTEN_IN_PLACE`, and only where no other handle holds the file open (`Shifting::read_elsewhere`: on Linux every readable `/proc/<pid>/fd` is looked at for the file's device and inode, this process's other handles included, so a decoder playing the track, ours or another player's, is never handed bytes shifted under it; a process whose folder cannot be read counts as holding the file, unless its `/proc/<pid>/status` says root runs it (every non-root program reads root's folders as closed, so counting those would end the in-place path on every machine; a root program under another account's music is the risk taken); such a track takes the copy, a new inode its readers never see, `a_track_another_handle_reads_is_held_open_elsewhere`, `a_process_whose_handles_cannot_be_read_holds_the_track_unless_root_runs_it`). `FALLOC_FL_INSERT_RANGE` opens whole blocks at offset zero, the
   head is rebuilt to exactly the old length plus them (`Blocks`; an Ogg head only where its page
   count stays) and written over the old head and the inserted room, so the audio behind it never
   moves. The order is the crash safety: journal written and synced, range inserted and
@@ -1482,7 +1482,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   the same size and the same bytes (`take_in::holds_the_same_bytes`); a numbered file differing
   from all of them is `Copies::differing` and stays. `fold_copies` hands each copy's plays, last
   play, favourite, listens, playlist entries, queue rows and `songs_received` row to the song in
-  one transaction (`copies::handed_over`), then `delete_tracks` trashes the copies as any deletion.
+  one transaction (`copies::handed_over`, which zeroes the copy's `plays` once they are the song's, so a copy the trash refuses and the next run finds again adds nothing twice, `a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice`), then `delete_tracks` trashes the copies as any deletion.
   `resonate dedupe` previews, `--apply` folds
   (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`).
 
@@ -1604,7 +1604,7 @@ guard and re-keys a sleeve-keyed album after moves land.
   same mtime, same bytes in `COMPARED_AT_ONCE` pieces once the cheap readings agree) and it lands as
   `Landing::Copied`; hence no `Refusal::AcrossDevices`.
 - **A staging file is noted before it is written, so a killed run's is swept by the next.** It sits
-  beside a destination the next run may never plan again. `noted_staging` writes its path and this
+  beside a destination the next run may never plan again. `noted_staging` (its name cut on a letter through `naming::named_within`, `a_staging_name_beside_a_longest_name_of_multibyte_letters_is_cut_on_a_letter`) writes its path and this
   process's pid into `staged_writes`, committed before a byte is written; `staged_left` removes the
   file where it stands and drops the row. The copy holds its file from creation to rename
   (`Held::taken_over`, `rust-style.md`). A run that applies begins with
@@ -1617,7 +1617,7 @@ guard and re-keys a sleeve-keyed album after moves land.
   anything clears the last run's note, later ones append), so a run killed part way leaves the note
   of what it moved. `OrganiseOptions::walk_back` plans from it, not a layout: units in reverse, each
   `Move::reversed`, through the same `apply`. What the walk back landed is noted in turn. A run cut
-  short keeps the units not put back. `resonate organise --undo` previews, `--undo --apply` makes
+  short keeps the units not put back (`still_to_walk_back` matches a unit by its main file's two paths, not the whole `Move`: `apply` trims sidecars that were gone, so a unit put back without one is still put back). `resonate organise --undo` previews, `--undo --apply` makes
   it; *Organising* offers *Put the last run back* behind a second press wherever
   `Library::walks_back` says a run is kept. A file moved or gone since is refused at `standing`.
 - **A run given files files those alone.** `OrganiseOptions::only` empty is every row; named paths

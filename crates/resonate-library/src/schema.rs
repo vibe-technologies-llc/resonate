@@ -1543,6 +1543,100 @@ mod tests {
     }
 
     #[test]
+    fn a_queue_kept_before_zones_is_read_back_as_the_first_zones() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        connection.execute_batch(V1).expect("the baseline");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_ZONE_KEEPS_ITS_OWN_QUEUE)
+            .expect("the zones migration");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO resume (id, row, at, shuffle, taken, next_first, next_last)
+                     VALUES (1, 2, 3500, 1, 7, 4, 9);
+                 INSERT INTO resume_rows (position, uri, span_start, span_frames)
+                     VALUES (0, 'file:///music/one.flac', 0, NULL),
+                            (1, 'file:///music/two.flac', 44100, 88200),
+                            (2, 'file:///music/three.flac', 0, NULL);
+                 INSERT INTO resume_order (position, loaded_at) VALUES (0, 10), (1, 20), (2, 30);",
+            )
+            .expect("a queue in the older shape");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the zones migration");
+
+        let position = connection
+            .query_row(
+                "SELECT zone, row, at, shuffle, taken, next_first, next_last FROM resume",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                    ))
+                },
+            )
+            .expect("the first zone's position");
+        let rows: Vec<(i64, i64, String, i64, Option<i64>)> = connection
+            .prepare(
+                "SELECT zone, position, uri, span_start, span_frames FROM resume_rows
+                  ORDER BY zone, position",
+            )
+            .expect("a statement")
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .expect("the rows")
+            .collect::<std::result::Result<_, rusqlite::Error>>()
+            .expect("every row");
+        let order: Vec<(i64, i64, i64)> = connection
+            .prepare("SELECT zone, position, loaded_at FROM resume_order ORDER BY position")
+            .expect("a statement")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("the order")
+            .collect::<std::result::Result<_, rusqlite::Error>>()
+            .expect("every order row");
+        assert_eq!(position, (1, 2, 3500, 1, 7, Some(4), Some(9)));
+        assert_eq!(
+            rows,
+            [
+                (1, 0, "file:///music/one.flac".to_owned(), 0, None),
+                (
+                    1,
+                    1,
+                    "file:///music/two.flac".to_owned(),
+                    44100,
+                    Some(88200)
+                ),
+                (1, 2, "file:///music/three.flac".to_owned(), 0, None),
+            ]
+        );
+        assert_eq!(order, [(1, 0, 10), (1, 1, 20), (1, 2, 30)]);
+        assert_eq!(
+            stamped(&connection).expect("the stamp reads back"),
+            Some(SCHEMA_FINGERPRINT)
+        );
+    }
+
+    #[test]
     fn an_album_and_an_artist_a_blank_tag_named_are_let_go_and_the_named_ones_stay() {
         let connection = Connection::open_in_memory().expect("a catalog");
         connection.execute_batch(V1).expect("the baseline");

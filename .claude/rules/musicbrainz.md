@@ -81,7 +81,7 @@ decodes both and requires a decoded value to read back as itself.
 **What it holds is the full export.** `mirror::import` streams `mbdump.tar.bz2` and
 `mbdump-derived.tar.bz2` (`bzip2`'s pure-Rust backend, `MultiBzDecoder`, `tar`) and reads each
 table `copy::TABLES` names as PostgreSQL COPY text. A field is tab-separated, `\N` is null, and
-backslash escapes are read, octal and hex included. Only the projected columns go into
+backslash escapes are read, octal and hex included (`\x` with no hex digit is an `x`, as PostgreSQL reads it). A row that is short of the projected columns is `Error::Columns`, and a final row with no line end is `Error::CutRow`, since PostgreSQL ends every row with one: a cut table is refused, never half kept. Only the projected columns go into
 `musicbrainz.staging.sqlite`.
 
 - **Column positions follow MusicBrainz's `CreateTables.sql`** at schema sequence 31. A row shorter
