@@ -1427,6 +1427,12 @@ impl RootView {
             this.window_bounds_changed(window, cx);
         })
         .detach();
+        cx.observe_window_visibility(window, |this, visibility, _, cx| {
+            this.library.update(cx, |library, _| {
+                library.window_seen(visibility.is_visible())
+            });
+        })
+        .detach();
         cx.on_app_quit(|this, cx| {
             this.keep_the_volume(cx);
             future::ready(())
@@ -1435,6 +1441,10 @@ impl RootView {
         cx.on_release(|this, _| this.keep_the_volume_as_the_window_leaves())
             .detach();
         view.look_for_a_newer_release(cx);
+        let opened_on_statistics = view.pane == Pane::Statistics;
+        view.library.update(cx, |library, cx| {
+            library.statistics_shown(opened_on_statistics, cx);
+        });
         view
     }
 
@@ -2436,6 +2446,9 @@ impl RootView {
         self.pane = pane;
         self.server
             .update(cx, |server, cx| server.shown(pane == Pane::Server, cx));
+        self.library.update(cx, |library, cx| {
+            library.statistics_shown(pane == Pane::Statistics, cx);
+        });
         if opens_the_queue {
             self.following = Following::default();
             let player = self.player.clone();
@@ -2604,7 +2617,14 @@ impl RootView {
                 .map_or_else(Vec::new, |opened| picked(&opened.tracks)),
             Shift::Listing(Listed::Top) => {
                 let songs = TopRun::of(library).songs();
-                picked(&library.listing()[..songs.min(library.listing().len())])
+                picked(
+                    &library
+                        .listing()
+                        .iter()
+                        .take(songs)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                )
             }
             _ => Vec::new(),
         }
@@ -3734,11 +3754,9 @@ impl RootView {
         self.settings_category.hash(&mut stamp);
         self.settings_page.hash(&mut stamp);
         self.player.read(cx).queued().revision.hash(&mut stamp);
-        Arc::as_ptr(&library.albums()).cast::<()>().hash(&mut stamp);
-        Arc::as_ptr(&library.artists())
-            .cast::<()>()
-            .hash(&mut stamp);
-        Arc::as_ptr(&library.tracks()).cast::<()>().hash(&mut stamp);
+        library.albums().identity().hash(&mut stamp);
+        library.artists().identity().hash(&mut stamp);
+        library.tracks().identity().hash(&mut stamp);
         library.playlists().len().hash(&mut stamp);
         if self.pane.lands_where_it_was_left() {
             let offset = self.scroll_of(self.pane).0.borrow().base_handle.offset();

@@ -2132,7 +2132,7 @@ mod tests {
         let (kept, taken) = driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 let listing = root.library.read(cx).listing();
-                root.play_the_listing_from(&listing, 0, window, cx);
+                root.play_the_listing_from(&listing.whole(), 0, window, cx);
                 (listing[0].id, listing[1].id)
             })
         });
@@ -2207,7 +2207,7 @@ mod tests {
                 });
                 let before = root.library.read(cx).playing_playlist(marked);
                 let listing = root.library.read(cx).listing();
-                root.play_the_listing_from(&listing, 0, window, cx);
+                root.play_the_listing_from(&listing.whole(), 0, window, cx);
                 (before, root.library.read(cx).playing_playlist(marked))
             })
         });
@@ -2234,7 +2234,7 @@ mod tests {
         let first = driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 let listing = root.library.read(cx).listing();
-                root.play_the_listing_from(&listing[1..2], 0, window, cx);
+                root.play_the_listing_from(&listing.whole()[1..2], 0, window, cx);
                 listing[1].id
             })
         });
@@ -2710,6 +2710,53 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_playing_row_is_stamped_alike_across_a_revision_that_left_it_and_apart_once_favoured(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let track = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the tracks read")
+            .remove(0);
+        let item = resonate_engine::QueueItem {
+            id: track.id,
+            location: track.location.clone(),
+            span: track.span,
+        };
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        let stamped = |driven: &mut Driven| {
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.library.update(cx, |model, _| {
+                    (model.revision(), model.scanned_playing_stamp(&item))
+                })
+            })
+        };
+
+        let (revision, first) = stamped(&mut driven);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library
+                .update(cx, |model, cx| model.reload_playlists(cx));
+        });
+        driven.settle();
+        let (moved, again) = stamped(&mut driven);
+
+        assert!(first.is_some(), "the playing row is held");
+        assert_ne!(moved, revision, "the catalog was read again");
+        assert_eq!(again, first, "nothing the playing row shows moved");
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| {
+                model.favour(resonate_library::Favoured::Track(track.id), true, cx)
+            });
+        });
+        let (_, favoured) = stamped(&mut driven);
+        assert_ne!(favoured, first, "a favourite is shown on the playing row");
+    }
+
+    #[gpui::test]
     fn the_statistics_pane_reads_when_things_were_heard_and_keeps_the_one_run_the_keys_walk(
         cx: &mut TestAppContext,
     ) {
@@ -2728,6 +2775,17 @@ mod tests {
             .expect("the catalog keeps the time");
         let mut driven = Driven::opened_in(cx, library, &folder);
         let root = driven.root.clone();
+        driven.settle();
+
+        driven.read(|root, cx| {
+            let library = root.library.read(cx);
+
+            assert!(
+                library.most_listened().tracks.is_empty(),
+                "what was heard is read only once Statistics is shown"
+            );
+            assert_eq!(library.habits().rhythm.days_heard, 0);
+        });
 
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.set_pane(Pane::Statistics, cx));

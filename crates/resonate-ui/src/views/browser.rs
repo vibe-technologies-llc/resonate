@@ -26,6 +26,7 @@ use crate::{
     Drawn, LibraryModel, ListedRow, Portrayed, Pressings, ResonateApp, Selection,
     downloads::Fetching,
     format,
+    held::Rows,
     icons::{self, Icon},
     models::{Notice, Picture},
     motion, theme, toast,
@@ -151,7 +152,7 @@ impl RootView {
         &self,
         id: (&'static str, usize),
         at: Placement,
-        tracks: &Arc<[Track]>,
+        tracks: &Rows<Track>,
         index: usize,
         chooses: Option<Chooses>,
         cx: &mut Context<Self>,
@@ -165,13 +166,13 @@ impl RootView {
     fn play_the_row(
         &mut self,
         plays: Plays,
-        played: &[Track],
+        played: &Rows<Track>,
         index: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match plays {
-            Plays::TheseRows => self.play(played, index, cx),
+            Plays::TheseRows => self.play(&played.whole(), index, cx),
             Plays::AsTheListingIsDrawn { .. } => {
                 let Some((drawn, start)) = self.library.read(cx).played_from_held(index) else {
                     return;
@@ -568,7 +569,7 @@ impl RootView {
                 if chosen.count() > 1 {
                     let page = match at.shift {
                         Shift::Listing(Listed::FavouriteAlbums) => {
-                            self.library.read(cx).favourite_albums()
+                            Rows::from(self.library.read(cx).favourite_albums())
                         }
                         _ => self.library.read(cx).albums(),
                     };
@@ -1053,7 +1054,7 @@ impl RootView {
 
     pub(crate) fn track_row(
         &self,
-        tracks: &Arc<[Track]>,
+        tracks: &Rows<Track>,
         index: usize,
         track: &Track,
         rowed: Rowed,
@@ -1066,9 +1067,9 @@ impl RootView {
             chooses,
         } = rowed;
         let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
-        let played = Arc::clone(tracks);
-        let menued = Arc::clone(tracks);
-        let pressed = Arc::clone(tracks);
+        let played = tracks.clone();
+        let menued = tracks.clone();
+        let pressed = tracks.clone();
         let adding_to = self.adding_songs_to;
         let id = track.id;
         let menued_row = menu::lit_by_its_menu(("track", id.get()), cx);
@@ -1262,7 +1263,7 @@ impl RootView {
                     .is_in_the_queue(&track.location, track.span, cx)
                     .then(|| (track.location.clone(), track.span));
 
-                let pressed = Arc::clone(&pressed);
+                let pressed = pressed.clone();
 
                 Menu::at(at)
                     .queues(
@@ -1688,8 +1689,8 @@ impl RootView {
             .child(choice(ArtistsDrawn::Grid, words::browser::grid(), cx))
     }
 
-    fn artist_grid(&mut self, artists: &Arc<[Artist]>, cx: &mut Context<Self>) -> Div {
-        let artists = Arc::clone(artists);
+    fn artist_grid(&mut self, artists: &Rows<Artist>, cx: &mut Context<Self>) -> Div {
+        let artists = artists.clone();
         let held = artists.len();
         let columns = self.grid_columns();
         let rows = self
@@ -4192,7 +4193,7 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
 fn artists_are_favoured(this: &RootView, shift: Shift, artists: &[ArtistId], cx: &App) -> bool {
     let library = this.library.read(cx);
     let among = match shift {
-        Shift::Listing(Listed::FavouriteArtists) => library.favourite_artists(),
+        Shift::Listing(Listed::FavouriteArtists) => Rows::from(library.favourite_artists()),
         _ => library.artists(),
     };
 
@@ -4325,8 +4326,8 @@ fn chosen_albums_menu(
         )
 }
 
-fn queueing(tracks: &Arc<[Track]>, index: usize) -> impl Fn() -> Arc<[PlaylistEntry]> + 'static {
-    let tracks = Arc::clone(tracks);
+fn queueing(tracks: &Rows<Track>, index: usize) -> impl Fn() -> Arc<[PlaylistEntry]> + 'static {
+    let tracks = tracks.clone();
     move || {
         tracks
             .get(index)

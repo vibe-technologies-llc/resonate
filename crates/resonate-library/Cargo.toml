@@ -43,5 +43,9 @@ rustfft.workspace = true
 name = "spelling"
 harness = false
 
+[[bench]]
+name = "paging"
+harness = false
+
 [lints]
 workspace = true

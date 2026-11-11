@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use gpui::{
     AnyElement, Bounds, Context, Div, DragMoveEvent, IntoElement, Pixels, Point, Render,
@@ -10,6 +10,7 @@ use resonate_engine::Placement;
 use resonate_library::{Album, Track};
 
 use crate::{
+    held::Rows,
     icons::{self, Icon},
     theme,
     views::{
@@ -403,7 +404,7 @@ pub(crate) enum Lift {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Run {
-    page: Arc<[Track]>,
+    page: Rows<Track>,
     rows: Chosen,
 }
 
@@ -428,7 +429,7 @@ impl Run {
 
 #[derive(Clone, Debug)]
 pub(crate) struct AlbumRun {
-    page: Arc<[Album]>,
+    page: Rows<Album>,
     rows: Chosen,
 }
 
@@ -465,10 +466,10 @@ pub(crate) struct Lifted {
 }
 
 impl Lifted {
-    pub(crate) fn tracks(page: &Arc<[Track]>, rows: Chosen) -> Self {
+    pub(crate) fn tracks(page: &Rows<Track>, rows: Chosen) -> Self {
         Self {
             lift: Lift::Tracks(Run {
-                page: Arc::clone(page),
+                page: page.clone(),
                 rows,
             }),
         }
@@ -480,10 +481,10 @@ impl Lifted {
         }
     }
 
-    pub(crate) fn albums(page: &Arc<[Album]>, rows: Chosen) -> Self {
+    pub(crate) fn albums(page: &Rows<Album>, rows: Chosen) -> Self {
         Self {
             lift: Lift::Albums(AlbumRun {
-                page: Arc::clone(page),
+                page: page.clone(),
                 rows,
             }),
         }
@@ -769,7 +770,7 @@ impl RootView {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::SystemTime};
+    use std::time::SystemTime;
 
     use gpui::{Bounds, SharedString, point, px, size};
     use proptest::prelude::*;
@@ -783,6 +784,7 @@ mod tests {
         Chosen, DRAGGING_EDGE, Lift, Lifted, Listed, Reach, Shift, Step, Toward, beside,
         toward_an_edge,
     };
+    use crate::held::Rows;
 
     fn song(id: u64) -> Track {
         Track {
@@ -839,14 +841,14 @@ mod tests {
 
     #[test]
     fn a_lifted_run_shares_the_page_it_was_lifted_from_and_is_named_by_its_first_song() {
-        let page: Arc<[Track]> = (1..=4).map(song).collect();
+        let page: Rows<Track> = (1..=4).map(song).collect::<Vec<_>>().into();
 
         let lifted = Lifted::tracks(&page, Chosen::of(Span::between(1, 3)));
         let Lift::Tracks(run) = &lifted.lift else {
             unreachable!("tracks were lifted");
         };
 
-        assert_eq!(Arc::strong_count(&page), 2);
+        assert!(run.page.same_as(&page));
         assert_eq!(run.tracks().len(), 3);
         assert_eq!(run.tracks()[0].title, "Song 2");
         assert_eq!(lifted.title(), "Song 2 and 2 more");
@@ -858,7 +860,7 @@ mod tests {
 
     #[test]
     fn a_lift_of_rows_chosen_apart_takes_those_rows_in_order_and_names_the_first() {
-        let page: Arc<[Track]> = (1..=6).map(song).collect();
+        let page: Rows<Track> = (1..=6).map(song).collect::<Vec<_>>().into();
         let rows = Chosen::of(Span::one(4))
             .united(Span::one(1))
             .united(Span::one(2));

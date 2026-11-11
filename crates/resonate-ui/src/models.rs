@@ -1,6 +1,8 @@
 use std::{
     borrow::Cow,
-    fs, mem,
+    fs,
+    hash::{Hash as _, Hasher as _},
+    mem,
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
     slice,
@@ -12,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::{AHashMap, AHashSet, AHasher};
 use crossbeam_channel::{Receiver, bounded};
 use futures_channel::mpsc::{UnboundedSender, unbounded};
 use gpui::{
@@ -49,7 +51,9 @@ use crate::{
         self, Download, Downloads, Fetched, Fetcher, Fetching, Polling, Unfinished, WantStanding,
     },
     drawing::Drawer,
-    format, keys,
+    format,
+    held::Rows,
+    keys,
     recent::{Leaving, Recent},
     serving::{Row, song_to_keep},
     settings::{Asking, Online, Sourcing},
@@ -99,6 +103,7 @@ const RETRIES_ASKED_AT_LEAST: Duration = Duration::from_secs(30);
 const UNHEARD_RETRIES_DOUBLE_AT_MOST: u32 = 5;
 const WATCHED_EVERY: Duration = Duration::from_secs(2);
 const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
+const ROOTS_LOOKED_AT_EVERY_UNSEEN: Duration = Duration::from_secs(60);
 const ROOTS_READ_EVERY: Duration = Duration::from_secs(5);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
 const UNCOVERED_ROOTS_TRIED_AGAIN_AFTER: Duration = Duration::from_secs(5 * 60);
@@ -183,8 +188,23 @@ struct Paged {
 struct Held {
     albums: usize,
     artists: usize,
-    tracks: usize,
-    scoped: usize,
+    tracks: Reached,
+    scoped: Reached,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Reached {
+    rows: usize,
+    last: Option<TrackId>,
+}
+
+impl Reached {
+    fn of(held: &Rows<Track>) -> Self {
+        Self {
+            rows: held.len(),
+            last: held.last().map(|track| track.id),
+        }
+    }
 }
 
 struct Grown {
@@ -211,12 +231,16 @@ impl Grew {
 
 struct Standing {
     statistics: Statistics,
-    most_listened: MostListened,
-    by_day: Vec<Day>,
-    habits: Habits,
+    heard: Option<Heard>,
     suggestions: Arc<[Suggestion]>,
     roots: Vec<PathBuf>,
     hidden: HiddenTracks,
+}
+
+struct Heard {
+    most_listened: MostListened,
+    by_day: Vec<Day>,
+    habits: Habits,
 }
 
 pub const HIDDEN_LISTED_AT_MOST: usize = 200;
@@ -457,6 +481,7 @@ struct Asked {
     reach: usize,
     held: Held,
     window: Window,
+    heard: bool,
 }
 
 impl Asked {
@@ -474,6 +499,7 @@ impl Asked {
             reach: PAGE,
             held: Held::default(),
             window: Window::default(),
+            heard: false,
         }
     }
 }
@@ -750,9 +776,9 @@ pub struct LibraryModel {
     studies: bool,
     lyrics: bool,
     resume: bool,
-    albums: Arc<[Album]>,
-    artists: Arc<[Artist]>,
-    tracks: Arc<[Track]>,
+    albums: Rows<Album>,
+    artists: Rows<Artist>,
+    tracks: Rows<Track>,
     favourite_albums: Arc<[Album]>,
     favourite_artists: Arc<[Artist]>,
     favourite_tracks: Arc<[Track]>,
@@ -760,10 +786,12 @@ pub struct LibraryModel {
     most_listened: Arc<MostListened>,
     by_day: Arc<[Day]>,
     habits: Arc<Habits>,
+    statistics_shown: bool,
+    heard_owed: bool,
     suggestions: Arc<[Suggestion]>,
     opened_suggestion: Option<Previewed>,
     window: Window,
-    scoped: Arc<[Track]>,
+    scoped: Rows<Track>,
     rows: Arc<[ListedRow]>,
     sung: Option<Sung>,
     found: Arc<[Found]>,
@@ -885,6 +913,7 @@ pub struct LibraryModel {
     _watching: Task<()>,
     _taking_offers: Task<()>,
     _watching_roots: Task<()>,
+    window_seen: bool,
     _watching_inbox: Task<()>,
     _keeping_in_step: Task<()>,
     _refreshing: Task<()>,
@@ -1028,9 +1057,9 @@ impl LibraryModel {
             studies: online.studies,
             lyrics: online.lyrics,
             resume,
-            albums: Arc::default(),
-            artists: Arc::default(),
-            tracks: Arc::default(),
+            albums: Rows::default(),
+            artists: Rows::default(),
+            tracks: Rows::default(),
             favourite_albums: Arc::default(),
             favourite_artists: Arc::default(),
             favourite_tracks: Arc::default(),
@@ -1038,10 +1067,12 @@ impl LibraryModel {
             most_listened: Arc::default(),
             by_day: Arc::default(),
             habits: Arc::default(),
+            statistics_shown: false,
+            heard_owed: true,
             suggestions: Arc::default(),
             opened_suggestion: None,
             window,
-            scoped: Arc::default(),
+            scoped: Rows::default(),
             rows: Arc::default(),
             sung: None,
             found: Arc::default(),
@@ -1163,6 +1194,7 @@ impl LibraryModel {
             _watching: Task::ready(()),
             _taking_offers: Task::ready(()),
             _watching_roots: Task::ready(()),
+            window_seen: true,
             _watching_inbox: Task::ready(()),
             _keeping_in_step: Task::ready(()),
             _refreshing: Task::ready(()),
@@ -1384,11 +1416,18 @@ impl LibraryModel {
             let mut watching = Watching::default();
             let mut owed: Vec<PathBuf> = Vec::new();
             let mut changed_while_closed = true;
+            let mut looked_at = None;
             loop {
                 cx.background_executor().timer(ROOTS_LOOKED_AT_EVERY).await;
-                let Ok(busy) = this.update(cx, |this, _| this.work.is_busy()) else {
+                let Ok((busy, seen)) =
+                    this.update(cx, |this, _| (this.work.is_busy(), this.window_seen))
+                else {
                     return;
                 };
+                if !roots_looked_at_now(seen, looked_at) {
+                    continue;
+                }
+                looked_at = Some(Instant::now());
 
                 let reading = Arc::clone(&library);
                 let (followed, settled, forgotten) = cx
@@ -1453,6 +1492,10 @@ impl LibraryModel {
                 }
             }
         });
+    }
+
+    pub(crate) fn window_seen(&mut self, seen: bool) {
+        self.window_seen = seen;
     }
 
     pub(crate) fn take_what_a_model_offered(&mut self, cx: &mut Context<Self>) {
@@ -1556,7 +1599,7 @@ impl LibraryModel {
         let listing = self.listing();
         self.rows = match self.selection {
             Selection::Album(_) => {
-                album_rows(&listing, &self.release_tracks, self.arranging()).into()
+                album_rows(&listing.whole(), &self.release_tracks, self.arranging()).into()
             }
             Selection::Artist(_) => beyond_the_listing(Reaching {
                 held: listing.len(),
@@ -3350,7 +3393,7 @@ impl LibraryModel {
 
     pub fn played_from(&self, row: usize) -> Option<(Arc<[Track]>, usize)> {
         if self.rows.is_empty() {
-            return Some((self.listing(), row));
+            return Some((self.listing().whole(), row));
         }
         self.played_from_held(held_at(&self.rows, row)?)
     }
@@ -3358,7 +3401,7 @@ impl LibraryModel {
     pub fn played_from_held(&self, held: usize) -> Option<(Arc<[Track]>, usize)> {
         let listing = self.listing();
         if self.rows.is_empty() {
-            return Some((listing, held));
+            return Some((listing.whole(), held));
         }
         let order = held_in(&self.rows);
         let start = order.iter().position(|at| *at == held)?;
@@ -3435,22 +3478,22 @@ impl LibraryModel {
         self.artists.len().max(self.artists_counted as usize)
     }
 
-    pub fn albums(&self) -> Arc<[Album]> {
-        Arc::clone(&self.albums)
+    pub fn albums(&self) -> Rows<Album> {
+        self.albums.clone()
     }
 
-    pub fn artists(&self) -> Arc<[Artist]> {
-        Arc::clone(&self.artists)
+    pub fn artists(&self) -> Rows<Artist> {
+        self.artists.clone()
     }
 
-    pub fn tracks(&self) -> Arc<[Track]> {
-        Arc::clone(&self.tracks)
+    pub fn tracks(&self) -> Rows<Track> {
+        self.tracks.clone()
     }
 
-    pub fn listing(&self) -> Arc<[Track]> {
+    pub fn listing(&self) -> Rows<Track> {
         match self.selection {
-            Selection::Everything => Arc::clone(&self.tracks),
-            Selection::Album(_) | Selection::Artist(_) => Arc::clone(&self.scoped),
+            Selection::Everything => self.tracks.clone(),
+            Selection::Album(_) | Selection::Artist(_) => self.scoped.clone(),
         }
     }
 
@@ -4641,6 +4684,30 @@ impl LibraryModel {
         Some(scanned)
     }
 
+    pub(crate) fn scanned_playing_stamp(&mut self, item: &QueueItem) -> Option<u64> {
+        let mut stamp = AHasher::default();
+        let track = self.named_track(item)?;
+        (
+            track.id,
+            &track.title,
+            &track.artist,
+            track.artist_id,
+            track.codec,
+            track.plays,
+            track.played,
+            track.added,
+        )
+            .hash(&mut stamp);
+        let (id, album, stored) = (track.id, track.album_id, track.favourite.is_some());
+
+        self.favours(Favoured::Track(id), stored).hash(&mut stamp);
+        album.hash(&mut stamp);
+        if let Some(album) = album {
+            self.with_album(album, |album| album.title.hash(&mut stamp));
+        }
+        Some(stamp.finish())
+    }
+
     fn scanned(&self, item: &QueueItem) -> Option<Track> {
         match self.library.track(item.id) {
             Ok(Some(track)) if track.location == item.location => return Some(track),
@@ -4882,11 +4949,12 @@ impl LibraryModel {
                 false => Held {
                     albums: self.albums.len(),
                     artists: self.artists.len(),
-                    tracks: self.tracks.len(),
-                    scoped: self.scoped.len(),
+                    tracks: Reached::of(&self.tracks),
+                    scoped: Reached::of(&self.scoped),
                 },
             },
             window: self.window,
+            heard: self.statistics_shown,
         }
     }
 
@@ -5067,8 +5135,8 @@ impl LibraryModel {
         }
         let grew = albums
             .and(grew(&mut self.artists, from.artists, page.artists))
-            .and(grew(&mut self.tracks, from.tracks, page.tracks))
-            .and(grew(&mut self.scoped, from.scoped, page.scoped));
+            .and(grew(&mut self.tracks, from.tracks.rows, page.tracks))
+            .and(grew(&mut self.scoped, from.scoped.rows, page.scoped));
         if from == Held::default() {
             self.page_moved = false;
         }
@@ -5076,10 +5144,10 @@ impl LibraryModel {
     }
 
     fn forget_the_listing(&mut self) {
-        self.albums = Arc::default();
-        self.artists = Arc::default();
-        self.tracks = Arc::default();
-        self.scoped = Arc::default();
+        self.albums = Rows::default();
+        self.artists = Rows::default();
+        self.tracks = Rows::default();
+        self.scoped = Rows::default();
         self.albums_counted = 0;
         self.artists_counted = 0;
         self.tracks_measured = Measured::default();
@@ -5089,12 +5157,27 @@ impl LibraryModel {
     }
 
     fn take_the_page(&mut self, paged: Paged) {
-        if renewed(&mut self.albums, paged.albums) {
+        if rows_renewed(&mut self.albums, paged.albums) {
             self.index_the_albums();
         }
-        renewed(&mut self.artists, paged.artists);
-        renewed(&mut self.tracks, paged.tracks);
-        renewed(&mut self.scoped, paged.scoped);
+        rows_renewed(&mut self.artists, paged.artists);
+        rows_renewed(&mut self.tracks, paged.tracks);
+        rows_renewed(&mut self.scoped, paged.scoped);
+    }
+
+    fn take_what_was_heard(&mut self, heard: Heard) {
+        self.most_listened = Arc::new(heard.most_listened);
+        if renewed(&mut self.by_day, heard.by_day) {
+            self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
+        }
+        self.habits = Arc::new(heard.habits);
+    }
+
+    pub(crate) fn statistics_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        self.statistics_shown = shown;
+        if shown && self.heard_owed {
+            self.read(Wanted::Everything, cx);
+        }
     }
 
     fn take_the_listing(&mut self, browsed: Browsed) {
@@ -5104,11 +5187,10 @@ impl LibraryModel {
         renewed(&mut self.favourite_tracks, browsed.favourite_tracks);
         if let Some(standing) = browsed.standing {
             self.statistics = standing.statistics;
-            self.most_listened = Arc::new(standing.most_listened);
-            if renewed(&mut self.by_day, standing.by_day) {
-                self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
+            self.heard_owed = standing.heard.is_none();
+            if let Some(heard) = standing.heard {
+                self.take_what_was_heard(heard);
             }
-            self.habits = Arc::new(standing.habits);
             self.suggestions = standing.suggestions;
             self.roots = standing.roots;
             if self.hidden.as_ref() != &standing.hidden {
@@ -7025,10 +7107,10 @@ fn in_the_order_they_came_out(mut releases: Vec<GroupRelease>) -> Arc<[GroupRele
     releases.into()
 }
 
-fn albums_of(tracks: &[Track]) -> Vec<AlbumId> {
+fn albums_of<'a>(tracks: impl IntoIterator<Item = &'a Track>) -> Vec<AlbumId> {
     let mut held = AHashSet::new();
     tracks
-        .iter()
+        .into_iter()
         .filter_map(|track| track.album_id)
         .filter(|album| held.insert(*album))
         .collect()
@@ -7406,6 +7488,7 @@ struct Watching {
     watch: Option<RootsWatch>,
     read_at: Option<Instant>,
     laid_at: Option<Instant>,
+    uncovered_wait: Duration,
     tried: Option<Vec<PathBuf>>,
     there: Option<bool>,
     gone: Vec<PathBuf>,
@@ -7435,13 +7518,15 @@ impl Watching {
             .watch
             .as_ref()
             .is_some_and(RootsWatch::leaves_a_root_uncovered)
-            && self
-                .laid_at
-                .is_some_and(|at| at.elapsed() >= UNCOVERED_ROOTS_TRIED_AGAIN_AFTER);
+            && self.laid_at.is_some_and(|at| {
+                at.elapsed() >= self.uncovered_wait.max(UNCOVERED_ROOTS_TRIED_AGAIN_AFTER)
+            });
         if self.tried.as_deref() == Some(present.as_slice()) && self.watch.is_some() {
             if to_cover_again && let Some(watch) = self.watch.as_mut() {
                 watch.cover_again();
                 self.laid_at = Some(Instant::now());
+                self.uncovered_wait =
+                    watch.tried_again_after(self.uncovered_wait, UNCOVERED_ROOTS_TRIED_AGAIN_AFTER);
             }
             return self;
         }
@@ -7458,6 +7543,8 @@ impl Watching {
             self.returned.extend(returned.cloned());
         }
         self.absent = absent;
+        self.uncovered_wait =
+            laid.tried_again_after(Duration::ZERO, UNCOVERED_ROOTS_TRIED_AGAIN_AFTER);
         self.watch = Some(laid);
         self.tried = Some(present);
         self.laid_at = Some(Instant::now());
@@ -7739,9 +7826,15 @@ fn grown(library: &Library, asked: &Asked) -> resonate_library::Result<Grown> {
     let from = asked.held;
     let overlapping = |held: usize| held.saturating_sub(1);
     let limit = |held: usize| Some(asked.reach.saturating_sub(overlapping(held)).max(1));
-    let tracks_after = |album, artist, held: usize| TrackQuery {
-        offset: overlapping(held),
-        ..asked.listing(album, artist, limit(held))
+    let tracks_after = |album, artist, reached: Reached| {
+        let query = TrackQuery {
+            offset: overlapping(reached.rows),
+            ..asked.listing(album, artist, limit(reached.rows))
+        };
+        match reached.last {
+            Some(last) => library.tracks_from(&query, last),
+            None => library.tracks(&query),
+        }
     };
 
     Ok(Grown {
@@ -7757,9 +7850,9 @@ fn grown(library: &Library, asked: &Asked) -> resonate_library::Result<Grown> {
                 offset: overlapping(from.artists),
                 ..asked.artists()
             })?,
-            tracks: library.tracks(&tracks_after(None, None, from.tracks))?,
+            tracks: tracks_after(None, None, from.tracks)?,
             scoped: match asked.scoping() {
-                true => library.tracks(&tracks_after(asked.album, asked.artist, from.scoped))?,
+                true => tracks_after(asked.album, asked.artist, from.scoped)?,
                 false => Vec::new(),
             },
         },
@@ -7836,6 +7929,10 @@ fn workers_beside(playing: bool) -> Option<NonZeroUsize> {
     NonZeroUsize::new(cores / 2).or(Some(NonZeroUsize::MIN))
 }
 
+fn roots_looked_at_now(seen: bool, looked_at: Option<Instant>) -> bool {
+    seen || looked_at.is_none_or(|at| at.elapsed() >= ROOTS_LOOKED_AT_EVERY_UNSEEN)
+}
+
 fn reach_covering(reach: usize, drawn_to: usize) -> usize {
     let wanted = drawn_to
         .saturating_add(LOOK_AHEAD)
@@ -7844,9 +7941,9 @@ fn reach_covering(reach: usize, drawn_to: usize) -> usize {
     wanted.max(reach.saturating_add(PAGE))
 }
 
-fn grew<T: PartialEq + Clone>(held: &mut Arc<[T]>, from: usize, read: Vec<T>) -> Grew {
+fn grew<T: PartialEq>(held: &mut Rows<T>, from: usize, read: Vec<T>) -> Grew {
     if from == 0 {
-        return match renewed(held, read) {
+        return match rows_renewed(held, read) {
             true => Grew::Renewed,
             false => Grew::Same,
         };
@@ -7854,17 +7951,27 @@ fn grew<T: PartialEq + Clone>(held: &mut Arc<[T]>, from: usize, read: Vec<T>) ->
     if held.len() != from {
         return Grew::Moved;
     }
-    let Some((overlap, after)) = read.split_first() else {
+    let mut read = read.into_iter();
+    let Some(overlap) = read.next() else {
         return Grew::Moved;
     };
-    if held.last() != Some(overlap) {
+    if held.last() != Some(&overlap) {
         return Grew::Moved;
     }
+    let after: Vec<T> = read.collect();
     if after.is_empty() {
         return Grew::Same;
     }
-    *held = held.iter().chain(after).cloned().collect();
+    *held = held.appended(after);
     Grew::Renewed
+}
+
+fn rows_renewed<T: PartialEq>(held: &mut Rows<T>, read: Vec<T>) -> bool {
+    if *held == *read {
+        return false;
+    }
+    *held = Rows::from(read);
+    true
 }
 
 fn paged(library: &Library, asked: &Asked) -> resonate_library::Result<Paged> {
@@ -7880,17 +7987,26 @@ fn paged(library: &Library, asked: &Asked) -> resonate_library::Result<Paged> {
     })
 }
 
-fn standing(library: &Library, window: Window) -> resonate_library::Result<Standing> {
-    let (by_day, habits) = library.days_and_habits(window)?;
-
+fn standing(library: &Library, window: Window, heard: bool) -> resonate_library::Result<Standing> {
     Ok(Standing {
         statistics: library.statistics(window)?,
-        most_listened: library.most_listened(window, MOST_LISTENED)?,
-        by_day,
-        habits,
+        heard: match heard {
+            true => Some(what_was_heard(library, window)?),
+            false => None,
+        },
         suggestions: library.suggestions()?,
         roots: library.roots()?,
         hidden: library.hidden_tracks(HIDDEN_LISTED_AT_MOST)?,
+    })
+}
+
+fn what_was_heard(library: &Library, window: Window) -> resonate_library::Result<Heard> {
+    let (by_day, habits) = library.days_and_habits(window)?;
+
+    Ok(Heard {
+        most_listened: library.most_listened(window, MOST_LISTENED)?,
+        by_day,
+        habits,
     })
 }
 
@@ -7958,7 +8074,7 @@ fn browsed(
         favourite_artists: library.favourite_artists(&favourite_artists_asked)?,
         favourite_tracks: library.favourite_tracks(&favourite_tracks_asked)?,
         standing: match with_what_stands {
-            true => Some(standing(library, asked.window)?),
+            true => Some(standing(library, asked.window, asked.heard)?),
             false => None,
         },
         sung,
@@ -8233,6 +8349,7 @@ mod tests {
     use crate::{
         ResonateApp,
         driven::{Driven, Folder},
+        held::Rows,
         served::ServedSong,
         serving::{Row, song_to_keep},
         settings::{Online, Supplying},
@@ -8807,6 +8924,18 @@ mod tests {
     }
 
     #[test]
+    fn the_roots_are_looked_at_every_second_while_seen_and_once_a_minute_while_unseen() {
+        let just = Some(std::time::Instant::now());
+        let a_minute_ago =
+            std::time::Instant::now().checked_sub(super::ROOTS_LOOKED_AT_EVERY_UNSEEN);
+
+        assert!(super::roots_looked_at_now(true, just));
+        assert!(!super::roots_looked_at_now(false, just));
+        assert!(super::roots_looked_at_now(false, a_minute_ago));
+        assert!(super::roots_looked_at_now(false, None));
+    }
+
+    #[test]
     fn a_list_read_again_the_same_is_left_where_it_stood() {
         let mut held: std::sync::Arc<[u32]> = vec![1, 2, 3].into();
         let before = std::sync::Arc::clone(&held);
@@ -8819,22 +8948,27 @@ mod tests {
 
     #[test]
     fn a_page_read_past_what_is_held_is_added_to_it_only_where_it_carries_on_from_the_last_row() {
-        let mut held: std::sync::Arc<[u32]> = vec![1, 2, 3].into();
-        let before = std::sync::Arc::clone(&held);
+        let mut held: Rows<u32> = vec![1, 2, 3].into();
+        let before = held.clone();
 
         assert_eq!(super::grew(&mut held, 3, vec![3]), super::Grew::Same);
-        assert!(std::sync::Arc::ptr_eq(&held, &before));
+        assert!(held.same_as(&before));
         assert_eq!(
             super::grew(&mut held, 3, vec![3, 4, 5]),
             super::Grew::Renewed
         );
-        assert_eq!(*held, [1, 2, 3, 4, 5]);
+        assert_eq!(held.to_vec(), [1, 2, 3, 4, 5]);
+        assert_eq!(
+            held.chunks().next().map(<[u32]>::as_ptr),
+            before.chunks().next().map(<[u32]>::as_ptr),
+            "the rows held are kept as they were, not copied, when a page is added"
+        );
         assert_eq!(super::grew(&mut held, 5, vec![9, 6]), super::Grew::Moved);
         assert_eq!(super::grew(&mut held, 4, vec![4, 5, 6]), super::Grew::Moved);
         assert_eq!(super::grew(&mut held, 5, Vec::new()), super::Grew::Moved);
-        assert_eq!(*held, [1, 2, 3, 4, 5]);
+        assert_eq!(held.to_vec(), [1, 2, 3, 4, 5]);
         assert_eq!(super::grew(&mut held, 0, vec![7, 8]), super::Grew::Renewed);
-        assert_eq!(*held, [7, 8]);
+        assert_eq!(held.to_vec(), [7, 8]);
     }
 
     #[test]

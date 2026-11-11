@@ -113,7 +113,17 @@ pub(crate) struct Resolving {
 
 pub(crate) struct Resolved {
     at: Resolving,
+    named: Option<u64>,
     playing: Rc<Playing>,
+}
+
+impl Resolving {
+    fn differs_only_in_the_catalog_from(self, now: Self) -> bool {
+        Self {
+            catalog: now.catalog,
+            ..self
+        } == now
+    }
 }
 
 pub(crate) struct ShownCover {
@@ -1029,19 +1039,36 @@ impl RootView {
             tagged: digest.is_some_and(|digest| digest.track == current.id),
         };
 
-        if let Some(resolved) = self.resolved.borrow().as_ref()
-            && resolved.at == at
+        let moved = match self.resolved.borrow().as_ref() {
+            Some(resolved) if resolved.at == at => return Rc::clone(&resolved.playing),
+            Some(resolved) => resolved
+                .named
+                .filter(|_| resolved.at.differs_only_in_the_catalog_from(at)),
+            None => None,
+        };
+        let named = self.named_stamp(state, cx);
+        if let Some(named) = named
+            && moved == Some(named)
+            && let Some(resolved) = self.resolved.borrow_mut().as_mut()
         {
+            resolved.at = at;
             return Rc::clone(&resolved.playing);
         }
 
         let playing = Rc::new(self.resolve(state, digest, cx));
         *self.resolved.borrow_mut() = Some(Resolved {
             at,
+            named,
             playing: Rc::clone(&playing),
         });
 
         playing
+    }
+
+    fn named_stamp(&self, state: &PlayerState, cx: &mut Context<Self>) -> Option<u64> {
+        let row = self.queued_row(state, cx)?;
+        self.library
+            .update(cx, |library, _| library.scanned_playing_stamp(&row))
     }
 
     fn resolve(

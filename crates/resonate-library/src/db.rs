@@ -52,7 +52,7 @@ use crate::{
     filed::{AlbumToFile, DeliveryFolder},
     foresight::Foresight,
     hinted::Hinted,
-    history, import, learning, likeness,
+    history, import, keyed, learning, likeness,
     linked::{
         self, AlbumLink, ArtistHeldBy, ArtistLink, FollowedPlaylist, HeldBy, LinkNames, Linked,
         ListedSong, PlaylistLink, SongLink,
@@ -690,6 +690,7 @@ pub(crate) struct Inner {
     arrivals: AtomicU64,
     named: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
+    heard: Arc<AtomicU64>,
     planned: Arc<AtomicU64>,
     renamed: Arc<Mutex<Renamed>>,
     spellings: Mutex<Option<KeptVocabulary>>,
@@ -760,6 +761,7 @@ impl KeptMeasurements {
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct PicturesAt {
     rows: CatalogStamp,
+    heard: u64,
     playlists: u64,
     filters: MusicFilters,
 }
@@ -774,7 +776,18 @@ impl PicturesAt {
 
 struct KeptPictures {
     at: PicturesAt,
-    by_playlist: AHashMap<(PlaylistId, usize), Vec<AlbumId>>,
+    by_playlist: AHashMap<(PlaylistId, usize), Pictured>,
+}
+
+struct Pictured {
+    albums: Vec<AlbumId>,
+    heard: Option<u64>,
+}
+
+impl Pictured {
+    fn holds(&self, heard: u64) -> bool {
+        self.heard.is_none_or(|then| then == heard)
+    }
 }
 
 const MEASUREMENTS_KEPT_FOR: Duration = Duration::from_secs(60);
@@ -788,6 +801,7 @@ struct KeptFiling {
 
 struct KeptSuggestions {
     stamp: CatalogStamp,
+    heard: u64,
     filters: MusicFilters,
     today: i64,
     suggestions: Arc<[Suggestion]>,
@@ -1157,6 +1171,7 @@ impl Inner {
     pub(crate) fn pictures_at(&self) -> PicturesAt {
         PicturesAt {
             rows: self.rows_stamp(),
+            heard: self.heard(),
             playlists: self.playlists_revision(),
             filters: *self.music_filters.lock(),
         }
@@ -1173,7 +1188,8 @@ impl Inner {
             .as_ref()
             .filter(|kept| kept.at.holds(at))
             .and_then(|kept| kept.by_playlist.get(&(playlist, at_most)))
-            .cloned()
+            .filter(|pictured| pictured.holds(at.heard))
+            .map(|pictured| pictured.albums.clone())
     }
 
     pub(crate) fn keep_pictures(
@@ -1182,20 +1198,28 @@ impl Inner {
         playlist: PlaylistId,
         at_most: usize,
         albums: &[AlbumId],
+        reads_listening: bool,
     ) {
+        let pictured = Pictured {
+            albums: albums.to_vec(),
+            heard: reads_listening.then_some(at.heard),
+        };
         let mut kept = self.pictured.lock();
         match kept.as_mut().filter(|kept| kept.at.holds(at)) {
             Some(kept) => {
-                kept.by_playlist
-                    .insert((playlist, at_most), albums.to_vec());
+                kept.by_playlist.insert((playlist, at_most), pictured);
             }
             None => {
                 *kept = Some(KeptPictures {
                     at,
-                    by_playlist: AHashMap::from_iter([((playlist, at_most), albums.to_vec())]),
+                    by_playlist: AHashMap::from_iter([((playlist, at_most), pictured)]),
                 });
             }
         }
+    }
+
+    fn heard(&self) -> u64 {
+        self.heard.load(Ordering::Acquire)
     }
 
     fn plans_stamp(&self) -> CatalogStamp {
@@ -1237,13 +1261,7 @@ impl Inner {
     }
 }
 
-const NAMED_TABLES: [&str; 5] = [
-    "tracks",
-    "albums",
-    "artists",
-    "artist_genres",
-    "track_credits",
-];
+const NAMED_TABLES: [&str; 4] = ["albums", "artists", "artist_genres", "track_credits"];
 const NAMES_MOVED: &str = "names_moved";
 const PLANS_MOVED: &str = "plans_moved";
 
@@ -1386,8 +1404,67 @@ fn plans_moved_triggers() -> String {
 struct Counters {
     named: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
+    heard: Arc<AtomicU64>,
     planned: Arc<AtomicU64>,
     renamed: Arc<Mutex<Renamed>>,
+}
+
+const ROWS_MOVED: &str = "rows_moved";
+const HEARD_MOVED: &str = "heard_moved";
+const NEVER_LISTED: [&str; 4] = ["seen", "asked", "asks", "refusals"];
+const LISTENING: [&str; 3] = ["plays", "played", "favourite"];
+
+fn moved_when(columns: &[String]) -> String {
+    format!(
+        "AFTER UPDATE OF {} ON main.tracks WHEN {}",
+        columns.join(", "),
+        columns
+            .iter()
+            .map(|column| format!("OLD.{column} IS NOT NEW.{column}"))
+            .collect::<Vec<_>>()
+            .join(" OR ")
+    )
+}
+
+fn track_rows_moved_triggers(connection: &Connection) -> Result<String> {
+    let columns = connection
+        .prepare("SELECT name FROM pragma_table_xinfo('tracks') WHERE hidden = 0")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
+    let (heard, listed): (Vec<String>, Vec<String>) = columns
+        .into_iter()
+        .filter(|column| !NEVER_LISTED.contains(&column.as_str()))
+        .partition(|column| LISTENING.contains(&column.as_str()));
+
+    let mut sql = String::new();
+    for table in [ROWS_MOVED, HEARD_MOVED] {
+        sql.push_str(&format!(
+            "CREATE TEMP TABLE {table} (
+                 id    INTEGER PRIMARY KEY CHECK (id = 1),
+                 times INTEGER NOT NULL
+             );
+             INSERT INTO temp.{table} (id, times) VALUES (1, 0);"
+        ));
+    }
+    let rows_moved = format!("BEGIN UPDATE temp.{ROWS_MOVED} SET times = times + 1; END;");
+    for (event, named) in [("INSERT", "added"), ("DELETE", "taken")] {
+        sql.push_str(&format!(
+            "CREATE TEMP TRIGGER track_row_{named} AFTER {event} ON main.tracks {rows_moved}"
+        ));
+    }
+    sql.push_str(&format!(
+        "CREATE TEMP TRIGGER track_row_moved {} {rows_moved}",
+        moved_when(&listed)
+    ));
+    sql.push_str(&format!(
+        "CREATE TEMP TRIGGER track_heard {} BEGIN UPDATE temp.{HEARD_MOVED} SET times = times + 1; END;",
+        moved_when(&heard)
+    ));
+    Ok(sql)
 }
 
 fn watch_the_names(connection: &mut Connection, counters: Counters) -> Result<()> {
@@ -1395,6 +1472,7 @@ fn watch_the_names(connection: &mut Connection, counters: Counters) -> Result<()
         NAMES_MOVED_TRIGGERS,
         &plans_moved_triggers(),
         RENAMED_TRIGGERS,
+        &track_rows_moved_triggers(connection)?,
     ] {
         connection
             .execute_batch(triggers)
@@ -1404,6 +1482,7 @@ fn watch_the_names(connection: &mut Connection, counters: Counters) -> Result<()
     let Counters {
         named,
         written,
+        heard,
         planned,
         renamed,
     } = counters;
@@ -1414,6 +1493,10 @@ fn watch_the_names(connection: &mut Connection, counters: Counters) -> Result<()
                     named.fetch_add(1, Ordering::AcqRel);
                 } else if database == TEMPORARY && table == PLANS_MOVED {
                     planned.fetch_add(1, Ordering::AcqRel);
+                } else if database == TEMPORARY && table == ROWS_MOVED {
+                    written.fetch_add(1, Ordering::AcqRel);
+                } else if database == TEMPORARY && table == HEARD_MOVED {
+                    heard.fetch_add(1, Ordering::AcqRel);
                 } else if database == TEMPORARY
                     && action == Action::SQLITE_INSERT
                     && (table == RETITLED || table == ADDED)
@@ -1656,6 +1739,7 @@ impl Library {
 
         let named = Arc::new(AtomicU64::new(0));
         let written = Arc::new(AtomicU64::new(0));
+        let heard = Arc::new(AtomicU64::new(0));
         let planned = Arc::new(AtomicU64::new(0));
         let renamed = Arc::new(Mutex::new(Renamed::default()));
         watch_the_names(
@@ -1663,6 +1747,7 @@ impl Library {
             Counters {
                 named: Arc::clone(&named),
                 written: Arc::clone(&written),
+                heard: Arc::clone(&heard),
                 planned: Arc::clone(&planned),
                 renamed: Arc::clone(&renamed),
             },
@@ -1682,6 +1767,7 @@ impl Library {
                 arrivals: AtomicU64::new(0),
                 named,
                 written,
+                heard,
                 planned,
                 renamed,
                 spellings: Mutex::new(None),
@@ -1835,6 +1921,10 @@ impl Library {
 
     pub fn tracks(&self, query: &TrackQuery) -> Result<Vec<Track>> {
         tracks(&self.inner, query, None)
+    }
+
+    pub fn tracks_from(&self, query: &TrackQuery, at: TrackId) -> Result<Vec<Track>> {
+        tracks_from(&self.inner, query, at)
     }
 
     pub fn favourite_tracks(&self, query: &TrackQuery) -> Result<Vec<Track>> {
@@ -2137,11 +2227,15 @@ impl Library {
 
     pub fn suggestions(&self) -> Result<Arc<[Suggestion]>> {
         let stamp = self.inner.rows_stamp();
+        let heard = self.inner.heard();
         let filters = self.music_filters();
         let now = SystemTime::now();
         let today = Calendar::local().day_of(now);
         if let Some(kept) = self.inner.suggested.lock().as_ref().filter(|kept| {
-            kept.stamp.still_holds_at(stamp) && kept.filters == filters && kept.today == today
+            kept.stamp.still_holds_at(stamp)
+                && kept.heard == heard
+                && kept.filters == filters
+                && kept.today == today
         }) {
             return Ok(Arc::clone(&kept.suggestions));
         }
@@ -2151,6 +2245,7 @@ impl Library {
             suggest::suggestions(&self.inner, &filing, today, now)?.into();
         *self.inner.suggested.lock() = Some(KeptSuggestions {
             stamp,
+            heard,
             filters,
             today,
             suggestions: Arc::clone(&suggestions),
@@ -6419,6 +6514,88 @@ pub(crate) fn tracks(
     collect(inner, &sql, binds)
 }
 
+pub(crate) fn tracks_from(inner: &Inner, query: &TrackQuery, at: TrackId) -> Result<Vec<Track>> {
+    let filters = *inner.music_filters.lock();
+    let Some(matching) = matching_tracks(query, None, filters) else {
+        return Ok(Vec::new());
+    };
+    if matching.ranked || !SortOrder::HELD_BY_AN_INDEX.contains(&query.sort) {
+        return tracks(inner, query, None);
+    }
+    let order = order_by(query.sort, query.reading, false);
+    let terms = keyed::terms(order);
+
+    let raw = inner.read(|connection| {
+        let reading = connection
+            .unchecked_transaction()
+            .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+        let key = reading
+            .prepare_cached(&keyed::key_read(&terms))
+            .and_then(|mut statement| {
+                statement
+                    .query_row([at.get() as i64], |row| {
+                        (0..terms.len())
+                            .map(|column| row.get::<_, Value>(column))
+                            .collect::<rusqlite::Result<Vec<_>>>()
+                    })
+                    .optional()
+            })
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        let Some(key) = key else {
+            return Ok(Vec::new());
+        };
+
+        let mut read = Vec::new();
+        for seek in keyed::seeks(&terms, &key) {
+            let wanted = match query.limit {
+                Some(limit) => match limit.checked_sub(read.len()) {
+                    Some(0) | None => break,
+                    Some(left) => Some(left),
+                },
+                None => None,
+            };
+            let (sql, binds) = sought(&matching, seek, wanted);
+            let mut statement = reading
+                .prepare(&sql)
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            let rows = statement
+                .query_map(params_from_iter(binds), RawTrack::read)
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            read.extend(rows);
+        }
+        Ok(read)
+    })?;
+
+    raw.into_iter().map(RawTrack::into_track).collect()
+}
+
+pub(crate) fn reads_listening(query: &TrackQuery) -> bool {
+    let ordered_by_listening = matches!(
+        query.sort,
+        SortOrder::Plays | SortOrder::Played | SortOrder::Favourited | SortOrder::PlaysThisMonth
+    );
+    query.text.is_some() || (ordered_by_listening && (query.limit.is_some() || query.offset > 0))
+}
+
+fn sought(matching: &Matching, seek: keyed::Seek, wanted: Option<usize>) -> (String, Vec<Value>) {
+    let mut conditions = matching.filters.clone();
+    conditions.extend(seek.conditions);
+    let mut binds = matching.binds.clone();
+    binds.extend(seek.binds);
+    binds.push(Value::Integer(limit(wanted)));
+
+    (
+        format!(
+            "SELECT {TRACK_COLUMNS} FROM tracks{}{} ORDER BY {} LIMIT ?",
+            matching.join,
+            clause(&conditions),
+            seek.order
+        ),
+        binds,
+    )
+}
+
 fn listing(
     query: &TrackQuery,
     narrowing: Option<&str>,
@@ -6473,7 +6650,10 @@ pub(crate) fn measured_narrowed(
         ),
     };
     let keepable = narrowing.is_none();
-    let key = format!("{sql}\u{0}{binds:?}");
+    let key = match reads_listening(query) {
+        true => format!("{sql}\u{0}{binds:?}\u{0}{}", inner.heard()),
+        false => format!("{sql}\u{0}{binds:?}"),
+    };
     if keepable && let Some(kept) = inner.measurement_kept(stamp, filters, &key) {
         return Ok(kept);
     }
@@ -6754,6 +6934,20 @@ fn narrowed_onto(
 }
 
 fn scoped(query: &TrackQuery, narrowing: Option<&str>, filters: MusicFilters) -> Option<Scoped> {
+    let matching = matching_tracks(query, narrowing, filters)?;
+
+    Some(Scoped {
+        from: format!(" FROM tracks{}{}", matching.join, clause(&matching.filters)),
+        binds: matching.binds,
+        ranked: matching.ranked,
+    })
+}
+
+fn matching_tracks(
+    query: &TrackQuery,
+    narrowing: Option<&str>,
+    filters: MusicFilters,
+) -> Option<Matching> {
     if narrowing.is_some_and(asks_for_nothing_it_can_read) {
         return None;
     }
@@ -6778,11 +6972,7 @@ fn scoped(query: &TrackQuery, narrowing: Option<&str>, filters: MusicFilters) ->
         matching.binds.push(Value::Integer(artist.get() as i64));
     }
 
-    Some(Scoped {
-        from: format!(" FROM tracks{}{}", matching.join, clause(&matching.filters)),
-        binds: matching.binds,
-        ranked: matching.ranked,
-    })
+    Some(matching)
 }
 
 fn matching(texts: &[Option<&str>]) -> Option<Matching> {
@@ -9006,6 +9196,211 @@ mod tests {
         }
     }
 
+    fn explained(library: &Library, sql: &str, binds: Vec<Value>) -> Vec<String> {
+        library
+            .inner
+            .read(|connection| {
+                let mut statement = connection
+                    .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                    .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                statement
+                    .query_map(params_from_iter(binds), |row| row.get::<_, String>(3))
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })
+            .expect("the planner answers for a seek it can prepare")
+    }
+
+    fn keys_held(library: &Library, terms: &[keyed::Term<'_>]) -> Vec<Vec<Value>> {
+        library
+            .inner
+            .read(|connection| {
+                let mut statement = connection
+                    .prepare(&keyed::key_read(terms).replace("WHERE tracks.id = ?", ""))
+                    .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                statement
+                    .query_map([], |row| {
+                        (0..terms.len())
+                            .map(|column| row.get::<_, Value>(column))
+                            .collect::<rusqlite::Result<Vec<_>>>()
+                    })
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })
+            .expect("every row's key is read")
+    }
+
+    fn never_null(library: &Library) -> Vec<String> {
+        library
+            .inner
+            .read(|connection| {
+                let mut statement = connection
+                    .prepare("SELECT name FROM pragma_table_xinfo('tracks') WHERE \"notnull\"")
+                    .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })
+            .expect("the columns are read")
+            .into_iter()
+            .map(|column| format!("(tracks.{column}) IS NULL"))
+            .collect()
+    }
+
+    #[test]
+    fn every_seek_past_a_key_is_read_off_the_orders_index_either_way_round() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        tied_and_unheld(&library);
+        let answered_before_reading = never_null(&library);
+
+        for sort in SortOrder::HELD_BY_AN_INDEX {
+            for reading in Direction::ALL {
+                let query = TrackQuery {
+                    sort,
+                    reading,
+                    ..TrackQuery::default()
+                };
+                let matching = matching_tracks(&query, None, MusicFilters::default())
+                    .expect("an unnarrowed listing is always matched");
+                let order = order_by(sort, reading, false);
+                let terms = keyed::terms(order);
+                for key in keys_held(&library, &terms) {
+                    for seek in keyed::seeks(&terms, &key) {
+                        if seek
+                            .conditions
+                            .iter()
+                            .any(|condition| answered_before_reading.contains(condition))
+                        {
+                            continue;
+                        }
+                        let said = format!("{sort:?} read {reading:?} past {:?}", seek.conditions);
+                        let (sql, binds) = sought(&matching, seek, Some(PAGED_BY));
+                        let steps = explained(&library, &sql, binds);
+                        assert!(
+                            !steps.iter().any(|step| step.contains(A_TEMPORARY_SORT)),
+                            "{said} sorts before the limit lands: {steps:?}"
+                        );
+                        assert!(
+                            steps.iter().any(|step| step.contains("USING INDEX")
+                                || step.contains("USING INTEGER PRIMARY KEY")
+                                || step.contains("USING ROWID")),
+                            "{said} walks the table rather than seeking: {steps:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    const PAGED_BY: usize = 3;
+
+    fn tied_and_unheld(library: &Library) {
+        run(
+            library,
+            "INSERT INTO roots (id, path) VALUES (1, '/music');
+             INSERT INTO albums (id, title) VALUES (1, 'One'), (2, 'Two');
+             INSERT INTO tracks (root_id, path, title, artist, album_id, disc_number, track_number,
+                                 duration, sample_rate, channels, sample_format, codec, file_size,
+                                 modified, added, seen, plays, played, favourite, hidden)
+             VALUES
+                 (1, '/music/01', 'Song', 'Band', 1, 1, 1, 100, 44100, 2, 1, 1, 0, 0, 5, 0, 2, 9, NULL, 0),
+                 (1, '/music/02', 'song', 'band', 1, 1, 1, 100, 44100, 2, 1, 1, 0, 0, 5, 0, 2, 9, 3, 0),
+                 (1, '/music/03', 'Song', NULL, 1, 1, NULL, NULL, 96000, 2, 2, 1, 0, 0, 5, 0, 0, NULL, NULL, 0),
+                 (1, '/music/04', 'Other', 'Band', 2, NULL, 2, 300, 44100, 2, 1, 7, 0, 0, 7, 0, 2, 4, 3, 0),
+                 (1, '/music/05', 'Other', 'Band', NULL, NULL, NULL, 300, 44100, 2, 1, 7, 0, 0, 7, 0, 0, NULL, NULL, 0),
+                 (1, '/music/06', 'Alone', 'Solo', NULL, NULL, NULL, NULL, 48000, 2, 1, 1, 0, 0, 1, 0, 5, 1, NULL, 0),
+                 (1, '/music/07', 'Hidden', 'Solo', 2, 1, 3, 200, 44100, 2, 1, 1, 0, 0, 1, 0, 0, NULL, NULL, 1),
+                 (1, '/music/08', 'Song', 'Band', 2, 1, 1, 100, 44100, 2, 1, 1, 0, 0, 5, 0, 2, 9, NULL, 0),
+                 (1, '/music/09', 'Late', NULL, 2, 2, 1, 250, 44100, 2, 1, 1, 0, 0, 9, 0, 1, 2, 1, 0),
+                 (1, '/music/10', 'late', NULL, 2, 2, 1, 250, 44100, 2, 1, 1, 0, 0, 9, 0, 1, 2, 1, 0),
+                 (1, '/music/11', 'Copy', 'Band', 1, 1, 1, 100, 44100, 2, 1, 1, 0, 0, 5, 0, 2, 9, NULL, 0);
+             UPDATE tracks SET alternative_of = 1 WHERE path = '/music/11';",
+        );
+    }
+
+    fn ids(tracks: &[Track]) -> Vec<TrackId> {
+        tracks.iter().map(|track| track.id).collect()
+    }
+
+    fn paged_by_key(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
+        let mut held = ids(&library.tracks(&TrackQuery {
+            limit: Some(PAGED_BY),
+            ..query.clone()
+        })?);
+        while let Some(last) = held.last().copied() {
+            let page = library.tracks_from(
+                &TrackQuery {
+                    limit: Some(PAGED_BY + 1),
+                    offset: held.len() - 1,
+                    ..query.clone()
+                },
+                last,
+            )?;
+            let mut page = ids(&page).into_iter();
+            assert_eq!(
+                page.next(),
+                Some(last),
+                "a page begins on the row it was read from"
+            );
+            let after: Vec<TrackId> = page.collect();
+            if after.is_empty() {
+                break;
+            }
+            held.extend(after);
+        }
+        Ok(held)
+    }
+
+    #[test]
+    fn paging_by_the_last_key_reads_every_row_once_in_the_order_read_whole() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        tied_and_unheld(&library);
+
+        for sort in SortOrder::ALL {
+            for reading in Direction::ALL {
+                for text in [None, Some("plays:>0")] {
+                    let query = TrackQuery {
+                        sort,
+                        reading,
+                        text: text.map(str::to_owned),
+                        ..TrackQuery::default()
+                    };
+                    let whole = ids(&library.tracks(&query)?);
+
+                    assert!(whole.len() > PAGED_BY, "{sort:?} reads more than a page");
+                    assert_eq!(
+                        paged_by_key(&library, &query)?,
+                        whole,
+                        "{sort:?} read {reading:?} for {text:?} paged by its last key"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_page_from_a_row_the_catalog_no_longer_holds_is_empty() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        tied_and_unheld(&library);
+        let gone = TrackId::new(999).expect("an id");
+
+        assert!(
+            library
+                .tracks_from(
+                    &TrackQuery {
+                        sort: SortOrder::Title,
+                        limit: Some(PAGED_BY),
+                        ..TrackQuery::default()
+                    },
+                    gone,
+                )?
+                .is_empty()
+        );
+        Ok(())
+    }
+
     #[test]
     fn every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie() {
         for ranked in [false, true] {
@@ -9427,6 +9822,75 @@ mod tests {
             "a write that moved a name left the vocabulary that was read before it standing"
         );
         assert_eq!(suggested(&library, "fearliss"), Some("Fearless".to_owned()));
+    }
+
+    #[test]
+    fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> Result<()> {
+        let library = Library::open_in_memory()?;
+        titled(&library, "Echoes");
+        titled(&library, "Time");
+        let written = |sql: &str| {
+            library
+                .inner
+                .writer
+                .lock()
+                .execute(sql, [])
+                .expect("the catalog takes the write");
+        };
+        let whole = TrackQuery::default();
+        let most_played = TrackQuery {
+            sort: SortOrder::Plays,
+            reading: Direction::Descending,
+            limit: Some(1),
+            ..TrackQuery::default()
+        };
+        let kept = |library: &Library| {
+            library
+                .inner
+                .measured
+                .lock()
+                .as_ref()
+                .map_or(0, |kept| kept.by_query.len())
+        };
+        let rows = library.rows_stamp();
+        let suggested = library.suggestions()?;
+
+        library.measured(&whole)?;
+        library.measured(&most_played)?;
+        let measured = kept(&library);
+
+        written("UPDATE tracks SET seen = 7, asked = 1, asks = 1");
+        written(
+            "UPDATE tracks SET plays = plays + 1, played = 1, favourite = 1, title = title
+             WHERE title = 'Time'",
+        );
+        assert!(
+            rows.still_holds_at(library.rows_stamp()),
+            "a counted play or a row seen again by a scan moved the rows stamp"
+        );
+        assert_eq!(library.measured(&whole)?.rows, 2);
+        assert_eq!(
+            kept(&library),
+            measured,
+            "the whole listing was counted again"
+        );
+        library.measured(&most_played)?;
+        assert_eq!(
+            kept(&library),
+            measured + 1,
+            "the most played was kept across a play that may have reordered it"
+        );
+        assert!(
+            !Arc::ptr_eq(&suggested, &library.suggestions()?),
+            "the lists read from listening were kept across a play"
+        );
+
+        written("UPDATE tracks SET duration = 44100 WHERE title = 'Time'");
+        assert!(
+            !rows.still_holds_at(library.rows_stamp()),
+            "a length written left the rows stamp standing"
+        );
+        Ok(())
     }
 
     #[test]
