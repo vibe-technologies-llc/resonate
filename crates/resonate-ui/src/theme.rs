@@ -687,28 +687,99 @@ static WORN: LazyLock<RwLock<Worn>> =
     LazyLock::new(|| RwLock::new(Worn::of(Appearance::DEFAULT, DesktopLook::default())));
 
 #[cfg(test)]
-pub(crate) static WEARING: parking_lot::RecursiveRwLock<()> = parking_lot::RecursiveRwLock::new(());
+mod wearing {
+    use std::cell::Cell;
+
+    use parking_lot::{RecursiveRwLock, RecursiveRwLockReadGuard, RecursiveRwLockWriteGuard};
+
+    static WEARING: RecursiveRwLock<()> = RecursiveRwLock::new(());
+
+    thread_local! {
+        static HELD_HERE: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn held(by: isize) {
+        HELD_HERE.with(|held| held.set(held.get().saturating_add_signed(by)));
+    }
+
+    pub(crate) fn is_held_here() -> bool {
+        HELD_HERE.with(|held| held.get() > 0)
+    }
+
+    pub(crate) struct Alongside {
+        _guard: RecursiveRwLockReadGuard<'static, ()>,
+    }
+
+    pub(crate) struct Alone {
+        _guard: RecursiveRwLockWriteGuard<'static, ()>,
+    }
+
+    pub(crate) fn alongside() -> Alongside {
+        let guard = WEARING.read();
+        held(1);
+        Alongside { _guard: guard }
+    }
+
+    pub(crate) fn alone() -> Alone {
+        let guard = WEARING.write();
+        held(1);
+        Alone { _guard: guard }
+    }
+
+    impl Drop for Alongside {
+        fn drop(&mut self) {
+            held(-1);
+        }
+    }
+
+    impl Drop for Alone {
+        fn drop(&mut self) {
+            held(-1);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) use wearing::{Alone, Alongside, alone, alongside};
+
+fn worn_read() -> parking_lot::RwLockReadGuard<'static, Worn> {
+    #[cfg(test)]
+    assert!(
+        wearing::is_held_here(),
+        "a test reading the theme holds theme::WEARING through Driven, theme::alongside or theme::alone"
+    );
+    WORN.read()
+}
+
+fn worn_write() -> parking_lot::RwLockWriteGuard<'static, Worn> {
+    #[cfg(test)]
+    assert!(
+        wearing::is_held_here(),
+        "a test wearing a theme holds theme::WEARING through Driven, theme::alongside or theme::alone"
+    );
+    WORN.write()
+}
 
 pub fn wear(chosen: Appearance) {
-    let mut worn = WORN.write();
+    let mut worn = worn_write();
     *worn = Worn::of(chosen, worn.look);
 }
 
 pub fn hear_the_desktop(look: DesktopLook) {
-    let mut worn = WORN.write();
+    let mut worn = worn_write();
     *worn = Worn::of(worn.chosen, look);
 }
 
 pub fn worn() -> Appearance {
-    WORN.read().appearance
+    worn_read().appearance
 }
 
 pub fn chosen() -> Appearance {
-    WORN.read().chosen
+    worn_read().chosen
 }
 
 pub(crate) fn ground() -> Ground {
-    WORN.read().appearance.theme.ground()
+    worn_read().appearance.theme.ground()
 }
 
 pub(crate) fn shadow(strength: f32) -> gpui::Hsla {
@@ -739,47 +810,47 @@ pub(crate) fn sample(appearance: Appearance) -> Sample {
 }
 
 pub(crate) fn background() -> u32 {
-    WORN.read().flavour.background
+    worn_read().flavour.background
 }
 
 pub(crate) fn surface() -> u32 {
-    WORN.read().flavour.surface
+    worn_read().flavour.surface
 }
 
 pub(crate) fn raised() -> u32 {
-    WORN.read().flavour.raised
+    worn_read().flavour.raised
 }
 
 pub(crate) fn hover() -> u32 {
-    WORN.read().flavour.hover
+    worn_read().flavour.hover
 }
 
 pub(crate) fn border() -> u32 {
-    WORN.read().flavour.border
+    worn_read().flavour.border
 }
 
 pub(crate) fn outline() -> u32 {
-    WORN.read().flavour.outline
+    worn_read().flavour.outline
 }
 
 pub(crate) fn text() -> u32 {
-    WORN.read().flavour.text
+    worn_read().flavour.text
 }
 
 pub(crate) fn muted() -> u32 {
-    WORN.read().flavour.muted
+    worn_read().flavour.muted
 }
 
 pub(crate) fn faint() -> u32 {
-    WORN.read().flavour.faint
+    worn_read().flavour.faint
 }
 
 pub(crate) fn accent() -> u32 {
-    WORN.read().accent
+    worn_read().accent
 }
 
 pub(crate) fn beside_the_accent(nth: usize) -> u32 {
-    let worn = WORN.read();
+    let worn = worn_read();
     let others: Vec<u32> = Accent::ALL
         .into_iter()
         .map(|other| worn.flavour.accents.pick(other))
@@ -792,7 +863,7 @@ pub(crate) fn beside_the_accent(nth: usize) -> u32 {
 }
 
 pub(crate) fn ink_over(colour: u32) -> u32 {
-    let worn = WORN.read();
+    let worn = worn_read();
 
     reads_better_on(colour, worn.flavour.pitch, worn.flavour.paper)
 }
@@ -802,7 +873,7 @@ pub(crate) fn accent_ink() -> u32 {
 }
 
 pub(crate) fn soft_edge() -> u32 {
-    soft_edge_of(WORN.read().flavour)
+    soft_edge_of(worn_read().flavour)
 }
 
 fn soft_edge_of(flavour: &Flavour) -> u32 {
@@ -814,7 +885,7 @@ fn soft_edge_of(flavour: &Flavour) -> u32 {
 }
 
 pub(crate) fn pressed() -> u32 {
-    pressed_of(WORN.read().flavour)
+    pressed_of(worn_read().flavour)
 }
 
 fn pressed_of(flavour: &Flavour) -> u32 {
@@ -846,13 +917,13 @@ const TEXT_READS_ON_A_PRESS: f32 = 4.5;
 pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
 
 pub(crate) fn focus_ring() -> u32 {
-    let worn = WORN.read();
+    let worn = worn_read();
 
     ring_of(worn.flavour, worn.accent)
 }
 
 pub(crate) fn focus_ring_over(fill: u32) -> u32 {
-    let worn = WORN.read();
+    let worn = worn_read();
     let ring = ring_of(worn.flavour, worn.accent);
 
     [
@@ -889,11 +960,11 @@ pub(crate) fn selection() -> u32 {
 }
 
 pub(crate) fn scrim() -> u32 {
-    WORN.read().flavour.scrim
+    worn_read().flavour.scrim
 }
 
 pub(crate) fn bit_perfect() -> u32 {
-    WORN.read().flavour.accents.green
+    worn_read().flavour.accents.green
 }
 
 pub(crate) fn lossless() -> u32 {
@@ -905,11 +976,11 @@ pub(crate) fn done() -> u32 {
 }
 
 pub(crate) fn repacked() -> u32 {
-    WORN.read().flavour.accents.blue
+    worn_read().flavour.accents.blue
 }
 
 pub(crate) fn dithered() -> u32 {
-    WORN.read().flavour.accents.amber
+    worn_read().flavour.accents.amber
 }
 
 pub(crate) fn converted() -> u32 {
@@ -921,15 +992,15 @@ pub(crate) fn lossy() -> u32 {
 }
 
 pub(crate) fn suspect() -> u32 {
-    WORN.read().flavour.accents.peach
+    worn_read().flavour.accents.peach
 }
 
 pub(crate) fn failure() -> u32 {
-    WORN.read().flavour.accents.red
+    worn_read().flavour.accents.red
 }
 
 pub(crate) fn close_hover() -> u32 {
-    WORN.read().flavour.alarm
+    worn_read().flavour.alarm
 }
 
 fn reads_better_on(over: u32, pitch: u32, paper: u32) -> u32 {
@@ -1121,7 +1192,7 @@ pub const MAGNIFIED_COVER_SHARE: f32 = 0.7;
 pub const MAGNIFIED_COVER_MAX: f32 = 720.0;
 
 fn scaled(base: f32) -> f32 {
-    base * WORN.read().scale
+    base * worn_read().scale
 }
 
 const MARK_MARGIN_AT_LEAST: f32 = 3.0;
@@ -1617,7 +1688,7 @@ mod tests {
 
     #[test]
     fn what_is_worn_is_what_was_asked_for() {
-        let _worn = WEARING.write();
+        let _worn = alone();
 
         for appearance in every_appearance() {
             wear(appearance);
@@ -1635,7 +1706,7 @@ mod tests {
 
     #[test]
     fn a_larger_text_size_draws_every_measure_larger() {
-        let _worn = WEARING.write();
+        let _worn = alone();
 
         let read = |size: TextSize| {
             wear(Appearance {
@@ -1993,7 +2064,7 @@ mod tests {
 
     #[test]
     fn a_shadow_is_softer_on_a_light_ground_than_on_a_dark_one() {
-        let _worn = WEARING.write();
+        let _worn = alone();
 
         wear(Appearance::DEFAULT);
         let on_dark = shadow(0.5).a;
@@ -2011,7 +2082,7 @@ mod tests {
 
     #[test]
     fn the_desktop_light_wears_the_counterpart_and_its_scale_the_nearest_size() {
-        let _worn = WEARING.write();
+        let _worn = alone();
 
         wear(Appearance::DEFAULT);
         hear_the_desktop(DesktopLook {
@@ -2031,7 +2102,7 @@ mod tests {
 
     #[test]
     fn the_desktop_is_not_heard_where_the_listener_wears_a_palette_and_size_of_their_own() {
-        let _worn = WEARING.write();
+        let _worn = alone();
 
         wear(Appearance {
             theme: Theme::Nord,
@@ -2056,7 +2127,7 @@ mod tests {
 
     #[test]
     fn a_focus_ring_over_a_fill_is_whichever_ink_stands_off_it() {
-        let _worn = WEARING.write();
+        let _worn = alone();
 
         for appearance in every_appearance() {
             wear(appearance);

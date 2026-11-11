@@ -650,6 +650,8 @@ mod tests {
 
     #[test]
     fn a_narrowing_listing_gives_up_what_was_heard_then_the_format_before_the_names() {
+        let _worn = crate::theme::alongside();
+
         let every = Shown::EVERY_COLUMN.width(true, browser::TRACK_CONTROLS);
         let without_heard = Shown::WITHOUT_HEARD.width(true, browser::TRACK_CONTROLS);
 
@@ -667,6 +669,8 @@ mod tests {
 
     #[test]
     fn the_narrowest_window_draws_the_names_alone() {
+        let _worn = crate::theme::alongside();
+
         let pane = theme::WINDOW_MIN_WIDTH - theme::sidebar_width();
 
         assert_eq!(fitted_in(pane), Shown::NAMES_ALONE);

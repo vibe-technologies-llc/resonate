@@ -237,14 +237,14 @@ pub(crate) struct Driven {
 }
 
 struct Wearers {
-    _alongside: Option<parking_lot::RecursiveRwLockReadGuard<'static, ()>>,
-    _alone: Option<parking_lot::RecursiveRwLockWriteGuard<'static, ()>>,
+    _alongside: Option<theme::Alongside>,
+    _alone: Option<theme::Alone>,
 }
 
 impl Wearers {
     fn alongside() -> Self {
         Self {
-            _alongside: Some(theme::WEARING.read()),
+            _alongside: Some(theme::alongside()),
             _alone: None,
         }
     }
@@ -252,7 +252,7 @@ impl Wearers {
     fn alone() -> Self {
         Self {
             _alongside: None,
-            _alone: Some(theme::WEARING.write()),
+            _alone: Some(theme::alone()),
         }
     }
 }

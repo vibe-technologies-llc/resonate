@@ -1274,6 +1274,8 @@ mod tests {
 
     #[test]
     fn a_menu_beneath_stands_beside_its_row_on_whichever_side_has_room() {
+        let _worn = crate::theme::alongside();
+
         let row = Bounds::new(point(px(100.0), px(50.0)), gpui::size(px(236.0), px(30.0)));
         let wide = gpui::size(px(1200.0), px(800.0));
         let narrow = gpui::size(px(500.0), px(800.0));

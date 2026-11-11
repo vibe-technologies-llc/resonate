@@ -1354,7 +1354,11 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   real engine and scan threads; `Driven::play` opens rows via `Command::Resume`, the first paused.
   **A `Driven` holds `theme::WEARING` shared for its life** (`Wearers`), and a theme test or a
   `Driven::wearing_alone` test holds it exclusively, since `theme::WORN` is one for the process and a
-  test wearing another palette or a text scale moves every row another test measures.
+  test wearing another palette or a text scale moves every row another test measures. **A test
+  reading a colour or a measure without a `Driven` holds it too**: `theme::alongside()` shared,
+  `theme::alone()` exclusive, each a guard counted on its thread, and every read or write of
+  `WORN` panics in a test build when its thread holds neither (`worn_read`, `worn_write`), so a
+  test that forgot fails at once rather than racing a theme test.
   **A `Driven` dropped closes its window, lets what was pending run and drops the globals**, so
   the engine it started ends with its test: gpui leaks a test's `App`, each kept an engine's ten
   threads and a `Drawer`'s two, and a Mac refuses a process its two thousandth thread (`macos.md`).

@@ -4405,6 +4405,8 @@ mod tests {
 
     #[test]
     fn the_cells_of_a_grid_fill_its_width_and_never_shrink_under_a_cover() {
+        let _worn = crate::theme::alongside();
+
         for width in [520.0_f32, 700.0, 861.0, 1_283.0, 1_921.0, 2_560.0] {
             let columns = columns_across(width) as f32;
             let side = side_across(width);
@@ -4426,6 +4428,8 @@ mod tests {
 
     #[test]
     fn one_cell_in_a_wide_pane_grows_no_further_than_its_picture_stays_sharp() {
+        let _worn = crate::theme::alongside();
+
         let narrow = theme::grid_cover() + GRID_PADDING;
 
         assert_eq!(columns_across(narrow), 1);

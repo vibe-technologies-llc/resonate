@@ -2788,6 +2788,8 @@ mod tests {
 
     #[test]
     fn a_channel_cut_deeper_than_the_rest_widens_the_plot_and_each_channel_has_an_ink_of_its_own() {
+        let _worn = crate::theme::alongside();
+
         let apart = [
             traced(TracedOn::Channel(0), &[0.0, 3.0]),
             traced(TracedOn::Channel(1), &[0.0, -18.0]),
