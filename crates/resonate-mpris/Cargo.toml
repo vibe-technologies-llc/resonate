@@ -26,10 +26,9 @@ resonate-apple.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 interprocess.workspace = true
-wasapi = "0.27.0"
+wasapi.workspace = true
 windows = {
-    version = "0.62.2",
-    default-features = false,
+    workspace = true,
     features = [
         "Data_Xml_Dom",
         "Foundation",

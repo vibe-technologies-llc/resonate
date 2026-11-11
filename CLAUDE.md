@@ -4,7 +4,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 
 | File | Scope | Covers |
 |---|---|---|
-| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
+| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep, the check that rules name code that exists |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language, adding one, the prose check |
 | `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
@@ -215,15 +215,16 @@ Invariants the layering protects (the rules files have the rest):
   the sideloadable IPA and its AltStore source (`release.md`).
 
 - `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets`:
-  the Windows build, cross-checked from Linux (`windows.md`); CI runs it natively in the `windows` job.
+  the Windows build, cross-checked from Linux (`windows.md`); CI lints it natively in the `windows` job
+  with `cargo clippy ... -- -D warnings` and the headless and per-feature lines of the Linux job.
   The same with `--target aarch64-pc-windows-msvc` is Windows on ARM64 (`rustup target add` first;
-  `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job checks it.
+  `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job lints it.
 
 - `RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo clippy --target aarch64-apple-darwin --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets -- -D warnings`:
   the macOS build, type-checked from Linux against the SDK `xtool setup` built
   (`~/.swiftpm/swift-sdks/darwin.artifactbundle/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk`),
   after `rustup target add aarch64-apple-darwin`; gpui's shader source is written on a Mac alone, so an
-  empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI builds and
+  empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI lints (the headless and per-feature lines too) and
   tests it natively in the `macos` job. `packaging/macos/build.sh` builds the disk image on a Mac.
 
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the

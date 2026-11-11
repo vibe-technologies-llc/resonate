@@ -463,7 +463,7 @@ weigh; the ledger still passes it on in its snapshot.
   whose peaks are not already whole, never over peaks held; a judgement or length this build cannot
   read is settled and written nowhere, and a copy not yet studied takes nothing (the study is
   listed first, so it lands first; a phone that missed it measures its own peaks alone). A study
-  landed without peaks reads as unmeasured to `studies_without_bands` until they arrive or the pass
+  landed without peaks reads as unmeasured to `bands_to_measure` until they arrive or the pass
   measures them (`the_peaks_of_a_study_land_on_every_studied_copy_of_the_same_file_and_never_over_peaks_held`,
   `peaks_of_another_encode_judgement_or_layout_are_written_nowhere`,
   `the_peaks_a_phone_kept_are_listed_beside_its_study_with_the_file_it_measured`).
@@ -968,7 +968,7 @@ name taken). Held by `the_eras_genres_artists_and_sounds_of_the_catalog_are_offe
 
 ## Resonate Wrapped
 
-`MobilePlayer::wrapped(year, time_zone, utc_offset_seconds)` answers a `WrappedYear` (the year, every year heard, `WrappedSlide`s, the summary) or nothing where no listen was ever kept; `resonate-mobile`'s `wrapped.rs` fills `resonate_core::wrapped::YearReview` from the document catalog (`library.md`), and the screens draw the slides as they come. The catalog's twenty-seventh step indexes `listens(began)`, since a year is read by time alone. Its thirty-first step, `A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD`, made `wrapped_years` (`library.md`'s *A year that is over is frozen*): `Catalog::wrapped` answers a kept year's review, keeps a finished year that holds something the first time it is shown, and lists kept years among those heard, the same rules as the desktop's (`a_year_over_is_frozen_when_first_shown_and_a_later_listen_or_deleted_song_leaves_it_as_it_was`, `a_year_still_running_is_read_afresh_and_a_year_with_nothing_in_it_is_never_kept`, `a_year_kept_by_a_later_build_is_shown_afresh_and_left_and_a_damaged_one_is_kept_again`, `a_catalog_of_before_years_were_kept_keeps_its_listens_and_gains_an_empty_table`). Neither phone changes: a front end still asks for a year and draws the slides.
+`MobilePlayer::wrapped(year, time_zone, utc_offset_seconds)` answers a `WrappedYear` (the year, every year heard, `WrappedSlide`s, the summary) or nothing where no listen was ever kept; `resonate-mobile`'s `wrapped.rs` fills `resonate_core::wrapped::YearReview` from the document catalog (`library.md`), and the screens draw the slides as they come. The catalog's twenty-seventh step indexes `listens(began)`, since a year is read by time alone. Its thirty-second step, `A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD`, made `wrapped_years` (`library.md`'s *A year that is over is frozen*): `Catalog::wrapped` answers a kept year's review, keeps a finished year that holds something the first time it is shown, and lists kept years among those heard, the same rules as the desktop's (`a_year_over_is_frozen_when_first_shown_and_a_later_listen_or_deleted_song_leaves_it_as_it_was`, `a_year_still_running_is_read_afresh_and_a_year_with_nothing_in_it_is_never_kept`, `a_year_kept_by_a_later_build_is_shown_afresh_and_left_and_a_damaged_one_is_kept_again`, `a_catalog_of_before_years_were_kept_keeps_its_listens_and_gains_an_empty_table`). Neither phone changes: a front end still asks for a year and draws the slides.
 
 A share lookup propagates service failures to the caller instead of returning an empty share after logging them.
 

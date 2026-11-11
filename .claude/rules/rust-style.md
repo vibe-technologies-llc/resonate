@@ -46,3 +46,15 @@ the first line of a `.swift` file (SwiftPM reads it). Generated and fetched fold
 ## A file another run may sweep
 
 **A staging file, journal or whole copy another run may take away is held under `resonate_core::writer::Held` for its whole life, and a sweeper asks `writer::writer_of`.** A held `flock` means a living writer in any pid namespace; a `/proc` pid cannot, because Flatpak's sandbox has pids of its own. On Windows a byte-range lock is mandatory, so it would refuse the writer's own reopenings by path (the vault's staging, organise, a copy read back): there the open handle is the hold, found by opening with nothing shared but deletion (`holding::looked_at`, a sharing violation meaning a living writer), and no lock is taken. A file nobody holds is gone once untouched for `UNHELD_AND_UNTOUCHED_FOR` (10 s, covering a writer between creating and locking), sooner where its stamped pid has no `/proc` entry; where the filesystem refuses locks the stamp alone decides. `Held::made` creates a fresh name; `Held::taken_over` reuses a fixed one, refusing `WouldBlock` while a living writer holds it. The pid stays in a name only to keep names apart and for that fallback. Users: the tag writer's staged copies, undo journals and whole copies, beside the track or in the spool (`resonate-codec`), the vault's staging, organise's and a delivery's staged files, organise's cue-sheet rewrite and a playlist export's stage, a drop-in's `.resonate-part` and the analysis cache's `.staged` writes (`a_held_file_is_living_whatever_process_its_stamp_names`, `an_unheld_file_left_alone_is_gone_though_its_stamp_names_a_running_process`).
+
+## Rules name code that exists
+
+**A test refuses a rule that names code that is gone**: `every_function_a_rule_names_is_written_somewhere_in_the_source`
+(`crates/resonate-words-build/tests/rules.rs`) reads every backticked snake_case name in
+`.claude/rules/*.md` (a bare name, `name()` or `Type::name`) and fails when no source under `crates`,
+`fuzz`, `soxr-comparison`, `android`, `ios` or `.github` holds it. A name that belongs to another
+program, a protocol or a crate's feature (`pw_stream_destroy`, `payload_utf8`, `rwh_06`) sits in the
+test's two lists, and a listed name no rule uses fails too. The phones' step numbers are held by
+`every_step_the_rules_number_stands_where_the_chain_puts_it` (`resonate-mobile`'s
+`catalog_steps_tests.rs`): a rule citing ``Step N (`NAME`)`` or "the Nth step, `NAME`" must put `NAME`
+at the position `MIGRATIONS` gives it, `V1` being the first.

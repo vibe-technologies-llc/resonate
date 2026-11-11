@@ -1733,7 +1733,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   background executor (`Serves::expand`, a failure a toast naming the `Failure`), and rows are
   `QueueItem::whole` with ids minted beside the queue's (`play_served`, `queue_served`). The server
   is only ever asked for what the pane shows: nothing is read until the pane is opened
-  (`a_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`,
+  (`the_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`,
   `an_artist_opens_to_its_albums_and_an_album_to_its_songs_and_a_song_plays_the_album_from_it`).
 - **A served song's cover is its service's.** A cover cell for a row whose location any service
   names (`ServerModel::names`) draws `ServerModel::cover` from the service that names it (keyed by
@@ -1913,7 +1913,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
     `want_found`, landing its release and wanting the row on bg, mark greyed meanwhile.
     `restate_what_was_found` passes over a found song whose want holds a track the held listing draws
     (`is_listed_as_held`), so it is listed once, as the held track, once the catalog's next read carries
-    it (`a_found_song_that_landed_is_listed_once_as_the_held_track`); until then, delivered or not, it
+    it (`a_found_song_pressed_lands_once_as_the_held_track_and_plays`); until then, delivered or not, it
     stays listed as found
     (`a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_again`). **A found song's whole row is that
     press** (`found_row`, `words::browser::fetch_found_hint`); the mark's own press finds the recording already

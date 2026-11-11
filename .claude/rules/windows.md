@@ -38,9 +38,10 @@ paths:
 
 The whole workspace but the phones' boundary and PipeWire builds for `x86_64-pc-windows-msvc`
 (`cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude
-resonate-bindgen --exclude resonate-pipewire --all-targets` on Linux, the `windows` CI job on a hosted runner)
+resonate-bindgen --exclude resonate-pipewire --all-targets` on Linux, the `windows` CI job on a hosted runner,
+which lints it with clippy, the headless workspace and each feature of the binary as Linux does)
 and for `aarch64-pc-windows-msvc` (the same command with that target; the `windows-arm64` CI job
-checks it on the hosted x64 runner). No crate has an x86-only path: the DSP's vector code is
+lints it on the hosted x64 runner). No crate has an x86-only path: the DSP's vector code is
 portable Rust the compiler vectorises, so ARM64 needs no fallback. `ring`, which `rustls` brings
 in, assembles its ARM64 Windows code with `clang` whatever `CC` says, so a build for that target
 needs clang on `PATH` (the hosted Windows image has LLVM); under `cargo xwin` on Linux the
