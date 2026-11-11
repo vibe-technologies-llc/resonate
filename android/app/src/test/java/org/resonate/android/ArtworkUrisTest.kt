@@ -1,7 +1,9 @@
 package org.resonate.android
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ArtworkUrisTest {
@@ -24,5 +26,16 @@ class ArtworkUrisTest {
     @Test
     fun theAuthorityFollowsThePackage() {
         assertEquals("org.resonate.android.art", authority)
+    }
+
+    @Test
+    fun onlyTheAppTheBrowsingHostsAndAMediaControllerMayReadACover() {
+        assertTrue(ArtworkReaders.mayRead(true, emptyList(), false))
+        assertTrue(
+            ArtworkReaders.mayRead(false, listOf("com.google.android.projection.gearhead"), false)
+        )
+        assertTrue(ArtworkReaders.mayRead(false, listOf("com.android.systemui"), true))
+        assertFalse(ArtworkReaders.mayRead(false, listOf("org.stranger.app"), false))
+        assertFalse(ArtworkReaders.mayRead(false, emptyList(), false))
     }
 }

@@ -124,7 +124,11 @@ notification and controllers the platform trusts (`ControllerInfo.isTrusted`) ma
 (`TrustedControllers`); a controller's add, move and remove become engine queue edits
 (`QueueEdits`: an append then moves, a range as moves of the rows it passes, a removal by queue id).
 A headset, Bluetooth or lock-screen play reaches a service that is gone through the manifest's
-`MediaButtonReceiver`, which starts it; `onPlaybackResumption` waits at most 8 s for the engine, the
+`MediaButtonReceiver`, which starts it; a `setMediaItems` that names the queue the engine already holds
+(`namesTheQueueHeld`, every item's media id in order, a served song's being its uri) only jumps to
+its row and place and reloads nothing, so a queue of library and served songs resumed from a headset
+loses no row (`ResumedQueueTest`), and a controller's `seekTo(index, ms)` is one boundary call
+(`jump_to_at`) that seeks at the rate of the row it lands on; `onPlaybackResumption` waits at most 8 s for the engine, the
 queue it resumed paused (`resume_saved`) and its first snapshot, and answers that queue at its row and
 position (the engine's close clears both, so a service made again in a living process never answers the
 last session's queue at row 0), so the key
@@ -143,7 +147,9 @@ or `MEDIA_PLAY_FROM_SEARCH` on `MainActivity`) plays `search_library`'s first 10
 Assistant, the car-assistant and the Auto simulator connect as controllers beside the trusted ones
 (`BROWSING_HOSTS`), and `automotive_app_desc.xml` declares the media app
 (`BrowseIdsTest`, `LibraryBrowseTest`). Every browse row wears a cover by `content://` URI, never bytes
-(a Binder payload of 500 rows would be too large): `ArtworkProvider` (exported, read-only, authority
+(a Binder payload of 500 rows would be too large): `ArtworkProvider` (exported, read-only, answering only the app itself, `BROWSING_HOSTS` and a caller
+holding `MEDIA_CONTENT_CONTROL`, `ArtworkReaders`, by the calling uid, so no other installed app reads
+a cover, authority
 `<applicationId>.art`, `ArtworkUris`) answers `/track/<id>` with the JPEG `artworkJpeg` encodes at
 `ArtworkSizes.BROWSE_EDGE` through a pipe fed off the main thread, and a folder wears the cover of the
 track the catalog names for it (`AlbumHit.artworkTrack`, `ArtistHit.artworkTrack`, a playlist's first
@@ -175,12 +181,19 @@ with the full message wrapped above the bottom edge. It never replaces the forma
 the elapsed and remaining times, where a waiting sentence was clipped and stayed until the route
 returned. Dismissing or timing out a notice leaves the engine's wait and recovery alone.
 `LibraryRepository.place` is the position the poll last read with the time it was read at; the player's position (`PlayerViewModel.position`: scrubber, mini-player progress) runs from it every 50 ms while the transport plays, clamped to the duration, and is corrected by the next poll at a seek, a skip or a pause. The scrubber's draft and drag are keyed on the playing queue row and a release commits only for the song it began on.
-The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
+The poll runs at the pace `PollPace` gives: 250 ms while the transport plays or loads, an analysis, a
+download or a scan runs, or for two seconds after any `request` (so a press is answered at once);
+once a second at rest in the foreground; every two seconds in the background. A request, a
+foreground change and the boundary's `watch_player` (registered once the engine opens, told of a track
+started or finished, an output change, a failure or a wait) wake it early, as on iOS. The poll catches a failing tick (a snapshot, queue read, save or listening count refused by
 a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
 ends for any other reason clears `started`, so the next retain reopens the engine. The queue is read
 only when `Snapshot.queue_revision` moved, or `catalog_revision` moved and three seconds have passed
 since the last read (`QueueReads`, as iOS's `catalogRereadAfter`), since every enrichment step, scan
 upsert and favourite moves the catalog.
+**A queued action runs only against the engine still open** (`OpenEngine`): the worker takes the
+engine before `access`, and the close takes `access` first and marks the engine closing inside it, so
+an action that lost the race is dropped instead of reaching a closed native object.
 Native shutdown stops sync, then the enrichment pass
 (leaving its mark to carry on), analysis, downloads and the shared online client before releasing
 playback; a failed final listen or save is answered after the player has stopped, never in its place. Long analysis, enrichment and HTTP work run on
@@ -208,7 +221,9 @@ callback owns the engine's source, so a refused open could not be retried) and o
 where it came back exclusive in that spec, else marks the route's exclusive offer refused (offered
 no longer, announced, not probed again) and opens mixed; mixed opens shared and lets Oboe convert
 (`SampleRateConversionQuality::Best`), and gives back any bit-perfect preference
-(`clearPreferredMixerAttributes`). The callback is typed by the spec (`f32`, `i16`, `i32`, mono or
+(`clearPreferredMixerAttributes`), as the stream that held it closes (`Routing::closed`, only for the
+stream still current, so a late close of an earlier stream leaves the next one's preference) and as
+the backend shuts down. The callback is typed by the spec (`f32`, `i16`, `i32`, mono or
 stereo); 24-bit packed has no Oboe-rs type, so it is never offered. `output_stream()` says what is
 open (`OutputStream`), which the page shows as *Current stream* (`outputStreamWords`,
 `outputPathWords`) under *This output takes* (the route's `AudioDeviceInfo` rates, depths and channel
@@ -431,7 +446,10 @@ those found, read every two seconds while the switch is on and the sheet open. E
 host) and, on one, *Play on this phone*; the row names the renderer before the device
 (`ZonePlan.heardOn`). The *Audio output* page takes its zone off a renderer before binding the device.
 Kotlin holds a `WifiManager.MulticastLock` (`resonate-renderers`, apart from sync's) exactly while the
-boundary searches, released at `stop`. Below the switch, *Add a renderer by address*
+boundary searches, released at `stop`. A song played in place holds a `WifiLock` (`StreamingWifi`,
+`resonate-streaming`, under `WAKE_LOCK`) while the transport plays or loads it, released at pause, stop
+and `handleRelease`, so power saving with the screen off does not starve a hi-res stream
+(`StreamingWifiTest`). Below the switch, *Add a renderer by address*
 (`RendererAddressDialog`) takes the address of a renderer's description and lists those added, each
 with *Remove*; `NetworkRenderers.add` and `forget` keep the boundary's list in the `renderers`
 preferences as `renderer-addresses` (a string set) and `begin` adds it again, so a renderer

@@ -826,6 +826,18 @@ reach the service the uri's scheme names. Each needs online (`OnlineOff`), the s
 (`every_service_set_is_offered_and_each_is_searched_and_played_from_its_own_uris`,
 `a_service_declined_as_hosted_is_not_served_and_a_service_no_longer_given_goes`).
 
+**A row whose catalog row is gone stays in the queue, and a saved row that does not read is passed
+over.** `queue()` reads through `tracks_held_at`, so a row whose document was deleted is listed as a
+`Track::gone` (its uri, its file name as the title, id 0) and every later row keeps its index;
+`resume_saved_in` skips a kept row whose uri does not read (a `resonate-displaced:` row organise left)
+and moves the kept place down by the rows it skipped before it
+(`a_queue_row_whose_catalog_row_is_gone_stays_listed_beside_the_rows_that_are_held`,
+`a_saved_row_whose_uri_does_not_read_is_passed_over_and_the_place_follows_the_song`). **`jump_to_at(index,
+ms)` jumps and seeks in one call**, converting at the target row's catalog rate
+(`a_jump_with_a_place_seeks_at_the_rate_of_the_row_it_lands_on`). **`shutdown` waits up to three
+seconds for a zone's last other holder** (`sole_holder`, the listening thread holds one a moment)
+before stopping the engine, so a service made at once never opens a second engine beside a running one.
+
 **A served row is not a document, but it is kept.** `Served::names` is the scheme alone; `queue()`
 and the snapshot's `current` give such a row a `Track` with id 0 made from what the browse returned
 (`served_first_page`, `served_songs`, `served_search` and `served_song_uris` remember the songs they

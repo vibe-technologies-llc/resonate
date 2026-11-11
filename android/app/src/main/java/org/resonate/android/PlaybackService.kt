@@ -40,14 +40,6 @@ private fun nextRepeat(mode: Int): Int =
 
 private const val RESUMPTION_WAITS_AT_MOST_MS = 8_000L
 
-private val BROWSING_HOSTS =
-    setOf(
-        "com.google.android.projection.gearhead",
-        "com.google.android.googlequicksearchbox",
-        "com.google.android.carassistant",
-        "com.google.android.autosimulator",
-    )
-
 @UnstableApi
 private class TrustedControllers(
     private val close: () -> Unit,

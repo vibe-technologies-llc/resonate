@@ -2,9 +2,13 @@ package org.resonate.android
 
 import android.content.ContentProvider
 import android.content.ContentValues
+import android.content.Context
 import android.database.Cursor
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Binder
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import java.io.FileNotFoundException
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +31,17 @@ object ArtworkUris {
             ?.toULongOrNull()
 }
 
+object ArtworkReaders {
+    const val MEDIA_CONTENT_CONTROL = "android.permission.MEDIA_CONTENT_CONTROL"
+
+    fun mayRead(
+        ownApp: Boolean,
+        packagesOfCaller: Collection<String>,
+        callerControlsMedia: Boolean,
+    ): Boolean =
+        ownApp || callerControlsMedia || packagesOfCaller.any { it in BROWSING_HOSTS }
+}
+
 class ArtworkProvider : ContentProvider() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -39,7 +54,9 @@ class ArtworkProvider : ContentProvider() {
         val track =
             ArtworkUris.trackOf(ArtworkUris.authority(context.packageName), uri.toString())
                 ?: throw FileNotFoundException(uri.toString())
-        if (mode != READ_ONLY) throw FileNotFoundException(uri.toString())
+        if (mode != READ_ONLY || !callerMayRead(context)) {
+            throw FileNotFoundException(uri.toString())
+        }
         val library = (context.applicationContext as ResonateApplication).library
         val (read, write) = ParcelFileDescriptor.createReliablePipe().let { it[0] to it[1] }
         scope.launch {
@@ -52,6 +69,17 @@ class ArtworkProvider : ContentProvider() {
             }
         }
         return read
+    }
+
+    private fun callerMayRead(context: Context): Boolean {
+        val uid = Binder.getCallingUid()
+        return ArtworkReaders.mayRead(
+            ownApp = uid == Process.myUid(),
+            packagesOfCaller = context.packageManager.getPackagesForUid(uid)?.toList().orEmpty(),
+            callerControlsMedia =
+                context.checkCallingPermission(ArtworkReaders.MEDIA_CONTENT_CONTROL) ==
+                    PackageManager.PERMISSION_GRANTED,
+        )
     }
 
     override fun query(
