@@ -36,6 +36,9 @@ are in [ROADMAP.md](ROADMAP.md).
   SQLite on the UI thread (`models.rs` `album_anywhere`)
 
 ## Startup and idle
+- [S · 0.8.1] The renderers' stream server polls its waiting request heads every 10 ms and its
+  listener every 100 ms while idle (`resonate-upnp` `serve.rs`); a loop woken by readiness (`poll`)
+  would not wake at all
 - [S · 0.8.1] The window waits up to `SINK_TIMEOUT` (2 s) on the first sink survey before it opens
   where a sink is chosen (`main.rs` `launch`, `confirm_sink`, `sinks_once_surveyed`), only to log a
   warning, though `audio.md` says the window opens without waiting on the graph

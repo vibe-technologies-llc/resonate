@@ -8,16 +8,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   any installed app can step through `content://<pkg>.art/track/<n>` and read every cover in the
   library, past the media session's trusted-controller check; grant each URI to the controllers it
   is handed to, or guard the provider with a signature permission beside `BROWSING_HOSTS`
-- [S · 0.8.1] The renderers' stream server spawns a thread for every connection it accepts and
-  reads a request's head with a 5 s timeout on each `read` and no deadline over all
-  (`resonate-upnp` `serve.rs`), so any host on the network (a café's Wi-Fi) holds thousands of
-  threads at a byte every few seconds, until a plain `thread::spawn` elsewhere panics; bound the
-  fetches, put a deadline on the head and refuse a path that is no `/resonate/<token>.<ext>` before
-  spawning
-- [S · 0.8.1] A UPnP description's `controlURL`, and an SSDP `LOCATION`, may name any host
-  (`description.rs` through `Located::join`, `ssdp.rs`), so a device answering the search points the
-  SOAP posts (the stream's token and the song's title among them) at another host or a loopback
-  service; keep control on the host that described the renderer
 - [L · 0.8.1] A view link can claim a shared playlist before its owner does: `share` hands out the
   links while the space still waits (sharing offline is allowed), the first token to arrive claims
   the space and sets its viewer digest (`serve.rs`), and the view key derives the sealer, so whoever
@@ -84,6 +74,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   any WebSocket `Close` as `None`, which a tunnel or a server draining its connections may send
 
 ## Playback and output
+- [S · 0.8.1] A seek in a fetched song asks each range with `Ranged::opened_from` (`Seeking`), which
+  carries no validator or total to weigh, so a file replaced between two seeks is joined old to new
+  with no `If-Range` and no `Changed` guard; carry the first answer's validator and total into it
 - [L · 0.8.1] A 3.0, 2.1, 3.1, 4.0 with a centre, 4.1, 6.0 or 7.0 source is mixed down by index
   though its container placed every channel: `positioned_layout` (`container.rs`) names Quad, 5.0,
   5.1, 6.1 and 7.1 alone and calls any other mask `Discrete`, which `Remix` routes in turn
@@ -100,21 +93,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   holding up to a ring (500 ms) of the leaving row before `boundary.at` (`engine.rs`), and
   `TrackFinished` and `TrackStarted` are told that much early; drop only what lies past `at` and let
   the graph reach it before moving on
-- [S · 0.8.1] A UPnP renderer or Cast receiver fetching its stream again counts the first fetch's
-  frames as heard: `served` is one counter for the `Feed`'s life though each fetch begins a stream
-  of its own from frame zero (`feed.rs`), so the delay and position read behind for the rest of the
-  song, and past `HEARD_TO_THE_SECOND` the drain is never told; reset it where a fetch takes the
-  source over (the fake renderer fetches once, so whether a real one fetches again after `Play` is
-  unseen)
-- [S · 0.8.1] A Cast receiver's lane is held through `GET_STATUS`, `LAUNCH` and `LOAD`
-  (`resonate-cast` `stream.rs`, some 45 s on a slow receiver), so a seek or an equaliser change that
-  rebinds meanwhile waits that long, silent, in `Lanes::taken`; weigh ownership under the lock and
-  launch outside it
-- [S · 0.8.1] A resume after a break sends a bare `Range` with no `If-Range` and takes any `206`
-  starting at the byte held, or a `200` with the head skipped (`resonate-fetch` `ranged.rs`
-  `resumed_after`), though the validator is known and the total in `Content-Range` is not weighed,
-  so a file a server re-transcoded or replaced between the break and the resume is joined old head
-  to new tail
 - [S · 0.8.1] (investigate) The ring's callback stores `quiet` from a read of `silenced` a whole
   `take_into` old (`ring.rs` `pulled`), so a pause then play landing in that window leaves `quiet`
   set over music, `is_sounding` false, and the next pause or track change stops the stream without

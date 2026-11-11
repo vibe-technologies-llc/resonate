@@ -134,11 +134,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the default without it (`driven.rs`) and one wears a 1.5 text scale, so a theme test wearing
   Larger between a test reading a row's place and clicking it moves every row (`theme.rs`); a lock
   for the whole crate held by `Driven` for its life would settle it
-- [S · 0.8.1] No fuzz target reaches the parsers facing the network: SSDP (`ssdp.rs`), a
-  renderer's description and chunked bodies (`description.rs`, `http.rs`), Cast's protobuf and JSON
-  (`frame.rs`, `json.rs`), and the server's page, gateway head and `Range` readers (`pages.rs`,
-  `gateway.rs`, `ranges.rs`); `fuzz/Cargo.toml` reaches none of `resonate-upnp`, `resonate-cast` or
-  `resonate-server`
 - [S · 0.8.1] The no-comment rule is checked in `.ftl` alone (`resonate-words-build`); nothing
   refuses a comment in `.rs`, `.kt`, `.swift` or the workflows, and `rust-formatter --check` cannot
   run in CI, so the strictest rule of style rests on review. A walk beside `prose_in`, which already
