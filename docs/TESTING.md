@@ -180,10 +180,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · 0.8.1] `parking_lot` 0.12 and 0.13, `base64` 0.22 and 0.23 and `sha2` 0.10 and 0.11 (with
-  `lock_api`, `parking_lot_core` and `digest` beside them) are built twice into the player, gpui's
-  tree holding the older; `base64` could come down to `usvg`'s 0.22, and `dependencies.md`'s
-  duplicates third parties force name `md-5` and `miniz_oxide` alone
 - [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
   0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
   `hdf5-reader` never calls the `LruCache::pop` the advisory names

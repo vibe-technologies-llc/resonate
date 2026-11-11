@@ -328,13 +328,17 @@ here, add it there.
   and a Cast receiver's TLS (`resonate-cast`, so also in the binary without `online` or `sync`),
   linked whether or not `resonate-sync` names it; `resonate-sync` uses the same crate directly for
   sealing, HKDF, SHA-256, randomness and the peer signature check rather than link a second provider.
-- **`parking_lot` 0.12** beside the workspace's 0.13 (with `lock_api` and `parking_lot_core`): gpui and
-  `crossterm` take 0.12, and `resonate-ui`'s `RecursiveRwLock` (`theme.rs`) exists from 0.13, so the
-  workspace cannot come down to share one copy.
-- **`base64` 0.22** beside the workspace's 0.23: `usvg` (under gpui) takes it while `ureq` and `wry`
-  take 0.23, which is why the workspace stays at 0.23. **`sha2` 0.10** beside 0.11 (with `digest`):
-  `oo7` (gpui) and `wry` take it; lowering ours would still build `digest` 0.11 for the `sha1`
-  `tungstenite` takes.
-- **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder` and `flacenc` take it; **`miniz_oxide`
+- **`parking_lot` 0.12** beside the workspace's 0.13 (with `lock_api` and `parking_lot_core`): gpui,
+  `wgpu-sync`, `crossterm` and `hdf5-reader` (under `resonate-codec`'s SOFA reader) take 0.12, and
+  `resonate-ui`'s `RecursiveRwLock` (`theme.rs`) exists from 0.13, so the workspace cannot come down
+  to share one copy.
+- **`base64` 0.22** beside the workspace's 0.23: `usvg` (under gpui) takes 0.22 while `ureq`,
+  `ureq-proto` and `wry` take 0.23, so the workspace could not come down to 0.22 without still
+  building 0.23 for the HTTP client every provider crate reaches. **`sha2` 0.10** beside 0.11 (with
+  `digest`, `block-buffer` and `crypto-common`): `oo7` (gpui) takes 0.10 and `wry` too; the
+  workspace's `sha2` and `md-5` are 0.11, and moving both to 0.10 would still build `digest` 0.11
+  for the `sha1` `tungstenite` (under `resonate-sync`) takes, so a held-back pair would remove two
+  crates and keep the third.
+- **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder`, `flacenc` and `oo7` take it; **`miniz_oxide`
   0.8** beside 0.9: `png` and `exr` (under `image`, and `gpui`'s) take it while `flate2` takes 0.9.
   None is ours to move; each goes when its dependent moves.
