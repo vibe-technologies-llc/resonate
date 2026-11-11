@@ -137,6 +137,9 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   (`recording_words`, `release_words`, `group_words`, `artist_words`).
 - **Reading.** A lookup by id is one index probe and one block unpacked; the last
   `BLOCKS_KEPT_UNPACKED` blocks are kept.
+- **An artist's pressings are listed once.** `releases_of_artist` flattens the artist's groups into
+  one list of release ids and pages that; the list of the last `ARTISTS_KEPT_LISTED` artists is kept,
+  so a page after the first unpacks only the releases it returns.
 
 **Search scores as MusicBrainz's does** (`mirror/search.rs`).
 
@@ -186,6 +189,8 @@ the export it came from is the source.
 1. `latest` reads `LATEST` under `DUMP_SERVER` (a name of digits and dashes alone).
 2. `fetched` reads `SHA256SUMS`, then downloads both archives into `downloads/<dump>/`.
    - Each download is resumable: `.part` grows through `Ranged::opened_from`, under `Held`.
+     Its total is the whole archive's (`Ranged::total`, else the length to come plus what the part
+     held), so a resumed one never reads past it (`whole_size`).
    - It waits while the download gate is shut (`stall-downloads-on-metered`).
    - Each archive is checked against its sum before being renamed whole and marked `.verified`.
    - A mismatch removes the part and is `Error::Checksum`.
@@ -201,8 +206,16 @@ leaves that folder alone.
 **The binary keeps it fresh.** With `musicbrainz-mirror` on and `online` on, the window looks at
 start (`musicbrainz::keep_fresh`). With no copy, or a copy built over `LOOKED_AT_AGAIN_AFTER`
 (30 days) ago from a dump `LATEST` no longer names, it builds in the background
-(`build_in_the_background`, one at a time). The settings pane's switch calls `musicbrainz::follow`
+(`build_in_the_background`, one at a time). `LATEST` is asked past the
+metered lookup gate, never while it is shut. The settings pane's switch calls `musicbrainz::follow`
 live.
+
+**Online off and the mirror off stop a build.** A build reads the settings file as it stands
+(`musicbrainz::current`), never the config cloned as the window opened: `build` refuses a download
+with `OnlineOff`, a landing build holds the mirror only while `musicbrainz-mirror` is still on, and a
+build is looked at again before it starts once `LATEST` is answered. `online::reach(false)` and
+`follow(false)` cancel the build running (`stop_building`); a cancelled build is no failure the pane
+reports.
 
 **`resonate musicbrainz`** prints what is held and how many answers are kept.
 

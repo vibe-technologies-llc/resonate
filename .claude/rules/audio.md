@@ -654,7 +654,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   self-referential field).
 - **Sinks are enumerated mid-stream on their own thread** (`Surveying`, a `resonate-sinks` thread
   holding the backend's `Surveyor`), so the engine never waits on the graph. One survey in flight; a
-  change announced meanwhile leaves the flag set and the landing answer asks again. No thread:
+  change announced meanwhile leaves the flag set and the landing answer asks again. A worker that ends
+  (a panicking surveyor) clears the asked flag and stops being a worker (`Surveying::is_running`), so a
+  row waiting on a survey is bound in line instead of staying `Loading`. No thread:
   enumerate in line only while no stream is open, under `SINK_TIMEOUT`. **`Player::new` answers
   before the first survey:** the engine thread publishes the settings and answers, then surveys in
   line before it takes a command, so a window opens without waiting on the graph while the first
@@ -675,7 +677,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   the cloneable `Survey`, whose `open` waits up to `STREAM_OPENED_WITHIN`); `Streaming` is a
   `resonate-stream-open` worker taking one `Asked` at a time while the transport stays `Loading`.
   Each `Output` is numbered (`Output::made`): a stream landing for an output since retired or rebound
-  is closed (`close_unwanted`). **One open in flight, none asked while one is** (a stray's `Close`
+  is closed (`close_unwanted`); so is one that lands after `Streaming::stop`, which closes every
+  answer until the worker has ended and then joins it. **One open in flight, none asked while one is** (a stray's `Close`
   must reach the loop before the next `Open`). `wait_for_the_graph` does not let go while an open is
   in flight or a row is opening, so an open refused `Disconnected` is read as the graph's, and a
   rebind leaves `graph_lost` standing until its stream lands (`waits_on_a_stream`: an output still

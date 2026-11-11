@@ -31,6 +31,7 @@ pub const GROUPS_AT_MOST: usize = 1_000;
 pub const DISCOGRAPHY_KINDS: [&str; 3] = ["Album", "EP", "Single"];
 pub const OFFICIAL: &str = "Official";
 const BLOCKS_KEPT_UNPACKED: usize = 64;
+const ARTISTS_KEPT_LISTED: usize = 4;
 const MOST_UNPACKED_BLOCK: usize = 16 * 1024 * 1024;
 
 pub(crate) const SCHEMA: &str = "
@@ -126,11 +127,17 @@ struct Unpacked {
     bytes: Arc<[u8]>,
 }
 
+struct Listed {
+    artist: Mbid,
+    credited: Arc<[Mbid]>,
+}
+
 pub struct Mirror {
     path: PathBuf,
     connection: Mutex<Connection>,
     dictionaries: Vec<(Entity, Vec<u8>)>,
     unpacked: Mutex<VecDeque<Unpacked>>,
+    listed: Mutex<VecDeque<Listed>>,
     made: Made,
 }
 
@@ -193,6 +200,7 @@ impl Mirror {
             connection: Mutex::new(connection),
             dictionaries,
             unpacked: Mutex::new(VecDeque::new()),
+            listed: Mutex::new(VecDeque::new()),
             made: Made {
                 dump,
                 built: u64::try_from(built).unwrap_or(0),
@@ -320,15 +328,9 @@ impl Mirror {
     }
 
     pub fn releases_of_artist(&self, artist: &Mbid, from: u32) -> Result<ArtistPressings> {
-        let Some(doc) = self.artist_doc(artist)? else {
+        let Some(credited) = self.credited_releases(artist)? else {
             return Ok(ArtistPressings::default());
         };
-        let mut credited = Vec::new();
-        for group in &doc.groups {
-            if let Some(group) = self.group_doc(&group.mbid)? {
-                credited.extend(group.group.releases.into_iter().map(|release| release.id));
-            }
-        }
         let start = usize::try_from(from)
             .unwrap_or(usize::MAX)
             .min(credited.len());
@@ -350,6 +352,36 @@ impl Mirror {
             credited: u32::try_from(credited.len()).unwrap_or(u32::MAX),
             read_to: u32::try_from(read_to).unwrap_or(u32::MAX),
         })
+    }
+
+    fn credited_releases(&self, artist: &Mbid) -> Result<Option<Arc<[Mbid]>>> {
+        if let Some(listed) = self
+            .listed
+            .lock()
+            .iter()
+            .find(|listed| listed.artist == *artist)
+        {
+            return Ok(Some(Arc::clone(&listed.credited)));
+        }
+        let Some(doc) = self.artist_doc(artist)? else {
+            return Ok(None);
+        };
+        let mut credited = Vec::new();
+        for group in &doc.groups {
+            if let Some(group) = self.group_doc(&group.mbid)? {
+                credited.extend(group.group.releases.into_iter().map(|release| release.id));
+            }
+        }
+        let credited: Arc<[Mbid]> = credited.into();
+        let mut listed = self.listed.lock();
+        if listed.len() == ARTISTS_KEPT_LISTED {
+            listed.pop_front();
+        }
+        listed.push_back(Listed {
+            artist: artist.clone(),
+            credited: Arc::clone(&credited),
+        });
+        Ok(Some(credited))
     }
 
     pub(crate) fn release_doc(&self, id: &Mbid) -> Result<Option<ReleaseDoc>> {

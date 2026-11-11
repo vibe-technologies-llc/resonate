@@ -8,7 +8,8 @@ use std::{
 
 use resonate_core::{Isrc, Mbid};
 use resonate_library::{
-    Barcode, GroupAsked, RecordingAsked, Reference, ReleaseAsked, SongsAsked, Wording,
+    ArtistPressings, Barcode, GroupAsked, RecordingAsked, Reference, ReleaseAsked, SongsAsked,
+    Wording,
 };
 use resonate_musicbrainz::{
     Answer, Archives, Asked, Building, Consultation, Kept, Layer, Layered, Mirror, Mirrored,
@@ -26,6 +27,53 @@ const TRACK_ONE: &str = "1d1e1f10-0000-4000-8000-000000000001";
 const TRACK_TWO: &str = "1d1e1f10-0000-4000-8000-000000000002";
 const CREEP_CODE: &str = "GBAYE9200070";
 const PABLO_BARCODE: &str = "724382775324";
+const PROLIFIC: &str = "3e3e3e3e-0000-4000-8000-000000000001";
+const ARTIST_PRESSINGS_PAGE: usize = 100;
+const PROLIFIC_GROUPS: usize = 3;
+const PRESSINGS_IN_A_PROLIFIC_GROUP: usize = 40;
+const FIRST_PROLIFIC_ROW: usize = 100;
+
+fn prolific_gid(kind: u8, at: usize) -> String {
+    format!("{kind:x}f3e3e3e-0000-4000-8000-{at:012x}")
+}
+
+fn prolific_groups() -> Vec<String> {
+    (0..PROLIFIC_GROUPS)
+        .map(|group| {
+            line(
+                8,
+                &[
+                    (0, &(FIRST_PROLIFIC_ROW + group).to_string()),
+                    (1, &prolific_gid(1, group)),
+                    (2, &format!("Prolific {group}")),
+                    (3, "3"),
+                    (4, "1"),
+                    (5, ""),
+                ],
+            )
+        })
+        .collect()
+}
+
+fn prolific_releases() -> Vec<String> {
+    (0..PROLIFIC_GROUPS * PRESSINGS_IN_A_PROLIFIC_GROUP)
+        .map(|at| {
+            let group = at / PRESSINGS_IN_A_PROLIFIC_GROUP;
+            line(
+                14,
+                &[
+                    (0, &(FIRST_PROLIFIC_ROW + at).to_string()),
+                    (1, &prolific_gid(2, at)),
+                    (2, &format!("Prolific {group} pressing {at}")),
+                    (3, "3"),
+                    (4, &(FIRST_PROLIFIC_ROW + group).to_string()),
+                    (5, "1"),
+                    (10, ""),
+                ],
+            )
+        })
+        .collect()
+}
 
 struct Scratch(PathBuf);
 
@@ -117,6 +165,17 @@ fn dump(into: &Path) -> Archives {
                             (16, "f"),
                         ],
                     ),
+                    line(
+                        19,
+                        &[
+                            (0, "3"),
+                            (1, PROLIFIC),
+                            (2, "Prolific"),
+                            (3, "Prolific"),
+                            (13, ""),
+                            (16, "f"),
+                        ],
+                    ),
                 ],
             ),
             (
@@ -134,6 +193,7 @@ fn dump(into: &Path) -> Archives {
                         5,
                         &[(0, "2"), (1, "0"), (2, "2"), (3, "Thom Yorke"), (4, "")],
                     ),
+                    line(5, &[(0, "3"), (1, "0"), (2, "3"), (3, "Prolific"), (4, "")]),
                 ],
             ),
             ("artist_type", vec![line(6, &[(0, "2"), (1, "Group")])]),
@@ -189,19 +249,23 @@ fn dump(into: &Path) -> Archives {
             ),
             (
                 "release",
-                vec![line(
-                    14,
-                    &[
-                        (0, "1"),
-                        (1, PABLO),
-                        (2, "Pablo Honey"),
-                        (3, "1"),
-                        (4, "1"),
-                        (5, "1"),
-                        (9, PABLO_BARCODE),
-                        (10, ""),
-                    ],
-                )],
+                [
+                    vec![line(
+                        14,
+                        &[
+                            (0, "1"),
+                            (1, PABLO),
+                            (2, "Pablo Honey"),
+                            (3, "1"),
+                            (4, "1"),
+                            (5, "1"),
+                            (9, PABLO_BARCODE),
+                            (10, ""),
+                        ],
+                    )],
+                    prolific_releases(),
+                ]
+                .concat(),
             ),
             (
                 "release_country",
@@ -212,17 +276,21 @@ fn dump(into: &Path) -> Archives {
             ),
             (
                 "release_group",
-                vec![line(
-                    8,
-                    &[
-                        (0, "1"),
-                        (1, PABLO_GROUP),
-                        (2, "Pablo Honey"),
-                        (3, "1"),
-                        (4, "1"),
-                        (5, ""),
-                    ],
-                )],
+                [
+                    vec![line(
+                        8,
+                        &[
+                            (0, "1"),
+                            (1, PABLO_GROUP),
+                            (2, "Pablo Honey"),
+                            (3, "1"),
+                            (4, "1"),
+                            (5, ""),
+                        ],
+                    )],
+                    prolific_groups(),
+                ]
+                .concat(),
             ),
             (
                 "release_group_primary_type",
@@ -427,6 +495,53 @@ fn a_mirror_answers_codes_barcodes_and_what_an_artist_and_a_group_hold() {
     assert_eq!(pressed.pressings.len(), 1);
     assert_eq!(pressed.credited, 1);
     assert!(none.releases.is_empty());
+}
+
+#[test]
+fn an_artists_pressings_are_paged_the_same_whether_or_not_its_list_was_already_read() {
+    let scratch = Scratch::new("paging");
+    let mirror = built(&scratch);
+    let artist = mbid(PROLIFIC);
+    let everything = PROLIFIC_GROUPS * PRESSINGS_IN_A_PROLIFIC_GROUP;
+
+    let first = mirror.releases_of_artist(&artist, 0).expect("a read");
+    let second = mirror
+        .releases_of_artist(&artist, first.read_to)
+        .expect("a read");
+    let again = mirror.releases_of_artist(&artist, 0).expect("a read");
+    let cold = Mirror::open(mirror.path())
+        .expect("the mirror opens again")
+        .releases_of_artist(&artist, first.read_to)
+        .expect("a read");
+    let past = mirror
+        .releases_of_artist(&artist, u32::MAX)
+        .expect("a read");
+    let stranger = mirror.releases_of_artist(&mbid(CREEP), 0).expect("a read");
+
+    let ids = |page: &ArtistPressings| -> Vec<Mbid> {
+        page.pressings
+            .iter()
+            .map(|pressing| pressing.id.clone())
+            .collect()
+    };
+    let mut every: Vec<Mbid> = [ids(&first), ids(&second)].concat();
+    every.sort();
+    every.dedup();
+
+    assert_eq!(first.credited as usize, everything);
+    assert_eq!(first.pressings.len(), ARTIST_PRESSINGS_PAGE);
+    assert_eq!(first.read_to as usize, ARTIST_PRESSINGS_PAGE);
+    assert_eq!(second.credited as usize, everything);
+    assert_eq!(second.pressings.len(), everything - ARTIST_PRESSINGS_PAGE);
+    assert_eq!(second.read_to as usize, everything);
+    assert_eq!(every.len(), everything);
+    assert_eq!(ids(&again), ids(&first));
+    assert_eq!(again.read_to, first.read_to);
+    assert_eq!(ids(&cold), ids(&second));
+    assert_eq!(cold.read_to, second.read_to);
+    assert!(past.pressings.is_empty());
+    assert_eq!(past.read_to as usize, everything);
+    assert!(stranger.pressings.is_empty());
 }
 
 #[test]

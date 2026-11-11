@@ -146,6 +146,9 @@ pub fn introduce(_contact: Option<&str>) {}
 #[cfg(all(feature = "online", feature = "ui"))]
 pub fn reach(on: bool) {
     REACHING.store(on, Ordering::Relaxed);
+    if !on {
+        crate::musicbrainz::stop_building();
+    }
     if let Some(client) = CLIENT.get() {
         client.reach(on);
     }

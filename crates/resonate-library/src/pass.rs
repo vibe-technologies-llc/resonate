@@ -140,14 +140,14 @@ mod tests {
             Some(Some(7))
         );
 
-        let deaf = thread::spawn(|| {
-            thread::sleep(Duration::from_secs(2));
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let deaf = thread::spawn(move || {
+            let _ = released.recv();
             Ok(())
         });
         let handle = PassHandle::of(PassKind::TakeIn, Arc::new(Stoppable::default()), deaf);
-        let began = Instant::now();
-        assert!(handle.wound_down(Duration::from_millis(20)).is_none());
-        assert!(began.elapsed() < Duration::from_secs(1));
+        assert!(handle.wound_down(Duration::ZERO).is_none());
+        let _ = release.send(());
     }
 
     #[test]
