@@ -4,23 +4,10 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## The window
-- [S · 0.8.1] Every `Everything` read still aggregates the listening history for Statistics whether
-  or not it is shown (`models.rs` `standing`, now one pass through `days_and_habits`)
-- [S · 0.8.1] A counted play and every 2 s of a scan still move `rows_stamp`, so the kept listing
-  measurements and playlist pictures are read again for a change that touches no column they use
-- [S · 0.8.1] The playing row in `RootView::resolve` clones its title and artist on every catalog
-  revision (`Resolving.catalog` keys on `library.revision()`)
-- [L · 0.8.1] A browse list's next page clones every row held to append 2 000 more (`models.rs`
-  `grew`, on the UI thread) and is read with `LIMIT … OFFSET` (`db.rs`) though `alternative_of` and
-  `hidden` are in no ordering index, so wheeling to the end of a 500 000-track list clones some sixty
-  million rows and walks the table quadratically; rows held in chunks and paging by the order's
-  last key (every order ends on the id) want both crates
+- [S · 0.8.1] Playing a row of a browse list held in several chunks copies the whole list once
+  (`Rows::whole`) beside the copy the queue makes; the queue could take the chunks as they are
 
 ## Startup and idle
-- [S · 0.8.1] A recursive watch failing for want of inotify watches (`ENOSPC`) is tried again every
-  five minutes, each try walking the whole tree (`watch.rs`); back off on that error
-- [S · 0.8.1] The window still looks at its roots every second while minimised or hidden
-  (`models.rs` `watch_the_roots`, a catalog read and a `stat` of each every 5 s)
 
 ## Android
 - [S · 0.8.1] A saved search's page walk (`savedSearchPage` through `pagedFully` and
