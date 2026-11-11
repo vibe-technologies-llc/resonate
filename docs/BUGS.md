@@ -15,17 +15,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `unheld_listens` copy as `remove_root` (`deleted::forget_a_root`) and `deleted.rs` do, so a file
   moved off a mount and back is counted from nothing and Statistics, unfrozen Wrapped years and
   scrobbles not yet sent lose it
-- [S · 0.8.1] Online off does not stop a build of the local MusicBrainz copy: the binary's
-  `musicbrainz::build` asks `online_enabled` once before a 7.5 GB download, `Mirroring` holds the
-  config cloned as the window opened (so *Build it now* reads Online as it stood at start),
-  `online::reach(false)` and `follow(false)` cancel nothing, a build landing after the mirror was
-  switched off holds it again from its own forced config, and `keep_fresh` asks `LATEST` past the
-  metered lookup gate; `online.md` has `online = false` stop every request. `musicbrainz.rs` holds
-  no test
-- [S · 0.8.1] A resumed download of the MusicBrainz export shows more read than there is:
-  `download.rs` takes the total from `source.length()`, which on a `206` is the bytes still to
-  come, while `written` starts at what the part held, so the settings pane reads past 100 %; the
-  total is `source.total()`, else the length and what was held
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with

@@ -125,11 +125,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.8.1] The engine's workers are untested at their edges: `streaming.rs`, `surveying.rs` and
-  `lending.rs` hold no test, `Streaming::stop` drains the answers without joining, so an open
-  landing after it leaves its `SinkStream` in the channel to be dropped unclosed, and a survey
-  worker that ends leaves `asked` set (`Surveying::answered`), so no survey is asked again and a row
-  waiting on one stays loading
 - [S · 0.8.1] Readers of bytes from outside have no fuzz target: the IPC frames of `resonate-mpris`'s
   `wire.rs` (a Windows pipe or a Mac's socket, up to 64 MiB), STUN answers on the QUIC socket
   (`stun.rs`'s `binding_answer`), a measurement or calibration file (`resonate-eq`'s
@@ -144,10 +139,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `term_holds`, `shaped`) and the desktop's as SQL (`db.rs`'s `Term`), over one grammar, and no
   test runs the same rows and queries through both, so a `Term` added to one is answered otherwise
   by the other
-- [S · 0.8.1] Three tests hold a wall-clock bound under load: `resonate-providers`' `provider.rs`
-  (a provider left behind is not waited on again, within 100 ms), `crew.rs` and `pass.rs` (within
-  1 s); what each holds is countable without a clock, and runner timing has needed fixing four
-  times (`f6aa0f4d` the latest)
 - [S · 0.8.1] Rules name code that is gone: `ui.md` two renamed tests
   (`a_found_song_that_landed_is_listed_once_as_the_held_track`,
   `a_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`), `upnp.md` one

@@ -13,10 +13,6 @@ are in [ROADMAP.md](ROADMAP.md).
   as `filtered_page` gives the library's pages
 
 ## Performance and scale
-- [S · 0.8.1] Paging an artist's releases from the local MusicBrainz copy unpacks every one of its
-  release groups at every page (`mirror/mod.rs`'s `releases_of_artist`, up to
-  `GROUPS_OF_AN_ARTIST_KEPT`) before it takes a page of a hundred, so a large artist costs pages
-  times groups block decodes under the one connection's lock
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
