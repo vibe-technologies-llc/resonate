@@ -1,3 +1,4 @@
+mod comments;
 mod prose;
 
 use std::{
@@ -7,11 +8,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub use comments::{Tongue, comments_in, comments_of};
 use fluent_syntax::{
     ast::{Entry, Expression, InlineExpression, Pattern, PatternElement},
     parser::{self, ParserError},
 };
-pub use prose::{Prose, prose_in, prose_of, reads_as_prose};
+pub use prose::{Comment, Prose, prose_in, prose_of, reads_as_prose};
 
 const WORDS: &str = "words";
 const ENGLISH: &str = "en";

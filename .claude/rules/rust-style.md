@@ -17,6 +17,18 @@ Strict: a violation is a defect.
 - extract the step into a named function;
 - put design facts in `CLAUDE.md`, `.claude/rules/`, `docs/`.
 
+**A test refuses a comment anywhere in the tree**: `no_source_in_the_workspace_carries_a_comment`
+(`crates/resonate-words-build/tests/comments.rs`, so `cargo test -p resonate-words-build` and CI's
+workspace test run it) walks `crates`, `fuzz`, `soxr-comparison`, `android`, `ios`, `packaging`,
+`.github`, `.claude` and the root manifests through `resonate_words_build::comments_in`, which
+tells a comment from a string, a raw string, a character, a lifetime and a template or
+interpolation: `//`, `///`, `//!` and nested `/* */` in `.rs`, `.kt`, `.kts` and `.swift`; `#` in
+`.py`, `.toml`, `.yml`, `.yaml`, `.sh`, `.ps1`, `.spec` and `PKGBUILD`; `<!-- -->` in `.xml` and
+`.plist`. Allowed: a shebang on the first line of `.py` and `.sh`, and `// swift-tools-version:` on
+the first line of a `.swift` file (SwiftPM reads it). Generated and fetched folders (`target`,
+`build`, `.build`, `.gradle`, `xtool`, `corpus`, `seeds`, `fixtures`) are skipped. Not walked:
+`.js`, `.iss` and `.desktop` files, and Markdown.
+
 ## Collections and sync
 
 - **`ahash` only without DoS risk**: standard hasher for untrusted keys and where an API demands `RandomState`; `AHashMap`/`AHashSet` for keys we produced.

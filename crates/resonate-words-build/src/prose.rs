@@ -31,6 +31,28 @@ const SAID_FOR_THE_LOG: [&str; 19] = [
 const ONLY_UNDER_TEST: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Comment {
+    pub line: usize,
+    pub text: String,
+}
+
+const COMMENT_SHOWN_FOR: usize = 60;
+
+impl Comment {
+    pub(crate) fn at(line: usize, letters: &[char]) -> Self {
+        let first: String = letters
+            .iter()
+            .take_while(|letter| **letter != '\n')
+            .take(COMMENT_SHOWN_FOR)
+            .collect();
+        Self {
+            line: line + 1,
+            text: first,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prose {
     pub line: usize,
     pub text: String,
@@ -132,15 +154,17 @@ struct Literal {
     text: String,
 }
 
-struct Lexed {
+pub(crate) struct Lexed {
     code: Vec<String>,
     literals: Vec<Literal>,
+    pub(crate) comments: Vec<Comment>,
 }
 
-fn lexed(source: &str) -> Lexed {
+pub(crate) fn lexed(source: &str) -> Lexed {
     let letters: Vec<char> = source.replace("\r\n", "\n").chars().collect();
     let mut code = String::with_capacity(source.len());
     let mut literals = Vec::new();
+    let mut comments = Vec::new();
     let mut line = 0;
     let mut at = 0;
 
@@ -154,22 +178,35 @@ fn lexed(source: &str) -> Lexed {
 
         match letter {
             '/' if next == Some('/') => {
+                let from = at;
                 while at < letters.len() && letters[at] != '\n' {
                     at += 1;
                 }
+                comments.push(Comment::at(line, &letters[from..at]));
             }
             '/' if next == Some('*') => {
-                at += 2;
-                while at < letters.len()
-                    && !(letters[at] == '*' && letters.get(at + 1) == Some(&'/'))
-                {
-                    if letters[at] == '\n' {
-                        line += 1;
-                        code.push('\n');
+                let from = at;
+                let started = line;
+                let mut depth = 0usize;
+                while at < letters.len() {
+                    if letters[at] == '/' && letters.get(at + 1) == Some(&'*') {
+                        depth += 1;
+                        at += 2;
+                    } else if letters[at] == '*' && letters.get(at + 1) == Some(&'/') {
+                        depth -= 1;
+                        at += 2;
+                        if depth == 0 {
+                            break;
+                        }
+                    } else {
+                        if letters[at] == '\n' {
+                            line += 1;
+                            code.push('\n');
+                        }
+                        at += 1;
                     }
-                    at += 1;
                 }
-                at += 2;
+                comments.push(Comment::at(started, &letters[from..at.min(letters.len())]));
             }
             '"' => {
                 let (text, end, lines) = quoted(&letters, at + 1);
@@ -230,6 +267,7 @@ fn lexed(source: &str) -> Lexed {
     Lexed {
         code: code.split('\n').map(str::to_owned).collect(),
         literals,
+        comments,
     }
 }
 
@@ -305,7 +343,7 @@ fn raw(letters: &[char], mut at: usize) -> Option<(String, usize, usize)> {
 fn character_end(letters: &[char], at: usize) -> usize {
     match (letters.get(at + 1), letters.get(at + 2)) {
         (Some('\\'), _) => {
-            let mut end = at + 2;
+            let mut end = at + 3;
             while end < letters.len() && letters[end] != '\'' {
                 end += 1;
             }
