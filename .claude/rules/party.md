@@ -33,7 +33,7 @@ have**. No sound passes between people; a guest with neither sits that song out.
 A guest mints one random seat token for the life of its `Party` and sends it with every `Room`
 frame, so the server binds the guest's `DeviceId` to it on the first join and refuses a second guest
 who names the same id (`server.md`). A reconnect sends the same token; a new `Party` is a new id and a
-new token, so a guest who leaves and comes back through the link is a new member.
+new token, so a guest who leaves and comes back through the link is a new member. A build older than the seat sends none: the server holds its id against any second join while its session is live, but the id is free once the session has gone, so another guest knowing the id (every guest is told every id) could take it in the gap of a reconnect, and the old build's own reconnect gets its place back the same way; that gap is the price of older builds still joining, and closes as those builds leave use.
 
 ## The clock
 

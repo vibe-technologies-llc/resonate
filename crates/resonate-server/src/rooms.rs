@@ -120,6 +120,9 @@ impl Rooms {
             match (room.seats.get(&asked.member), asked.seat) {
                 (Some(bound), Some(given)) if bound == given => {}
                 (Some(_), _) => return Err(Refusal::Token),
+                (None, _) if room.members.contains_key(&asked.member) => {
+                    return Err(Refusal::Busy);
+                }
                 (None, Some(_)) if room.seats.len() >= SEATS_BOUND_AT_MOST => {
                     return Err(Refusal::Busy);
                 }
@@ -476,6 +479,37 @@ mod tests {
     }
 
     #[test]
+    fn a_guest_without_a_secret_cannot_be_replaced_while_its_session_is_live() {
+        let rooms = Rooms::default();
+        let _hosting = host(&rooms);
+        let mut first = guest(&rooms, GUEST).expect("a guest joins");
+
+        let second = guest(&rooms, GUEST);
+        let with_a_secret = seated(&rooms, GUEST, Some(&[10; 32]));
+
+        assert!(matches!(second, Err(Refusal::Busy)));
+        assert!(matches!(with_a_secret, Err(Refusal::Busy)));
+        assert!(first.notices.try_recv().is_err(), "the guest was replaced");
+
+        rooms.leave(ROOM, GUEST, first.session);
+
+        assert!(guest(&rooms, GUEST).is_ok(), "an old build comes back");
+    }
+
+    #[test]
+    fn a_refused_second_join_leaves_a_live_guest_without_a_secret_in_its_place() {
+        let rooms = Rooms::default();
+        let mut hosting = host(&rooms);
+        let first = guest(&rooms, GUEST).expect("a guest joins");
+        let _arrived = hosting.notices.try_recv();
+
+        let _refused = guest(&rooms, GUEST);
+
+        assert_eq!(rooms.leave(ROOM, GUEST, first.session), Leaving::Plainly);
+        assert_eq!(hosting.notices.try_recv(), Ok(RoomNotice::Left(GUEST)));
+    }
+
+    #[test]
     fn a_room_binds_only_so_many_places() {
         let rooms = Rooms::default();
         let _hosting = host(&rooms);
@@ -607,14 +641,17 @@ mod tests {
     fn a_full_room_and_a_full_server_turn_away_all_but_one_coming_back() {
         let rooms = Rooms::default();
         let _host = host(&rooms);
-        let _one = guest(&rooms, GUEST).expect("joined");
+        let _one = seated(&rooms, GUEST, Some(&[10; 32])).expect("joined");
         let _other = guest(&rooms, OTHER).expect("joined");
 
         assert!(matches!(
             guest(&rooms, DeviceId([9; 16])),
             Err(Refusal::Busy)
         ));
-        assert!(guest(&rooms, GUEST).is_ok(), "coming back takes no seat");
+        assert!(
+            seated(&rooms, GUEST, Some(&[10; 32])).is_ok(),
+            "coming back takes no seat"
+        );
 
         let full = RoomLimits {
             rooms: 1,
