@@ -111,7 +111,7 @@ fluent-syntax = { version = "0.12.0", default-features = false }
 unic-langid = { version = "0.9.6", default-features = false }
 sys-locale = { version = "0.3.2", default-features = false }
 jiff = {
-    version = "0.2.42",
+    version = "0.2.43",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
