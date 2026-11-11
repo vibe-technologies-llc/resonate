@@ -4,29 +4,14 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] A `resonate://shared/…?server=` link opened from outside joins at once
-  (`together.rs` `accepted`, a recorded decision) whatever server it names (`invitation.rs`), so a
-  link clicked in a browser has the desktop reach a stranger's server every five minutes; ask before
-  joining a server other than the default, a sheet of its own as `party_offer.rs` is
-- [S · 0.8.1] A shared list's op log is unbounded in memory: `SharedList` keeps every `Added` row
-  in its map though `rows()` shows `ROWS_AT_MOST` (10 000), so a hostile writer within the server's
-  64 MiB space limit still costs every follower the whole map; drop the rows past the cap
-  deterministically as the log is folded
+- [S · 0.8.1] A shared list's `people` map is unbounded in memory: `Member` ops are kept whatever
+  their number, so a hostile writer within the server's space limit costs every follower the whole
+  map, as the rows did before `ENTRIES_KEPT_AT_MOST`; the same smallest-ids bound would hold it
 - [S · 0.8.1] A guest from a build older than the party seat can still be taken over: the room binds
   a member's id to the seat it first joined with, and a member that never sends one is bound to
   nothing
 
 ## Sync and together
-- [S · 0.8.1] A command sent to a driven device carries the queue revision of the controller's
-  latest mirror when it leaves, not the one the front end drew (`resonate-driven`), so a mirror
-  landing between a draw and a press lets a stale *Remove* through; the revision wants passing from
-  the row drawn
-- [S · 0.8.1] A shared playlist reads one clean close as `ServerTooOld`, as a party did:
-  `shared/service.rs` ends on `Ok(Ok(None))` in the heads read and on a `None` in the close path,
-  where a tunnel or a draining server sends a WebSocket `Close`; take several in a row before any
-  answer, as `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` does
-- [S · 0.8.1] Two presses of *Play next* on one party request while its search runs queue it twice:
-  `take_a_request` takes the request named, but nothing marks it taken until the search lands
 
 ## Playback and output
 
