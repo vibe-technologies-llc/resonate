@@ -191,6 +191,86 @@ fn answers_taken_from_a_device_are_marked_and_never_told_back_to_it() {
     assert_eq!(phone.take(DESK, &told, told[0].seq).expect("taken"), 0);
 }
 
+const TIME: &str = "1b4ad7c2-1e2f-4b8e-9a39-2d44c35a0c11";
+const BREATHE: &str = "6e1c5f4a-8d0b-4f5e-b8c2-7f3e1d9a4b22";
+
+fn recorded(id: &str) -> (Asked, Answer) {
+    (
+        Asked::Recording(mbid(id)),
+        Answer::Recording(Some(Recording {
+            id: mbid(id),
+            ..echoes()
+        })),
+    )
+}
+
+#[test]
+fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_it_is_told_the_next()
+{
+    let folder = scratch("numbered");
+    let path = folder.join("kept.sqlite");
+    let desk = Kept::open(&path).expect("laid out");
+    for id in [ECHOES, TIME] {
+        let (asked, answer) = recorded(id);
+        desk.keep(&asked, &answer).expect("kept");
+    }
+    let mark = desk
+        .after(0, 512, "phone")
+        .expect("listed")
+        .iter()
+        .map(|told| told.seq)
+        .max()
+        .expect("answers told");
+    drop(desk);
+    rusqlite::Connection::open(&path)
+        .expect("opened")
+        .execute("UPDATE answers SET at = 0 WHERE seq = ?1", [mark as i64])
+        .expect("the newest answer aged");
+
+    let desk = Kept::open(&path).expect("opened again, sweeping the newest");
+    let (asked, answer) = recorded(BREATHE);
+    desk.keep(&asked, &answer).expect("kept");
+    let told = desk.after(mark, 512, "phone").expect("listed");
+
+    assert_eq!(desk.counted().expect("counted"), 2);
+    assert_eq!(
+        told.len(),
+        1,
+        "an answer kept after a sweep was numbered under a mark passed"
+    );
+    assert_eq!(told[0].key, asked.key());
+    assert!(told[0].seq > mark);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_device_holding_a_mark_past_every_number_here_is_told_what_is_kept_next() {
+    let desk = Kept::in_memory().expect("a kept store");
+    let (echoes_asked, echoes_answer) = recorded(ECHOES);
+    desk.keep(&echoes_asked, &echoes_answer).expect("kept");
+
+    let beyond = desk.after(u64::MAX, 512, "laptop").expect("listed");
+    let unmoved = desk.last_seq().expect("read");
+    let passed = desk.after(7, 512, "phone").expect("listed");
+    let (asked, answer) = recorded(TIME);
+    desk.keep(&asked, &answer).expect("kept");
+    let told = desk.after(7, 512, "phone").expect("listed");
+
+    assert!(beyond.is_empty());
+    assert_eq!(
+        unmoved, 1,
+        "a mark no device could hold moved the numbering"
+    );
+    assert!(passed.is_empty());
+    assert_eq!(
+        told.len(),
+        1,
+        "an answer kept after a mark past this store was never told"
+    );
+    assert_eq!(told[0].seq, 8);
+    assert_eq!(told[0].key, asked.key());
+}
+
 #[test]
 fn kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again() {
     let folder = scratch("versions");

@@ -64,6 +64,13 @@ decodes both and requires a decoded value to read back as itself.
 - **The store.** `Kept` keeps every non-miss answer this device obtained from any layer in
   `kept.sqlite` (the data folder's `musicbrainz/`; the phones' sync folder's). Each row is
   zstd-packed (`KEPT_PACKED_AT`) under its key, with `at`, a `seq` and the device it `came_from`.
+- **A `seq` never goes back.** It is drawn from `numbered`, a one-row counter, never from
+  `max(seq)`, so the open's sweep taking the newest answer cannot hand its number out again under a
+  mark a device has already passed. A device asking after a mark past the counter (a store swept
+  before the counter, or one made anew) raises it there, so what is kept next is told to it; a mark
+  past `A_MARK_NO_DEVICE_REACHES` is not one this store gave and moves nothing
+  (`an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_it_is_told_the_next`,
+  `a_device_holding_a_mark_past_every_number_here_is_told_what_is_kept_next`).
 - **Answers are found by id too.** `entities` indexes every whole entity an answer holds (a
   release, a recording, a group, an artist, every pressing of a list), so `recording(id)` is
   answered by an ISRC answer that held it
@@ -72,7 +79,9 @@ decodes both and requires a decoded value to read back as itself.
   are deleted when the store opens and never taken from a device. A miss is never kept, so it is
   always asked again (`a_search_is_kept_under_its_folded_words_and_a_miss_is_never_kept`,
   `a_kept_answer_older_than_a_month_is_not_served`).
-- **The schema is `V1` plus `MIGRATIONS`**, with `user_version` counting the steps laid. A later
+- **The schema is `V1` plus `MIGRATIONS`**, with `user_version` counting the steps laid; the
+  second step is `numbered`, seeded at the store's highest `seq`
+  (`answers_kept_before_they_were_numbered_go_on_from_the_newest_number`). A later
   build's store is `Error::KeptVersion`
   (`kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again`).
 
