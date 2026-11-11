@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] Every job of `release.yml` holds a write token: `permissions: contents: write` is
-  set for the whole workflow and each build job's checkout keeps its credentials in `.git/config`
-  while build scripts, `makepkg`, `rpmbuild` and Gradle run, and `android-apk` holds the release
-  keystore beside three third-party actions pinned by movable tags (`setup-android`, `rust-cache`,
-  `setup-gradle`); only `release` and `publish` write. `contents: read` at the top, `write` on
-  those two, `persist-credentials: false` on the rest and the keystore job's actions pinned by
-  commit
 - [S · 0.8.1] The sync server's `--total-bytes` holds for appends alone: `Store::compact` weighs
   only the space's own `--space-bytes` (`store.rs`), and a compaction needs one record past the
   snapshot, so a script that claims spaces and compacts each to a snapshot near 64 MiB fills

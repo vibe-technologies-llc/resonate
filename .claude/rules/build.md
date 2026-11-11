@@ -48,7 +48,7 @@ paths:
   backend crate. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
-  `tag`, empty builds artifacts only; `contents: write`). The `release` job holds the tag to
+  `tag`, empty builds artifacts only). The workflow holds `contents: read`; only `release` and `publish` raise it to `contents: write`, and they reach the API through `GH_TOKEN`, so every `actions/checkout` sets `persist-credentials: false` and no build step runs beside a token in `.git/config`. The `release` job holds the tag to
   `v` plus Cargo's version and the recipes' versions, and creates the GitHub release as a draft
   (pre-release when the tag has `-rc`, `-beta` or `-alpha`). The workflow sets `RESONATE_RELEASES` to `github.repository` for every job, so each release asset names the repository it asks about newer releases (`online.md`'s *The latest release*). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
@@ -62,7 +62,7 @@ paths:
   keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
   `RESONATE_SIGNING_KEY_PASSWORD`; the Windows job reads `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` when they exist and signs nothing when they do not; the macOS job reads `MACOS_CERTIFICATE_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY_BASE64`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER` when they exist and signs ad hoc when they do not (`packaging.md`). The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
   for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
-  `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens.
+  `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens. The three third-party actions beside the keystore (`setup-android`, `rust-cache`, `setup-gradle`) are pinned by full commit SHA of the release tag they were taken from, never a movable tag; a bump resolves the new tag with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (dereferencing an annotated tag to its commit).
 
 CI and the release jobs install WebKitGTK 4.1 (`webkit2gtk-4.1`, Fedora's `webkit2gtk4.1-devel`,
 Ubuntu's `libwebkit2gtk-4.1-dev`) for `resonate-signin`'s window.

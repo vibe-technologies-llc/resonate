@@ -11,7 +11,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
@@ -20,6 +20,8 @@ env:
 jobs:
   release:
     name: Release
+    permissions:
+      contents: write
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     outputs:
@@ -29,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ env.RELEASE_TAG || github.sha }}
       - name: Check the tag against the declared versions
         id: declared
@@ -80,6 +83,7 @@ jobs:
         run: useradd --create-home rpm-builder
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - name: Create the source archive
         run: |
@@ -124,6 +128,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - name: Build the DEBs
         run: |
@@ -159,6 +164,7 @@ jobs:
           vulkan-headers webkit2gtk-4.1 inter-font ttf-jetbrains-mono
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - name: Create the source archives
         env:
@@ -203,6 +209,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - name: Install the pinned toolchain
         run: rustup toolchain install
@@ -231,6 +238,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - name: Install the pinned toolchain
         run: rustup toolchain install
@@ -257,12 +265,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         with:
           packages: platform-tools
       - name: Install the Android toolchains
@@ -270,10 +279,10 @@ jobs:
           sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;28.2.13676358"
           rustup toolchain install stable --profile minimal
           rustup target add aarch64-linux-android x86_64-linux-android
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: . -> android/.cargo-target
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
       - name: Build the signed release variant
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -306,6 +315,8 @@ jobs:
 
   publish:
     name: Checksums and assets
+    permissions:
+      contents: write
     needs: [release, fedora-rpm, ubuntu-deb, arch-package, windows-zip, macos-dmg, android-apk]
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-26.04
@@ -313,6 +324,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           ref: ${{ needs.release.outputs.ref }}
       - uses: actions/download-artifact@v8
         with:
