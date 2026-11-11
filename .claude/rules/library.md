@@ -618,8 +618,10 @@ rows read via `Player::media` like any unscanned row.
   never handed out again, and `unheld_credited` notes the `listens` id each credited (or dropped)
   unheld row became, its row going with that listen; `history::spent` spends an `Unheld` handle on
   its row, else on what the note says it became, so a song credited by a scan while it plays keeps
-  the time heard after
-  (`an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_one`,
+  the time heard after, and a `Held` handle on its `listens` row, else on the `unheld_listens` row
+  that kept it as `listen_id`, so a song deleted while it plays does too
+  (`a_held_listen_whose_song_is_deleted_mid_play_is_still_spent_and_survives_a_restore`,
+  `an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_one`,
   `unheld_listens_kept_before_their_ids_were_numbered_keep_them_and_never_hand_one_out_again`). `plays:`, `played:`
   narrow on the two columns; `SortOrder::Plays`, `Played` order on them, so *Top 25 most played* is
   a saved query.

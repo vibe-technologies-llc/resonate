@@ -68,6 +68,9 @@ const COUNT_THE_CREDITED_AND_LET_THEM_GO: &str = "UPDATE tracks
 
 const SPEND_A_HELD_LISTEN: &str = "UPDATE listens SET heard = ?1 WHERE id = ?2";
 
+const SPEND_WHAT_A_HELD_LISTEN_BECAME: &str =
+    "UPDATE unheld_listens SET heard = ?1 WHERE listen_id = ?2";
+
 const SPEND_AN_UNHELD_LISTEN: &str = "UPDATE unheld_listens SET heard = ?1 WHERE id = ?2";
 
 const SPEND_WHAT_AN_UNHELD_LISTEN_BECAME: &str = "UPDATE listens SET heard = ?1
@@ -207,7 +210,10 @@ pub(crate) fn spent(transaction: &Transaction<'_>, listen: Listen, heard: i64) -
     };
 
     match listen {
-        Listen::Held(id) => spend(SPEND_A_HELD_LISTEN, id).map(drop),
+        Listen::Held(id) => match spend(SPEND_A_HELD_LISTEN, id)? {
+            0 => spend(SPEND_WHAT_A_HELD_LISTEN_BECAME, id).map(drop),
+            _ => Ok(()),
+        },
         Listen::Unheld(id) => match spend(SPEND_AN_UNHELD_LISTEN, id)? {
             0 => spend(SPEND_WHAT_AN_UNHELD_LISTEN_BECAME, id).map(drop),
             _ => Ok(()),

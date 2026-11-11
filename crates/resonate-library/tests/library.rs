@@ -27379,6 +27379,46 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_h
 }
 
 #[test]
+#[cfg(unix)]
+fn a_held_listen_whose_song_is_deleted_mid_play_is_still_spent_and_survives_a_restore() -> Result<()>
+{
+    const HEARD_AT_THE_START: Duration = Duration::from_secs(2);
+    const HEARD_BY_THE_END: Duration = Duration::from_secs(120);
+    let tree = Tree::new();
+    let data = Tree::new();
+    let cold = tree.write(
+        "cold.wav",
+        &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
+    );
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+
+    let counted = library
+        .track_played(&MediaLocation::local(&cold), None, HEARD_AT_THE_START)?
+        .expect("a counted play");
+    assert!(matches!(counted.listen, resonate_library::Listen::Held(_)));
+    let held = library.track_at(&cold, None)?.expect("held");
+
+    library.delete_tracks(&[held.id])?;
+    library.listened(counted.listen, HEARD_BY_THE_END)?;
+
+    assert_eq!(
+        library.statistics(Window::Everything)?.listened,
+        HEARD_BY_THE_END,
+        "the time heard after the delete did not reach the listen the delete kept"
+    );
+
+    fs::rename(data.path().join("Trash/files/cold.wav"), &cold).expect("a restored file");
+    scan(&library, &options(&tree))?;
+
+    let heard = library.statistics(Window::Everything)?;
+    assert_eq!(heard.plays, 1);
+    assert_eq!(heard.listened, HEARD_BY_THE_END);
+    Ok(())
+}
+
+#[test]
 fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_one() -> Result<()> {
     const HEARD_FIRST: Duration = Duration::from_secs(90);
     const HEARD_SECOND: Duration = Duration::from_secs(5);
