@@ -2571,6 +2571,52 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
 }
 
 #[test]
+fn a_seat_that_read_the_queue_before_another_edit_changes_nothing_and_keeps_it_on_the_next_look()
+-> Result<()> {
+    let tree = Tree::new();
+    let long = pcm(16, RATE as usize * 10).file;
+    let [a, b, c, d] = ["a", "b", "c", "d"].map(|name| tree.write(&format!("{name}.wav"), &long));
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    let seat = Seat::on(Arc::clone(&first));
+    let [row_a, row_b, row_c, row_d] = [&a, &b, &c, &d].map(|path| kept(path));
+    let queue = |player: &Player| locations(&player.queue());
+    let here = |paths: &[&PathBuf]| -> Vec<MediaLocation> {
+        paths
+            .iter()
+            .map(|path| MediaLocation::local(*path))
+            .collect()
+    };
+
+    assert!(seat.take_up(
+        &[row_a, row_b.clone(), row_c],
+        Duration::from_secs(1),
+        Moment::now(),
+        false,
+    )?);
+    let (queued, state) = seat.settled_view().expect("a settled view");
+
+    first
+        .request(Command::Remove(Span::one(1)))?
+        .wait()
+        .expect("removed");
+    let after_the_other_edit = queue(&first);
+
+    assert!(!seat.keep_ahead_seen(&queued, &state, &[row_b.clone(), row_d.clone()])?);
+    assert_eq!(queue(&first), after_the_other_edit);
+    assert_eq!(queue(&first), here(&[&a, &c]));
+
+    assert!(seat.keep_ahead(&[row_b, row_d])?);
+    wait_for(
+        &first,
+        |player| queue(player) == here(&[&a, &b, &d]),
+        "the queue behind the song to follow the host's order from a fresh look",
+    );
+    Ok(())
+}
+
+#[test]
 fn a_paused_zone_hands_over_paused_where_it_stood_and_a_handover_is_refused_where_it_cannot_land()
 -> Result<()> {
     let tree = Tree::new();

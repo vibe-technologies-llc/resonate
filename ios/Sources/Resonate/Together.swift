@@ -228,18 +228,20 @@ final class TogetherState {
         }
     }
 
-    func playNext(_ request: Int) {
+    func playNext(_ request: PartyRequest) {
+        let id = request.id
         Task {
             guard let native = try? await library.player() else { return }
-            let placed = (try? await Work.aside { native.partyPlayNext(request: UInt32(request)) }) ?? false
+            let placed = (try? await Work.aside { native.partyPlayNext(request: id) }) ?? false
             if !placed { library.fail(PartyWords.songNotHeld) }
         }
     }
 
-    func passOver(_ request: Int) {
+    func passOver(_ request: PartyRequest) {
+        let id = request.id
         Task {
             guard let native = try? await library.player() else { return }
-            _ = try? await Work.aside { native.partyPassOver(request: UInt32(request)) }
+            _ = try? await Work.aside { native.partyPassOver(request: id) }
         }
     }
 }

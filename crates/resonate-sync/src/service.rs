@@ -48,7 +48,7 @@ use crate::{
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     remote::{CONTROL_ANSWERED_WITHIN, Controlled, Controlling, RemoteCommand, Watched},
-    seal::{opened, sealed},
+    seal::{LARGEST_OPENED, opened, sealed},
     stun::{Reflector, STUN_PORT},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
@@ -89,6 +89,9 @@ const HEARD_FOR: Duration = Duration::from_secs(60);
 const WATCH_LAPSES_AFTER: Duration = Duration::from_secs(30);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 const PUNCH_ANSWERED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
+const LARGEST_CANDIDATES_OPENED: usize = 64 * 1024;
+const KNOWN_DEVICES_ANSWERED_AT_MOST: usize = 1024;
+const STRANGERS_ANSWERED_AT_MOST: usize = 16;
 const RELAY_DIAL_WITHIN: Duration = Duration::from_secs(20);
 const RELAYED_DATAGRAMS_QUEUED_AT_MOST: usize = 256;
 
@@ -531,6 +534,7 @@ struct Syncing {
     dialling_back: BTreeSet<DeviceId>,
     peers: BTreeMap<DeviceId, Connection>,
     punched_back: BTreeMap<DeviceId, Instant>,
+    strangers_answered: BTreeMap<DeviceId, Instant>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
     following: BTreeSet<DeviceId>,
@@ -1305,6 +1309,44 @@ fn host_and_port(server: &str) -> (String, u16) {
     }
 }
 
+fn may_answer(table: &mut BTreeMap<DeviceId, Instant>, device: DeviceId, at_most: usize) -> bool {
+    table.retain(|_, at| at.elapsed() < PUNCH_ANSWERED_AT_MOST_EVERY);
+    if table.contains_key(&device) || table.len() >= at_most {
+        return false;
+    }
+    table.insert(device, Instant::now());
+    true
+}
+
+fn punched_candidates(
+    derived: &Derived,
+    address: SocketAddr,
+    sealed: &[u8],
+) -> Option<Vec<SocketAddr>> {
+    let theirs = match opened(
+        &derived.sealer,
+        derived.space,
+        sealed,
+        LARGEST_CANDIDATES_OPENED,
+    )
+    .and_then(|plain| decoded_candidates(&plain))
+    {
+        Ok(theirs) => theirs,
+        Err(error) => {
+            tracing::debug!(%error, "a peer's candidates could not be read");
+            return None;
+        }
+    };
+    let mut candidates = Vec::with_capacity(theirs.len() + 1);
+    if !address.ip().is_unspecified() {
+        candidates.push(address);
+    }
+    candidates.extend(theirs);
+    candidates.dedup();
+
+    Some(candidates)
+}
+
 pub(crate) async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
     timeout(SERVER_ANSWERS_WITHIN, waiting)
         .await
@@ -1489,6 +1531,7 @@ impl Syncing {
             dialling_back: BTreeSet::new(),
             peers: BTreeMap::new(),
             punched_back: BTreeMap::new(),
+            strangers_answered: BTreeMap::new(),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
             following: BTreeSet::new(),
@@ -1838,6 +1881,14 @@ impl Syncing {
         }
     }
 
+    fn knows_device(&self, device: DeviceId) -> bool {
+        self.running
+            .ledger
+            .lock()
+            .knows_device(device)
+            .unwrap_or(false)
+    }
+
     fn publish_devices(&self) {
         let notes = match self.running.ledger.lock().devices() {
             Ok(notes) => notes,
@@ -1847,6 +1898,12 @@ impl Syncing {
             }
         };
         let this = self.running.device;
+        self.running.reflector.relay().admit(
+            notes
+                .iter()
+                .map(|note| note.device)
+                .chain(self.server_online.iter().copied()),
+        );
         let devices = notes
             .into_iter()
             .map(|note| {
@@ -1874,8 +1931,13 @@ impl Syncing {
             for (at, blob) in blobs.into_iter().enumerate() {
                 let length = blob.as_ref().map_or(0, Vec::len);
                 if let Some(blob) = blob {
-                    match opened(&running.derived.sealer, running.derived.space, &blob)
-                        .and_then(|plain| decoded_bundle(&plain))
+                    match opened(
+                        &running.derived.sealer,
+                        running.derived.space,
+                        &blob,
+                        LARGEST_OPENED,
+                    )
+                    .and_then(|plain| decoded_bundle(&plain))
                     {
                         Ok(changes) => {
                             ledger.arrived(running.catalog.as_ref(), &changes)?;
@@ -2321,7 +2383,10 @@ impl Syncing {
         }
         let running = Arc::clone(&self.running);
         tokio::spawn(async move {
-            let address = running.reflector.relay().address_of(device);
+            let Some(address) = running.reflector.relay().address_of(device) else {
+                let _ = running.events.send(Event::Relayed(device, None));
+                return;
+            };
             let connection = match dialled_within(
                 &running.endpoint,
                 &running.to_peers,
@@ -2428,35 +2493,25 @@ impl Syncing {
             .peers
             .get(&device)
             .is_some_and(|connection| connection.close_reason().is_none());
-        let answered_lately = self
-            .punched_back
-            .get(&device)
-            .is_some_and(|at| at.elapsed() < PUNCH_ANSWERED_AT_MOST_EVERY);
         if connected {
             return Ok(());
         }
+        let Some(mut candidates) = punched_candidates(&self.running.derived, address, sealed)
+        else {
+            return Ok(());
+        };
         if !self.waiting.contains_key(&device) {
-            if answered_lately {
+            let known = self.knows_device(device);
+            let (table, at_most) = if known {
+                (&mut self.punched_back, KNOWN_DEVICES_ANSWERED_AT_MOST)
+            } else {
+                (&mut self.strangers_answered, STRANGERS_ANSWERED_AT_MOST)
+            };
+            if !may_answer(table, device, at_most) {
                 return Ok(());
             }
-            self.punched_back.insert(device, Instant::now());
             self.punch(device).await?;
         }
-        let mut candidates = Vec::new();
-        if !address.ip().is_unspecified() {
-            candidates.push(address);
-        }
-        match opened(
-            &self.running.derived.sealer,
-            self.running.derived.space,
-            sealed,
-        )
-        .and_then(|plain| decoded_candidates(&plain))
-        {
-            Ok(theirs) => candidates.extend(theirs),
-            Err(error) => tracing::debug!(%error, "a peer's candidates could not be read"),
-        }
-        candidates.dedup();
         if self.running.relay_only {
             candidates.clear();
         }
@@ -3142,6 +3197,54 @@ mod tests {
     use super::*;
 
     const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+
+    #[test]
+    fn a_device_is_answered_once_in_a_while_and_a_crowd_of_strangers_only_up_to_a_few() {
+        let mut table = BTreeMap::new();
+        let device = |number: u8| DeviceId([number; 16]);
+
+        assert!(may_answer(&mut table, device(1), 2));
+        assert!(!may_answer(&mut table, device(1), 2));
+        assert!(may_answer(&mut table, device(2), 2));
+        assert!(!may_answer(&mut table, device(3), 2));
+        assert_eq!(table.len(), 2);
+    }
+
+    fn observed() -> SocketAddr {
+        SocketAddr::from(([203, 0, 113, 9], 4000))
+    }
+
+    #[test]
+    fn the_address_a_server_observed_joins_the_candidates_only_when_the_sealed_ones_open() {
+        let derived = SyncKey::minted()
+            .expect("randomness")
+            .derived()
+            .expect("derived");
+        let stranger = SyncKey::minted()
+            .expect("randomness")
+            .derived()
+            .expect("derived");
+        let theirs = SocketAddr::from(([192, 168, 1, 7], 5000));
+        let sealed_candidates = sealed(
+            &derived.sealer,
+            derived.space,
+            &encoded_candidates(&[theirs]),
+        )
+        .expect("sealed");
+        let foreign = sealed(
+            &stranger.sealer,
+            derived.space,
+            &encoded_candidates(&[theirs]),
+        )
+        .expect("sealed");
+
+        assert_eq!(
+            punched_candidates(&derived, observed(), &sealed_candidates),
+            Some(vec![observed(), theirs])
+        );
+        assert_eq!(punched_candidates(&derived, observed(), &foreign), None);
+        assert_eq!(punched_candidates(&derived, observed(), &[0; 8]), None);
+    }
 
     fn named(title: &str) -> Recording {
         Recording {

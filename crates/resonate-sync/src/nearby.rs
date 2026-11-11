@@ -10,7 +10,7 @@ use crate::{
     Error, Result,
     key::{Derived, hex, random_bytes},
     seal::{opened, sealed},
-    wire::Beacon,
+    wire::{Beacon, LARGEST_DATAGRAM},
 };
 
 pub const NEARBY_PORT: u16 = 41_734;
@@ -230,7 +230,7 @@ pub fn beacon_bytes(derived: &Derived, beacon: &Beacon) -> Result<Vec<u8>> {
 
 pub fn beacon_of(derived: &Derived, bytes: &[u8]) -> Option<Beacon> {
     let blob = bytes.strip_prefix(BEACON_MAGIC)?;
-    opened(&derived.sealer, derived.space, blob)
+    opened(&derived.sealer, derived.space, blob, LARGEST_DATAGRAM)
         .and_then(|plain| Beacon::decoded(&plain))
         .ok()
 }

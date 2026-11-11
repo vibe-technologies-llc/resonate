@@ -10,7 +10,7 @@ use crate::{
         Access,
         moved::Personal,
         op::{
-            ENTRY_BYTES, EntryId, MEMBER_BYTES, MemberId, SharedList, SharedOp, decoded_ops,
+            ENTRY_BYTES, EntryId, MEMBER_BYTES, MemberId, SharedList, SharedOp, decoded_kept_ops,
             encoded_ops,
         },
     },
@@ -218,7 +218,7 @@ impl Store {
         let member: [u8; MEMBER_BYTES] = raw.member.try_into().map_err(|_| malformed())?;
         let personal: [u8; 32] = raw.personal.try_into().map_err(|_| malformed())?;
         let mut list = SharedList::default();
-        for op in decoded_ops(&raw.state)? {
+        for op in decoded_kept_ops(&raw.state)? {
             list.apply(&op);
         }
         let written = raw
@@ -241,7 +241,7 @@ impl Store {
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .into_iter()
-            .map(|(seq, ops)| decoded_ops(&ops).map(|ops| (seq, ops)))
+            .map(|(seq, ops)| decoded_kept_ops(&ops).map(|ops| (seq, ops)))
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Kept {

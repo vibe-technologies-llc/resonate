@@ -865,6 +865,25 @@ fn a_device_forgotten_while_it_still_syncs_speaks_up_and_is_listed_again() {
 }
 
 #[test]
+fn only_a_device_the_ledger_lists_is_known_and_a_forgotten_one_is_not() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    let stranger = Device::new("Stranger", &["A"]).ledger.device();
+    let phone_id = phone.ledger.device();
+
+    assert!(!desk.ledger.knows_device(phone_id).expect("asked"));
+
+    sync(&mut phone, &mut desk);
+
+    assert!(desk.ledger.knows_device(phone_id).expect("asked"));
+    assert!(!desk.ledger.knows_device(stranger).expect("asked"));
+
+    desk.ledger.forget_device(phone_id).expect("forgotten");
+
+    assert!(!desk.ledger.knows_device(phone_id).expect("asked"));
+}
+
+#[test]
 fn a_listen_past_what_the_ledger_keeps_is_never_credited_again() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);

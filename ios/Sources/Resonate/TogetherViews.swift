@@ -295,12 +295,12 @@ struct PartyView: View {
         peopleSection(party, together)
         if !party.requests.isEmpty {
             Section("party.requests") {
-                ForEach(Array(party.requests.enumerated()), id: \.offset) { at, request in
+                ForEach(party.requests, id: \.id) { request in
                     VStack(alignment: .leading, spacing: 8) {
                         PartySongLines(song: request)
                         HStack(spacing: 12) {
-                            Button("party.requests.play-next") { together.playNext(at) }
-                            Button("party.requests.pass") { together.passOver(at) }
+                            Button("party.requests.play-next") { together.playNext(request) }
+                            Button("party.requests.pass") { together.passOver(request) }
                         }
                         .buttonStyle(.bordered)
                     }

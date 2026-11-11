@@ -10,7 +10,7 @@ use crate::{
     key::{expand, random_bytes},
     shared::{
         Access,
-        op::{MEMBER_BYTES, MemberId, PUBLIC_BYTES},
+        op::{MEMBER_BYTES, MemberId, PEOPLE_KEPT_AT_MOST, PUBLIC_BYTES},
     },
     wire::{Reader, Writer},
 };
@@ -20,6 +20,8 @@ const SEAL_KEY_BYTES: usize = 32;
 const NONCE_BYTES: usize = 12;
 const DERIVATION_SALT: &[u8] = b"resonate-shared-moved/1";
 const LARGEST_SEALED_CODE: usize = 512;
+pub const LARGEST_SEATS_OPENED: usize =
+    PEOPLE_KEPT_AT_MOST * (MEMBER_BYTES + LARGEST_SEALED_CODE + 8);
 const SEAT_AT_LEAST: usize = MEMBER_BYTES + PUBLIC_BYTES + 1;
 
 #[derive(Clone)]

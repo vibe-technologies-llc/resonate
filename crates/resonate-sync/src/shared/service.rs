@@ -28,8 +28,14 @@ use crate::{
         catalog::{LocalShared, SharedCatalog},
         diff::{Looking, Resolving, edits_seen, written_order},
         invitation::{Invited, link_to, web_link_to},
-        moved::{Personal, Seat, access_from, decoded_seats, encoded_seats, seat_for},
-        op::{EntryId, MemberId, SharedList, SharedOp, decoded_ops, encoded_ops},
+        moved::{
+            LARGEST_SEATS_OPENED, Personal, Seat, access_from, decoded_seats, encoded_seats,
+            seat_for,
+        },
+        op::{
+            BUNDLE_OPS_AT_MOST, EntryId, LARGEST_BUNDLE_OPENED, MemberId, SharedList, SharedOp,
+            decoded_ops, encoded_ops,
+        },
         place::Place,
         store::{Kept, Me, Store},
     },
@@ -51,8 +57,6 @@ const LAST_RETRY: Duration = Duration::from_secs(30 * 60);
 const COMPACT_PAST_RECORDS: u64 = 512;
 
 const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
-
-const BUNDLE_OPS_AT_MOST: usize = 256;
 
 const CLOSES_BEFORE_ANSWER_FOR_TOO_OLD: u32 = 3;
 
@@ -1098,7 +1102,7 @@ impl Running {
         keys: &crate::shared::SharedKeys,
         blob: &[u8],
     ) -> Result<bool> {
-        let Ok(plain) = opened(&keys.sealer, keys.space, blob) else {
+        let Ok(plain) = opened(&keys.sealer, keys.space, blob, LARGEST_BUNDLE_OPENED) else {
             tracing::warn!("a shared playlist's record did not open and was passed over");
             return Ok(false);
         };
@@ -1108,15 +1112,15 @@ impl Running {
         };
 
         let kept = &mut self.lists[at];
-        let before = kept.list.clone();
+        let mut changed = false;
         for op in &ops {
             if let Some(stamp) = stamp_of(op) {
                 self.clock.saw(stamp);
             }
-            kept.list.apply(op);
+            changed |= kept.list.apply(op);
         }
 
-        Ok(kept.list != before)
+        Ok(changed)
     }
 
     async fn pushed(
@@ -1207,7 +1211,7 @@ impl Running {
         keys: &crate::shared::SharedKeys,
         sealed_seats: &[u8],
     ) -> Result<Option<SpaceId>> {
-        let seats = opened(&keys.sealer, keys.space, sealed_seats)
+        let seats = opened(&keys.sealer, keys.space, sealed_seats, LARGEST_SEATS_OPENED)
             .ok()
             .and_then(|plain| decoded_seats(&plain).ok())
             .unwrap_or_default();
