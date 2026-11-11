@@ -46,23 +46,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## The window
-- [S · 0.8.1] Late network answers act on a window that has moved on: *Find another version*
-  opens its menu at the press's place whenever the services answer (`better.rs`), as *Place on a
-  release…* does (`browser.rs`), and `open_a_menu` clears `naming`, `adding` and `record`, so an
-  answer landing while a playlist is named or picked drops it and its held rows; an album or artist
-  not held opens its page whenever its lookup lands (`open_album_not_held`, `root.rs`), so of two
-  pressed, whichever answers last is shown. A serial taken at the press and moved by every pane,
-  sheet and lookup
-- [S · 0.8.1] The Match sheet takes an answer asked by an earlier opening: `ask_to_match` starts
-  `asked` at 0 each time the sheet opens (`matching.rs`) and a landing compares the track and that
-  count alone, so a sheet reopened on the same song before MusicBrainz answers takes the first ask's
-  recordings (for the words typed then), and they overwrite the newer where they land after
-- [S · 0.8.1] A remote zone's clock shows no hours: `remote.rs`'s `clock` prints `75:03` where the
-  Device sync pane prints `1:15:03` for the same zone. The window, the panes and the terminal hold
-  some eight clock formatters of their own (`format.rs`'s `whole_seconds` and `spanned`, the
-  binary's `played`, `readout.rs`, `sync.rs`, `settings/sync.rs`, `analysis_plot.rs`), and the
-  terminal's `ago` stops at days (*400 days ago*) where the window says years (`format.rs`'s
-  `since`); one formatter in core would serve both
-- [S · 0.8.1] Forgetting the served covers lets fetches already running land: `serving.rs`'s
-  `forget_the_covers` clears `fetching` and the cache while detached fetches run, and each landing
-  removes a key a newer fetch may hold and keeps a cover from before the reset

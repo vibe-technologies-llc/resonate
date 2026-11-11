@@ -4,14 +4,6 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## The window
-- [S · 0.8.1] Choosing a version, *Play your own copy again* and *Look for missing covers* write
-  the catalog on the window's thread (`better.rs`'s `choose_the_version` and `play_your_own_copy`,
-  `models.rs`'s `look_for_missing_covers`), behind the one writer a scan holds for each batch and
-  SQLite's ten-second `busy_timeout` where another process writes; every other edit goes through
-  `edited_then`. Every `Load` and `Insert` also reads the whole `versions_chosen` table and its
-  tracks there (`with_the_versions_chosen`)
-- [S · 0.8.1] Playing a row of a browse list held in several chunks copies the whole list once
-  (`Rows::whole`) beside the copy the queue makes; the queue could take the chunks as they are
 
 ## Startup and idle
 
