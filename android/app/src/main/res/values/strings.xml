@@ -57,6 +57,7 @@
     </plurals>
     <string name="opened_unnamed">Opened song</string>
     <string name="opened_unreadable">The file could not be opened</string>
+    <string name="opened_too_large">The file is too large to keep a copy of</string>
     <string name="together_reaching_the_server">Reaching the server…</string>
     <string name="together_party_reconnecting">Lost the server; trying again…</string>
     <string name="together_party_ended">The party is over</string>

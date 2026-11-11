@@ -46,15 +46,17 @@ private class TrustedControllers(
     private val library: LibraryRepository,
     private val browse: LibraryBrowse,
     private val scope: CoroutineScope,
+    private val isBrowsingHost: (MediaSession.ControllerInfo) -> Boolean,
     private val carButtons: () -> List<CommandButton>,
 ) : MediaLibraryService.MediaLibrarySession.Callback {
     override fun onConnect(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
-    ): MediaSession.ConnectionResult =
-        if (session.isMediaNotificationController(controller) ||
+    ): MediaSession.ConnectionResult {
+        val browsingHost = isBrowsingHost(controller)
+        return if (session.isMediaNotificationController(controller) ||
             controller.isTrusted ||
-            controller.packageName in BROWSING_HOSTS)
+            browsingHost)
             MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(
                     MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
@@ -63,12 +65,10 @@ private class TrustedControllers(
                         .add(cycleRepeat)
                         .build()
                 )
-                .apply {
-                    if (controller.packageName in BROWSING_HOSTS)
-                        setMediaButtonPreferences(carButtons())
-                }
+                .apply { if (browsingHost) setMediaButtonPreferences(carButtons()) }
                 .build()
         else MediaSession.ConnectionResult.reject()
+    }
 
     override fun onGetLibraryRoot(
         session: MediaLibraryService.MediaLibrarySession,
@@ -241,7 +241,7 @@ class PlaybackService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         session =
-            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, library.browse, scope) {
+            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, library.browse, scope, ::isBrowsingHost) {
                     buttons(adapter, forCar = true)
                 })
                 .setSessionActivity(openApp)
@@ -262,11 +262,14 @@ class PlaybackService : MediaLibraryService() {
         super.onUpdateNotification(session, startInForegroundRequired || holdsAParty)
     }
 
+    private fun isBrowsingHost(controller: MediaSession.ControllerInfo): Boolean =
+        packageManager.isBrowsingHost(controller.uid, controller.packageName)
+
     private fun refreshButtons(player: Player) {
         val open = session ?: return
         open.setMediaButtonPreferences(buttons(player, forCar = false))
         open.connectedControllers
-            .filter { it.packageName in BROWSING_HOSTS }
+            .filter(::isBrowsingHost)
             .forEach { open.setMediaButtonPreferences(it, buttons(player, forCar = true)) }
     }
 

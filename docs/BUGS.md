@@ -4,19 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.8.1] Any installed Android app can make Resonate copy whatever it can read into its own
-  storage: `MainActivity` is exported, and an `ACTION_VIEW` that is neither a pairing nor an
-  invitation link goes to `OpenedFiles.track` whatever its scheme (`MainActivity.kt`'s `opening`);
-  `copied` reads it through the app's own `ContentResolver` (a `file:` URI into the app's private
-  files included) with no ceiling, so one explicit intent can fill the phone's storage. `android.md`
-  says the activity takes a `content:` audio URI: every other scheme and the app's own authorities
-  want refusing, and the copy stopping and deleted past a ceiling
-- [S · 0.8.1] Android Auto and the Assistant are trusted by package name alone: `BROWSING_HOSTS`
-  (`BrowsingHosts.kt`) admits a controller to the whole library and queue
-  (`PlaybackService`'s `onConnect`) and to every cover (`ArtworkProvider`'s `mayRead`) when its
-  package bears one of four names, two of which (`autosimulator`, `carassistant`) no retail phone
-  holds, so a sideloaded app taking the name browses and drives everything; each name wants its
-  signing certificate's digest checked (`PackageManager.hasSigningCertificate`)
 - [S · 0.8.1] Every job of `release.yml` holds a write token: `permissions: contents: write` is
   set for the whole workflow and each build job's checkout keeps its credentials in `.git/config`
   while build scripts, `makepkg`, `rpmbuild` and Gradle run, and `android-apk` holds the release
@@ -173,10 +160,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.8.1] Forgetting the served covers lets fetches already running land: `serving.rs`'s
   `forget_the_covers` clears `fetching` and the cache while detached fetches run, and each landing
   removes a key a newer fetch may hold and keeps a cover from before the reset
-
-## The phones
-- [S · 0.8.1] Android keeps a whole copy of every opened file that does not index:
-  `OpenedFiles.track` copies, then calls `indexDocument`, and deletes the copy only where the copy
-  itself failed, so a damaged or unsupported file stays in `files/opened`, which nothing lists or
-  removes; opening the same file again copies it again (`name (2)`), where iOS reuses an identical
-  copy (`Folders.localCopy`)

@@ -34,12 +34,8 @@ object ArtworkUris {
 object ArtworkReaders {
     const val MEDIA_CONTENT_CONTROL = "android.permission.MEDIA_CONTENT_CONTROL"
 
-    fun mayRead(
-        ownApp: Boolean,
-        packagesOfCaller: Collection<String>,
-        callerControlsMedia: Boolean,
-    ): Boolean =
-        ownApp || callerControlsMedia || packagesOfCaller.any { it in BROWSING_HOSTS }
+    fun mayRead(ownApp: Boolean, callerControlsMedia: Boolean, callerBrowses: () -> Boolean): Boolean =
+        ownApp || callerControlsMedia || callerBrowses()
 }
 
 class ArtworkProvider : ContentProvider() {
@@ -73,13 +69,15 @@ class ArtworkProvider : ContentProvider() {
 
     private fun callerMayRead(context: Context): Boolean {
         val uid = Binder.getCallingUid()
+        val packages = context.packageManager
         return ArtworkReaders.mayRead(
             ownApp = uid == Process.myUid(),
-            packagesOfCaller = context.packageManager.getPackagesForUid(uid)?.toList().orEmpty(),
             callerControlsMedia =
                 context.checkCallingPermission(ArtworkReaders.MEDIA_CONTENT_CONTROL) ==
                     PackageManager.PERMISSION_GRANTED,
-        )
+        ) {
+            packages.getPackagesForUid(uid).orEmpty().any { packages.isBrowsingHost(uid, it) }
+        }
     }
 
     override fun query(

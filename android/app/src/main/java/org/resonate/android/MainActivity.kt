@@ -148,8 +148,13 @@ class MainActivity : ComponentActivity(), Host {
                         )
                         return
                     }
-                    OpenedLink.SOMETHING_ELSE ->
+                    OpenedLink.SOMETHING_ELSE -> {
+                        if (!library.openedFiles.mayOpen(opened)) {
+                            Log.w("Resonate", "Refused to open ${opened.scheme}://${opened.authority}")
+                            return
+                        }
                         waitingToPlay = { listOf(library.openedFiles.track(opened)) }
+                    }
                 }
             }
             MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH -> {

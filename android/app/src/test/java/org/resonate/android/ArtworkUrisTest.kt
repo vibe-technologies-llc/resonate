@@ -29,13 +29,10 @@ class ArtworkUrisTest {
     }
 
     @Test
-    fun onlyTheAppTheBrowsingHostsAndAMediaControllerMayReadACover() {
-        assertTrue(ArtworkReaders.mayRead(true, emptyList(), false))
-        assertTrue(
-            ArtworkReaders.mayRead(false, listOf("com.google.android.projection.gearhead"), false)
-        )
-        assertTrue(ArtworkReaders.mayRead(false, listOf("com.android.systemui"), true))
-        assertFalse(ArtworkReaders.mayRead(false, listOf("org.stranger.app"), false))
-        assertFalse(ArtworkReaders.mayRead(false, emptyList(), false))
+    fun onlyTheAppASignedBrowsingHostAndAMediaControllerMayReadACover() {
+        assertTrue(ArtworkReaders.mayRead(ownApp = true, callerControlsMedia = false) { false })
+        assertTrue(ArtworkReaders.mayRead(ownApp = false, callerControlsMedia = false) { true })
+        assertTrue(ArtworkReaders.mayRead(ownApp = false, callerControlsMedia = true) { false })
+        assertFalse(ArtworkReaders.mayRead(ownApp = false, callerControlsMedia = false) { false })
     }
 }

@@ -146,9 +146,12 @@ follows the song it named (`BrowseIds.playable`), and a song no longer in its fo
 listed under the root, a playlist past row 500) plays alone. A voice request (`requestMetadata.searchQuery`,
 or `MEDIA_PLAY_FROM_SEARCH` on `MainActivity`) plays `search_library`'s first 100 songs. Android Auto, the
 Assistant, the car-assistant and the Auto simulator connect as controllers beside the trusted ones
-(`BROWSING_HOSTS`), and `automotive_app_desc.xml` declares the media app
+(`BrowsingHosts`), each admitted only when the calling uid holds the package and the package is signed
+by one of that name's own release certificates (`PackageManager.hasSigningCertificate` by SHA-256, the
+digests Google publishes in UAMP's `allowed_media_browser_callers.xml`; `isBrowsingHost`,
+`BrowsingHostsTest`), so an app sideloaded under one of those names browses nothing, and `automotive_app_desc.xml` declares the media app
 (`BrowseIdsTest`, `LibraryBrowseTest`). Every browse row wears a cover by `content://` URI, never bytes
-(a Binder payload of 500 rows would be too large): `ArtworkProvider` (exported, read-only, answering only the app itself, `BROWSING_HOSTS` and a caller
+(a Binder payload of 500 rows would be too large): `ArtworkProvider` (exported, read-only, answering only the app itself, a signed browsing host and a caller
 holding `MEDIA_CONTENT_CONTROL`, `ArtworkReaders`, by the calling uid, so no other installed app reads
 a cover, authority
 `<applicationId>.art`, `ArtworkUris`) answers `/track/<id>` with the JPEG `artworkJpeg` encodes at
@@ -771,13 +774,21 @@ distinct text. The queue drops hidden rows through the boundary's own `left_the_
 
 **A file opened from elsewhere is played at once** (`OpenedFiles`): `MainActivity` takes `ACTION_VIEW` of
 a `content:` audio URI (`audio/*`, `application/ogg`), as iOS's `onOpenURL` does, and once the controller is
-connected plays it through `Playback`. A document that lies in a granted tree (the same authority and a
+connected plays it through `Playback`. The activity is exported, so an explicit intent reaches it whatever
+its filter says: any other scheme (`file:` into the app's own files included) and any authority the app
+itself declares (its providers' and its libraries', a `<user>@` prefix and case ignored) is refused
+before anything is read (`OpenedSources.mayOpen`, `OpenedSourcesTest`). A document that lies in a granted tree (the same authority and a
 tree document id holding it, the most specific tree winning, `OpenedNames.withinTree`) is indexed at the
-URI that tree reaches it by and played where it is; any other is copied into `files/opened` under its
-display name made safe (`safeName`; `name (2).ext` where taken) and indexed as
+URI that tree reaches it by and played where it is; any other is copied, first into a staging file under
+`cache/opening` that stops and is deleted past `OpenedCopying.ceiling` (4 GiB, and never leaving less
+than 1 GiB free), then compared byte for byte with the copies already kept under its name
+(`OpenedNames.copiesOf`, `name.ext` and `name (n).ext`): an identical one is indexed again in its place, as
+iOS's `Folders.localCopy`, and only a new file is moved into `files/opened` under its display name made
+safe (`safeName`; `name (2).ext` where taken), under one lock so two opens never take one name. It is indexed as
 `resonate-folder://local/<escaped name>`, a URI `Documents.openDocument` resolves to that file before it
-asks the resolver (iOS's `local` folder). The copy is kept as a song of the library; a temporary grant
-would not outlive the process.
+asks the resolver (iOS's `local` folder); a new copy that does not index (damaged, unsupported) is deleted,
+so nothing is kept that no list shows (`OpenedFilesTest`). The copy is kept as a song of the library; a
+temporary grant would not outlive the process.
 
 The song sheet holds *Share link* (`shareLink`: `share_link(id)` on the
 IO dispatcher, then the system `ACTION_SEND` chooser with the link as text; no link is a notice) and,

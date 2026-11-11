@@ -34,11 +34,26 @@ class OpenedNamesTest {
     }
 
     @Test
+    fun theCopiesOfANameAreItAndItsNumberedTakenNames() {
+        assertEquals(
+            listOf("a.flac", "a (2).flac", "a (4).flac"),
+            OpenedNames.copiesOf(
+                "a.flac",
+                setOf("a.flac", "a (2).flac", "a (4).flac", "b.flac", "a (2).mp3"),
+            ),
+        )
+        assertEquals(listOf("a (3).flac"), OpenedNames.copiesOf("a.flac", setOf("a (3).flac")))
+        assertEquals(emptyList<String>(), OpenedNames.copiesOf("a.flac", setOf("b.flac")))
+    }
+
+    @Test
     fun aNameLosesWhatAFileSystemRefuses() {
         assertEquals("a_b_.flac", OpenedNames.safeName("a:b?.flac", unnamed))
         assertEquals("c.flac", OpenedNames.safeName("x/y/c.flac", unnamed))
         assertEquals("Opened song", OpenedNames.safeName(null, unnamed))
         assertEquals("Opened song", OpenedNames.safeName("  ", unnamed))
+        assertEquals("Opened song", OpenedNames.safeName("..", unnamed))
+        assertEquals("Opened song", OpenedNames.safeName("x/.", unnamed))
     }
 
     @Test
@@ -48,5 +63,14 @@ class OpenedNamesTest {
         assertEquals("resonate-folder://local/100%25%20a%20b.flac", uri)
         assertEquals("100% a b.flac", OpenedNames.localName(uri))
         assertEquals(null, OpenedNames.localName("content://x/y"))
+    }
+
+    @Test
+    fun aLocalNameNeverReachesOutOfTheFolder() {
+        assertEquals(null, OpenedNames.localName("resonate-folder://local/..%2Fshared_prefs%2Fa.xml"))
+        assertEquals(null, OpenedNames.localName("resonate-folder://local/../a"))
+        assertEquals(null, OpenedNames.localName("resonate-folder://local/.."))
+        assertEquals(null, OpenedNames.localName("resonate-folder://local/"))
+        assertEquals("..a.flac", OpenedNames.localName("resonate-folder://local/..a.flac"))
     }
 }
