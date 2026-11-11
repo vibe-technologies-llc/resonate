@@ -30,7 +30,7 @@ use unicode_normalization::UnicodeNormalization as _;
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
     REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
-    synced::HeldRow,
+    deleted, synced::HeldRow,
 };
 
 const UNIT_SEPARATOR: char = '\u{1f}';
@@ -1438,16 +1438,25 @@ pub fn forget_paths(tx: &Transaction<'_>, root: i64, paths: &[PathBuf]) -> Resul
     let mut forgotten = 0;
     for batch in paths.chunks(FORGOTTEN_AT_ONCE) {
         let held = vec!["?"; batch.len()].join(",");
-        let mut statement = tx
-            .prepare(&format!(
-                "DELETE FROM tracks WHERE root_id = ?1 AND vault_key IS NULL AND path IN ({held})"
-            ))
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let unvaulted_at_these_paths =
+            format!("t.root_id = ?1 AND t.vault_key IS NULL AND t.path IN ({held})");
         let mut bound: Vec<Value> = Vec::with_capacity(batch.len() + 1);
         bound.push(Value::Integer(root));
         for path in batch {
             bound.push(Value::Text(path_text(path).into_owned()));
         }
+
+        deleted::keep_listens_as_unheld(
+            tx,
+            &unvaulted_at_these_paths,
+            params_from_iter(bound.iter()),
+        )?;
+
+        let mut statement = tx
+            .prepare(&format!(
+                "DELETE FROM tracks WHERE root_id = ?1 AND vault_key IS NULL AND path IN ({held})"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         forgotten += statement
             .execute(params_from_iter(bound))
             .map_err(|source| Error::store(StoreOp::Delete, source))?;

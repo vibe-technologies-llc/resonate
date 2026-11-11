@@ -751,7 +751,7 @@ song the scan indexed there (`keep_folder_cover`), not once a song. Albums group
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
 request. `refresh()` and `reload()` take the repository's `access` lock one 500-row page at a time
 (`pagedTracks`), so the poll and queued transport actions run between the pages of a big library's
-read, and a `reload` a newer request overtook stops at its next page. **A walk of the library's pages is read from one index** (`pagedPinned`, also `filteredFully`): each page after the first asks `filtered_page` with the revision the first answered, so the boundary reads it from the index the walk began on however the catalog moves meanwhile (`mobile.md`), and only a page whose pin was let go starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times; each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key. A saved search's pages (`pagedFully`) still read `catalog_revision` before and after and walk again on a moved one (`pagedSteadily`) (`PagedSteadilyTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
+read, and a `reload` a newer request overtook stops at its next page. **A walk of the library's pages is read from one index** (`pagedPinned`, also `filteredFully`): each page after the first asks `filtered_page` with the revision the first answered, so the boundary reads it from the index the walk began on however the catalog moves meanwhile (`mobile.md`), and only a page whose pin was let go starts the walk over, at most `PAGE_WALKS_AT_MOST` (3) times; each song is kept once by id, so a scan or sync landing between pages neither skips a row nor doubles one into a lazy list's key. A saved search's pages are the same walk (`savedSearchFully`, over `saved_search_walk`), so a mix opens on one index too (`PagedWalkTest`). A song's album page opens by `album_key` (`albumKey`), so a song with
 another spelling, no album artist or a shared title opens its own album, and the song sheet's
 heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music files
@@ -834,7 +834,7 @@ turning daily. Home's *Made for you* shelf shows up to twelve of the first three
 and the cover mosaic the boundary measured, and the Made for you page (`SuggestionsScreen`) lists every
 shelf under its name after the *Your favourites* card. A card opens `Screen.Suggested`, which carries the
 list's name, detail and search as plain values (`SuggestedSearch`, so a restored back stack needs no
-catalog) and reads its songs with `saved_search_page` and its covers with `measure_saved_search`
+catalog) and reads its songs with `saved_search_walk` and its covers with `measure_saved_search`
 (`SuggestedViewModel`); its overflow menu offers *Keep as a playlist that fills itself*
 (`LibraryFeatures.keepSearchAsPlaylist`, `keep_search_as_playlist`: keeping the same list twice says
 *Already kept as ...* and makes no second playlist). The four filter `Mix`es (*Never heard*, *Most played*, *Recently added*, *High
@@ -1645,7 +1645,7 @@ unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws n
 - **Held by** `ThemeContrastTest` (JVM: every accent in light, dark and pitch black, standard and high contrast;
   text pairs 4.5:1, non-text pairs 3:1, quiet lyric ink 3:1 on four grounds, body text 7:1 at high contrast) and
   the Library shelf tabs end in an ellipsis rather than a clip (the sweep reads a `maxLines` cut with no ellipsis as clipped, and the row scrolls above font scale 1.3), `A11ySweepTest` (instrumented: the Compose accessibility checks over the root tabs and settings, a
-  `fontScale = 2` pass for clipped text and a pass for unnamed clickables; the sweep needs an emulator). **Clipped is a line wider than its box or lines cut off with no ellipsis** (`isClipped`, `ClippedTextTest`): `didOverflowWidth` weighs the box against the paragraph's layout width, so it reads every label narrower than its container as overflowing.
+  `fontScale = 2` pass for clipped text, which waits for the activity's configuration to report the scale before it reads a screen (`settings put` returns before the change is delivered, and a screen read mid-change is read at two scales), and a pass for unnamed clickables; the sweep needs an emulator). **Clipped is a line wider than its box or lines cut off with no ellipsis** (`isClipped`, `ClippedTextTest`): `didOverflowWidth` weighs the box against the paragraph's layout width, so it reads every label narrower than its container as overflowing.
 
 Share lookup failures appear as a notice; coroutine cancellation still propagates.
 

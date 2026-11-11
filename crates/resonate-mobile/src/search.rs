@@ -226,6 +226,20 @@ struct Pinned {
     asked: Instant,
 }
 
+fn positioned_page(index: &Index, found: &[usize], offset: usize, limit: usize) -> Vec<Track> {
+    found
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(limit)
+        .map(|(position, at)| {
+            let mut track = index.rows[*at].track.clone();
+            track.queue_id = Some(position as u64);
+            track
+        })
+        .collect()
+}
+
 pub(crate) struct Walked {
     pub(crate) tracks: Vec<Track>,
     pub(crate) revision: u64,
@@ -472,22 +486,39 @@ impl Searching {
     ) -> Result<Vec<Track>> {
         let (index, found) = self.saved(catalog, query)?;
 
-        Ok(found
-            .iter()
-            .enumerate()
-            .skip(offset)
-            .take(limit)
-            .map(|(position, at)| {
-                let mut track = index.rows[*at].track.clone();
-                track.queue_id = Some(position as u64);
-                track
-            })
-            .collect())
+        Ok(positioned_page(&index, &found, offset, limit))
+    }
+
+    pub(crate) fn saved_walked(
+        &self,
+        catalog: &Catalog,
+        query: &SavedQuery,
+        offset: usize,
+        limit: usize,
+        pinned: Option<u64>,
+    ) -> Result<Walked> {
+        let index = self.pinned_for_a_walk(catalog, pinned)?;
+        let revision = index.revision;
+        let (index, found) = self.saved_by(catalog, query, || Ok(index))?;
+
+        Ok(Walked {
+            tracks: positioned_page(&index, &found, offset, limit),
+            revision,
+        })
     }
 
     fn saved(&self, catalog: &Catalog, query: &SavedQuery) -> Result<(Arc<Index>, Vec<usize>)> {
+        self.saved_by(catalog, query, || self.index(catalog))
+    }
+
+    fn saved_by(
+        &self,
+        catalog: &Catalog,
+        query: &SavedQuery,
+        index: impl FnOnce() -> Result<Arc<Index>>,
+    ) -> Result<(Arc<Index>, Vec<usize>)> {
         let search = Search::read(query.text.as_deref().unwrap_or_default());
-        let index = self.index(catalog)?;
+        let index = index()?;
         let asking = self.asking(catalog, &search)?;
         let sung = self.sung_for(catalog, &asking)?;
         let ranked = query.sort == SortOrder::Relevance && !asking.ranked.is_empty();
@@ -3439,6 +3470,97 @@ mod tests {
         );
         let lost = searching
             .walked(&catalog, &filter, 3, 100, Some(first.revision))
+            .expect("a page whose pin is gone");
+
+        assert_ne!(lost.revision, first.revision);
+        assert_eq!(lost.tracks.len(), 7);
+    }
+
+    #[test]
+    fn a_walk_of_a_saved_searchs_pages_reads_every_page_from_the_index_it_began_on() {
+        let catalog = library();
+        let searching = Searching::default();
+        let query = SavedQuery {
+            sort: SortOrder::Title,
+            ..SavedQuery::default()
+        };
+
+        let first = searching
+            .saved_walked(&catalog, &query, 0, 3, None)
+            .expect("a first page");
+        song(
+            &catalog,
+            Tagged {
+                title: "Added Later",
+                artist: "Someone",
+                album: "Elsewhere",
+                ..UNTAGGED
+            },
+        );
+        let pinned = searching
+            .saved_walked(&catalog, &query, 3, 100, Some(first.revision))
+            .expect("a later page of the same walk");
+        let afresh = searching
+            .saved_walked(&catalog, &query, 0, 100, None)
+            .expect("a walk begun after the change");
+        let plain = searching
+            .saved_page(&catalog, &query, 0, 100)
+            .expect("the page as it stands");
+
+        assert_ne!(first.revision, catalog.revision());
+        assert_eq!(pinned.revision, first.revision);
+        assert_eq!(first.tracks.len() + pinned.tracks.len(), 9);
+        assert!(
+            pinned
+                .tracks
+                .iter()
+                .all(|track| track.title != "Added Later")
+        );
+        assert_eq!(
+            pinned
+                .tracks
+                .iter()
+                .map(|track| track.queue_id)
+                .collect::<Vec<_>>(),
+            (3..9).map(Some).collect::<Vec<_>>()
+        );
+        assert_eq!(afresh.revision, catalog.revision());
+        assert_eq!(afresh.tracks.len(), 10);
+        assert_eq!(
+            afresh
+                .tracks
+                .iter()
+                .map(|track| (track.id, track.queue_id))
+                .collect::<Vec<_>>(),
+            plain
+                .iter()
+                .map(|track| (track.id, track.queue_id))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_walk_of_a_saved_searchs_pages_whose_index_is_no_longer_pinned_starts_from_the_catalog_as_it_stands()
+     {
+        let catalog = library();
+        let searching = Searching::default();
+        let query = SavedQuery::default();
+
+        let first = searching
+            .saved_walked(&catalog, &query, 0, 3, None)
+            .expect("a first page");
+        searching.walked.lock().clear();
+        song(
+            &catalog,
+            Tagged {
+                title: "Added Later",
+                artist: "Someone",
+                album: "Elsewhere",
+                ..UNTAGGED
+            },
+        );
+        let lost = searching
+            .saved_walked(&catalog, &query, 3, 100, Some(first.revision))
             .expect("a page whose pin is gone");
 
         assert_ne!(lost.revision, first.revision);

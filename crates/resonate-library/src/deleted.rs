@@ -8,25 +8,15 @@ use std::{
 use ahash::AHashSet;
 use resonate_codec::the_folder_a_cue_names;
 use resonate_core::{MediaLocation, TrackId};
-use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
+use rusqlite::{Connection, OptionalExtension as _, Params, Transaction, params};
 
 use crate::{Error, Result, StoreOp, alternatives, scan, store, synced};
 
 const LYRICS_EXTENSION: &str = "lrc";
 
-const LISTENS_KEPT_AS_UNHELD: &str = "INSERT INTO unheld_listens
-            (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
-     SELECT t.path, t.span_start, l.at, l.began, l.heard, l.id, l.elsewhere, l.origin_device,
-            l.origin_id
-       FROM listens l JOIN tracks t ON t.id = l.track_id
-      WHERE t.path = ?1";
+const UNVAULTED_ROWS_OF_A_ROOT: &str = "t.root_id = ?1 AND t.vault_key IS NULL";
 
-const LISTENS_OF_A_ROOTS_UNVAULTED_ROWS_KEPT_AS_UNHELD: &str = "INSERT INTO unheld_listens
-            (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
-     SELECT t.path, t.span_start, l.at, l.began, l.heard, l.id, l.elsewhere, l.origin_device,
-            l.origin_id
-       FROM listens l JOIN tracks t ON t.id = l.track_id
-      WHERE t.root_id = ?1 AND t.vault_key IS NULL";
+const ROWS_AT_A_PATH: &str = "t.path = ?1";
 
 const VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS: &str =
     "UPDATE tracks SET root_id = NULL WHERE root_id = ?1 AND vault_key IS NOT NULL";
@@ -192,12 +182,28 @@ pub(crate) fn note_before_removing(tx: &Transaction<'_>, files: &BTreeSet<PathBu
     Ok(())
 }
 
-pub(crate) fn forget_a_root(tx: &Transaction<'_>, root: i64) -> Result<()> {
+pub(crate) fn keep_listens_as_unheld(
+    tx: &Transaction<'_>,
+    rows_held_by: &str,
+    bound: impl Params,
+) -> Result<()> {
     tx.execute(
-        LISTENS_OF_A_ROOTS_UNVAULTED_ROWS_KEPT_AS_UNHELD,
-        params![root],
+        &format!(
+            "INSERT INTO unheld_listens
+                (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
+         SELECT t.path, t.span_start, l.at, l.began, l.heard, l.id, l.elsewhere, l.origin_device,
+                l.origin_id
+           FROM listens l JOIN tracks t ON t.id = l.track_id
+          WHERE {rows_held_by}"
+        ),
+        bound,
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    Ok(())
+}
+
+pub(crate) fn forget_a_root(tx: &Transaction<'_>, root: i64) -> Result<()> {
+    keep_listens_as_unheld(tx, UNVAULTED_ROWS_OF_A_ROOT, params![root])?;
     tx.execute(VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS, params![root])
         .map_err(|source| Error::store(StoreOp::Update, source))?;
     tx.execute("DELETE FROM tracks WHERE root_id = ?1", params![root])
@@ -229,8 +235,7 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         forgotten.vault_keys.extend(held);
 
-        tx.execute(LISTENS_KEPT_AS_UNHELD, params![named])
-            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        keep_listens_as_unheld(tx, ROWS_AT_A_PATH, params![named])?;
         tx.execute(
             "DELETE FROM wants
               WHERE offered = ?2

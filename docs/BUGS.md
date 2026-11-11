@@ -4,10 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.8.1] The Library tab's labels clip at the largest font scale on Android 13: CI's API 33
-  emulator fails `A11ySweepTest.theLargestTextDoesNotClipAnyRootScreen` (*tab-library clips text
-  without an ellipsis: Songs, Albums, Artists*) once the activity's font scale has reached 2.0,
-  where an API 37 emulator passes; the tab row wants to fit or ellipsise at that scale
 
 ## Security
 
@@ -16,11 +12,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [S · 0.8.1] Tidying the gone and a scan's tidy delete listens without keeping them: `forget_paths`
-  (`forget_the_gone`, the scan's tidy) deletes the rows' listens with them and makes no
-  `unheld_listens` copy as `remove_root` (`deleted::forget_a_root`) and `deleted.rs` do, so a file
-  moved off a mount and back is counted from nothing and Statistics, unfrozen Wrapped years and
-  scrobbles not yet sent lose it
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with

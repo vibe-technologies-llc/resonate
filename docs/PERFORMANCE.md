@@ -8,9 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Startup and idle
 
 ## Android
-- [S · 0.8.1] A saved search's page walk (`savedSearchPage` through `pagedFully` and
-  `pagedSteadily`) still rebuilds the search index on every moved revision; it wants a pinned walk
-  as `filtered_page` gives the library's pages
 
 ## Performance and scale
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU

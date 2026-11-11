@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlin.math.abs
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,8 +60,7 @@ class A11ySweepTest {
 
     @Test
     fun theLargestTextDoesNotClipAnyRootScreen() {
-        shell("settings put system font_scale 2.0")
-        rule.waitForIdle()
+        settingTheFontScale(LARGEST_FONT_SCALE)
         ROOT_TABS.forEach { tab ->
             rule.onNodeWithTag(tab).performClick()
             rule.waitForIdle()
@@ -112,11 +112,22 @@ class A11ySweepTest {
     private fun SemanticsNode.allNodes(): List<SemanticsNode> =
         listOf(this) + children.flatMap { it.allNodes() }
 
+    private fun settingTheFontScale(scale: Float) {
+        shell("settings put system font_scale $scale")
+        rule.waitUntil(timeoutMillis = FONT_SCALE_APPLIED_WITHIN_MS) {
+            abs(rule.activity.resources.configuration.fontScale - scale) < FONT_SCALE_TOLERANCE
+        }
+        rule.waitForIdle()
+    }
+
     private fun shell(command: String) {
         automation.executeShellCommand(command).close()
     }
 
     private companion object {
         val ROOT_TABS = listOf("tab-home", "tab-library", "tab-search")
+        const val LARGEST_FONT_SCALE = 2.0f
+        const val FONT_SCALE_TOLERANCE = 0.01f
+        const val FONT_SCALE_APPLIED_WITHIN_MS = 10_000L
     }
 }
