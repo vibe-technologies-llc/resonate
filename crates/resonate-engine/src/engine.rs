@@ -253,6 +253,12 @@ impl Ahead {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Waiting {
+    ForTheBoundary,
+    NoLonger,
+}
+
 struct Boundary {
     at: u64,
     made: u64,
@@ -3582,6 +3588,7 @@ impl Engine {
     fn pump(&mut self) {
         self.fill_owed = false;
         if self.failing_past_the_boundary.is_some() {
+            self.hand_on_the_leaving_tail();
             return;
         }
         let outcome = {
@@ -3847,6 +3854,38 @@ impl Engine {
             producer.splice(boundary.at, written);
         }
         reachable
+    }
+
+    fn the_leaving_tail_waits_in_the_chain(&self) -> bool {
+        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_ref()) else {
+            return false;
+        };
+        let producer = &output.producer;
+        output.made == boundary.made
+            && producer.read() < boundary.at
+            && producer.written() < boundary.at
+            && !producer.is_splicing()
+            && !producer.is_discarding()
+            && output.chain.max_flush_frames() > 0
+            && output.chain.max_flush_frames() <= output.capacity
+    }
+
+    fn hand_on_the_leaving_tail(&mut self) {
+        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_mut()) else {
+            return;
+        };
+        if output.producer.written() >= boundary.at
+            || output.producer.free_frames() < output.chain.max_flush_frames()
+        {
+            return;
+        }
+        output.hand_on_what_the_chain_holds();
+        if self.drop_what_lies_past_the_boundary() {
+            return;
+        }
+        if let Some(error) = self.failing_past_the_boundary.take() {
+            self.failing(error, Waiting::NoLonger);
+        }
     }
 
     fn fail_what_waited_for_the_boundary(&mut self) {
@@ -4745,10 +4784,17 @@ impl Engine {
     }
 
     fn fail(&mut self, error: Error) {
+        self.failing(error, Waiting::ForTheBoundary);
+    }
+
+    fn failing(&mut self, error: Error, waiting: Waiting) {
         if !self.boundaries.is_empty() {
             let entering = self.track.as_ref().map(|track| track.id);
             if entering.is_some() && error.track() == entering {
-                if self.drop_what_lies_past_the_boundary() {
+                if waiting == Waiting::ForTheBoundary
+                    && (self.drop_what_lies_past_the_boundary()
+                        || self.the_leaving_tail_waits_in_the_chain())
+                {
                     self.failing_past_the_boundary = Some(error);
                     return;
                 }

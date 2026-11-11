@@ -788,19 +788,22 @@ struct Breaking {
     source: SourceId,
     bytes: Vec<u8>,
     broken: Arc<AtomicBool>,
+    reads_allowed: usize,
 }
 
 struct Broken {
     bytes: Vec<u8>,
     broken: Arc<AtomicBool>,
     at: usize,
+    reads_allowed: usize,
 }
 
 impl std::io::Read for Broken {
     fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
-        if self.broken.load(Ordering::Acquire) {
+        if self.broken.load(Ordering::Acquire) || self.reads_allowed == 0 {
             return Err(std::io::ErrorKind::InvalidData.into());
         }
+        self.reads_allowed -= 1;
         let read = into.len().min(self.bytes.len() - self.at);
         into[..read].copy_from_slice(&self.bytes[self.at..self.at + read]);
         self.at += read;
@@ -842,6 +845,7 @@ impl MediaProvider for Breaking {
                 bytes: self.bytes.clone(),
                 broken: Arc::clone(&self.broken),
                 at: 0,
+                reads_allowed: self.reads_allowed,
             }),
             hint: None,
         })
@@ -5677,6 +5681,7 @@ fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_wh
         source: named.clone(),
         bytes: source.file.clone(),
         broken: Arc::clone(&broken),
+        reads_allowed: usize::MAX,
     }));
     let breaks_at = boundary - BROKEN_THIS_FAR_BEFORE_THE_BOUNDARY * frame_bytes(SampleFormat::S16);
 
@@ -5735,6 +5740,126 @@ fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_wh
     assert!(
         failed_at.is_some_and(|at| at >= boundary),
         "the failing row was passed over at {failed_at:?} of {boundary} bytes"
+    );
+    Ok(())
+}
+
+const READS_BEFORE_THE_HANDED_ON_ROW_BREAKS: usize = 10;
+const THE_CHAINS_REACH_FRAMES: usize = 4_096;
+const DITHER_AND_ROUNDING_AT_MOST: i32 = 64;
+
+fn heard_with_a_second_row(
+    first: &Path,
+    second: &MediaLocation,
+    sources: Sources,
+    until: usize,
+) -> Result<(Vec<u8>, Option<usize>)> {
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![
+            track(first, 1),
+            QueueItem {
+                id: TrackId::new(2).expect("a non-zero track id"),
+                location: second.clone(),
+                span: None,
+            },
+        ],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut failed_at = None;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| {
+            for event in player.events().try_iter() {
+                if let Event::Failed { track, .. } = event
+                    && track.get() == 2
+                {
+                    failed_at = Some(graph.played.len());
+                }
+            }
+            failed_at.is_some() || graph.played.len() >= until
+        },
+        "the second row to fail or the first row's tail to be heard",
+    );
+    let played = graph.lock().played.clone();
+    Ok((played, failed_at))
+}
+
+fn played_alone_at_48(path: &Path) -> Result<Vec<u8>> {
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, _| player.state().playback == PlaybackState::Stopped,
+        "the row to play to its end alone",
+    );
+    let played = graph.lock().played.clone();
+    Ok(played)
+}
+
+fn widest_step_between(heard: &[u8], meant: &[u8]) -> Option<i32> {
+    heard
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(meant.as_chunks::<2>().0)
+        .map(|(heard, meant)| {
+            (i32::from(i16::from_le_bytes(*heard)) - i32::from(i16::from_le_bytes(*meant))).abs()
+        })
+        .max()
+}
+
+#[test]
+fn a_row_failing_before_its_frames_pass_the_chains_latency_lets_the_leaving_tail_play_out_whole()
+-> Result<()> {
+    let tree = Tree::new();
+    let song = steady(HALF_SCALE, FRAMES);
+    let first = tree.write("first.wav", &song);
+    let healthy = tree.write("second.wav", &song);
+    let named = SourceId::new("breaking").expect("a lowercase name");
+    let breaking = MediaLocation::new(named.clone(), "second.wav");
+    let breaks = Sources::local().and(Arc::new(Breaking {
+        source: named,
+        bytes: song,
+        broken: Arc::new(AtomicBool::new(false)),
+        reads_allowed: READS_BEFORE_THE_HANDED_ON_ROW_BREAKS,
+    }));
+
+    let whole = played_alone_at_48(&first)?.len();
+    let (unbroken, _) = heard_with_a_second_row(
+        &first,
+        &MediaLocation::local(&healthy),
+        Sources::local(),
+        whole,
+    )?;
+    let (heard, failed_at) = heard_with_a_second_row(&first, &breaking, breaks, usize::MAX)?;
+    assert!(
+        failed_at.is_some_and(|at| at >= whole),
+        "the failing row was passed over at {failed_at:?} of {whole} bytes"
+    );
+
+    let reach = THE_CHAINS_REACH_FRAMES * frame_bytes(SampleFormat::S16);
+    let settled = whole - reach;
+    let heard_tail = heard
+        .get(..settled)
+        .expect("the failing row was passed over after the tail");
+    let widest = widest_step_between(heard_tail, &unbroken[..settled]);
+    assert!(
+        widest.is_some_and(|widest| widest <= DITHER_AND_ROUNDING_AT_MOST),
+        "the leaving tail was heard {widest:?} steps from what plays on unbroken"
     );
     Ok(())
 }

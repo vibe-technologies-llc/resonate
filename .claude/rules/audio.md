@@ -397,9 +397,16 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   passed every boundary on time (`TrackFinished`, `TrackStarted` as the graph hears them) it fails
   as ever (`fail_what_waited_for_the_boundary`), so the leaving row's tail is heard whole rather
   than faded out by `start` retiring the output
-  (`a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole`). Where that
-  cannot be spliced (another output's boundary, the graph already past it, a boundary still inside
-  the chain's latency, a splice or discard in flight) it passes every boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
+  (`a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_whole`). **A row
+  failing before its frames have passed the chain's latency** has written nothing past the
+  boundary (`at` is `written` plus what the carried chain holds), so the leaving row's last frames
+  still wait in the chain: the failure is held, and once the ring has room for
+  `max_flush_frames` the pump flushes the chain into it (`hand_on_the_leaving_tail`), then splices
+  away what lies past `at` as above; if that splice cannot be asked it fails as a plain refusal
+  (`Waiting::NoLonger`)
+  (`a_row_failing_before_its_frames_pass_the_chains_latency_lets_the_leaving_tail_play_out_whole`).
+  Where that cannot be spliced (another output's boundary, the graph already past it, a splice or
+  discard in flight, a chain whose flush would not fit the ring) it passes every boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
   and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
   and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
   wherever the rate, word or channels move. Refused also: a sleep timer ending at
