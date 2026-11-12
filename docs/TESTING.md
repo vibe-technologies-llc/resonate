@@ -167,10 +167,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `config.rs` and `settings.rs`, core's `config_key.rs`, the window's `settings.rs` and four panes,
   the man page), though the window and the file now share one `ConfigKey`; one table of keys, types,
   defaults and groups both read would make a new setting one entry
-- [M] The window draws pictures through six copies of one cache (`app.rs` twice, `serving.rs`, and
-  `models.rs` for covers, covers not held and portraits), and they have drifted: `DECODES_AT_ONCE`
-  defined twice, a failed picture asked again after 30 s in one and 60 s in two, four or six
-  fetches at once
 - [M] The binary and the phones each carry the adapter that plays a service's song in place
   (`ServedSongs` and `Streaming` in `resonate`'s and `resonate-mobile`'s `served.rs`) and each build
   their providers from settings (`providers.rs`, `downloads.rs`), and the second pair already

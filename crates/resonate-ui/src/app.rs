@@ -6,10 +6,10 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use gpui::{
     App, AppContext as _, Bounds, Context, Global, KeyBinding, OperatingSystem, Task,
@@ -35,6 +35,7 @@ use resonate_words::LanguageChoice;
 use crate::{
     AppIcon, Bindings, CaretBlink, Error, Launcher, Measurers, Notice, Result, RootView, Settings,
     WindowKind,
+    asking::Underway,
     drawing::Drawer,
     format, icons,
     listening::Listens,
@@ -71,10 +72,6 @@ const CLOCK_STEP: Duration = Duration::from_secs(1);
 const STEPS_PER_PIXEL: f32 = 4.0;
 
 const PICTURES_HELD: NonZeroUsize = held(256);
-
-const DECODES_AT_ONCE: usize = 4;
-
-const A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30);
 
 enum Drew {
     Settled(Option<Picture>),
@@ -354,9 +351,8 @@ pub struct PlayerModel {
     queued: Queued,
     reads: u64,
     pictures: Recent<AtSide<MediaLocation>, Option<Picture>>,
-    decoding: AHashSet<AtSide<MediaLocation>>,
+    decoding: Underway<AtSide<MediaLocation>>,
     unsettled: AHashMap<AtSide<MediaLocation>, u64>,
-    unread: AHashMap<AtSide<MediaLocation>, Instant>,
     scale: Scale,
     magnified: Option<Magnifying<MediaLocation>>,
     grain: Grain,
@@ -395,9 +391,8 @@ impl PlayerModel {
             queued: player.queued(),
             reads: player.media_revision(),
             pictures: Recent::new(PICTURES_HELD),
-            decoding: AHashSet::new(),
+            decoding: Underway::decoding(),
             unsettled: AHashMap::new(),
-            unread: AHashMap::new(),
             scale: Scale::ONE,
             magnified: None,
             grain: Grain::default(),
@@ -570,17 +565,10 @@ impl PlayerModel {
         if let Some(held) = self.pictures.get(&wanted) {
             return held.clone();
         }
-        if self.decoding.contains(&wanted)
-            || self.decoding.len() >= DECODES_AT_ONCE
-            || self.unsettled.get(&wanted) == Some(&self.reads)
-            || self
-                .unread
-                .get(&wanted)
-                .is_some_and(|failed| failed.elapsed() < A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER)
-        {
+        if !self.decoding.may_ask(&wanted) || self.unsettled.get(&wanted) == Some(&self.reads) {
             return None;
         }
-        self.decoding.insert(wanted.clone());
+        let ask = self.decoding.begin(wanted.clone());
 
         let player = Arc::clone(&self.player);
         let asked = location.clone();
@@ -597,18 +585,18 @@ impl PlayerModel {
         cx.spawn(async move |this, cx| {
             let drawn = drawing.await.unwrap_or(Drew::Settled(None));
             let landed = this.update(cx, |this, cx| {
-                this.decoding.remove(&wanted);
                 match drawn {
                     Drew::Settled(decoded) => {
+                        this.decoding.answered(&wanted, ask);
                         this.unsettled.remove(&wanted);
-                        this.unread.remove(&wanted);
                         this.pictures.insert(wanted, decoded).forget(cx);
                     }
                     Drew::NotYet => {
+                        this.decoding.left(&wanted, ask);
                         this.unsettled.insert(wanted, asked_at);
                     }
                     Drew::Failed => {
-                        this.unread.insert(wanted, Instant::now());
+                        this.decoding.failed(wanted, ask);
                     }
                 }
                 cx.notify();
@@ -1373,6 +1361,7 @@ pub(crate) fn sink_in_use<'s>(
 
 #[cfg(test)]
 mod tests {
+    use ahash::AHashSet;
     use gpui::{KeyBindingContextPredicate, KeyContext, Keystroke, Modifiers};
     use resonate_core::{ChannelLayout, Frames, SampleFormat, SampleRate, StreamSpec, TrackId};
     use resonate_engine::PlaybackState;

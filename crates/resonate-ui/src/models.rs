@@ -70,6 +70,7 @@ pub(crate) use self::{
 };
 use crate::{
     ResonateApp,
+    asking::Underway,
     downloads::{Downloads, Unfinished, WantStanding},
     format,
     held::Rows,
@@ -99,13 +100,9 @@ const COVERS_WARMED: usize = 256;
 const NAMES_HELD: NonZeroUsize = held(4_096);
 const ALBUMS_HELD: NonZeroUsize = held(256);
 const PORTRAITS_HELD: NonZeroUsize = held(256);
-const DECODES_AT_ONCE: usize = 4;
 const DECODES_KEPT_FOR_WHAT_IS_SHOWN: usize = 1;
 const RELEASED_COVERS_HELD: NonZeroUsize = held(512);
 const ANSWERS_HELD: NonZeroUsize = held(128);
-const FETCHES_AT_ONCE: usize = 6;
-
-const A_FAILED_COVER_IS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(60);
 
 const OWED_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(30);
 
@@ -931,13 +928,12 @@ pub struct LibraryModel {
     favours_written: Vec<(Favoured, bool)>,
     charted: Arc<Chart>,
     covers: Recent<AtSide<AlbumId>, Option<Picture>>,
-    decoding: AHashSet<AtSide<AlbumId>>,
+    decoding: Underway<AtSide<AlbumId>>,
     released_covers: Recent<AtSide<Mbid>, Option<Picture>>,
-    fetching_covers: AHashSet<Mbid>,
-    covers_unfetched: AHashMap<Mbid, Instant>,
+    fetching_covers: Underway<Mbid>,
     magnified: Option<Magnifying<AlbumId>>,
     portraits: Recent<AtSide<ArtistId>, Option<Picture>>,
-    decoding_portraits: AHashSet<AtSide<ArtistId>>,
+    decoding_portraits: Underway<AtSide<ArtistId>>,
     scale: Scale,
     _warming: Task<()>,
     warmed: bool,
@@ -1214,13 +1210,12 @@ impl LibraryModel {
             favours_written: Vec::new(),
             charted: Arc::default(),
             covers: Recent::new(COVERS_HELD),
-            decoding: AHashSet::new(),
+            decoding: Underway::decoding(),
             released_covers: Recent::new(RELEASED_COVERS_HELD),
-            fetching_covers: AHashSet::new(),
-            covers_unfetched: AHashMap::new(),
+            fetching_covers: Underway::fetching(),
             magnified: None,
             portraits: Recent::new(PORTRAITS_HELD),
-            decoding_portraits: AHashSet::new(),
+            decoding_portraits: Underway::decoding(),
             scale: Scale::ONE,
             _warming: Task::ready(()),
             warmed: false,

@@ -800,8 +800,14 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   (`a_cover_found_after_it_was_first_drawn_is_drawn_once_the_catalog_reloads`). **A file's picture is
   cached only once the engine settled it**: `PlayerModel::art` reads `Player::art_read`
   (`NotYet`/`Answered`/`Nothing`); `NotYet` goes in `unsettled` against the `media_revision` asked at;
-  `Failed` is held in `unread` and asked again after `A_FAILED_PICTURE_IS_ASKED_AGAIN_AFTER`; a failed
-  release cover likewise (`A_FAILED_COVER_IS_ASKED_AGAIN_AFTER`, `released_covers`).
+  `Failed` is asked again after `A_FAILED_READ_IS_ASKED_AGAIN_AFTER` (30 s); a failed release cover or
+  served cover after `A_FAILED_FETCH_IS_ASKED_AGAIN_AFTER` (60 s).
+  - **Every picture cache asks through one `Underway`** (`asking.rs`): what is being asked, at most
+    so many at once, what failed and when, and a reset whose earlier asks neither land nor free a key
+    (`Underway::forget`, `Asked`). Its constructors carry the limits, so they are written once:
+    `decoding` (`DECODES_AT_ONCE`, a file's picture, an album's cover, an artist's portrait),
+    `fetching` (`FETCHES_AT_ONCE`, a release's cover from the reference) and
+    `fetching_from_one_server` (`FETCHES_FROM_ONE_SERVER_AT_ONCE`, a served cover).
   - **The tracks pane asks for row covers a screenful past what it draws**: after its rows, the
     processor hands `RootView::covers_ahead` the albums of the `COVERS_AHEAD` (48) rows past each end of
     the range, nearest first, to `LibraryModel::cover_ahead`, which leaves `DECODES_KEPT_FOR_WHAT_IS_SHOWN`
@@ -1109,7 +1115,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   twice; an unscanned row has no `TrackId`). The queue draws `PlayerState::queue_position`; a playlist
   `PlayerState::loaded_position`, marked only while `Library::playing_playlist` names it, i.e. while
   the queue holds the rows it was loaded with.
-- **An answer that lands late acts only on the window it was asked from.** `RootView::attention` is a `Serial` moved by every pane change (`set_pane`), search change, `open_a_menu` and each lookup pressed (`press_a_lookup`); a lookup that answers later (*Find another version*, *Place on a release…*, an album or artist not held) holds the serial taken at its press and is dropped when `window_has_moved_on_from` says the serial moved or a sheet other than a menu stands in front (`an_album_not_held_does_not_open_over_a_pane_the_window_moved_to_while_it_was_asked`). Of two lookups pressed, the later wins whichever answers last. The Match sheet asks by `RootView::likely_asked`, a `Serial` that survives reopening, so an answer asked by an earlier opening never lands in a later one (`an_answer_asked_by_an_earlier_opening_of_the_sheet_is_not_taken_by_a_later_one`). The served covers' fetches hold a `Fetching` generation moved by `forget_the_covers`, so a fetch from before the reset neither lands nor frees a key a newer fetch holds (`a_fetch_from_before_a_reset_neither_lands_nor_removes_the_key_a_newer_fetch_holds`).
+- **An answer that lands late acts only on the window it was asked from.** `RootView::attention` is a `Serial` moved by every pane change (`set_pane`), search change, `open_a_menu` and each lookup pressed (`press_a_lookup`); a lookup that answers later (*Find another version*, *Place on a release…*, an album or artist not held) holds the serial taken at its press and is dropped when `window_has_moved_on_from` says the serial moved or a sheet other than a menu stands in front (`an_album_not_held_does_not_open_over_a_pane_the_window_moved_to_while_it_was_asked`). Of two lookups pressed, the later wins whichever answers last. The Match sheet asks by `RootView::likely_asked`, a `Serial` that survives reopening, so an answer asked by an earlier opening never lands in a later one (`an_answer_asked_by_an_earlier_opening_of_the_sheet_is_not_taken_by_a_later_one`). The served covers' fetches hold the `Asked` of an `Underway` that `forget_the_covers` resets, so a fetch from before the reset neither lands nor frees a key a newer fetch holds (`an_answer_from_before_a_reset_neither_lands_nor_frees_the_key_a_newer_ask_holds`).
 - **An edit never cancels the one before it.** `LibraryModel::edited_then` holds one task in `_edit`;
   each new edit takes the previous out of the slot and awaits it first
   (`two_edits_asked_for_at_once_both_land`); `track_passed` and the two `listened` writes on `_settled`
@@ -1773,7 +1779,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `is_pictureless`, so the queue, the playback bar and the pane draw one picture: a row's own
   `ServedCover` where the browse gave one, else the song's (the model asks `Serves::cover` with no
   name and the adapter asks the server what a song's is), fetched on the background executor
-  `COVERS_FETCHED_AT_ONCE` (4) at a time, decoded on the `Drawer` at the drawn side, held in a
+  `FETCHES_FROM_ONE_SERVER_AT_ONCE` (4) at a time, decoded on the `Drawer` at the drawn side, held in a
   `Recent` of `COVERS_HELD` (256) keyed by name and side, a failed one asked again after a minute.
   The magnifier opens `Magnified::Served` at the now-playing size.
 - **YouTube Music is a group in the Accounts category, and what it holds is kept, not played.**

@@ -465,7 +465,7 @@ impl LibraryModel {
                         key: id,
                         side: Drawn::InAGrid.side(this.scale),
                     };
-                    (!this.covers.holds(&sized) && !this.decoding.contains(&sized)).then_some(sized)
+                    (!this.covers.holds(&sized) && !this.decoding.holds(&sized)).then_some(sized)
                 }) else {
                     return;
                 };

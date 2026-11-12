@@ -1,10 +1,9 @@
 use std::{
     num::{NonZeroU32, NonZeroUsize},
     sync::Arc,
-    time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use gpui::{Context, Task};
 use resonate_core::{MediaLocation, SourceId};
 use resonate_library::{CoverArt, ImageFormat, SongToKeep};
@@ -12,19 +11,15 @@ use resonate_providers::{Error as ProviderError, Named};
 
 use crate::{
     ResonateApp,
+    asking::Underway,
     drawing::Drawer,
     models::{AtSide, Drawn, Forget as _, Picture, Scale, drawn_within},
     recent::Recent,
-    serial::Serial,
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves},
     words,
 };
 
 const COVERS_HELD: NonZeroUsize = NonZeroUsize::new(256).expect("a cache holds an entry");
-
-const COVERS_FETCHED_AT_ONCE: usize = 4;
-
-const A_FAILED_COVER_IS_ASKED_AGAIN_AFTER: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Place {
@@ -215,47 +210,6 @@ pub(crate) enum Page {
     Failed(Failure),
 }
 
-#[derive(Default)]
-struct Fetching {
-    keys: AHashSet<CoverKey>,
-    forgotten: Serial,
-}
-
-#[derive(Clone, Copy)]
-struct Fetch {
-    forgotten: Serial,
-}
-
-impl Fetching {
-    fn holds(&self, key: &CoverKey) -> bool {
-        self.keys.contains(key)
-    }
-
-    fn len(&self) -> usize {
-        self.keys.len()
-    }
-
-    fn begin(&mut self, key: &CoverKey) -> Fetch {
-        self.keys.insert(key.clone());
-        Fetch {
-            forgotten: self.forgotten,
-        }
-    }
-
-    fn landed(&mut self, key: &CoverKey, fetch: Fetch) -> bool {
-        let current = fetch.forgotten == self.forgotten;
-        if current {
-            self.keys.remove(key);
-        }
-        current
-    }
-
-    fn forget(&mut self) {
-        self.keys.clear();
-        self.forgotten.moved();
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum CoverKey {
     Named(SourceId, ServedCover),
@@ -287,8 +241,7 @@ pub(crate) struct ServerModel {
     reading: u64,
     _read: Option<Task<()>>,
     covers: Recent<AtSide<CoverKey>, Option<Picture>>,
-    fetching: Fetching,
-    unfetched: AHashMap<CoverKey, Instant>,
+    fetching: Underway<CoverKey>,
     favoured: AHashMap<MediaLocation, bool>,
     scale: Scale,
     shown: bool,
@@ -305,8 +258,7 @@ impl ServerModel {
             reading: 0,
             _read: None,
             covers: Recent::new(COVERS_HELD),
-            fetching: Fetching::default(),
-            unfetched: AHashMap::new(),
+            fetching: Underway::fetching_from_one_server(),
             favoured: AHashMap::new(),
             scale: Scale::ONE,
             shown: false,
@@ -506,7 +458,6 @@ impl ServerModel {
         }
         self.covers = Recent::new(COVERS_HELD);
         self.fetching.forget();
-        self.unfetched.clear();
     }
 
     pub(crate) fn cover(
@@ -525,16 +476,10 @@ impl ServerModel {
         if let Some(held) = self.covers.get(&wanted) {
             return held.clone();
         }
-        if self.fetching.holds(&key)
-            || self.fetching.len() >= COVERS_FETCHED_AT_ONCE
-            || self
-                .unfetched
-                .get(&key)
-                .is_some_and(|failed| failed.elapsed() < A_FAILED_COVER_IS_ASKED_AGAIN_AFTER)
-        {
+        if !self.fetching.may_ask(&key) {
             return None;
         }
-        let fetch = self.fetching.begin(&key);
+        let fetch = self.fetching.begin(key);
 
         let side = wanted.side;
         let location = of.clone();
@@ -561,16 +506,18 @@ impl ServerModel {
             };
             let decoded = drawing.await.flatten();
             let _ = this.update(cx, |this, cx| {
-                if !this.fetching.landed(&wanted.key, fetch) {
+                let landed = if answered {
+                    this.fetching.answered(&wanted.key, fetch)
+                } else {
+                    this.fetching.failed(wanted.key.clone(), fetch)
+                };
+                if !landed {
                     decoded.forget(cx);
                     return;
                 }
                 if answered {
-                    this.unfetched.remove(&wanted.key);
                     this.covers.insert(wanted, decoded).forget(cx);
                     cx.notify();
-                } else {
-                    this.unfetched.insert(wanted.key, Instant::now());
                 }
             });
         })
@@ -612,42 +559,4 @@ fn rows_at(serves: &dyn Serves, place: &Place) -> Result<Vec<Row>, ProviderError
             .collect(),
         Place::Found { words } => rows_of_found(serves.search(words)?),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn key(id: &str) -> CoverKey {
-        CoverKey::Located(MediaLocation::from_uri(&format!("subsonic:{id}")).expect("a location"))
-    }
-
-    #[test]
-    fn a_fetch_from_before_a_reset_neither_lands_nor_removes_the_key_a_newer_fetch_holds() {
-        let mut fetching = Fetching::default();
-        let cover = key("al-1");
-
-        let before = fetching.begin(&cover);
-        fetching.forget();
-        let after = fetching.begin(&cover);
-
-        assert!(!fetching.landed(&cover, before));
-        assert!(fetching.holds(&cover));
-        assert_eq!(fetching.len(), 1);
-
-        assert!(fetching.landed(&cover, after));
-        assert!(!fetching.holds(&cover));
-    }
-
-    #[test]
-    fn a_fetch_with_no_reset_since_lands_and_frees_its_key() {
-        let mut fetching = Fetching::default();
-        let cover = key("al-2");
-
-        let fetch = fetching.begin(&cover);
-
-        assert!(fetching.holds(&cover));
-        assert!(fetching.landed(&cover, fetch));
-        assert_eq!(fetching.len(), 0);
-    }
 }

@@ -4,6 +4,7 @@ mod analysis;
 mod analysis_plot;
 mod app;
 mod app_menu;
+mod asking;
 #[cfg(target_os = "linux")]
 mod clipboard;
 #[cfg(not(target_os = "linux"))]

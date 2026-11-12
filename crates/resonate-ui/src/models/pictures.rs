@@ -1,18 +1,11 @@
-use std::{
-    fs,
-    num::NonZeroU32,
-    path::Path,
-    sync::Arc,
-    time::{Instant, SystemTime},
-};
+use std::{fs, num::NonZeroU32, path::Path, sync::Arc, time::SystemTime};
 
 use gpui::{App, Context, Image, Pixels, RenderImage, px};
 use resonate_core::{AlbumId, ArtistId};
 use resonate_library::{CoverArt, Drawing, Mbid, Raster};
 
 use super::{
-    A_FAILED_COVER_IS_ASKED_AGAIN_AFTER, DECODES_AT_ONCE, DECODES_KEPT_FOR_WHAT_IS_SHOWN,
-    FETCHES_AT_ONCE, LibraryModel, side,
+    DECODES_KEPT_FOR_WHAT_IS_SHOWN, LibraryModel, side,
     watched::{drawn_cover, drawn_portrait, picture_or_trouble, whole_cover_of},
 };
 use crate::{drawing::Drawer, recent::Leaving, theme, words};
@@ -31,7 +24,10 @@ impl LibraryModel {
     }
 
     pub fn cover_ahead(&mut self, id: AlbumId, drawn: Drawn, cx: &mut Context<Self>) -> bool {
-        if self.decoding.len() + DECODES_KEPT_FOR_WHAT_IS_SHOWN >= DECODES_AT_ONCE {
+        if !self
+            .decoding
+            .has_room_beyond(DECODES_KEPT_FOR_WHAT_IS_SHOWN)
+        {
             return false;
         }
         let _ = self.cover(id, drawn, cx);
@@ -46,10 +42,10 @@ impl LibraryModel {
         if let Some(held) = self.covers.get(&wanted) {
             return held.clone();
         }
-        if self.decoding.contains(&wanted) || self.decoding.len() >= DECODES_AT_ONCE {
+        if !self.decoding.may_ask(&wanted) {
             return None;
         }
-        self.decoding.insert(wanted.clone());
+        let ask = self.decoding.begin(wanted.clone());
 
         let library = Arc::clone(&self.library);
         let side = wanted.side;
@@ -60,7 +56,7 @@ impl LibraryModel {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
                 let decoded = picture_or_trouble(read, words::models::read_a_cover(), cx);
-                this.decoding.remove(&wanted);
+                this.decoding.answered(&wanted, ask);
                 this.covers.insert(wanted, decoded).forget(cx);
                 cx.notify();
             });
@@ -128,16 +124,10 @@ impl LibraryModel {
         if reference.is_none() && group.is_none() {
             return None;
         }
-        if self.fetching_covers.contains(release)
-            || self.fetching_covers.len() >= FETCHES_AT_ONCE
-            || self
-                .covers_unfetched
-                .get(release)
-                .is_some_and(|failed| failed.elapsed() < A_FAILED_COVER_IS_ASKED_AGAIN_AFTER)
-        {
+        if !self.fetching_covers.may_ask(release) {
             return None;
         }
-        self.fetching_covers.insert(release.clone());
+        let ask = self.fetching_covers.begin(release.clone());
 
         let asked = release.clone();
         let group = group.cloned();
@@ -176,13 +166,12 @@ impl LibraryModel {
             };
             let decoded = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
-                this.fetching_covers.remove(&wanted.key);
                 if answered || decoded.is_some() {
-                    this.covers_unfetched.remove(&wanted.key);
+                    this.fetching_covers.answered(&wanted.key, ask);
                     this.released_covers.insert(wanted, decoded).forget(cx);
                     cx.notify();
                 } else {
-                    this.covers_unfetched.insert(wanted.key, Instant::now());
+                    this.fetching_covers.failed(wanted.key, ask);
                 }
             });
             let _ = landed;
@@ -204,12 +193,10 @@ impl LibraryModel {
         if let Some(held) = self.portraits.get(&wanted) {
             return held.clone();
         }
-        if self.decoding_portraits.contains(&wanted)
-            || self.decoding_portraits.len() >= DECODES_AT_ONCE
-        {
+        if !self.decoding_portraits.may_ask(&wanted) {
             return None;
         }
-        self.decoding_portraits.insert(wanted.clone());
+        let ask = self.decoding_portraits.begin(wanted.clone());
 
         let library = Arc::clone(&self.library);
         let side = wanted.side;
@@ -220,7 +207,7 @@ impl LibraryModel {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
                 let decoded = picture_or_trouble(read, words::models::read_a_portrait(), cx);
-                this.decoding_portraits.remove(&wanted);
+                this.decoding_portraits.answered(&wanted, ask);
                 this.portraits.insert(wanted, decoded).forget(cx);
                 cx.notify();
             });

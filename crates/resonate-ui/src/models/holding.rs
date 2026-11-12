@@ -30,7 +30,7 @@ impl LibraryModel {
 
     #[cfg(test)]
     pub(crate) fn is_drawing_covers(&self) -> bool {
-        !self.decoding.is_empty()
+        !self.decoding.is_idle()
     }
 
     pub fn track_of(&mut self, item: &QueueItem) -> Option<Track> {
