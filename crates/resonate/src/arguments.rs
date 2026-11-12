@@ -116,11 +116,7 @@ pub(crate) fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec
     items
 }
 
-fn items_of(
-    sources: &Sources,
-    location: MediaLocation,
-    minting: &mut Unclaimed,
-) -> Vec<QueueItem> {
+fn items_of(sources: &Sources, location: MediaLocation, minting: &mut Unclaimed) -> Vec<QueueItem> {
     let Some(path) = location.as_path().map(Path::to_path_buf) else {
         return vec![QueueItem::whole(minting.mint(), location)];
     };

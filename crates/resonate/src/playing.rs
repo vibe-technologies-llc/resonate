@@ -444,11 +444,7 @@ fn anywhere_in(rows: usize) -> usize {
     now.checked_rem(rows).unwrap_or_default()
 }
 
-fn set_out(
-    transport: &TransportArgs,
-    items: Vec<QueueItem>,
-    start_at: usize,
-) -> Vec<Command> {
+fn set_out(transport: &TransportArgs, items: Vec<QueueItem>, start_at: usize) -> Vec<Command> {
     let shuffle = transport.shuffle.then_some(Command::SetShuffle(true));
     let repeat = transport
         .repeat
@@ -478,11 +474,7 @@ fn count_a_play(
     );
 }
 
-fn record_a_play(
-    library: &Library,
-    counting: Option<Counting>,
-    counted: &mut Option<Listen>,
-) {
+fn record_a_play(library: &Library, counting: Option<Counting>, counted: &mut Option<Listen>) {
     let Some(counting) = counting else {
         return;
     };

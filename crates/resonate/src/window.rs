@@ -349,10 +349,7 @@ const WHAT_IS_OPENED_WAITS_FOR_THE_WINDOW: Duration = Duration::from_secs(15);
 
 const THE_WINDOW_IS_LOOKED_FOR_EVERY: Duration = Duration::from_millis(100);
 
-fn queue_what_the_system_opens(
-    opened: crossbeam_channel::Receiver<Vec<String>>,
-    served: Served,
-) {
+fn queue_what_the_system_opens(opened: crossbeam_channel::Receiver<Vec<String>>, served: Served) {
     let spawned = thread::Builder::new()
         .name("resonate-opened".to_owned())
         .spawn(move || {
