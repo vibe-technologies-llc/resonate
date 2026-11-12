@@ -2,9 +2,9 @@ use std::cell::Cell;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ResizeEdge, Role,
-    SharedString, Size, Stateful, Svg, Tiling, Window, WindowControlArea, canvas, div, point,
-    prelude::*, px, rgb,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, OperatingSystem, Pixels, Point,
+    ResizeEdge, Role, SharedString, Size, Stateful, Svg, Tiling, Window, WindowControlArea, canvas,
+    div, point, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -187,6 +187,36 @@ const fn mark_inset() -> f32 {
 
 pub(crate) fn client_side(window: &Window) -> bool {
     matches!(window.window_decorations(), Decorations::Client { .. })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Closing {
+    LeavesTheWindow,
+    HidesTheApp,
+}
+
+const fn closing_on(system: OperatingSystem) -> Closing {
+    match system {
+        OperatingSystem::Mac => Closing::HidesTheApp,
+        _ => Closing::LeavesTheWindow,
+    }
+}
+
+pub(crate) fn close_the_window(window: &mut Window, cx: &mut App) {
+    match closing_on(cx.platform_info().os) {
+        Closing::HidesTheApp => cx.hide(),
+        Closing::LeavesTheWindow => window.remove_window(),
+    }
+}
+
+pub(crate) fn closed_by_the_system(_: &mut Window, cx: &mut App) -> bool {
+    match closing_on(cx.platform_info().os) {
+        Closing::HidesTheApp => {
+            cx.hide();
+            false
+        }
+        Closing::LeavesTheWindow => true,
+    }
 }
 
 pub(crate) fn the_window_controls_are_ours(window: &Window) -> bool {
@@ -415,6 +445,16 @@ mod tests {
     use super::*;
 
     const BORDER: f32 = 10.0;
+
+    #[test]
+    fn closing_the_window_hides_the_app_on_a_mac_so_it_plays_on_and_leaves_it_elsewhere() {
+        assert_eq!(closing_on(OperatingSystem::Mac), Closing::HidesTheApp);
+        assert_eq!(closing_on(OperatingSystem::Linux), Closing::LeavesTheWindow);
+        assert_eq!(
+            closing_on(OperatingSystem::Windows),
+            Closing::LeavesTheWindow
+        );
+    }
 
     fn grabbed(x: f32, y: f32, held: Tiling) -> Option<ResizeEdge> {
         grabbed_edge(

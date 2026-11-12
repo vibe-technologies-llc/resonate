@@ -6331,8 +6331,8 @@ impl Render for RootView {
                 }
             }))
             .on_action(|_: &Quit, window: &mut Window, _: &mut App| window.remove_window())
-            .on_action(|_: &CloseTheWindow, window: &mut Window, _: &mut App| {
-                window.remove_window();
+            .on_action(|_: &CloseTheWindow, window: &mut Window, cx: &mut App| {
+                chrome::close_the_window(window, cx);
             })
             .on_action(|_: &Minimise, window: &mut Window, _: &mut App| {
                 window.minimize_window();

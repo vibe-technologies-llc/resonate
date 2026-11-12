@@ -94,8 +94,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] The exclusive sink on macOS offers no 32-bit integer word and no layout past stereo, and asks
   for no buffer size: the HAL unit's Float32 path holds 24 bits, a true integer mode (an IOProc on
   an unmixable format) is not built, and a device of more channels plays as its preferred pair
-- [S] Closing the window on macOS quits; playing on with it closed, as a Mac's players do, is not
-  built, and `resonate play` answers no media key there (it runs no main loop)
 - [S · blocked: certificate] The macOS disk image is signed ad hoc and not notarised, so Gatekeeper
   refuses a first run until it is opened from *Privacy & Security*: no Developer ID exists.
   `sign.sh` and `release.yml` sign and notarise once `MACOS_CERTIFICATE_BASE64`,

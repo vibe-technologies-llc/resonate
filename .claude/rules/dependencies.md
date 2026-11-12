@@ -34,7 +34,7 @@ whose callback is handed a number, never a pointer, looked up in a registry, so 
 its guard dropped finds nothing). It takes `objc2-audio-toolbox` and `objc2-core-audio-types` on Apple
 targets and `thiserror`; on macOS alone `objc2-core-audio` 0.3.2 (`AudioHardware`, the device,
 stream and property calls, with `objc2-core-audio-types` for the ranged format), `objc2-core-foundation`
-0.3.2 (`CFString`, a device's name and UID; the version gpui's tree already holds) and
+0.3.2 (`CFString`, a device's name and UID; `CFRunLoop`, the main loop `resonate play` runs for Now Playing; the version gpui's tree already holds) and
 `parking_lot` (the listeners' registry), and for `NowPlaying` (the system's Now Playing and its
 remote commands, `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`) `objc2-media-player` 0.3.2
 (the info center, the commands, their events and the artwork alone), `objc2`, `objc2-foundation`

@@ -132,14 +132,18 @@ for them.
 - **Every MediaPlayer call is posted to the main queue and none is waited for**: teardown joins
   the transport thread from the main thread as the application ends, and a synchronous call back
   onto it would never return.
-- **Only a window answers.** `resonate play` runs no main loop, so a handler registered there
-  would never be called: the binary's `Desktop::answers_media_keys` is the first zone's and, on
-  macOS, only where the host can raise a window (`NOW_PLAYING_NEEDS_A_WINDOW`).
+- **Only a main loop answers.** A handler is called on the main thread's run loop, so on macOS
+  `Desktop::answers_media_keys` is the first zone's only where the host can raise a window or was
+  told it is heard there (`NOW_PLAYING_NEEDS_A_MAIN_LOOP`, `Serving::heard_on_the_main_loop`).
+  `resonate play` runs the main loop itself: `play_queue` hands its work to
+  `resonate_mpris::while_media_keys_are_heard` (`resonate_apple::while_the_main_loop_runs`: the
+  work on a scoped thread, the main thread in `CFRunLoopRunInMode` a quarter second at a time until
+  it ends, resting a moment where the loop has nothing to run), which elsewhere just runs it.
 
 ## Not on macOS yet
 
 Notifications (no bus `Desk` is opened and none is made for a Mac); recording the desktop's sound; Game Mode;
-playing on with the window closed; the launcher's icon following the accent (`plain_launcher.rs`
+the launcher's icon following the accent (`plain_launcher.rs`
 does nothing, as on Windows).
 
 ## Release

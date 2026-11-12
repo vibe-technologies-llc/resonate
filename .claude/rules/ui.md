@@ -66,9 +66,15 @@ is never named.
     `WindowRestore`, `WindowClose`), strokes one device pixel at drawn size, lit via
     `icons::lit_on_hover`, all `theme::WINDOW_MARK` less overlap across.
 - **Closing removes the window; quitting follows, never the reverse.** Close control, the quit key
-  (`ctrl-q`, ⌘Q on macOS), the menu's *Close* and *Quit* and the bus's `Quit` call
+  (`ctrl-q`, ⌘Q on macOS), the menu's *Quit* and the bus's `Quit` call
   `Window::remove_window`; `app.rs` quits once the last window closed (`App::quit` under a live
-  window logs *window not found*).
+  window logs *window not found*). **On macOS closing hides the app and playing goes on**, as a
+  Mac's players do: ⌘W and the menu's *Close* (`chrome::close_the_window`) and the red light
+  (`chrome::closed_by_the_system`, the window's `on_window_should_close`, refusing) hide it, so
+  every zone, its counted plays and kept queue go on in `RootView`, and the Dock, ⌘Tab or a second
+  launch's raise (which activates the app first) brings it back
+  (`closing_the_window_hides_the_app_on_a_mac_so_it_plays_on_and_leaves_it_elsewhere`; gpui's test
+  platform cannot hide, so the decision is `closing_on` alone).
 - **What is done on leaving is done once, from gpui's own quit.** `run` takes a `Leaving`, the
   binary's teardown (the tools, the presence, sync, the party room, shared playlists, submitting,
   the zones), and runs it after its own two `wind_down`s from a `cx.on_app_quit` observer, or

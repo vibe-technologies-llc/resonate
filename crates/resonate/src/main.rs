@@ -2659,6 +2659,19 @@ fn play_queue(
     opening: Opening,
     transport: &TransportArgs,
 ) -> Result<()> {
+    resonate_mpris::while_media_keys_are_heard(|| {
+        play_queue_here(cli, config, items, library, opening, transport)
+    })
+}
+
+fn play_queue_here(
+    cli: &Cli,
+    config: &Config,
+    items: Vec<QueueItem>,
+    library: Option<Arc<Library>>,
+    opening: Opening,
+    transport: &TransportArgs,
+) -> Result<()> {
     let Opening {
         playing,
         asleep,
@@ -2714,7 +2727,8 @@ fn play_queue(
             Some(asked_to_quit),
             None,
             &Arc::new(AtomicBool::new(config.notifies())),
-        ),
+        )
+        .heard_on_the_main_loop(),
         &player,
     );
     let presenter = discord::start(&player, library.as_ref(), config);

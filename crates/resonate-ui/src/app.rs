@@ -1129,6 +1129,7 @@ fn raise_when_asked(asked: Receiver<()>, cx: &mut App) {
             match asked.try_recv() {
                 Ok(()) => {
                     cx.update(|cx| {
+                        cx.activate(true);
                         for handle in cx.windows() {
                             let _ = handle.update(cx, |_, window, _| window.activate_window());
                         }
@@ -1332,6 +1333,7 @@ pub fn run(
 
         let opened = cx.open_window(options, |window, cx| {
             window.set_window_title(WINDOW_TITLE);
+            window.on_window_should_close(cx, chrome::closed_by_the_system);
             cx.new(|cx| RootView::new(window, cx))
         });
 

@@ -28,6 +28,7 @@ objc2-core-foundation = {
     features = [
         "std",
         "CFCGTypes",
+        "CFRunLoop",
         "CFString"
     ]
 }

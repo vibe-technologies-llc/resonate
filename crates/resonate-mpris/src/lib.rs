@@ -102,6 +102,16 @@ pub use crate::{
     wire::{Call, Fault, WireFault},
 };
 
+#[cfg(target_os = "macos")]
+pub fn while_media_keys_are_heard<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    resonate_apple::while_the_main_loop_runs(work)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn while_media_keys_are_heard<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    work()
+}
+
 #[cfg(test)]
 mod said_through_the_catalog {
     use std::{fs, path::Path};

@@ -15,6 +15,8 @@ mod hog;
 #[cfg(target_os = "macos")]
 mod listening;
 #[cfg(target_os = "macos")]
+mod main_loop;
+#[cfg(target_os = "macos")]
 mod now_playing;
 #[cfg(target_os = "macos")]
 mod path_monitor;
@@ -47,6 +49,7 @@ pub use crate::{
     device::{Device, OfferedFormat, RateRange, Stream, Transport},
     hog::{Hog, Pid},
     listening::{Listening, Told, notify_on_the_hals_own_thread, told_of_the_system},
+    main_loop::while_the_main_loop_runs,
     now_playing::{Answer, Asked, Clock, NowPlaying, Offered, Playback, Shown},
     path_monitor::{PathMonitor, Route},
     physical::{Depth, PhysicalFormat},

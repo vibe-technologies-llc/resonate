@@ -28,7 +28,7 @@ const IDENTITY: &str = "Resonate";
 const DESKTOP_ENTRY: &str = "resonate";
 const SANDBOXED_AS: &str = "FLATPAK_ID";
 const OPENS_IN_FRONT: bool = true;
-const NOW_PLAYING_NEEDS_A_WINDOW: bool = cfg!(target_os = "macos");
+const NOW_PLAYING_NEEDS_A_MAIN_LOOP: bool = cfg!(target_os = "macos");
 const MIME_TYPES: [&str; 20] = [
     "audio/flac",
     "audio/x-flac",
@@ -92,6 +92,7 @@ pub(crate) struct Serving {
     #[cfg(feature = "ui")]
     followed: Option<Sender<resonate_ui::Followed>>,
     notify: Arc<AtomicBool>,
+    heard_on_the_main_loop: bool,
 }
 
 impl Serving {
@@ -125,6 +126,14 @@ impl Serving {
             #[cfg(feature = "ui")]
             followed,
             notify: Arc::clone(notify),
+            heard_on_the_main_loop: false,
+        }
+    }
+
+    pub(crate) fn heard_on_the_main_loop(self) -> Self {
+        Self {
+            heard_on_the_main_loop: true,
+            ..self
         }
     }
 }
@@ -218,7 +227,10 @@ impl Host for Desktop {
     }
 
     fn answers_media_keys(&self) -> bool {
-        self.is_the_first_zone() && (!NOW_PLAYING_NEEDS_A_WINDOW || self.serving.raise.is_some())
+        self.is_the_first_zone()
+            && (!NOW_PLAYING_NEEDS_A_MAIN_LOOP
+                || self.serving.raise.is_some()
+                || self.serving.heard_on_the_main_loop)
     }
 
     fn quit(&self) {
