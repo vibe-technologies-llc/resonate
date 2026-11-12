@@ -12,6 +12,12 @@ paths:
 
 Invariants from file to sink. Callback contract: `realtime.md`.
 
+**The engine thread is one `Engine` over many files**: `engine.rs` holds the state, `run`'s loop and
+the tick budget, and `engine/` one `impl Engine` a subject (`commands`, `transport`, `seeking`,
+`moving`, `opening`, `filling`, `boundary`, `binding`, `reshaping`, `auditioning`, `in_step`,
+`dozing`, `levels`, `resting`, `sinks`, `graph`, `publishing`), beside `output.rs` (the stream and
+ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file calls is `pub(super)`.
+
 ## Decode
 
 - **Depth: container, never decoder buffer.** symphonia leaves ALAC `bits_per_sample` unset;

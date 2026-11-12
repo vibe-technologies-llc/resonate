@@ -83,7 +83,7 @@ one room. A song whose copies differ (another master, leading silence) lines up 
   `a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_not_near_its_end`).
 - **`Seat::take_up` is ordered as a zone handover is** (`zones.rs`): `SetRepeat(Off)`, `Resume` at the
   start to read the row's rate, `Resume` at the place, tell the clock, `KeepInStepWith`, `Play`. `Load`
-  would keep the guest's `next` rows; a wrong row or rate steps in at once (`engine.rs`) and no clock
+  would keep the guest's `next` rows; a wrong row or rate steps in at once (`engine/in_step.rs`) and no clock
   releases after 3 s. A row that will not resume part way sits out until the next song
   (`SittingOut::CannotStartMidSong`).
 - **The row is a `QueueStamp`**, the one a `HeardAt` already names; the seat maps its own stamps to the

@@ -91,5 +91,4 @@ pub(crate) use crate::{
     command::{Reply, Request},
     engine::Engine,
     sleep::Sleeping,
-    tap::Tapping,
 };
