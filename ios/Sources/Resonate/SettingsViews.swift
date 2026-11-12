@@ -156,12 +156,12 @@ private struct SettingsStatusRow: View {
             ].compactMap { $0 }
             return services.isEmpty ? said("settings.scrobbling.none") : services.joined(separator: " · ")
         case .sync:
-            switch features.syncActivity {
+            switch features.syncActivityCounted {
             case .fetching(let songs, _): return said("settings.sync.fetching", songs)
             case .syncing: return said("sync.syncing")
             case nil: break
             }
-            let standing = syncStanding(features.syncStatus, config: features.syncConfig, online: features.online)
+            let standing = syncStanding(features.syncSummary, config: features.syncConfig, online: features.online)
             return features.syncUpToDate ? said("settings.sync.up-to-date", standing) : standing
         case .accent:
             return AppearanceState.shared.accent.map { $0.name.capitalized } ?? "Resonate"

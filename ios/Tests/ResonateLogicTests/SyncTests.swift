@@ -120,7 +120,7 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
                 == "Connecting · 1 device on this network"
         )
         #expect(syncStanding(status(.off), config: config(), online: true) == "Starting…")
-        #expect(syncStanding(nil, config: config(), online: true) == "Starting…")
+        #expect(syncStanding(SyncSummary?.none, config: config(), online: true) == "Starting…")
     }
 }
 
@@ -210,6 +210,18 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
 
         #expect(SyncActivity.of(status(transfers: over), landing: 0, asked: false) == .fetching(songs: 1, fraction: 1))
         #expect(SyncActivity.of(status(), landing: 2, asked: false) == .fetching(songs: 2, fraction: nil))
+    }
+
+    @Test func anActivityCountedKeepsItsSongsAndDropsItsFraction() {
+        #expect(SyncActivity.fetching(songs: 3, fraction: 0.4).counted == .fetching(songs: 3, fraction: nil))
+        #expect(SyncActivity.syncing.counted == .syncing)
+    }
+
+    @Test func aSummaryLeavesTheTransfersOut() {
+        let moving = status(.connected, transfers: [transfer("A", .moving)])
+
+        #expect(SyncSummary(moving) == SyncSummary(status(.connected)))
+        #expect(SyncTransfersShown(moving) != SyncTransfersShown(status(.connected)))
     }
 
     @Test func theContinuedProgressSumsWhatIsLeftToFetchAndNamesTheSongsLeft() {

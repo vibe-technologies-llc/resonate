@@ -7,7 +7,7 @@ struct DrivenDevicePage: View {
     let id: String
 
     var body: some View {
-        let status = library.features.syncStatus
+        let status = library.features.syncSummary
         if let device = status?.devices.first(where: { $0.id == id }) {
             DrivenDeviceView(device: device)
         } else if status == nil {

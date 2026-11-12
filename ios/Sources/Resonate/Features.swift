@@ -155,14 +155,25 @@ final class Features {
     var syncConfig: SyncConfig?
     @ObservationIgnored private var secretsUnread = false
     @ObservationIgnored private var unreadReported = false
-    var syncStatus: SyncStatus?
+    var syncStatus: SyncStatus? {
+        didSet { syncStatusMoved() }
+    }
+    private(set) var syncSummary: SyncSummary?
+    private(set) var syncTransfers: SyncTransfersShown?
+    private(set) var syncActivity: SyncActivity?
+    private(set) var syncActive = false
+    private(set) var syncActivityCounted: SyncActivity?
     var syncHandoffs: [HandedOff] = []
     var syncFolder: String?
     var syncNotice: String?
     var playlistSync: PlaylistSync?
     var transferring = false
-    var syncAskedAt: Date?
-    var syncLanding = 0
+    var syncAskedAt: Date? {
+        didSet { syncActivityMoved() }
+    }
+    var syncLanding = 0 {
+        didSet { syncActivityMoved() }
+    }
     var pairingOffered: String?
     var localNetworkRefused = false
     @ObservationIgnored private var joinWaiting: String?
@@ -644,13 +655,25 @@ final class Features {
         }
     }
 
-    var syncActivity: SyncActivity? {
-        SyncActivity.of(syncStatus, landing: syncLanding, asked: syncAskedAt != nil)
+    private func syncStatusMoved() {
+        let summary = syncStatus.map(SyncSummary.init)
+        if syncSummary != summary { syncSummary = summary }
+        let transfers = syncStatus.flatMap { $0.transfers.isEmpty ? nil : SyncTransfersShown($0) }
+        if syncTransfers != transfers { syncTransfers = transfers }
+        syncActivityMoved()
+    }
+
+    private func syncActivityMoved() {
+        let activity = SyncActivity.of(syncStatus, landing: syncLanding, asked: syncAskedAt != nil)
+        if syncActivity != activity { syncActivity = activity }
+        if syncActive != (activity != nil) { syncActive = activity != nil }
+        let counted = activity?.counted
+        if syncActivityCounted != counted { syncActivityCounted = counted }
     }
 
     var syncUpToDate: Bool {
-        guard let status = syncStatus, status.standing != .off else { return false }
-        return syncActivity == nil && status.settled
+        guard let summary = syncSummary, summary.standing != .off else { return false }
+        return !syncActive && summary.settled
     }
 
     func forceSync() {

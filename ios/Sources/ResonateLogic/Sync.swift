@@ -17,6 +17,13 @@ public enum SyncActivity: Equatable {
         }
         return asked ? .syncing : nil
     }
+
+    public var counted: SyncActivity {
+        switch self {
+        case .syncing: .syncing
+        case .fetching(let songs, _): .fetching(songs: songs, fraction: nil)
+        }
+    }
 }
 
 public func fetchingHeading(downloading: UInt32, waiting: UInt32) -> String {
@@ -50,7 +57,39 @@ public struct ContinuedProgress: Equatable {
     }
 }
 
+public struct SyncSummary: Equatable, Sendable {
+    public let standing: SyncStanding
+    public let code: String
+    public let devices: [SyncedDevice]
+    public let owed: UInt32
+    public let settled: Bool
+
+    public init(_ status: SyncStatus) {
+        standing = status.standing
+        code = status.code
+        devices = status.devices
+        owed = status.owed
+        settled = status.settled
+    }
+}
+
+public struct SyncTransfersShown: Equatable, Sendable {
+    public let transfers: [SyncTransfer]
+    public let downloading: UInt32
+    public let waiting: UInt32
+
+    public init(_ status: SyncStatus) {
+        transfers = status.transfers
+        downloading = status.downloading
+        waiting = status.waiting
+    }
+}
+
 public func syncStanding(_ status: SyncStatus?, config: SyncConfig?, online: Bool) -> String {
+    syncStanding(status.map(SyncSummary.init), config: config, online: online)
+}
+
+public func syncStanding(_ status: SyncSummary?, config: SyncConfig?, online: Bool) -> String {
     guard let config, config.enabled else { return said("sync.standing.off") }
     if !online, !config.nearbyOnly { return said("sync.standing.waiting-for-online") }
     let others = status?.devices.filter { !$0.thisDevice } ?? []

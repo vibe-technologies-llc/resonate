@@ -207,7 +207,15 @@ sync seals its records and talks QUIC (TLS) of its own.
   comparisons against the filtered songs list (`SongsListed`) and the albums' and artists' letter
   runs (`CollectionsListed`).
   State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
-  only when it changed, so an unchanged answer redraws nothing.
+  only when it changed, so an unchanged answer redraws nothing. **No view reads `syncStatus` whole**: its
+  `didSet` derives parts, each assigned only where it moved: `syncSummary` (`SyncSummary`: standing,
+  code, devices, owed, settled; Home's devices, the pairing sheet's code, a playlist's options, a
+  driven device's page, the sync page's state row and devices), `syncTransfers`
+  (`SyncTransfersShown`, read by `SyncTransfersSection` alone), `syncActivity` (the banner's
+  `SyncProgressCard`, whose fraction moves with the bytes), `syncActivityCounted` (the same without
+  the fraction, `SyncActivity.counted`: the Settings row and the state row's headline) and
+  `syncActive` (whether the banner holds the card), so a transfer's byte count moving wakes the
+  progress card and the transfers alone, and the sync page sorts its devices only when they move.
   **An `@Observable` setter compares before it notifies**: the macro's `set` skips an assignment
   `==` to the value held, which is a deep comparison on the main actor for an array of thousands
   of rows, while a subscript or mutating write (`_modify`) always notifies. So the arrays compared

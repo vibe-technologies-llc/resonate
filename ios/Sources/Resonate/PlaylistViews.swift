@@ -281,7 +281,7 @@ struct PlaylistOptions: View {
     var body: some View {
         let features = library.features
         let sync = features.playlistSync.flatMap { $0.playlist == id ? $0 : nil }
-        let devices = (features.syncStatus?.devices ?? []).filter { device in
+        let devices = (features.syncSummary?.devices ?? []).filter { device in
             !device.thisDevice && (device.nearby || device.online && features.online)
         }
         Section {
@@ -318,7 +318,7 @@ struct PlaylistOptions: View {
                 Button("playlist.link.forget", systemImage: "link") { features.forgetPlaylistLink(id) }
             }
         }
-        if let sync, !fills, features.syncStatus?.standing != .off {
+        if let sync, !fills, features.syncSummary?.standing != .off {
             Section("playlist.devices") {
                 Toggle("playlist.devices.keep-songs", isOn: Binding(get: { sync.kept }, set: { features.keepSongs(id, $0) }))
                 if sync.missing > 0 {

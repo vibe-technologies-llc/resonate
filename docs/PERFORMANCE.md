@@ -28,10 +28,6 @@ are in [ROADMAP.md](ROADMAP.md).
   shown and every zone and visible row is evaluated again; the position wants an observable of its
   own, as `PlayClock` is, read by the place line and the seek slider. The party page does the same
   with the round trip it shows
-- [S] `Features.syncStatus` is read whole by views that need one field of it (Home's devices, the
-  pairing sheet's code, a playlist's options, the status banner), so each is evaluated again at
-  every poll while a transfer's byte count moves, and the sync page sorts its devices and keys its
-  transfers again each time
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the

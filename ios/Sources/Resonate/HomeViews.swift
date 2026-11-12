@@ -123,7 +123,7 @@ private struct HomeDevices: View {
 
     var body: some View {
         let features = library.features
-        let devices = features.syncStatus?.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) } ?? []
+        let devices = features.syncSummary?.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) } ?? []
         Section("playlist.devices") {
             ForEach(devices, id: \.id) { device in
                 KnownDeviceEntry(known: device)

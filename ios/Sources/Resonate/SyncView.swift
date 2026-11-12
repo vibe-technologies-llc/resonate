@@ -32,13 +32,7 @@ struct SyncView: View {
                             HandoffRows()
                         }
                     }
-                    if let status = features.syncStatus, !status.transfers.isEmpty {
-                        SyncTransfers(
-                            transfers: status.transfers,
-                            downloading: status.downloading,
-                            waiting: status.waiting
-                        )
-                    }
+                    SyncTransfersSection()
                     Section("sync.options") {
                         NavigationLink(value: Destination.syncSongs) {
                             ToolRow(title: said("sync.options.songs"), detail: Self.songs(config), symbol: SettingsPlace.syncSongs.symbol)
@@ -149,10 +143,10 @@ struct SyncStateRow: View {
 
     var body: some View {
         let features = library.features
-        let status = features.syncStatus
+        let status = features.syncSummary
         HStack(spacing: 12) {
             Group {
-                if features.syncActivity != nil || status?.standing == .connecting {
+                if features.syncActive || status?.standing == .connecting {
                     ProgressView().accessibilityHidden(true)
                 } else if features.syncUpToDate {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.confirmation)
@@ -180,12 +174,12 @@ struct SyncStateRow: View {
     }
 
     private func headline(_ features: Features) -> String {
-        switch features.syncActivity {
+        switch features.syncActivityCounted {
         case .fetching(let songs, _): return said("sync.state.fetching", songs)
         case .syncing: return said("sync.syncing")
         case nil: break
         }
-        guard let status = features.syncStatus else { return said("sync.state.starting") }
+        guard let status = features.syncSummary else { return said("sync.state.starting") }
         if features.syncUpToDate { return said("sync.state.up-to-date") }
         let nearby = status.devices.contains { $0.nearby && !$0.thisDevice }
         switch status.standing {
@@ -205,7 +199,7 @@ struct SyncDevices: View {
 
     var body: some View {
         let features = library.features
-        let devices = features.syncStatus?.devices ?? []
+        let devices = features.syncSummary?.devices ?? []
         let others = devices.filter { !$0.thisDevice }.sorted { first, second in
             first.online != second.online ? first.online : first.name.localizedStandardCompare(second.name) == .orderedAscending
         }
@@ -447,7 +441,7 @@ struct PairingSheet: View {
 
     private var shownCode: String? {
         let features = library.features
-        if let code = features.syncStatus?.code, !code.isEmpty { return code }
+        if let code = features.syncSummary?.code, !code.isEmpty { return code }
         guard let key = features.syncConfig?.key, !key.isEmpty else { return nil }
         return key
     }
@@ -684,6 +678,16 @@ struct SyncConnectionPage: View {
             said("sync.route.own.explained")
         case .nearby:
             said("sync.route.nearby.explained")
+        }
+    }
+}
+
+struct SyncTransfersSection: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        if let shown = library.features.syncTransfers {
+            SyncTransfers(transfers: shown.transfers, downloading: shown.downloading, waiting: shown.waiting)
         }
     }
 }

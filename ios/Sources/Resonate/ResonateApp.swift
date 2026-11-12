@@ -595,8 +595,8 @@ struct StatusBanner: View {
                 ScanProgress()
                     .transition(arrival)
             }
-            if let activity = library.features.syncActivity {
-                SyncProgress(activity: activity)
+            if library.features.syncActive {
+                SyncProgressCard()
                     .transition(arrival)
             }
             if let message = library.status {
@@ -607,7 +607,17 @@ struct StatusBanner: View {
         }
         .motion(.smooth, calm: Self.fade, value: library.status)
         .motion(.smooth, calm: Self.fade, value: library.scanShown)
-        .motion(.smooth, calm: Self.fade, value: library.features.syncActivity == nil)
+        .motion(.smooth, calm: Self.fade, value: library.features.syncActive)
+    }
+}
+
+struct SyncProgressCard: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        if let activity = library.features.syncActivity {
+            SyncProgress(activity: activity)
+        }
     }
 }
 
