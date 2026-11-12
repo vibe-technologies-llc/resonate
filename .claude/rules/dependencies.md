@@ -44,7 +44,8 @@ the main queue, never run synchronously), each at the version gpui's tree alread
 second copy is built. `NowPlaying` holds no Objective-C object: each call fetches the shared center
 inside its block, so it is `Send` and `Sync` and may be dropped on any thread. `mach_absolute_time` and `mach_timebase_info` are declared
 by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
-is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature. It is
+is the run-loop selector and the Network framework's path monitor (`PathMonitor`, its update handler a
+`block2` block on a `dispatch2` queue), the one constant behind `objc2-core-audio`'s deprecated feature. It is
 reached by `resonate-coreaudio`, on macOS `resonate-listen` (the microphone and the measuring
 sweep) and `resonate-mpris` (Now Playing, `macos.md`) and, on iOS, `resonate-mobile` alone.
 

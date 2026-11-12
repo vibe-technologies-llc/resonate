@@ -169,7 +169,7 @@ Invariants the layering protects (the rules files have the rest):
   AcoustID key, Spotify client ID, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
   default; `online = false` stops every request (`online.md`).
 - **A metered connection is one `resonate_core::Metering`, read through `Gate`s**: a detector
-  (`resonate-mpris` on NetworkManager, the phones' own callbacks) reports `Meter::{Unknown,
+  (`resonate-mpris` on NetworkManager, Windows's connection cost and a Mac's path monitor, the phones' own callbacks) reports `Meter::{Unknown,
   Unmetered, Metered}`; a gate is shut only by `Metered`, so unknown never blocks. Lookups are
   skipped by default while metered (`enrich-on-metered`) and downloads wait only when asked
   (`stall-downloads-on-metered`); a song played in place is neither (`online.md`, `providers.md`).

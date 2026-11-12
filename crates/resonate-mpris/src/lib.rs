@@ -28,13 +28,15 @@ mod idle;
 mod interfaces;
 #[cfg(any(windows, target_os = "macos", test))]
 mod listening;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 mod metered;
 #[cfg(unix)]
 mod notifier;
 mod notify;
 #[cfg(target_os = "macos")]
 mod nowplaying;
+#[cfg(target_os = "macos")]
+mod pathing;
 mod peer;
 #[cfg(windows)]
 mod pipe;
@@ -43,6 +45,8 @@ mod preferences;
 #[cfg(any(windows, target_os = "macos", test))]
 mod registry;
 mod remote;
+#[cfg(any(target_os = "macos", test))]
+mod route;
 mod service;
 #[cfg(windows)]
 mod smtc;
@@ -72,8 +76,10 @@ pub use crate::costing::watch_the_meter;
 pub use crate::error::WindowsOp;
 #[cfg(fuzzing)]
 pub use crate::fuzzing::read_what_a_peer_says;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub use crate::metered::{meter_of_network_manager, watch_the_meter};
+#[cfg(target_os = "macos")]
+pub use crate::pathing::watch_the_meter;
 #[cfg(all(unix, not(target_os = "macos")))]
 pub use crate::trash::{Trashing, trash_through_the_portal};
 pub use crate::{

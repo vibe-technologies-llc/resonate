@@ -85,6 +85,10 @@ macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS, which the layeri
 - **The HAL is macOS's alone**: `Device`, `Stream`, `PhysicalFormat`, `Hog`, `Volume`, `Mute`,
   `Listening`, each an owned value over one `AudioObject` property call.
 - **`NowPlaying`** is the system's Now Playing and remote commands (below).
+- **`PathMonitor`** is the Network framework's path monitor, its C calls declared by hand (no
+  `objc2` crate covers Network); the monitor is cancelled and released on drop and the handler
+  block is kept beside it, so an update never outlives what it calls (`mpris.md`'s *Is the
+  connection metered*).
 - Errors are `Error::Refused { op: Op, source: OsStatus }` and the typed cases beside it; an
   `OsStatus` prints as its four-character code where it has one.
 
@@ -134,8 +138,7 @@ for them.
 
 ## Not on macOS yet
 
-Notifications (no bus `Desk` is opened and none is made for a Mac); whether the connection is
-metered (it stays `Unknown`, so nothing is held back); recording the desktop's sound; Game Mode;
+Notifications (no bus `Desk` is opened and none is made for a Mac); recording the desktop's sound; Game Mode;
 playing on with the window closed; the launcher's icon following the accent (`plain_launcher.rs`
 does nothing, as on Windows); a Homebrew cask.
 

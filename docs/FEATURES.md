@@ -91,8 +91,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] The desktop's sound cannot be recorded on macOS (`Listening::Desktop` is
   `Error::DesktopUnheard`, the Listen pane offers the microphone alone): a Core Audio process tap
   (macOS 14.2) is not built
-- [S] macOS never knows a metered connection (`Meter::Unknown`, so nothing is held back): the
-  Network framework's path monitor is not read
 - [S] The exclusive sink on macOS offers no 32-bit integer word and no layout past stereo, and asks
   for no buffer size: the HAL unit's Float32 path holds 24 bits, a true integer mode (an IOProc on
   an unmixable format) is not built, and a device of more channels plays as its preferred pair

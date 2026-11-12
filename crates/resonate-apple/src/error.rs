@@ -103,6 +103,9 @@ pub enum Error {
     #[cfg(target_os = "macos")]
     #[error("Core Audio answered {bytes} bytes to {op}, which is not what was asked for")]
     Missized { op: Op, bytes: u32 },
+    #[cfg(target_os = "macos")]
+    #[error("the Network framework made no path monitor")]
+    NoPathMonitor,
 }
 
 impl Error {

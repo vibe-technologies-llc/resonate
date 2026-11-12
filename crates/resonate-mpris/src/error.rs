@@ -81,6 +81,13 @@ pub enum Error {
         source: windows::core::Error,
     },
 
+    #[cfg(target_os = "macos")]
+    #[error("the network's path was not followed")]
+    Path {
+        #[source]
+        source: resonate_apple::Error,
+    },
+
     #[error("the player's pipe spoke out of turn")]
     Wire(#[from] WireFault),
 

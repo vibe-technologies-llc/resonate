@@ -22,9 +22,10 @@ pipe: `Mpris::served` and `Session::open` fall back under `cfg(any(windows, targ
 so one launch finds the window another opened, hands it its files and raises it, and `queue`,
 `players`, `sleep` and a subcommand's `Reload` reach it. The portal trash is not compiled there
 (`rustix`'s `OFlags::PATH` is not Apple's; a Mac's Trash is the binary's, `binary.md`). No toast,
-notification, idle inhibit or metered reading is made on a Mac by this crate: the bus `Desk` is
-opened only by the bus loop, which a Mac never reaches, `watch_the_meter` ends at once with no
-system bus (the connection stays `Unknown`), and the binary's `awake.rs` keeps the machine awake.
+notification or idle inhibit is made on a Mac by this crate: the bus `Desk` is opened only by the
+bus loop, which a Mac never reaches, and the binary's `awake.rs` keeps the machine awake. Whether
+the connection is metered is read from the Network framework's path monitor (*Is the connection
+metered*).
 The first zone is published to and commanded from the system's Now Playing (*The media transport*
 below, `macos.md`).
 
@@ -271,8 +272,13 @@ tests alone. The crate reaches `resonate-apple` on macOS for this and nothing el
 On Windows `costing.rs`'s `watch_the_meter` has the same signature and the same contract (the first
 read made before it returns, `Unknown` where nothing is known) over
 `NetworkInformation::GetInternetConnectionProfile().GetConnectionCost().NetworkCostType()` and its
-`NetworkStatusChanged` event, mapped by `cost::meter_of_network_cost` (`windows.md`). The rest of
-this section is NetworkManager's.
+`NetworkStatusChanged` event, mapped by `cost::meter_of_network_cost` (`windows.md`). On macOS
+`pathing.rs`'s holds a `resonate_apple::PathMonitor` (the Network framework's `nw_path_monitor`, its
+updates on a dispatch queue of its own) on `resonate-metered` for the life of the process, and
+`route::meter_of_the_path` maps each `Route`: no satisfied path is `Unknown`, an expensive one
+(cellular, a phone's hotspot) or a constrained one (Low Data Mode) `Metered`, any other `Unmetered`.
+`Unknown` is reported before the monitor starts, and its first update comes within moments. The
+rest of this section is NetworkManager's.
 
 `metered.rs`'s `watch_the_meter(Metering)` reads NetworkManager's `Metered` property
 (`org.freedesktop.NetworkManager` at `/org/freedesktop/NetworkManager`) over the system bus and
