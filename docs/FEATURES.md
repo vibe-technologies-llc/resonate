@@ -154,6 +154,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] The window speaking a newly chosen language at once, without a restart.
 - [S] The CLI's help, the man pages, the desktop entry and the metainfo in the listener's language; `build.rs` writes them in English at build time.
 
+## Later: Together
 
 - [M] Chat and reactions in a listening party.
 - [M] Handing the host's role to someone else in a party, when the host must go.
