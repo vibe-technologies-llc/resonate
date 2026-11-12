@@ -5,7 +5,7 @@ use resonate_library::Track;
 
 use super::{Pane, PlayingRow, RootView, somewhere_in, unsaved};
 use crate::{
-    Notice, PlayerModel, ResonateApp, Setting, SettingChange, SettingKey,
+    ConfigKey, Notice, PlayerModel, ResonateApp, Setting, SettingChange,
     toast::{self},
     views::zones::{self},
 };
@@ -141,7 +141,7 @@ impl RootView {
     }
 
     pub(super) fn store_for(&mut self, zone: ZoneId, setting: &Setting, cx: &mut Context<Self>) {
-        if setting.key().is_the_zones_own() && !zone.is_first() {
+        if crate::settings::is_the_zones_own(setting.key()) && !zone.is_first() {
             return;
         }
         self.settings_written
@@ -149,8 +149,8 @@ impl RootView {
         self.write_the_settings(cx);
     }
 
-    pub(crate) fn forget(&mut self, key: SettingKey, cx: &mut Context<Self>) {
-        if key.is_the_zones_own() && !self.switcher.selected().is_first() {
+    pub(crate) fn forget(&mut self, key: ConfigKey, cx: &mut Context<Self>) {
+        if crate::settings::is_the_zones_own(key) && !self.switcher.selected().is_first() {
             return;
         }
         self.settings_written.change(SettingChange::Forget(key));

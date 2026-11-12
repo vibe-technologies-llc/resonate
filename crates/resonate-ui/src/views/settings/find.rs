@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, sync::OnceLock};
 
 pub(crate) use crate::SettingsCategory as Category;
-use crate::{SettingKey, icons::Icon, system::sound_system, words};
+use crate::{ConfigKey, icons::Icon, system::sound_system, words};
 
 impl Category {
     pub(crate) fn label(self) -> &'static str {
@@ -228,7 +228,7 @@ pub(crate) struct Described {
     pub(crate) title: &'static str,
     pub(crate) hint: &'static str,
     pub(crate) also_called: &'static str,
-    pub(crate) keys: &'static [SettingKey],
+    pub(crate) keys: &'static [ConfigKey],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -442,7 +442,7 @@ impl Group {
         self.described().also_called
     }
 
-    pub(crate) fn keys(self) -> &'static [SettingKey] {
+    pub(crate) fn keys(self) -> &'static [ConfigKey] {
         self.described().keys
     }
 
@@ -454,7 +454,7 @@ impl Group {
                 title: words::settings_find::playback_device(),
                 hint: words::settings_find::device_hint(),
                 also_called: words::settings_find::sink_output_card_dac_headphones_speakers(),
-                keys: &[SettingKey::Sink, SettingKey::Renderers],
+                keys: &[ConfigKey::Sink, ConfigKey::Renderers],
             },
             Self::DeviceVolume => Described {
                 category: Category::Output,
@@ -462,7 +462,7 @@ impl Group {
                 title: words::settings_find::hardware_volume(),
                 hint: words::settings_find::device_volume_hint(),
                 also_called: words::settings_find::hardware_mixer_amplifier_alsa_route_loudness(),
-                keys: &[SettingKey::DeviceVolume],
+                keys: &[ConfigKey::DeviceVolume],
             },
             Self::SampleRate => Described {
                 category: Category::Output,
@@ -470,7 +470,7 @@ impl Group {
                 title: words::settings_find::sample_rate(),
                 hint: sample_rate_hint(),
                 also_called: words::settings_find::bit_perfect_khz_hz_resample_untouched(),
-                keys: &[SettingKey::BitPerfect],
+                keys: &[ConfigKey::BitPerfect],
             },
             Self::GraphRate => Described {
                 category: Category::Output,
@@ -478,7 +478,7 @@ impl Group {
                 title: words::settings_find::graph_rate(),
                 hint: words::settings_find::graph_rate_hint(),
                 also_called: words::settings_find::pipewire_daemon_switch_rate(),
-                keys: &[SettingKey::ForceGraphRate],
+                keys: &[ConfigKey::ForceGraphRate],
             },
             Self::Buffer => Described {
                 category: Category::Output,
@@ -486,7 +486,7 @@ impl Group {
                 title: words::settings_find::buffer(),
                 hint: words::settings_find::buffer_hint(),
                 also_called: words::settings_find::latency_milliseconds_ms_depth_ring_underrun(),
-                keys: &[SettingKey::Buffer],
+                keys: &[ConfigKey::BufferMs],
             },
             Self::Dop => Described {
                 category: Category::Output,
@@ -494,7 +494,7 @@ impl Group {
                 title: words::settings_find::dsd_over_pcm(),
                 hint: words::settings_find::dop_hint(),
                 also_called: words::settings_find::dsd_dsf_dff_sacd_marker_packing(),
-                keys: &[SettingKey::Dop, SettingKey::DsdLikePcm],
+                keys: &[ConfigKey::Dop, ConfigKey::DsdLikePcm],
             },
             Self::Bluetooth => Described {
                 category: Category::Output,
@@ -503,9 +503,9 @@ impl Group {
                 hint: words::settings_find::bluetooth_hint(),
                 also_called: words::settings_find::headphones_earbuds_airpods_a2dp_wireless_cut(),
                 keys: &[
-                    SettingKey::BluetoothWake,
-                    SettingKey::BluetoothLead,
-                    SettingKey::BluetoothAwake,
+                    ConfigKey::BluetoothWake,
+                    ConfigKey::BluetoothLeadMs,
+                    ConfigKey::BluetoothAwakeS,
                 ],
             },
             Self::FlacRenderers => Described {
@@ -514,7 +514,7 @@ impl Group {
                 title: words::settings_find::high_rate_flac_to_renderers(),
                 hint: words::settings_find::flac_renderers_hint(),
                 also_called: words::settings_find::upnp_dlna_renderer_streamer_network_flac(),
-                keys: &[SettingKey::FlacAbove96kFor],
+                keys: &[ConfigKey::FlacAbove96kFor],
             },
             Self::Resampler => Described {
                 category: Category::Processing,
@@ -522,7 +522,7 @@ impl Group {
                 title: words::settings_find::resampler(),
                 hint: words::settings_find::resampler_hint(),
                 also_called: words::settings_find::quality_sinc_kaiser_taps_filter_conversion(),
-                keys: &[SettingKey::Quality, SettingKey::FilterPhase],
+                keys: &[ConfigKey::Quality, ConfigKey::FilterPhase],
             },
             Self::Dither => Described {
                 category: Category::Processing,
@@ -530,7 +530,7 @@ impl Group {
                 title: words::settings_find::dither(),
                 hint: words::settings_find::dither_hint(),
                 also_called: words::settings_find::truncation_triangular_rectangular_noise(),
-                keys: &[SettingKey::Dither],
+                keys: &[ConfigKey::Dither],
             },
             Self::NoiseShaping => Described {
                 category: Category::Processing,
@@ -538,7 +538,7 @@ impl Group {
                 title: words::settings_find::noise_shaping(),
                 hint: words::settings_find::shaping_hint(),
                 also_called: words::settings_find::lipshitz_threshold_hearing_terhardt_e_weighted(),
-                keys: &[SettingKey::NoiseShaping],
+                keys: &[ConfigKey::NoiseShaping],
             },
             Self::ReplayGain => Described {
                 category: Category::Processing,
@@ -547,9 +547,9 @@ impl Group {
                 hint: words::settings_find::replay_gain_hint(),
                 also_called: words::settings_find::loudness_volume_normalisation_gain_album_track(),
                 keys: &[
-                    SettingKey::ReplayGain,
-                    SettingKey::PreAmp,
-                    SettingKey::Untagged,
+                    ConfigKey::ReplayGain,
+                    ConfigKey::ReplayGainPreAmp,
+                    ConfigKey::ReplayGainUntagged,
                 ],
             },
             Self::TruePeak => Described {
@@ -559,7 +559,7 @@ impl Group {
                 hint: words::settings_find::true_peak_hint(),
                 also_called: words::settings_find::clipping_intersample_over_limiter_dbtp_headroom(
                 ),
-                keys: &[SettingKey::TruePeak],
+                keys: &[ConfigKey::TruePeak],
             },
             Self::LossySources => Described {
                 category: Category::Processing,
@@ -567,7 +567,7 @@ impl Group {
                 title: words::settings_find::artificially_enhance_lossy_files(),
                 hint: words::settings_find::lossy_sources_hint(),
                 also_called: words::settings_find::lossy_sources_mp3_aac_vorbis_restore(),
-                keys: &[SettingKey::Restoration],
+                keys: &[ConfigKey::RestoreLossy],
             },
             Self::Crossfeed => Described {
                 category: Category::Processing,
@@ -576,7 +576,7 @@ impl Group {
                 hint: words::settings_find::crossfeed_hint(),
                 also_called: words::settings_find::crossfeed_bauer_headphones_stereo_image_binaural(
                 ),
-                keys: &[SettingKey::Crossfeed],
+                keys: &[ConfigKey::Crossfeed],
             },
             Self::Equalising => Described {
                 category: Category::Equaliser,
@@ -585,7 +585,7 @@ impl Group {
                 hint: words::settings_find::equalising_hint(),
                 also_called:
                     words::settings_find::eq_equalizer_parametric_filter_correction_headphone(),
-                keys: &[SettingKey::Equaliser],
+                keys: &[ConfigKey::Equaliser],
             },
             Self::BoundTo => Described {
                 category: Category::Equaliser,
@@ -593,7 +593,7 @@ impl Group {
                 title: words::settings_find::bound_to_each_device(),
                 hint: words::settings_find::bound_to_hint(),
                 also_called: words::settings_find::sink_device_per_device_default_binding(),
-                keys: &[SettingKey::EqualiserFor],
+                keys: &[ConfigKey::EqualiserFor],
             },
             Self::Bands => Described {
                 category: Category::Equaliser,
@@ -620,8 +620,8 @@ impl Group {
                 also_called: words::settings_find::measurer_oratory1990_crinacle_rtings_rig_ranking(
                 ),
                 keys: &[
-                    SettingKey::EqualiserMeasurer,
-                    SettingKey::EqualiserMeasurerFor,
+                    ConfigKey::EqualiserMeasurer,
+                    ConfigKey::EqualiserMeasurerFor,
                 ],
             },
             Self::OwnMeasurement => Described {
@@ -646,7 +646,7 @@ impl Group {
                 title: words::settings_find::the_rooms_response(),
                 hint: words::settings_find::room_hint(),
                 also_called: words::settings_find::convolution_impulse_response_ir_fir_room(),
-                keys: &[SettingKey::Convolution],
+                keys: &[ConfigKey::Convolution],
             },
             Self::Speakers => Described {
                 category: Category::Equaliser,
@@ -655,9 +655,9 @@ impl Group {
                 hint: words::settings_find::speakers_hint(),
                 also_called: words::settings_find::sofa_hrir_hrtf_angle_degrees_speaker(),
                 keys: &[
-                    SettingKey::SpeakerAngle,
-                    SettingKey::SpeakerElevation,
-                    SettingKey::HeadYaw,
+                    ConfigKey::SpeakerAngle,
+                    ConfigKey::SpeakerElevation,
+                    ConfigKey::HeadYaw,
                 ],
             },
             Self::Abx => Described {
@@ -674,7 +674,7 @@ impl Group {
                 title: words::settings_find::resuming(),
                 hint: words::settings_find::resuming_hint(),
                 also_called: words::settings_find::queue_restart_restore_carry_on_position(),
-                keys: &[SettingKey::Resume],
+                keys: &[ConfigKey::Resume],
             },
             Self::Shuffling => Described {
                 category: Category::Playback,
@@ -683,10 +683,10 @@ impl Group {
                 hint: words::settings_find::shuffling_hint(),
                 also_called: words::settings_find::shuffle_smart_random_spread_artist_album(),
                 keys: &[
-                    SettingKey::ShuffleStyle,
-                    SettingKey::ShuffleSpreadsArtists,
-                    SettingKey::ShuffleSpreadsAlbums,
-                    SettingKey::ShuffleFreshFirst,
+                    ConfigKey::ShuffleStyle,
+                    ConfigKey::ShuffleSpreadsArtists,
+                    ConfigKey::ShuffleSpreadsAlbums,
+                    ConfigKey::ShuffleFreshFirst,
                 ],
             },
             Self::Repeating => Described {
@@ -695,7 +695,7 @@ impl Group {
                 title: words::settings_find::repeating_a_track(),
                 hint: words::settings_find::repeating_hint(),
                 also_called: words::settings_find::loop_repeat_one_single_track_skip(),
-                keys: &[SettingKey::SkipUnderRepeat],
+                keys: &[ConfigKey::SkipRepeatsQueue],
             },
             Self::PreviousButton => Described {
                 category: Category::Playback,
@@ -703,7 +703,7 @@ impl Group {
                 title: words::settings_find::the_previous_button(),
                 hint: words::settings_find::previous_hint(),
                 also_called: words::settings_find::restart_replay_beginning_start_over_back(),
-                keys: &[SettingKey::PreviousRestarts],
+                keys: &[ConfigKey::PreviousRestarts],
             },
             Self::Folders => Described {
                 category: Category::Library,
@@ -711,7 +711,7 @@ impl Group {
                 title: words::settings_find::music_folders(),
                 hint: words::settings_find::folders_hint(),
                 also_called: words::settings_find::roots_directories_add_scan_music_path(),
-                keys: &[SettingKey::MusicFolder, SettingKey::FileDropped],
+                keys: &[ConfigKey::MusicFolder, ConfigKey::FileDropped],
             },
             Self::Rescanning => Described {
                 category: Category::Library,
@@ -751,7 +751,7 @@ impl Group {
                 title: words::settings_find::organising(),
                 hint: words::settings_find::organising_hint(),
                 also_called: words::settings_find::tidy_rename_move_layout_template_pattern(),
-                keys: &[SettingKey::OrganiseAs],
+                keys: &[ConfigKey::OrganiseAs],
             },
             Self::Vault => Described {
                 category: Category::Library,
@@ -767,7 +767,7 @@ impl Group {
                 title: words::settings_find::the_inbox(),
                 hint: words::settings_find::inbox_hint(),
                 also_called: words::settings_find::provider_poll_wants_missing_download_drop(),
-                keys: &[SettingKey::Inbox],
+                keys: &[ConfigKey::Inbox],
             },
             Self::History => Described {
                 category: Category::Library,
@@ -775,7 +775,7 @@ impl Group {
                 title: words::settings_find::listening_history(),
                 hint: words::settings_find::history_hint(),
                 also_called: words::settings_find::history_listens_plays_statistics_forget_age(),
-                keys: &[SettingKey::HistoryKept],
+                keys: &[ConfigKey::HistoryKept],
             },
             Self::MusicExtensions => Described {
                 category: Category::Filters,
@@ -783,7 +783,7 @@ impl Group {
                 title: words::settings_find::file_extensions(),
                 hint: words::settings_find::choose_which_supported_file_extensions_appear(),
                 also_called: words::settings_find::music_filters_formats_mp3_flac_m4a(),
-                keys: &[SettingKey::MusicExtensions],
+                keys: &[ConfigKey::MusicExtensions],
             },
             Self::MinimumLength => Described {
                 category: Category::Filters,
@@ -791,7 +791,7 @@ impl Group {
                 title: words::settings_find::minimum_length(),
                 hint: words::settings_find::only_show_tracks_at_least_this(),
                 also_called: words::settings_find::music_filters_duration_seconds_minutes_short(),
-                keys: &[SettingKey::MinimumLength],
+                keys: &[ConfigKey::MinimumLength],
             },
             Self::Hidden => Described {
                 category: Category::Filters,
@@ -808,7 +808,7 @@ impl Group {
                 hint: words::settings_find::online_hint(),
                 also_called:
                     words::settings_find::musicbrainz_network_internet_covers_lyrics_lrclib(),
-                keys: &[SettingKey::Online, SettingKey::MusicbrainzMirror],
+                keys: &[ConfigKey::Online, ConfigKey::MusicbrainzMirror],
             },
             Self::AfterScan => Described {
                 category: Category::Online,
@@ -816,7 +816,7 @@ impl Group {
                 title: words::settings_find::after_a_scan(),
                 hint: words::settings_find::after_scan_hint(),
                 also_called: words::settings_find::enrich_automatic_handover(),
-                keys: &[SettingKey::EnrichAfterScan],
+                keys: &[ConfigKey::EnrichAfterScan],
             },
             Self::Metered => Described {
                 category: Category::Online,
@@ -826,8 +826,8 @@ impl Group {
                 also_called: words::settings_find::metered_mobile_data_hotspot_tethering_bandwidth(
                 ),
                 keys: &[
-                    SettingKey::EnrichOnMetered,
-                    SettingKey::StallDownloadsOnMetered,
+                    ConfigKey::EnrichOnMetered,
+                    ConfigKey::StallDownloadsOnMetered,
                 ],
             },
             Self::Lyrics => Described {
@@ -836,7 +836,7 @@ impl Group {
                 title: words::settings_find::fetching_lyrics(),
                 hint: words::settings_find::lyrics_hint(),
                 also_called: words::settings_find::lyrics_lrclib_better_lyrics_betterlyrics_ttml(),
-                keys: &[SettingKey::FetchLyrics, SettingKey::LyricsByTheLocale],
+                keys: &[ConfigKey::FetchLyrics, ConfigKey::LyricsLanguageFromLocale],
             },
             Self::Contact => Described {
                 category: Category::Online,
@@ -844,7 +844,7 @@ impl Group {
                 title: words::settings_find::contact(),
                 hint: words::settings_find::contact_hint(),
                 also_called: words::settings_find::user_agent_email_identity_request(),
-                keys: &[SettingKey::Contact],
+                keys: &[ConfigKey::Contact],
             },
             Self::Studies => Described {
                 category: Category::Recognition,
@@ -853,7 +853,7 @@ impl Group {
                 hint: words::settings_find::studies_hint(),
                 also_called: words::settings_find::analyse_analysis_decode_fake_lossless_transcode(
                 ),
-                keys: &[SettingKey::Study, SettingKey::IdentifyBySound],
+                keys: &[ConfigKey::Study, ConfigKey::IdentifyBySound],
             },
             Self::Recognition => Described {
                 category: Category::Recognition,
@@ -862,7 +862,7 @@ impl Group {
                 hint: words::settings_find::recognition_hint(),
                 also_called: words::settings_find::acoustid_audd_key_token_fingerprint_chromaprint(
                 ),
-                keys: &[SettingKey::AcoustidKey, SettingKey::AuddToken],
+                keys: &[ConfigKey::AcoustidKey, ConfigKey::AuddToken],
             },
             Self::Listening => Described {
                 category: Category::Recognition,
@@ -870,7 +870,7 @@ impl Group {
                 title: words::settings_find::listening(),
                 hint: words::settings_find::listening_hint(),
                 also_called: words::settings_find::listen_shazam_microphone_mic_desktop_monitor(),
-                keys: &[SettingKey::ListenFrom, SettingKey::ListenFor],
+                keys: &[ConfigKey::ListenFrom, ConfigKey::ListenFor],
             },
             Self::ResonateKey => Described {
                 category: Category::Accounts,
@@ -878,7 +878,7 @@ impl Group {
                 title: words::settings_find::resonate_server_key(),
                 hint: words::settings_find::resonate_key_hint(),
                 also_called: words::settings_find::resonate_server_key_secret_hifi_api(),
-                keys: &[SettingKey::HifiSecret],
+                keys: &[ConfigKey::HifiSecret],
             },
             Self::Subsonic => Described {
                 category: Category::Accounts,
@@ -888,9 +888,9 @@ impl Group {
                 also_called:
                     words::settings_find::navidrome_airsonic_gonic_server_provider_download(),
                 keys: &[
-                    SettingKey::Subsonic,
-                    SettingKey::SubsonicUser,
-                    SettingKey::SubsonicPassword,
+                    ConfigKey::Subsonic,
+                    ConfigKey::SubsonicUser,
+                    ConfigKey::SubsonicPassword,
                 ],
             },
             Self::Jellyfin => Described {
@@ -900,9 +900,9 @@ impl Group {
                 hint: words::settings_find::jellyfin_hint(),
                 also_called: words::settings_find::emby_server_provider_stream_play_in(),
                 keys: &[
-                    SettingKey::Jellyfin,
-                    SettingKey::JellyfinUser,
-                    SettingKey::JellyfinPassword,
+                    ConfigKey::Jellyfin,
+                    ConfigKey::JellyfinUser,
+                    ConfigKey::JellyfinPassword,
                 ],
             },
             Self::Tidal => Described {
@@ -913,12 +913,12 @@ impl Group {
                 also_called:
                     words::settings_find::tidal_streaming_service_subscription_provider_download(),
                 keys: &[
-                    SettingKey::TidalClientId,
-                    SettingKey::TidalClientSecret,
-                    SettingKey::TidalRefreshToken,
-                    SettingKey::HifiApi,
-                    SettingKey::Monochrome,
-                    SettingKey::HostedServices,
+                    ConfigKey::TidalClientId,
+                    ConfigKey::TidalClientSecret,
+                    ConfigKey::TidalRefreshToken,
+                    ConfigKey::HifiApi,
+                    ConfigKey::Monochrome,
+                    ConfigKey::HostedServices,
                 ],
             },
             Self::YoutubeMusic => Described {
@@ -928,10 +928,10 @@ impl Group {
                 hint: words::settings_find::youtube_music_hint(),
                 also_called: words::settings_find::youtube_music_ytmusic_yt_dlp_ytdlp(),
                 keys: &[
-                    SettingKey::YoutubeMusic,
-                    SettingKey::YoutubeMusicCookies,
-                    SettingKey::YtDlp,
-                    SettingKey::YoutubeMusicKeepOrder,
+                    ConfigKey::YoutubeMusic,
+                    ConfigKey::YoutubeMusicCookies,
+                    ConfigKey::YtDlp,
+                    ConfigKey::YoutubeMusicKeepOrder,
                 ],
             },
             Self::Spotify => Described {
@@ -940,7 +940,7 @@ impl Group {
                 title: words::settings_find::a_spotify_account(),
                 hint: words::settings_find::spotify_hint(),
                 also_called: words::settings_find::spotify_account_sign_in_playlists_liked(),
-                keys: &[SettingKey::SpotifyClientId, SettingKey::SpotifyRefreshToken],
+                keys: &[ConfigKey::SpotifyClientId, ConfigKey::SpotifyRefreshToken],
             },
             Self::Lastfm => Described {
                 category: Category::Accounts,
@@ -950,9 +950,9 @@ impl Group {
                 also_called:
                     words::settings_find::scrobble_scrobbling_last_fm_lastfm_audioscrobbler(),
                 keys: &[
-                    SettingKey::LastfmKey,
-                    SettingKey::LastfmSecret,
-                    SettingKey::LastfmSession,
+                    ConfigKey::LastfmKey,
+                    ConfigKey::LastfmSecret,
+                    ConfigKey::LastfmSession,
                 ],
             },
             Self::Submitting => Described {
@@ -962,7 +962,7 @@ impl Group {
                 hint: words::settings_find::submitting_hint(),
                 also_called: words::settings_find::scrobble_scrobbling_listens_history_submit_plays(
                 ),
-                keys: &[SettingKey::ListenbrainzToken],
+                keys: &[ConfigKey::ListenbrainzToken],
             },
             Self::Syncing => Described {
                 category: Category::Sync,
@@ -972,7 +972,7 @@ impl Group {
                 also_called:
                     words::settings_find::sync_synchronise_synchronize_devices_playlists_favourites(
                     ),
-                keys: &[SettingKey::Sync],
+                keys: &[ConfigKey::Sync],
             },
             Self::Pairing => Described {
                 category: Category::Sync,
@@ -996,7 +996,7 @@ impl Group {
                 title: resonate_core::remote_trust_title(),
                 hint: words::settings_find::sync_control_hint(),
                 also_called: words::settings_find::drive_driven_remote_control_another_device(),
-                keys: &[SettingKey::SyncControl],
+                keys: &[ConfigKey::SyncControl],
             },
             Self::SyncConnection => Described {
                 category: Category::Sync,
@@ -1005,10 +1005,10 @@ impl Group {
                 hint: words::settings_find::sync_connection_hint(),
                 also_called: words::settings_find::server_self_hosted_own_nearby_network(),
                 keys: &[
-                    SettingKey::SyncNearbyOnly,
-                    SettingKey::SyncServer,
-                    SettingKey::SyncDevice,
-                    SettingKey::SharedName,
+                    ConfigKey::SyncNearbyOnly,
+                    ConfigKey::SyncServer,
+                    ConfigKey::SyncDevice,
+                    ConfigKey::SharedName,
                 ],
             },
             Self::SyncedSongs => Described {
@@ -1017,7 +1017,7 @@ impl Group {
                 title: words::settings_find::songs_between_devices(),
                 hint: words::settings_find::synced_songs_hint(),
                 also_called: words::settings_find::sync_copy_transfer_download_songs_files(),
-                keys: &[SettingKey::SyncSongs],
+                keys: &[ConfigKey::SyncSongs],
             },
             Self::Notifications => Described {
                 category: Category::Desktop,
@@ -1025,7 +1025,7 @@ impl Group {
                 title: words::settings_find::notifications(),
                 hint: words::settings_find::notifications_hint(),
                 also_called: words::settings_find::notify_popup_toast_banner_song_track(),
-                keys: &[SettingKey::Notify],
+                keys: &[ConfigKey::Notify],
             },
             Self::Discord => Described {
                 category: Category::Desktop,
@@ -1034,7 +1034,7 @@ impl Group {
                 hint: words::settings_find::discord_hint(),
                 also_called: words::settings_find::rich_presence_status_activity_listening_profile(
                 ),
-                keys: &[SettingKey::Discord, SettingKey::DiscordApp],
+                keys: &[ConfigKey::Discord, ConfigKey::DiscordApp],
             },
             Self::DiscordShows => Described {
                 category: Category::Desktop,
@@ -1043,11 +1043,11 @@ impl Group {
                 hint: words::settings_find::discord_shows_hint(),
                 also_called: words::settings_find::rich_presence_status_activity_cover_art(),
                 keys: &[
-                    SettingKey::DiscordShows,
-                    SettingKey::DiscordArt,
-                    SettingKey::DiscordIcon,
-                    SettingKey::DiscordProgress,
-                    SettingKey::DiscordPaused,
+                    ConfigKey::DiscordShows,
+                    ConfigKey::DiscordArt,
+                    ConfigKey::DiscordIcon,
+                    ConfigKey::DiscordProgress,
+                    ConfigKey::DiscordPaused,
                 ],
             },
             Self::Colour => Described {
@@ -1057,9 +1057,9 @@ impl Group {
                 hint: words::settings_find::colour_hint(),
                 also_called: words::settings_find::theme_accent_palette_dark_light_day(),
                 keys: &[
-                    SettingKey::Theme,
-                    SettingKey::Accent,
-                    SettingKey::FollowDesktopScheme,
+                    ConfigKey::Theme,
+                    ConfigKey::Accent,
+                    ConfigKey::FollowDesktopScheme,
                 ],
             },
             Self::Layout => Described {
@@ -1068,7 +1068,7 @@ impl Group {
                 title: words::settings_find::layout(),
                 hint: words::settings_find::layout_hint(),
                 also_called: words::settings_find::text_size_type_scale_larger_largest(),
-                keys: &[SettingKey::TextSize, SettingKey::FollowDesktopTextSize],
+                keys: &[ConfigKey::TextSize, ConfigKey::FollowDesktopTextSize],
             },
             Self::Language => Described {
                 category: Category::Appearance,
@@ -1077,7 +1077,7 @@ impl Group {
                 hint: words::settings_find::language_hint(),
                 also_called:
                     words::settings_find::language_locale_translation_translated_words_english(),
-                keys: &[SettingKey::Language],
+                keys: &[ConfigKey::Language],
             },
             Self::Motion => Described {
                 category: Category::Appearance,
@@ -1086,7 +1086,7 @@ impl Group {
                 hint: words::settings_find::motion_hint(),
                 also_called: words::settings_find::animation_animations_reduced_reduce_motion_fade(
                 ),
-                keys: &[SettingKey::ReducedMotion],
+                keys: &[ConfigKey::ReducedMotion],
             },
             Self::Scrollbars => Described {
                 category: Category::Appearance,
@@ -1094,7 +1094,7 @@ impl Group {
                 title: words::settings_find::scrollbars(),
                 hint: words::settings_find::scrollbars_hint(),
                 also_called: words::settings_find::scroll_bar_thumb_track_overlay_lists(),
-                keys: &[SettingKey::Scrollbars],
+                keys: &[ConfigKey::Scrollbars],
             },
             Self::LiveSpectrum => Described {
                 category: Category::Appearance,
@@ -1103,10 +1103,10 @@ impl Group {
                 hint: words::settings_find::live_spectrum_hint(),
                 also_called: words::settings_find::visualiser_analyser_analyzer_bars_tilt_slope(),
                 keys: &[
-                    SettingKey::SpectrumTilt,
-                    SettingKey::SpectrumFloor,
-                    SettingKey::SpectrumBands,
-                    SettingKey::SpectrumFalls,
+                    ConfigKey::SpectrumTilt,
+                    ConfigKey::SpectrumFloor,
+                    ConfigKey::SpectrumBands,
+                    ConfigKey::SpectrumFalls,
                 ],
             },
             Self::WindowButtons => Described {
@@ -1116,7 +1116,7 @@ impl Group {
                 hint: words::settings_find::window_buttons_hint(),
                 also_called:
                     words::settings_find::titlebar_minimize_maximize_minimise_maximise_zoom(),
-                keys: &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
+                keys: &[ConfigKey::MinimiseButton, ConfigKey::MaximiseButton],
             },
             Self::Tabs => Described {
                 category: Category::Window,
@@ -1125,9 +1125,9 @@ impl Group {
                 hint: words::settings_find::tabs_hint(),
                 also_called: words::settings_find::sidebar_panes_suggestions_missing_wanted_hide(),
                 keys: &[
-                    SettingKey::SuggestionsTab,
-                    SettingKey::MissingTab,
-                    SettingKey::TabCounts,
+                    ConfigKey::SuggestionsTab,
+                    ConfigKey::MissingTab,
+                    ConfigKey::TabCounts,
                 ],
             },
             Self::WindowState => Described {
@@ -1137,9 +1137,9 @@ impl Group {
                 hint: words::settings_find::window_state_hint(),
                 also_called: words::settings_find::remember_restore_last_tab_pane_window(),
                 keys: &[
-                    SettingKey::RememberTab,
-                    SettingKey::RememberWindowSize,
-                    SettingKey::RememberSettingsCategory,
+                    ConfigKey::RememberTab,
+                    ConfigKey::RememberWindowSize,
+                    ConfigKey::RememberSettingsCategory,
                 ],
             },
             Self::VolumeWheel => Described {
@@ -1148,7 +1148,7 @@ impl Group {
                 title: words::settings_find::the_volume_wheel(),
                 hint: words::settings_find::volume_wheel_hint(),
                 also_called: words::settings_find::scroll_mouse_wheel_touchpad_volume_slider(),
-                keys: &[SettingKey::ScrollVolume],
+                keys: &[ConfigKey::ScrollVolume],
             },
             Self::MouseNavigation => Described {
                 category: Category::Window,
@@ -1156,7 +1156,7 @@ impl Group {
                 title: words::settings_find::mouse_navigation(),
                 hint: words::settings_find::mouse_navigation_hint(),
                 also_called: words::settings_find::mouse_side_buttons_back_forward_browser(),
-                keys: &[SettingKey::MouseNavigation],
+                keys: &[ConfigKey::MouseNavigation],
             },
             Self::Build => Described {
                 category: Category::About,
@@ -1172,7 +1172,7 @@ impl Group {
                 title: words::settings_find::updates(),
                 hint: words::settings_find::updates_hint(),
                 also_called: words::settings_find::update_upgrade_new_version_release_newer(),
-                keys: &[SettingKey::CheckForUpdates, SettingKey::UpdateDismissed],
+                keys: &[ConfigKey::CheckForUpdates, ConfigKey::UpdateDismissed],
             },
             Self::Places => Described {
                 category: Category::About,
@@ -1365,11 +1365,11 @@ mod tests {
         assert_eq!(
             Group::Metered.keys(),
             &[
-                SettingKey::EnrichOnMetered,
-                SettingKey::StallDownloadsOnMetered
+                ConfigKey::EnrichOnMetered,
+                ConfigKey::StallDownloadsOnMetered
             ]
         );
-        assert_eq!(Group::FlacRenderers.keys(), &[SettingKey::FlacAbove96kFor]);
+        assert_eq!(Group::FlacRenderers.keys(), &[ConfigKey::FlacAbove96kFor]);
     }
 
     #[test]

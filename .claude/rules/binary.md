@@ -307,7 +307,9 @@ wins, as it does over the known folders on Windows
 help names no folder, since `build.rs` writes one man page for every system;
 `resonate-config.toml(5)`'s FILES names all three.
 CLI flag > file > `EngineConfig` defaults; an unknown key warns via `tracing`. Every key is a
-`ConfigKey` variant (`ConfigKey::ALL`): a bad value names its key without prose in an error. Keys
+`ConfigKey` variant (`ConfigKey::ALL`, in `resonate-core` so the window's `Setting::key` names the
+same key the file is written under, with no table between them): a bad value names its key without
+prose in an error. Keys
 with a flag: the `global` ones plus `volume`; the rest only pane and file. Defaults and meanings:
 `config.rs` and `views/settings/`; below are the decisions.
 

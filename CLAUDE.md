@@ -185,7 +185,8 @@ Invariants the layering protects (the rules files have the rest):
 - **Active desktop Game Mode holds background enrichment and studies** through `core::gaming`; Linux polls Feral GameMode on the session bus, Windows follows effective power mode V2. Cancellation releases the wait, and playback stays independent.
 - **Core carries what two mutually blind crates share**: `Resumption`, `Reordered`, `Appearance`,
   `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`, `titles`, `words_of_a_name`,
-  `Answer` (what a lookup or study learnt, shared between devices).
+  `Answer` (what a lookup or study learnt, shared between devices), `ConfigKey` (a settings file's
+  keys, which the window's `Setting` names).
 - **The sync server never reads what it keeps**: every record is sealed under keys the pairing
   code derives, songs travel device to device, and a device names itself only inside the sealed
   records (`sync.md`). A shared playlist or a party has a key of its own, passed as a link; there

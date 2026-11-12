@@ -6,7 +6,7 @@ use resonate_core::{
 use resonate_words::LanguageChoice;
 
 use crate::{
-    ResonateApp, Setting, SettingKey, Tabs, WindowButtons, WindowSize, theme,
+    ConfigKey, ResonateApp, Setting, Tabs, WindowButtons, WindowSize, theme,
     views::{
         hint::Names,
         kit::{self, EndsInAnEllipsis as _},
@@ -712,7 +712,7 @@ impl RootView {
         if remember {
             self.remember_current_tab(cx);
         } else {
-            self.forget(SettingKey::LastTab, cx);
+            self.forget(ConfigKey::LastTab, cx);
             cx.update_global::<ResonateApp, _>(|global, _| global.last_tab = None);
         }
     }
@@ -732,7 +732,7 @@ impl RootView {
         if remember {
             self.remember_current_window_size(window, cx);
         } else {
-            self.forget(SettingKey::WindowSize, cx);
+            self.forget(ConfigKey::WindowSize, cx);
             self.last_window_size = None;
             cx.update_global::<ResonateApp, _>(|global, _| global.window_size = None);
         }
@@ -748,7 +748,7 @@ impl RootView {
         if remember {
             self.remember_current_settings_category(cx);
         } else {
-            self.forget(SettingKey::LastSettingsCategory, cx);
+            self.forget(ConfigKey::LastSettingsCategory, cx);
             cx.update_global::<ResonateApp, _>(|global, _| {
                 global.last_settings_category = Category::default();
             });

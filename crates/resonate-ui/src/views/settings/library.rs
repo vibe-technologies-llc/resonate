@@ -15,7 +15,7 @@ use resonate_library::{
 };
 
 use crate::{
-    Notice, Pass, Planned, ResonateApp, Setting, SettingKey, format,
+    ConfigKey, Notice, Pass, Planned, ResonateApp, Setting, format,
     icons::{self, Icon},
     theme, toast,
     views::{
@@ -1803,7 +1803,7 @@ impl RootView {
 
     pub(crate) fn forget_the_music_folder(&mut self, cx: &mut Context<Self>) {
         self.clear_the_music_folder(cx);
-        self.forget(SettingKey::MusicFolder, cx);
+        self.forget(ConfigKey::MusicFolder, cx);
     }
 
     pub(crate) fn clear_the_music_folder(&mut self, cx: &mut Context<Self>) {

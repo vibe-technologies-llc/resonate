@@ -8,7 +8,7 @@ use resonate_engine::{
 };
 use resonate_eq::Binding;
 use resonate_library::HistoryKept;
-use resonate_ui::{Setting, SettingChange, SettingKey, Settings};
+use resonate_ui::{Setting, SettingChange, Settings};
 use toml_edit::{Array, Value};
 
 use crate::{
@@ -105,14 +105,14 @@ impl Settings for File {
                 SettingChange::Store(Setting::Contact(contact)) => {
                     online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
                 }
-                SettingChange::Forget(SettingKey::Contact) => online::introduce(None),
+                SettingChange::Forget(ConfigKey::Contact) => online::introduce(None),
                 SettingChange::Store(Setting::Online(on)) => online::reach(*on),
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::EnrichOnMetered(allowed)) => {
                     metered::allow_lookups(*allowed);
                 }
                 #[cfg(feature = "online")]
-                SettingChange::Forget(SettingKey::EnrichOnMetered) => metered::allow_lookups(false),
+                SettingChange::Forget(ConfigKey::EnrichOnMetered) => metered::allow_lookups(false),
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::MusicbrainzMirror(mirrors)) => {
                     crate::musicbrainz::follow(
@@ -121,7 +121,7 @@ impl Settings for File {
                     );
                 }
                 #[cfg(feature = "online")]
-                SettingChange::Forget(SettingKey::MusicbrainzMirror) => {
+                SettingChange::Forget(ConfigKey::MusicbrainzMirror) => {
                     crate::musicbrainz::follow(
                         &config::load(Some(&self.path)).unwrap_or_default(),
                         false,
@@ -130,7 +130,7 @@ impl Settings for File {
                 SettingChange::Store(Setting::StallDownloadsOnMetered(stalls)) => {
                     metered::stall_downloads(*stalls);
                 }
-                SettingChange::Forget(SettingKey::StallDownloadsOnMetered) => {
+                SettingChange::Forget(ConfigKey::StallDownloadsOnMetered) => {
                     metered::stall_downloads(false);
                 }
                 _ => {}
@@ -443,21 +443,21 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
     Ok(())
 }
 
-fn forgotten(editing: &mut Editing<'_>, key: SettingKey) {
+fn forgotten(editing: &mut Editing<'_>, key: ConfigKey) {
     match key {
-        SettingKey::RememberTab => {
+        ConfigKey::RememberTab => {
             editing.clear(ConfigKey::RememberTab);
             editing.clear(ConfigKey::LastTab);
         }
-        SettingKey::RememberWindowSize => {
+        ConfigKey::RememberWindowSize => {
             editing.clear(ConfigKey::RememberWindowSize);
             editing.clear(ConfigKey::WindowSize);
         }
-        SettingKey::RememberSettingsCategory => {
+        ConfigKey::RememberSettingsCategory => {
             editing.clear(ConfigKey::RememberSettingsCategory);
             editing.clear(ConfigKey::LastSettingsCategory);
         }
-        _ => editing.clear(named(key)),
+        _ => editing.clear(key),
     }
 }
 
@@ -478,142 +478,6 @@ fn written_as_a_binding(setting: &Setting, written: crate::Result<()>) -> resona
         tracing::error!(%error, "a binding could not be written");
         resonate_ui::Error::SettingNotStored { key: setting.key() }
     })
-}
-
-const fn named(key: SettingKey) -> ConfigKey {
-    match key {
-        SettingKey::Sink => ConfigKey::Sink,
-        SettingKey::Quality => ConfigKey::Quality,
-        SettingKey::FilterPhase => ConfigKey::FilterPhase,
-        SettingKey::TruePeak => ConfigKey::TruePeak,
-        SettingKey::Restoration => ConfigKey::RestoreLossy,
-        SettingKey::Crossfeed => ConfigKey::Crossfeed,
-        SettingKey::Dither => ConfigKey::Dither,
-        SettingKey::NoiseShaping => ConfigKey::NoiseShaping,
-        SettingKey::ReplayGain => ConfigKey::ReplayGain,
-        SettingKey::PreAmp => ConfigKey::ReplayGainPreAmp,
-        SettingKey::Untagged => ConfigKey::ReplayGainUntagged,
-        SettingKey::BitPerfect => ConfigKey::BitPerfect,
-        SettingKey::Dop => ConfigKey::Dop,
-        SettingKey::DsdLikePcm => ConfigKey::DsdLikePcm,
-        SettingKey::DeviceVolume => ConfigKey::DeviceVolume,
-        SettingKey::ForceGraphRate => ConfigKey::ForceGraphRate,
-        SettingKey::BluetoothWake => ConfigKey::BluetoothWake,
-        SettingKey::BluetoothLead => ConfigKey::BluetoothLeadMs,
-        SettingKey::BluetoothAwake => ConfigKey::BluetoothAwakeS,
-        SettingKey::Buffer => ConfigKey::BufferMs,
-        SettingKey::Volume => ConfigKey::Volume,
-        SettingKey::Theme => ConfigKey::Theme,
-        SettingKey::Accent => ConfigKey::Accent,
-        SettingKey::TextSize => ConfigKey::TextSize,
-        SettingKey::Language => ConfigKey::Language,
-        SettingKey::FollowDesktopScheme => ConfigKey::FollowDesktopScheme,
-        SettingKey::FollowDesktopTextSize => ConfigKey::FollowDesktopTextSize,
-        SettingKey::Online => ConfigKey::Online,
-        SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
-        SettingKey::EnrichOnMetered => ConfigKey::EnrichOnMetered,
-        SettingKey::MusicbrainzMirror => ConfigKey::MusicbrainzMirror,
-        SettingKey::StallDownloadsOnMetered => ConfigKey::StallDownloadsOnMetered,
-        SettingKey::Study => ConfigKey::Study,
-        SettingKey::FetchLyrics => ConfigKey::FetchLyrics,
-        SettingKey::LyricsByTheLocale => ConfigKey::LyricsLanguageFromLocale,
-        SettingKey::IdentifyBySound => ConfigKey::IdentifyBySound,
-        SettingKey::SkipUnderRepeat => ConfigKey::SkipRepeatsQueue,
-        SettingKey::PreviousRestarts => ConfigKey::PreviousRestarts,
-        SettingKey::ShuffleStyle => ConfigKey::ShuffleStyle,
-        SettingKey::ShuffleSpreadsArtists => ConfigKey::ShuffleSpreadsArtists,
-        SettingKey::ShuffleSpreadsAlbums => ConfigKey::ShuffleSpreadsAlbums,
-        SettingKey::ShuffleFreshFirst => ConfigKey::ShuffleFreshFirst,
-        SettingKey::Contact => ConfigKey::Contact,
-        SettingKey::AcoustidKey => ConfigKey::AcoustidKey,
-        SettingKey::AuddToken => ConfigKey::AuddToken,
-        SettingKey::ListenbrainzToken => ConfigKey::ListenbrainzToken,
-        SettingKey::LastfmKey => ConfigKey::LastfmKey,
-        SettingKey::LastfmSecret => ConfigKey::LastfmSecret,
-        SettingKey::LastfmSession => ConfigKey::LastfmSession,
-        SettingKey::ListenFrom => ConfigKey::ListenFrom,
-        SettingKey::ListenFor => ConfigKey::ListenFor,
-        SettingKey::Equaliser => ConfigKey::Equaliser,
-        SettingKey::EqualiserFor => ConfigKey::EqualiserFor,
-        SettingKey::EqualiserProfile => ConfigKey::EqualiserProfile,
-        SettingKey::EqualiserMeasurer => ConfigKey::EqualiserMeasurer,
-        SettingKey::EqualiserMeasurerFor => ConfigKey::EqualiserMeasurerFor,
-        SettingKey::Renderers => ConfigKey::Renderers,
-        SettingKey::FlacAbove96kFor => ConfigKey::FlacAbove96kFor,
-        SettingKey::Resume => ConfigKey::Resume,
-        SettingKey::HistoryKept => ConfigKey::HistoryKept,
-        SettingKey::OrganiseAs => ConfigKey::OrganiseAs,
-        SettingKey::Notify => ConfigKey::Notify,
-        SettingKey::CheckForUpdates => ConfigKey::CheckForUpdates,
-        SettingKey::UpdateDismissed => ConfigKey::UpdateDismissed,
-        SettingKey::MinimiseButton => ConfigKey::MinimiseButton,
-        SettingKey::MaximiseButton => ConfigKey::MaximiseButton,
-        SettingKey::ScrollVolume => ConfigKey::ScrollVolume,
-        SettingKey::MouseNavigation => ConfigKey::MouseNavigation,
-        SettingKey::ReducedMotion => ConfigKey::ReducedMotion,
-        SettingKey::Scrollbars => ConfigKey::Scrollbars,
-        SettingKey::SpectrumTilt => ConfigKey::SpectrumTilt,
-        SettingKey::SpectrumFloor => ConfigKey::SpectrumFloor,
-        SettingKey::SpectrumBands => ConfigKey::SpectrumBands,
-        SettingKey::SpectrumFalls => ConfigKey::SpectrumFalls,
-        SettingKey::SuggestionsTab => ConfigKey::SuggestionsTab,
-        SettingKey::MissingTab => ConfigKey::MissingTab,
-        SettingKey::TabCounts => ConfigKey::TabCounts,
-        SettingKey::RememberTab => ConfigKey::RememberTab,
-        SettingKey::LastTab => ConfigKey::LastTab,
-        SettingKey::ArtistsDrawn => ConfigKey::ArtistsDrawn,
-        SettingKey::RememberWindowSize => ConfigKey::RememberWindowSize,
-        SettingKey::WindowSize => ConfigKey::WindowSize,
-        SettingKey::RememberSettingsCategory => ConfigKey::RememberSettingsCategory,
-        SettingKey::LastSettingsCategory => ConfigKey::LastSettingsCategory,
-        SettingKey::Inbox => ConfigKey::Inbox,
-        SettingKey::Vault => ConfigKey::Vault,
-        SettingKey::MusicExtensions => ConfigKey::MusicExtensions,
-        SettingKey::MinimumLength => ConfigKey::MinimumLength,
-        SettingKey::MusicFolder => ConfigKey::MusicFolder,
-        SettingKey::FileDropped => ConfigKey::FileDropped,
-        SettingKey::Convolution => ConfigKey::Convolution,
-        SettingKey::SpeakerAngle => ConfigKey::SpeakerAngle,
-        SettingKey::SpeakerElevation => ConfigKey::SpeakerElevation,
-        SettingKey::HeadYaw => ConfigKey::HeadYaw,
-        SettingKey::Subsonic => ConfigKey::Subsonic,
-        SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
-        SettingKey::SubsonicPassword => ConfigKey::SubsonicPassword,
-        SettingKey::Jellyfin => ConfigKey::Jellyfin,
-        SettingKey::JellyfinUser => ConfigKey::JellyfinUser,
-        SettingKey::JellyfinPassword => ConfigKey::JellyfinPassword,
-        SettingKey::JellyfinToken => ConfigKey::JellyfinToken,
-        SettingKey::JellyfinUserId => ConfigKey::JellyfinUserId,
-        SettingKey::JellyfinDevice => ConfigKey::JellyfinDevice,
-        SettingKey::TidalClientId => ConfigKey::TidalClientId,
-        SettingKey::TidalClientSecret => ConfigKey::TidalClientSecret,
-        SettingKey::TidalRefreshToken => ConfigKey::TidalRefreshToken,
-        SettingKey::SpotifyClientId => ConfigKey::SpotifyClientId,
-        SettingKey::SpotifyRefreshToken => ConfigKey::SpotifyRefreshToken,
-        SettingKey::HifiApi => ConfigKey::HifiApi,
-        SettingKey::HifiSecret => ConfigKey::HifiSecret,
-        SettingKey::Monochrome => ConfigKey::Monochrome,
-        SettingKey::HostedServices => ConfigKey::HostedServices,
-        SettingKey::YoutubeMusic => ConfigKey::YoutubeMusic,
-        SettingKey::YoutubeMusicCookies => ConfigKey::YoutubeMusicCookies,
-        SettingKey::YtDlp => ConfigKey::YtDlp,
-        SettingKey::YoutubeMusicKeepOrder => ConfigKey::YoutubeMusicKeepOrder,
-        SettingKey::Discord => ConfigKey::Discord,
-        SettingKey::DiscordApp => ConfigKey::DiscordApp,
-        SettingKey::DiscordShows => ConfigKey::DiscordShows,
-        SettingKey::DiscordArt => ConfigKey::DiscordArt,
-        SettingKey::DiscordIcon => ConfigKey::DiscordIcon,
-        SettingKey::DiscordProgress => ConfigKey::DiscordProgress,
-        SettingKey::DiscordPaused => ConfigKey::DiscordPaused,
-        SettingKey::Sync => ConfigKey::Sync,
-        SettingKey::SyncNearbyOnly => ConfigKey::SyncNearbyOnly,
-        SettingKey::SyncServer => ConfigKey::SyncServer,
-        SettingKey::SyncKey => ConfigKey::SyncKey,
-        SettingKey::SyncDevice => ConfigKey::SyncDevice,
-        SettingKey::SharedName => ConfigKey::SharedName,
-        SettingKey::SyncSongs => ConfigKey::SyncSongs,
-        SettingKey::SyncControl => ConfigKey::SyncControl,
-    }
 }
 
 fn quality_text(quality: Quality) -> String {
@@ -684,8 +548,8 @@ mod tests {
             filters
         );
         file.apply(&[
-            SettingChange::Forget(SettingKey::MusicExtensions),
-            SettingChange::Forget(SettingKey::MinimumLength),
+            SettingChange::Forget(ConfigKey::MusicExtensions),
+            SettingChange::Forget(ConfigKey::MinimumLength),
         ])
         .expect("resetting the filters");
         assert_eq!(
@@ -829,7 +693,7 @@ mod tests {
             .expect("a writable temporary directory");
         let chosen = config::load(Some(&path)).expect("the file reads back");
 
-        file.apply(&[SettingChange::Forget(SettingKey::SpeakerAngle)])
+        file.apply(&[SettingChange::Forget(ConfigKey::SpeakerAngle)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -849,7 +713,7 @@ mod tests {
             .expect("a writable temporary directory");
         let chosen = config::load(Some(&path)).expect("the file reads back");
 
-        file.apply(&[SettingChange::Forget(SettingKey::SpeakerElevation)])
+        file.apply(&[SettingChange::Forget(ConfigKey::SpeakerElevation)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -869,7 +733,7 @@ mod tests {
             .expect("a writable temporary directory");
         let chosen = config::load(Some(&path)).expect("the file reads back");
 
-        file.apply(&[SettingChange::Forget(SettingKey::HeadYaw)])
+        file.apply(&[SettingChange::Forget(ConfigKey::HeadYaw)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -890,7 +754,7 @@ mod tests {
         .expect("a writable temporary directory");
         let preferred = config::load(Some(&path)).expect("the file reads back");
 
-        file.apply(&[SettingChange::Forget(SettingKey::EqualiserMeasurer)])
+        file.apply(&[SettingChange::Forget(ConfigKey::EqualiserMeasurer)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -947,7 +811,7 @@ mod tests {
         let named = config::load(Some(&path))
             .expect("the file reads back")
             .inbox;
-        file.apply(&[SettingChange::Forget(SettingKey::Inbox)])
+        file.apply(&[SettingChange::Forget(ConfigKey::Inbox)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path))
             .expect("the file reads back")
@@ -972,7 +836,7 @@ mod tests {
 
             assert_eq!(read.sync_control, Some(trust));
         }
-        file.apply(&[SettingChange::Forget(SettingKey::SyncControl)])
+        file.apply(&[SettingChange::Forget(ConfigKey::SyncControl)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -997,8 +861,8 @@ mod tests {
         .expect("a writable temporary directory");
         let allowed = config::load(Some(&path)).expect("the file reads back");
         file.apply(&[
-            SettingChange::Forget(SettingKey::EnrichOnMetered),
-            SettingChange::Forget(SettingKey::StallDownloadsOnMetered),
+            SettingChange::Forget(ConfigKey::EnrichOnMetered),
+            SettingChange::Forget(ConfigKey::StallDownloadsOnMetered),
         ])
         .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
@@ -1070,7 +934,7 @@ mod tests {
         let named = config::load(Some(&path))
             .expect("the file reads back")
             .music_folder;
-        file.apply(&[SettingChange::Forget(SettingKey::MusicFolder)])
+        file.apply(&[SettingChange::Forget(ConfigKey::MusicFolder)])
             .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path))
             .expect("the file reads back")
@@ -1093,7 +957,7 @@ mod tests {
             SettingChange::Store(Setting::Inbox(unwritable)),
             SettingChange::Store(Setting::Resume(false)),
             SettingChange::Store(Setting::Notify(false)),
-            SettingChange::Forget(SettingKey::Notify),
+            SettingChange::Forget(ConfigKey::Notify),
         ]);
         let read = config::load(Some(&path)).expect("the file reads back");
         let staged = fs::read_dir(&folder)
@@ -1106,7 +970,7 @@ mod tests {
         assert!(matches!(
             refused,
             Err(resonate_ui::Error::SettingNotStored {
-                key: SettingKey::Inbox
+                key: ConfigKey::Inbox
             })
         ));
         assert_eq!(read.inbox, Some(PathBuf::from("/music/inbox")));
@@ -1156,29 +1020,6 @@ mod tests {
         assert_eq!(read, named);
         assert_eq!(cleared.discord_app, None);
         assert!(!cleared.presence().active());
-    }
-
-    #[test]
-    fn every_setting_the_pane_can_write_names_a_key_the_file_reads_back() {
-        for key in SettingKey::ALL {
-            assert_eq!(ConfigKey::parse(named(key).as_str()), Some(named(key)));
-        }
-    }
-
-    #[test]
-    fn no_two_keys_the_pane_writes_land_in_one_place_in_the_file() {
-        for key in SettingKey::ALL {
-            let sharing = SettingKey::ALL
-                .into_iter()
-                .filter(|other| named(*other) == named(key))
-                .count();
-            assert_eq!(
-                sharing,
-                1,
-                "{} is written where another setting is",
-                named(key)
-            );
-        }
     }
 
     #[test]

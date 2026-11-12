@@ -421,7 +421,7 @@ background readers) and `tests.rs`. A method another file calls is `pub(super)`.
   for a `Field` (`zone_name`, in `text_fields`): `enter` names it, escape or a press outside leaves it.
   `RootView::send` goes through `Zones::send`, and a refusal is a toast naming the zone in the way
   (`zones::refusal`); `store`/`forget` drop the `sink` and `volume` keys for any zone but the first
-  (`SettingKey::is_the_zones_own`), its device and volume being kept with the zone. The output
+  (`settings::is_the_zones_own`), its device and volume being kept with the zone. The output
   picker routes through `route_to` and marks a device another zone holds *Held bit-perfect by …*.
 - **`PlayerModel::state` returns a borrow of the model, not a copy.** Clone it before anything taking
   `&mut Context`: `let model = self.player.read(cx); let state = model.state().clone();`.
@@ -2195,7 +2195,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `Category` (Output, Processing, Equaliser, Playback, Library, Filters, Online, Recognition,
   Accounts, Sync, Desktop, Appearance, Window, About), `Page` (a page inside a category) and `Group`,
   one per setting, whose one match `Group::described` gives its category, its page (`None` for the
-  category's own page), title, hint, *also*-called words and the `SettingKey`s putting it back; every
+  category's own page), title, hint, *also*-called words and the `ConfigKey`s putting it back; every
   other accessor reads that row. Nothing else enumerates groups: `Category::groups` filters the one
   table, `Category::shown_on(page)` a page of it, `Category::drawn` the category's own page in table
   order (`Drawn::Group`, and `Drawn::Pages` where the first group of a page stands, consecutive pages

@@ -2,7 +2,7 @@ use std::result;
 
 use thiserror::Error;
 
-use crate::SettingKey;
+use crate::ConfigKey;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum WindowKind {
@@ -15,7 +15,7 @@ pub enum Error {
     WindowOpen { kind: WindowKind },
 
     #[error("the {key:?} setting could not be saved")]
-    SettingNotStored { key: SettingKey },
+    SettingNotStored { key: ConfigKey },
 
     #[error(transparent)]
     Engine(#[from] resonate_engine::Error),

@@ -4,6 +4,7 @@ mod appearance;
 mod buffer;
 mod calendar;
 mod channel;
+mod config_key;
 mod date;
 pub mod elapsed;
 pub mod eq;
@@ -63,6 +64,7 @@ pub use crate::{
     buffer::{AudioBuffer, SampleData},
     calendar::Calendar,
     channel::{ChannelCount, ChannelLayout, ChannelPosition, Places},
+    config_key::ConfigKey,
     date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
     eq::{HeadYaw, SpeakerAngle, SpeakerElevation, Speakers},
     error::{Error, Result},

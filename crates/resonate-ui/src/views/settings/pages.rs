@@ -10,7 +10,7 @@ use resonate_library::{Library, MusicExtensions};
 
 use super::{Armed, Category, Group, Page, defaults};
 use crate::{
-    ResonateApp, Setting, SettingChange, SettingKey,
+    ConfigKey, ResonateApp, Setting, SettingChange,
     driven::{Driven, Folder},
     settings::{Settings, SettingsWriter},
 };
@@ -238,7 +238,7 @@ fn no_longer_remembering_the_category_forgets_the_one_kept(cx: &mut TestAppConte
         written,
         [
             stored(Setting::RememberSettingsCategory(false)),
-            SettingChange::Forget(SettingKey::LastSettingsCategory),
+            SettingChange::Forget(ConfigKey::LastSettingsCategory),
         ]
     );
 }

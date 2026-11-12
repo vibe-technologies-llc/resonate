@@ -43,6 +43,8 @@ mod words {
 }
 mod wrapped_card;
 
+pub(crate) use resonate_core::ConfigKey;
+
 pub use crate::{
     app::{Bus, Leaving, Lookups, PlayerModel, ResonateApp, run},
     equaliser::{Curve, EqualiserModel, Sounding},
@@ -60,10 +62,10 @@ pub use crate::{
         Asking, Bindings, CaretBlink, ChecksYoutubeMusic, Continuing, Ephemeral, Followed,
         HandedOff, JellyfinBegun, JellyfinSession, JellyfinSignIn, ListOffered, Measurers,
         MirrorTold, Mirroring, Newer, Online, Places, Present, Registering, RemoteKey,
-        RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange,
-        SettingKey, Settings, SettingsCategory, SignsInToJellyfin, SignsInToYoutubeMusic, Sourcing,
-        SpotifySignIn, Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform,
-        Synchronised, Syncing, Tabs, TidalSignIn, Unkept, Updates, WindowButtons, WindowSize,
+        RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange, Settings,
+        SettingsCategory, SignsInToJellyfin, SignsInToYoutubeMusic, Sourcing, SpotifySignIn,
+        Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,
+        Syncing, Tabs, TidalSignIn, Unkept, Updates, WindowButtons, WindowSize,
         YoutubeMusicConnection, YoutubeMusicSignIn,
     },
     together::{
