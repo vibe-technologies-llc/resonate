@@ -1427,8 +1427,8 @@ fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<
 }
 
 fn dedupe(library: &Library, apply: bool) -> Result<()> {
-    let copies = library.numbered_copies()?;
-    for copy in &copies.numbered {
+    let copies = library.identical_copies()?;
+    for copy in &copies.identical {
         said!(
             "{}",
             words::main::copies(
@@ -1441,10 +1441,10 @@ fn dedupe(library: &Library, apply: bool) -> Result<()> {
         said!("{}", words::main::differs(differing.display().to_string()));
     }
     if !apply {
-        said!("{}", words::main::to_fold(copies.numbered.len()));
+        said!("{}", words::main::to_fold(copies.identical.len()));
         return Ok(());
     }
-    let deleted = library.fold_copies(&copies.numbered)?;
+    let deleted = library.fold_copies(&copies.identical)?;
     said!("{}", words::main::folded(deleted.files));
     if deleted.kept > 0 {
         said!("{}", words::main::trash_refused(deleted.kept));

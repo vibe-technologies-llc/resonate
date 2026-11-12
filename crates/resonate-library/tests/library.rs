@@ -31179,9 +31179,9 @@ fn a_kept_song_folded_into_its_twin_is_still_known_by_its_video() -> Result<()> 
         )
         .expect("the song landed as the copy");
 
-    let found = library.numbered_copies()?;
-    assert_eq!(found.numbered.len(), 1);
-    library.fold_copies(&found.numbered)?;
+    let found = library.identical_copies()?;
+    assert_eq!(found.identical.len(), 1);
+    library.fold_copies(&found.identical)?;
 
     assert!(matches!(
         library.keep_song(by_link)?,

@@ -24,11 +24,11 @@ pub(super) struct Identical<'a> {
 
 pub(super) fn grouped(copies: &Copies) -> Vec<Identical<'_>> {
     let mut by_song: BTreeMap<&Path, Vec<&Path>> = BTreeMap::new();
-    for numbered in &copies.numbered {
+    for identical in &copies.identical {
         by_song
-            .entry(numbered.kept.as_path())
+            .entry(identical.kept.as_path())
             .or_default()
-            .push(numbered.copy.as_path());
+            .push(identical.copy.as_path());
     }
 
     by_song
@@ -50,7 +50,7 @@ impl RootView {
         let found = library.identical_songs().filter(|_| planned.is_shown());
         let foldable = found
             .as_ref()
-            .is_some_and(|copies| !copies.numbered.is_empty());
+            .is_some_and(|copies| !copies.identical.is_empty());
         let armed = self.is_armed(&Armed::FoldTheCopies) && foldable;
 
         kit::rows()
@@ -180,12 +180,12 @@ fn named(path: &Path) -> String {
 }
 
 fn told(copies: &Copies) -> String {
-    let numbered = copies.numbered.len();
-    if numbered == 0 && copies.differing.is_empty() {
+    let folding = copies.identical.len();
+    if folding == 0 && copies.differing.is_empty() {
         return words::settings_identical::none_held_twice().to_owned();
     }
 
-    words::settings_identical::would_fold(numbered, grouped(copies).len(), copies.differing.len())
+    words::settings_identical::would_fold(folding, grouped(copies).len(), copies.differing.len())
 }
 
 #[cfg(test)]
@@ -213,23 +213,25 @@ mod tests {
     }
 
     #[test]
-    fn copies_of_one_song_are_one_group_named_by_the_song_they_copy() {
+    fn copies_of_one_song_are_one_group_named_by_the_song_that_is_not_numbered() {
         let folder = Folder::new();
         folder.tone("Song.wav", 1);
         folder.tone("Song (1).wav", 1);
         folder.tone("Song (2).wav", 1);
+        folder.tone("Song2.wav", 1);
         folder.tone("Other.wav", 2);
         folder.tone("Other (1).wav", 3);
         let library = scanned(&folder);
 
-        let copies = library.numbered_copies().expect("the copies are found");
+        let copies = library.identical_copies().expect("the copies are found");
         let groups = grouped(&copies);
 
         assert_eq!(groups.len(), 1);
         assert!(groups[0].kept.ends_with("Song.wav"));
-        assert_eq!(groups[0].copies.len(), 2);
-        assert!(groups[0].copies[0].ends_with("Song (1).wav"));
-        assert!(groups[0].copies[1].ends_with("Song (2).wav"));
+        assert_eq!(groups[0].copies.len(), 3);
+        assert!(groups[0].copies[0].ends_with("Song2.wav"));
+        assert!(groups[0].copies[1].ends_with("Song (1).wav"));
+        assert!(groups[0].copies[2].ends_with("Song (2).wav"));
         assert_eq!(copies.differing.len(), 1);
     }
 
@@ -262,7 +264,7 @@ mod tests {
         let listed = driven
             .read(|root, cx| root.library.read(cx).identical_songs())
             .expect("the copies are listed");
-        assert_eq!(listed.numbered.len(), 1);
+        assert_eq!(listed.identical.len(), 1);
         assert_eq!(listed.differing.len(), 1);
         assert!(copy.exists());
 

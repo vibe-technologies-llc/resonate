@@ -6815,7 +6815,7 @@ impl LibraryModel {
         self._scan = cx.spawn(async move |this, cx| {
             let found = cx
                 .background_executor()
-                .spawn(async move { library.numbered_copies() })
+                .spawn(async move { library.identical_copies() })
                 .await;
 
             let outcome = this.update(cx, |this, cx| {
@@ -6866,7 +6866,7 @@ impl LibraryModel {
             before.await;
             let folded = cx
                 .background_executor()
-                .spawn(async move { library.fold_copies(&copies.numbered) })
+                .spawn(async move { library.fold_copies(&copies.identical) })
                 .await;
 
             let outcome = this.update(cx, |this, cx| {

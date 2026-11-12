@@ -46,7 +46,7 @@ use crate::{
     Submitted, Suggestion, Sung, TagSink, Term, Track, TrackQuery, TrackToAsk, Uncovered, Undoable,
     Unfinished, UnheldRelease, Vault, VaultKey, VaultObject, Verdict, Version, Waits, Want, Window,
     Word, alternatives, answers, chosen,
-    copies::{self, Copies, NumberedCopy},
+    copies::{self, Copies, IdenticalCopy},
     deleted::{self, Deleted, Removal, Trashes, Why},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -2572,11 +2572,11 @@ impl Library {
         Ok(())
     }
 
-    pub fn numbered_copies(&self) -> Result<Copies> {
+    pub fn identical_copies(&self) -> Result<Copies> {
         self.inner.read(copies::found)
     }
 
-    pub fn fold_copies(&self, numbered: &[NumberedCopy]) -> Result<Deleted> {
+    pub fn fold_copies(&self, numbered: &[IdenticalCopy]) -> Result<Deleted> {
         if numbered.is_empty() {
             return Ok(Deleted::default());
         }
@@ -2587,7 +2587,7 @@ impl Library {
             Ok(())
         })?;
         self.inner.playlists_changed();
-        let copies: Vec<TrackId> = numbered.iter().map(NumberedCopy::copy_id).collect();
+        let copies: Vec<TrackId> = numbered.iter().map(IdenticalCopy::copy_id).collect();
         self.remove_tracks(&copies, Why::Folded)
     }
 

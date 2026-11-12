@@ -1,6 +1,5 @@
 use std::{
-    collections::BTreeMap,
-    ffi::OsString,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -13,14 +12,14 @@ use crate::{Error, Result, StoreOp, store, take_in};
 const NUMBERED_AT_MOST: u32 = 999;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NumberedCopy {
+pub struct IdenticalCopy {
     pub kept: PathBuf,
     pub copy: PathBuf,
     kept_id: TrackId,
     copy_id: TrackId,
 }
 
-impl NumberedCopy {
+impl IdenticalCopy {
     pub const fn copy_id(&self) -> TrackId {
         self.copy_id
     }
@@ -28,7 +27,7 @@ impl NumberedCopy {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Copies {
-    pub numbered: Vec<NumberedCopy>,
+    pub identical: Vec<IdenticalCopy>,
     pub differing: Vec<PathBuf>,
 }
 
@@ -38,34 +37,92 @@ struct Whole {
     size: i64,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Member<'a> {
+    path: &'a PathBuf,
+    whole: Whole,
+}
+
 pub(crate) fn found(connection: &Connection) -> Result<Copies> {
     let wholes = whole_files(connection)?;
     let mut copies = Copies::default();
+    let mut held_in_a_class: BTreeSet<&PathBuf> = BTreeSet::new();
 
-    for path in wholes.keys() {
-        let Some((stem, nth, extension)) = numbered(path) else {
-            continue;
-        };
-        let copy = wholes[path];
-        let kept = earlier_names(path, &stem, nth, extension.as_ref())
-            .filter_map(|earlier| wholes.get(&earlier).map(|whole| (earlier, *whole)))
-            .find(|(earlier, whole)| {
-                whole.size == copy.size && take_in::holds_the_same_bytes(earlier, path)
+    for class in identical_classes(&wholes) {
+        let (kept, rest) = class
+            .split_first()
+            .expect("a class holds at least two files");
+        for copy in rest {
+            held_in_a_class.insert(copy.path);
+            copies.identical.push(IdenticalCopy {
+                kept: kept.path.clone(),
+                copy: copy.path.clone(),
+                kept_id: kept.whole.id,
+                copy_id: copy.whole.id,
             });
-        match kept {
-            Some((kept, whole)) => copies.numbered.push(NumberedCopy {
-                kept,
-                copy: path.clone(),
-                kept_id: whole.id,
-                copy_id: copy.id,
-            }),
-            None => copies.differing.push(path.clone()),
         }
+        held_in_a_class.insert(kept.path);
     }
+    copies
+        .identical
+        .sort_by(|one, other| one.copy.cmp(&other.copy));
+
+    copies.differing = wholes
+        .keys()
+        .filter(|path| is_numbered(path) && !held_in_a_class.contains(path))
+        .cloned()
+        .collect();
     Ok(copies)
 }
 
-pub(crate) fn handed_over(transaction: &Transaction<'_>, copy: &NumberedCopy) -> Result<()> {
+fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> {
+    let mut by_size: BTreeMap<i64, Vec<Member<'_>>> = BTreeMap::new();
+    for (path, whole) in wholes {
+        if whole.size > 0 {
+            by_size.entry(whole.size).or_default().push(Member {
+                path,
+                whole: *whole,
+            });
+        }
+    }
+
+    let mut classes = Vec::new();
+    for sharing_a_size in by_size.into_values().filter(|members| members.len() > 1) {
+        let mut by_digest: BTreeMap<u64, Vec<Member<'_>>> = BTreeMap::new();
+        for member in sharing_a_size {
+            if let Some(digest) = take_in::content_digest(member.path) {
+                by_digest.entry(digest).or_default().push(member);
+            }
+        }
+        for sharing_a_digest in by_digest.into_values().filter(|members| members.len() > 1) {
+            classes.extend(
+                verified_classes(sharing_a_digest)
+                    .into_iter()
+                    .filter(|class| class.len() > 1),
+            );
+        }
+    }
+    classes
+}
+
+fn verified_classes(members: Vec<Member<'_>>) -> Vec<Vec<Member<'_>>> {
+    let mut classes: Vec<Vec<Member<'_>>> = Vec::new();
+    for member in members {
+        match classes
+            .iter_mut()
+            .find(|class| take_in::holds_the_same_bytes(class[0].path, member.path))
+        {
+            Some(class) => class.push(member),
+            None => classes.push(vec![member]),
+        }
+    }
+    for class in &mut classes {
+        class.sort_by_key(|member| (is_numbered(member.path), member.path));
+    }
+    classes
+}
+
+pub(crate) fn handed_over(transaction: &Transaction<'_>, copy: &IdenticalCopy) -> Result<()> {
     let kept = copy.kept_id.get() as i64;
     let taken = copy.copy_id.get() as i64;
     let kept_path = store::path_text(&copy.kept).into_owned();
@@ -150,34 +207,22 @@ fn whole_files(connection: &Connection) -> Result<BTreeMap<PathBuf, Whole>> {
         .collect()
 }
 
-fn numbered(path: &Path) -> Option<(String, u32, Option<OsString>)> {
-    let stem = path.file_stem()?.to_str()?;
-    let (before, after) = stem.rsplit_once(" (")?;
-    let digits = after.strip_suffix(')')?;
-    if before.is_empty() || digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let nth = digits.parse().ok().filter(|nth| *nth <= NUMBERED_AT_MOST)?;
-    Some((before.to_owned(), nth, path.extension().map(OsString::from)))
-}
-
-fn earlier_names<'a>(
-    path: &'a Path,
-    stem: &'a str,
-    nth: u32,
-    extension: Option<&'a OsString>,
-) -> impl Iterator<Item = PathBuf> + 'a {
-    let named = move |stem: String| {
-        let mut name = OsString::from(stem);
-        if let Some(extension) = extension {
-            name.push(".");
-            name.push(extension);
-        }
-        path.with_file_name(name)
+fn is_numbered(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
     };
-
-    std::iter::once(named(stem.to_owned()))
-        .chain((1..nth).map(move |earlier| named(format!("{stem} ({earlier})"))))
+    let Some((before, after)) = stem.rsplit_once(" (") else {
+        return false;
+    };
+    let Some(digits) = after.strip_suffix(')') else {
+        return false;
+    };
+    !before.is_empty()
+        && !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && digits
+            .parse::<u32>()
+            .is_ok_and(|nth| nth <= NUMBERED_AT_MOST)
 }
 
 #[cfg(test)]
@@ -185,30 +230,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_name_numbered_by_a_copy_reads_back_its_stem_and_its_number() {
-        assert_eq!(
-            numbered(Path::new("/m/Jon Licht - More Love (1).flac")),
-            Some(("Jon Licht - More Love".to_owned(), 1, Some("flac".into())))
-        );
-        assert_eq!(numbered(Path::new("/m/Track (Live).flac")), None);
-        assert_eq!(numbered(Path::new("/m/(1).flac")), None);
-        assert_eq!(numbered(Path::new("/m/Song.flac")), None);
-    }
-
-    #[test]
-    fn the_names_a_copy_was_numbered_after_are_the_bare_one_then_every_lower_number() {
-        let path = Path::new("/m/Song (3).flac");
-        let extension = OsString::from("flac");
-
-        let names: Vec<_> = earlier_names(path, "Song", 3, Some(&extension)).collect();
-
-        assert_eq!(
-            names,
-            [
-                PathBuf::from("/m/Song.flac"),
-                PathBuf::from("/m/Song (1).flac"),
-                PathBuf::from("/m/Song (2).flac"),
-            ]
-        );
+    fn a_name_numbered_by_a_copy_is_told_from_one_that_is_not() {
+        assert!(is_numbered(Path::new("/m/Jon Licht - More Love (1).flac")));
+        assert!(!is_numbered(Path::new("/m/Track (Live).flac")));
+        assert!(!is_numbered(Path::new("/m/(1).flac")));
+        assert!(!is_numbered(Path::new("/m/Song.flac")));
+        assert!(!is_numbered(Path::new("/m/Song (1000).flac")));
     }
 }

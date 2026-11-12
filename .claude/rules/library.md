@@ -1539,15 +1539,23 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_folder_it_emptied_and_keeps_the_listens`,
   `a_file_with_no_trash_to_go_to_is_kept_with_its_row`)
 
-- **A copy numbered beside its song is folded into it.** `Library::numbered_copies` (`copies.rs`)
-  reads every whole-file row (one row at the path, no span, not vaulted) whose stem ends ` (N)`
-  and finds the song it copies: the bare name, then each lower number, the first catalogued with
-  the same size and the same bytes (`take_in::holds_the_same_bytes`); a numbered file differing
-  from all of them is `Copies::differing` and stays. `fold_copies` hands each copy's plays, last
+- **Files holding the same bytes are folded into one song.** `Library::identical_copies` (`copies.rs`)
+  reads every whole-file row (one row at the path, no span, not vaulted, a size above zero) and
+  groups them by the catalogued `file_size`, so only files sharing a size are ever read. Each such
+  file is digested (`take_in::content_digest`, a streamed hash of the whole file; a file that will
+  not open is left out), files sharing a digest are confirmed byte for byte against their class's
+  first (`take_in::holds_the_same_bytes`, so a collision never folds), and a class of two or more is
+  a song and its copies, whatever the names or folders. Which file is kept is deterministic: a
+  name not ending ` (N)` before one that does, then the path that sorts first, so the choice does
+  not depend on scan order or row ids; the phones keep the song playing, else the first row. A file ending
+  ` (N)` that joins no class is `Copies::differing` and stays. It is a plain call to run off
+  the window's thread (the CLI and `LibraryModel::find_identical_songs` do). `fold_copies` hands each copy's plays, last
   play, favourite, listens, playlist entries, queue rows and `songs_received` row to the song in
   one transaction (`copies::handed_over`, which zeroes the copy's `plays` once they are the song's, so a copy the trash refuses and the next run finds again adds nothing twice, `a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice`), then `delete_tracks` trashes the copies as any deletion.
   `resonate dedupe` previews, `--apply` folds
-  (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`). The window's
+  (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`,
+  `files_holding_the_same_bytes_under_different_names_are_folded_into_the_one_not_numbered`,
+  `files_of_one_size_holding_other_bytes_are_not_identical`). The window's
   *Identical songs* page (`ui.md`) calls the same two functions, so the terminal and the window
   fold the same copies.
 
