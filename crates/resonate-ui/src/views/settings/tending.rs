@@ -199,7 +199,7 @@ fn checked_told(weighed: &VaultWeighing) -> String {
 
 fn weighing_progress_told(stats: VaultWeighingStats) -> Option<String> {
     (stats.to_weigh > 0).then(|| {
-        words::settings_tending::checked_so_far(stats.weighed.min(stats.to_weigh), stats.to_weigh)
+        words::settings_tending::checked_so_far(stats.to_weigh, stats.weighed.min(stats.to_weigh))
     })
 }
 
@@ -664,10 +664,10 @@ mod tests {
         assert_eq!(weighing_progress_told(begun), None);
         assert_eq!(
             weighing_progress_told(under_way),
-            Some(words::settings_tending::checked_so_far(5, 12))
+            Some(words::settings_tending::checked_so_far(12, 5))
         );
         assert_eq!(
-            words::settings_tending::checked_so_far(5, 12),
+            words::settings_tending::checked_so_far(12, 5),
             "Checked 5 of 12"
         );
     }

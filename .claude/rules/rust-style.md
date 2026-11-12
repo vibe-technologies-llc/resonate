@@ -25,8 +25,8 @@ tells a comment from a string, a raw string, a character, a lifetime and a templ
 interpolation: `//`, `///`, `//!` and nested `/* */` in `.rs`, `.kt`, `.kts` and `.swift`; `#` in
 `.py`, `.toml`, `.yml`, `.yaml`, `.sh`, `.ps1`, `.spec` and `PKGBUILD`; `<!-- -->` in `.xml` and
 `.plist`. Allowed: a shebang on the first line of `.py` and `.sh`, and `// swift-tools-version:` on
-the first line of a `.swift` file (SwiftPM reads it). Generated and fetched folders (`target`,
-`build`, `.build`, `.gradle`, `xtool`, `corpus`, `seeds`, `fixtures`) are skipped. Not walked:
+the first line of a `.swift` file (SwiftPM reads it). Generated and fetched folders (`target`, `.cargo-target`,
+`Generated`, `build`, `.build`, `.gradle`, `xtool`, `corpus`, `seeds`, `fixtures`) are skipped. Not walked:
 `.js`, `.iss` and `.desktop` files, and Markdown.
 
 ## Collections and sync

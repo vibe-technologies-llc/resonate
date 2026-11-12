@@ -13,8 +13,10 @@ const ROOTS: [&str; 8] = [
     ".claude",
 ];
 const ROOT_FILES: [&str; 3] = ["Cargo.toml", "rust-formatter.toml", "rust-toolchain.toml"];
-const NOT_SOURCE: [&str; 11] = [
+const NOT_SOURCE: [&str; 13] = [
     "target",
+    ".cargo-target",
+    "Generated",
     ".git",
     ".gradle",
     "build",

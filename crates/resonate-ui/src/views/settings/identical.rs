@@ -229,9 +229,9 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert!(groups[0].kept.ends_with("Song.wav"));
         assert_eq!(groups[0].copies.len(), 3);
-        assert!(groups[0].copies[0].ends_with("Song2.wav"));
-        assert!(groups[0].copies[1].ends_with("Song (1).wav"));
-        assert!(groups[0].copies[2].ends_with("Song (2).wav"));
+        assert!(groups[0].copies[0].ends_with("Song (1).wav"));
+        assert!(groups[0].copies[1].ends_with("Song (2).wav"));
+        assert!(groups[0].copies[2].ends_with("Song2.wav"));
         assert_eq!(copies.differing.len(), 1);
     }
 
