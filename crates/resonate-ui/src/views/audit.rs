@@ -53,9 +53,9 @@ mod tests {
         "playlists.rs | kit::framed_field(\"playlist-name\", true) | .on_click(cx.listener(|this, _, window, cx| {",
         "playlists.rs | let cell = div() | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
         "playlists.rs | let listed = tall_row(playing) | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
-        "root.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
-        "root.rs | let box_of_words = div() | .on_click(cx.listener(|this, _, window, cx| {",
-        "root.rs | named | .on_click(cx.listener(move |this, _, _, cx| {",
+        "root/heading.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "root/heading.rs | let box_of_words = div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "root/pointer.rs | named | .on_click(cx.listener(move |this, _, _, cx| {",
         "served.rs | kit::framed_field(SEARCH_ID, false) | .on_click(cx.listener(|this, _, window, cx| {",
         "settings/library.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {",
         "settings/mod.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {",
@@ -236,7 +236,7 @@ mod words {
         "wrapped_card/markup.rs",
     ];
 
-    const ONLY_UNDER_TEST: &[&str] = &["models/tests.rs"];
+    const ONLY_UNDER_TEST: &[&str] = &["models/tests.rs", "views/root/tests.rs"];
 
     const STILL_TO_MOVE: &[&str] = &[];
 

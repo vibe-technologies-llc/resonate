@@ -17,6 +17,11 @@ they are made of, and `models/` one `impl LibraryModel` a subject (`listing`, `f
 `told.rs` (what a pass says when it ends), `arranged.rs` (rows as drawn), `watched.rs` (the
 background readers) and `tests.rs`. A method another file calls is `pub(super)`.
 
+**`RootView` is the same**: `views/root.rs` holds its fields, the panes and the `Render`, and
+`views/root/` one `impl RootView` a subject (`made` for `new`, `told`, `started`, `playlist_actions`,
+`keys`, `panes`, `reaching`, `acting`, `landing`, `pointer`, `wayback`, `typing_ahead`, `searching`,
+`loudness`, `heading`, `downloading`, `deletion`, `regions`) beside `tests.rs`.
+
 ## Chrome and input
 
 - **Title names what plays.** `RootView::name_the_window` sets *Echoes — Pink Floyd · Resonate*

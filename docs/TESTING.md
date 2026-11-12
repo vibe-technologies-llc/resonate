@@ -154,11 +154,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and `basic-toml` (uniffi's askama)
 
 ## Later: Structure
-- [L] `LibraryModel` still holds 174 fields (its methods are now an `impl` a subject under
-  `models/`), and `RootView` 215 fields with a 671-line `new` making 39 subscriptions in a 7 700-line
-  `root.rs`, and every pane's feature passes through both: split `root.rs` as `models.rs` was, then
-  panes as entities owning their fields and subscriptions, once the `driven.rs` harness pins what
-  they do
+- [L] `LibraryModel` still holds 174 fields and `RootView` 215, its `new` 671 lines making 39
+  subscriptions (their methods are now an `impl` a subject under `models/` and `views/root/`), and
+  every pane's feature passes through both: panes as entities owning their fields and
+  subscriptions, once the `driven.rs` harness pins what they do
 - [L] The phones' enrichment pass copies the desktop's orchestration: `resonate-mobile`'s
   `enrichment.rs` (4 100 lines: `Sought`, `Pictures`, `Pass`, the lyric reader, and constants such as
   `PICTURES_WAITING_AT_MOST` and `PERFORMERS_WEIGHED_AT_MOST`) beside `resonate-library`'s
