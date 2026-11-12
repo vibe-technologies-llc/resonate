@@ -40,6 +40,10 @@ pub enum Op {
     NotifyOnOwnThread,
     CreateTap,
     CreateAggregate,
+    ReadBufferFrames,
+    SetBufferFrames,
+    ReadMixing,
+    SetMixing,
 }
 
 impl Op {
@@ -78,6 +82,10 @@ impl Op {
             Self::NotifyOnOwnThread => "move the device notifications off the main run loop",
             Self::CreateTap => "tap the sound every process plays",
             Self::CreateAggregate => "make the device a tap is heard through",
+            Self::ReadBufferFrames => "read the buffer sizes a device allows",
+            Self::SetBufferFrames => "set a device's buffer size",
+            Self::ReadMixing => "read whether a device mixes",
+            Self::SetMixing => "turn a device's mixing on or off",
         }
     }
 }
@@ -113,6 +121,9 @@ pub enum Error {
     #[cfg(target_os = "macos")]
     #[error("the process carries no bundle identifier, which notifications need")]
     NoBundle,
+    #[cfg(target_os = "macos")]
+    #[error("the device does not let anyone {op}")]
+    Unsettable { op: Op },
     #[cfg(target_os = "macos")]
     #[error("this macOS has no process tap, which came with macOS 14.2")]
     NoProcessTap,

@@ -71,8 +71,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L · blocked: hardware] The macOS build has never run on a Mac: it is type-checked from Linux and
   built and tested on a hosted runner (`macos.md`). Only hardware settles hog mode (taking a
   device, moving its nominal rate and then its physical format, each read back within 1.5 s, and
-  putting all three back), whether the HAL unit takes 16-bit and packed 32-bit client words and
-  carries 24 bits through its Float32 path exactly, the callback's host time as the moment a buffer
+  putting all four back, mixing turned off and on again), whether the HAL unit's converter carries
+  16-bit and packed 32-bit client words to an unmixed integer device bit for bit (and 24 bits
+  through Float32 where a device keeps mixing), surround layouts in the device's channel order, the
+  buffer size asked for, the callback's host time as the moment a buffer
   reaches the device, a device's volume and mute (element 0 or the stereo pair, and whether a
   settable scalar is the device's own), listeners for hot-plug and a rate another program moved, a
   microphone through the HAL input unit and its permission prompt, the desktop's sound through a
@@ -90,9 +92,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   FAT and exFAT volumes named portably, the YouTube Music sign-in window on WKWebView, and the disk
   image (Gatekeeper on an ad-hoc signature, the document types and the link scheme registering,
   the icon)
-- [S] The exclusive sink on macOS offers no 32-bit integer word and no layout past stereo, and asks
-  for no buffer size: the HAL unit's Float32 path holds 24 bits, a true integer mode (an IOProc on
-  an unmixable format) is not built, and a device of more channels plays as its preferred pair
 - [S · blocked: certificate] The macOS disk image is signed ad hoc and not notarised, so Gatekeeper
   refuses a first run until it is opened from *Privacy & Security*: no Developer ID exists.
   `sign.sh` and `release.yml` sign and notarise once `MACOS_CERTIFICATE_BASE64`,

@@ -10,9 +10,10 @@ use resonate_apple::{
     Component, Device, Direction, Format, Hog, PhysicalFormat, Shape, Stream, Unit, Word,
 };
 use resonate_audio::{
-    AudioSource, Error, NodeName, Opener, Operation, SinkId, SinkResult, SinkStream, StreamRequest,
+    AudioSource, Error, LatencyRequest, NodeName, Opener, Operation, SinkId, SinkResult,
+    SinkStream, StreamRequest,
 };
-use resonate_core::StreamSpec;
+use resonate_core::{SampleFormat, StreamSpec};
 
 use crate::{
     clock::Latencies,
@@ -76,12 +77,13 @@ impl Opener for Opens {
     ) -> SinkResult<SinkStream> {
         let target = self.target_of(request.target)?;
         let spec = request.spec;
+        let latency = request.latency;
         launch(
             request,
             source,
             OPEN_WITHIN,
             Looks::DEVICES,
-            move |rendering| Playing::on(&target, spec, rendering),
+            move |rendering| Playing::on(&target, spec, latency, rendering),
         )
     }
 }
@@ -118,10 +120,14 @@ struct Restoring {
     stream: Stream,
     rate: Option<f64>,
     format: Option<PhysicalFormat>,
+    mixed: Option<bool>,
 }
 
 impl Drop for Restoring {
     fn drop(&mut self) {
+        if let Some(mixed) = self.mixed {
+            let _ = self.device.set_mixing(mixed);
+        }
         if let Some(format) = &self.format {
             let _ = self.stream.set_physical_format(format);
         }
@@ -140,11 +146,12 @@ impl Hogged {
     fn taken(device: Device, spec: StreamSpec) -> SinkResult<Self> {
         let hog = Hog::taken(device).map_err(unopened)?;
         let stream = output_stream_of(device).ok_or(Error::FormatRefused)?;
-        let restoring = Restoring {
+        let mut restoring = Restoring {
             device,
             stream,
             rate: device.nominal_rate().ok(),
             format: stream.physical_format().ok(),
+            mixed: None,
         };
         let offered = stream.physical_formats().map_err(unformatted)?;
         let carried: Vec<_> = offered
@@ -160,6 +167,20 @@ impl Hogged {
         let hz = f64::from(spec.rate.hz());
         let format = format.at(hz);
 
+        match device.mixes() {
+            Some(true) => match device.set_mixing(false) {
+                Ok(()) => restoring.mixed = Some(true),
+                Err(error) if needs_the_mixer_off(spec.format) => {
+                    return Err(unformatted(error));
+                }
+                Err(error) => {
+                    tracing::debug!(%error, "the device keeps mixing, so its words pass through float");
+                }
+            },
+            Some(false) => {}
+            None if needs_the_mixer_off(spec.format) => return Err(Error::FormatRefused),
+            None => {}
+        }
         if !runs_at(device, hz) {
             device.set_nominal_rate(hz).map_err(unformatted)?;
         }
@@ -182,6 +203,30 @@ impl Hogged {
     }
 }
 
+const fn needs_the_mixer_off(format: SampleFormat) -> bool {
+    matches!(format, SampleFormat::S32)
+}
+
+fn frames_of(latency: LatencyRequest, hz: f64) -> Option<u32> {
+    let LatencyRequest::Duration(wanted) = latency else {
+        return None;
+    };
+    let frames = (wanted.as_secs_f64() * hz).round();
+    (frames.is_finite() && frames >= 1.0).then(|| frames.min(f64::from(u32::MAX)) as u32)
+}
+
+fn ask_for_the_buffer(device: Device, latency: LatencyRequest, hz: f64) {
+    let Some(frames) = frames_of(latency, hz) else {
+        return;
+    };
+    let asked = device
+        .buffer_frames_allowed()
+        .and_then(|allowed| device.set_buffer_frames(allowed.held_to(frames)));
+    if let Err(error) = asked {
+        tracing::debug!(%error, frames, "the device keeps the buffer size it had");
+    }
+}
+
 struct Playing {
     unit: Unit,
     _hogged: Option<Hogged>,
@@ -197,7 +242,12 @@ const fn word_of(client: ClientWord) -> Word {
 }
 
 impl Playing {
-    fn on(target: &Target, spec: StreamSpec, rendering: Box<Rendering>) -> SinkResult<Self> {
+    fn on(
+        target: &Target,
+        spec: StreamSpec,
+        latency: LatencyRequest,
+        rendering: Box<Rendering>,
+    ) -> SinkResult<Self> {
         let (device, way) = match target {
             Target::Default => {
                 let device = Device::default_output().map_err(unopened)?;
@@ -208,7 +258,7 @@ impl Playing {
                 (device_of_uid(uid).ok_or(Error::NoSink)?, way)
             }
         };
-        let client = ClientWord::of(spec.format).ok_or(Error::FormatRefused)?;
+        let client = ClientWord::of(spec.format);
         let channels =
             NonZeroU32::new(u32::from(spec.channel_count().get())).ok_or(Error::FormatRefused)?;
         let hz = f64::from(spec.rate.hz());
@@ -216,6 +266,7 @@ impl Playing {
             Way::Shared => None,
             Way::Hog => Some(Hogged::taken(device, spec)?),
         };
+        ask_for_the_buffer(device, latency, hz);
         let shape = Shape {
             component: Component::HalOutput,
             device: Some(device.id()),
@@ -275,6 +326,39 @@ impl Hardware for Playing {
                 latencies: self.latencies(),
             },
             _ => Standing::Gone,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_latency_asked_for_is_the_frames_it_lasts_at_the_rate_and_auto_asks_nothing() {
+        assert_eq!(
+            frames_of(
+                LatencyRequest::Duration(Duration::from_millis(10)),
+                48_000.0
+            ),
+            Some(480)
+        );
+        assert_eq!(
+            frames_of(LatencyRequest::Duration(Duration::from_millis(5)), 44_100.0),
+            Some(221)
+        );
+        assert_eq!(
+            frames_of(LatencyRequest::Duration(Duration::ZERO), 48_000.0),
+            None
+        );
+        assert_eq!(frames_of(LatencyRequest::Auto, 48_000.0), None);
+    }
+
+    #[test]
+    fn only_thirty_two_bits_need_the_mixer_off_to_reach_the_device_whole() {
+        assert!(needs_the_mixer_off(SampleFormat::S32));
+        for format in [SampleFormat::S16, SampleFormat::S24, SampleFormat::F32] {
+            assert!(!needs_the_mixer_off(format));
         }
     }
 }

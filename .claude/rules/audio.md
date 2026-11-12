@@ -1486,14 +1486,25 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   default sink where the device is the system's default output; `coreaudio-hog:<device UID>`
   ("<name> (exclusive)", from the crate's catalog) takes the device in hog mode, moves its nominal
   rate and then its physical format to the song's (each read back within 1.5 s, else
-  `FormatRefused`) and puts the format, the rate and the hog back, in that order, once the unit is
-  disposed. It is offered per word at every rate some physical format carries that word
-  (`formats::hog_formats`: a 16-bit format carries S16; a 24 or 32-bit one S16 and S24; a float one
-  those and F32), each layout its own entry, a range of rates crossed with the rates music comes in;
-  `physical_for` picks the format of the least depth holding the word. **S32 is never offered**: the
-  HAL unit carries the client's words to the device through Float32, which holds 24 bits exactly and
-  32 not, so S24 reaches the unit left-aligned in a packed 32-bit word (`left_aligned`, published
-  `Words::Padded`) and S16 as it is. An aggregate device has no hogged sink; a device another
+  `FormatRefused`) and puts the mixing, the format, the rate and the hog back, in that order, once
+  the unit is disposed. **A hogged device's mixing is turned off** (`Device::set_mixing`, the
+  hand-declared `mix?` property), so its virtual format is the integer physical format and the HAL
+  unit's converter carries the client's integer words through without a Float32 stage; a device
+  that will not stop mixing still plays S16 and S24 (24 bits survive Float32) and refuses S32
+  (`needs_the_mixer_off`). It is offered per word at every rate some physical format carries that
+  word (`formats::hog_formats`: a 16-bit format carries S16; a 24-bit one S16 and S24; a 32-bit
+  integer one those and S32; a float one S16, S24 and F32), each layout its own entry, a range of
+  rates crossed with the rates music comes in; `physical_for` picks the format of the least depth
+  holding the word, then of the fewest channels. **Each physical format offers its own layout**
+  (`ChannelLayout::from_count` of its channels: 5.1 at six, 7.1 at eight, `Discrete` where no
+  standard layout has that count) and, past two channels, stereo too, played on the first pair
+  (`hogged_layouts`); the channels reach the device in the order the unit receives them, so a
+  device whose own order is not the file's plays its channels where it numbers them. S24 and S32
+  reach the unit in a packed 32-bit word (`ClientWord::Signed32`), S24 left-aligned (`left_aligned`,
+  published `Words::Padded`) and S32 and S16 as they are. **A latency asked for is the device's
+  buffer size** (`ask_for_the_buffer`: the request's duration in frames at the stream's rate, held
+  to `Device::buffer_frames_allowed`, on both sinks; Core Audio keeps a buffer size per process, so
+  the system's mixer and other programs are untouched; `Auto` asks nothing). An aggregate device has no hogged sink; a device another
   program holds keeps the formats it took while free (`Remembered`). `SinkId` is `sink_id_of` the
   node name. **A stream is a control thread beside the HAL's own realtime thread**
   (`serving::launch`, `resonate-coreaudio-stream`): the unit, the hog and what is restored are made

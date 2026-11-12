@@ -50,7 +50,7 @@ pub use crate::{
 #[cfg(target_os = "macos")]
 pub use crate::{
     cloning::clone_file,
-    device::{Device, OfferedFormat, RateRange, Stream, Transport},
+    device::{Device, FramesRange, OfferedFormat, RateRange, Stream, Transport},
     hog::{Hog, Pid},
     listening::{Listening, Told, notify_on_the_hals_own_thread, told_of_the_system},
     main_loop::while_the_main_loop_runs,

@@ -21,7 +21,7 @@ use crate::{
     clock::Latencies,
     drain::Drain,
     fill::{Presented, Rendering, Shaped},
-    formats::{ClientWord, frame_of, laid_of, words_of},
+    formats::{frame_of, laid_of, words_of},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,9 +117,6 @@ where
     M: FnOnce(Box<Rendering>) -> SinkResult<H> + Send + 'static,
 {
     let spec = request.spec;
-    if ClientWord::of(spec.format).is_none() {
-        return Err(Error::FormatRefused);
-    }
     let (sending, orders) = unbounded();
     let (announced, events) = unbounded();
     let (ready, started) = bounded(1);
@@ -459,16 +456,17 @@ mod tests {
     }
 
     #[test]
-    fn a_word_the_unit_cannot_carry_exactly_is_refused_before_anything_is_made() {
-        let made = launch(
-            &request(SampleFormat::S32),
-            Box::new(Silent),
-            WAIT,
-            QUICK,
-            |_| -> SinkResult<Fake> { panic!("hardware was made for a refused word") },
-        );
+    fn a_thirty_two_bit_stream_opens_carrying_its_words_whole() {
+        let opened = opened_with(Box::new(Silent), SampleFormat::S32, None);
 
-        assert!(matches!(made, Err(Error::FormatRefused)));
+        assert_eq!(
+            event(&opened),
+            StreamEvent::FormatChanged {
+                spec: request(SampleFormat::S32).spec,
+                words: Words::Whole,
+            }
+        );
+        quiet(&opened);
     }
 
     #[test]

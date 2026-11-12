@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use resonate_audio::{SinkFormats, Words};
-use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 
 use crate::fill::Laid;
 
@@ -16,8 +16,12 @@ pub const RATES_A_RANGE_IS_CROSSED_WITH: [SampleRate; 8] = [
     SampleRate::HZ_384000,
 ];
 const RATES_AGREE_WITHIN_HZ: f64 = 0.5;
-const HOGGED_WORDS: [SampleFormat; 3] = [SampleFormat::S16, SampleFormat::S24, SampleFormat::F32];
-const HOGGED_LAYOUTS: [ChannelLayout; 2] = [ChannelLayout::Stereo, ChannelLayout::Mono];
+const HOGGED_WORDS: [SampleFormat; 4] = [
+    SampleFormat::S16,
+    SampleFormat::S24,
+    SampleFormat::S32,
+    SampleFormat::F32,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Depth {
@@ -60,12 +64,28 @@ impl Physical {
             SampleFormat::S16 => true,
             SampleFormat::S24 => !matches!(self.depth, Depth::Sixteen),
             SampleFormat::F32 => matches!(self.depth, Depth::Float),
-            SampleFormat::S32 => false,
+            SampleFormat::S32 => matches!(self.depth, Depth::ThirtyTwo),
         }
     }
 
     fn plays(&self, layout: ChannelLayout) -> bool {
-        layout_of(self.channels) == Some(layout)
+        let channels = u32::from(layout.count().get());
+        channels == self.channels || (layout == ChannelLayout::Stereo && self.channels > channels)
+    }
+
+    fn layouts(&self) -> Vec<ChannelLayout> {
+        let Some(own) = u16::try_from(self.channels)
+            .ok()
+            .and_then(|channels| ChannelCount::new(channels).ok())
+            .map(ChannelLayout::from_count)
+        else {
+            return Vec::new();
+        };
+        if self.channels > 2 {
+            vec![ChannelLayout::Stereo, own]
+        } else {
+            vec![own]
+        }
     }
 }
 
@@ -99,12 +119,11 @@ pub enum ClientWord {
 }
 
 impl ClientWord {
-    pub const fn of(format: SampleFormat) -> Option<Self> {
+    pub const fn of(format: SampleFormat) -> Self {
         match format {
-            SampleFormat::F32 => Some(Self::Float32),
-            SampleFormat::S16 => Some(Self::Signed16),
-            SampleFormat::S24 => Some(Self::Signed32),
-            SampleFormat::S32 => None,
+            SampleFormat::F32 => Self::Float32,
+            SampleFormat::S16 => Self::Signed16,
+            SampleFormat::S24 | SampleFormat::S32 => Self::Signed32,
         }
     }
 }
@@ -132,10 +151,24 @@ pub fn shared_formats(nominal: SampleRate, channels: u32) -> Vec<SinkFormats> {
         .collect()
 }
 
+fn hogged_layouts(offered: &[Physical]) -> Vec<ChannelLayout> {
+    let mut layouts: Vec<ChannelLayout> = offered.iter().flat_map(Physical::layouts).collect();
+    layouts.sort_by_key(|layout| {
+        (
+            *layout != ChannelLayout::Stereo,
+            *layout != ChannelLayout::Mono,
+            layout.count().get(),
+        )
+    });
+    layouts.dedup();
+    layouts
+}
+
 pub fn hog_formats(offered: &[Physical]) -> Vec<SinkFormats> {
+    let layouts = hogged_layouts(offered);
     let mut formats = Vec::new();
     for format in HOGGED_WORDS {
-        for layout in HOGGED_LAYOUTS {
+        for &layout in &layouts {
             let mut rates: Vec<SampleRate> = offered
                 .iter()
                 .filter(|physical| physical.holds(format) && physical.plays(layout))
@@ -198,9 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn each_physical_depth_offers_the_words_it_carries_whole_and_thirty_two_bits_never() {
+    fn each_physical_depth_offers_the_words_it_carries_whole_and_thirty_two_bits_on_their_own_alone()
+     {
         let sixteen = hog_formats(&[at(Depth::Sixteen, 44_100.0)]);
         let twenty_four = hog_formats(&[at(Depth::TwentyFour, 96_000.0)]);
+        let thirty_two = hog_formats(&[at(Depth::ThirtyTwo, 192_000.0)]);
         let float = hog_formats(&[at(Depth::Float, 48_000.0)]);
 
         assert_eq!(rates_of(&sixteen, SampleFormat::S16), [44_100]);
@@ -210,6 +245,8 @@ mod tests {
         assert!(rates_of(&twenty_four, SampleFormat::F32).is_empty());
         assert_eq!(rates_of(&float, SampleFormat::F32), [48_000]);
         assert_eq!(rates_of(&float, SampleFormat::S24), [48_000]);
+        assert_eq!(rates_of(&thirty_two, SampleFormat::S32), [192_000]);
+        assert_eq!(rates_of(&thirty_two, SampleFormat::S24), [192_000]);
         for formats in [&sixteen, &twenty_four, &float] {
             assert!(rates_of(formats, SampleFormat::S32).is_empty());
         }
@@ -263,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn a_one_channel_device_is_offered_as_mono_and_one_with_more_as_stereo() {
+    fn a_device_is_offered_at_its_own_layout_and_one_of_more_channels_as_stereo_too() {
         let mono = Physical {
             channels: 1,
             ..at(Depth::Sixteen, 48_000.0)
@@ -281,6 +318,20 @@ mod tests {
         assert!(formats.iter().any(|offered| {
             offered.format == SampleFormat::S24 && offered.channels == [ChannelLayout::Stereo]
         }));
+        assert!(formats.iter().any(|offered| {
+            offered.format == SampleFormat::S24 && offered.channels == [ChannelLayout::Surround51]
+        }));
+        assert_eq!(
+            physical_for(
+                StreamSpec::new(
+                    SampleRate::HZ_48000,
+                    ChannelLayout::Surround51,
+                    SampleFormat::S24
+                ),
+                &[mono, surround]
+            ),
+            Some(surround)
+        );
         assert_eq!(shared_formats(SampleRate::HZ_48000, 0), []);
     }
 
@@ -318,22 +369,21 @@ mod tests {
         );
         assert_eq!(depth(spec(96_000, SampleFormat::F32)), Some(Depth::Float));
         assert_eq!(depth(spec(44_100, SampleFormat::S24)), Some(Depth::Float));
-        assert_eq!(depth(spec(96_000, SampleFormat::S32)), None);
+        assert_eq!(
+            depth(spec(96_000, SampleFormat::S32)),
+            Some(Depth::ThirtyTwo)
+        );
+        assert_eq!(depth(spec(44_100, SampleFormat::S32)), None);
         assert_eq!(depth(spec(48_000, SampleFormat::S16)), None);
     }
 
     #[test]
     fn each_word_reaches_the_unit_in_a_client_format_that_carries_it_exactly() {
-        assert_eq!(
-            ClientWord::of(SampleFormat::S16),
-            Some(ClientWord::Signed16)
-        );
-        assert_eq!(
-            ClientWord::of(SampleFormat::S24),
-            Some(ClientWord::Signed32)
-        );
-        assert_eq!(ClientWord::of(SampleFormat::F32), Some(ClientWord::Float32));
-        assert_eq!(ClientWord::of(SampleFormat::S32), None);
+        assert_eq!(ClientWord::of(SampleFormat::S16), ClientWord::Signed16);
+        assert_eq!(ClientWord::of(SampleFormat::S24), ClientWord::Signed32);
+        assert_eq!(ClientWord::of(SampleFormat::S32), ClientWord::Signed32);
+        assert_eq!(ClientWord::of(SampleFormat::F32), ClientWord::Float32);
+        assert_eq!(laid_of(SampleFormat::S32), Laid::AsHeld);
         assert_eq!(laid_of(SampleFormat::S24), Laid::TwentyFourAgainstTheTop);
         assert_eq!(laid_of(SampleFormat::S16), Laid::AsHeld);
         assert_eq!(frame_of(spec(48_000, SampleFormat::S24)).get(), 8);

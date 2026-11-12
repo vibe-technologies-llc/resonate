@@ -1,7 +1,7 @@
 use objc2_core_audio::{
     AudioStreamRangedDescription, kAudioDevicePropertyAvailableNominalSampleRates,
-    kAudioDevicePropertyBufferFrameSize, kAudioDevicePropertyDeviceIsAlive,
-    kAudioDevicePropertyDeviceUID, kAudioDevicePropertyHogMode,
+    kAudioDevicePropertyBufferFrameSize, kAudioDevicePropertyBufferFrameSizeRange,
+    kAudioDevicePropertyDeviceIsAlive, kAudioDevicePropertyDeviceUID, kAudioDevicePropertyHogMode,
     kAudioDevicePropertyJackIsConnected, kAudioDevicePropertyLatency,
     kAudioDevicePropertyNominalSampleRate, kAudioDevicePropertySafetyOffset,
     kAudioDevicePropertyStreams, kAudioDevicePropertyTransportType, kAudioDeviceTransportTypeAVB,
@@ -19,7 +19,7 @@ use objc2_core_audio::{
 use objc2_core_audio_types::{AudioStreamBasicDescription, AudioValueRange};
 
 use crate::{
-    error::{Op, Result},
+    error::{Error, Op, Result},
     hog::Pid,
     physical::PhysicalFormat,
     property::{self, Address, Direction},
@@ -29,6 +29,7 @@ pub(crate) const THE_SYSTEM: u32 = kAudioObjectSystemObject as u32;
 const NO_DEVICE: u32 = 0;
 const AN_AGGREGATE_THE_SYSTEM_MADE: u32 = u32::from_be_bytes(*b"fgrp");
 const HELD_BY_NOBODY: i32 = -1;
+const SUPPORTS_MIXING: u32 = u32::from_be_bytes(*b"mix?");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Device(u32);
@@ -83,6 +84,32 @@ impl Transport {
 pub struct RateRange {
     pub lowest: f64,
     pub highest: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FramesRange {
+    pub fewest: u32,
+    pub most: u32,
+}
+
+impl FramesRange {
+    fn of(range: AudioValueRange) -> Self {
+        let frames = |bound: f64| {
+            if bound.is_finite() && bound >= 0.0 {
+                bound.min(f64::from(u32::MAX)).round() as u32
+            } else {
+                0
+            }
+        };
+        Self {
+            fewest: frames(range.mMinimum),
+            most: frames(range.mMaximum),
+        }
+    }
+
+    pub fn held_to(self, frames: u32) -> u32 {
+        frames.clamp(self.fewest, self.most.max(self.fewest))
+    }
 }
 
 impl RateRange {
@@ -190,6 +217,31 @@ impl Device {
     pub fn buffer_frames(self) -> Result<u32> {
         let frames = Address::global(kAudioDevicePropertyBufferFrameSize);
         property::read(self.0, frames, Op::ReadLatency)
+    }
+
+    pub fn buffer_frames_allowed(self) -> Result<FramesRange> {
+        let range = Address::global(kAudioDevicePropertyBufferFrameSizeRange);
+        property::read::<AudioValueRange>(self.0, range, Op::ReadBufferFrames).map(FramesRange::of)
+    }
+
+    pub fn set_buffer_frames(self, frames: u32) -> Result<()> {
+        let size = Address::global(kAudioDevicePropertyBufferFrameSize);
+        property::write(self.0, size, &frames, Op::SetBufferFrames)
+    }
+
+    pub fn mixes(self) -> Option<bool> {
+        let mixing = Address::global(SUPPORTS_MIXING);
+        property::read::<u32>(self.0, mixing, Op::ReadMixing)
+            .ok()
+            .map(|mixes| mixes != 0)
+    }
+
+    pub fn set_mixing(self, mixes: bool) -> Result<()> {
+        let mixing = Address::global(SUPPORTS_MIXING);
+        if !property::settable(self.0, mixing) {
+            return Err(Error::Unsettable { op: Op::SetMixing });
+        }
+        property::write(self.0, mixing, &u32::from(mixes), Op::SetMixing)
     }
 
     pub fn jack_connected(self, direction: Direction) -> Option<bool> {
