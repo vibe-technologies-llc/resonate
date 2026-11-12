@@ -6,6 +6,7 @@ members = [
     "crates/resonate-apple",
     "crates/resonate-audio",
     "crates/resonate-cast",
+    "crates/resonate-cli",
     "crates/resonate-mobile",
     "crates/resonate-bindgen",
     "crates/resonate-core",
@@ -280,6 +281,7 @@ resonate-analysis = { version = "0.9.0", path = "crates/resonate-analysis" }
 resonate-apple = { version = "0.9.0", path = "crates/resonate-apple" }
 resonate-audio = { version = "0.9.0", path = "crates/resonate-audio" }
 resonate-cast = { version = "0.9.0", path = "crates/resonate-cast" }
+resonate-cli = { version = "0.9.0", path = "crates/resonate-cli" }
 resonate-core = { version = "0.9.0", path = "crates/resonate-core" }
 resonate-signin = { version = "0.9.0", path = "crates/resonate-signin", default-features = false }
 resonate-codec = { version = "0.9.0", path = "crates/resonate-codec" }

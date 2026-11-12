@@ -259,6 +259,8 @@ jobs:
           refuse_headless resonate wry tao webkit2gtk webview2-com
           only resonate-signin resonate-core resonate-words
           reached_by_the_binary_alone resonate-signin
+          only resonate-cli resonate-words
+          reached_by_the_binary_alone resonate-cli
           refuse resonate-pipewire resonate-wasapi
           refuse resonate-wasapi resonate-codec resonate-dsp resonate-pipewire pipewire libspa gpui
           only resonate-wasapi resonate-core resonate-audio resonate-words

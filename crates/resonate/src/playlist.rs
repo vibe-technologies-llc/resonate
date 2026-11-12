@@ -8,8 +8,7 @@ use std::{
 use resonate_codec::Sources;
 use resonate_core::{MediaLocation, elapsed};
 use resonate_library::{
-    Cut, Direction, Kept, Library, Playlist, PlaylistName, PlaylistOrder, RowOrder, SavedQuery,
-    Search, SortOrder, Upkeep,
+    Cut, Direction, Kept, Library, Playlist, PlaylistName, RowOrder, SavedQuery, Search, Upkeep,
 };
 
 use crate::{
@@ -21,7 +20,9 @@ use crate::{
     playing::{Opening, play_queue},
     playlists,
     table::Table,
-    versions, words,
+    versions,
+    vocabulary::Meaning,
+    words,
     words::columns,
 };
 
@@ -31,7 +32,7 @@ pub(crate) fn list_playlists(
     reverse: bool,
     named: Option<&str>,
 ) -> Result<()> {
-    let order = PlaylistOrder::from(order);
+    let order = order.meaning();
     let reading = read_as(order.reads(), reverse);
     let listed = library.playlists(order, reading, named)?;
 
@@ -137,7 +138,7 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
         return followed::refresh(&library, config, &found);
     }
     if let Some(upkeep) = wanted.upkeep {
-        return followed::set_upkeep(&library, &found, upkeep.into());
+        return followed::set_upkeep(&library, &found, upkeep.meaning());
     }
     if wanted.forget_link {
         return followed::forget_link(&library, &found);
@@ -165,7 +166,7 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
     }
     if let Some(order) = wanted.order {
         let kept = Kept {
-            order: order.into(),
+            order: order.meaning(),
             reading: read_as(Direction::Ascending, wanted.reverse),
         };
         if wanted.keep {
@@ -248,7 +249,7 @@ pub(crate) fn save_query(
     text: &str,
     wanted: &PlaylistArgs,
 ) -> Result<()> {
-    let sort = SortOrder::from(wanted.sort);
+    let sort = wanted.sort.meaning();
     let query = SavedQuery {
         text: (!text.trim().is_empty()).then(|| text.trim().to_owned()),
         sort,

@@ -34,7 +34,9 @@ use crate::{
     sinks::{confirm_sink, wanted_sink},
     sleep, submitting, sync,
     table::Table,
-    versions, words,
+    versions,
+    vocabulary::Meaning,
+    words,
     words::columns,
 };
 
@@ -448,7 +450,7 @@ fn set_out(transport: &TransportArgs, items: Vec<QueueItem>, start_at: usize) ->
     let shuffle = transport.shuffle.then_some(Command::SetShuffle(true));
     let repeat = transport
         .repeat
-        .map(|repeat| Command::SetRepeat(repeat.into()));
+        .map(|repeat| Command::SetRepeat(repeat.meaning()));
     let load = Command::Load {
         items,
         start_at,

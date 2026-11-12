@@ -12,7 +12,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
 | `ios.md` | `ios/**`, the RemoteIO output, resonate-apple's unit | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
-| `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
+| `binary.md` | the binary, its grammar (`resonate-cli`), the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
 | `realtime.md` | engine, pipewire, the Oboe and AudioUnit callbacks, the Core Audio fill, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, zones, sleep, resumption, what is published, DSP, sink |
 | `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` and its wires (the bus, a Windows pipe, a Mac's socket) |
@@ -72,13 +72,14 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Forty-one crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
+Forty-two crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
 leaf every crate that says words reaches; `resonate-codec`, `resonate-dsp` and `resonate-pipewire`
 never depend on each other; `resonate-engine` joins them.
 
 ```
 resonate            bin: CLI, tracing, wiring
   ├── resonate-ui         GPUI views, Wayland          [`ui` feature]
+  ├── resonate-cli        the CLI grammar and its words, and the desktop entry's and metainfo's
   ├── resonate-mcp        catalog and player over MCP  [`mcp`]
   ├── resonate-mpris      session bus: MPRIS, notifications, idle inhibit, playlists
   ├── resonate-discord    what is playing, told to Discord  [`discord`]
@@ -156,8 +157,8 @@ Invariants the layering protects (the rules files have the rest):
   any other, so `crates/resonate-engine/tests/transport.rs` drives a transport with no daemon.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`**,
   so one service serves `resonate play` and the window (`mpris.md`).
-- **The CLI grammar is written once, read three times**: `cli.rs` is the clap derive alone and
-  `build.rs` writes man pages and completions from it. **What is offered is what decodes**:
+- **The CLI grammar is written once, read three times**: `resonate-cli` is the clap derive and its
+  words, and the binary's `build.rs` writes man pages (one set a language) and completions from it. **What is offered is what decodes**:
   `MIME_TYPES`, the desktop entry and the metainfo agree, held by tests; `AUDIO_EXTENSIONS` (core)
   is what a scan admits.
 - **The network is behind `Reference`; the library owns the seam**: `Online` implements it, so

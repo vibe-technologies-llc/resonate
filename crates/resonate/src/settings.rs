@@ -16,6 +16,7 @@ use crate::{
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
     config::{self, Editing},
     metered, online,
+    vocabulary::Meaning,
 };
 
 const MILLIBELS_PER_DECIBEL: f64 = 100.0;
@@ -393,19 +394,19 @@ fn written_as_a_binding(setting: &Setting, written: crate::Result<()>) -> resona
 }
 
 fn quality_text(quality: Quality) -> String {
-    spelt(QualityArg::from(quality))
+    spelt(Meaning::<QualityArg>::meaning(quality))
 }
 
 fn phase_text(phase: FilterPhase) -> String {
-    spelt(FilterPhaseArg::from(phase))
+    spelt(Meaning::<FilterPhaseArg>::meaning(phase))
 }
 
 fn dither_text(dither: DitherKind) -> String {
-    spelt(DitherArg::from(dither))
+    spelt(Meaning::<DitherArg>::meaning(dither))
 }
 
 fn shaping_text(shaping: NoiseShaping) -> String {
-    spelt(NoiseShapingArg::from(shaping))
+    spelt(Meaning::<NoiseShapingArg>::meaning(shaping))
 }
 
 fn spelt(value: impl ValueEnum) -> String {

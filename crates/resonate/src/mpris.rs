@@ -22,6 +22,7 @@ use crate::{
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
     config, equaliser,
     playlists::Collection,
+    vocabulary::Meaning,
 };
 
 const IDENTITY: &str = "Resonate";
@@ -481,11 +482,13 @@ fn same_file(first: &Path, second: &Path) -> bool {
 fn tuning_command(setting: Tunable, value: &str) -> Option<Command> {
     Some(match setting {
         Tunable::Sink => Command::SetSink(Some(NodeName::new(value))),
-        Tunable::Quality => Command::SetQuality(spelled::<QualityArg>(value)?.into()),
-        Tunable::FilterPhase => Command::SetFilterPhase(spelled::<FilterPhaseArg>(value)?.into()),
-        Tunable::Dither => Command::SetDither(spelled::<DitherArg>(value)?.into()),
+        Tunable::Quality => Command::SetQuality(spelled::<QualityArg>(value)?.meaning()),
+        Tunable::FilterPhase => {
+            Command::SetFilterPhase(spelled::<FilterPhaseArg>(value)?.meaning())
+        }
+        Tunable::Dither => Command::SetDither(spelled::<DitherArg>(value)?.meaning()),
         Tunable::NoiseShaping => {
-            Command::SetNoiseShaping(spelled::<NoiseShapingArg>(value)?.into())
+            Command::SetNoiseShaping(spelled::<NoiseShapingArg>(value)?.meaning())
         }
         Tunable::BitPerfect => Command::SetBitPerfect(value.parse().ok()?),
     })

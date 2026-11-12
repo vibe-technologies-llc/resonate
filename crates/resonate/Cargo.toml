@@ -5,9 +5,10 @@ edition.workspace = true
 license.workspace = true
 
 [build-dependencies]
-clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
+resonate-cli.workspace = true
+resonate-words.workspace = true
 resonate-words-build.workspace = true
 
 [target.'cfg(windows)'.build-dependencies]
@@ -36,6 +37,7 @@ clap.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 resonate-cast.workspace = true
+resonate-cli.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-discord = { workspace = true, optional = true }

@@ -1,0 +1,12 @@
+usage = Usage:
+arguments = Arguments:
+options = Options:
+commands = Commands:
+print-help = Print help
+print-version = Print version
+man-name = NAME
+man-synopsis = SYNOPSIS
+man-description = DESCRIPTION
+man-options = OPTIONS
+man-subcommands = SUBCOMMANDS
+man-version = VERSION

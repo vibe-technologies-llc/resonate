@@ -1,6 +1,8 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env, fmt,
+    env,
+    ffi::OsString,
+    fmt,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
     ops::RangeInclusive,
@@ -33,9 +35,12 @@ use toml_edit::{DocumentMut, Item, Table};
 use crate::{
     ConfigKey, Error, Result, ValueKind,
     cli::{DitherArg, FilterPhaseArg, LISTENS_FOR_SECONDS, NoiseShapingArg, QualityArg},
+    vocabulary::Meaning,
 };
 
 const LOCK_SUFFIX: &str = ".lock";
+
+const CONFIG_FLAG: &str = "--config";
 
 const BLUETOOTH_LEAD_MS: RangeInclusive<u64> = 0..=5_000;
 
@@ -1040,6 +1045,29 @@ impl Config {
     }
 }
 
+pub fn spoken_before_the_grammar(arguments: &[OsString]) -> Language {
+    let chosen = named_on_the_command_line(arguments)
+        .or_else(|| config_path().ok())
+        .and_then(|path| item_in(&path, ConfigKey::Language).ok().flatten())
+        .and_then(|item| item.as_str().and_then(LanguageChoice::parse))
+        .unwrap_or_default();
+    chosen.language(&resonate_words::languages_the_listener_reads())
+}
+
+fn named_on_the_command_line(arguments: &[OsString]) -> Option<PathBuf> {
+    let given = format!("{CONFIG_FLAG}=");
+    let mut words = arguments.iter().skip(1).take_while(|word| *word != "--");
+    while let Some(word) = words.next() {
+        if *word == *CONFIG_FLAG {
+            return words.next().map(PathBuf::from);
+        }
+        if let Some(path) = word.to_str().and_then(|word| word.strip_prefix(&given)) {
+            return Some(PathBuf::from(path));
+        }
+    }
+    None
+}
+
 pub fn load(explicit: Option<&Path>) -> Result<Config> {
     let (path, demanded) = match explicit {
         Some(path) => (path.to_path_buf(), true),
@@ -1159,7 +1187,6 @@ pub fn submitting_in(path: &Path) -> Result<Accounts> {
     })
 }
 
-#[cfg(feature = "online")]
 fn item_in(path: &Path, key: ConfigKey) -> Result<Option<Item>> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
@@ -2037,23 +2064,23 @@ fn settings_category(text: &str) -> Option<&'static str> {
 }
 
 fn quality(text: &str) -> Option<Quality> {
-    QualityArg::from_str(text, false).ok().map(Quality::from)
+    QualityArg::from_str(text, false).ok().map(Meaning::meaning)
 }
 
 fn filter_phase(text: &str) -> Option<FilterPhase> {
     FilterPhaseArg::from_str(text, false)
         .ok()
-        .map(FilterPhase::from)
+        .map(Meaning::meaning)
 }
 
 fn dither(text: &str) -> Option<DitherKind> {
-    DitherArg::from_str(text, false).ok().map(DitherKind::from)
+    DitherArg::from_str(text, false).ok().map(Meaning::meaning)
 }
 
 fn noise_shaping(text: &str) -> Option<NoiseShaping> {
     NoiseShapingArg::from_str(text, false)
         .ok()
-        .map(NoiseShaping::from)
+        .map(Meaning::meaning)
 }
 
 fn replay_gain(text: &str) -> Option<ReplayGainMode> {
@@ -2101,6 +2128,41 @@ mod tests {
             "Library/Application Support"
         );
         assert_eq!(library_folder_for("XDG_CACHE_HOME"), "Library/Caches");
+    }
+
+    fn spoken(words: &[&str]) -> Vec<OsString> {
+        words.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn the_settings_a_command_line_names_are_found_before_the_grammar_reads_it() {
+        let apart = spoken(&["resonate", "scan", "--config", "/elsewhere.toml"]);
+        let joined = spoken(&["resonate", "--config=/joined.toml", "play", "a.flac"]);
+        let after_the_end = spoken(&["resonate", "play", "--", "--config", "/a-file.toml"]);
+        let unnamed = spoken(&["resonate", "play", "a.flac"]);
+
+        assert_eq!(
+            named_on_the_command_line(&apart),
+            Some(PathBuf::from("/elsewhere.toml"))
+        );
+        assert_eq!(
+            named_on_the_command_line(&joined),
+            Some(PathBuf::from("/joined.toml"))
+        );
+        assert_eq!(named_on_the_command_line(&after_the_end), None);
+        assert_eq!(named_on_the_command_line(&unnamed), None);
+    }
+
+    #[test]
+    fn the_language_a_named_settings_file_chooses_is_spoken_before_the_grammar() {
+        let settings = Scratch::new().seed("language = \"en\"\n");
+        let arguments = spoken(&[
+            "resonate",
+            "--config",
+            settings.path.to_str().expect("a UTF-8 path"),
+        ]);
+
+        assert_eq!(spoken_before_the_grammar(&arguments), Language::English);
     }
 
     fn read(text: &str) -> Result<Config> {

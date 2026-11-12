@@ -10,6 +10,7 @@ use crate::{
     equaliser,
     error::{Error, Result},
     sinks::wanted_sink,
+    vocabulary::Meaning,
 };
 
 fn impulse_at(path: &Path, speakers: Speakers) -> Option<Arc<Impulse>> {
@@ -48,22 +49,22 @@ pub(crate) fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         sink: wanted_sink(cli, config),
         quality: cli
             .quality
-            .map(Into::into)
+            .map(Meaning::meaning)
             .or(config.quality)
             .unwrap_or(defaults.quality),
         filter_phase: cli
             .filter_phase
-            .map(Into::into)
+            .map(Meaning::meaning)
             .or(config.filter_phase)
             .unwrap_or(defaults.filter_phase),
         dither: cli
             .dither
-            .map(Into::into)
+            .map(Meaning::meaning)
             .or(config.dither)
             .unwrap_or(defaults.dither),
         noise_shaping: cli
             .noise_shaping
-            .map(Into::into)
+            .map(Meaning::meaning)
             .or(config.noise_shaping)
             .unwrap_or(defaults.noise_shaping),
         replay_gain: config.replay_gain.unwrap_or(defaults.replay_gain),

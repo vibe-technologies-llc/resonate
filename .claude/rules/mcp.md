@@ -9,7 +9,7 @@ paths:
 `resonate mcp` gives a language model the player and catalog. `resonate-mcp` depends on core, engine
 vocabulary, library, `resonate-mpris`, the `resonate-providers` seam (a poll takes it),
 `serde_json`. The binary reaches it behind the default `mcp` feature; without it the subcommand
-stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error::NoMcp`.
+stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
 
 ## Transport
 

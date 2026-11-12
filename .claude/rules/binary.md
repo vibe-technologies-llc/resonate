@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate/**"
+  - "crates/resonate-cli/**"
   - "crates/resonate-ui/src/settings.rs"
   - "crates/resonate-ui/src/views/settings/**"
 ---
@@ -16,9 +17,23 @@ paths:
   `players`), `connected` (`sync`, `shared`, `party`), and for every pass `passes::until_told`.
   The window's launch is `window.rs` (behind `ui`), what a file argument becomes `arguments.rs`,
   the engine's settings from the flags and file `engine_settings.rs`, the kept queue `resuming.rs`.
-- **Written once, read three times.** `cli.rs` is the clap derive alone; `build.rs` includes it to
-  write man pages and completions (it links no workspace crate, so `cli.rs` names `std` and `clap`
-  only; `vocabulary.rs` maps `QualityArg` to `engine::Quality`). It builds the command on a thread
+- **Written once, read three times.** The grammar is `resonate-cli`'s `grammar.rs`, the clap derive
+  alone (the binary names it `cli`), every help and about said through `words::grammar`; `said.rs`
+  says clap's own words: the help template's headings (`template_for`, a section headed only where
+  the command has one, in clap's order), the help and version flags (`said`, `command`, last in each
+  list by `SAID_LAST`) and `man_heading`, the section headings clap_mangen writes in English. The
+  crate reaches `clap` and `resonate-words` alone, so the binary's `build.rs` takes it as a build
+  dependency; `vocabulary.rs` maps `QualityArg` to `engine::Quality` through the binary's own
+  `Meaning` trait, since a `From` between two other crates' types is refused. **The help is said in
+  the language the settings choose**: `run` speaks `config::spoken_before_the_grammar` (the
+  `language` key alone, read leniently from the file `--config` names, `named_on_the_command_line`,
+  else the default one) and parses through `resonate_cli::parsed_from`, so a key that will not read
+  is reported by the full load after. **`build.rs` writes each language's man pages**
+  (`write_every_grammar`): it speaks each `Language` in turn and writes the pages into the output
+  folder for English, `<tag>/` beside it for any other, the headings said
+  (`headed_in_the_language_spoken`); the completions are written once, in English, since a shell
+  takes one file a program. clap's errors, its `[default: …]` and `[possible values: …]` notes and
+  the `help` subcommand's line are clap's and stay English. It builds the command on a thread
   of `GRAMMAR_STACK_BYTES` (16 MiB): a build script is unoptimised, and the whole grammar's derive
   overflows Windows' 1 MiB main stack (Linux's 8 MiB hides it). Flags mirroring a config key are
   `global`; `--bit-perfect` with `--no-bit-perfect` is `Error::BitPerfectBothWays`, checked in `run`
@@ -221,13 +236,13 @@ what follows describes Unix, where `signals.rs` and termios are used.
   words has `crates/resonate/words/en/<file>.ftl` and says them through `words::<file>::…`;
   `columns.ftl` holds the table headings every listing shares (`words::columns`). A count is a
   Fluent selector, a figure whose precision matters is passed formatted, and a line's indentation,
-  separators (` · `, ` | `) and the tabs of `sync` and `shared` stay in the code. The clap grammar,
-  error `Display`, `report`'s `resonate:` and `caused by` lines and log lines stay English. `mod
+  separators (` · `, ` | `) and the tabs of `sync` and `shared` stay in the code. Error `Display`,
+  `report`'s `resonate:` and `caused by` lines and log lines stay English. `mod
   words` allows dead code unless every feature is on, so the full build alone refuses an unused
   message. `every_word_the_terminal_says_is_said_through_its_catalog` (`catalog.rs`) fails on a
   prose literal; its `PROPER` names what is a name or a stored spelling (a fetched correction's
   kept profile name, a `Debug` type name), `NOT_WORDS` the files that say none to a listener
-  (`cli.rs`, `error.rs`, and `awake.rs`, whose power-request reason only `powercfg` reads).
+  (`error.rs`, and `awake.rs`, whose power-request reason only `powercfg` reads).
 - **Tables are plain text:** `Table::push` passes every cell through `table::on_one_line`; `info`
   cuts a raw tag value at `WIDEST_TAG_VALUE`. Lengths read through one clock (`info::clock`, rounded
   to the millisecond so a minute rolls over, not `1:60.000`); a *listening* total through
@@ -574,7 +589,7 @@ symlinked `config.toml`; locks the containing folder for the whole read-edit-wri
 (`config.toml.<pid>-<n>.new`, older builds' `config.toml.lock`, nothing else); stages under this
 process's own name; creates the staged file `0600` and narrows the standing file to its owner's bits
 before writing (it holds secrets); `sync_all`s file and folder; renames over the target. **On Unix the data folder is `0700` and `shared.sqlite` and `sync.sqlite` (and their `-wal` and `-shm`) are `0600`** (`config::private_data_dir`, `private_store`: the folder narrowed whenever it is made or opened for the library, the sync lock or a store, a store made `0600` before SQLite opens it so its side files take that mode, and a standing one narrowed): they hold shared-playlist edit codes and the member's private key. A value
-with a flag is spelled as the flag spells it (`ValueEnum`s from `cli.rs`). `Setting::Theme`,
+with a flag is spelled as the flag spells it (`ValueEnum`s from the grammar). `Setting::Theme`,
 `Accent`, `Online`, `Contact` never reach the engine; a cleared contact is `config::clear` on the
 key, not an empty string (`Config::contact` stays `None`, the User-Agent bare).
 

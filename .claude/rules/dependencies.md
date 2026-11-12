@@ -164,6 +164,9 @@ here, add it there.
   reached by the binary and `resonate-mobile` alone. **`bzip2`** keeps its default features,
   which are its pure-Rust `libbz2-rs-sys` backend (the C `bzip2-sys` is the other, off); **`tar`**
   has no default features (`xattr` is not read). Both read the MusicBrainz export alone.
+- `resonate-cli`: `resonate-words` alone among workspace crates, with `clap`; reached by the binary
+  alone, as a dependency and as its build script's, so the grammar the man pages are written from is
+  the one parsed.
 - `resonate-signin`: core alone among workspace crates, reached by the binary alone, and only
   without its `window` feature; **`wry`** (`os-webview` alone) and **`tao`** (`rwh_06` alone: no
   `x11`, no `dbus`, since the window runs on Wayland through GTK) come in only under `window`, which

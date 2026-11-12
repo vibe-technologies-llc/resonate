@@ -8,20 +8,10 @@ use resonate_library::{
 
 use crate::{
     Error, Result,
-    cli::UpkeepArg,
     config::Config,
     online::{self, Asking},
     words,
 };
-
-impl From<UpkeepArg> for Upkeep {
-    fn from(upkeep: UpkeepArg) -> Self {
-        match upkeep {
-            UpkeepArg::Once => Self::Once,
-            UpkeepArg::InStep => Self::InStep,
-        }
-    }
-}
 
 pub fn link_named_by(file: &Path) -> Option<PlaylistLink> {
     file.to_str().and_then(PlaylistLink::read)

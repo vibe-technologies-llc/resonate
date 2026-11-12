@@ -9,7 +9,6 @@ mod arguments;
 #[cfg(any(windows, target_os = "macos"))]
 mod awake;
 mod catalog;
-mod cli;
 mod config;
 mod connected;
 mod discord;
@@ -122,7 +121,7 @@ use std::{
     sync::Arc,
 };
 
-use clap::Parser;
+use resonate_cli as cli;
 use resonate_codec::Sources;
 use resonate_library::{
     Aged, DeliveryFolder, EnrichOptions, HistoryKept, Library, ListeningService, StudyFilter,
@@ -155,6 +154,7 @@ use crate::{
     served::Served,
     sinks::list_sinks,
     tagging::{dedupe, tag},
+    vocabulary::Meaning,
 };
 
 const LOG_FILTER: &str = "RESONATE_LOG";
@@ -230,7 +230,9 @@ fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let arguments: Vec<_> = env::args_os().collect();
+    resonate_words::speak(config::spoken_before_the_grammar(&arguments));
+    let cli = cli::parsed_from(arguments);
     one_way_on_bit_perfect(&cli)?;
     #[cfg(all(windows, feature = "ui"))]
     if cli.command.is_none() {
@@ -477,7 +479,7 @@ fn run() -> Result<()> {
             &config,
             files,
             name.as_deref(),
-            (*upkeep).into(),
+            upkeep.meaning(),
         ),
         Some(Sub::Sleep { spec, player, zone }) => {
             sleep::set(spec, player.as_deref(), zone.as_deref())
@@ -661,6 +663,8 @@ fn catalog(cli: &Cli, config: &Config) -> Option<Arc<Library>> {
 
 #[cfg(test)]
 mod tests {
+    use clap::Parser as _;
+
     use super::*;
 
     #[test]

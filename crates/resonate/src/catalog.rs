@@ -19,7 +19,7 @@ mod tests {
         "resonate: the console the window was started with stays open: {error}",
     ];
 
-    const NOT_WORDS: &[&str] = &["awake.rs", "cli.rs", "error.rs"];
+    const NOT_WORDS: &[&str] = &["awake.rs", "error.rs"];
 
     const STILL_TO_MOVE: &[&str] = &[];
 

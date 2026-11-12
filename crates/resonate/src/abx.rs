@@ -23,6 +23,7 @@ use crate::{
     readout::billing,
     signals,
     sinks::SINK_TIMEOUT,
+    vocabulary::Meaning,
     words,
 };
 
@@ -84,7 +85,7 @@ fn contest_of(asked: AbxArgs, set: &EngineConfig) -> Result<Option<Contest>> {
                 } else {
                     Restoration::Off
                 },
-                Into::into,
+                Meaning::meaning,
             );
             Ok(Some(Contest::Restoration { a, b }))
         }
@@ -101,9 +102,9 @@ fn contest_of(asked: AbxArgs, set: &EngineConfig) -> Result<Option<Contest>> {
                     } else {
                         Quality::LowLatency
                     },
-                    Into::into,
+                    Meaning::meaning,
                 ),
-                phase: asked.against_filter_phase.map_or(a.phase, Into::into),
+                phase: asked.against_filter_phase.map_or(a.phase, Meaning::meaning),
             };
             Ok(Some(Contest::Resampling { a, b }))
         }
@@ -120,9 +121,11 @@ fn contest_of(asked: AbxArgs, set: &EngineConfig) -> Result<Option<Contest>> {
                     } else {
                         DitherKind::None
                     },
-                    Into::into,
+                    Meaning::meaning,
                 ),
-                shaping: asked.against_noise_shaping.map_or(a.shaping, Into::into),
+                shaping: asked
+                    .against_noise_shaping
+                    .map_or(a.shaping, Meaning::meaning),
             };
             Ok(Some(Contest::Dithering { a, b }))
         }

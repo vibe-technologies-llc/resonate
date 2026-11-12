@@ -51,15 +51,28 @@ the code that says the words.
   window never shows one (`ui.md`'s *Toasts speak plainly*). The exception is `resonate-mobile`'s
   `Error`: it is flat across the boundary, so its message is the phone's sentence and comes out of
   the mobile crate's catalog.
-- The CLI grammar (`cli.rs`'s help, the man pages and completions `build.rs` writes) is English.
-- Log lines, test names and the desktop entry and metainfo are English.
+- What clap and clap_mangen say with no seam to say it otherwise: clap's errors, its `[default: …]`
+  and `[possible values: …]` notes, the `help` subcommand's line. The completions are English, one
+  file a shell (`binary.md`).
+- Log lines and test names are English.
 
 ## Choosing the language
 
 - **`language` in `config.toml`** (`system`, default, or a tag) is read first thing in `run`, which
   calls `speak(config.language_spoken())`, so the terminal, the window, notifications and Discord
-  speak it. The Appearance category's *Language* group writes it (`Setting::Language`,
-  `ResonateApp::language`); a change is spoken from the next start, and the group says so.
+  speak it. The help is said before the settings are read, so `run` first speaks
+  `config::spoken_before_the_grammar`, the `language` key alone (`binary.md`). The Appearance
+  category's *Language* group writes it (`Setting::Language`, `ResonateApp::language`); a change is
+  spoken from the next start, and the group says so.
+- **The grammar, the man pages, the desktop entry and the metainfo come out of `resonate-cli`'s
+  catalog.** Every help and about is `words::grammar::…` (`grammar.ftl`), clap's headings, flags and
+  clap_mangen's section headings `words::said::…`, and the binary's `build.rs` writes each
+  language's man pages by speaking it in turn (English in the output folder, any other under
+  `<tag>/`). The desktop entry and the metainfo are files the packages install as they are, so
+  their words are the catalog's `presented.ftl` (`presented`) and
+  `the_desktop_entry_and_the_metainfo_say_what_the_catalog_says_in_every_language` holds them to
+  it: English as the plain keys and elements, any other language as `GenericName[tag]`,
+  `Comment[tag]`, `Keywords[tag]` and `<summary xml:lang="tag">` and `<p xml:lang="tag">`.
 - **The phones choose their own**: `speak_languages(tags)` at the boundary answers the tag it
   settled on, so what Rust sends (errors, failures, presets, Wrapped, mix reasons) is in the phone's
   language. Android tells it the configuration's locales as the player opens and again from
@@ -76,7 +89,10 @@ the code that says the words.
 
 A `Language` variant (tag, endonym, `ALL`, `by_tag`); `words/<tag>/` beside every crate's `en/` with
 every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
-`CFBundleLocalizations` on iOS; the `language` key's man page entry names the tag.
+`CFBundleLocalizations` on iOS; the `language` key's man page entry names the tag; the desktop
+entry's and the metainfo's keys and elements in the tag, as the catalog says them; the packages
+install `<tag>/*.1` from the build's output folder under `man/<tag>/man1`, and a translated copy of
+the hand-written `resonate-config.toml(5)` beside the English one.
 
 ## The checks
 
@@ -96,10 +112,15 @@ every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
   message is an attribute the walk passes over, so every `Error` sentence there is read by eye:
   each is `words::errors::…` or a `failure.rs` function, never a literal.
 - **The binary's is `every_word_the_terminal_says_is_said_through_its_catalog`** (`catalog.rs`):
-  `PROPER` names proper names, diagnostics and a stored spelling, `NOT_WORDS` is `cli.rs` (the clap
-  grammar), `error.rs` and `awake.rs` (a power request only `powercfg` shows). Its table headings
-  share one `columns` area. Its `mod words` allows dead code unless every feature (`ui`, `online`,
-  `sync`, `mcp`, `discord`) is on, so the full-feature clippy is the one that refuses a dead word.
+  `PROPER` names proper names, diagnostics and a stored spelling, `NOT_WORDS` is `error.rs` and
+  `awake.rs` (a power request only `powercfg` shows). Its table headings share one `columns` area.
+  Its `mod words` allows dead code unless every feature (`ui`, `online`, `sync`, `mcp`, `discord`)
+  is on, so the full-feature clippy is the one that refuses a dead word.
+- **`resonate-cli`'s are two**: `every_word_the_grammar_says_is_said_through_its_catalog` walks its
+  sources through `prose_in`, and since that walk passes over attributes,
+  `no_help_the_grammar_gives_is_a_literal_in_an_attribute` refuses a `help = "…"` or `about = "…"`
+  in `grammar.rs`. `every_heading_a_man_page_carries_is_said_in_the_language_spoken` renders every
+  page and fails on a section heading `man_heading` does not say.
 - **Every other crate a listener hears from has one, each a `said_through_the_catalog` module.** A
   crate whose sources hold little else walks them all through `prose_in` with its `PROPER`
   (`resonate-core`'s `every_word_core_hands_a_listener_is_said_through_its_catalog`: theme and

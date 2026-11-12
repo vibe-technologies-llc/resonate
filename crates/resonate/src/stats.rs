@@ -2,14 +2,14 @@ use std::time::Duration;
 
 use resonate_library::{Library, Listened, MostListened, Statistics, Window};
 
-use crate::{Result, cli::WindowArg, table::Table, words};
+use crate::{Result, cli::WindowArg, table::Table, vocabulary::Meaning, words};
 
 const SECONDS_A_MINUTE: u64 = 60;
 const MINUTES_AN_HOUR: u64 = 60;
 const SECONDS_AN_HOUR: u64 = MINUTES_AN_HOUR * SECONDS_A_MINUTE;
 
 pub fn print(library: &Library, window: WindowArg, most: usize) -> Result<()> {
-    let window = Window::from(window);
+    let window = window.meaning();
     let counts = library.statistics(window)?;
     said!("{}", summarised(counts, window));
 
