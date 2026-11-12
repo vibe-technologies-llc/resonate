@@ -113,7 +113,6 @@ type Serving = crate::socket::Serving;
 #[cfg(any(windows, target_os = "macos"))]
 struct OnThePipe {
     serving: Serving,
-    #[cfg(windows)]
     toasts: Option<JoinHandle<()>>,
 }
 
@@ -182,7 +181,6 @@ impl Mpris {
                 let serving = Serving::start(zone, answering)?;
                 Ok(Service::Pipe(OnThePipe {
                     serving,
-                    #[cfg(windows)]
                     toasts: toasting(shared, told, stop),
                 }))
             }
@@ -233,7 +231,6 @@ impl Mpris {
 #[cfg(any(windows, target_os = "macos"))]
 impl OnThePipe {
     fn rest(&mut self) {
-        #[cfg(windows)]
         if let Some(toasts) = self.toasts.take() {
             let _ = toasts.join();
         }
@@ -241,7 +238,7 @@ impl OnThePipe {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn toasting(
     shared: &Arc<Shared>,
     told: &Receiver<Told>,
@@ -257,7 +254,7 @@ fn toasting(
     match spawned {
         Ok(toasts) => Some(toasts),
         Err(error) => {
-            tracing::warn!(%error, "a track change will not be told to Windows");
+            tracing::warn!(%error, "a track change will not be told to the desktop");
             None
         }
     }
@@ -733,7 +730,7 @@ fn tell_the_desktop(
     told
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn toast_what_plays(shared: &Arc<Shared>, told: &Receiver<Told>, stop: &AtomicBool) {
     let errands = Errands::start(shared);
     let mut toasted = None;

@@ -21,9 +21,10 @@ reached on a Unix socket (`socket.rs`, *The client's second wire*) exactly as Wi
 pipe: `Mpris::served` and `Session::open` fall back under `cfg(any(windows, target_os = "macos"))`,
 so one launch finds the window another opened, hands it its files and raises it, and `queue`,
 `players`, `sleep` and a subcommand's `Reload` reach it. The portal trash is not compiled there
-(`rustix`'s `OFlags::PATH` is not Apple's; a Mac's Trash is the binary's, `binary.md`). No toast,
-notification or idle inhibit is made on a Mac by this crate: the bus `Desk` is opened only by the
-bus loop, which a Mac never reaches, and the binary's `awake.rs` keeps the machine awake. Whether
+(`rustix`'s `OFlags::PATH` is not Apple's; a Mac's Trash is the binary's, `binary.md`). A song
+change is told through the system's notifications (`desk_notice.rs`, `macos.md`'s *Notifications*);
+no idle inhibit is made (`desk_bus.rs`, `idle.rs` and `notifier.rs` are not compiled there), the
+binary's `awake.rs` keeping the machine awake. Whether
 the connection is metered is read from the Network framework's path monitor (*Is the connection
 metered*).
 The first zone is published to and commanded from the system's Now Playing (*The media transport*
@@ -173,9 +174,10 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
 
 - **Own connection and thread; the poll only leaves errands.** `notify.rs` is what a notification
   says on every platform (`Shown`, `actions`, `pressed`); `desktop.rs`'s `Errands` run on a `Desk`,
-  Linux's `desk_bus.rs` (`notifier.rs` raises `org.freedesktop.Notifications` on a track change) or
+  Linux's `desk_bus.rs` (`notifier.rs` raises `org.freedesktop.Notifications` on a track change),
   Windows's `desk_toast.rs` (toasts, `windows.md`: `toast.rs` writes the XML from the same `Shown`
-  and `actions`, a press is `notify::pressed` again); `idle.rs` holds the portal's
+  and `actions`, a press is `notify::pressed` again) or a Mac's `desk_notice.rs` (UserNotifications,
+  `macos.md`); a pipe or socket service runs `toast_what_plays` on Windows and macOS alike; `idle.rs` holds the portal's
   `org.freedesktop.portal.Inhibit` while there is sound; `desk_bus.rs` makes both on a second
   connection with `DEADLINE` (2 s) `method_timeout` and a thread reading a bounded channel (on the
   poll thread one unanswered call held every property change 25 s). Inhibit is a *level*:

@@ -11,8 +11,10 @@ use std::{
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use resonate_engine::PlaybackState;
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 use crate::desk_bus::Desk;
+#[cfg(target_os = "macos")]
+use crate::desk_notice::Desk;
 #[cfg(windows)]
 use crate::desk_toast::Desk;
 use crate::{Error, Result, interfaces::Shared, notify::Shown, track::sounding};

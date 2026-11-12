@@ -41,7 +41,9 @@ remote commands, `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`) `objc2-me
 (strings, numbers, data, the dictionary), `objc2-app-kit` (`NSImage` alone, the cover),
 `block2` (the command handlers and the artwork's request) and `dispatch2` (every call is posted to
 the main queue, never run synchronously), each at the version gpui's tree already holds, so no
-second copy is built. `NowPlaying` holds no Objective-C object: each call fetches the shared center
+second copy is built; for `Notices` `objc2-user-notifications` 0.3.2 (the center, the content,
+request, category, action, attachment and response alone, with `block2`) and `objc2-foundation`'s
+`NSArray`, `NSBundle`, `NSError`, `NSSet` and `NSURL`. `NowPlaying` holds no Objective-C object: each call fetches the shared center
 inside its block, so it is `Send` and `Sync` and may be dropped on any thread. `mach_absolute_time` and `mach_timebase_info` are declared
 by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
 is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature, and so

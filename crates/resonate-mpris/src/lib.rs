@@ -10,8 +10,10 @@ mod caret;
 mod cost;
 #[cfg(windows)]
 mod costing;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 mod desk_bus;
+#[cfg(target_os = "macos")]
+mod desk_notice;
 #[cfg(windows)]
 mod desk_toast;
 mod desktop;
@@ -23,14 +25,14 @@ mod gaming;
 mod host;
 mod icons;
 mod identity;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 mod idle;
 mod interfaces;
 #[cfg(any(windows, target_os = "macos", test))]
 mod listening;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod metered;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 mod notifier;
 mod notify;
 #[cfg(target_os = "macos")]
@@ -62,7 +64,7 @@ mod transport;
 mod trash;
 mod wire;
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
 mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }

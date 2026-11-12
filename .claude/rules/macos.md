@@ -140,9 +140,28 @@ for them.
   work on a scoped thread, the main thread in `CFRunLoopRunInMode` a quarter second at a time until
   it ends, resting a moment where the loop has nothing to run), which elsewhere just runs it.
 
+## Notifications
+
+**A song change is told as Linux's notification and Windows's toast are, word for word**:
+`desk_notice.rs` is a Mac's `Desk`, fed by the same `toast_what_plays` and `Telling::of` the
+socket's service runs, over `resonate_apple::Notices` (UserNotifications). `Notices::open` refuses
+`Error::NoBundle` where the process has no bundle identifier (a `cargo run` binary; the framework
+raises an Objective-C exception there rather than answering), so only `Resonate.app`'s executable,
+the window or `resonate play` through the link `README.txt` names, raises any. It asks the alert
+permission once (the system asks the listener the first time; a refusal is the system's to keep),
+sets the one category `resonate.transport` whose actions are `notify::actions`' Previous,
+Play/Pause and Next, and sets a process-wide delegate once (`ResonateNoticeAnswerer`, kept for the
+life of the process) which shows a notice while the app is in front too, as a banner and in the
+list, and hands a press to the `Notices` that raised it: a notice's identifier is
+`<asker>.<kind>` (`track`, or `listen` for what Listen named, with no buttons), so each zone's
+presses reach its own transport through `notify::pressed`, and a second telling of the same kind
+replaces the first in Notification Center. A cover is copied into the temporary folder as
+`resonate-notice-<pid>-<n>` before it is attached, since the system moves an attachment's file into
+its own store. Teardown removes the track's notice. Nothing here has run on a Mac.
+
 ## Not on macOS yet
 
-Notifications (no bus `Desk` is opened and none is made for a Mac); recording the desktop's sound; Game Mode;
+Recording the desktop's sound; Game Mode;
 the launcher's icon following the accent (`plain_launcher.rs`
 does nothing, as on Windows).
 

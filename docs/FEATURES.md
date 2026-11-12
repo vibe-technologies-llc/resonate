@@ -86,8 +86,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   FAT and exFAT volumes named portably, the YouTube Music sign-in window on WKWebView, and the disk
   image (Gatekeeper on an ad-hoc signature, the document types and the link scheme registering,
   the icon)
-- [M] macOS tells nothing of a song change: no notification is raised (UserNotifications needs a
-  bundle and the listener's permission, and nothing calls it)
 - [M] The desktop's sound cannot be recorded on macOS (`Listening::Desktop` is
   `Error::DesktopUnheard`, the Listen pane offers the microphone alone): a Core Audio process tap
   (macOS 14.2) is not built

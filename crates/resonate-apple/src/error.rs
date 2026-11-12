@@ -106,6 +106,9 @@ pub enum Error {
     #[cfg(target_os = "macos")]
     #[error("the Network framework made no path monitor")]
     NoPathMonitor,
+    #[cfg(target_os = "macos")]
+    #[error("the process carries no bundle identifier, which notifications need")]
+    NoBundle,
 }
 
 impl Error {

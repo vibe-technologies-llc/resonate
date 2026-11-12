@@ -6936,6 +6936,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "objc2-media-player",
+ "objc2-user-notifications",
  "parking_lot 0.13.0",
  "thiserror 2.0.21",
 ]

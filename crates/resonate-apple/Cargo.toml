@@ -49,10 +49,15 @@ objc2-foundation = {
     default-features = false,
     features = [
         "std",
+        "NSArray",
+        "NSBundle",
         "NSData",
         "NSDictionary",
+        "NSError",
+        "NSSet",
         "NSObject",
         "NSString",
+        "NSURL",
         "NSValue",
         "objc2-core-foundation"
     ]
@@ -71,6 +76,23 @@ objc2-media-player = {
         "block2",
         "objc2-app-kit",
         "objc2-core-foundation"
+    ]
+}
+objc2-user-notifications = {
+    version = "0.3.2",
+    default-features = false,
+    features = [
+        "std",
+        "UNNotification",
+        "UNNotificationAction",
+        "UNNotificationAttachment",
+        "UNNotificationCategory",
+        "UNNotificationContent",
+        "UNNotificationRequest",
+        "UNNotificationResponse",
+        "UNNotificationTrigger",
+        "UNUserNotificationCenter",
+        "block2"
     ]
 }
 parking_lot.workspace = true
