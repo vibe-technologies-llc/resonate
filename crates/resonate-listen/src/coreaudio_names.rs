@@ -6,10 +6,10 @@ const CAPTURE_PREFIX: &str = "coreaudio-capture:";
 const SHARED_PREFIX: &str = "coreaudio:";
 const HOG_PREFIX: &str = "coreaudio-hog:";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Unheard<'a> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Source<'a> {
     TheDesktop,
-    NoSuchMicrophone(&'a NodeName),
+    Microphone(Option<&'a str>),
 }
 
 pub(crate) fn capture_node_of(uid: &str) -> NodeName {
@@ -26,13 +26,13 @@ fn render_uid_of(node: &NodeName) -> Option<&str> {
         .or_else(|| name.strip_prefix(SHARED_PREFIX))
 }
 
-pub(crate) fn microphone_of(from: &Listening) -> Result<Option<&str>, Unheard<'_>> {
+pub(crate) fn source_of(from: &Listening) -> Result<Source<'_>, &NodeName> {
     match from {
-        Listening::Desktop => Err(Unheard::TheDesktop),
-        Listening::Microphone(None) => Ok(None),
+        Listening::Desktop => Ok(Source::TheDesktop),
+        Listening::Microphone(None) => Ok(Source::Microphone(None)),
         Listening::Microphone(Some(node)) => capture_uid_of(node)
-            .map(Some)
-            .ok_or(Unheard::NoSuchMicrophone(node)),
+            .map(|uid| Source::Microphone(Some(uid)))
+            .ok_or(node),
     }
 }
 
@@ -60,16 +60,19 @@ mod tests {
     }
 
     #[test]
-    fn the_desktop_cannot_be_heard_and_a_microphone_is_named_by_its_capture_node() {
+    fn the_desktop_is_tapped_and_a_microphone_is_named_by_its_capture_node() {
         let named = Listening::Microphone(Some(capture_node_of(UID)));
         let stranger = NodeName::new("alsa_input.usb");
 
-        assert_eq!(microphone_of(&Listening::Desktop), Err(Unheard::TheDesktop));
-        assert_eq!(microphone_of(&Listening::Microphone(None)), Ok(None));
-        assert_eq!(microphone_of(&named), Ok(Some(UID)));
+        assert_eq!(source_of(&Listening::Desktop), Ok(Source::TheDesktop));
         assert_eq!(
-            microphone_of(&Listening::Microphone(Some(stranger.clone()))),
-            Err(Unheard::NoSuchMicrophone(&stranger))
+            source_of(&Listening::Microphone(None)),
+            Ok(Source::Microphone(None))
+        );
+        assert_eq!(source_of(&named), Ok(Source::Microphone(Some(UID))));
+        assert_eq!(
+            source_of(&Listening::Microphone(Some(stranger.clone()))),
+            Err(&stranger)
         );
     }
 

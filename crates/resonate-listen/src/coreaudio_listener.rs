@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use resonate_apple::Device;
-use resonate_audio::{NodeName, Operation};
+use resonate_apple::{DesktopTap, Device};
+use resonate_audio::{Error as AudioError, NodeName, Operation};
 
 use crate::{
     CaptureOp, Clip, Error, Hearing, Listening, Result,
-    coreaudio_capture::{Capture, backend_error, hears},
-    coreaudio_names::{Unheard, capture_node_of, microphone_of, output_of},
+    coreaudio_capture::{Capture, backend_error, hears, microphone_of},
+    coreaudio_names::{Source, capture_node_of, output_of, source_of},
     coreaudio_playback::Playback,
     microphone::Microphone,
     recording::Recorder,
@@ -16,10 +16,28 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Listener;
 
-fn unheard(refused: Unheard<'_>) -> Error {
+fn untapped(refused: resonate_apple::Error) -> Error {
     match refused {
-        Unheard::TheDesktop => Error::DesktopUnheard,
-        Unheard::NoSuchMicrophone(name) => Error::NoSuchMicrophone { name: name.clone() },
+        resonate_apple::Error::NoProcessTap => Error::DesktopUnheard,
+        refused => Error::capture(CaptureOp::Open, backend_error(Operation::Open, refused)),
+    }
+}
+
+fn tapped_where_asked(source: Source<'_>) -> Result<Option<DesktopTap>> {
+    match source {
+        Source::TheDesktop => DesktopTap::open().map(Some).map_err(untapped),
+        Source::Microphone(_) => Ok(None),
+    }
+}
+
+fn device_heard(
+    source: Source<'_>,
+    tap: Option<&DesktopTap>,
+) -> std::result::Result<Device, AudioError> {
+    match (source, tap) {
+        (_, Some(tap)) => Ok(tap.device()),
+        (Source::Microphone(uid), None) => microphone_of(uid),
+        (Source::TheDesktop, None) => Err(AudioError::NoSink),
     }
 }
 
@@ -77,14 +95,16 @@ impl Listener {
         hearing: &Hearing,
         accompanied_by: impl FnOnce() -> Result<Option<Playback>>,
     ) -> Result<Clip> {
-        let microphone = microphone_of(from).map_err(unheard)?;
+        let source =
+            source_of(from).map_err(|name| Error::NoSuchMicrophone { name: name.clone() })?;
+        let tap = tapped_where_asked(source)?;
         let sitting = Sitting::begin(length, hearing);
 
-        let opened = Capture::open(
-            microphone,
-            Recorder::admitting(Arc::clone(&sitting.recording)),
-        )
-        .map_err(|source| Error::capture(CaptureOp::Open, source))?;
+        let opened = device_heard(source, tap.as_ref())
+            .and_then(|device| {
+                Capture::open(device, Recorder::admitting(Arc::clone(&sitting.recording)))
+            })
+            .map_err(|source| Error::capture(CaptureOp::Open, source))?;
 
         let accompanying = match accompanied_by() {
             Ok(playback) => playback,
@@ -95,7 +115,8 @@ impl Listener {
         };
 
         let left = sitting.until_full(opened, length, hearing, |recorder| {
-            Capture::open(microphone, recorder)
+            device_heard(source, tap.as_ref())
+                .and_then(|device| Capture::open(device, recorder))
                 .inspect_err(|error| tracing::debug!(%error, "the capture cannot open again yet"))
                 .ok()
         });
@@ -104,6 +125,7 @@ impl Listener {
             .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
         drop(accompanying);
+        drop(tap);
 
         finished(
             stopped,

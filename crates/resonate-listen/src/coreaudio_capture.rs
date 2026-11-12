@@ -184,8 +184,8 @@ fn hearing(
 }
 
 impl Capture {
-    pub(crate) fn open(microphone: Option<&str>, recorder: Recorder) -> Result<Self, AudioError> {
-        let heard = Heard::from(microphone_of(microphone)?)?;
+    pub(crate) fn open(device: Device, recorder: Recorder) -> Result<Self, AudioError> {
+        let heard = Heard::from(device)?;
         let (stopping, stopped) = mpsc::channel();
         let (ready, opened) = mpsc::channel();
         let lost = Arc::new(AtomicBool::new(false));

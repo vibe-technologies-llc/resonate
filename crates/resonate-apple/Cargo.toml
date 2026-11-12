@@ -19,7 +19,9 @@ objc2-core-audio = {
     features = [
         "std",
         "AudioHardware",
-        "objc2-core-audio-types"
+        "objc2",
+        "objc2-core-audio-types",
+        "objc2-foundation"
     ]
 }
 objc2-core-foundation = {
@@ -58,6 +60,7 @@ objc2-foundation = {
         "NSObject",
         "NSString",
         "NSURL",
+        "NSUUID",
         "NSValue",
         "objc2-core-foundation"
     ]

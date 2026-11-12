@@ -25,6 +25,8 @@ mod path_monitor;
 #[cfg(any(target_os = "macos", test))]
 mod physical;
 #[cfg(target_os = "macos")]
+mod process_tap;
+#[cfg(target_os = "macos")]
 mod property;
 #[cfg(target_vendor = "apple")]
 mod render;
@@ -56,6 +58,7 @@ pub use crate::{
     now_playing::{Answer, Asked, Clock, NowPlaying, Offered, Playback, Shown},
     path_monitor::{PathMonitor, Route},
     physical::{Depth, PhysicalFormat},
+    process_tap::DesktopTap,
     property::Direction,
     volume::{Mute, Scalar, Volume},
 };

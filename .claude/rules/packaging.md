@@ -52,8 +52,9 @@ either:
 - **`Info.plist`** names the bundle `org.resonate.Resonate` (`APP_USER_MODEL_ID`), asks for macOS
   13.0, declares one *Audio* document type at rank `Alternate` (it claims no default) over
   `public.audio` and an imported `org.resonate.audio` listing every `AUDIO_EXTENSIONS` entry, takes
-  the `resonate` scheme, and says why the microphone and the local network are asked for (English,
-  `language.md`).
+  the `resonate` scheme, and says why the microphone, the Mac's own sound and the local network are
+  asked for (English, `language.md`;
+  `the_bundle_says_why_it_asks_for_the_microphone_the_macs_own_sound_and_the_network`).
 - **`icon.py` renders the committed `resonate.icns` from `resonate.svg`** with `rsvg-convert`, on
   Linux, so no runner tool draws it: the drawing inset to 824 of 1 024 px, as an icon sits on
   macOS's grid, in eight PNG entries from 32 to 1 024 px (`ic11`, `ic12`, `ic07`, `ic13`, `ic08`,

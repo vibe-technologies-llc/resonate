@@ -41,7 +41,7 @@ pub enum Error {
     NoSuchMicrophone { name: resonate_audio::NodeName },
 
     #[cfg(target_os = "macos")]
-    #[error("what the desktop plays cannot be recorded on macOS")]
+    #[error("what the desktop plays can be recorded from macOS 14.2 on")]
     DesktopUnheard,
 
     #[error("nothing reached the recording before it was given up on")]

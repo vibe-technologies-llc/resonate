@@ -485,7 +485,7 @@ fn noted(error: &ListenError) {
         }
         #[cfg(target_os = "macos")]
         ListenError::DesktopUnheard => {
-            tracing::warn!(%error, "the desktop was asked for where only a microphone is heard");
+            tracing::warn!(%error, "the desktop was asked for on a macOS older than 14.2, which cannot tap it");
         }
         ListenError::Unreachable { .. }
         | ListenError::Refused { .. }

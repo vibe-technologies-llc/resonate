@@ -14,7 +14,8 @@ macOS asks once whether Resonate may show notifications; with them allowed, a so
 with Previous, Play/Pause and Next beside it while the window is not in front.
 
 macOS asks before Resonate uses the microphone (naming the song playing around you, measuring your
-headphones or your room) and before it looks for devices on your network (your other devices in
+headphones or your room), before it records what the Mac itself plays (naming the song another
+program plays; macOS 14.2 or later) and before it looks for devices on your network (your other devices in
 step, streamers and amplifiers to play to). Either can be refused and changed later under Privacy
 & Security.
 

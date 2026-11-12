@@ -357,12 +357,13 @@ fn the_cask_names_the_two_images_build_sh_makes_and_every_placeholder_is_filled(
 }
 
 #[test]
-fn the_bundle_says_why_it_asks_for_the_microphone_and_the_network() {
+fn the_bundle_says_why_it_asks_for_the_microphone_the_macs_own_sound_and_the_network() {
     let info = packaging(INFO);
     let entitlements = packaging(ENTITLEMENTS);
 
     for prompt in [
         "NSMicrophoneUsageDescription",
+        "NSAudioCaptureUsageDescription",
         "NSLocalNetworkUsageDescription",
     ] {
         assert!(

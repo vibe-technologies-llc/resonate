@@ -38,6 +38,8 @@ pub enum Op {
     SetMute,
     Listen,
     NotifyOnOwnThread,
+    CreateTap,
+    CreateAggregate,
 }
 
 impl Op {
@@ -74,6 +76,8 @@ impl Op {
             Self::SetMute => "set a device's mute",
             Self::Listen => "listen for a device's changes",
             Self::NotifyOnOwnThread => "move the device notifications off the main run loop",
+            Self::CreateTap => "tap the sound every process plays",
+            Self::CreateAggregate => "make the device a tap is heard through",
         }
     }
 }
@@ -109,6 +113,12 @@ pub enum Error {
     #[cfg(target_os = "macos")]
     #[error("the process carries no bundle identifier, which notifications need")]
     NoBundle,
+    #[cfg(target_os = "macos")]
+    #[error("this macOS has no process tap, which came with macOS 14.2")]
+    NoProcessTap,
+    #[cfg(target_os = "macos")]
+    #[error("there is no output device whose sound could be tapped")]
+    NoOutputToTap,
 }
 
 impl Error {

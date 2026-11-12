@@ -99,7 +99,7 @@ A Mac's parts are described where their subject is, not here:
 | Subject | Rule |
 |---|---|
 | The Core Audio backend: two sinks a device, hog mode, the stream, the clock, hot-plug, volume | `audio.md`'s *The sink*, `realtime.md` |
-| Microphone capture; the desktop cannot be recorded (`Error::DesktopUnheard`) | `audio.md`, `dependencies.md` |
+| Microphone capture | `audio.md`, `dependencies.md` |
 | The window's socket, the registry folder, the bus tried first | `mpris.md`'s *The client's second wire* |
 | Folders, Finder's Trash, keep-awake, the host's name, `open` | `binary.md`, `library.md` |
 | The language | `language.md` |
@@ -159,9 +159,27 @@ replaces the first in Notification Center. A cover is copied into the temporary 
 `resonate-notice-<pid>-<n>` before it is attached, since the system moves an attachment's file into
 its own store. Teardown removes the track's notice. Nothing here has run on a Mac.
 
+## Recording what the Mac plays
+
+**`Listening::Desktop` is a process tap heard through a private aggregate device**
+(`resonate_apple::DesktopTap`, opened for the whole sitting by `coreaudio_listener.rs` and dropped
+after the capture stops): a global stereo `CATapDescription` excluding no process (so, as Linux's
+monitor of the default sink, what Resonate plays is heard too), private and unmuted, made by
+`AudioHardwareCreateProcessTap`, then `AudioHardwareCreateAggregateDevice` over a private
+aggregate whose main sub-device is the default output and whose one sub-tap is the tap (drift
+compensated, started by the aggregate), so the HAL input unit the microphone uses
+(`coreaudio_capture.rs`, `Capture::open` taking the `Device`) reads the aggregate as it would any
+input and `Sitting::until_full` reopens it on the same tap. **The tap's calls are looked up when
+asked, never linked**: they came with macOS 14.2 and the bundle runs from 13, so `dlsym` finds
+`AudioHardwareCreateProcessTap` and `AudioHardwareDestroyProcessTap` and the class is looked up by
+name; a system without them is `Error::NoProcessTap`, which `resonate-listen` answers as
+`Error::DesktopUnheard`. The system asks the listener once (*System Audio Recording*, the bundle's
+`NSAudioCaptureUsageDescription`); a refusal reads as silence, which the sitting answers as
+`NothingHeard`. Dropping the tap destroys the aggregate, then the tap. Nothing here has run on a Mac.
+
 ## Not on macOS yet
 
-Recording the desktop's sound; Game Mode;
+Game Mode;
 the launcher's icon following the accent (`plain_launcher.rs`
 does nothing, as on Windows).
 

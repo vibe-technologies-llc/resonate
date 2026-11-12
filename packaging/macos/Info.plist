@@ -30,6 +30,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Resonate listens for a few seconds when you ask it to name the song playing around you, and while it measures your headphones or your room.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Resonate records a few seconds of what this Mac plays when you ask it to name the song playing on it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Resonate finds your other devices on this network and keeps them in step, sending songs directly between them, and plays to the streamers and amplifiers you choose on it.</string>
 	<key>NSBonjourServices</key>

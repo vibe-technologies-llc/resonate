@@ -126,6 +126,10 @@ impl Device {
         )
     }
 
+    pub(crate) const fn of(id: u32) -> Self {
+        Self(id)
+    }
+
     pub const fn id(self) -> u32 {
         self.0
     }

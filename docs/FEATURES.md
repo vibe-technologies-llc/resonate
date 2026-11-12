@@ -75,7 +75,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   carries 24 bits through its Float32 path exactly, the callback's host time as the moment a buffer
   reaches the device, a device's volume and mute (element 0 or the stereo pair, and whether a
   settable scalar is the device's own), listeners for hot-plug and a rate another program moved, a
-  microphone through the HAL input unit and its permission prompt, the measuring sweep, Now Playing
+  microphone through the HAL input unit and its permission prompt, the desktop's sound through a
+  process tap and its aggregate device (the *System Audio Recording* prompt, the tap's format, a
+  macOS older than 14.2 refused by name), song-change notifications (the permission prompt, the
+  buttons, the cover attached, a press reaching the zone that raised it), `resonate play` running
+  the main loop for the media keys, playing on with the window closed, the measuring sweep, Now Playing
   (whether setting the playback state alone makes an unbundled process the Now Playing app, the
   media keys, the cover, the seek bar), the window (shaders compiled at start, the header beside the
   traffic lights and their size on macOS 26, dragging and double click on it, the bundle's fonts
@@ -86,9 +90,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   FAT and exFAT volumes named portably, the YouTube Music sign-in window on WKWebView, and the disk
   image (Gatekeeper on an ad-hoc signature, the document types and the link scheme registering,
   the icon)
-- [M] The desktop's sound cannot be recorded on macOS (`Listening::Desktop` is
-  `Error::DesktopUnheard`, the Listen pane offers the microphone alone): a Core Audio process tap
-  (macOS 14.2) is not built
 - [S] The exclusive sink on macOS offers no 32-bit integer word and no layout past stereo, and asks
   for no buffer size: the HAL unit's Float32 path holds 24 bits, a true integer mode (an IOProc on
   an unmixable format) is not built, and a device of more channels plays as its preferred pair
