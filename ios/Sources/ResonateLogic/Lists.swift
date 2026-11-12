@@ -143,6 +143,26 @@ public struct NextPlacement: Sendable {
     }
 }
 
+public struct SongOrdering: Equatable, Hashable, Sendable {
+    public var order: TrackOrder
+    public var descending: Bool
+
+    public init(order: TrackOrder, descending: Bool) {
+        self.order = order
+        self.descending = descending
+    }
+
+    public static let newestFirst = SongOrdering(order: .added, descending: true)
+
+    public func favourites() -> TrackFilter {
+        var filter = defaultTrackFilter()
+        filter.favourites = true
+        filter.order = order
+        filter.descending = descending
+        return filter
+    }
+}
+
 public enum SongBrowsing {
     public static var defaultFilter: TrackFilter {
         var filter = defaultTrackFilter()

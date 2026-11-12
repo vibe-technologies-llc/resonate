@@ -270,6 +270,23 @@ import Testing
     }
 }
 
+@Suite struct SongOrderingTests {
+    @Test func favouritesOpenNewestFirstAsTheSongsPageDoes() {
+        #expect(SongOrdering.newestFirst.order == SongBrowsing.defaultFilter.order)
+        #expect(SongOrdering.newestFirst.descending == SongBrowsing.defaultFilter.descending)
+    }
+
+    @Test func anOrderingAsksForTheFavouritesAloneInThatOrder() {
+        let filter = SongOrdering(order: .plays, descending: true).favourites()
+
+        #expect(filter.favourites)
+        #expect(filter.order == .plays)
+        #expect(filter.descending)
+        #expect(filter.text.isEmpty)
+        #expect(filter.genre.isEmpty)
+    }
+}
+
 @Suite struct FilterChipTests {
     @Test func theDefaultFilterHasNoChips() {
         #expect(FilterChip.of(SongBrowsing.defaultFilter).isEmpty)

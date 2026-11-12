@@ -229,6 +229,12 @@ struct LibraryView: View {
                 }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
+            if page == .albums || page == .artists {
+                ToolbarItem(placement: .topBarTrailing) {
+                    CollectionOrderMenu(grouping: page == .albums ? .albums : .artists)
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
             LibraryToolbar()
         }
         .onAppear { library.features.loadPlaylists() }
@@ -1307,19 +1313,33 @@ struct FavouritesView: View {
     @Environment(Navigation.self) private var navigation
     @State private var search = ""
     @State private var keyed = SongKeys.empty
-    @State private var keyedAt = -1
+    @State private var keyedAt: Listed?
     @State private var found: [Track] = []
     @State private var foundFor = ""
+    @State private var ordered: OrderedFavourites?
 
     private struct Asked: Equatable {
-        let epoch: Int
+        let listed: Listed
         let folded: String
     }
 
+    private struct Listed: Equatable {
+        let epoch: Int
+        let ordering: SongOrdering
+    }
+
+    private struct OrderedFavourites {
+        let listed: Listed
+        let tracks: [Track]
+    }
+
     var body: some View {
+        @Bindable var library = library
         let folded = search.trimmingCharacters(in: .whitespacesAndNewlines).searchFolded
         let favourites = library.favouriteTracks
-        let shown = folded.isEmpty ? favourites : found
+        let listing = Listed(epoch: library.favouriteEpoch, ordering: library.favouritesOrder)
+        let listed = listing.ordering == .newestFirst ? favourites : ordered?.tracks ?? favourites
+        let shown = folded.isEmpty ? listed : found
         List {
             CollectionHeader(title: said("favourites.title"), subtitle: "", tracks: favourites) {
                 FavouritesArtwork(corner: CollectionCover.corner)
@@ -1345,16 +1365,16 @@ struct FavouritesView: View {
         }
         .listStyle(.plain)
         .searchable(text: $search, prompt: "favourites.search.prompt")
-        .task(id: Asked(epoch: library.favouriteEpoch, folded: folded)) {
+        .task(id: listing) { await order(listing) }
+        .task(id: Asked(listed: listing, folded: folded)) {
             guard !folded.isEmpty else { return }
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
-            let epoch = library.favouriteEpoch
-            if keyedAt != epoch {
-                let tracks = library.favouriteTracks
+            if keyedAt != listing {
+                let tracks = listed
                 keyed = (try? await Work.onScreen { SongKeys.of(tracks) }) ?? keyed
                 guard !Task.isCancelled else { return }
-                keyedAt = epoch
+                keyedAt = listing
             }
             let keys = keyed
             let matching = (try? await Work.onScreen { keys.matching(folded) }) ?? []
@@ -1363,8 +1383,37 @@ struct FavouritesView: View {
             foundFor = folded
         }
         .navigationTitle("favourites.title")
-        .toolbar { CollectionMenu(tracks: favourites) }
+        .toolbar {
+            if !favourites.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) { SongOrderMenu(ordering: $library.favouritesOrder) }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
+            ToolbarItem(placement: .topBarTrailing) { CollectionMenu(tracks: favourites) }
+        }
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func order(_ listing: Listed) async {
+        guard listing.ordering != .newestFirst else {
+            ordered = nil
+            return
+        }
+        guard ordered?.listed != listing else { return }
+        let filter = listing.ordering.favourites()
+        let favourites = library.favouriteTracks
+        do {
+            let native = try await library.player()
+            let read = try await Work.onScreen {
+                let held = Set(favourites.map(\.id))
+                return try Library.everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) }
+                    .filter { held.contains($0.id) }
+            }
+            guard !Task.isCancelled else { return }
+            ordered = OrderedFavourites(listed: listing, tracks: read)
+        } catch {
+            guard !Task.isCancelled else { return }
+            library.report(error)
+        }
     }
 }
 

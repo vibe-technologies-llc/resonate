@@ -907,7 +907,14 @@ every route change (a pair of headphones at the same rate included), not from th
   Statistics are Home's), *Saved for later* while not searching, then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
   own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
-  every one as rows with its own search. **A shelf builds the cards on screen** (`Shelf`,
+  every one as rows with its own search; the Albums and Artists pages carry a *Sort by* menu in the
+  toolbar (`CollectionOrderMenu`) over the order the Songs page's picker sets
+  (`Library.collectionOrder`, which the home's shelves follow too). **Favourites sorts too**
+  (`SongOrderMenu`, the Songs page's orders and *Descending*): newest added first is
+  `favouriteTracks` as kept, and any other `Library.favouritesOrder` (a `SongOrdering`, kept for the
+  session) is read in Rust (`filtered_tracks` of the favourites alone, `SongOrdering.favourites`) on
+  `Work.onScreen`, keyed by `favouriteEpoch` and the order, never sorted in Swift; its search
+  matches in the order shown. **A shelf builds the cards on screen** (`Shelf`,
   `Layouts.swift`: a `LazyHStack` in a horizontal `ScrollView`, an `HStack` at accessibility text
   sizes, where titles wrap and a lazy row's height would move as taller cards arrive): the three
   shelves and Home's *Made for you* use it, since an `HStack` built all twelve cards (four

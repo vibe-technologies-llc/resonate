@@ -75,6 +75,7 @@ struct SongsView: View {
                     FilterChips()
                 } else {
                     CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
+                        .pickerStyle(.menu)
                 }
             }
             .listRowSeparator(.hidden)
@@ -203,7 +204,33 @@ struct CollectionOrderPicker: View {
             Text("collections.order.added").tag(CollectionOrder.added)
             Text("collections.order.plays").tag(CollectionOrder.plays)
         }
-        .pickerStyle(.menu)
+    }
+}
+
+struct CollectionOrderMenu: View {
+    @Environment(Library.self) private var library
+    let grouping: Grouping
+
+    var body: some View {
+        @Bindable var library = library
+        Menu("filter.sort-by", systemImage: "arrow.up.arrow.down") {
+            CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
+                .pickerStyle(.inline)
+        }
+    }
+}
+
+struct SongOrderMenu: View {
+    @Binding var ordering: SongOrdering
+
+    var body: some View {
+        Menu("filter.sort-by", systemImage: "arrow.up.arrow.down") {
+            Picker("filter.sort-by", selection: $ordering.order) {
+                ForEach(FilterChip.orderNames, id: \.1) { Text($0.1).tag($0.0) }
+            }
+            .pickerStyle(.inline)
+            Toggle("filter.descending", isOn: $ordering.descending)
+        }
     }
 }
 
