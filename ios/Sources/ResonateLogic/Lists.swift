@@ -110,6 +110,27 @@ public func sharedQuality(_ tracks: [Track]) -> String? {
     return quality.isEmpty ? nil : quality
 }
 
+public struct RowWindow: Equatable, Sendable {
+    public static let opening = 300
+    public static let widenedBy = 300
+
+    public private(set) var atMost = RowWindow.opening
+
+    public init() {}
+
+    public func shown(of rows: Int) -> Int {
+        min(rows, atMost)
+    }
+
+    public func holdsMore(than rows: Int) -> Bool {
+        rows > atMost
+    }
+
+    public mutating func widen() {
+        atMost += Self.widenedBy
+    }
+}
+
 public struct QueueParts: Sendable {
     public let history: Range<Int>
     public let next: Range<Int>

@@ -474,11 +474,17 @@ struct AddSongsSheet: View {
     @State private var listed: [Track] = []
     @State private var keying = true
     @State private var discarding = false
+    @State private var window = RowWindow()
 
     var body: some View {
         NavigationStack {
-            List(listed, id: \.id) { track in
-                ChoosableSong(track: track, chosen: chosen)
+            List {
+                ForEach(listed.prefix(window.shown(of: listed.count)), id: \.id) { track in
+                    ChoosableSong(track: track, chosen: chosen)
+                }
+                if window.holdsMore(than: listed.count) {
+                    MoreRows { window.widen() }
+                }
             }
             .overlay {
                 if keying || !library.catalogRead {
@@ -511,6 +517,7 @@ struct AddSongsSheet: View {
                 let folded = Self.folded(search)
                 let found = (try? await Work.onScreen { keys.matching(folded) }) ?? []
                 guard !Task.isCancelled else { return }
+                window = RowWindow()
                 listed = found
             }
             .toolbar {

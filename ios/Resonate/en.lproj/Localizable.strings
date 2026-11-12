@@ -1366,6 +1366,7 @@
 "songs.filtered.none" = "No songs match these filters";
 "songs.filtered.none.detail" = "Change or reset the filters to see the rest of your library.";
 "songs.filtered.reset" = "Reset filters";
+"songs.more.reading" = "Reading more songs";
 "songs.search.prompt" = "Search your music";
 "songs.show" = "Show";
 "spotify.account" = "Your account";

@@ -1228,7 +1228,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   so paging 100 000 songs filters and sorts once; the index is built outside the catalog's lock
   and by one caller at a time (`Searching::index`). Albums and artists with 40
   rows or more ordered by name get a section per letter run and the section index. All songs is
-  always a flat list with no letter headings or alphabet index, ordered by Added descending by
+  always a flat list with no letter headings or alphabet index, **drawn as a window** (`RowWindow`:
+  its first 300 rows, 300 more each time its end row, `MoreRows`, scrolls in, back to 300 when the
+  filter changes; the add-songs sheet the same, back to 300 with each search's answer), since one
+  `ForEach` of the whole library had its ids gathered and diffed on the main thread at every
+  publish, several milliseconds past ten thousand songs; a press still plays the whole list, ordered by Added descending by
   default (`SongBrowsing.defaultFilter`). Resetting filters or clearing an order chip returns to
   newest added first; that default draws no filter chip. Other sort orders remain in Filter and sort. `EmptyLibrary`
   shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.

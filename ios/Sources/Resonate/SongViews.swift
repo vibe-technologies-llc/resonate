@@ -111,8 +111,15 @@ struct BrowsedMusic: View {
 
 struct BrowsedSongs: View {
     @Environment(Library.self) private var library
+    @State private var window = RowWindow()
 
     var body: some View {
+        Group { listed }
+            .onChange(of: library.filter) { window = RowWindow() }
+    }
+
+    @ViewBuilder
+    private var listed: some View {
         let tracks = library.tracks
         if library.tracksRead, tracks.isEmpty, library.filtering {
             ContentUnavailableView {
@@ -125,7 +132,10 @@ struct BrowsedSongs: View {
             }
             .listRowSeparator(.hidden)
         } else {
-            ForEach(tracks, id: \.id) { row($0, among: tracks) }
+            ForEach(tracks.prefix(window.shown(of: tracks.count)), id: \.id) { row($0, among: tracks) }
+            if window.holdsMore(than: tracks.count) {
+                MoreRows { window.widen() }
+            }
         }
     }
 
@@ -133,6 +143,18 @@ struct BrowsedSongs: View {
         TrackRow(track: track) {
             library.play(tracks, selected: track)
         }
+    }
+}
+
+struct MoreRows: View {
+    let widen: () -> Void
+
+    var body: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel("songs.more.reading")
+            .listRowSeparator(.hidden)
+            .onAppear(perform: widen)
     }
 }
 

@@ -15,9 +15,6 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## iOS
-- [M] Songs and the add-songs sheet hand SwiftUI the whole filtered library as one `ForEach`, whose
-  ids are gathered and diffed on the main thread at every publish (several milliseconds past ten
-  thousand songs); the queue is a window (`QueueParts`), these are not
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the

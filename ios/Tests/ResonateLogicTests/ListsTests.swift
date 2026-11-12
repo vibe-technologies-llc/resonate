@@ -270,6 +270,22 @@ import Testing
     }
 }
 
+@Suite struct RowWindowTests {
+    @Test func aWindowOpensOnItsFirstRowsAndWidensByAPage() {
+        var window = RowWindow()
+
+        #expect(window.shown(of: 10) == 10)
+        #expect(!window.holdsMore(than: 10))
+        #expect(window.shown(of: 10_000) == RowWindow.opening)
+        #expect(window.holdsMore(than: 10_000))
+
+        window.widen()
+
+        #expect(window.shown(of: 10_000) == RowWindow.opening + RowWindow.widenedBy)
+        #expect(!window.holdsMore(than: RowWindow.opening + RowWindow.widenedBy))
+    }
+}
+
 @Suite struct SongOrderingTests {
     @Test func favouritesOpenNewestFirstAsTheSongsPageDoes() {
         #expect(SongOrdering.newestFirst.order == SongBrowsing.defaultFilter.order)
