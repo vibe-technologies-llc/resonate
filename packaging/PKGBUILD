@@ -1,7 +1,7 @@
 pkgbase=resonate-player-git
 pkgname=('resonate-player-git' 'resonate-signin-git')
 _pkgname=resonate
-pkgver=0.9.0.r2249.g1f12699b
+pkgver=0.9.0.r2312.ge26f05d9
 pkgrel=1
 pkgdesc='A high-fidelity music player with native PipeWire output'
 arch=('x86_64' 'aarch64')
