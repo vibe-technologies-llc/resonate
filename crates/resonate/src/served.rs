@@ -1,22 +1,19 @@
 use std::path::PathBuf;
 #[cfg(feature = "online")]
-use std::{
-    io::{self, Read, Seek, SeekFrom},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 #[cfg(all(feature = "ui", feature = "online"))]
 use parking_lot::Mutex;
 #[cfg(feature = "online")]
 use parking_lot::RwLock;
 use resonate_codec::Sources;
-#[cfg(feature = "online")]
-use resonate_codec::{FormatHint, Media, MediaProvider, MediaStream};
 use resonate_core::MediaLocation;
 #[cfg(feature = "online")]
 use resonate_core::SourceId;
 #[cfg(feature = "online")]
-use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song, Streamed};
+use resonate_library::PlayedInPlace;
+#[cfg(feature = "online")]
+use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song};
 
 #[cfg(feature = "online")]
 use crate::providers::{self, InPlace};
@@ -127,10 +124,10 @@ impl Served {
     #[cfg(feature = "online")]
     pub fn sources(&self, sources: Sources) -> Sources {
         self.schemes().into_iter().fold(sources, |sources, scheme| {
-            sources.and(Arc::new(ServedSongs {
-                scheme,
-                slot: Arc::clone(&self.slot),
-            }))
+            let slot = Arc::clone(&self.slot);
+            sources.and(Arc::new(PlayedInPlace::new(scheme, move |scheme| {
+                serving(&slot.read(), scheme)
+            })))
         })
     }
 
@@ -145,7 +142,7 @@ impl Served {
             tracing::warn!(%location, "this service's songs are not played from here");
             return Some(Vec::new());
         }
-        let service = serving(&self.slot.read(), location)?;
+        let service = serving(&self.slot.read(), location.source())?;
         let named = service.named_by(location)?;
         if let Named::Song(_) = named {
             return Some(vec![location.clone()]);
@@ -202,53 +199,11 @@ impl Served {
 }
 
 #[cfg(feature = "online")]
-fn serving(
-    services: &[Arc<dyn PlaysInPlace>],
-    location: &MediaLocation,
-) -> Option<Arc<dyn PlaysInPlace>> {
+fn serving(services: &[Arc<dyn PlaysInPlace>], scheme: &SourceId) -> Option<Arc<dyn PlaysInPlace>> {
     services
         .iter()
-        .find(|service| service.scheme() == location.source())
+        .find(|service| service.scheme() == scheme)
         .cloned()
-}
-
-#[cfg(feature = "online")]
-struct ServedSongs {
-    scheme: SourceId,
-    slot: Arc<RwLock<InPlace>>,
-}
-
-#[cfg(feature = "online")]
-impl MediaProvider for ServedSongs {
-    fn source(&self) -> &SourceId {
-        &self.scheme
-    }
-
-    fn open(&self, location: &MediaLocation) -> resonate_codec::Result<Media> {
-        let service = serving(&self.slot.read(), location);
-        let named = service
-            .as_ref()
-            .and_then(|service| service.named_by(location));
-        let (Some(service), Some(Named::Song(id))) = (service, named) else {
-            return Err(resonate_codec::Error::LocatorNotUsable {
-                location: location.clone(),
-            });
-        };
-        let streamed = service
-            .streamed(&id)
-            .map_err(|error| resonate_codec::Error::Io {
-                location: location.clone(),
-                source: io::Error::other(error),
-            })?;
-        let hint = streamed
-            .media_type
-            .as_deref()
-            .map(|media_type| FormatHint::MediaType(Box::from(media_type)));
-        Ok(Media {
-            stream: Box::new(Streaming(streamed)),
-            hint,
-        })
-    }
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]
@@ -446,34 +401,6 @@ impl resonate_ui::Serves for ServedBy {
             }
         };
         self.0.cover(&cover, side)
-    }
-}
-
-#[cfg(feature = "online")]
-struct Streaming(Streamed);
-
-#[cfg(feature = "online")]
-impl Read for Streaming {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-#[cfg(feature = "online")]
-impl Seek for Streaming {
-    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
-        self.0.seek(to)
-    }
-}
-
-#[cfg(feature = "online")]
-impl MediaStream for Streaming {
-    fn is_seekable(&self) -> bool {
-        self.0.is_seekable()
-    }
-
-    fn byte_len(&self) -> Option<u64> {
-        self.0.length()
     }
 }
 
@@ -703,7 +630,7 @@ fn songs_table(service: &dyn PlaysInPlace, songs: &[Song]) -> Table {
 mod tests {
     use std::{
         ffi::OsString,
-        io::{BufRead, BufReader, Write},
+        io::{self, BufRead, BufReader, Read, Write},
         net::{TcpListener, TcpStream},
         thread,
     };

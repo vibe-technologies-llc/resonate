@@ -455,11 +455,14 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   carries (`ProviderOp::Stream`). The `Streamed` it answers names the `Content-Type` (the decoder's
   hint, since the key carries no extension) and is `Streamed::seeking` over a
   `resonate_fetch::Seeking` (`a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there`).
-- **The binary makes every service played in place a `MediaProvider`** (`served.rs`, under
-  `online`, since no provider crate may see `resonate-codec`): `Served::of(config, settings)` holds
+- **Every service played in place is a `MediaProvider` through `resonate_library::PlayedInPlace`**
+  (`played_in_place.rs`; no provider crate may see `resonate-codec`, and the library reaches both
+  seams), one per scheme, which opens a song through whichever service the closure it was made with
+  finds for the scheme, so the binary and the phones share it over their own slots. The binary's
+  (`served.rs`, under `online`): `Served::of(config, settings)` holds
   the `PlaysInPlace` services `providers::in_place_named` builds from the same settings and `online`
   switch the provider registry reads, in the registry's order; `Served::sources` adds one
-  `ServedSongs` per service's scheme to every `Sources` that plays (`playing_from`: `play`, the
+  `PlayedInPlace` per service's scheme to every `Sources` that plays (`playing_from`: `play`, the
   window and its zones) and to the one reading arguments, so a `subsonic:` (or `tidal:`, …) URI is
   the service's only where it is set (`a_song_uri_is_a_file_here_unless_a_server_is_named_and_then_it_is_queued_as_named`,
   `a_uri_of_a_service_not_set_is_a_file_here`). A stream is seekable where `Streamed::is_seekable`
@@ -479,7 +482,7 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   (`a_cover_is_asked_for_by_the_name_the_server_gives_it_and_a_song_is_asked_what_that_is`,
   `a_cover_the_server_does_not_hold_is_the_refusal_it_carries`).
 - **The window's accounts are live, the command line's are fixed.** `Served::for_the_window` holds
-  the services in a slot (`Arc<RwLock<Vec<Arc<dyn PlaysInPlace>>>>`) its `ServedSongs` read on every
+  the services in a slot (`Arc<RwLock<Vec<Arc<dyn PlaysInPlace>>>>`) its `PlayedInPlace` providers read on every
   open, one for each of `PLAYED_IN_PLACE` (`subsonic`, `tidal`, `resonate`, `hifi-api`,
   `monochrome`) always registered in the window's `Sources`; `Served::serving()` is the
   `resonate_ui::Serving` seam, which on each call builds the services from the window's live

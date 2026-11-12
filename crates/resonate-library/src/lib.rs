@@ -36,6 +36,7 @@ mod organise;
 mod outcomes;
 mod paged;
 mod pass;
+mod played_in_place;
 mod playlist;
 mod pls;
 mod query;
@@ -157,6 +158,7 @@ pub use crate::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
         RetagHandle, ScanHandle, TakeInHandle, VaultWeighingHandle,
     },
+    played_in_place::PlayedInPlace,
     playlist::{Filled, Mirrored, cuts_listed_in},
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,

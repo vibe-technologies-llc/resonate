@@ -847,10 +847,10 @@ while hosted services are declined, a hifi-api account with a key is the `resona
 TIDAL account hands a rotated token to `refreshed_tidal_token`), the first account a scheme wins. `MusicProvider::Jellyfin` is in-place only: `Downloads::fetches_for_wants` leaves it out of `find`, so a want is never asked of it (`a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want`).
 The list is compared with the one held, so a call with the same accounts builds nothing and every
 read may bind first; a service whose account stands keeps its `Arc` (one TIDAL session). One slot
-(`Arc<RwLock<Vec<Service>>>`) is read on each open by a `ServedSongs` per scheme of
+(`Arc<RwLock<Vec<Service>>>`) is read on each open by a `resonate_library::PlayedInPlace` per scheme of
 `PLAYED_IN_PLACE`, each a `MediaProvider` registered in every `Sources` the boundary makes
 (`Served::sources`), so a stream of known length is probed and seeked by range and one read onward
-is spooled (the binary's `ServedSongs` is the same thing over its `Sources`; no provider crate may
+is spooled (the binary registers the same provider over its own slot; no provider crate may
 see `resonate-codec`). `served_services` lists them (`ServedService`: scheme and title).
 `served_first_page(service)` (a Subsonic server's artists, a TIDAL account's favourites with its
 favourite mixes among the albums as records of the same shape, a mix's uri being `<scheme>:mix/<id>`,

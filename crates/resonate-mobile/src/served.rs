@@ -1,14 +1,11 @@
-use std::{
-    collections::BTreeMap,
-    io::{self, Read, Seek, SeekFrom},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use parking_lot::{Mutex, RwLock};
-use resonate_codec::{FormatHint, Media, MediaProvider, MediaStream, Sources};
+use resonate_codec::Sources;
 use resonate_core::{MediaLocation, Resumable, Resumption, SourceId, TrackId};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Unclaimed};
-use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song, Streamed};
+use resonate_library::PlayedInPlace;
+use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song};
 
 use crate::{
     Error, MobilePlayer, Result, Track,
@@ -184,10 +181,13 @@ impl Served {
             .iter()
             .filter_map(|scheme| SourceId::new(scheme).ok())
             .fold(sources, |sources, scheme| {
-                sources.and(Arc::new(ServedSongs {
-                    scheme,
-                    slot: Arc::clone(&self.slot),
-                }))
+                let slot = Arc::clone(&self.slot);
+                sources.and(Arc::new(PlayedInPlace::new(scheme, move |scheme| {
+                    slot.read()
+                        .iter()
+                        .find(|service| service.plays.scheme() == scheme)
+                        .map(|service| Arc::clone(&service.plays))
+                })))
             })
     }
 
@@ -589,74 +589,10 @@ fn paused(items: Vec<QueueItem>, row: usize) -> Resumption {
     }
 }
 
-struct ServedSongs {
-    scheme: SourceId,
-    slot: Slot,
-}
-
-impl MediaProvider for ServedSongs {
-    fn source(&self) -> &SourceId {
-        &self.scheme
-    }
-
-    fn open(&self, location: &MediaLocation) -> resonate_codec::Result<Media> {
-        let plays = self
-            .slot
-            .read()
-            .iter()
-            .find(|service| service.plays.scheme() == location.source())
-            .map(|service| Arc::clone(&service.plays));
-        let named = plays.as_ref().and_then(|plays| plays.named_by(location));
-        let (Some(plays), Some(Named::Song(id))) = (plays, named) else {
-            return Err(resonate_codec::Error::LocatorNotUsable {
-                location: location.clone(),
-            });
-        };
-        let streamed = plays
-            .streamed(&id)
-            .map_err(|error| resonate_codec::Error::Io {
-                location: location.clone(),
-                source: io::Error::other(error),
-            })?;
-        let hint = streamed
-            .media_type
-            .as_deref()
-            .map(|media_type| FormatHint::MediaType(Box::from(media_type)));
-        Ok(Media {
-            stream: Box::new(Streaming(streamed)),
-            hint,
-        })
-    }
-}
-
-struct Streaming(Streamed);
-
-impl Read for Streaming {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-impl Seek for Streaming {
-    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
-        self.0.seek(to)
-    }
-}
-
-impl MediaStream for Streaming {
-    fn is_seekable(&self) -> bool {
-        self.0.is_seekable()
-    }
-
-    fn byte_len(&self) -> Option<u64> {
-        self.0.length()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
-        io::{BufRead, BufReader, Write},
+        io::{self, BufRead, BufReader, Read, Write},
         net::{TcpListener, TcpStream},
         thread,
     };
@@ -666,6 +602,7 @@ mod tests {
         ChannelLayout, Frames, SampleFormat, SampleRate, StreamSpec, TrackId, ZoneId,
     };
     use resonate_engine::{PlaybackState, PlayerState, TrackState};
+    use resonate_providers::Streamed;
 
     use super::*;
     use crate::{
