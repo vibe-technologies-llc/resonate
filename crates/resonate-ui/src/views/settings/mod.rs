@@ -1384,3 +1384,6 @@ fn action(
         cx,
     )
 }
+
+#[cfg(test)]
+mod pages;

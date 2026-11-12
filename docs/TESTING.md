@@ -131,10 +131,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `read_response`), the AutoEq index whose `DeviceId::new` keeps `..` out of a path
   (`catalogue.rs`), and `probe_scanned` and `probe_pictured`, which the `probe` target never calls;
   a release build aborts on a panic in any of them
-- [M · 0.8.1] The settings pane changes as often as `root.rs` and is held by almost nothing:
-  `views/settings/mod.rs` (107 commits) and `appearance.rs` hold no test, `output.rs` one and
-  `equaliser.rs` four, and `driven.rs` only opens a page; each page opened, a setting changed and
-  the `SettingChange` written would pin it
 - [M · 0.8.1] The phones' search is evaluated in memory (`resonate-mobile`'s `search.rs`:
   `term_holds`, `shaped`) and the desktop's as SQL (`db.rs`'s `Term`), over one grammar, and no
   test runs the same rows and queries through both, so a `Term` added to one is answered otherwise
