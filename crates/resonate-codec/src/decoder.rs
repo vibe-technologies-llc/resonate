@@ -667,7 +667,7 @@ impl Decoder {
     }
 
     #[cfg(test)]
-    pub fn open_reader_span<R>(
+    pub(crate) fn open_reader_span<R>(
         reader: R,
         location: &MediaLocation,
         span: FrameSpan,

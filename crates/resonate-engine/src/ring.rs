@@ -438,7 +438,8 @@ impl RingProducer {
         self.fader.fading.open();
     }
 
-    pub fn is_fading_out(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_fading_out(&self) -> bool {
         self.fader.fading.read() != Fading::Open
     }
 

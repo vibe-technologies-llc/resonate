@@ -177,11 +177,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   for a JPEG's transcode, though `jxl-encoder` 0.3.4 encodes losslessly and carries an ICC profile,
   which would let a cover with a profile become JXL too (`vault.md` keeps it as it came); whether it
   is as small and as fast as zune at its highest effort is unmeasured
-- [S] Dead code hides behind allowances and tests: `resonate-mpris`'s `blocking.rs` allows dead code
-  over the whole file, so `receive_all_signals` and `ObjectServer::at`, which nothing calls, are
-  never warned; `Sync::unconsulted`, which `sync.md` names as how the consulting seam is taken away,
-  is never called; `Decoder::open_reader_span` and `Producer::is_fading_out` are public for tests
-  alone
 
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its

@@ -931,8 +931,7 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   The phones' catalogs ask and answer on the same pacing, the service being the same.
 - **A lookup is asked of a device, and the answers each kept travel device to device**
   (`consulted.rs`, `musicbrainz.md`). The seam is `Consultable` (`consult`, `kept_after`,
-  `kept_mark`, `take_kept`), handed to a running `Sync` by `consult_with` and taken away by
-  `unconsulted`. The payloads are opaque bytes, since this crate may not see the library's
+  `kept_mark`, `take_kept`), handed to a running `Sync` by `consult_with` for the life of the service. The payloads are opaque bytes, since this crate may not see the library's
   vocabulary.
   - **Asking a lookup.** `ToPeer::Consult` (tag 10, at most `LARGEST_CONSULTATION`) is answered
     `FromPeer::Consulted` (tag 15, at most `LARGEST_CONSULTED`) or `Unconsulted` (16), the latter

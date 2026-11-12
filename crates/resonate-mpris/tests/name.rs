@@ -17,6 +17,7 @@ use zbus::{
 };
 
 #[path = "../src/blocking.rs"]
+#[allow(dead_code)]
 mod blocking;
 
 use blocking::{Connection, Proxy, connection, fdo::DBusProxy};

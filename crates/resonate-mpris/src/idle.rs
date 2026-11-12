@@ -44,6 +44,7 @@ impl Gripping {
 }
 
 pub(crate) struct Awake {
+    connection: Connection,
     proxy: Proxy<'static>,
     reason: String,
     request: Option<OwnedObjectPath>,
@@ -65,6 +66,7 @@ impl Awake {
             .map_err(|source| Error::bus(BusOp::Connect, source))?;
 
         Ok(Self {
+            connection: connection.clone(),
             proxy,
             reason: words::idle::playing(host.identity()),
             request: None,
@@ -94,18 +96,13 @@ impl Awake {
         let Some(request) = self.request.take() else {
             return;
         };
-        let closed = Proxy::new(
-            self.proxy.connection(),
-            PORTAL,
-            request.into_inner(),
-            REQUEST,
-        )
-        .map_err(|source| Error::bus(BusOp::Connect, source))
-        .and_then(|request| {
-            request
-                .call::<_, _, ()>("Close", &())
-                .map_err(|source| Error::bus(BusOp::Release, source))
-        });
+        let closed = Proxy::new(&self.connection, PORTAL, request.into_inner(), REQUEST)
+            .map_err(|source| Error::bus(BusOp::Connect, source))
+            .and_then(|request| {
+                request
+                    .call::<_, _, ()>("Close", &())
+                    .map_err(|source| Error::bus(BusOp::Release, source))
+            });
 
         if let Err(error) = closed {
             tracing::debug!(%error, "the session was left held awake");

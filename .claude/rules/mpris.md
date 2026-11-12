@@ -38,7 +38,9 @@ below, `macos.md`).
   only while a thread is inside it, and handing it to a helper thread between calls lost signals
   under load (`a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever`). Built
   outside, every connection is run by the backend's own helper thread. The integration tests
-  include the file by `#[path]`. An error reply whose name `fdo::Error` defines (`UnknownMethod`,
+  include the file by `#[path]` (each `mod blocking` there allowed dead, since each uses a part), so
+  the crate's own build is warned of every unused wrapper; a wrapper only tests call is
+  `#[cfg(test)]`, and those the integration tests alone reach carry their own `allow(dead_code)`. An error reply whose name `fdo::Error` defines (`UnknownMethod`,
   `InvalidArgs`) reaches a caller as `zbus::Error::FDO`, not `MethodError`.
 - **Engine only via `Player`, front end only via `Host`.** No gpui or library dependency: one
   service serves `resonate play` and the window. Media keys are the desktop's to grab (it calls

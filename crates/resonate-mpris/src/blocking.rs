@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     future::{Future, poll_fn},
     pin::{Pin, pin},
@@ -58,6 +56,8 @@ use zbus::{
 pub(crate) struct Connection(zbus::Connection);
 
 impl Connection {
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn session() -> zbus::Result<Self> {
         block_on(zbus::Connection::session()).map(Self)
     }
@@ -148,6 +148,8 @@ impl Connection {
 pub(crate) struct ObjectServer(zbus::Connection);
 
 impl ObjectServer {
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn at<'p, P, I>(&self, path: P, iface: I) -> zbus::Result<Option<I>>
     where
         I: Interface,
@@ -182,7 +184,9 @@ impl<I: 'static> InterfaceRef<I> {
 pub(crate) mod connection {
     use std::time::Duration;
 
-    use zbus::{ObjectPath, names::WellKnownName, object_server::Interface};
+    #[cfg(test)]
+    use zbus::names::WellKnownName;
+    use zbus::{ObjectPath, object_server::Interface};
 
     use super::{Connection, block_on};
 
@@ -209,6 +213,8 @@ pub(crate) mod connection {
         {
             Ok(Self(self.0.serve_at(path, iface)))
         }
+        #[cfg(test)]
+        #[allow(dead_code)]
         pub(crate) fn name<W>(self, name: W) -> zbus::Result<Self>
         where
             W: TryInto<WellKnownName<'static>>,
@@ -226,7 +232,6 @@ pub(crate) mod connection {
 #[derive(Clone)]
 pub(crate) struct Proxy<'a> {
     inner: zbus::Proxy<'a>,
-    connection: Connection,
 }
 
 impl<'a> Proxy<'a> {
@@ -250,14 +255,7 @@ impl<'a> Proxy<'a> {
             path,
             interface,
         ))
-        .map(|inner| Self {
-            inner,
-            connection: connection.clone(),
-        })
-    }
-
-    pub(crate) const fn connection(&self) -> &Connection {
-        &self.connection
+        .map(|inner| Self { inner })
     }
 
     pub(crate) fn call<'m, M, B, R>(&self, method_name: M, body: &B) -> zbus::Result<R>
@@ -292,6 +290,8 @@ impl<'a> Proxy<'a> {
     {
         block_on(self.inner.set_property(property_name, value))
     }
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn receive_all_signals(
         &self,
     ) -> zbus::Result<Arrivals<zbus::proxy::SignalStream<'static>>> {
@@ -339,6 +339,8 @@ pub(crate) mod fdo {
         pub(crate) fn receive_name_lost(&self) -> zbus::Result<Arrivals<NameLostStream>> {
             block_on(self.0.receive_name_lost()).map(Arrivals)
         }
+        #[cfg(test)]
+        #[allow(dead_code)]
         pub(crate) fn get_name_owner(
             &self,
             name: BusName<'_>,

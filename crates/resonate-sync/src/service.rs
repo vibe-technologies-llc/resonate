@@ -798,10 +798,6 @@ impl Sync {
         let _ = self.commands.send(Command::KeptOwed);
     }
 
-    pub fn unconsulted(&self) {
-        *self.running.answering.consulted.write() = None;
-    }
-
     pub fn ask_to_consult(&self, device: DeviceId, asked: Vec<u8>) -> AskedToConsult {
         let (answer, answered) = std_mpsc::channel();
         let _ = self.commands.send(Command::Consult {
