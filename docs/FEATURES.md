@@ -55,10 +55,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   tests under ConPTY, a tag write carrying NTFS alternate streams and the DACL and owner, and a toast
   shown from the zip under the process's own AppUserModelID have never run on real hardware or a
   real audio endpoint
-- [S · blocked: hardware] The console tests (`tests/console.rs`) skip where `resonate sinks`
-  lists no audio endpoint, which is every hosted runner: `play` answers `NoSink` to its first load
-  with no device, so it leaves before the console can be driven, and a runner cannot be given an
-  endpoint without a driver
 - [S · blocked: hardware] The YouTube Music sign-in window (`resonate-signin`) on WebView2 is
   cross-checked only: whether Google lets the sign-in through there, whether its HttpOnly cookies
   are handed over and whether `yt-dlp` reads the jar as it did on Linux; where it fails the window
