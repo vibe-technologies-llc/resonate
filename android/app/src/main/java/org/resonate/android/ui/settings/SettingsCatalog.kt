@@ -238,6 +238,8 @@ enum class Setting(
             R.string.settings_inner_pairing_code,
             R.string.settings_inner_join_a_group,
             R.string.settings_inner_sync_server,
+            R.string.settings_inner_sync_stun,
+            R.string.settings_inner_sync_certificate,
             R.string.settings_inner_name_other_people_see,
             R.string.settings_inner_only_this_network,
             R.string.settings_inner_mobile_data,

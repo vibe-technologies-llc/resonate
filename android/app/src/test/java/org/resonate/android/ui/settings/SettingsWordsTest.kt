@@ -261,7 +261,7 @@ class SettingsWordsTest {
         assertFalse(canSignInToLastFm(ScrobbleDraft(account.copy(lastfmSecret = ""))))
     }
 
-    private val config = SyncConfig(true, false, "", "", "", false, false, false, false, SyncControl.EVERYTHING)
+    private val config = SyncConfig(true, false, "", "", "", false, false, false, false, SyncControl.EVERYTHING, "", "")
 
     private fun device(
         name: String,
@@ -368,8 +368,12 @@ class SettingsWordsTest {
     fun deviceNameAndServerAreUnsavedOnlyWhenTheyDiffer() {
         val stored = config.copy(device = "Phone", server = "https://sync")
 
-        assertFalse(namesUnsaved(stored, " Phone ", "https://sync"))
-        assertTrue(namesUnsaved(stored, "Tablet", "https://sync"))
+        assertFalse(namesUnsaved(stored, " Phone ", "https://sync", ""))
+        assertTrue(namesUnsaved(stored, "Tablet", "https://sync", ""))
+        assertTrue(namesUnsaved(stored, "Phone", "https://sync", "stun.example.org"))
+        assertFalse(
+            namesUnsaved(stored.copy(stun = "stun.example.org"), "Phone", "https://sync", " stun.example.org ")
+        )
     }
 
     @Test

@@ -626,14 +626,14 @@ impl MobilePlayer {
             .unwrap_or_else(|| HOSTED_SERVER.to_owned())
     }
 
-    fn party_settings(&self, server: Option<String>) -> Result<PartySettings> {
+    pub(crate) fn party_settings(&self, server: Option<String>) -> Result<PartySettings> {
         self.require_online()?;
 
         let server = server.unwrap_or_else(|| self.own_server());
 
         Ok(PartySettings {
             server,
-            trusted: None,
+            trusted: self.syncing.reaching.lock().trusted.clone(),
             name: self.syncing.shared_name.lock().clone(),
             now_nanos: Arc::new(|| Moment::now().nanos()),
         })

@@ -133,11 +133,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   *Checking…* until it ends, as long as the vault is large
 
 ## Sync and together
-- [M · 0.9.0] A phone cannot name a STUN server or the server's certificate: `SyncConfig` carries
-  neither and `resonate-mobile`'s `sync.rs` hands `trusted: None` and `stun: None` to sync and to
-  shared playlists, so a `resonate-server` behind a private CA pairs no phone, and a phone on a
-  `ws` or `wss` server never offers a public address to punch with; the desktop passes both
-  (`sync-server-certificate`, `sync-stun`)
 - [L · 0.9.0] The phones have no *Find another version*: the lookup across services played in
   place and the choice it keeps (`better.rs`, `Library::choose_version`) are the window's, though
   both phones hold every such service; the phones' catalog has no `versions_chosen`, so it wants a

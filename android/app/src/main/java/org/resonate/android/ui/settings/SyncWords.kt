@@ -127,8 +127,8 @@ fun transferProgress(transfer: SyncTransfer): Float? =
     if (transfer.size == 0uL) null
     else (minOf(transfer.received, transfer.size).toDouble() / transfer.size.toDouble()).toFloat()
 
-fun namesUnsaved(stored: SyncConfig, device: String, server: String): Boolean =
-    device.trim() != stored.device || server.trim() != stored.server
+fun namesUnsaved(stored: SyncConfig, device: String, server: String, stun: String): Boolean =
+    device.trim() != stored.device || server.trim() != stored.server || stun.trim() != stored.stun
 
 fun codeLines(code: String, groupsPerLine: Int = 3): String =
     code.split('-').chunked(groupsPerLine).joinToString("-\n") { it.joinToString("-") }

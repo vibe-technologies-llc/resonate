@@ -26,6 +26,8 @@ struct WantedSaving: Sendable {
     let failure: (any Swift.Error)?
 }
 
+private let certificateBytesAtMost = 1_048_576
+
 @MainActor
 @Observable
 final class Features {
@@ -478,6 +480,34 @@ final class Features {
             }
             try await self?.applySync(native)
         }
+    }
+
+    func keepSyncCertificate(_ url: URL) {
+        let name = url.lastPathComponent
+        work { [weak self] native in
+            let pem = try await Work.aside { try Self.certificate(at: url) }
+            try await Work.inSync { try native.syncKeepCertificate(pem: pem) }
+            guard var config = self?.syncConfig else { return }
+            config.certificate = name
+            self?.saveSync(config)
+        }
+    }
+
+    func forgetSyncCertificate() {
+        work { [weak self] native in
+            try await Work.inSync { try native.syncForgetCertificate() }
+            guard var config = self?.syncConfig else { return }
+            config.certificate = ""
+            self?.saveSync(config)
+        }
+    }
+
+    nonisolated private static func certificate(at url: URL) throws -> Data {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: certificateBytesAtMost + 1) ?? Data()
     }
 
     func joinSync(_ code: String) {

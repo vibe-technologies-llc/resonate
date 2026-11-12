@@ -41,7 +41,7 @@ pub use crate::{
     key::{DEVICE_BYTES, Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
     ledger::{Applied, Follow, Ledger, Looked, Me},
     nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
-    quic::{read_frame, send_frame, transport},
+    quic::{check_trusted_certificate, read_frame, send_frame, transport},
     relay::{RELAYED_PORT, Relay},
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER, Mirror,

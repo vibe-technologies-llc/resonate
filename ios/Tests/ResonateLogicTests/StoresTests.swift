@@ -392,6 +392,7 @@ let interactionNotAllowed: Int32 = -25308
         #expect(!read.nearbyOnly)
         #expect(read.key == "")
         #expect(read.server == "")
+        #expect(read.stun == "" && read.certificate == "")
         #expect(!read.favourites && !read.playlists && !read.everything && !read.meteredAllowed)
     }
 
@@ -406,7 +407,9 @@ let interactionNotAllowed: Int32 = -25308
             playlists: true,
             everything: false,
             meteredAllowed: true,
-            control: .transport
+            control: .transport,
+            stun: "stun.example.org:3479",
+            certificate: "private-ca.pem"
         )
 
         try store.writeSync(config)

@@ -42,6 +42,7 @@ use crate::{
 };
 
 mod answers;
+mod certificate;
 mod consulted;
 
 pub(crate) use self::consulted::Layers;
@@ -55,6 +56,8 @@ pub(crate) type Resolving = Arc<dyn Fn(&Recording) -> Option<String> + Send + st
 const LEDGER: &str = "sync.sqlite";
 
 const SHARED_STORE: &str = "shared.sqlite";
+const CERTIFICATE: &str = "sync-server-certificate.pem";
+const STAGED_CERTIFICATE: &str = "sync-server-certificate.staged";
 const STAGING: &str = "sync-staging";
 const RECEIVED: &str = "sync-received";
 #[cfg(not(target_os = "ios"))]
@@ -76,6 +79,7 @@ type Answered<T> = std::result::Result<T, Refused>;
 
 pub(crate) struct Syncing {
     folder: PathBuf,
+    pub(crate) reaching: Mutex<Reaching>,
     pub(crate) shared_name: Mutex<String>,
     shared: Arc<Mutex<Option<Arc<Shared>>>>,
     server: Mutex<Option<String>>,
@@ -85,6 +89,23 @@ pub(crate) struct Syncing {
     kept: std::sync::OnceLock<Option<Arc<resonate_musicbrainz::Kept>>>,
     unmetered: AtomicBool,
     arrivals: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Reaching {
+    pub(crate) trusted: Option<PathBuf>,
+    pub(crate) stun: Option<String>,
+}
+
+impl Reaching {
+    fn of(config: &SyncConfig, folder: &Path) -> Self {
+        let stun = config.stun.trim();
+
+        Self {
+            trusted: (!config.certificate.trim().is_empty()).then(|| folder.join(CERTIFICATE)),
+            stun: (!stun.is_empty()).then(|| stun.to_owned()),
+        }
+    }
 }
 
 struct Running {
@@ -135,6 +156,7 @@ impl Syncing {
     pub(crate) fn under(folder: PathBuf) -> Self {
         Self {
             folder,
+            reaching: Mutex::new(Reaching::default()),
             shared_name: Mutex::new(String::new()),
             shared: Arc::new(Mutex::new(None)),
             server: Mutex::new(None),
@@ -172,6 +194,8 @@ pub struct SyncConfig {
     pub everything: bool,
     pub metered_allowed: bool,
     pub control: driving::SyncControl,
+    pub stun: String,
+    pub certificate: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -305,6 +329,7 @@ pub fn sync_code_in_link(link: String) -> Option<String> {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn sync_start(&self, mut config: SyncConfig) -> Result<SyncStatus> {
+        *self.syncing.reaching.lock() = Reaching::of(&config, &self.syncing.folder);
         let mut running = self.syncing.running.lock();
         if let Some(previous) = running.take() {
             if config.key.trim().is_empty() {
@@ -320,6 +345,14 @@ impl MobilePlayer {
         }
         drop(running);
         Ok(self.sync_status())
+    }
+
+    pub fn sync_keep_certificate(&self, pem: Vec<u8>) -> Result<()> {
+        certificate::keep(&self.syncing.folder, &pem)
+    }
+
+    pub fn sync_forget_certificate(&self) -> Result<()> {
+        certificate::forget(&self.syncing.folder)
     }
 
     pub fn sync_stop(&self) {
@@ -641,6 +674,7 @@ impl MobilePlayer {
         }
         .map_err(|source| Error::sync(SyncOp::Start, source))?;
         let folder = &self.syncing.folder;
+        let reaching = Reaching::of(&config, folder);
         let catalog = Arc::new(DocumentCatalog {
             shared: Arc::clone(&self.syncing.shared),
             catalog: Arc::clone(&self.catalog),
@@ -658,8 +692,8 @@ impl MobilePlayer {
             } else {
                 Server::At(config.server.clone())
             },
-            trusted: None,
-            stun: None,
+            trusted: reaching.trusted.clone(),
+            stun: reaching.stun.clone(),
             key,
             me: Me::called(&config.device, "", THIS_PLATFORM, DEVICE_NAME),
             follow: Follow {
@@ -681,7 +715,7 @@ impl MobilePlayer {
                 Shared::start(
                     SharedSettings {
                         server: Server::At(config.server.clone()),
-                        trusted: None,
+                        trusted: reaching.trusted,
                         store: folder.join(SHARED_STORE),
                         name: self.syncing.shared_name.lock().clone(),
                     },

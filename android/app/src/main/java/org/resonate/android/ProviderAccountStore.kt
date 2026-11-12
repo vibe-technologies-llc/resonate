@@ -112,6 +112,8 @@ class ProviderAccountStore(context: Context) {
             everything = storage.getBoolean("sync-everything", false),
             meteredAllowed = storage.getBoolean("sync-metered-allowed", false),
             control = SyncControls.of(storage.getString("sync-control", null)),
+            stun = storage.getString("sync-stun", "").orEmpty(),
+            certificate = storage.getString("sync-certificate", "").orEmpty(),
         )
 
     @Synchronized
@@ -129,6 +131,8 @@ class ProviderAccountStore(context: Context) {
                 .putBoolean("sync-everything", config.everything)
                 .putBoolean("sync-metered-allowed", config.meteredAllowed)
                 .putString("sync-control", SyncControls.spelt(config.control))
+                .putString("sync-stun", config.stun)
+                .putString("sync-certificate", config.certificate)
         check(edit.commit()) { resources.getString(R.string.provider_sync_not_saved) }
     }
 

@@ -126,6 +126,7 @@ private const val LYRIC_FRAME_EVERY_MS = 33L
 private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 15000L
 private const val DEVICE_NAME_SETTING = "device_name"
+private const val SYNC_CERTIFICATE_BYTES_AT_MOST = 1048576uL
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"
 private const val TELL_FINDINGS_KEY = "tell-findings"
@@ -453,6 +454,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     everything = false,
                     meteredAllowed = false,
                     control = SyncControls.of(null),
+                    stun = "",
+                    certificate = "",
                 )
             }
         together.begin(native)
@@ -686,6 +689,26 @@ class LibraryFeatures(private val context: Context, private val library: Library
         work { native ->
             accounts.writeSync(config)
             applySync(native)
+        }
+    }
+
+    fun keepSyncCertificate(uri: Uri) {
+        work { native ->
+            val read =
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.readUpTo(uri, SYNC_CERTIFICATE_BYTES_AT_MOST)
+                }
+            native.syncKeepCertificate(read.bytes)
+            val config = syncConfig.value ?: return@work
+            saveSync(config.copy(certificate = read.name))
+        }
+    }
+
+    fun forgetSyncCertificate() {
+        work { native ->
+            native.syncForgetCertificate()
+            val config = syncConfig.value ?: return@work
+            saveSync(config.copy(certificate = ""))
         }
     }
 

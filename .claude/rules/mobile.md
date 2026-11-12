@@ -920,6 +920,24 @@ favourite in the service's own mark*)
 `a_service_with_an_account_marks_its_songs_and_one_without_draws_no_star`,
 `a_star_is_refused_for_a_uri_that_is_no_song_and_while_online_is_off`).
 
+## Reaching a private server
+
+`SyncConfig.stun` (a `host` or `host:port`, blank asks none) and `SyncConfig.certificate` (the name of the
+certificate kept, blank trusting none) are the desktop's `sync-stun` and `sync-server-certificate`
+(`sync.md`). The certificate's PEM is the boundary's: `sync_keep_certificate(pem)` stages it beside the
+ledger, requires `resonate_sync::check_trusted_certificate` to find at least one certificate every root
+store accepts and only then renames it over `sync-server-certificate.pem`, so a refused file
+(`Error::SyncCertificate`) leaves the one kept as it was; `sync_forget_certificate` removes it. `sync_start`,
+called with sync on or off, records the pair as `Syncing::reaching` (`Reaching::of`: the kept file's path when
+`certificate` is named, the trimmed STUN or none), which `Sync` and shared playlists receive as `trusted` and
+`stun` and a party as `trusted`, so a `resonate-server` behind a private authority pairs a phone and a phone on
+a `ws` or `wss` server offers its public address. A certificate named but gone fails the start with the sync
+crate's `TrustedCertificate`
+(`a_certificate_kept_is_trusted_by_sync_and_by_parties_and_one_forgotten_is_not`,
+`a_file_that_is_no_certificate_is_refused_and_leaves_the_kept_one_alone`,
+`a_certificate_named_but_gone_stops_sync_from_starting`). Both phones keep the name and the STUN in their
+sync preferences and choose the PEM as a document (`android.md`, `ios.md`).
+
 ## Hosted services on the phones
 
 **`configure_hosted_services(enabled)` is the desktop's `hosted-services` on a phone** (default on, kept

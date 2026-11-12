@@ -649,6 +649,8 @@ mod tests {
                 everything: false,
                 metered_allowed: true,
                 control: SyncControl::Transport,
+                stun: String::new(),
+                certificate: String::new(),
             })
             .expect("sync started");
         let told = player

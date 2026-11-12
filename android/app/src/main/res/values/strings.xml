@@ -1270,6 +1270,8 @@
     <string name="settings_inner_pairing_code">Pairing code</string>
     <string name="settings_inner_join_a_group">Join a group</string>
     <string name="settings_inner_sync_server">Sync server</string>
+    <string name="settings_inner_sync_stun">STUN server</string>
+    <string name="settings_inner_sync_certificate">Server certificate</string>
     <string name="settings_inner_name_other_people_see">Name other people see</string>
     <string name="settings_inner_only_this_network">Only this network</string>
     <string name="settings_inner_mobile_data">Mobile data</string>
@@ -1654,6 +1656,13 @@
     <string name="sync_name_for_others_detail">On a shared playlist or at a party. Empty until you type it.</string>
     <string name="sync_server">Sync server</string>
     <string name="sync_server_detail">The server your devices meet through</string>
+    <string name="sync_stun">STUN server</string>
+    <string name="sync_stun_detail">A host or host:port that tells this device its public address when the server is a web socket. Empty asks none.</string>
+    <string name="sync_certificate">Server certificate</string>
+    <string name="sync_certificate_none">None. The server\'s certificate must come from an authority this phone already trusts.</string>
+    <string name="sync_certificate_kept">%1$s is trusted beside the authorities this phone already trusts</string>
+    <string name="sync_certificate_choose">Choose a certificate</string>
+    <string name="sync_certificate_forget">Forget</string>
     <string name="sync_save">Save</string>
     <string name="sync_saved">Saved</string>
     <string name="sync_keystore">The pairing code stays encrypted with Android Keystore. The server keeps only sealed records it cannot read.</string>

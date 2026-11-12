@@ -131,6 +131,9 @@ pub enum Error {
         source: rustls_pki_types::pem::Error,
     },
 
+    #[error("the trusted certificate {} holds no certificate", path.display())]
+    NoTrustedCertificate { path: PathBuf },
+
     #[error("{server} does not resolve")]
     Resolve {
         server: Box<str>,

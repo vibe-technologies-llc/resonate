@@ -371,6 +371,8 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
             [
                 said("settings.sync-connection.inner.resonate-server"),
                 said("settings.sync-connection.inner.your-own-server"),
+                said("settings.sync-connection.inner.stun-server"),
+                said("settings.sync-connection.inner.server-certificate"),
                 said("settings.sync-connection.inner.this-network-only"),
                 said("settings.sync-connection.inner.device-name"),
             ]
