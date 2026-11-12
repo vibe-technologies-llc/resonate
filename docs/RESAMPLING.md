@@ -32,7 +32,7 @@ the changes this comparison led to (*What changed in Resonate*). `soxr-compariso
   at 0.023 % against 0.053 % of a core, and at 44.1 to 48 kHz answers sooner too
   (16.67 ms against 18.39 ms).
 - **Low latency answers in about a millisecond, for the most work of the four.** It is the one level
-  left summing a polyphase kernel: 1.07 ms, flat to 19.77 kHz, −90.0 dB, 0.097 %.
+  left summing a polyphase kernel: 1.07 ms, flat to 19.77 kHz, −90.0 dB, 0.068 %.
 - **The price is latency, and a longer hop is what buys the speed.** Very high's peak leaves
   103.33 ms after its impulse at 44.1 to 48 kHz and 299.99 ms at 96 to 48 kHz, where VHQ's
   leaves after 8.41 ms and 2.80 ms and steep's after 24.83 ms and 143.14 ms. A
@@ -153,7 +153,7 @@ The case nearly every listener with a 48 kHz device hears.
 
 | Setting | −0.1 dB (kHz) | Worst alias or image (dB) | Worst landing ≤ 20 kHz (dB) | Worst SNR (dB) | Null to 10 kHz (dB) | Ringing (ms) | Streaming latency (ms) | CPU (%) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Resonate Low latency** | 19.77 | −90.0 | −109.1 | 97.4 | −106.4 | 1.06 | 1.07 | 0.097 |
+| **Resonate Low latency** | 19.77 | −90.0 | −109.1 | 97.4 | −106.4 | 1.06 | 1.07 | 0.068 |
 | **Resonate Balanced** | 20.53 | −133.1 | −227.8 | 164.1 | −135.8 | 2.02 | 16.67 | 0.023 |
 | SoXR HQ | 20.53 | −132.0 | −141.5 | 131.1 | −131.3 | 2.15 | 18.39 | 0.053 |
 | **Resonate High** | 20.61 | −194.1 | −276.1 | 214.5 | −192.0 | 2.38 | 46.67 | 0.025 |
@@ -231,46 +231,46 @@ idle machine: the share of one core a second of audio costs.
 
 | Setting | 44.1 kHz to 48 kHz | 48 kHz to 44.1 kHz | 96 kHz to 48 kHz | 96 kHz to 44.1 kHz | 192 kHz to 48 kHz | 44.1 kHz to 96 kHz | 48 kHz to 96 kHz |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **Resonate Low latency** | 0.097 | 0.095 | 0.130 | 0.142 | 0.204 | 0.195 | 0.173 |
-| **Resonate Balanced** | 0.023 | 0.023 | 0.035 | 0.034 | 0.062 | 0.034 | 0.037 |
-| **Resonate High** | 0.025 | 0.025 | 0.036 | 0.038 | 0.062 | 0.038 | 0.038 |
-| **Resonate Very high** | 0.037 | 0.037 | 0.041 | 0.044 | 0.076 | 0.045 | 0.043 |
-| **Resonate High, minimum** | 0.024 | 0.025 | 0.036 | 0.039 | 0.065 | 0.040 | 0.036 |
-| **Resonate Very high, intermediate** | 0.057 | 0.058 | 0.045 | 0.048 | 0.083 | 0.049 | 0.046 |
-| **Resonate Very high, minimum** | 0.039 | 0.040 | 0.044 | 0.044 | 0.083 | 0.047 | 0.044 |
-| SoXR QQ | 0.023 | 0.021 | 0.026 | 0.024 | 0.032 | 0.044 | 0.044 |
-| SoXR LQ | 0.046 | 0.049 | 0.041 | 0.062 | 0.068 | 0.095 | 0.043 |
-| SoXR MQ | 0.050 | 0.052 | 0.043 | 0.066 | 0.070 | 0.066 | 0.046 |
-| SoXR 16-bit | 0.052 | 0.052 | 0.043 | 0.066 | 0.070 | 0.069 | 0.046 |
-| SoXR HQ | 0.053 | 0.055 | 0.044 | 0.069 | 0.072 | 0.071 | 0.048 |
-| SoXR 24-bit | 0.052 | 0.055 | 0.038 | 0.064 | 0.080 | 0.078 | 0.040 |
-| SoXR VHQ | 0.054 | 0.058 | 0.040 | 0.066 | 0.085 | 0.079 | 0.041 |
-| SoXR 32-bit | 0.061 | 0.063 | 0.045 | 0.073 | 0.097 | 0.091 | 0.045 |
-| SoXR VHQ, steep | 0.073 | 0.072 | 0.050 | 0.084 | 0.098 | 0.102 | 0.058 |
-| SoXR VHQ, intermediate | 0.060 | 0.062 | 0.047 | 0.071 | 0.092 | 0.084 | 0.048 |
-| SoXR VHQ, minimum | 0.054 | 0.058 | 0.040 | 0.066 | 0.085 | 0.079 | 0.041 |
+| **Resonate Low latency** | 0.068 | 0.066 | 0.101 | 0.129 | 0.155 | 0.133 | 0.116 |
+| **Resonate Balanced** | 0.023 | 0.022 | 0.036 | 0.035 | 0.063 | 0.034 | 0.038 |
+| **Resonate High** | 0.024 | 0.025 | 0.036 | 0.038 | 0.062 | 0.038 | 0.038 |
+| **Resonate Very high** | 0.037 | 0.038 | 0.041 | 0.044 | 0.076 | 0.045 | 0.043 |
+| **Resonate High, minimum** | 0.024 | 0.025 | 0.036 | 0.039 | 0.073 | 0.040 | 0.037 |
+| **Resonate Very high, intermediate** | 0.055 | 0.057 | 0.046 | 0.051 | 0.080 | 0.047 | 0.046 |
+| **Resonate Very high, minimum** | 0.041 | 0.040 | 0.044 | 0.044 | 0.083 | 0.047 | 0.044 |
+| SoXR QQ | 0.023 | 0.021 | 0.026 | 0.025 | 0.032 | 0.044 | 0.044 |
+| SoXR LQ | 0.046 | 0.049 | 0.041 | 0.062 | 0.069 | 0.095 | 0.044 |
+| SoXR MQ | 0.050 | 0.052 | 0.043 | 0.065 | 0.071 | 0.065 | 0.047 |
+| SoXR 16-bit | 0.052 | 0.052 | 0.043 | 0.065 | 0.071 | 0.069 | 0.046 |
+| SoXR HQ | 0.053 | 0.055 | 0.045 | 0.069 | 0.073 | 0.070 | 0.048 |
+| SoXR 24-bit | 0.052 | 0.055 | 0.039 | 0.064 | 0.079 | 0.078 | 0.040 |
+| SoXR VHQ | 0.054 | 0.059 | 0.040 | 0.067 | 0.084 | 0.079 | 0.041 |
+| SoXR 32-bit | 0.061 | 0.063 | 0.045 | 0.073 | 0.098 | 0.091 | 0.045 |
+| SoXR VHQ, steep | 0.073 | 0.072 | 0.050 | 0.084 | 0.097 | 0.102 | 0.058 |
+| SoXR VHQ, intermediate | 0.060 | 0.063 | 0.047 | 0.071 | 0.093 | 0.085 | 0.048 |
+| SoXR VHQ, minimum | 0.054 | 0.059 | 0.040 | 0.067 | 0.084 | 0.079 | 0.041 |
 
 #### Construction, milliseconds
 
 | Setting | First, 44.1 kHz to 48 kHz | Again, 44.1 kHz to 48 kHz | First, 192 kHz to 48 kHz | Again, 192 kHz to 48 kHz |
 | --- | ---: | ---: | ---: | ---: |
-| **Resonate Low latency** | 0.34 | 0.00 | 0.01 | 0.00 |
-| **Resonate Balanced** | 0.25 | 0.00 | 0.29 | 0.01 |
+| **Resonate Low latency** | 0.33 | 0.00 | 0.01 | 0.00 |
+| **Resonate Balanced** | 0.24 | 0.00 | 0.29 | 0.01 |
 | **Resonate High** | 0.35 | 0.00 | 0.37 | 0.01 |
-| **Resonate Very high** | 2.21 | 0.00 | 4.05 | 0.06 |
-| **Resonate High, minimum** | 62.88 | 0.00 | 0.71 | 0.01 |
-| **Resonate Very high, intermediate** | 139.22 | 0.00 | 6.82 | 0.06 |
-| **Resonate Very high, minimum** | 139.59 | 0.00 | 6.56 | 0.06 |
-| SoXR QQ | 0.01 | 0.00 | 0.00 | 0.00 |
+| **Resonate Very high** | 2.21 | 0.00 | 4.06 | 0.06 |
+| **Resonate High, minimum** | 62.72 | 0.00 | 0.86 | 0.01 |
+| **Resonate Very high, intermediate** | 138.42 | 0.00 | 6.95 | 0.06 |
+| **Resonate Very high, minimum** | 137.93 | 0.00 | 6.47 | 0.05 |
+| SoXR QQ | 0.01 | 0.00 | 0.01 | 0.00 |
 | SoXR LQ | 0.05 | 0.05 | 0.01 | 0.00 |
 | SoXR MQ | 0.03 | 0.01 | 0.01 | 0.01 |
-| SoXR 16-bit | 0.01 | 0.01 | 0.01 | 0.01 |
+| SoXR 16-bit | 0.02 | 0.01 | 0.01 | 0.01 |
 | SoXR HQ | 0.02 | 0.02 | 0.01 | 0.01 |
 | SoXR 24-bit | 0.04 | 0.04 | 0.03 | 0.02 |
 | SoXR VHQ | 0.04 | 0.04 | 0.03 | 0.03 |
 | SoXR 32-bit | 0.06 | 0.06 | 0.05 | 0.05 |
-| SoXR VHQ, steep | 0.20 | 0.19 | 0.18 | 0.18 |
-| SoXR VHQ, intermediate | 0.45 | 0.42 | 0.42 | 0.41 |
+| SoXR VHQ, steep | 0.20 | 0.19 | 0.19 | 0.18 |
+| SoXR VHQ, intermediate | 0.45 | 0.42 | 0.42 | 0.40 |
 | SoXR VHQ, minimum | 0.40 | 0.40 | 0.39 | 0.38 |
 
 - **Balanced and High beat every recipe at or above their rejection, at every pair.** 0.023 % and
@@ -282,7 +282,7 @@ idle machine: the share of one core a second of audio costs.
 - **The speed hardly depends on the build.** `rustfft` picks its vector width at run time, so on a
   baseline SSE2 build (the Flatpak's) `cargo bench -p resonate-dsp --bench stages` reads Balanced, High
   and Very high at 0.024 %, 0.024 % and 0.035 % at 44.1 to 48 kHz, where Low latency, compiled for the
-  build's target, rises from 0.096 % to 0.120 %.
+  build's target, rises from 0.068 % to 0.119 % (0.064 % on `x86-64-v3`, the release assets' baseline).
 - **Intermediate phase costs up to half as much again as linear** at 44.1 to 48 kHz, its complex
   response and wider reach; minimum phase costs what linear does, within a tenth.
 - **The timings vary by about a tenth between runs on the same code**; the tables are the latest run.
@@ -301,6 +301,18 @@ old Low's 0.43 ms cost 7 dB at 20 kHz. **Balanced** moved to the block route, wh
 at 44.1 to 48 kHz from 0.097 % to 0.023 % at −133.1 dB where it had −90 dB. The analysis crates' resamplers
 take Low latency, so what they measure does not move. `quality = "fast"` in an existing settings file,
 and the phones' stored choice, read as Low latency.
+
+Low latency's sum was then made a third cheaper (0.097 % to 0.068 % at 44.1 to 48 kHz, 0.204 % to 0.155 %
+at 192 to 48 kHz) without touching its kernel. The lanes it summed in had been left to LLVM's SLP
+vectoriser, which kept every lane a scalar of its own; each frame's sum was one chain of dependent
+multiply-adds, then a horizontal sum, and the weights were read again for each channel. It now sums in
+explicit vectors (`wide`'s `f64x8`) and walks the frames a call makes phase by phase: frames a whole ratio
+cycle apart share a row of the table, so four of them are summed at once, each weight read once for four
+frames and every channel, with eight independent chains. The row is read at a fixed offset and the history
+at whatever offset the frame starts, so every frame of a phase shares one slice of the row. Grouping by
+phase alone, for the table's sake, bought nothing: the table was never what it waited on. Neither do the
+mirrored rows of a linear-phase kernel: halving the table saves memory, not work, and a row folds onto
+itself only at phase 0 (a whole-number ratio such as 192 to 48 kHz).
 
 ### The kernel stops at its reach, and its window is designed
 
@@ -386,7 +398,7 @@ to 1.9e-8 dB with their rejection unchanged.
   VHQ keeps that row. Minimum phase is the way to no pre-echo at all, at either library.
 - **High intermediate reaches −154 dB at worst**, against High minimum's −187 dB, whatever the floor and with
   a wider window hardly less: half a minimum phase spreads further than a short kernel holds.
-- **Low latency is the dearest level** (0.097 %), the price of summing a kernel per frame (`docs/PERFORMANCE.md`).
+- **Low latency is the dearest level** (0.068 %), the price of summing a kernel per frame for a millisecond's latency.
 
 ## Every measurement
 
@@ -511,7 +523,7 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 
 | Setting | Delay at 1 kHz (µs) | Delay spread 20 Hz–20 kHz (µs) | Impulse peak offset (µs) | Ringing before peak (ms) | Ringing after peak (ms) | Energy over 1 ms before peak (dB) | Streaming latency (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **Resonate Low latency** | -0.0 | 0.0 | 0.0 | 0.96 | 0.96 | < -200 | 0.98 |
+| **Resonate Low latency** | 0.0 | 0.0 | 0.0 | 0.96 | 0.96 | < -200 | 0.98 |
 | **Resonate Balanced** | -0.0 | 0.0 | 0.0 | 1.83 | 1.83 | -53.8 | 35.22 |
 | **Resonate High** | 0.0 | 0.0 | 0.0 | 2.23 | 2.23 | -46.7 | 63.97 |
 | **Resonate Very high** | 0.0 | 0.0 | 0.0 | 9.31 | 9.31 | -30.8 | 299.99 |

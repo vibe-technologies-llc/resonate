@@ -7074,6 +7074,7 @@ dependencies = [
  "resonate-core",
  "rustfft",
  "thiserror 2.0.21",
+ "wide 1.7.1",
 ]
 
 [[package]]

@@ -13,6 +13,7 @@ realfft.workspace = true
 resonate-core.workspace = true
 rustfft.workspace = true
 thiserror.workspace = true
+wide.workspace = true
 
 [lints]
 workspace = true

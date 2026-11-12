@@ -1,7 +1,8 @@
-use std::{array, f64::consts::PI, num::NonZeroU32, sync::Arc};
+use std::{array, f64::consts::PI, mem, num::NonZeroU32, sync::Arc};
 
 use parking_lot::Mutex;
 use resonate_core::{ChannelLayout, Ratio, SampleRate, StreamSpec};
+use wide::f64x8;
 
 use crate::{
     Error, FilterPhase, ProcessCount, Processor, RatioLimits, Result,
@@ -21,6 +22,7 @@ const LANES_PER_VECTOR: usize = if cfg!(target_feature = "avx512f") {
 const WIDEST_LANES_PER_VECTOR: usize = 8;
 const VECTOR_BYTES: usize = LANES_PER_VECTOR * size_of::<f64>();
 const ACCUMULATORS: usize = 8;
+const FRAMES_AT_ONCE: usize = 4;
 const _: () =
     assert!(ACCUMULATORS.is_power_of_two() && ACCUMULATORS.is_multiple_of(LANES_PER_VECTOR));
 const _: () = assert!(LANES_PER_VECTOR <= WIDEST_LANES_PER_VECTOR);
@@ -127,8 +129,6 @@ fn interpolator_for(params: SincParams) -> SincParams {
         f64::from(INTERPOLATOR_CUTOFF),
     )
 }
-
-type Lanes = [f64; ACCUMULATORS];
 
 const fn ratio(numer: u32, denom: u32) -> Ratio {
     match (NonZeroU32::new(numer), NonZeroU32::new(denom)) {
@@ -653,6 +653,12 @@ enum Taps {
     Interpolated(Kernel),
 }
 
+#[derive(Clone, Copy)]
+struct Read {
+    whole: usize,
+    phase: u32,
+}
+
 fn conversion_for(
     config: ResamplerConfig,
     params: SincParams,
@@ -880,7 +886,6 @@ struct Polyphase {
     ratio: f64,
     reach: Reach,
     history: History,
-    lanes: Aligned,
     weights: Vec<f64>,
     filled: usize,
     whole: usize,
@@ -987,7 +992,6 @@ impl Polyphase {
             ratio,
             reach,
             history: History::new(channels, up * config.max_frames_in + reach.span() + 2),
-            lanes: Aligned::zeroed(channels * ACCUMULATORS),
             weights: vec![0.0; tapering],
             filled: if stage.is_some() { 0 } else { reach.behind },
             whole: reach.behind,
@@ -1082,44 +1086,57 @@ impl Polyphase {
         }
     }
 
-    fn accumulate(lanes: &mut Lanes, block: &Lanes, batch: &Lanes) {
-        for ((lane, sample), weight) in lanes.iter_mut().zip(block).zip(batch) {
-            *lane += sample * weight;
-        }
+    fn blocks_of(history: &[f64]) -> &[[f64; ACCUMULATORS]] {
+        history.as_chunks::<ACCUMULATORS>().0
     }
 
-    fn accumulate_one(lanes: &mut Lanes, history: &[f64], weights: &[f64]) {
-        let mut running = [0.0; ACCUMULATORS];
-
-        let (blocks, _) = history.as_chunks::<ACCUMULATORS>();
-        let (batches, _) = weights.as_chunks::<ACCUMULATORS>();
-
-        for (block, batch) in blocks.iter().zip(batches) {
-            Self::accumulate(&mut running, block, batch);
-        }
-
-        *lanes = running;
+    fn dot_one(history: &[f64], weights: &[f64]) -> f64x8 {
+        Self::blocks_of(weights)
+            .iter()
+            .zip(Self::blocks_of(history))
+            .fold(f64x8::ZERO, |sum, (batch, block)| {
+                f64x8::new(*block).mul_add(f64x8::new(*batch), sum)
+            })
     }
 
-    fn accumulate_pair(lanes: &mut [Lanes; 2], left: &[f64], right: &[f64], weights: &[f64]) {
-        let mut left_running = [0.0; ACCUMULATORS];
-        let mut right_running = [0.0; ACCUMULATORS];
-
-        let (left_blocks, _) = left.as_chunks::<ACCUMULATORS>();
-        let (right_blocks, _) = right.as_chunks::<ACCUMULATORS>();
-        let (batches, _) = weights.as_chunks::<ACCUMULATORS>();
-
-        for ((left_block, right_block), batch) in left_blocks.iter().zip(right_blocks).zip(batches)
-        {
-            Self::accumulate(&mut left_running, left_block, batch);
-            Self::accumulate(&mut right_running, right_block, batch);
-        }
-
-        *lanes = [left_running, right_running];
+    fn dot_two(histories: [&[f64]; 2], weights: &[f64]) -> [f64x8; 2] {
+        let [first, second] = histories.map(Self::blocks_of);
+        Self::blocks_of(weights).iter().zip(first).zip(second).fold(
+            [f64x8::ZERO; 2],
+            |[one, two], ((batch, first), second)| {
+                let batch = f64x8::new(*batch);
+                [
+                    f64x8::new(*first).mul_add(batch, one),
+                    f64x8::new(*second).mul_add(batch, two),
+                ]
+            },
+        )
     }
 
-    fn summed(lanes: &Lanes) -> f64 {
-        let mut partial = *lanes;
+    fn dot_four(histories: [&[f64]; FRAMES_AT_ONCE], weights: &[f64]) -> [f64x8; FRAMES_AT_ONCE] {
+        let [first, second, third, fourth] = histories.map(Self::blocks_of);
+        Self::blocks_of(weights)
+            .iter()
+            .zip(first)
+            .zip(second)
+            .zip(third)
+            .zip(fourth)
+            .fold(
+                [f64x8::ZERO; FRAMES_AT_ONCE],
+                |[one, two, three, four], ((((batch, first), second), third), fourth)| {
+                    let batch = f64x8::new(*batch);
+                    [
+                        f64x8::new(*first).mul_add(batch, one),
+                        f64x8::new(*second).mul_add(batch, two),
+                        f64x8::new(*third).mul_add(batch, three),
+                        f64x8::new(*fourth).mul_add(batch, four),
+                    ]
+                },
+            )
+    }
+
+    fn summed(lanes: f64x8) -> f64 {
+        let mut partial = lanes.to_array();
         let mut width = ACCUMULATORS;
         while width > 1 {
             width /= 2;
@@ -1131,103 +1148,184 @@ impl Polyphase {
         partial.first().copied().unwrap_or_default()
     }
 
-    fn convolve(
-        frame: &mut [f64],
-        planes: &[f64],
-        stride: usize,
-        first: usize,
+    fn histories<const FRAMES: usize>(
+        &self,
+        firsts: [usize; FRAMES],
+        channel: usize,
+        taps: usize,
+    ) -> [&[f64]; FRAMES] {
+        let planes = self.history.planes();
+        let offset = channel * self.history.stride;
+        firsts.map(|first| {
+            planes
+                .get(first + offset..first + offset + taps)
+                .unwrap_or_default()
+        })
+    }
+
+    fn convolve_many<const FRAMES: usize>(
+        &self,
+        mut frames: [&mut [f64]; FRAMES],
+        firsts: [usize; FRAMES],
         weights: &[f64],
-        lanes: &mut [Lanes],
+        dot: fn([&[f64]; FRAMES], &[f64]) -> [f64x8; FRAMES],
     ) {
-        let span = first..first + weights.len();
-        let (pairs, lone) = lanes.as_chunks_mut::<2>();
-        let mut paired = planes.chunks_exact(2 * stride);
-
-        for (pair, both) in pairs.iter_mut().zip(paired.by_ref()) {
-            let (left, right) = both.split_at(stride);
-            Self::accumulate_pair(
-                pair,
-                left.get(span.clone()).unwrap_or_default(),
-                right.get(span.clone()).unwrap_or_default(),
-                weights,
-            );
-        }
-
-        if let Some(single) = lone.first_mut() {
-            let history = paired.remainder().get(span).unwrap_or_default();
-            Self::accumulate_one(single, history, weights);
-        }
-
-        for (slot, lanes) in frame.iter_mut().zip(lanes.iter()) {
-            *slot = Self::summed(lanes);
+        for channel in 0..self.channels {
+            let sums = dot(self.histories(firsts, channel, weights.len()), weights);
+            for (frame, sum) in frames.iter_mut().zip(sums) {
+                if let Some(slot) = frame.get_mut(channel) {
+                    *slot = Self::summed(sum);
+                }
+            }
         }
     }
 
+    fn convolve_one(&self, frame: &mut [f64], first: usize, weights: &[f64]) {
+        for (channel, slot) in frame.iter_mut().enumerate() {
+            let [history] = self.histories([first], channel, weights.len());
+            *slot = Self::summed(Self::dot_one(history, weights));
+        }
+    }
+
+    fn after(&self, read: Read) -> Read {
+        let stepped = read.phase + self.phase_step;
+        let wraps = stepped >= self.phases;
+        Read {
+            whole: read.whole + self.whole_step + usize::from(wraps),
+            phase: if wraps {
+                stepped - self.phases
+            } else {
+                stepped
+            },
+        }
+    }
+
+    fn fits(&self, read: Read) -> bool {
+        let rising = usize::from(read.phase == 0);
+        read.whole.saturating_add(self.reach.ahead) + (1 - rising) < self.filled
+    }
+
+    fn first_of(&self, read: Read) -> usize {
+        let rising = usize::from(read.phase == 0);
+        read.whole.saturating_sub(self.reach.behind) + (1 - rising)
+    }
+
+    fn weights_of<'row>(&self, phase: u32, row: &'row [f64]) -> &'row [f64] {
+        let covered = self
+            .reach
+            .taps(usize::from(phase == 0))
+            .next_multiple_of(ACCUMULATORS);
+        row.get(LANES_PER_VECTOR..LANES_PER_VECTOR + covered)
+            .unwrap_or_default()
+    }
+
     fn emit(&mut self, output: &mut [f64]) -> usize {
-        let Self {
-            taps,
-            channels,
-            reach,
-            history,
-            lanes,
-            weights,
-            filled,
-            whole,
-            phase,
-            phases,
-            whole_step,
-            phase_step,
-            ..
-        } = self;
-        let channels = *channels;
-        let reach = *reach;
-        let stride = history.stride;
-        let planes = history.planes();
-        let lanes = lanes.as_mut_slice().as_chunks_mut::<ACCUMULATORS>().0;
-        let capacity = output.len() / channels;
-        let mut produced = 0;
+        let capacity = output.len() / self.channels;
+        let start = Read {
+            whole: self.whole,
+            phase: self.phase,
+        };
 
-        while produced < capacity && *filled > 0 {
-            let rising = usize::from(*phase == 0);
-            if whole.saturating_add(reach.ahead) + (1 - rising) > *filled - 1 {
-                break;
-            }
-
-            let first = whole.saturating_sub(reach.behind) + (1 - rising);
-            let taps_now = reach.taps(rising);
-            let aligned = first - first % LANES_PER_VECTOR;
-            let lead = first - aligned;
-            let covered = (lead + taps_now).next_multiple_of(ACCUMULATORS);
-
-            let padded = match taps {
-                Taps::Tabulated(tabulated) => tabulated.row(*phase),
-                Taps::Interpolated(kernel) => {
-                    let fraction = f64::from(*phase) / f64::from(*phases);
-                    let shaped = weights
-                        .get_mut(LANES_PER_VECTOR..LANES_PER_VECTOR + taps_now)
-                        .unwrap_or_default();
-                    kernel.taper(shaped, fraction, rising);
-                    if let Some(stale) = weights.get_mut(LANES_PER_VECTOR + taps_now) {
-                        *stale = 0.0;
-                    }
-                    weights.as_slice()
-                }
-            };
-            let from = LANES_PER_VECTOR - lead;
-            let taken = padded.get(from..from + covered).unwrap_or_default();
-
-            if let Some(frame) = output.get_mut(produced * channels..(produced + 1) * channels) {
-                Self::convolve(frame, planes, stride, aligned, taken, lanes);
-            }
-
-            let stepped = *phase + *phase_step;
-            let wraps = stepped >= *phases;
-            *phase = if wraps { stepped - *phases } else { stepped };
-            *whole += *whole_step + usize::from(wraps);
-            produced += 1;
+        let mut end = start;
+        let mut count = 0;
+        while count < capacity && self.fits(end) {
+            end = self.after(end);
+            count += 1;
         }
 
-        produced
+        match &self.taps {
+            Taps::Tabulated(tabulated) => self.emit_by_phase(tabulated, start, count, output),
+            Taps::Interpolated(kernel) => {
+                let mut weights = mem::take(&mut self.weights);
+                self.emit_tapering(kernel, &mut weights, start, count, output);
+                self.weights = weights;
+            }
+        }
+
+        self.whole = end.whole;
+        self.phase = end.phase;
+        count
+    }
+
+    fn emit_by_phase(&self, tabulated: &Tabulated, start: Read, count: usize, output: &mut [f64]) {
+        let channels = self.channels;
+        let phases = (self.phases as usize).max(1);
+        let cycle = self.whole_step * phases + self.phase_step as usize;
+
+        let mut read = start;
+        for group in 0..count.min(phases) {
+            let weights = self.weights_of(read.phase, tabulated.row(read.phase));
+            let first = self.first_of(read);
+            let frames_in_the_group = (count - group).div_ceil(phases);
+
+            let mut taken = 0;
+            while taken < frames_in_the_group {
+                let index = group + taken * phases;
+                let first = first + taken * cycle;
+                let left = frames_in_the_group - taken;
+                let rest = output.get_mut(index * channels..).unwrap_or_default();
+                if left >= FRAMES_AT_ONCE {
+                    let frames = Self::every_cycle(rest, channels, phases);
+                    let firsts = array::from_fn(|frame| first + frame * cycle);
+                    self.convolve_many(frames, firsts, weights, Self::dot_four);
+                    taken += FRAMES_AT_ONCE;
+                } else if left >= 2 {
+                    let frames = Self::every_cycle(rest, channels, phases);
+                    self.convolve_many(frames, [first, first + cycle], weights, Self::dot_two);
+                    taken += 2;
+                } else {
+                    let frame = rest.get_mut(..channels).unwrap_or_default();
+                    self.convolve_one(frame, first, weights);
+                    taken += 1;
+                }
+            }
+            read = self.after(read);
+        }
+    }
+
+    fn every_cycle<const FRAMES: usize>(
+        output: &mut [f64],
+        channels: usize,
+        phases: usize,
+    ) -> [&mut [f64]; FRAMES] {
+        let mut rest = output;
+        array::from_fn(|_| {
+            let taken = mem::take(&mut rest);
+            let (frame, after) = taken.split_at_mut(channels.min(taken.len()));
+            let skipped = (phases * channels - frame.len()).min(after.len());
+            rest = after.get_mut(skipped..).unwrap_or_default();
+            frame
+        })
+    }
+
+    fn emit_tapering(
+        &self,
+        kernel: &Kernel,
+        weights: &mut [f64],
+        start: Read,
+        count: usize,
+        output: &mut [f64],
+    ) {
+        let channels = self.channels;
+
+        let mut read = start;
+        for index in 0..count {
+            let rising = usize::from(read.phase == 0);
+            let taps_now = self.reach.taps(rising);
+            let fraction = f64::from(read.phase) / f64::from(self.phases);
+            let shaped = weights
+                .get_mut(LANES_PER_VECTOR..LANES_PER_VECTOR + taps_now)
+                .unwrap_or_default();
+            kernel.taper(shaped, fraction, rising);
+            if let Some(stale) = weights.get_mut(LANES_PER_VECTOR + taps_now) {
+                *stale = 0.0;
+            }
+            if let Some(frame) = output.get_mut(index * channels..(index + 1) * channels) {
+                let taken = self.weights_of(read.phase, weights);
+                self.convolve_one(frame, self.first_of(read), taken);
+            }
+            read = self.after(read);
+        }
     }
 
     fn compact(&mut self) {

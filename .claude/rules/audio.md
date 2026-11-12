@@ -1103,11 +1103,20 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   never this build's, so a rate pair takes the same route on the baseline, `x86-64-v3` and a native
   build: weighed on its own row, the baseline tabulated Balanced at 44.1 onto 47.993 kHz while
   AVX-512 interpolated it. History is one f64
-  plane per channel, `ACCUMULATORS` independent lanes, aligned to `VECTOR_BYTES` and zero-padded (no
-  scalar tail); lanes pass through `lanes` before summing (LLVM's SLP vectoriser paired the two
-  channels instead of packing each one's lanes). More accumulators win nothing: the loop is bound by
-  its loads (about 3.5 of 5 multiply-adds a cycle on Zen 4), so a long kernel needs fewer taps, not
-  a faster dot product.
+  plane per channel, zero-padded past `ACCUMULATORS` (no scalar tail). **The sum is written in explicit
+  vectors** (`wide`'s `f64x8`, `ACCUMULATORS` lanes, one AVX-512 register or two AVX ones): left to
+  LLVM's SLP vectoriser, every lane stayed a scalar of its own, and whether it packed them changed with
+  the optimisation level. **Frames are summed phase by phase** (`emit_by_phase`): `emit` first counts
+  the frames a call can make (`fits`, `after`), then for each phase walks the frames a ratio cycle
+  apart, which share a table row, four at once (`FRAMES_AT_ONCE`, `dot_four`; two, then one, for the
+  rest of a group), so each weight is loaded once for four frames and a channel, and eight sums are in
+  flight. The row is read at its fixed offset (`weights_of`) and the history wherever the frame starts
+  (`first_of`), so every frame of a phase shares one slice of the row; aligning the history instead put
+  the row's offset per frame. What was measured (`docs/RESAMPLING.md`): grouping by phase for the
+  table's cache alone, more chains for one frame and a fused multiply-add each bought nothing; sharing
+  the weight loads across frames did. A linear-phase kernel's mirrored rows would halve the table,
+  not the work, and fold onto themselves only at phase 0. `Kernel`'s rows (`emit_tapering`) are
+  tapered frame by frame and summed one at a time.
 - **Low latency is the one level summing a polyphase kernel** (47 taps a side, 1.07 ms, the fewest that
   start the stopband at Nyquist at its cutoff and β; a designed window measured no better, since a Kaiser
   is near-optimal when only depth at its reach is asked). `resonate-analysis`'s resamplers take it, so a

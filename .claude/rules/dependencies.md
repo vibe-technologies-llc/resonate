@@ -273,6 +273,9 @@ here, add it there.
 - **`hdf5-reader`** (no default features, so no `rayon` and no `lz4`): `resonate-codec`'s SOFA reader alone (`eq.md`). Pure Rust, read only; its `memmap2` and `libc` are not used for a set (`from_vec`). **`hdf5-writer`**: dev-dependency of `resonate-codec`, `-engine` and `-mobile`, building the tests' sets. Both are versions of one family (`hdf5-core`), moved together.
 - **`rustfft`**: `resonate-dsp`'s, `-analysis`', `-codec`'s (`sofa.rs`), library dev; at symphonia's `opt-simd` version.
   **`realfft`**: `resonate-dsp`'s convolver, over the same `rustfft`, with the same SIMD features.
+  **`wide`** (no default features, pure Rust): `resonate-dsp`'s polyphase sum alone,
+  its `f64x8` the lanes LLVM would not reliably pack (`audio.md`); it picks AVX-512, AVX or SSE2 by the
+  build's target features, so the release baseline sums in AVX and the Flatpak's in SSE2.
   **`rusty-chromaprint`**: `resonate-analysis`'s, pure Rust, since AcoustID wants that exact print.
   **`rayon`**: `resonate-analysis`'s, pure Rust, no default features: the crews a pass fans out over (`analysis.md`), since a stage may wait on its own parallel search without holding a thread idle, and the forbidden `unsafe_code` rules out a scoped pool of our own.
 - **`quinn`** (`runtime-tokio`, `rustls-ring`) and **`tokio`**: the sync stack alone

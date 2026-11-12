@@ -48,6 +48,3 @@ are in [ROADMAP.md](ROADMAP.md).
   (300 ms, against 2.8 ms): the forward transform runs at the input's length and most of its bins are
   dropped. A halving stage at 4:1 and beyond would close part of it; pruning the transform to the bins kept was
   worked through and saves one stage of fourteen; an own FFT was measured at parity
-- [S] The resampler's Low latency costs four times Balanced (0.097 % against 0.023 % at 44.1 to 48 kHz, and it
-  rises to 0.120 % on a build without `target-cpu`, where `rustfft` does not): it stays polyphase for its
-  latency of 1.07 ms, and the kernel's symmetry is unused
