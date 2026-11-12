@@ -32,8 +32,6 @@ are in [ROADMAP.md](ROADMAP.md).
   pairing sheet's code, a playlist's options, the status banner), so each is evaluated again at
   every poll while a transfer's byte count moves, and the sync page sorts its devices and keys its
   transfers again each time
-- [S] Every download job row holds three or four glass buttons, each a glass surface of its own in
-  a scrolling list, and *Download all missing* makes hundreds of rows
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the

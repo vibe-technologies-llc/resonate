@@ -855,7 +855,10 @@ every route change (a pair of headphones at the same rate included), not from th
   (`DownloadStandingRead.songsMoved`, the latest job found by `latestJob`), so a download moving does
   not rebuild every online and *Not in your library* row. The background task's progress is told at
   most once a second unless a song settles. An online row matches the library again when the
-  catalog's size moves, not at every catalog read.
+  catalog's size moves, not at every catalog read. A job row's buttons (*Cancel*, *Play*, *Go to
+  album*, *Try again*, `DownloadJobRow`) are `.bordered`, never `.glass`: glass is for controls over
+  the content, and three or four glass surfaces a row in a scrolling list of hundreds (*Download all
+  missing*) were each composited again on every scrolled frame.
 - **A finished download refreshes the library once for a run of them** (`DownloadQueue.landed`
   sets `landedSince` and starts one `settleLandings` task, which loops until no song landed during
   its refresh), so *Download all missing* of N songs reads the catalog and rebuilds the search index

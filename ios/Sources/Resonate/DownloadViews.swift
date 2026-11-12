@@ -164,7 +164,7 @@ struct DownloadJobRow: View {
         case .waiting, .finding, .downloading, .validating:
             progress
             Button("common.cancel", role: .destructive) { downloads.cancel(job.id) }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
         case .done(let track):
             HStack {
                 Button("common.play") { library.play([track], at: 0) }
@@ -172,15 +172,15 @@ struct DownloadJobRow: View {
                     Button("downloads.job.go-to-album") { navigation.open(albumPage) }
                 }
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
         case .failed(let reason):
             Text(reason).font(.footnote).foregroundStyle(Color.failure)
             Button("common.try-again") { downloads.retry(job.id) }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
         case .cancelled:
             Text("downloads.job.cancelled").font(.footnote).foregroundStyle(.secondary)
             Button("common.try-again") { downloads.retry(job.id) }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
         }
     }
 
