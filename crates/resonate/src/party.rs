@@ -296,18 +296,21 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
     let library = crate::catalog(cli, config);
     let served = crate::Served::of(config, crate::settings_path(cli).ok());
     let sources = crate::playing_from(library.as_deref(), &served);
-    let sink = crate::wanted_sink(cli, config);
+    let sink = crate::sinks::wanted_sink(cli, config);
     let player = Arc::new(
-        crate::Rendering::of(config, sink.as_ref(), crate::Asked::Nothing)
-            .player(crate::engine_config(cli, config), Arc::clone(&sources))?,
+        crate::rendering::Rendering::of(config, sink.as_ref(), crate::rendering::Asked::Nothing)
+            .player(
+                crate::engine_settings::engine_config(cli, config),
+                Arc::clone(&sources),
+            )?,
     );
-    crate::confirm_sink(&player, sink.as_ref());
+    crate::sinks::confirm_sink(&player, sink.as_ref());
 
     let name = config.shared_name.clone().unwrap_or_default();
     let trusted = config.sync_server_certificate.clone();
     let party = match wanted {
         PartyWanted::Start { files } => {
-            let items = crate::queue_items_served(files, &served);
+            let items = crate::arguments::queue_items_served(files, &served);
             if items.is_empty() {
                 return Err(Error::NoFileNamed);
             }

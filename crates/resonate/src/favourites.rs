@@ -4,11 +4,12 @@ use resonate_library::{
 };
 
 use crate::{
-    Error, Result, ago,
+    Error, Result,
     cli::FavouritesArgs,
     error::{ArtistName, Given, Named},
-    folded_name,
     info::clock,
+    missing::folded_name,
+    playlist::ago,
     table::Table,
     words::{self, columns},
 };

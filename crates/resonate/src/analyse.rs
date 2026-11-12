@@ -6,9 +6,9 @@ use resonate_engine::{Analysis, Envelope, Spectrum, Watch, analyse};
 use resonate_library::{Fingerprinters, HeardAs, Sounded};
 
 use crate::{
-    Error, Result, cut_of_argument, from_here,
+    Error, Result,
+    arguments::{cut_of_argument, from_here, names_a_sheet},
     info::{BLOCKS, clock, heading, pairs},
-    names_a_sheet,
     table::Table,
     words,
 };

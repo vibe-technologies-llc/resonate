@@ -163,9 +163,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `PICTURES_WAITING_AT_MOST` and `PERFORMERS_WEIGHED_AT_MOST`) beside `resonate-library`'s
   `enrich.rs`; the strict rules are shared, the queueing, backoff and stopping are not, so a fix to
   one is made twice. One pass over a small catalog trait both catalogs fill
-- [L] Three more files every change lands in: the binary's `main.rs` (4 914 lines, with `scan`,
-  `enrich`, `tag`, `organise`, `playlist`, `play_queue` and `launch` written in it, while `vault`,
-  `served` and `ytmusic` have modules of their own), `Library`'s `impl` in `db.rs` (some 7 400
+- [L] Two more files every change lands in: `Library`'s `impl` in `db.rs` (some 7 400
   lines and 294 public functions, the search compiled to SQL among them, though `sourced.rs` and
   `supply.rs` already hold parts of it) and `impl Engine` (some 3 950 lines and 196 methods beside
   `arms.rs` and `splicing.rs`)

@@ -3,7 +3,7 @@ use std::path::Path;
 use resonate_core::{FrameSpan, MediaLocation};
 use resonate_library::{Library, Reference};
 
-use crate::{Error, Result, from_here, reached};
+use crate::{Error, Result, arguments::from_here, playing::reached};
 
 pub fn print(
     library: &Library,

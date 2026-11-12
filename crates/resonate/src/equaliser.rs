@@ -15,7 +15,8 @@ use crate::{
     config,
     config::Config,
     measuring::{self, Room},
-    online, reloading, select_sink,
+    online, reloading,
+    sinks::select_sink,
     table::Table,
     words,
 };
@@ -56,7 +57,7 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     let bound = wanted.r#for.as_deref().map(NodeName::new);
 
     if let Some(text) = wanted.find.as_deref() {
-        let sink = crate::wanted_sink(cli, config);
+        let sink = crate::sinks::wanted_sink(cli, config);
         return find(config, text, measurer_of(config, wanted, sink.as_ref()));
     }
     if wanted.suggest {
@@ -84,7 +85,7 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
         return fetch_every(&store, config, text);
     }
     if wanted.measure {
-        let through = crate::wanted_sink(cli, config);
+        let through = crate::sinks::wanted_sink(cli, config);
         return measure(
             &store,
             settings,
@@ -804,7 +805,7 @@ fn measurer_missed(asked_for: Option<&str>, chosen: &str) -> Option<String> {
 fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
     let sink = select_sink(
         crate::surveyed::sinks()?,
-        crate::wanted_sink(cli, config).as_ref(),
+        crate::sinks::wanted_sink(cli, config).as_ref(),
     )?;
 
     said!(

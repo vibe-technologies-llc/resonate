@@ -16,12 +16,14 @@ use resonate_engine::{
 };
 
 use crate::{
-    Cli, Error, Result, SINK_TIMEOUT,
+    Cli, Error, Result,
     cli::{AbxArgs, AbxOfArg},
     config::Config,
     input,
     readout::billing,
-    signals, words,
+    signals,
+    sinks::SINK_TIMEOUT,
+    words,
 };
 
 const OUTPUT_WITHIN: Duration = Duration::from_secs(15);
@@ -334,20 +336,20 @@ pub fn run(
     trials: usize,
     asked: AbxArgs,
 ) -> Result<()> {
-    let mut named = crate::queue_items(std::slice::from_ref(file));
+    let mut named = crate::arguments::queue_items(std::slice::from_ref(file));
     if named.len() > 1 {
         return Err(Error::AbxSeveralSongs { named: named.len() });
     }
     let song = named.pop().ok_or(Error::NothingPlayableNamed)?;
 
-    let engine = crate::engine_config(cli, config);
+    let engine = crate::engine_settings::engine_config(cli, config);
     let contest = contest_of(asked, &engine)?;
     let resolved = Arc::clone(&engine.equaliser);
     let player = Arc::new(Player::with_sources(
         engine,
         Arc::new(resonate_codec::Sources::local()),
     )?);
-    crate::confirm_sink(&player, crate::wanted_sink(cli, config).as_ref());
+    crate::sinks::confirm_sink(&player, crate::sinks::wanted_sink(cli, config).as_ref());
 
     player.send(Command::SetRepeat(RepeatMode::Track))?;
     player.send(Command::Load {

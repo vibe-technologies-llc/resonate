@@ -6,8 +6,12 @@ use resonate_library::{
 };
 
 use crate::{
-    Error, Result, cli::VaultArgs, finished, info::bytes_text, none_failed, table::Table,
-    until_told, words,
+    Error, Result,
+    cli::VaultArgs,
+    info::bytes_text,
+    passes::{finished, none_failed, until_told},
+    table::Table,
+    words,
 };
 
 const WRITES_SHOWN: usize = 20;

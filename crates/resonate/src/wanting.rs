@@ -5,7 +5,8 @@ use crate::{
     Error, Result,
     cli::WantsArgs,
     error::{Given, Named},
-    folded_name, words,
+    missing::folded_name,
+    words,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -23,7 +24,7 @@ pub fn run(library: &Library, args: &WantsArgs) -> Result<()> {
     match (args.add.as_deref(), args.remove.as_deref()) {
         (Some(title), _) => want(library, title, narrowing),
         (None, Some(title)) => unwant(library, title, narrowing),
-        (None, None) => crate::wants(library),
+        (None, None) => crate::missing::wants(library),
     }
 }
 

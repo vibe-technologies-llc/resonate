@@ -1,6 +1,6 @@
 use resonate_engine::{SinkInfo, desktop_backend};
 
-use crate::{Result, SINK_TIMEOUT};
+use crate::{Result, sinks::SINK_TIMEOUT};
 
 pub(crate) const APP_NAME: &str = "Resonate";
 

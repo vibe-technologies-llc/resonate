@@ -18,10 +18,10 @@ use resonate_mpris::{
 };
 
 use crate::{
+    arguments::{names_a_sheet, sheet_items},
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
-    config, equaliser, names_a_sheet,
+    config, equaliser,
     playlists::Collection,
-    sheet_items,
 };
 
 const IDENTITY: &str = "Resonate";

@@ -554,7 +554,7 @@ recognisers above. `reference_asked_for` and `corrections_asked_for` = the same 
 it reads**: an index naming no device, or a profile `read_profile` makes no correction of (a captive
 portal's page), is `Unreadable`, never cached for the index's 30 days or a device's 90. Without the
 feature the twins answer `None`, `Error::NoReference`, `Corrected::uncorrected()` and the stubs, so
-`main.rs` reads the same names either way. **`reference` hands `Online` to `musicbrainz::layered`**, which puts the kept answers, the local
+the binary reads the same names either way. **`reference` hands `Online` to `musicbrainz::layered`**, which puts the kept answers, the local
 copy of MusicBrainz and the synced devices before it (`musicbrainz.md`); with `online` off the
 reference is those layers alone, and only where a copy is held. All is built over the one `Arc<Client>` in
 `online::CLIENT` (made on first use over `INTRODUCTION`; `online::YIELDING` holds its yielding

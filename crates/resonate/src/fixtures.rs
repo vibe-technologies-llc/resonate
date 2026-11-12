@@ -6,7 +6,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use clap::Parser as _;
 use resonate_library::{Library, PassHandle, ScanOptions};
+
+use crate::cli::Cli;
 
 const CHANNELS: u16 = 2;
 const BITS: u16 = 16;
@@ -99,4 +102,9 @@ pub fn scanned(root: &Path) -> Library {
         .and_then(PassHandle::join)
         .expect("a scan");
     library
+}
+
+pub fn parsed(arguments: &[&str]) -> Cli {
+    Cli::try_parse_from(arguments.iter().copied())
+        .unwrap_or_else(|error| panic!("{arguments:?} was refused: {error}"))
 }

@@ -6,7 +6,8 @@ use resonate_mpris::Running;
 use crate::{
     Error, Result,
     lasting::{Bare, lasting},
-    reached, words,
+    playing::reached,
+    words,
 };
 
 const END_OF_TRACK: &str = "track";

@@ -691,7 +691,7 @@ fn songs_table(service: &dyn PlaysInPlace, songs: &[Song]) -> Table {
             counted(song.track),
             song.title.clone(),
             song.artist.clone().unwrap_or_else(|| "-".to_owned()),
-            crate::played(song.length),
+            crate::playlist::played(song.length),
             song.suffix.clone().unwrap_or_else(|| "-".to_owned()),
             uri_of(service, Named::Song(song.id.clone())),
         ]);
@@ -1170,7 +1170,8 @@ mod tests {
         let served = serving();
         let sources = served.sources(Sources::local());
 
-        let queued = crate::queue_items_served(&[OsString::from("subsonic:album/al-1")], &served);
+        let queued =
+            crate::arguments::queue_items_served(&[OsString::from("subsonic:album/al-1")], &served);
         let uris: Vec<_> = queued.iter().map(|item| item.location.to_uri()).collect();
         let info = probe(&sources, &queued[0].location).expect("the song probes");
         let (mut decoder, opened) =
@@ -1199,8 +1200,9 @@ mod tests {
     fn a_song_uri_is_a_file_here_unless_a_server_is_named_and_then_it_is_queued_as_named() {
         let named = OsString::from("subsonic:track/so-1");
 
-        let unserved = crate::queue_items_served(std::slice::from_ref(&named), &Served::default());
-        let served = crate::queue_items_served(std::slice::from_ref(&named), &serving());
+        let unserved =
+            crate::arguments::queue_items_served(std::slice::from_ref(&named), &Served::default());
+        let served = crate::arguments::queue_items_served(std::slice::from_ref(&named), &serving());
 
         assert!(unserved[0].location.is_local());
         assert_eq!(served[0].location.to_uri(), "subsonic:track/so-1");
@@ -1210,7 +1212,8 @@ mod tests {
     fn a_tidal_album_is_queued_as_its_songs_and_a_song_in_one_flac_file_decodes_and_seeks() {
         let served = tidal_serving();
 
-        let queued = crate::queue_items_served(&[OsString::from("tidal:album/7")], &served);
+        let queued =
+            crate::arguments::queue_items_served(&[OsString::from("tidal:album/7")], &served);
         let uris: Vec<_> = queued.iter().map(|item| item.location.to_uri()).collect();
 
         assert_eq!(uris, ["tidal:track/11", "tidal:track/12"]);
@@ -1234,7 +1237,7 @@ mod tests {
     fn a_uri_of_a_service_not_set_is_a_file_here() {
         let named = OsString::from("tidal:track/11");
 
-        let queued = crate::queue_items_served(std::slice::from_ref(&named), &serving());
+        let queued = crate::arguments::queue_items_served(std::slice::from_ref(&named), &serving());
 
         assert!(queued[0].location.is_local());
     }
@@ -1251,7 +1254,9 @@ mod tests {
         let named = OsString::from("ytmusic:track/abc");
 
         assert_eq!(served.songs_at(&location), Some(Vec::new()));
-        assert!(crate::queue_items_served(std::slice::from_ref(&named), &served).is_empty());
+        assert!(
+            crate::arguments::queue_items_served(std::slice::from_ref(&named), &served).is_empty()
+        );
     }
 
     #[cfg(unix)]

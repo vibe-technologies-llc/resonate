@@ -9,6 +9,13 @@ paths:
 
 ## The grammar
 
+- **`main.rs` is `run`'s dispatch and the opening of the catalog, vault and settings; each
+  subcommand lives in a module of its own**: `sinks`, `explain`, `scanning` (`scan`, `enrich`),
+  `missing` (`missing`, `poll`), `roots` (`roots`, `forget`), `tagging` (`tag`, `dedupe`),
+  `organising`, `playlist` (`playlists`, `playlist`, `import`), `playing` (`play`, `queue`,
+  `players`), `connected` (`sync`, `shared`, `party`), and for every pass `passes::until_told`.
+  The window's launch is `window.rs` (behind `ui`), what a file argument becomes `arguments.rs`,
+  the engine's settings from the flags and file `engine_settings.rs`, the kept queue `resuming.rs`.
 - **Written once, read three times.** `cli.rs` is the clap derive alone; `build.rs` includes it to
   write man pages and completions (it links no workspace crate, so `cli.rs` names `std` and `clap`
   only; `vocabulary.rs` maps `QualityArg` to `engine::Quality`). It builds the command on a thread
@@ -156,7 +163,7 @@ that name. Every file argument goes through it.
   name not set `ServiceNotServed`; `subsonic` without the account `NoSubsonicServer`; a build
   without `online` `NoServed`
   (`the_terminal_browses_the_service_named_and_a_tidal_accounts_first_page_is_its_favourites`).
-- **`main::local_path`**: commands reading a local file alone (`info`, `explain`, `share <file>`,
+- **`arguments::local_path`**: commands reading a local file alone (`info`, `explain`, `share <file>`,
   `playlist --add`).
 - **A cut row is named by frames too.** `to_uri_within` appends `#frames=START-END` (or `START-`),
   `from_uri_within` reads it; `#` in a path is always escaped. It is `xesam:url` for a cue row. A

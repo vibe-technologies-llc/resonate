@@ -2,7 +2,7 @@ use std::fmt;
 
 use resonate_library::{Library, Suggestion};
 
-use crate::{Error, Result, folded_name, table::Table, words};
+use crate::{Error, Result, missing::folded_name, table::Table, words};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SuggestionName(Box<str>);
