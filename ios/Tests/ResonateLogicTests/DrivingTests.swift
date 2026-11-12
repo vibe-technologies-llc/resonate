@@ -52,4 +52,19 @@ import Testing
         #expect(!pausedAgain)
         #expect(beganAgain)
     }
+
+    @Test func aReadSetsThePlacesApartFromWhatElseItShows() {
+        let zone = { (position: UInt64) in
+            RemoteZoneState(
+                zone: 1, name: "Kitchen", playing: .playing, playingRow: 0, positionMillis: position,
+                lengthMillis: 200_000, volumePermille: 500, queueLength: 1, firstRow: 0, queueRevision: 3, rows: []
+            )
+        }
+        let early = DrivenRead(RemoteDevice(standing: .mirrored, zones: [zone(1_000)]))
+        let later = DrivenRead(RemoteDevice(standing: .mirrored, zones: [zone(1_500)]))
+
+        #expect(early.still == later.still)
+        #expect(early.places == [1: 1_000])
+        #expect(later.places == [1: 1_500])
+    }
 }

@@ -21,6 +21,7 @@ final class TogetherState {
 
     private(set) var lists: [UInt64: SharedPlaylist] = [:]
     private(set) var party: ListeningParty?
+    private(set) var partyRoundTripMs: UInt64?
     private(set) var joining = false
     private(set) var name: String
     var toShow: InvitationKind?
@@ -136,7 +137,7 @@ final class TogetherState {
                     return (accepted, native.sharedPlaylists(), native.partyShown())
                 }
                 adopt(lists)
-                self.party = party
+                adoptParty(party)
                 library.features.loadPlaylists()
                 toShow = accepted
             } catch {
@@ -189,7 +190,7 @@ final class TogetherState {
         guard let native = try? await library.player() else { return }
         while !Task.isCancelled {
             let shown = try? await Work.aside { native.partyShown() }
-            if party != shown { party = shown }
+            adoptParty(shown)
             try? await Task.sleep(for: TogetherPace.partyReadEvery)
         }
     }
@@ -205,15 +206,23 @@ final class TogetherState {
             defer { joining = false }
             do {
                 let native = try await library.player()
-                party = try await Work.aside { try native.partyBegin() }
+                adoptParty(try await Work.aside { try native.partyBegin() })
             } catch {
                 library.report(error)
             }
         }
     }
 
+    private func adoptParty(_ shown: ListeningParty?) {
+        var still = shown
+        still?.roundTripMs = nil
+        if party != still { party = still }
+        let trip = shown?.roundTripMs
+        if partyRoundTripMs != trip { partyRoundTripMs = trip }
+    }
+
     func leaveParty() {
-        party = nil
+        adoptParty(nil)
         Task {
             guard let native = try? await library.player() else { return }
             _ = try? await Work.aside { native.partyLeave() }

@@ -1,3 +1,4 @@
+import Observation
 import ResonateNative
 
 public enum SyncControls {
@@ -53,5 +54,33 @@ public enum DrivenRows {
     public static func seek(to seconds: Double, lengthMillis: UInt64) -> RemoteControl {
         let asked = UInt64((max(seconds, 0) * 1000).rounded())
         return .seek(millis: min(asked, lengthMillis))
+    }
+}
+
+public struct DrivenRead: Equatable, Sendable {
+    public let still: RemoteDevice
+    public let places: [UInt32: UInt64]
+
+    public init(_ read: RemoteDevice) {
+        var still = read
+        for at in still.zones.indices { still.zones[at].positionMillis = 0 }
+        self.still = still
+        places = Dictionary(read.zones.map { ($0.zone, $0.positionMillis) }, uniquingKeysWith: { kept, _ in kept })
+    }
+}
+
+@MainActor
+@Observable
+public final class DrivenPlaces {
+    public private(set) var millis: [UInt32: UInt64] = [:]
+
+    public init() {}
+
+    public func take(_ read: [UInt32: UInt64]) {
+        if millis != read { millis = read }
+    }
+
+    public func of(_ zone: UInt32) -> UInt64 {
+        millis[zone] ?? 0
     }
 }

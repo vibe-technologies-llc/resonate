@@ -26,6 +26,7 @@ struct DrivenDeviceView: View {
     @Environment(Library.self) private var library
     let device: SyncedDevice
     @State private var shown: RemoteDevice?
+    @State private var places = DrivenPlaces()
 
     private static let readEvery: Duration = .milliseconds(500)
     private static let volumeStep: UInt16 = 100
@@ -66,13 +67,11 @@ struct DrivenDeviceView: View {
             Text(Self.song(zone))
                 .font(.headline)
                 .lineLimit(2)
-            Text("\(Self.place(zone)) · \((Int(zone.volumePermille) + 5) / 10)%")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            DrivenPlaceLine(zone: zone, places: places)
         }
         .accessibilityElement(children: .combine)
         if let length = zone.lengthMillis, length > 0 {
-            DrivenSeek(zone: zone.zone, positionMillis: zone.positionMillis, lengthMillis: length) { control in
+            DrivenSeek(zone: zone.zone, places: places, lengthMillis: length) { control in
                 press(zone, control)
             }
         }
@@ -139,8 +138,9 @@ struct DrivenDeviceView: View {
         while !Task.isCancelled {
             if let native = try? await library.player() {
                 let id = device.id
-                if let read = try? await Work.aside({ try native.syncWatch(device: id) }), read != shown {
-                    shown = read
+                if let read = try? await Work.aside({ DrivenRead(try native.syncWatch(device: id)) }) {
+                    places.take(read.places)
+                    if read.still != shown { shown = read.still }
                 }
             }
             try? await Task.sleep(for: Self.readEvery)
@@ -173,8 +173,8 @@ struct DrivenDeviceView: View {
         row.artist.isEmpty ? row.title : "\(row.title) — \(row.artist)"
     }
 
-    static func place(_ zone: RemoteZoneState) -> String {
-        let at = clock(zone.positionMillis)
+    static func place(_ zone: RemoteZoneState, at position: UInt64) -> String {
+        let at = clock(position)
         guard let length = zone.lengthMillis else { return at }
         return "\(at) / \(clock(length))"
     }
@@ -222,9 +222,20 @@ private struct DrivenQueueRow: View {
     }
 }
 
+private struct DrivenPlaceLine: View {
+    let zone: RemoteZoneState
+    let places: DrivenPlaces
+
+    var body: some View {
+        Text("\(DrivenDeviceView.place(zone, at: places.of(zone.zone))) · \((Int(zone.volumePermille) + 5) / 10)%")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+    }
+}
+
 private struct DrivenSeek: View {
     let zone: UInt32
-    let positionMillis: UInt64
+    let places: DrivenPlaces
     let lengthMillis: UInt64
     let commit: (RemoteControl) -> Void
     @State private var editing: Double?
@@ -232,7 +243,7 @@ private struct DrivenSeek: View {
     var body: some View {
         CommittingSlider(
             title: said("driven.position"),
-            value: min(Double(positionMillis), Double(lengthMillis)) / 1000,
+            value: min(Double(places.of(zone)), Double(lengthMillis)) / 1000,
             range: 0...(Double(lengthMillis) / 1000),
             step: 1,
             editing: $editing,

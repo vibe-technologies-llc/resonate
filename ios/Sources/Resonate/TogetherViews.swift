@@ -344,9 +344,17 @@ struct PartyView: View {
         } header: {
             Text("together.people")
         } footer: {
-            if let said = PartyWords.roundTrip(party.roundTripMs) {
-                Text(said)
-            }
+            PartyRoundTrip(together: together)
+        }
+    }
+}
+
+private struct PartyRoundTrip: View {
+    let together: TogetherState
+
+    var body: some View {
+        if let said = PartyWords.roundTrip(together.partyRoundTripMs) {
+            Text(said)
         }
     }
 }

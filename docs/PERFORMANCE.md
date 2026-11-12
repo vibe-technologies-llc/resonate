@@ -23,11 +23,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Songs and the add-songs sheet hand SwiftUI the whole filtered library as one `ForEach`, whose
   ids are gathered and diffed on the main thread at every publish (several milliseconds past ten
   thousand songs); the queue is a window (`QueueParts`), these are not
-- [S] The remote-device page rebuilds its list twice a second while the driven device plays:
-  `sync_watch` answers the position played on to the moment asked, so the read never equals what is
-  shown and every zone and visible row is evaluated again; the position wants an observable of its
-  own, as `PlayClock` is, read by the place line and the seek slider. The party page does the same
-  with the round trip it shows
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the
