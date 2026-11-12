@@ -127,7 +127,7 @@ struct BackdropView: View {
 
     private static func rate(sounding: Bool, lowPower: Bool, beneathASheet: Bool) -> Int {
         if beneathASheet { return lowPower ? 15 : 30 }
-        switch (sounding, lowPower) {
+        return switch (sounding, lowPower) {
         case (true, false): 120
         case (true, true): 60
         case (false, false): 60
