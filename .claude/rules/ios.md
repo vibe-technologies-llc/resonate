@@ -817,7 +817,14 @@ every route change (a pair of headphones at the same rate included), not from th
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
   search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
   `@ScaledMetric`.
-- **One song menu everywhere a song is listed** (`SongPages`: *Song details*, *Share link*, *Edit
+- **Find another version** is in `SongPages` beside *Share link* (`Navigation.findVersions`,
+  presented by the root as `VersionsSheet` and held until Now Playing closes, as the tag editor is):
+  `Features.versionSearches` reads the searches and whether a version is chosen,
+  `Features.findVersions` asks `find_versions` through `serverAnswer` (the served accounts bound),
+  and a version chosen is `chooseVersion` (`choose_version`, then `Library.play` of the song, which the
+  boundary swaps for its version); *Play your own copy again* is `forgetVersionChosen`
+  (`mobile.md`'s *Another version of a song*).
+- **One song menu everywhere a song is listed** (`SongPages`: *Song details*, *Share link*, *Find another version*, *Edit
   tags* where writable, *Lyrics*, *Analyse*, *Go to album*, *Go to artist*): `TrackMenu` carries it
   under its queue, favourite and playlist sections, a queue row (`QueueRow`) under its favourite and
   playlist entries with *Remove from queue* last (no Play next or Add to queue, which would only copy

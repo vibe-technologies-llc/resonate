@@ -1,12 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use gpui::{Context, Pixels, Point};
 use resonate_core::{
-    MediaLocation, SampleFormat, TrackId, folded_letters,
+    MediaLocation, TrackId,
     titles::{self, Rating},
 };
 use resonate_engine::{QueueItem, Unclaimed};
-use resonate_library::{Chosen, Codec, Played, Track, Version, codec_named};
+use resonate_library::{
+    Chosen, Codec, Played, SongHeard, TheSong, Track, Version, VersionSought, better_held,
+    codec_named, rated_held, rating_of,
+};
 
 use crate::{
     ResonateApp, format,
@@ -17,173 +20,40 @@ use crate::{
     words,
 };
 
-const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(3);
-
 const HELD_WEIGHED_AT_MOST: usize = 64;
 
 const NAMES_APART: &str = ", ";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Sought {
-    Better,
-    Rated(Rating),
-}
+pub(crate) type Sought = VersionSought;
 
-impl Sought {
-    pub(crate) fn offered_for(track: &Track) -> Vec<Self> {
-        let rated = match rating_of(track) {
-            Rating::Explicit => vec![Self::Rated(Rating::Clean)],
-            Rating::Clean => vec![Self::Rated(Rating::Explicit)],
-            Rating::Unmarked => vec![Self::Rated(Rating::Clean), Self::Rated(Rating::Explicit)],
-        };
-        let mut offered = vec![Self::Better];
-        offered.extend(rated);
-        offered
-    }
-
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Better => words::better::find_a_better_version(),
-            Self::Rated(Rating::Explicit) => words::better::look_for_explicit(),
-            Self::Rated(Rating::Clean | Rating::Unmarked) => words::better::look_for_clean(),
-        }
-    }
-
-    fn looking(self, title: &str) -> String {
-        match self {
-            Self::Better => words::better::looking(title),
-            Self::Rated(Rating::Explicit) => words::better::looking_for_explicit(title),
-            Self::Rated(Rating::Clean | Rating::Unmarked) => {
-                words::better::looking_for_clean(title)
-            }
-        }
+pub(crate) fn sought_label(sought: Sought) -> &'static str {
+    match sought {
+        Sought::Better => words::better::find_a_better_version(),
+        Sought::Rated(Rating::Explicit) => words::better::look_for_explicit(),
+        Sought::Rated(Rating::Clean | Rating::Unmarked) => words::better::look_for_clean(),
     }
 }
 
-pub(crate) fn rating_of(track: &Track) -> Rating {
-    Rating::of(Rating::flagged(track.explicit), &track.title, None)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Quality {
-    lossless: bool,
-    bits: u8,
-    rate: u32,
-}
-
-impl Quality {
-    pub(crate) fn of(track: &Track) -> Self {
-        Self {
-            lossless: track.codec.is_lossless(),
-            bits: significant_bits(track.spec.format),
-            rate: track.spec.rate.hz(),
-        }
-    }
-
-    pub(crate) fn is_above(self, held: Self) -> bool {
-        let at_least =
-            self.lossless >= held.lossless && self.bits >= held.bits && self.rate >= held.rate;
-        at_least && self != held
+fn looking(sought: Sought, title: &str) -> String {
+    match sought {
+        Sought::Better => words::better::looking(title),
+        Sought::Rated(Rating::Explicit) => words::better::looking_for_explicit(title),
+        Sought::Rated(Rating::Clean | Rating::Unmarked) => words::better::looking_for_clean(title),
     }
 }
 
-const fn significant_bits(format: SampleFormat) -> u8 {
-    match format {
-        SampleFormat::S16 => 16,
-        SampleFormat::S24 | SampleFormat::F32 => 24,
-        SampleFormat::S32 => 32,
-    }
+pub(crate) fn offered_for(track: &Track) -> Vec<Sought> {
+    Sought::offered_for(rating_of(track))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct TheSong {
-    title: String,
-    artist: Option<String>,
-    length: Option<Duration>,
-    lossless: bool,
-    rating: Rating,
-}
-
-impl TheSong {
-    pub(crate) fn of(track: &Track) -> Self {
-        Self {
-            title: folded_letters(titles::bare(&track.title)),
-            artist: track
-                .artist
-                .as_deref()
-                .map(folded_letters)
-                .filter(|artist| !artist.is_empty()),
-            length: length_of(track),
-            lossless: track.codec.is_lossless(),
-            rating: rating_of(track),
-        }
+fn heard_of(song: &ServedSong) -> SongHeard<'_> {
+    SongHeard {
+        title: &song.title,
+        artist: song.artist.as_deref(),
+        length: song.length,
+        lossless: served_codec(song).is_some_and(Codec::is_lossless),
+        rating: song.rating,
     }
-
-    pub(crate) fn words(track: &Track) -> String {
-        let title = titles::bare(&track.title);
-        match track
-            .artist
-            .as_deref()
-            .filter(|artist| !artist.trim().is_empty())
-        {
-            Some(artist) => format!("{title} {artist}"),
-            None => title.to_owned(),
-        }
-    }
-
-    pub(crate) fn is_bettered_by(&self, song: &ServedSong) -> bool {
-        !self.lossless
-            && served_codec(song).is_some_and(Codec::is_lossless)
-            && self.names(&song.title, song.artist.as_deref(), song.length)
-    }
-
-    pub(crate) fn is_rated_as(&self, wanted: Rating, rating: Rating) -> bool {
-        match wanted {
-            Rating::Explicit => rating == Rating::Explicit,
-            Rating::Clean | Rating::Unmarked => {
-                rating == Rating::Clean
-                    || (rating == Rating::Unmarked && self.rating == Rating::Explicit)
-            }
-        }
-    }
-
-    pub(crate) fn served_as(&self, sought: Sought, song: &ServedSong) -> bool {
-        match sought {
-            Sought::Better => self.is_bettered_by(song),
-            Sought::Rated(wanted) => {
-                self.is_rated_as(wanted, song.rating)
-                    && self.names(&song.title, song.artist.as_deref(), song.length)
-            }
-        }
-    }
-
-    pub(crate) fn held_as(&self, wanted: Rating, track: &Track) -> bool {
-        self.is_rated_as(wanted, rating_of(track))
-            && self.names(&track.title, track.artist.as_deref(), length_of(track))
-    }
-
-    fn names(&self, title: &str, artist: Option<&str>, length: Option<Duration>) -> bool {
-        let same_title = folded_letters(titles::bare(title)) == self.title;
-        let same_artist = match (&self.artist, artist.map(folded_letters)) {
-            (Some(held), Some(served)) => {
-                served.contains(held.as_str()) || held.contains(served.as_str())
-            }
-            (None, _) => true,
-            (Some(_), None) => false,
-        };
-        let same_length = match (self.length, length) {
-            (Some(held), Some(served)) => held.abs_diff(served) <= LENGTHS_AGREE_WITHIN,
-            _ => true,
-        };
-
-        same_title && same_artist && same_length
-    }
-}
-
-fn length_of(track: &Track) -> Option<Duration> {
-    track
-        .duration
-        .map(|frames| frames.to_duration(track.spec.rate))
 }
 
 fn served_codec(song: &ServedSong) -> Option<Codec> {
@@ -226,27 +96,6 @@ fn held_label(sought: Sought, copy: &Track, album: Option<&str>) -> String {
     }
 }
 
-pub(crate) fn better_held(track: &Track, copies: Vec<Track>) -> Vec<Track> {
-    let held = Quality::of(track);
-    let mut better: Vec<Track> = copies
-        .into_iter()
-        .filter(|copy| Quality::of(copy).is_above(held))
-        .collect();
-    better.sort_by_key(|copy| {
-        let quality = Quality::of(copy);
-        std::cmp::Reverse((quality.lossless, quality.bits, quality.rate))
-    });
-    better
-}
-
-pub(crate) fn rated_held(track: &Track, wanted: Rating, found: Vec<Track>) -> Vec<Track> {
-    let song = TheSong::of(track);
-    found
-        .into_iter()
-        .filter(|copy| copy.id != track.id && song.held_as(wanted, copy))
-        .collect()
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct Asked {
     served: Vec<ServedVersion>,
@@ -263,7 +112,7 @@ fn asked_of(services: &[Arc<dyn Serves>], words: &str, song: &TheSong, sought: S
                 found
                     .songs
                     .into_iter()
-                    .filter(|found| song.served_as(sought, found))
+                    .filter(|found| song.served_as(sought, heard_of(found)))
                     .map(|found| ServedVersion {
                         service: service.clone(),
                         song: found,
@@ -341,6 +190,10 @@ fn versions_menu(
     menu
 }
 
+fn words_of(track: &Track) -> String {
+    TheSong::words(&track.title, track.artist.as_deref())
+}
+
 pub(crate) fn played_as_chosen(
     chosen: &Chosen,
     items: Vec<QueueItem>,
@@ -385,7 +238,7 @@ impl RootView {
                 let found = self
                     .library
                     .read(cx)
-                    .tracks_named(&TheSong::words(&track), HELD_WEIGHED_AT_MOST);
+                    .tracks_named(&words_of(&track), HELD_WEIGHED_AT_MOST);
                 rated_held(&track, wanted, found)
             }
         };
@@ -405,7 +258,7 @@ impl RootView {
         let id = track.id;
 
         let nothing_to_ask = match sought {
-            Sought::Better if song.lossless => Some(Nothing::AlreadyLossless),
+            Sought::Better if song.is_lossless() => Some(Nothing::AlreadyLossless),
             _ if services.iter().all(|serves| !serves.plays_songs()) => Some(Nothing::NowhereToAsk),
             _ => None,
         };
@@ -420,8 +273,8 @@ impl RootView {
             return;
         }
 
-        self.report(Notice::Noted(sought.looking(&title)), cx);
-        let words = TheSong::words(&track);
+        self.report(Notice::Noted(looking(sought, &title)), cx);
+        let words = words_of(&track);
         let asking = cx
             .background_executor()
             .spawn(async move { asked_of(&services, &words, &song, sought) });
@@ -507,9 +360,9 @@ impl RootView {
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
-    use resonate_core::{ChannelLayout, SampleRate, StreamSpec};
+    use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
     use resonate_library::{ChosenVersion, Codec};
 
     use super::*;
@@ -554,126 +407,6 @@ mod tests {
             location: MediaLocation::local(format!("/music/{id}.flac")),
             ..track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100)
         }
-    }
-
-    fn served(title: &str, artist: &str, seconds: u64, suffix: &str) -> ServedSong {
-        ServedSong {
-            rating: Default::default(),
-            location: MediaLocation::from_uri("tidal:track/1").expect("a location"),
-            title: title.to_owned(),
-            artist: Some(artist.to_owned()),
-            album: Some("Meddle".to_owned()),
-            track: None,
-            length: Some(Duration::from_secs(seconds)),
-            format: Some(suffix.to_owned()),
-            cover: None,
-            favourite: None,
-        }
-    }
-
-    #[test]
-    fn a_copy_is_higher_quality_only_where_it_is_no_lower_on_any_count_and_higher_on_one() {
-        let cd = Quality::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100));
-        let mp3 = Quality::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100));
-        let hi_res = Quality::of(&track(Codec::Flac, SampleFormat::S24, SampleRate::HZ_96000));
-        let lossy_hi_rate =
-            Quality::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_48000));
-
-        assert!(cd.is_above(mp3));
-        assert!(hi_res.is_above(cd));
-        assert!(hi_res.is_above(mp3));
-
-        assert!(!cd.is_above(cd));
-        assert!(!mp3.is_above(cd));
-        assert!(!lossy_hi_rate.is_above(cd));
-        assert!(!cd.is_above(lossy_hi_rate));
-    }
-
-    #[test]
-    fn a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song() {
-        let song = TheSong::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100));
-        let lossless = TheSong::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100));
-
-        assert!(song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "flac")));
-        assert!(song.is_bettered_by(&served("ECHOES", "pink floyd", 1_410, "FLAC")));
-
-        assert!(!song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "mp3")));
-        assert!(!song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "m4a")));
-        assert!(!song.is_bettered_by(&served("Echoes", "Pink Floyd", 1_300, "flac")));
-        assert!(!song.is_bettered_by(&served("Time", "Pink Floyd", 1_413, "flac")));
-        assert!(!song.is_bettered_by(&served("Echoes", "Someone Else", 1_413, "flac")));
-        assert!(!lossless.is_bettered_by(&served("Echoes", "Pink Floyd", 1_413, "flac")));
-    }
-
-    #[test]
-    fn the_better_copies_held_are_offered_best_first_and_none_worse_than_the_track() {
-        let held = track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100);
-        let copies = vec![
-            track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100),
-            track(Codec::Flac, SampleFormat::S24, SampleRate::HZ_48000),
-            track(Codec::Flac, SampleFormat::S24, SampleRate::HZ_96000),
-        ];
-
-        let better = better_held(&held, copies);
-
-        assert_eq!(
-            better.iter().map(|copy| copy.spec.rate).collect::<Vec<_>>(),
-            [SampleRate::HZ_96000, SampleRate::HZ_48000]
-        );
-    }
-
-    #[test]
-    fn a_rating_is_offered_only_where_the_track_is_not_already_it() {
-        let explicit = rated(1, Some(true), "Echoes");
-        let clean = rated(2, None, "Echoes (Clean)");
-        let unmarked = rated(3, None, "Echoes");
-
-        assert_eq!(
-            Sought::offered_for(&explicit),
-            [Sought::Better, Sought::Rated(Rating::Clean)]
-        );
-        assert_eq!(
-            Sought::offered_for(&clean),
-            [Sought::Better, Sought::Rated(Rating::Explicit)]
-        );
-        assert_eq!(
-            Sought::offered_for(&unmarked),
-            [
-                Sought::Better,
-                Sought::Rated(Rating::Clean),
-                Sought::Rated(Rating::Explicit)
-            ]
-        );
-    }
-
-    #[test]
-    fn a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked() {
-        let explicit = rated(1, Some(true), "Echoes");
-        let found = vec![
-            rated(1, Some(true), "Echoes"),
-            rated(2, None, "Echoes"),
-            rated(3, None, "Echoes (Clean)"),
-            rated(4, Some(true), "Echoes"),
-            rated(5, None, "Time"),
-        ];
-
-        let clean: Vec<u64> = rated_held(&explicit, Rating::Clean, found.clone())
-            .iter()
-            .map(|copy| copy.id.get())
-            .collect();
-        let unmarked = rated(9, None, "Echoes");
-        let marked: Vec<u64> = rated_held(&unmarked, Rating::Explicit, found.clone())
-            .iter()
-            .map(|copy| copy.id.get())
-            .collect();
-        let strictly_clean: Vec<u64> = rated_held(&unmarked, Rating::Clean, found)
-            .iter()
-            .map(|copy| copy.id.get())
-            .collect();
-
-        assert_eq!(clean, [2, 3]);
-        assert_eq!(marked, [1, 4]);
-        assert_eq!(strictly_clean, [3]);
     }
 
     #[test]

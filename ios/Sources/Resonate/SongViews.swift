@@ -589,6 +589,9 @@ struct SongPages: View {
     private var pages: some View {
         Button("song.details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
         ShareSongButton(track: track)
+        Button("song.find-another-version", systemImage: "arrow.left.arrow.right") {
+            navigation.findVersions(track)
+        }
         if library.features.tagsWritable(track) {
             Button("song.edit-tags", systemImage: "pencil") { navigation.editTags([track]) }
         }

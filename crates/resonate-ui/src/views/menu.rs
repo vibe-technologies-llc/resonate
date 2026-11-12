@@ -942,11 +942,15 @@ impl Menu {
             Icon::Search,
             words::menu::find_another_version(),
             move |mut menu| {
-                for sought in better::Sought::offered_for(&track) {
+                for sought in better::offered_for(&track) {
                     let track = track.clone();
-                    menu = menu.does(Icon::Search, sought.label(), move |this, _, cx| {
-                        this.look_for_a_version(sought, track.clone(), at, cx);
-                    });
+                    menu = menu.does(
+                        Icon::Search,
+                        better::sought_label(sought),
+                        move |this, _, cx| {
+                            this.look_for_a_version(sought, track.clone(), at, cx);
+                        },
+                    );
                 }
                 if chosen {
                     let track = track.clone();

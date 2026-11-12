@@ -1347,6 +1347,7 @@
 "song.download.cancel" = "Cancel download";
 "song.download.hint" = "Downloads the song";
 "song.edit-tags" = "Edit tags";
+"song.find-another-version" = "Find another version";
 "song.favourite.add" = "Add to favourites";
 "song.favourite.remove" = "Remove from favourites";
 "song.go-to-album" = "Go to album";
@@ -1697,3 +1698,7 @@
 "scrobbling.lastfm.ended" = "The Last.fm sign-in ended before Resonate was allowed";
 "scrobbling.lastfm.open-again" = "Open the Last.fm page again";
 "scrobbling.lastfm.waiting" = "Waiting for Last.fm…";
+"versions.title" = "Find another version";
+"versions.reading" = "Reading what can be looked for";
+"versions.looking" = "Looking in your library and on your services";
+"versions.play-own-copy" = "Play your own copy again";

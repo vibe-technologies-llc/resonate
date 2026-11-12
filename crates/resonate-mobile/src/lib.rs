@@ -49,6 +49,7 @@ mod sync;
 mod tagging;
 mod together;
 mod vanished;
+mod versions;
 mod watching;
 mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
@@ -105,6 +106,7 @@ pub use crate::{
         InvitationKind, ListeningParty, PartyConnection, PartyFollowing, PartyRequest,
         SharedPlaylist, SharedPlaylistReach, TogetherPerson, invitation_kind,
     },
+    versions::{FoundVersion, FoundVersions, SongVersion, VersionSearch, VersionSearchOffered},
     watching::PlayerWatch,
     zoning::PlayerZone,
 };
@@ -486,6 +488,7 @@ impl MobilePlayer {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
+        let items = self.as_chosen(items, [])?;
         if !autoplay {
             return self.command_landed(Command::Resume(Resumption {
                 rows: items

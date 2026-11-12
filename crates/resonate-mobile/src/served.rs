@@ -295,6 +295,20 @@ impl Served {
         })
     }
 
+    pub(crate) fn knows(&self, location: &MediaLocation) -> bool {
+        self.known.lock().contains_key(location)
+    }
+
+    pub(crate) fn serves(&self, location: &MediaLocation) -> bool {
+        Self::names(location)
+            && self.named(location.source().as_str()).is_ok_and(|service| {
+                service
+                    .plays
+                    .named_by(location)
+                    .is_some_and(|named| matches!(named, Named::Song(_)))
+            })
+    }
+
     pub(crate) fn kept(&self, songs: &[ServedSong]) {
         self.remember(&mut songs.to_vec());
     }
@@ -496,6 +510,7 @@ impl MobilePlayer {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
+        let held = self.as_chosen(held, [])?;
         let mut minting = Unclaimed::beside(&held);
         let mut held = held.into_iter();
         let items = songs

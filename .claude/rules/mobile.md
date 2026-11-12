@@ -55,7 +55,7 @@ opening and the TIDAL sign-in alike.
 **Every sentence comes out of the crate's catalog** (`words/en/*.ftl`, one area per subject:
 `errors` for each variant and the op words its `Display` reads, `failure`, `measurement`,
 `downloads`, `equaliser` for the presets' names and lines, `statistics`, `search`, `sync`,
-`driving` for `sync_control_offered`): a variant's `#[error]` calls its `words::errors` function
+`driving` for `sync_control_offered`, `versions` for *Find another version*): a variant's `#[error]` calls its `words::errors` function
 with the typed fields as the variables, a count chooses its form by a Fluent selector, and a
 figure whose precision matters (a frequency, a decibel) is passed formatted. A foreign error a
 sentence carries (`{ $source }`) and the words another crate hands over (`LookupOp::asked_for`,
@@ -914,6 +914,35 @@ favourite in the service's own mark*)
 (`a_song_is_starred_and_unstarred_by_the_services_own_call_and_drawn_so_until_the_accounts_move`,
 `a_service_with_an_account_marks_its_songs_and_one_without_draws_no_star`,
 `a_star_is_refused_for_a_uri_that_is_no_song_and_while_online_is_off`).
+
+## Another version of a song
+
+`versions.rs` is the phones' half of `ui.md`'s *Find another version*, the matching the library's own
+(`library.md`'s *A version chosen*). `version_searches(id)` answers the searches the song is offered
+(`VersionSearchOffered`: `VersionSearch::{Better, Clean, Explicit}` and its label, said through the
+`versions` area); `find_versions(id, search)` (blocking, for the caller's worker) weighs the songs the
+search index ranks for the bare title and artist (`HELD_WEIGHED_AT_MOST`, 64): for quality those that
+name the same song and whose `Quality` (lossless by `search::codec_named`, the document's `bits`, 16
+where none is kept, and rate) is above the song's, best first, for a rating those `TheSong::held_as`
+it; then, while online reaches, every service played in place that plays songs is searched for the
+same words and a song kept as the desktop keeps one. It answers `FoundVersions`: each version
+(`SongVersion::Held { id }` or `Served { uri }`) with its label, `said` (*Found N versions of …*, or
+why nothing was: already lossless, no service to ask, none on the services named) and `trouble`
+(the services that could not be asked). Step 34 (`A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT`) made
+`versions_chosen` (`track` primary, either `held` or `served`, never both, both to `documents` with
+`ON DELETE CASCADE`, and `chosen` in Unix seconds), so a song forgotten, deleted or folded takes the
+choice with it and a document handed over (`handed_over`'s referring columns) carries it.
+`choose_version(id, version)` keeps it (the song itself as the version forgets it) and answers
+*{title} plays this version from now on*; `version_chosen(id)` reads it and
+`forget_version_chosen(id)` drops it. **Every call that queues catalog ids plays a song as its
+version** (`MobilePlayer::as_chosen`): `load`, `load_songs`, `play_next`, `add_to_queue` and
+`insert_in_queue` queue a held version (a visible document) by its id, and a served one under an id
+minted beside the queue only while its service is served (`Served::serves`), else the song itself;
+a served version not yet remembered is named after the song (`name_as_its_song`). A playlist keeps
+the song itself; only a queue swaps it. Both phones draw it (`android.md`'s and `ios.md`'s *Find
+another version*), choosing and then playing the song, which the swap turns into its version
+(`a_version_chosen_is_queued_in_place_of_its_song_and_forgotten_with_it`,
+`a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table`).
 
 ## Hosted services on the phones
 

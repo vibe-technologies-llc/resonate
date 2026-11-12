@@ -257,6 +257,40 @@ final class Features {
         }
     }
 
+    func versionSearches(_ track: Track) async throws -> VersionsOffered {
+        let native = try await library.player()
+        let id = track.id
+        return try await Work.aside {
+            VersionsOffered(
+                searches: try native.versionSearches(id: id),
+                chosen: try native.versionChosen(id: id) != nil
+            )
+        }
+    }
+
+    func findVersions(_ track: Track, _ search: VersionSearch) async throws -> FoundVersions {
+        let id = track.id
+        return try await serverAnswer { try $0.findVersions(id: id, search: search) }
+    }
+
+    func chooseVersion(_ track: Track, _ version: SongVersion) {
+        let id = track.id
+        work { [weak self] native in
+            let told = try await Work.aside { try native.chooseVersion(id: id, version: version) }
+            self?.library.play([track], at: 0)
+            self?.library.notice(told)
+        }
+    }
+
+    func forgetVersionChosen(_ track: Track) {
+        let id = track.id
+        work { [weak self] native in
+            let told = try await Work.aside { try native.forgetVersionChosen(id: id) }
+            self?.library.play([track], at: 0)
+            self?.library.notice(told)
+        }
+    }
+
     func favourServed(_ uri: String, _ favourite: Bool) async throws {
         try await serverAnswer { try $0.favourServedSong(uri: uri, favoured: favourite) }
     }

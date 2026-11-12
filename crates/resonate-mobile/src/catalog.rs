@@ -334,6 +334,17 @@ ALTER TABLE zone_resume ADD COLUMN next_first INTEGER;
 ALTER TABLE zone_resume ADD COLUMN next_last INTEGER;
 ";
 
+const A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT: &str = "
+CREATE TABLE versions_chosen (
+    track  INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    held   INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+    served TEXT,
+    chosen INTEGER NOT NULL,
+    CHECK ((held IS NULL) <> (served IS NULL))
+) STRICT;
+CREATE INDEX versions_chosen_by_held ON versions_chosen(held) WHERE held IS NOT NULL;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -368,6 +379,7 @@ const MIGRATIONS: &[&str] = &[
     DOCUMENTS_ARE_FOUND_BY_THEIR_ISRC,
     A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD,
     QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT,
+    A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
 ];
 
 #[cfg(test)]
@@ -1925,6 +1937,80 @@ mod tests {
 
         assert_eq!(count("listens"), 1);
         assert_eq!(count("wrapped_years"), 0);
+        drop(connection);
+        drop(opened);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-versions-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        for (id, uri) in [(1, "content://song/1"), (2, "content://song/2")] {
+            connection
+                .execute(
+                    "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
+                     VALUES (?1, ?2, 'echoes.flac', 'Echoes', 'Pink Floyd', 'Meddle', 1000, 44100, 'FLAC')",
+                    params![id, uri],
+                )
+                .expect("a song of before");
+        }
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT))
+                    .expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let connection = opened.0.lock();
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table")
+        };
+        let both = connection.execute(
+            "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, 2, 'tidal:track/7', 0)",
+            [],
+        );
+        let neither = connection.execute(
+            "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, NULL, NULL, 0)",
+            [],
+        );
+        connection
+            .execute(
+                "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, 2, NULL, 0)",
+                [],
+            )
+            .expect("a version chosen");
+        connection
+            .execute("DELETE FROM documents WHERE id = 2", [])
+            .expect("the copy forgotten");
+
+        assert_eq!(count("documents"), 1);
+        assert!(both.is_err());
+        assert!(neither.is_err());
+        assert_eq!(count("versions_chosen"), 0);
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
