@@ -26,7 +26,7 @@ mod tests {
         "d.title, d.artist, d.album, d.recording, d.duration_ms",
     ];
 
-    const ONLY_UNDER_TEST: &[&str] = &["harness.rs", "resuming_tests.rs"];
+    const ONLY_UNDER_TEST: &[&str] = &["catalog_steps_tests.rs", "harness.rs", "resuming_tests.rs"];
 
     const SQL_OPENINGS: &[&str] = &[
         "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "WITH", "AND", "FROM", "PRAGMA",
