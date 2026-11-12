@@ -1,0 +1,50 @@
+name: macOS disk images
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Which Mac to build for
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - aarch64
+          - x86_64
+
+permissions:
+  contents: read
+
+env:
+  RESONATE_RELEASES: ${{ github.repository }}
+
+jobs:
+  macos-dmg:
+    name: macOS disk image (${{ matrix.architecture }})
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: ${{ fromJSON(inputs.architecture == 'both' && '["aarch64", "x86_64"]' || format('["{0}"]', inputs.architecture)) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Build the application and its disk image
+        env:
+          RESONATE_MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          RESONATE_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          RESONATE_MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          RESONATE_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          RESONATE_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: packaging/macos/build.sh "" assets "$ARCHITECTURE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: resonate-macos-${{ matrix.architecture }}
+          path: assets/*.dmg
+          if-no-files-found: error

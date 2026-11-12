@@ -72,6 +72,12 @@ paths:
   for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
   `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens. The three third-party actions beside the keystore (`setup-android`, `rust-cache`, `setup-gradle`) are pinned by full commit SHA of the release tag they were taken from, never a movable tag; a bump resolves the new tag with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (dereferencing an annotated tag to its commit).
 
+- **`macos-dmg.yml` builds the macOS disk images alone, on a manual run** (input `architecture`:
+  `both`, `aarch64` or `x86_64`), so a Mac can try the branch before any release: the
+  `macos-dmg` job of `release.yml` over the checked-out branch, the version the manifest names,
+  each image uploaded as the artifact `resonate-macos-<architecture>` and nothing published.
+  `gh workflow run macos-dmg.yml --ref <branch>` starts it.
+
 CI and the release jobs install WebKitGTK 4.1 (`webkit2gtk-4.1`, Fedora's `webkit2gtk4.1-devel`,
 Ubuntu's `libwebkit2gtk-4.1-dev`) for `resonate-signin`'s window.
 
