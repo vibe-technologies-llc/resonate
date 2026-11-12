@@ -125,10 +125,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [M · 0.8.1] The phones' search is evaluated in memory (`resonate-mobile`'s `search.rs`:
-  `term_holds`, `shaped`) and the desktop's as SQL (`db.rs`'s `Term`), over one grammar, and no
-  test runs the same rows and queries through both, so a `Term` added to one is answered otherwise
-  by the other
 - [S · 0.8.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
   the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
   Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game

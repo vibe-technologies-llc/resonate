@@ -805,6 +805,15 @@ step would move them.
 ## Checks
 
 `cargo test -p resonate-mobile` runs on the host.
+`search_parity.rs` (test-only) scans a table of songs into a real `resonate-library` catalog, shapes their
+rows by SQL, builds the same songs in the document catalog and asks both every kind of term the grammar
+reads (`added`, `plays` with and without a window, `played`, `year`, `length`, `rate`, `depth`, every
+`Codec`, every `Shape`, each under all five comparisons, ranges, denials and mixes), requiring the same
+songs back from the desktop's SQL and the phones' `term_holds` and `shaped`
+(`the_desktops_sql_and_the_phones_memory_answer_every_term_of_the_grammar_alike`); a `Term` added to one and
+not the other fails there, and the table must ask every kind
+(`the_table_asks_every_kind_of_term_the_grammar_has`). The two reads of a year differ by design (the album's
+and the song's own `date`), so the table gives an album one song.
 `every_word_the_phones_show_is_said_through_the_catalog` refuses a prose literal anywhere in the
 crate's sources (`language.md`'s *The checks*). The queue edit tests drive a real engine over
 a backend with no device (a paused queue never binds a stream; `Harness::sounding` lists one sink
