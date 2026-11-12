@@ -70,6 +70,7 @@ mod unreplacing;
 mod vaulted;
 mod volumes;
 mod watch;
+mod weighing;
 mod wrapped;
 mod xspf;
 
@@ -217,4 +218,5 @@ pub use crate::{
     },
     undo::{Edit, Maker, Undoable},
     watch::RootsWatch,
+    weighing::{VaultMended, VaultReframed, VaultUnreached, VaultWeighing},
 };

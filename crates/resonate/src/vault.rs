@@ -1,8 +1,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use resonate_library::{
-    Form, ImportOptions, ImportSummary, Library, PassKind, Passing, Reframing, Sources, Vault,
-    VaultObject, Wanted,
+    Form, ImportOptions, ImportSummary, Library, PassKind, Passing, Sources, Vault, VaultObject,
+    VaultWeighing, Wanted,
 };
 
 use crate::{
@@ -14,7 +14,7 @@ const WRITES_SHOWN: usize = 20;
 
 pub fn run(library: &Library, vault: &Arc<Vault>, args: &VaultArgs) -> Result<()> {
     if args.verify {
-        return verify(library, vault, args.apply);
+        return verify(library, args.apply);
     }
     if args.prune {
         return prune(library, args);
@@ -269,106 +269,55 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
     told
 }
 
-fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
-    let objects = library.vault_objects()?;
-    let covers = vault.covers()?;
-    if objects.is_empty() && covers.is_empty() {
+fn verify(library: &Library, mending: bool) -> Result<()> {
+    let weighed = library.weigh_the_vault(mending)?;
+    if weighed.held_nothing() {
         said!("{}", words::vault::nothing_to_weigh());
         return Ok(());
     }
 
-    let mut held = 0_u64;
-    let mut moved = Vec::new();
-    let mut unreached = Vec::new();
-    let mut unframed = Vec::new();
-    for object in &objects {
-        let reads_back = match vault.verify(&object.path, object.form) {
-            Ok(reads_back) => reads_back,
-            Err(error) if vault.failed_itself(&error) => {
-                unreached.push((object.path.clone(), error));
-                continue;
-            }
-            Err(error) => {
-                tracing::debug!(%error, path = %object.path.display(), "a vault object failed as it was read back");
-                false
-            }
-        };
-        library.note_validated(&object.key, reads_back)?;
-        if reads_back {
-            held += 1;
-            let before_the_frames = object.form == Form::Wave
-                && vault
-                    .packed_before_the_frames(&object.path)
-                    .inspect_err(|error| {
-                        tracing::debug!(
-                            %error,
-                            path = %object.path.display(),
-                            "a vault object's frames could not be walked"
-                        );
-                    })
-                    .unwrap_or(false);
-            if before_the_frames {
-                unframed.push(object.path.clone());
-            }
-        } else {
-            moved.push((object.key, object.path.clone()));
-        }
-    }
-
-    let mut covers_held = 0_u64;
-    let mut covers_moved = Vec::new();
-    for cover in &covers {
-        match vault.verify_cover(&cover.path) {
-            Ok(true) => covers_held += 1,
-            Ok(false) => covers_moved.push((cover.key, cover.path.clone())),
-            Err(error) if vault.failed_itself(&error) => {
-                unreached.push((cover.path.clone(), error));
-            }
-            Err(error) => {
-                tracing::debug!(%error, path = %cover.path.display(), "a vault cover failed as it was read back");
-                covers_moved.push((cover.key, cover.path.clone()));
-            }
-        }
-    }
-
-    for (_, path) in moved.iter().chain(&covers_moved) {
+    for path in weighed.objects_moved.iter().chain(&weighed.covers_moved) {
         said!(
             "{}",
             words::vault::did_not_read_back(path.display().to_string())
         );
     }
-    for (path, error) in &unreached {
+    for unreached in &weighed.unreached {
         said!(
             "{}",
-            words::vault::not_weighed(error.to_string(), path.display().to_string())
+            words::vault::not_weighed(
+                unreached.error.to_string(),
+                unreached.path.display().to_string()
+            )
         );
     }
     said!(
         "{}",
         words::vault::weighed(
-            covers.len(),
-            covers_held,
-            covers_moved.len(),
-            held,
-            moved.len(),
-            unreached.len(),
-            objects.len(),
+            weighed.covers,
+            weighed.covers_held,
+            weighed.covers_moved.len(),
+            weighed.objects_held,
+            weighed.objects_moved.len(),
+            weighed.unreached.len(),
+            weighed.objects,
         )
     );
 
-    reframed(vault, &unframed, mending)?;
+    told_reframing(&weighed, mending);
 
-    let failing = moved.len() + covers_moved.len();
-    if failing > 0 && mending {
-        let keys: Vec<_> = moved.iter().map(|(key, _)| *key).collect();
-        let released = library.release_the_rows_of(&keys)?;
-        let covers: Vec<_> = covers_moved.iter().map(|(key, _)| *key).collect();
-        let let_go = library.let_go_of_vault_covers(&covers)?;
+    let failing = weighed.failing();
+    let unreached = weighed.unreached.len() as u64;
+    if let Some(mended) = weighed.mended {
         said!(
             "{}",
-            words::vault::mended(let_go, released.released, released.stranded)
+            words::vault::mended(
+                mended.covers_let_go,
+                mended.released.released,
+                mended.released.stranded
+            )
         );
-        return match unreached.len() as u64 {
+        return match unreached {
             0 => Ok(()),
             unreached => Err(Error::ObjectsUnverified {
                 moved: 0,
@@ -379,34 +328,30 @@ fn verify(library: &Library, vault: &Arc<Vault>, mending: bool) -> Result<()> {
     if failing > 0 {
         said!("{}", words::vault::nothing_mended());
     }
-    match (failing as u64, unreached.len() as u64) {
+    match (failing as u64, unreached) {
         (0, 0) => Ok(()),
         (moved, unreached) => Err(Error::ObjectsUnverified { moved, unreached }),
     }
 }
 
-fn reframed(vault: &Vault, unframed: &[PathBuf], mending: bool) -> Result<()> {
-    if unframed.is_empty() {
-        return Ok(());
+fn told_reframing(weighed: &VaultWeighing, mending: bool) {
+    if weighed.unframed.is_empty() {
+        return;
     }
-    if !mending {
-        said!("{}", words::vault::unframed(unframed.len()));
-        return Ok(());
+    let Some(reframed) = weighed.reframed.as_ref().filter(|_| mending) else {
+        said!("{}", words::vault::unframed(weighed.unframed.len()));
+        return;
+    };
+    for path in &reframed.not_held {
+        said!(
+            "{}",
+            words::vault::did_not_repack(path.display().to_string())
+        );
     }
-
-    let mut repacked = 0_u64;
-    for path in unframed {
-        match vault.reframe(path)? {
-            Reframing::Reframed => repacked += 1,
-            Reframing::AlreadyFramed => {}
-            Reframing::NotHeld => said!(
-                "{}",
-                words::vault::did_not_repack(path.display().to_string())
-            ),
-        }
-    }
-    said!("{}", words::vault::repacked(repacked, unframed.len()));
-    Ok(())
+    said!(
+        "{}",
+        words::vault::repacked(reframed.repacked, weighed.unframed.len())
+    );
 }
 
 fn prune(library: &Library, args: &VaultArgs) -> Result<()> {

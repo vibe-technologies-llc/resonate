@@ -125,10 +125,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [M · 0.8.1] The settings pane changes as often as `root.rs` and is held by almost nothing:
-  `views/settings/mod.rs` (107 commits) and `appearance.rs` hold no test, `output.rs` one and
-  `equaliser.rs` four, and `driven.rs` only opens a page; each page opened, a setting changed and
-  the `SettingChange` written would pin it
 - [M · 0.8.1] The phones' search is evaluated in memory (`resonate-mobile`'s `search.rs`:
   `term_holds`, `shaped`) and the desktop's as SQL (`db.rs`'s `Term`), over one grammar, and no
   test runs the same rows and queries through both, so a `Term` added to one is answered otherwise

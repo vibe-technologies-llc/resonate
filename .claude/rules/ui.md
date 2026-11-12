@@ -1379,7 +1379,16 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `Unplugged` backend sinks to list, so a device row is pressed too. gpui can't build an
   `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`; the platform's
   own drag events are driven by the `drive-a-drag` skill on a hosted KWin, which `crates/resonate/tests/dragging.rs` runs (opt-in: `RESONATE_DRAG_TESTS=1`, a compositor, GTK 4 in python3 and `spectacle` on the path) and which proves the drop is accepted and copied and the overlay drawn: against `before.png` the window drew widely, and in `over.png` (decoded with the `png` dev-dependency, found by what is drawn rather than by the window's place, which KWin does not always honour) everything past the source window but one card-sized, drop-centred box sits under the scrim, and that box holds a tinted border several times what the same box held before. `views/root.rs`
-  drives keys. The equaliser's note is always drawn and `kit::group_heading` holds a row control's
+  drives keys. **Every settings page is opened and a setting on it changed in `views/settings/pages.rs`**:
+  `Pane` swaps the window's `SettingsWriter` for one recording the `SettingChange`s it is handed
+  (`Recorded`), opens a category (`open_the_place`), `reach`es a control by scrolling the body until its
+  drawn bounds sit inside it (a control below the fold is out of reach of a press), presses it and
+  waits for the changes to arrive (`written_after`), so a page is held to what it *writes*, not to the
+  state it changes. A switch is pressed by its `-track` mark. A test that changes the text size or the
+  theme calls `Driven::wearing_alone` first, since `theme::WORN` is the process's. Category memory
+  (`LastSettingsCategory`, `Forget`), a group put back (`revert-<title>`) and a category reset
+  (`reset-the-category`) are held there too, and the vault's upkeep beside the group in `tending.rs`.
+  The equaliser's note is always drawn and `kit::group_heading` holds a row control's
   height, so pressing the curve with the equaliser off moves nothing under the press.
 
 ## Panes
@@ -2553,7 +2562,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   then takes two presses (the second under a note saying what the first armed); *Stop* is drawn only
   while it runs. *Put the last run back* (`walks_back`, `tags_walk_back`) is armed the same way.
   **One press is armed at a time**: `RootView::armed` is an `Option<Armed>` (the filing's move and
-  walk back, the tags' write and walk back, the reset, the vault's keep, the curve discard, history
+  walk back, the tags' write and walk back, the reset, the vault's keep and upkeep (`Armed::TendTheVault`), the curve discard, history
   aging, a folder's forget, a new pairing code, the earlier plays), `arm`, `is_armed` and `lower`
   its only gestures, so arming one lowers any other; `disarm` (leaving the pane, a category or a
   page) and the pointer leaving the settings body (a transition via `on_hover`) run
