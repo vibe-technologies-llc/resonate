@@ -38,7 +38,9 @@ const TRAFFIC_LIGHTS_FROM_THE_EDGE: f32 = 16.0;
 
 const A_TRAFFIC_LIGHT_IS_TALL: f32 = 14.0;
 
-const THE_TRAFFIC_LIGHTS_ARE_WIDE: f32 = 54.0;
+const THE_TRAFFIC_LIGHTS_ARE_WIDE: f32 = 58.0;
+
+const ROOM_AFTER_THE_TRAFFIC_LIGHTS: f32 = 12.0;
 
 const A_DOUBLE_PRESS: usize = 2;
 
@@ -58,8 +60,11 @@ pub(crate) fn room_for_the_traffic_lights(window: &Window) -> Option<Pixels> {
 }
 
 fn room_kept_for_the_lights(drawn_by_the_system: bool, fills_the_screen: bool) -> Option<Pixels> {
-    (drawn_by_the_system && !fills_the_screen)
-        .then(|| px(THE_TRAFFIC_LIGHTS_ARE_WIDE + TRAFFIC_LIGHTS_FROM_THE_EDGE))
+    (drawn_by_the_system && !fills_the_screen).then(|| {
+        px(TRAFFIC_LIGHTS_FROM_THE_EDGE
+            + THE_TRAFFIC_LIGHTS_ARE_WIDE
+            + ROOM_AFTER_THE_TRAFFIC_LIGHTS)
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -479,7 +484,7 @@ mod tests {
 
     #[test]
     fn the_header_keeps_room_for_the_traffic_lights_only_while_the_system_draws_them() {
-        assert_eq!(room_kept_for_the_lights(true, false), Some(px(70.0)));
+        assert_eq!(room_kept_for_the_lights(true, false), Some(px(86.0)));
         assert_eq!(room_kept_for_the_lights(true, true), None);
         assert_eq!(room_kept_for_the_lights(false, false), None);
         assert_eq!(room_kept_for_the_lights(false, true), None);

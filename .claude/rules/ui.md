@@ -28,8 +28,9 @@ is never named.
     `TitlebarOptions::traffic_light_position`: `TRAFFIC_LIGHTS_FROM_THE_EDGE` (16) in and mid-height
     of `theme::header_height()` (19 down at the middling text size, a light being
     `A_TRAFFIC_LIGHT_IS_TALL`, 14), since gpui makes the title bar a light's height plus twice that
-    drop. The wordmark is inset by `chrome::room_for_the_traffic_lights` (70: the lights' 54 and
-    the 16 before them) inside its own column, so the search field stays centred, and by nothing
+    drop. The wordmark is inset by `chrome::room_for_the_traffic_lights` (86: the 16 before the
+    lights, their 58 as macOS 26 draws them on a MacBook Pro, and `ROOM_AFTER_THE_TRAFFIC_LIGHTS`, 12,
+    since at 70 the mark stood against the green light) inside its own column, so the search field stays centred, and by nothing
     while the window fills the screen, where the system hides the lights. A press on the bar is
     noted and the first move after it calls `Window::start_window_move`; a double press is
     `Window::titlebar_double_click`, which does what the system's setting says; a right press opens
@@ -37,8 +38,8 @@ is never named.
     the lights where they stood until the next start. `WindowDecorations::Client` is ignored there
     (`Decorations::Server`), so `chrome::frame` draws no border, rounding or shadow of its own
     (`the_traffic_lights_stand_mid_height_of_the_header_whatever_its_size`,
-    `the_header_keeps_room_for_the_traffic_lights_only_while_the_system_draws_them`). Never seen on
-    a Mac (`macos.md`).
+    `the_header_keeps_room_for_the_traffic_lights_only_while_the_system_draws_them`). Seen on a
+    MacBook Pro M4 under macOS 26.
   - Header: `theme::header_height()`, three columns; wordmark and controls each take sidebar width
     less padding, so the search field (at most `theme::search_width()`) centres on the window.
     Control = `theme::WINDOW_CONTROL` (31, odd so the mark centres on a whole pixel) square.
