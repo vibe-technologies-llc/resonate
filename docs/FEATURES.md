@@ -125,9 +125,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   are fixed, and the callback is typed by them
 
 ## The window
-- [M · 0.9.0] The window's *Identical songs* page and `resonate dedupe` find only a file numbered
-  after a song it copies (`Song (1).flac`); the phones fold any files holding the same bytes, and
-  the desktop catalog has no such search
 
 ## Sync and together
 

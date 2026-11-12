@@ -1191,12 +1191,12 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
         }],
     )?;
 
-    let found = library.numbered_copies()?;
-    let deleted = library.fold_copies(&found.numbered)?;
+    let found = library.identical_copies()?;
+    let deleted = library.fold_copies(&found.identical)?;
 
-    assert_eq!(found.numbered.len(), 1);
-    assert_eq!(found.numbered[0].kept, original);
-    assert_eq!(found.numbered[0].copy, copy);
+    assert_eq!(found.identical.len(), 1);
+    assert_eq!(found.identical[0].kept, original);
+    assert_eq!(found.identical[0].copy, copy);
     assert_eq!(found.differing, std::slice::from_ref(&differing));
     assert_eq!(deleted.files, 1);
     assert!(!copy.exists());
@@ -1214,7 +1214,73 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
             .collect::<Vec<_>>(),
         [MediaLocation::local(&original)]
     );
-    assert!(library.numbered_copies()?.numbered.is_empty());
+    assert!(library.identical_copies()?.identical.is_empty());
+    Ok(())
+}
+
+#[test]
+fn files_holding_the_same_bytes_under_different_names_are_folded_into_the_one_not_numbered()
+-> Result<()> {
+    let tree = Tree::new();
+    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let renamed = tree.root.join("Echoes2.wav");
+    let elsewhere = tree.root.join("Mirror/echoes.wav");
+    let numbered = tree.root.join("Echoes (1).wav");
+    fs::create_dir_all(elsewhere.parent().expect("a folder")).expect("a writable folder");
+    fs::copy(&original, &renamed).expect("a copy");
+    fs::copy(&original, &elsewhere).expect("a copy");
+    fs::copy(&original, &numbered).expect("a copy");
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(TakenByTheDesktop)));
+    scan(&library, &tree.root)?;
+
+    let found = library.identical_copies()?;
+    let deleted = library.fold_copies(&found.identical)?;
+
+    assert_eq!(found.identical.len(), 3);
+    assert!(found.identical.iter().all(|copy| copy.kept == original));
+    assert!(found.differing.is_empty());
+    assert_eq!(deleted.files, 3);
+    assert!(original.exists());
+    assert!(!renamed.exists() && !elsewhere.exists() && !numbered.exists());
+    assert!(library.identical_copies()?.identical.is_empty());
+    Ok(())
+}
+
+#[test]
+fn files_of_one_size_holding_other_bytes_are_not_identical() -> Result<()> {
+    let tree = Tree::new();
+    let one = tree.root.join("One.wav");
+    let other = tree.root.join("Other.wav");
+    let numbered = tree.root.join("One (1).wav");
+    fs::write(
+        &one,
+        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 1),
+    )
+    .expect("a song");
+    fs::write(
+        &other,
+        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 2),
+    )
+    .expect("a song");
+    fs::write(
+        &numbered,
+        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 3),
+    )
+    .expect("a song");
+    assert_eq!(
+        fs::metadata(&one).expect("a song").len(),
+        fs::metadata(&other).expect("a song").len(),
+        "the files must share a size"
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &tree.root)?;
+
+    let found = library.identical_copies()?;
+
+    assert!(found.identical.is_empty());
+    assert_eq!(found.differing, std::slice::from_ref(&numbered));
+    assert!(one.exists() && other.exists() && numbered.exists());
     Ok(())
 }
 
@@ -1243,14 +1309,14 @@ fn a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice() -> 
     library.track_played(&MediaLocation::local(&copy), None, Duration::from_secs(2))?;
     library.track_played(&MediaLocation::local(&copy), None, Duration::from_secs(2))?;
 
-    let first = library.numbered_copies()?;
-    let first_deleted = library.fold_copies(&first.numbered)?;
-    let second = library.numbered_copies()?;
-    library.fold_copies(&second.numbered)?;
+    let first = library.identical_copies()?;
+    let first_deleted = library.fold_copies(&first.identical)?;
+    let second = library.identical_copies()?;
+    library.fold_copies(&second.identical)?;
 
-    assert_eq!(first.numbered.len(), 1);
+    assert_eq!(first.identical.len(), 1);
     assert_eq!(first_deleted.kept, 1);
-    assert_eq!(second.numbered.len(), 1);
+    assert_eq!(second.identical.len(), 1);
     let kept = library.track_at(&original, None)?.expect("the song stays");
     assert_eq!(kept.plays, 3);
     let left = library.track_at(&copy, None)?.expect("the copy stays");
@@ -1280,8 +1346,8 @@ fn a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not
     let echoes = song("Echoes", "Pink Floyd", "Meddle");
     let fearless = song("Fearless", "Pink Floyd", "Meddle");
 
-    let found = library.numbered_copies()?;
-    library.fold_copies(&found.numbered)?;
+    let found = library.identical_copies()?;
+    library.fold_copies(&found.identical)?;
 
     assert!(!library.deleted_recording(&echoes)?);
 

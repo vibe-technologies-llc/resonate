@@ -1572,9 +1572,9 @@ pub enum Sub {
     },
 
     #[command(
-        about = "Print every song held twice under a numbered name, such as Song (1).flac \
-                 beside Song.flac, whose bytes are the same as the song it was numbered after. \
-                 Nothing is folded until --apply says so"
+        about = "Print every file holding the same bytes as another, such as Song (1).flac \
+                 beside Song.flac or a song copied under a new name, with the copy to fold into \
+                 the song kept. Nothing is folded until --apply says so"
     )]
     Dedupe {
         #[arg(

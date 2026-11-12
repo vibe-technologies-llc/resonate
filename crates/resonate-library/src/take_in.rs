@@ -1,6 +1,7 @@
 use std::{
     ffi::OsString,
     fs::{self, File},
+    hash::{DefaultHasher, Hasher},
     io::{self, Read},
     path::{Path, PathBuf},
     process,
@@ -789,6 +790,19 @@ fn place(staged: &Path, content: &Content, whole: &Path) -> std::result::Result<
 pub(crate) fn holds_the_same_bytes(one: &Path, other: &Path) -> bool {
     let length = |path: &Path| fs::metadata(path).map(|held| held.len()).ok();
     length(one).is_some_and(|held| Some(held) == length(other)) && verified(one, other).is_ok()
+}
+
+pub(crate) fn content_digest(path: &Path) -> Option<u64> {
+    let mut file = File::open(path).ok()?;
+    let mut chunk = vec![0_u8; COMPARED_AT_ONCE];
+    let mut hasher = DefaultHasher::new();
+
+    loop {
+        match read_full(&mut file, &mut chunk).ok()? {
+            0 => return Some(hasher.finish()),
+            read => hasher.write(&chunk[..read]),
+        }
+    }
 }
 
 fn verified(one: &Path, other: &Path) -> io::Result<()> {
