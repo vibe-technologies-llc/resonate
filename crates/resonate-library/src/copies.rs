@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::File,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -7,7 +8,7 @@ use std::{
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::{Connection, ToSql, Transaction, params};
 
-use crate::{Error, Result, StoreOp, store, take_in};
+use crate::{Error, Result, StoreOp, identical::identical_among, store};
 
 const NUMBERED_AT_MOST: u32 = 999;
 
@@ -88,33 +89,9 @@ fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> 
 
     let mut classes = Vec::new();
     for sharing_a_size in by_size.into_values().filter(|members| members.len() > 1) {
-        let mut by_digest: BTreeMap<u64, Vec<Member<'_>>> = BTreeMap::new();
-        for member in sharing_a_size {
-            if let Some(digest) = take_in::content_digest(member.path) {
-                by_digest.entry(digest).or_default().push(member);
-            }
-        }
-        for sharing_a_digest in by_digest.into_values().filter(|members| members.len() > 1) {
-            classes.extend(
-                verified_classes(sharing_a_digest)
-                    .into_iter()
-                    .filter(|class| class.len() > 1),
-            );
-        }
-    }
-    classes
-}
-
-fn verified_classes(members: Vec<Member<'_>>) -> Vec<Vec<Member<'_>>> {
-    let mut classes: Vec<Vec<Member<'_>>> = Vec::new();
-    for member in members {
-        match classes
-            .iter_mut()
-            .find(|class| take_in::holds_the_same_bytes(class[0].path, member.path))
-        {
-            Some(class) => class.push(member),
-            None => classes.push(vec![member]),
-        }
+        classes.extend(identical_among(sharing_a_size, |member| {
+            File::open(member.path).ok()
+        }));
     }
     for class in &mut classes {
         class.sort_by_key(|member| (is_numbered(member.path), member.path));

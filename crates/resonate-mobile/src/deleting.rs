@@ -1,9 +1,9 @@
 use std::{
     collections::BTreeMap,
-    io::Read,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use resonate_library::identical_among;
 use rusqlite::{OptionalExtension, Transaction};
 
 use crate::{
@@ -16,7 +16,6 @@ use crate::{
     vanished::{handed_over, referring_tables},
 };
 
-const READ_IN_CHUNKS_OF: usize = 1 << 16;
 const HELD_WITH_THEIR_SIZES: &str =
     "SELECT d.*, d.size AS bytes FROM documents d WHERE d.missing = 0 ORDER BY d.id";
 
@@ -47,19 +46,11 @@ impl MobilePlayer {
         let mut found = Vec::new();
 
         for same_size in self.songs_sharing_a_size()? {
-            let mut by_crc = BTreeMap::<u32, Vec<Track>>::new();
-            for track in same_size {
-                if let Some(crc) = self.whole_crc(&track.uri) {
-                    by_crc.entry(crc).or_default().push(track);
-                }
-            }
-            for same_crc in by_crc.into_values().filter(|tracks| tracks.len() > 1) {
-                found.extend(
-                    self.alike(same_crc)
-                        .into_iter()
-                        .filter_map(|alike| kept_among(alike, playing.as_deref())),
-                );
-            }
+            found.extend(
+                identical_among(same_size, |track| self.opened(&track.uri))
+                    .into_iter()
+                    .filter_map(|alike| kept_among(alike, playing.as_deref())),
+            );
         }
         Ok(found)
     }
@@ -178,54 +169,6 @@ impl MobilePlayer {
             }
         }
     }
-
-    fn alike(&self, tracks: Vec<Track>) -> Vec<Vec<Track>> {
-        let mut classes: Vec<Vec<Track>> = Vec::new();
-        for track in tracks {
-            match classes
-                .iter_mut()
-                .find(|class| self.same_bytes(&class[0].uri, &track.uri))
-            {
-                Some(class) => class.push(track),
-                None => classes.push(vec![track]),
-            }
-        }
-        classes
-    }
-
-    fn same_bytes(&self, one: &str, other: &str) -> bool {
-        let (Some(mut one), Some(mut other)) = (self.opened(one), self.opened(other)) else {
-            return false;
-        };
-        let mut left = vec![0; READ_IN_CHUNKS_OF];
-        let mut right = vec![0; READ_IN_CHUNKS_OF];
-        loop {
-            let (Some(read_left), Some(read_right)) =
-                (filled(&mut one, &mut left), filled(&mut other, &mut right))
-            else {
-                return false;
-            };
-            if read_left != read_right || left[..read_left] != right[..read_right] {
-                return false;
-            }
-            if read_left == 0 {
-                return true;
-            }
-        }
-    }
-}
-
-fn filled(stream: &mut impl Read, into: &mut [u8]) -> Option<usize> {
-    let mut held = 0;
-    while held < into.len() {
-        match stream.read(&mut into[held..]) {
-            Ok(0) => break,
-            Ok(read) => held += read,
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(_) => return None,
-        }
-    }
-    Some(held)
 }
 
 fn kept_among(mut alike: Vec<Track>, playing: Option<&str>) -> Option<IdenticalSongs> {

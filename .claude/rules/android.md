@@ -1007,8 +1007,8 @@ is the next remaining row from its start
 `deleting_the_song_heard_resumes_the_next_one_from_its_start`). `identical_songs()` answers
 `IdenticalSongs` (the copy kept and the copies) for files holding exactly the same bytes: held
 songs grouped by size (the stamp a scan kept, else measured through the document provider, since a
-download, a landing or an opened file is indexed with none), then by a CRC-32 of the whole file,
-then confirmed byte for byte, so equal sizes or equal CRCs alone never match
+download, a landing or an opened file is indexed with none), then through the library's `identical_among` (a streamed digest of the whole file, then
+confirmed byte for byte, so equal sizes or equal digests alone never match)
 (`songs_whose_files_hold_the_same_bytes_are_found_and_one_alike_in_size_alone_is_not`). The copy
 playing is kept, else the first indexed (`the_copy_playing_is_the_one_kept`); an unreadable file is
 left out. `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each

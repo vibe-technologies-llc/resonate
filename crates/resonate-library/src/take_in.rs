@@ -1,8 +1,7 @@
 use std::{
     ffi::OsString,
     fs::{self, File},
-    hash::{DefaultHasher, Hasher},
-    io::{self, Read},
+    io,
     path::{Path, PathBuf},
     process,
     sync::{
@@ -20,7 +19,7 @@ use resonate_core::{
 };
 
 use crate::{
-    Error, Result,
+    Error, Result, identical,
     pass::{Cancelling, PassHandle, PassKind, TakeInHandle},
     unreplacing, words,
 };
@@ -33,8 +32,6 @@ const LYRIC_FOLDERS: [&str; 3] = ["lyrics", "lyric", "lrc"];
 const LARGEST_SHEET_REWRITTEN: u64 = 1 << 20;
 
 const DEEPEST_FOLDER: usize = 32;
-
-const COMPARED_AT_ONCE: usize = 256 * 1024;
 
 const CANDIDATE_NAMES: u32 = 999;
 
@@ -792,46 +789,12 @@ pub(crate) fn holds_the_same_bytes(one: &Path, other: &Path) -> bool {
     length(one).is_some_and(|held| Some(held) == length(other)) && verified(one, other).is_ok()
 }
 
-pub(crate) fn content_digest(path: &Path) -> Option<u64> {
-    let mut file = File::open(path).ok()?;
-    let mut chunk = vec![0_u8; COMPARED_AT_ONCE];
-    let mut hasher = DefaultHasher::new();
-
-    loop {
-        match read_full(&mut file, &mut chunk).ok()? {
-            0 => return Some(hasher.finish()),
-            read => hasher.write(&chunk[..read]),
-        }
-    }
-}
-
 fn verified(one: &Path, other: &Path) -> io::Result<()> {
-    let mut one = File::open(one)?;
-    let mut other = File::open(other)?;
-    let mut held = vec![0_u8; COMPARED_AT_ONCE];
-    let mut copied = vec![0_u8; COMPARED_AT_ONCE];
-
-    loop {
-        let read = read_full(&mut one, &mut held)?;
-        let again = read_full(&mut other, &mut copied)?;
-        if read != again || held[..read] != copied[..again] {
-            return Err(io::Error::from(io::ErrorKind::InvalidData));
-        }
-        if read == 0 {
-            return Ok(());
-        }
+    if identical::same_bytes(File::open(one)?, File::open(other)?) {
+        Ok(())
+    } else {
+        Err(io::Error::from(io::ErrorKind::InvalidData))
     }
-}
-
-fn read_full(file: &mut File, into: &mut [u8]) -> io::Result<usize> {
-    let mut filled = 0;
-    while filled < into.len() {
-        match file.read(&mut into[filled..])? {
-            0 => break,
-            read => filled += read,
-        }
-    }
-    Ok(filled)
 }
 
 #[cfg(test)]

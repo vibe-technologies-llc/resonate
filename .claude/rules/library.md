@@ -1558,9 +1558,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
 - **Files holding the same bytes are folded into one song.** `Library::identical_copies` (`copies.rs`)
   reads every whole-file row (one row at the path, no span, not vaulted, a size above zero) and
   groups them by the catalogued `file_size`, so only files sharing a size are ever read. Each such
-  file is digested (`take_in::content_digest`, a streamed hash of the whole file; a file that will
-  not open is left out), files sharing a digest are confirmed byte for byte against their class's
-  first (`take_in::holds_the_same_bytes`, so a collision never folds), and a class of two or more is
+  group goes through `identical_among` (`identical.rs`, the phones' `identical_songs` calls it too,
+  over documents): every file is digested (a streamed hash of the whole file; a file that will not
+  open is left out), files sharing a digest are confirmed byte for byte against their class's first
+  (so a collision never folds), and a class of two or more is
   a song and its copies, whatever the names or folders. Which file is kept is deterministic: a
   name not ending ` (N)` before one that does, then the path that sorts first, so the choice does
   not depend on scan order or row ids; the phones keep the song playing, else the first row. A file ending

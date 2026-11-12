@@ -15,6 +15,7 @@ mod fingerprint;
 mod foresight;
 mod hinted;
 mod history;
+mod identical;
 mod import;
 mod keeps;
 mod keyed;
@@ -125,6 +126,7 @@ pub use crate::{
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},
     foresight::FORESEEN_FOR,
     history::{Aged, HistoryKept},
+    identical::identical_among,
     import::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,
