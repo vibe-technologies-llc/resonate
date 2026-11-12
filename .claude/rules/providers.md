@@ -857,7 +857,10 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   re-encode or a remux, and each song call with `--no-playlist`, naming the song
   `https://music.youtube.com/watch?v=<id>`, the address on which `yt-dlp` adds its `web_music` client.
   `deno` is found by `yt-dlp` itself; `--js-runtimes` is passed only where it is absent, naming the
-  first of `node`, `bun` on `PATH`. A call is held to `ASKED_WITHIN` (60 s), a whole listing to twice
+  first of `node`, `bun` on `PATH`. **A window started from Finder has the system's short `PATH`**, so
+  on macOS `searched_path` adds `FOLDERS_A_FINDER_START_LEAVES_OUT` (Homebrew's `/opt/homebrew/bin`,
+  `/usr/local/bin`) after it: the bare `yt-dlp`, the runtimes and what `yt-dlp` runs are looked up
+  there, and the child is handed the same `PATH`. A call is held to `ASKED_WITHIN` (60 s), a whole listing to twice
   that, a download's silence to `LEFT_SILENT_FOR`, and a child past its limit is killed.
 - **What lands is the stream as served.** Tiers best first: `Opus774` (`mka`, about 260 kbps),
   `Aac141` (`m4a`), `Opus251` (`mka`), the two first Premium's (`Tier::is_premium`). `-f <id> -o -`

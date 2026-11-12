@@ -32,6 +32,10 @@ const A_PATH_SEPARATOR: [char; 2] = ['/', '\\'];
 const AN_EXTENSION_BEGINS: char = '.';
 const FOUND_BY_ITSELF: &str = "deno";
 const RUNTIMES_NAMED: [&str; 2] = ["node", "bun"];
+#[cfg(target_os = "macos")]
+const FOLDERS_A_FINDER_START_LEAVES_OUT: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
+#[cfg(not(target_os = "macos"))]
+const FOLDERS_A_FINDER_START_LEAVES_OUT: [&str; 0] = [];
 const ASKED_WITHIN: Duration = Duration::from_secs(60);
 const A_WHOLE_LISTING_TAKES_AT_MOST: u32 = 2;
 const LEFT_SILENT_FOR: Duration = Duration::from_secs(120);
@@ -256,6 +260,20 @@ fn holds_a_program(folders: &[PathBuf], name: &str) -> bool {
     folders
         .iter()
         .any(|folder| folder.join(name).is_file() || folder.join(format!("{name}.exe")).is_file())
+}
+
+fn searched_path(path: Option<&OsStr>, also: &[&str]) -> Option<OsString> {
+    let mut folders: Vec<PathBuf> = path.map(env::split_paths).into_iter().flatten().collect();
+    let before = folders.len();
+    for folder in also.iter().map(PathBuf::from) {
+        if !folders.contains(&folder) {
+            folders.push(folder);
+        }
+    }
+    if folders.len() == before {
+        return path.map(OsStr::to_os_string);
+    }
+    env::join_paths(folders).ok()
 }
 
 fn runtime_named_on(path: Option<&OsStr>) -> Option<&'static str> {
@@ -539,11 +557,16 @@ struct Running {
 impl Running {
     fn of(
         program: &Path,
+        searched: Option<&OsStr>,
         arguments: &[OsString],
         withheld: Vec<String>,
     ) -> std::result::Result<Self, Starting> {
+        let mut command = Command::new(program);
+        if let Some(searched) = searched {
+            command.env("PATH", searched);
+        }
         let child = Reaped::spawned(
-            Command::new(program)
+            command
                 .args(arguments)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -655,6 +678,7 @@ impl Read for Reading {
 pub struct Tool {
     provider: SourceId,
     program: PathBuf,
+    searched: Option<OsString>,
     cookies: Cookies,
     runtime: Option<&'static str>,
     asked_within: Duration,
@@ -664,11 +688,16 @@ pub struct Tool {
 
 impl Tool {
     pub fn new(program: Option<PathBuf>, cookies: Cookies) -> Self {
+        let searched = searched_path(
+            env::var_os("PATH").as_deref(),
+            &FOLDERS_A_FINDER_START_LEAVES_OUT,
+        );
         Self {
             provider: SourceId::new(YTMUSIC).unwrap_or_else(|_| SourceId::local()),
             program: program.unwrap_or_else(|| THE_PROGRAM.into()),
+            runtime: runtime_named_on(searched.as_deref()),
+            searched,
             cookies,
-            runtime: runtime_named_on(env::var_os("PATH").as_deref()),
             asked_within: ASKED_WITHIN,
             left_silent_for: LEFT_SILENT_FOR,
             lapse: Lapse::default(),
@@ -700,15 +729,19 @@ impl Tool {
     }
 
     fn running(&self, op: ProviderOp, arguments: &[OsString]) -> Result<Running> {
-        Running::of(&self.program, arguments, self.cookies.withheld()).map_err(|starting| {
-            match starting {
-                Starting::NotRun(source) => Error::ToolNotRun {
-                    provider: self.provider.clone(),
-                    op,
-                    source,
-                },
-                Starting::Io(source) => self.failed_io(op, source),
-            }
+        Running::of(
+            &self.program,
+            self.searched.as_deref(),
+            arguments,
+            self.cookies.withheld(),
+        )
+        .map_err(|starting| match starting {
+            Starting::NotRun(source) => Error::ToolNotRun {
+                provider: self.provider.clone(),
+                op,
+                source,
+            },
+            Starting::Io(source) => self.failed_io(op, source),
         })
     }
 
@@ -915,6 +948,28 @@ mod tests {
             fs::write(folder.join(name), b"").expect("a program");
         }
         folder
+    }
+
+    #[test]
+    fn the_folders_a_finder_start_leaves_out_are_searched_after_the_path() {
+        let path = env::join_paths(["/usr/bin", "/bin"]).expect("a path");
+        let holding = env::join_paths(["/opt/homebrew/bin", "/usr/bin"]).expect("a path");
+        let also = ["/opt/homebrew/bin", "/usr/local/bin"];
+
+        let searched = searched_path(Some(&path), &also).expect("a path");
+        let unchanged = searched_path(Some(&holding), &["/opt/homebrew/bin"]);
+        let from_nothing = searched_path(None, &also).expect("a path");
+
+        assert_eq!(
+            env::split_paths(&searched).collect::<Vec<_>>(),
+            ["/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from)
+        );
+        assert_eq!(unchanged.as_deref(), Some(holding.as_os_str()));
+        assert_eq!(
+            env::split_paths(&from_nothing).collect::<Vec<_>>(),
+            also.map(PathBuf::from)
+        );
+        assert_eq!(searched_path(None, &[]), None);
     }
 
     #[test]

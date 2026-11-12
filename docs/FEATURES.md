@@ -101,8 +101,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] The menu bar has no Undo or Redo (a menu item is dispatched outside the focused field's
   context, so it would undo a library edit while a field holds the caret) and *Play or pause* shows
   no key
-- [S] A window started from Finder has the system's short `PATH`, so a Homebrew `yt-dlp` is found
-  only where its path is set in the settings
 - [S] Tag writes on APFS copy where they could clone (`clonefile` has no safe wrapper here), and a
   name an HFS+ volume hands back decomposed is not composed
 - [S] There is no Homebrew cask and no Intel build: the release is one Apple Silicon disk image
