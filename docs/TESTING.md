@@ -29,10 +29,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   a USB DAC: no device is attached here, so neither the route taking `preferredSampleRate` nor the
   gap of the RemoteIO reopen it causes has been heard
 
-- [S · blocked: hardware] Android's unmixed output (`follow-song-rate`) is proved on the host and by
-  the emulator's mixed fallback alone: no USB DAC or MMAP-capable phone is attached here, so neither
-  `setPreferredMixerAttributes` taking a format, an exclusive open at the song's rate, nor the bytes
-  reaching a DAC unaltered has been heard
 
 - [S · blocked: hardware] No Google Cast receiver has been played to: the Cast stream is proved
   against a loopback fake alone (`resonate-cast/tests/receiver.rs`), and no Chromecast, Nest
@@ -55,13 +51,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   refused without the multicast entitlement have not been seen
 
 ## iOS
-- [S · blocked: iPhone] `resonate-apple`'s `AudioToolbox` (the unsafe `AudioComponentInstanceNew`,
-  `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`
-  shells are compiled for Apple targets alone; the unit's sequence, the output thread and the panic
-  catch are proved on the host over fakes, so what no test has run is Apple's answer to the calls
-  (that the format is accepted, the callback is called with the `Rendering`, a stop disposes
-  cleanly), and the RemoteIO output has not been heard on an iPhone since those calls moved out of
-  `resonate-mobile`
 - [M · blocked: hardware] The Core Audio tests (`resonate-coreaudio --test stream`: a tone through
   the shared sink, a hog-mode rate switch and its restoration, a 24-bit ramp read back bit for bit
   through a loopback device) need an output device, and the hog and bit-exact halves a device named
@@ -71,24 +60,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),
   and `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it. The
   processor is an arm64 Mach-O
-- [S · blocked: iPhone] Now Playing's motion is proved by its rules in tests and a clean build, never
-  seen on an iPhone: the handover (cover crossfade, words, the held title height), the play and
-  pause symbol replacing, the shuffle and repeat flips, the progress bar's flow, seek and song
-  change, the mode change's pane fade, each under Reduce Motion, in the one column and in the two
-  columns turned on its side, and the defects only a device shows (a dropped frame in a handover,
-  the cover's decode landing late)
-- [S · blocked: iPhone] The Settings pages and the equaliser page are proved by their rules in
-  tests and a clean build, never run on an iPhone: a swipe that starts off a handle scrolling the
-  form while one that starts on it drags the band, overlapping octave handles taken by the one on
-  top, the band card fitting under the graph on one screen, the alert asking for an exact
-  value, a settings stack kept by an earlier build reopening, and VoiceOver on the handles and the
-  sliders
-- [S · blocked: iPhone] The playing row's bars as layers, the lazy shelves and the filter sheet's
-  name lists are proved by their rules, the bars' geometry tests and a clean build, never seen on an
-  iPhone: the bars following the song and settling on a pause, their ink over a cover and in place
-  of a number in both appearances, a shelf row holding its height as cards arrive on Home, Library
-  and Search, the mix shelf's reserved detail line, a pushed name list popping on a choice, and a
-  renderer address added while a song plays
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from

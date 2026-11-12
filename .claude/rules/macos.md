@@ -22,9 +22,10 @@ paths:
 # macOS
 
 The whole workspace but the phones' boundary and PipeWire builds for `aarch64-apple-darwin`, and
-nothing in it is ARM-only (`x86_64-apple-darwin` type-checks the same). **No Mac has opened the
-window or played a note**: the hosted runner builds it and runs its tests, with no display and no
-output device. It is checked two ways:
+nothing in it is ARM-only (`x86_64-apple-darwin` type-checks the same). **One Mac has run it**, a
+MacBook Pro M4 under macOS 26 from the disk image (the window, drag and drop, playback, the
+transport and the volume); `docs/FEATURES.md` holds what that run did not reach. The hosted runner
+builds it and runs its tests, with no display and no output device. It is checked two ways:
 
 - **From Linux, types alone.** `rustup target add aarch64-apple-darwin`, a macOS SDK (the one
   `xtool setup` builds for iOS holds `MacOSX.sdk` beside `iPhoneOS.sdk`) and clang:

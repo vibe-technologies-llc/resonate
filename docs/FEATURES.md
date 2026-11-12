@@ -36,9 +36,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Windows parity
-- [M · blocked: hardware] Physical Windows devices still need WASAPI shared and exclusive playback
-  at every rate and word (`windows.md` records what has run on Windows 11 under QEMU/KVM), device
-  hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
+- [M · blocked: hardware] Windows has played on a physical machine (a listener's, beside what
+  `windows.md` records under QEMU/KVM); what a plain run there did not settle is still unseen:
+  WASAPI exclusive playback at every rate and word on a real DAC, device hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
   per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
   owner-only security descriptor against another account), the ARM64 files (cross-built on an x64
@@ -52,9 +52,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   buttons, seek bar, shuffle and repeat reaching the transport, the cover read through `StorageFile`,
   the title, artist and album on the overlay and the lock screen), the stream thread in MMCSS's
   `Pro Audio` class, the endpoint volume's change notification and its scalar level, the console
-  tests under ConPTY, a tag write carrying NTFS alternate streams and the DACL and owner, and a toast
-  shown from the zip under the process's own AppUserModelID have never run on real hardware or a
-  real audio endpoint
+  tests on a real endpoint, a tag write carrying NTFS alternate streams and the DACL and owner, and a
+  toast shown from the zip under the process's own AppUserModelID
 - [S · blocked: hardware] The YouTube Music sign-in window (`resonate-signin`) on WebView2 is
   cross-checked only: whether Google lets the sign-in through there, whether its HttpOnly cookies
   are handed over and whether `yt-dlp` reads the jar as it did on Linux; where it fails the window
@@ -64,8 +63,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
 
 ## macOS parity
-- [L · blocked: hardware] The macOS build has never run on a Mac: it is type-checked from Linux and
-  built and tested on a hosted runner (`macos.md`). Only hardware settles hog mode (taking a
+- [L · blocked: hardware] The macOS build has run on one Mac, a MacBook Pro M4 under macOS 26, from
+  the disk image: the window, drag and drop, playback, play and pause and the volume work there
+  (`macos.md`). What a plain run there did not settle is still unseen: hog mode (taking a
   device, moving its nominal rate and then its physical format, each read back within 1.5 s, and
   putting all four back, mixing turned off and on again), whether the HAL unit's converter carries
   16-bit and packed 32-bit client words to an unmixed integer device bit for bit (and 24 bits
@@ -79,15 +79,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   buttons, the cover attached, a press reaching the zone that raised it), `resonate play` running
   the main loop for the media keys, playing on with the window closed, the measuring sweep, Now Playing
   (whether setting the playback state alone makes an unbundled process the Now Playing app, the
-  media keys, the cover, the seek bar), the window (shaders compiled at start, the header beside the
-  traffic lights and their size on macOS 26, dragging and double click on it, the bundle's fonts
-  found by family, the menu's key equivalents while a field holds the caret, Control-Space against
-  the system's input-source switch), files and `resonate://` links from Finder at a cold start, the
+  media keys, the cover, the seek bar), the window's menu key equivalents while a field holds the
+  caret and Control-Space against the system's input-source switch, the wordmark's new room after
+  the traffic lights, files and `resonate://` links from Finder at a cold start, the
   socket a second launch reaches the window on (and its path under an unusually long home), Finder's
   Trash through `trashItemAtURL` and its *Put Back*, the machine kept awake, the language list,
   FAT and exFAT volumes named portably, the YouTube Music sign-in window on WKWebView, and the disk
-  image (Gatekeeper on an ad-hoc signature, the document types and the link scheme registering,
-  the icon)
+  image's document types and link scheme registering
 - [S · blocked: certificate] The macOS disk image is signed ad hoc and not notarised, so Gatekeeper
   refuses a first run until it is opened from *Privacy & Security*: no Developer ID exists.
   `sign.sh` and `release.yml` sign and notarise once `MACOS_CERTIFICATE_BASE64`,
